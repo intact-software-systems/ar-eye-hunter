@@ -2,6 +2,8 @@ import { test } from 'bun:test';
 import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -1398,6 +1400,29 @@ test('formation view states the reshape the gate holds for an active room, from 
     assert.equal(reads.length, 1);
 });
 
+test('formation view reads the gate record before the topology view', async () => {
+    const reads: string[] = [];
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+        topologyQuery: {
+            readTopologyView: (groupRef) => {
+                reads.push('topology-view');
+                return topologyQueryWith(null, null).readTopologyView(groupRef);
+            }
+        },
+        reshapeGates: {
+            readTopologyReshapeGate: () => {
+                reads.push('reshape-gate');
+                return Promise.resolve({ state: HELD_GATE, revision: 3 });
+            }
+        }
+    });
+
+    await readFormationView(app);
+
+    assert.deepEqual(reads, ['reshape-gate', 'topology-view']);
+});
+
 test('formation view states no held reshape outside the stage the gate applies in', async () => {
     for (const lifecycleState of ['dormant', 'forming', 'planned', 'connecting', 'reconfiguring', 'reconnecting'] as const) {
         const app = createRouteApp({
@@ -1420,7 +1445,7 @@ test('formation view states no held reshape for a room that stores no gate or wa
     }
 });
 
-test('formation view opens the gate by the default bounds under an unreadable policy, and still states the hold', async () => {
+test('formation view does not fail the held reshape closed under an unreadable policy', async () => {
     const app = createRouteApp({
         group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
         readLifecyclePolicy: () => Promise.resolve({ status: 'corrupt' as const, reason: 'Stored policy does not decode' }),
@@ -1460,10 +1485,18 @@ test('formation view opens the gate by the bounds the planning authority read', 
 test('formation view fails rather than state no held reshape when the gate record is unreadable', async () => {
     const app = createRouteApp({
         group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
-        reshapeGates: { readTopologyReshapeGate: () => Promise.reject(new Error('Stored RTC topology reshape gate is invalid: room-1')) }
+        reshapeGates: {
+            readTopologyReshapeGate: () =>
+                Promise.reject(
+                    new RtcTopologyRepositoryInvariantCorruptionError(
+                        groupStateGroupStorageKey({ ...TEST_SCOPE, groupId: 'room-1' }),
+                        'Stored RTC topology reshape gate fields are invalid'
+                    )
+                )
+        }
     });
 
     const response = await app.request(FORMATION_PATH, { headers: { authorization: 'Bearer token' } });
 
-    assert.notEqual(response.status, 200);
+    assert.equal(response.status, 400);
 });

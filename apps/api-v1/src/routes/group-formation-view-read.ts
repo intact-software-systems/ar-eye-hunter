@@ -54,8 +54,11 @@ export async function readGroupFormationView(
     snapshot: GroupSnapshot,
     deps: ReadGroupFormationViewDependencies
 ): Promise<GroupFormationView> {
-    const inputs = await readFormationViewInputs(groupRef, snapshot, deps);
-    const { authority, view, policy, layoutStale } = inputs;
+    const { authority, view, policy, layoutStale, reshapeGate } = await readFormationViewInputs(
+        groupRef,
+        snapshot,
+        deps
+    );
     const group = authority.group.group;
     const status = computeActivationStatus({
         group,
@@ -79,7 +82,7 @@ export async function readGroupFormationView(
         pending: view.pending,
         heldReshape: computeStagedHeldTopologyReshape({
             lifecycleState: group.lifecycleState,
-            state: inputs.reshapeGate,
+            state: reshapeGate,
             bounds: authority.reshapeBounds
         }),
         maxFormationAttempts: policy === null ? null : policy.activation.maxFormationAttempts,
@@ -103,6 +106,9 @@ async function readFormationViewInputs(
     snapshot: GroupSnapshot,
     deps: ReadGroupFormationViewDependencies
 ): Promise<GroupFormationViewInputs> {
+    // The gate is read before the planned slot, so a release committed in between is stated as still held, never
+    // as nothing held on the old layout.
+    const storedReshapeGate = await deps.reshapeGates.readTopologyReshapeGate(groupRef);
     const [authority, view] = await Promise.all([
         deps.topologyPlanning.readTopologyPlanningAuthority({
             groupRef,
@@ -110,10 +116,9 @@ async function readFormationViewInputs(
         }),
         deps.topologyQuery.readTopologyView(groupRef)
     ]);
-    const [policyRead, layoutStale, storedReshapeGate] = await Promise.all([
+    const [policyRead, layoutStale] = await Promise.all([
         deps.readLifecyclePolicy(groupRef),
-        readLayoutStale({ groupRef, authority, planned: view.snapshot, deps }),
-        deps.reshapeGates.readTopologyReshapeGate(groupRef)
+        readLayoutStale({ groupRef, authority, planned: view.snapshot, deps })
     ]);
     return {
         authority,
