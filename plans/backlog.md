@@ -789,6 +789,17 @@ and it has no status list.
     work.
   - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
   - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
+  - A room that empties while its gate is closed keeps its empty layout's kind until the gate opens, and that hold
+    counts as any other. Whether a layout of no or one member should pass the gate is not decided.
+  - `packages/shared/encoding` imports `packages/shared/api/exact-object-decoding.ts` at runtime (the GroupRef
+    and back-off gate decoders), while `api` imports `encoding`. Moving `exact-object-decoding.ts` into `encoding`
+    ends the cycle; it has about 140 importers.
+  - `toCoalescedGroupRevisionEntry` builds a topology work entry by hand beside `toRtcTopologyWorkEntry`.
+  - `BackoffGateState` says "never passed" two ways: a null state, and a state whose `lastPassAtEpochMs` is null.
+  - A `reshape-due` row carries `ordering: { epoch: 0, seq: 0 }` on the room's ordering key; what that value means
+    to the queue was not checked.
+  - Two older GroupRef decoders (`decode-stored-group-lifecycle-policy.ts`, `decode-rtc-topology-snapshot.ts`)
+    differ from `decodeExactGroupRef` in their checks and messages and were left as they are.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

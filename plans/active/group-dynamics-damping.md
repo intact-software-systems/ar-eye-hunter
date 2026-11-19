@@ -844,10 +844,25 @@ their last phase: a re-root held near the end of `leader-churn` and released whe
   above, not holds: the server log reads each as an unchanged plan with the reshape allowed. They are spread
   unevenly. The debounced room of 12 re-rooted none of its four `leader` appointments in either run, where it
   re-rooted four of four in both runs before the gate, and the debounced room of 8 re-rooted none and one, as it
-  did before. The planner's path for an appointment with the reshape allowed is the one it was, so this is read
-  as the layout's chance; two runs do not settle it.
-- One server process took all the topology work in both runs. Work taken by different servers is what the cluster
-  recipe covers.
+  did before. That was checked three ways, and it is the layout's chance.
+  - A replay of 2 400 seeded rooms of 8 and 12 through the planner as it was before the gate and as it is now gave
+    the same decision and the same layout on every one of 9 600 appointments. With the reshape held, the planner
+    named `leader-rooting` exactly when the allowed plan would have re-rooted.
+  - A third run on the head `e0774c966` (report `7e79e13459c04658b4868713`) re-rooted that room on its first
+    appointment and again when the gate opened.
+  - In that run every `leader` appointment of the four led rooms was planned again from the layout and the leader
+    the server had stored. All 16 decisions and all 8 re-rooted layouts are the server's. The two appointments
+    that changed nothing with the gate open had a leader no deeper in the kept tree than in a fresh one; a hold was
+    recorded exactly when a re-root was owed; each wake-up came 15, 30 and then 60 s after the previous reshape,
+    15 to 124 ms late.
+  - The replay puts a room of 12 whose four appointments all change nothing at 10 to 15 % of rooms. It also splits
+    the sampled share above: on a tree never re-rooted, a deepest appointment re-roots 35 to 40 % of rooms of 8 and
+    51 to 55 % of rooms of 12; right after a re-root, 78 to 80 % and 87 to 92 %.
+- One server process took all the topology work in every run. The cluster recipe sends its requests to
+  three servers; it does not show which server took the work.
+- A room that empties while its gate is closed keeps the kind of its empty layout until the gate opens. In the
+  third run three led rooms held the change back to a star for about 59 s. Nobody dials an empty layout, and the
+  hold counts as any other. Recorded in the backlog.
 
 ### Later, decided after slice 2
 
