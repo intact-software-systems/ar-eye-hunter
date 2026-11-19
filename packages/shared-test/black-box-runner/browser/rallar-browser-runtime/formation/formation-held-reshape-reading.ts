@@ -54,8 +54,7 @@ export class FormationHeldReshapeReading {
         key: string,
         observation: FormationHeldReshapeReading.Observation
     ): Promise<BlackBoxRallarFormationHeldReshape> {
-        const view = await this.#dependencies.readView(observation.roomRef, observation.timeoutMs)
-            .catch((error: unknown) => toError(error));
+        const view = await this.#dependencies.readView(observation.roomRef, observation.timeoutMs).catch(toError);
         if (view instanceof Error) {
             return { reading: 'not-read', because: 'view-read-failed', message: view.message };
         }
