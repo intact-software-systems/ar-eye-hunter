@@ -63,6 +63,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      server_timing:
+        description: Roll the API out with its timing and AppInbox phase timing logs; off leaves it uninstrumented
+        type: boolean
+        default: false
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: choice
@@ -136,6 +140,7 @@ jobs:
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}
       register_before_login: ${{ inputs.register_before_login }}
+      server_timing: ${{ inputs.server_timing }}
       browser_log_level: ${{ inputs.browser_log_level }}
       headless_entry: ${{ inputs.headless_entry }}
       browser_engine: ${{ inputs.browser_engine }}

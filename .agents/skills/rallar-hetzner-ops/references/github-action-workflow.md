@@ -108,6 +108,9 @@ TLS requirement.
   then registers its own `<prefix>-NN` user.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected. Default: `true`.
+- `server_timing`: roll the API out with its timing and AppInbox phase timing
+  logs for this run; `api-journal.log` then has a line per HTTP request and per
+  AppInbox phase. Default: `false`. The helper flag is `--server-timing`.
 
 Manual fast-iteration dispatch:
 

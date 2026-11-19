@@ -265,6 +265,14 @@ defaults `register_before_login=true` and `stop_after_run=true`. Passing only
 `install_playwright=false` is also supplied. Pass `--keep-headless` only when
 you intentionally want to leave browser processes running after artifact capture
 for live debugging or back-to-back warm experiments.
+
+Pass `--server-timing` to attribute where a run's time goes on the server. It
+sends `server_timing=true`, the run rolls the API out with its timing and
+AppInbox phase timing logs on, and the operation artifact's `api-journal.log`
+then carries one line per HTTP request and per AppInbox phase. The flag is sent
+only when given, so the helper still dispatches a ref whose workflow has no such
+input. The next run without it rolls the API out uninstrumented again.
+
 The distributed recipe runner sends control-server admin API calls to the
 `control_http_url` input (default `https://control.rallar.intactss.com`)
 because distributed-run creation requires TLS; `control_url` (default
