@@ -60,12 +60,19 @@ if (import.meta.main) {
             const started = performance.now();
             const at = new Date().toISOString();
             try {
-                const [calibration, enforcement] = await Promise.all([
+                const [calibration, enforcement] = await Promise.allSettled([
                     sampleNode(first, calibrationId),
                     sampleNode(second, enforcementId)
                 ]);
+                if (calibration.status === 'rejected') {
+                    throw calibration.reason;
+                }
+                if (enforcement.status === 'rejected') {
+                    throw enforcement.reason;
+                }
+                const pair = { calibration: calibration.value, enforcement: enforcement.value };
                 const now = performance.now();
-                const result = checkNodeClockOffset({ calibration, enforcement }, now, budgetMs);
+                const result = checkNodeClockOffset(pair, now, budgetMs);
                 console.log(JSON.stringify(
                     repeated
                         ? {
@@ -73,12 +80,12 @@ if (import.meta.main) {
                             at,
                             ...result,
                             elapsedMs: now - started,
-                            calibrationRoundTripMs: calibration.responseReceivedAtMonotonicMs -
-                                calibration.requestStartedAtMonotonicMs,
-                            enforcementRoundTripMs: enforcement.responseReceivedAtMonotonicMs -
-                                enforcement.requestStartedAtMonotonicMs,
-                            calibrationAgeMs: now - calibration.responseReceivedAtMonotonicMs,
-                            enforcementAgeMs: now - enforcement.responseReceivedAtMonotonicMs,
+                            calibrationRoundTripMs: pair.calibration.responseReceivedAtMonotonicMs -
+                                pair.calibration.requestStartedAtMonotonicMs,
+                            enforcementRoundTripMs: pair.enforcement.responseReceivedAtMonotonicMs -
+                                pair.enforcement.requestStartedAtMonotonicMs,
+                            calibrationAgeMs: now - pair.calibration.responseReceivedAtMonotonicMs,
+                            enforcementAgeMs: now - pair.enforcement.responseReceivedAtMonotonicMs,
                             widthMs: result.maximumOffsetMs - result.minimumOffsetMs
                         }
                         : result

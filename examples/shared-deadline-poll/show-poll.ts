@@ -2,7 +2,7 @@ import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connect
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
-import { pollPhase } from './poll-phase.ts';
+import { pollPhase, pollResultText } from './poll-phase.ts';
 import { requestPollSnapshot } from './request-poll-snapshot.ts';
 
 export interface ShowPollInput {
@@ -71,8 +71,14 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function render(): void {
-        const restoring = away || restored !== generation;
-        const currentPhase = restoring ? 'Recovering room poll' : pollPhase(record, rallar, input.authority);
+        let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || restored !== generation
+            ? 'Recovering room poll'
+            : pollPhase(record, rallar, input.authority);
+        if (currentPhase === 'Waiting for server time') {
+            generation++;
+            currentPhase = 'Recovering room poll';
+        }
+        const restoring = currentPhase === 'Recovering room poll';
         const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed';
         if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
@@ -84,27 +90,20 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         no.disabled = disabled || unacknowledged === 'yes';
         yes.textContent = unacknowledged === 'yes' ? 'Retry Yes' : 'Yes';
         no.textContent = unacknowledged === 'no' ? 'Retry No' : 'No';
-        if (restoring) {
-            result.textContent = 'Waiting for the current room snapshot';
-            return;
-        }
-        if (checkingReceipt) {
-            result.textContent = 'Checking your vote with the poll authority';
-            return;
-        }
-        if (currentPhase === 'Voting closed') {
-            result.textContent = retryAt && !refreshing
-                ? 'Final results unavailable · Retrying'
-                : 'Loading final results';
-            return;
-        }
-        if (unacknowledged) {
-            result.textContent = 'The authority has no receipt yet for your vote.';
-            return;
-        }
-        result.textContent = `Yes ${record.yes} · No ${record.no} · Your vote: ${record.disposition}`;
+        result.textContent = pollResultText({
+            phase: currentPhase,
+            checkingReceipt,
+            retryingFinalRead: retryAt > 0 && !refreshing,
+            unacknowledged,
+            record
+        });
     }
     async function submit(choice: PollAuthority.Choice): Promise<void> {
+        render();
+        const button = choice === 'yes' ? yes : no;
+        if (button.disabled) {
+            return;
+        }
         submitting = true;
         render();
         try {

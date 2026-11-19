@@ -27,3 +27,26 @@ export function pollPhase(
     }
     return 'Voting open';
 }
+
+export function pollResultText(input: {
+    readonly phase: ReturnType<typeof pollPhase> | 'Recovering room poll';
+    readonly checkingReceipt: boolean;
+    readonly retryingFinalRead: boolean;
+    readonly unacknowledged: PollAuthority.Choice | undefined;
+    readonly record: PollAuthority.Snapshot;
+}): string {
+    if (input.phase === 'Recovering room poll') {
+        return 'Waiting for the current room snapshot';
+    }
+    if (input.checkingReceipt) {
+        return 'Checking your vote with the poll authority';
+    }
+    if (input.phase === 'Voting closed') {
+        return input.retryingFinalRead ? 'Final results unavailable · Retrying' : 'Loading final results';
+    }
+    if (input.unacknowledged) {
+        return 'The authority has no receipt yet for your vote.';
+    }
+    const { yes, no, disposition } = input.record;
+    return `Yes ${yes} · No ${no} · Your vote: ${disposition}`;
+}
