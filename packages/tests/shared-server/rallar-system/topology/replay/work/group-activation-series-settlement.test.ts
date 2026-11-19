@@ -20,6 +20,7 @@ import {
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { createActivationStatusClockWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-activation-status-clock-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
@@ -102,7 +103,11 @@ describe('activation status series settlement', () => {
             topologySnapshotRepository: snapshots
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({ groupRef: toCanonicalGroupRef(current.group) });
-        const plan = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
+        const plan = computeGroupTopologyFromAuthority(authority, undefined, {
+            intent: 'full-rebuild',
+            origin: 'automatic',
+            reshape: { reshape: 'allowed', wantedReasons: [] }
+        });
         if (plan.action !== 'planned') {
             throw new Error('Expected persisted initial layout');
         }
@@ -256,11 +261,14 @@ describe('activation status series settlement', () => {
             traceId: 'trace-activation-clock-entry'
         });
         const message = newALUntargetedMessage(
-            'activation-clock-test',
-            newALRoute('activation-clock-test', 'activation-clock-test', 'activation-clock-test'),
-            AppOutboxType.ACTIVATION_STATUS_CLOCK,
-            {},
-            { traceId: 'trace-activation-clock-1' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'activation-clock-test',
+                route: newALRoute('activation-clock-test', 'activation-clock-test', 'activation-clock-test'),
+                typeId: AppOutboxType.ACTIVATION_STATUS_CLOCK,
+                resource: {},
+                options: { traceId: 'trace-activation-clock-1' }
+            }
         );
 
         await handler.onMessage(message, entry);
@@ -333,6 +341,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): Ac
         rttMeasurements: [],
         rttReplanMinimumLayoutAgeMs: 15_000,
         replanning: 'auto',
+        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
         nowEpochMs: 2_000
     };
     const spokes = group.activeSessions.slice(1).map(({ sessionId }) => sessionId);
@@ -340,6 +349,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): Ac
         group: authority.group,
         topology: 'star',
         derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
+        heldReshapeReasons: [],
         degreeLimit: 25,
         nextHopsBySessionId: { center: spokes, ...Object.fromEntries(spokes.map((sessionId) => [sessionId, ['center']])) },
         nowEpochMs: 2_000

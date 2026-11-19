@@ -184,10 +184,13 @@ describe('auth reservation preparation', () => {
                 resourceId: input.requestId
             });
             const legacy = newALUntargetedMessage(
-                toAppQueueCreatedBy('auth-fact-reservation'),
-                newALRoute(key.topicId, key.contextId, key.resourceId),
-                AppInboxType.AUTH_SESSION_LOGOUT,
-                JSON.parse(message.payload.resource)
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: toAppQueueCreatedBy('auth-fact-reservation'),
+                    route: newALRoute(key.topicId, key.contextId, key.resourceId),
+                    typeId: AppInboxType.AUTH_SESSION_LOGOUT,
+                    resource: JSON.parse(message.payload.resource)
+                }
             );
             expect(candidate.resource).toBe(JSON.stringify({
                 ...legacy,

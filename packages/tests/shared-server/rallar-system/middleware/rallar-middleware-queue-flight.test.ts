@@ -325,11 +325,14 @@ async function enqueue(reader: InboxQueueReader, count: number): Promise<void> {
 
 async function enqueueRow(reader: InboxQueueReader, contextId: string, rowId: string): Promise<void> {
     await reader.enqueueIfAbsent(newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.queue-flight', contextId, rowId),
-        TYPE,
-        { rowId },
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.queue-flight', contextId, rowId),
+            typeId: TYPE,
+            resource: { rowId },
+            options: { ttlMs: 300_000 }
+        }
     ));
 }
 

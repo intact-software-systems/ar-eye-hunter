@@ -14,10 +14,18 @@ const ROUTE = newALRoute('room.app.command', 'room-1', 'resource-1');
 
 describe('a room send stamped with its sender roster', () => {
     it('carries the roster beside the snapshot floor on a multicast, and no ordering epoch', () => {
-        const message = newALMulticastMessage('a', ROUTE, ROOM, 'app.command.v1', { go: true }, {
-            minSnapshotVersion: 7,
-            rosterVersion: 4,
-            seq: 1
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            groupRef: ROOM,
+            typeId: 'app.command.v1',
+            resource: { go: true },
+            options: {
+                minSnapshotVersion: 7,
+                rosterVersion: 4,
+                seq: 1
+            }
         });
 
         expect(message.id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
@@ -27,16 +35,32 @@ describe('a room send stamped with its sender roster', () => {
     });
 
     it('opens no ordering section on an unordered multicast', () => {
-        const message = newALMulticastMessage('a', ROUTE, ROOM, 'app.command.v1', {}, { rosterVersion: 4 });
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            groupRef: ROOM,
+            typeId: 'app.command.v1',
+            resource: {},
+            options: { rosterVersion: 4 }
+        });
 
         expect(message.ordering).toBeUndefined();
     });
 
     it('carries the roster beside the snapshot floor on a room broadcast', () => {
-        const message = newALBroadcastMessage('a', ROUTE, 'room', 'app.command.v1', {}, {
-            groupRef: ROOM,
-            minSnapshotVersion: 7,
-            rosterVersion: 4
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.command.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                minSnapshotVersion: 7,
+                rosterVersion: 4
+            }
         });
 
         expect(message.id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);

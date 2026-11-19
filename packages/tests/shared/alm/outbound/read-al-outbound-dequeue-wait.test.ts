@@ -28,12 +28,15 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 const NOW_MS = 1_000;
 const MESSAGE = newALMulticastMessage(
-    'a',
-    { topicId: 'chat', resourceId: 'held', contextId: 'room' },
-    { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-    'chat.message.v1',
-    {},
-    { ttlMs: 30_000 }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: { topicId: 'chat', resourceId: 'held', contextId: 'room' },
+        groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    }
 );
 /** A claimed dequeue row: its lease ends 10 s after the claim, its deadline 30 s after the send. */
 const HELD_EFFECT = {

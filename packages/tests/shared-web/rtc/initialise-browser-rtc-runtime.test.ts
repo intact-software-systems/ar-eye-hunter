@@ -182,6 +182,7 @@ describe('browser RTC runtime composition', () => {
         });
         onTestFinished(() => queueBox.close());
         await expect(initialiseRtcConnectionService({
+        creationEpochMs: Date.now,
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -240,7 +241,12 @@ describe('browser RTC runtime composition', () => {
         }
         const qboxEngine = new InboxOutboxEngine();
         const drain = captureOutboundWorkRunnable(qboxEngine);
-        const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
+        const registry = new BrowserRallarDeliveryRegistry({
+            nowMs: Date.now,
+            maxEntries: 10,
+            retainTerminalMs: 60_000,
+            cancel: () => {}
+        });
         const manager = initialiseRtcOverlayMulticastManager({
             nowEpochMs: Date.now,
             workNowEpochMs: Date.now,
@@ -260,23 +266,34 @@ describe('browser RTC runtime composition', () => {
             selfPrincipalId: fixture.service.input.sessionId
         });
         onTestFinished(() => manager.dispose());
-        const oldMessage = newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' }, group.group, 'alm.lifecycle', {
-            marker: 'delivery-lifecycle',
-            specimen: 'supersedence'
-        }, { ack: 'receiver', reliability: 'at-least-once', seq: 1, qos: { ack: { algo: 'hop' } } });
+        const oldMessage = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' },
+            groupRef: group.group,
+            typeId: 'alm.lifecycle',
+            resource: {
+                marker: 'delivery-lifecycle',
+                specimen: 'supersedence'
+            },
+            options: { ack: 'receiver', reliability: 'at-least-once', seq: 1, qos: { ack: { algo: 'hop' } } }
+        });
         const replacement = newALMulticastMessage(
-            'self',
-            { topicId: 'room.lifecycle', resourceId: 'new', contextId: 'group-1' },
-            group.group,
-            'alm.lifecycle',
-            { marker: 'delivery-lifecycle', specimen: 'supersedence' },
-            { ack: 'receiver', reliability: 'at-least-once', seq: 2, qos: { ack: { algo: 'hop' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'room.lifecycle', resourceId: 'new', contextId: 'group-1' },
+                groupRef: group.group,
+                typeId: 'alm.lifecycle',
+                resource: { marker: 'delivery-lifecycle', specimen: 'supersedence' },
+                options: { ack: 'receiver', reliability: 'at-least-once', seq: 2, qos: { ack: { algo: 'hop' } } }
+            }
         );
-        const handle = registry.open(oldMessage, 'rtc');
+        const handle = registry.open({ message: oldMessage, carrier: 'rtc', readDeadlineEpochMs: Date.now });
         await manager.enqueueIfAbsent(oldMessage);
         await drain();
         expect(nativePeer.channels.flatMap((channel) => channel.sent)).toEqual([]);
-        registry.open(replacement, 'rtc');
+        registry.open({ message: replacement, carrier: 'rtc', readDeadlineEpochMs: Date.now });
         await manager.enqueueIfAbsent(replacement);
         vi.setSystemTime(Date.now() + 100);
         await drain();
@@ -351,16 +368,19 @@ describe('browser RTC runtime composition', () => {
 
         const result = await manager.enqueueIfAbsent(
             newALMulticastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'message-1',
-                    contextId: group.group.groupId
-                },
-                group.group,
-                'chat.message.v1',
-                { text: 'accepted traffic only' },
-                { qos: { durability: { algo: 'volatile' } } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'message-1',
+                        contextId: group.group.groupId
+                    },
+                    groupRef: group.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'accepted traffic only' },
+                    options: { qos: { durability: { algo: 'volatile' } } }
+                }
             )
         );
 
@@ -540,12 +560,15 @@ describe('browser RTC runtime composition', () => {
 
         const result = await manager.enqueueIfAbsent(
             newALMulticastMessage(
-                'self',
-                { topicId: 'chat', resourceId: 'counted', contextId: group.group.groupId },
-                group.group,
-                'chat.message.v1',
-                { text: 'counted' },
-                { ttlMs: 30_000 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { topicId: 'chat', resourceId: 'counted', contextId: group.group.groupId },
+                    groupRef: group.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'counted' },
+                    options: { ttlMs: 30_000 }
+                }
             )
         );
 
@@ -585,12 +608,15 @@ describe('browser RTC runtime composition', () => {
 
         const result = await manager.enqueueIfAbsent(
             newALMulticastMessage(
-                'self',
-                { topicId: 'chat', resourceId: 'checkpointed', contextId: group.group.groupId },
-                group.group,
-                'chat.message.v1',
-                { text: 'checkpointed' },
-                { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { topicId: 'chat', resourceId: 'checkpointed', contextId: group.group.groupId },
+                    groupRef: group.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'checkpointed' },
+                    options: { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+                }
             )
         );
 
@@ -642,6 +668,7 @@ async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.Cap
     });
     const groupPeerLedger = createStartupGroupPeerLedger();
     const initializing = initialiseRtcConnectionService({
+        creationEpochMs: Date.now,
         webSocketQueueBox: queueBox,
         qboxEngine: new InboxOutboxEngine(),
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -771,11 +798,14 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
     const message: ALMessage = newALUnicastMessage(
-        peerId,
-        { topicId: 'rtc', resourceId: `offer-${peerId}`, contextId: 'group-1' },
-        'self',
-        'rtc',
-        signal
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: peerId,
+            route: { topicId: 'rtc', resourceId: `offer-${peerId}`, contextId: 'group-1' },
+            toPeerId: 'self',
+            typeId: 'rtc',
+            resource: signal
+        }
     );
     const accepted = await queueBox.acceptIncomingMessage(message);
     expect(accepted.right).toEqual({ kind: 'admitted' });

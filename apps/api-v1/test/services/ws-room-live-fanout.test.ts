@@ -72,12 +72,15 @@ test('API authorized broadcast keeps exclusions and closed connections out of th
         Object.defineProperty(closedSocket, 'readyState', { value: WebSocket.CLOSED });
         attachTestWebSocket(runtime.socket, new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
         const message = newALBroadcastMessage(
-            'session-1',
-            newALEventRoute('room.chat', 'group-1', 'broadcast-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'hello' },
-            { groupRef: snapshot.group, exceptPeerIds: ['session-1'] }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALEventRoute('room.chat', 'group-1', 'broadcast-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' },
+                options: { groupRef: snapshot.group, exceptPeerIds: ['session-1'] }
+            }
         );
 
         await runtime.router.route(message);
@@ -250,18 +253,21 @@ test('a WS-carried room multicast reaches the other admitted members live and ne
         runtime.cache.observe(snapshot);
         runtime.router.install();
         const message = newALMulticastMessage(
-            'session-1',
-            newALEventRoute('room.chat', snapshot.group.groupId, 'fallback-1'),
-            snapshot.group,
-            'chat.message.v1',
-            { text: 'over the fallback carrier' },
             {
-                ttlMs: 30_000,
-                orderingKey: toALGroupTargetKey(snapshot.group),
-                reliability: 'at-least-once',
-                ack: 'none',
-                ownership: 'shared',
-                overlayId: toScopedOverlayId(snapshot.group)
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALEventRoute('room.chat', snapshot.group.groupId, 'fallback-1'),
+                groupRef: snapshot.group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'over the fallback carrier' },
+                options: {
+                    ttlMs: 30_000,
+                    orderingKey: toALGroupTargetKey(snapshot.group),
+                    reliability: 'at-least-once',
+                    ack: 'none',
+                    ownership: 'shared',
+                    overlayId: toScopedOverlayId(snapshot.group)
+                }
             }
         );
 
@@ -289,12 +295,15 @@ test('a live-only receiver room multicast answers its origin with the admitted a
         runtime.cache.observe(snapshot);
         runtime.router.install();
         const message = newALMulticastMessage(
-            'session-1',
-            newALEventRoute('room.chat', snapshot.group.groupId, 'receiver-1'),
-            snapshot.group,
-            'chat.message.v1',
-            { text: 'confirm me' },
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALEventRoute('room.chat', snapshot.group.groupId, 'receiver-1'),
+                groupRef: snapshot.group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'confirm me' },
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
 
         assert.deepEqual((await runtime.service.acceptIncomingMessage(message, 'session-1')).right, { kind: 'admitted' });
@@ -345,10 +354,13 @@ test('generic custom authorization retains its configured resolver without group
 
 function roomMessage(snapshot: GroupSnapshot): ALMessage {
     return newALMulticastMessage(
-        'session-1',
-        newALEventRoute('room.chat', snapshot.group.groupId, 'message-1'),
-        snapshot.group,
-        'chat.message.v1',
-        { text: 'hello' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.chat', snapshot.group.groupId, 'message-1'),
+            groupRef: snapshot.group,
+            typeId: 'chat.message.v1',
+            resource: { text: 'hello' }
+        }
     );
 }

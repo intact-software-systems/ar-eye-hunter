@@ -204,10 +204,13 @@ describe('OutboxQueueReader', () => {
 
 function createAppMessage(typeId: string, direction: string): ALMessage {
     return newALUntargetedMessage(
-        'api-v1',
-        newALRoute(`app-${direction}.work`, 'group-1', crypto.randomUUID()),
-        typeId,
-        { requestId: crypto.randomUUID() }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute(`app-${direction}.work`, 'group-1', crypto.randomUUID()),
+            typeId,
+            resource: { requestId: crypto.randomUUID() }
+        }
     );
 }
 

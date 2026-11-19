@@ -827,6 +827,19 @@ requester of its gaps, so a held frame's repeated reports are one attempt, the s
 the frame arrives on the hold's release. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
+Two fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
+Every send of both names `ack: 'receiver'` and the cell's ordering key. `lost-stream-start` runs over `rtc` alone and
+pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
+the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
+`entered` at seq 2 and `before-entry` for seq 1, and proves the absence of a third; the sender observes handle 1 `failed` with
+`failure.kind: 'receipt-exhausted'`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no
+delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twenty sends are sent and each read
+acknowledged. Two facts prove the jitter disturbed the stream: its release must read at least twenty delayed frames
+(`acted.delay`, one per send), and the sender must have admitted a gap NACK about its track, which the server sends
+only when a later sequence reached it first. The receiver reads twenty arrivals in sequence order and proves the
+absence of a twenty-first. No cell runs under a seeded loss: an ordered
+receipted stream does not reliably recover from one (D670), and a catalog test pins that none claims it.
+
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
 `rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC
 `admission-outcome` refusing the send as `rejected` with a reason starting
@@ -1097,7 +1110,7 @@ only, in `relayRejection`.
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
 the send over; `congested`, a carrier at its high watermark with no fallback carrier left), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
-its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
+its `cause` (`missing`, `open-failed`, `quota`, `closed`, `evicted` or
 `transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
 with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
@@ -1147,20 +1160,48 @@ diagnostic carries only `typeId`, `msgId`, `count`, `observed` and `absent`,
 never the copies. A matched copy whose `traceId` is missing or outside the trace
 grammar fails the command as an invalid runtime result.
 
+`ascendingBy` names a field of each copy's payload and claims an order: the
+field is a finite number in every matched copy and strictly ascends in arrival
+order, so a copy out of order, a repeated value and a copy without the field all
+fail the claim. The count is judged first; a count that is met with the claim
+failed ends `RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING`. The result and the
+diagnostic then carry `ascending`, a boolean, and neither is present when no
+order was claimed. An absence claim has no order: command validation refuses
+`ascendingBy` beside `absent: true`.
+
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
 (the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a
 matching submission not ready. `backpressure` (either transport carrier)
 makes the carrier read its channel at its high watermark when it plans a
 matching origination and when it submits a matching frame; each such read
-consumes one of `remaining`. The matcher reads the
+consumes one of `remaining`. Two actions are seeded, so a run repeats on every
+machine: `{ loss: { ratio, seed } }` (either transport carrier) drops the share
+`ratio`, above 0 and at most 1, of the matching frames, and
+`{ jitter: { minDelayMs, maxDelayMs, seed } }` (`ws` only) delays every matching
+frame by a whole number of milliseconds within its bounds. Each injected fault
+draws from its own sequence, one number per matching frame; `remaining` counts
+the frames the fault acted on, so a frame a loss let pass consumes nothing and
+leaves no observation. A loss over `rtc` is a drop the channel reports to its
+sender, whose owner resubmits the frame 50 ms later; a loss over `ws` is silent.
+The matcher reads the
 **AL envelope**, not the recipe's own fields: `match.typeId` compares against
 `payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
 repair, against the original message id parsed out of the control payload's own
 `resource` JSON — and `match.controlType` selects the ACK, NACK or repair type
-id. A top-level `typeId` never matches. The fault's observations are not
-readable from a recipe in this release, so a fault's effect can only be inferred
-from what the receiver did or did not get.
+id. A top-level `typeId` never matches.
+
+A transport `fault.inject` returns `{ faultId, injected, acted }`. `acted` counts
+the frames the fault of that `faultId` has acted on so far, by decision: `drop`,
+`delay`, `rewrite`, `not-ready` and `backpressure`, each a whole number, zero
+when none. It is read after the injection, so the release of a fault
+(`remaining: 0`) reads the fault's totals, and a recipe proves its fault acted by
+asserting a floor on `resultCache.<release>.value.acted.drop`. The counts live
+with the page's connection and add up across every arming of one `faultId`,
+while a seeded draw starts again at each arming: a close or a reload starts
+the counts again. `acted`
+carries no frame and no payload. A storage or product-socket injection returns
+`{ faultId, injected }` alone.
 
 On the `rtc` carrier, `action: { rewrite }` writes each matching frame in place of the frame the page signed:
 `'strip-proof'` deletes its publication proof, and `{ forgeSender: { principal } }` names that principal's one
@@ -1698,6 +1739,11 @@ buckets, fails the stats command.
 `ordering` is `readUsage().ordering`, required: `{ entered, omitted, witnessed, beforeEntry }`, the
 `ordering-position` events the connect's inbound admissions stated on either carrier, cumulative over the
 connect and counted per event, not per distinct copy.
+`congestionEpisodes` is `readUsage().congestionEpisodes`, required: `durationMs`, a bounded histogram on
+`AL_CONGESTION_EPISODE_BOUNDS_MS` of how long each message a carrier deferred waited, from its first deferral to the
+settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
+and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
+carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

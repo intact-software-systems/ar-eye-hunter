@@ -55,7 +55,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
                 ignoredMessages.push(message);
             }
         });
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now);
         const socket = await openSignalingConnection(transport, observations.callbacks);
         const matching = createEnvelope('rtc', { hello: true });
         const ignored = createEnvelope('other', { ignored: true });
@@ -85,7 +85,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             }
             observations.messages.push(message);
         };
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now);
         const socket = await openSignalingConnection(transport, observations.callbacks);
         const message = createEnvelope('rtc', { hello: true });
 
@@ -98,7 +98,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
     it('sends through an open socket without waking the outbox', async () => {
         const service = createSignalingQueueBox();
         let wakes = 0;
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now, () => {
             wakes += 1;
         });
         const socket = await openSignalingConnection(transport, createSignalingObservations().callbacks);
@@ -137,7 +137,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             };
         });
         let wakes = 0;
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now, () => {
             wakes += 1;
         });
 
@@ -181,7 +181,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             };
         });
         let wakes = 0;
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now, () => {
             wakes += 1;
         });
 
@@ -206,7 +206,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             };
         });
         let wakes = 0;
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now, () => {
             wakes += 1;
         });
 
@@ -219,7 +219,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
     it('queues signaling while disconnected as volatile work without waking the outbox, and refuses a closed service', async () => {
         const service = createSignalingQueueBox();
         let wakes = 0;
-        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now, () => {
             wakes += 1;
         });
         const payload = createSignalingPayload();
@@ -312,5 +312,12 @@ function createSignalingPayload(): QRtcSignalingMessage {
 }
 
 function createEnvelope(typeId: string, payload: object): ALMessage {
-    return newALUnicastMessage('peer-1', newALEventRoute(typeId, 'session-1'), 'session-1', typeId, payload);
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: newALEventRoute(typeId, 'session-1'),
+        toPeerId: 'session-1',
+        typeId,
+        resource: payload
+    });
 }

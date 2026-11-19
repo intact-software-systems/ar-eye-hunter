@@ -26,7 +26,15 @@ const PRINCIPAL = {
 } as const;
 
 function newRequest(senderId: string, groupRef?: typeof ROOM, actions?: ALMessage['actions']): ALMessage {
-    return newALUnicastMessage(senderId, ROUTE, 'server', 'app.ask.v1', { q: 1 }, { groupRef, actions });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: ROUTE,
+        toPeerId: 'server',
+        typeId: 'app.ask.v1',
+        resource: { q: 1 },
+        options: { groupRef, actions }
+    });
 }
 
 describe('the correlation id of a message', () => {
@@ -61,25 +69,92 @@ describe('the context a reply routes in', () => {
     const customContext = newALRoute('app.command', 'custom', 'resource-1');
 
     it('is the room id when the request names a room, whatever context it used', () => {
-        const roomBroadcast = newALBroadcastMessage('client', customContext, 'room', 't', {}, { groupRef: ROOM });
+        const roomBroadcast = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'client',
+            route: customContext,
+            scope: 'room',
+            typeId: 't',
+            resource: {},
+            options: { groupRef: ROOM }
+        });
 
         expect(toALReplyContextId(roomBroadcast)).toBe(ROOM.groupId);
-        expect(toALReplyContextId(newALUnicastMessage('client', customContext, 'server', 't', {}, { groupRef: ROOM })))
+        expect(toALReplyContextId(newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'client',
+            route: customContext,
+            toPeerId: 'server',
+            typeId: 't',
+            resource: {},
+            options: { groupRef: ROOM }
+        })))
             .toBe(ROOM.groupId);
     });
 
     it('is the request context when the request names no room', () => {
-        expect(toALReplyContextId(newALUnicastMessage('client', customContext, 'server', 't', {}))).toBe('custom');
+        expect(toALReplyContextId(newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'client',
+            route: customContext,
+            toPeerId: 'server',
+            typeId: 't',
+            resource: {}
+        }))).toBe('custom');
     });
 });
 
 describe('the actions option of the message builders', () => {
     const builders: ReadonlyArray<readonly [string, (actions?: ALMessage['actions']) => ALMessage]> = [
-        ['untargeted', (actions) => newALUntargetedMessage('a', ROUTE, 't', {}, { actions })],
-        ['unicast', (actions) => newALUnicastMessage('a', ROUTE, 'b', 't', {}, { actions })],
-        ['multicast', (actions) => newALMulticastMessage('a', ROUTE, ROOM, 't', {}, { actions })],
-        ['room broadcast', (actions) => newALBroadcastMessage('a', ROUTE, 'room', 't', {}, { groupRef: ROOM, actions })],
-        ['principal broadcast', (actions) => newALPrincipalBroadcastMessage('a', ROUTE, PRINCIPAL, 't', {}, { actions })]
+        ['untargeted', (actions) =>
+            newALUntargetedMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                typeId: 't',
+                resource: {},
+                options: { actions }
+            })],
+        ['unicast', (actions) =>
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                toPeerId: 'b',
+                typeId: 't',
+                resource: {},
+                options: { actions }
+            })],
+        ['multicast', (actions) =>
+            newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                groupRef: ROOM,
+                typeId: 't',
+                resource: {},
+                options: { actions }
+            })],
+        ['room broadcast', (actions) =>
+            newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                scope: 'room',
+                typeId: 't',
+                resource: {},
+                options: { groupRef: ROOM, actions }
+            })],
+        ['principal broadcast', (actions) =>
+            newALPrincipalBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                target: PRINCIPAL,
+                typeId: 't',
+                resource: {},
+                options: { actions }
+            })]
     ];
 
     it.each(builders)('writes them verbatim on a %s message', (_name, build) => {
@@ -96,11 +171,55 @@ describe('the actions option of the message builders', () => {
 
 describe('the trace of the message builders', () => {
     const builders: ReadonlyArray<readonly [string, (traceId?: string) => ALMessage]> = [
-        ['untargeted', (traceId) => newALUntargetedMessage('a', ROUTE, 't', {}, { traceId })],
-        ['unicast', (traceId) => newALUnicastMessage('a', ROUTE, 'b', 't', {}, { traceId })],
-        ['multicast', (traceId) => newALMulticastMessage('a', ROUTE, ROOM, 't', {}, { traceId })],
-        ['room broadcast', (traceId) => newALBroadcastMessage('a', ROUTE, 'room', 't', {}, { groupRef: ROOM, traceId })],
-        ['principal broadcast', (traceId) => newALPrincipalBroadcastMessage('a', ROUTE, PRINCIPAL, 't', {}, { traceId })]
+        ['untargeted', (traceId) =>
+            newALUntargetedMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                typeId: 't',
+                resource: {},
+                options: { traceId }
+            })],
+        ['unicast', (traceId) =>
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                toPeerId: 'b',
+                typeId: 't',
+                resource: {},
+                options: { traceId }
+            })],
+        ['multicast', (traceId) =>
+            newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                groupRef: ROOM,
+                typeId: 't',
+                resource: {},
+                options: { traceId }
+            })],
+        ['room broadcast', (traceId) =>
+            newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                scope: 'room',
+                typeId: 't',
+                resource: {},
+                options: { groupRef: ROOM, traceId }
+            })],
+        ['principal broadcast', (traceId) =>
+            newALPrincipalBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                target: PRINCIPAL,
+                typeId: 't',
+                resource: {},
+                options: { traceId }
+            })]
     ];
 
     it.each(builders)('mints a valid trace on a %s message when the caller passes none', (_name, build) => {
@@ -139,7 +258,15 @@ describe('the server reply to a request', () => {
     });
 
     it('carries the trace of the request', () => {
-        const request = newALUnicastMessage('client-session', ROUTE, 'server', 'app.ask.v1', {}, { traceId: 'trace_01' });
+        const request = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'client-session',
+            route: ROUTE,
+            toPeerId: 'server',
+            typeId: 'app.ask.v1',
+            resource: {},
+            options: { traceId: 'trace_01' }
+        });
 
         expect(newALReplyMessage(request, { senderId: 'server', typeId: 't', payload: {} }).id.traceId).toBe('trace_01');
     });
@@ -153,12 +280,15 @@ describe('the server reply to a request', () => {
 
     it('routes a reply to a room broadcast with a custom context in the room id, as the server ingress requires', () => {
         const request = newALBroadcastMessage(
-            'client-session',
-            newALRoute('app.command', 'custom', 'resource-1'),
-            'room',
-            'app.ask.v1',
-            { q: 1 },
-            { groupRef: ROOM }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'client-session',
+                route: newALRoute('app.command', 'custom', 'resource-1'),
+                scope: 'room',
+                typeId: 'app.ask.v1',
+                resource: { q: 1 },
+                options: { groupRef: ROOM }
+            }
         );
         const reply = newALReplyMessage(request, { senderId: 'server', typeId: 't', payload: {} });
 

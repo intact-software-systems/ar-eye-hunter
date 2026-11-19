@@ -190,21 +190,24 @@ describe('RTC room authority recovery', () => {
         await receiver.native.open();
         const ack = scenario === 'no-ack' ? 'none' : 'hop';
         const message = newALMulticastMessage(
-            'sender',
             {
-                topicId: 'room.messages',
-                contextId: 'room',
-                resourceId: 'recovery'
-            },
-            room,
-            'recovery.message',
-            { value: 1 },
-            {
-                ttlMs: 30_000,
-                reliability: 'at-least-once',
-                minSnapshotVersion: scenario === 'insufficient-floor' ? 2 : undefined,
-                ack: ack === 'hop' ? 'all-logical-recipients' : 'none',
-                qos: { durability: { algo: 'volatile' }, ack: { algo: ack, opts: { timeoutMs: 5_000 } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: {
+                    topicId: 'room.messages',
+                    contextId: 'room',
+                    resourceId: 'recovery'
+                },
+                groupRef: room,
+                typeId: 'recovery.message',
+                resource: { value: 1 },
+                options: {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    minSnapshotVersion: scenario === 'insufficient-floor' ? 2 : undefined,
+                    ack: ack === 'hop' ? 'all-logical-recipients' : 'none',
+                    qos: { durability: { algo: 'volatile' }, ack: { algo: ack, opts: { timeoutMs: 5_000 } } }
+                }
             }
         );
 
@@ -247,12 +250,15 @@ describe('RTC room authority recovery', () => {
         }
         if (scenario === 'coalesced-higher-floor') {
             higherFloorMessage = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'higher-floor' },
-                room,
-                'recovery.message',
-                { value: 2 },
-                { ttlMs: 30_000, minSnapshotVersion: 2 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'higher-floor' },
+                    groupRef: room,
+                    typeId: 'recovery.message',
+                    resource: { value: 2 },
+                    options: { ttlMs: 30_000, minSnapshotVersion: 2 }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(higherFloorMessage)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(0);
@@ -379,18 +385,21 @@ describe('the roster fence at an RTC receiver', () => {
         await sender.native.open();
         await receiver.native.open();
         const message = newALMulticastMessage(
-            'sender',
-            { topicId: 'room.messages', contextId: 'room', resourceId: 'fenced' },
-            room,
-            'fenced.message',
-            { value: 1 },
             {
-                ttlMs: 30_000,
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                minSnapshotVersion: stamped.group.snapshotVersion,
-                rosterVersion: stamped.group.rosterVersion,
-                qos: { durability: { algo: 'volatile' }, ack: { algo: 'hop', opts: { timeoutMs: 5_000 } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'room.messages', contextId: 'room', resourceId: 'fenced' },
+                groupRef: room,
+                typeId: 'fenced.message',
+                resource: { value: 1 },
+                options: {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    minSnapshotVersion: stamped.group.snapshotVersion,
+                    rosterVersion: stamped.group.rosterVersion,
+                    qos: { durability: { algo: 'volatile' }, ack: { algo: 'hop', opts: { timeoutMs: 5_000 } } }
+                }
             }
         );
 
@@ -506,34 +515,40 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             await sender.native.open();
             await receiver.native.open();
             const old = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'old' },
-                room,
-                'lifecycle.message',
-                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
                 {
-                    ttlMs: 30_000,
-                    reliability: 'at-least-once',
-                    ack: 'receiver',
-                    seq: scenario === 'unsequenced-latest' ? undefined : 1,
-                    qos: { ack: { algo: 'hop' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'old' },
+                    groupRef: room,
+                    typeId: 'lifecycle.message',
+                    resource: { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
+                    options: {
+                        ttlMs: 30_000,
+                        reliability: 'at-least-once',
+                        ack: 'receiver',
+                        seq: scenario === 'unsequenced-latest' ? undefined : 1,
+                        qos: { ack: { algo: 'hop' } }
+                    }
                 }
             );
             expect(await sender.multicast.enqueueIfAbsent(old)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);
             expect(sender.messages()).toEqual([]);
             const replacement = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'replacement' },
-                room,
-                'lifecycle.message',
-                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
                 {
-                    ttlMs: 30_000,
-                    reliability: 'at-least-once',
-                    ack: 'receiver',
-                    seq: scenario === 'unsequenced-latest' ? undefined : 2,
-                    qos: { ack: { algo: 'hop' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'replacement' },
+                    groupRef: room,
+                    typeId: 'lifecycle.message',
+                    resource: { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
+                    options: {
+                        ttlMs: 30_000,
+                        reliability: 'at-least-once',
+                        ack: 'receiver',
+                        seq: scenario === 'unsequenced-latest' ? undefined : 2,
+                        qos: { ack: { algo: 'hop' } }
+                    }
                 }
             );
             expect(await sender.multicast.enqueueIfAbsent(replacement)).toMatchObject({ verdict: { kind: 'admitted' } });
@@ -911,12 +926,15 @@ describe('authoritative room observation freshness', () => {
             await sender.native.open();
             await receiver.native.open();
             const message = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'freshness' },
-                room,
-                'freshness.message',
-                { value: 1 },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'freshness' },
+                    groupRef: room,
+                    typeId: 'freshness.message',
+                    resource: { value: 1 },
+                    options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
+                }
             );
             if (scenario === 'expired-original' || scenario === 'normal-authoritative-expired-original') {
                 vi.setSystemTime(92_000);

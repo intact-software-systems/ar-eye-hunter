@@ -16,11 +16,14 @@ export interface ManagedApiServerPlanLifecycleInput {
     readonly artifactDir: string;
 }
 
+export type ManagedApiServerState = 'running' | 'suspended' | 'stopped' | 'unmanaged';
+
 export interface ManagedApiServerLifecycleControls {
-    readonly stop: (port: number, mode: ManagedApiStopMode) => Promise<void>;
-    readonly restart: (port: number, replacementPlan: ManagedApiServerPlan) => Promise<void>;
-    readonly suspend: (port: number) => Promise<void>;
-    readonly resume: (port: number) => Promise<void>;
+    stop(port: number, mode: ManagedApiStopMode): Promise<void>;
+    restart(port: number, replacementPlan: ManagedApiServerPlan): Promise<void>;
+    suspend(port: number): Promise<void>;
+    resume(port: number): Promise<void>;
+    getState(port: number): ManagedApiServerState;
 }
 
 export interface ManagedApiServerPlanLifecycleDependencies {
@@ -40,142 +43,156 @@ export interface ManagedApiServerPlanLifecycleDependencies {
     readonly stopServer: (child: ManagedApiServer['child'], mode: ManagedApiStopMode) => Promise<void>;
 }
 
-export async function withManagedApiServerPlans(
-    input: ManagedApiServerPlanLifecycleInput,
-    dependencies: ManagedApiServerPlanLifecycleDependencies
-): Promise<void> {
-    const serverGenerations: Array<
-        Readonly<{
-            plan: ManagedApiServerPlan;
-            server: ManagedApiServer;
-        }>
-    > = [];
-    const activeServers = new Map<number, ManagedApiServer>();
-    const suspendedServers = new Set<ManagedApiServer>();
-    const managedPorts = new Set(input.plans.map((plan) => plan.port));
-    const logPaths = new Set<string>();
+interface ManagedApiServerGeneration {
+    readonly plan: ManagedApiServerPlan;
+    readonly server: ManagedApiServer;
+}
 
-    const start = async (plan: ManagedApiServerPlan): Promise<void> => {
-        if (activeServers.has(plan.port)) {
-            throw new Error(`Managed API-v1 port ${plan.port} is already running.`);
+/** Every process a run started, by port: the one running now and the generations it replaced. */
+class ManagedApiServerGenerations implements ManagedApiServerLifecycleControls {
+    private readonly generations: ManagedApiServerGeneration[] = [];
+    private readonly activeServers = new Map<number, ManagedApiServer>();
+    private readonly suspendedServers = new Set<ManagedApiServer>();
+    private readonly logPaths = new Set<string>();
+    private readonly managedPorts: ReadonlySet<number>;
+    private readonly input: ManagedApiServerPlanLifecycleInput;
+    private readonly dependencies: ManagedApiServerPlanLifecycleDependencies;
+
+    constructor(input: ManagedApiServerPlanLifecycleInput, dependencies: ManagedApiServerPlanLifecycleDependencies) {
+        this.input = input;
+        this.dependencies = dependencies;
+        this.managedPorts = new Set(input.plans.map((plan) => plan.port));
+    }
+
+    async startAll(): Promise<void> {
+        for (const plan of this.input.plans) {
+            await this.spawn(plan);
         }
-        if (logPaths.has(plan.logPath)) {
-            throw new Error(`Managed API-v1 restart log must be distinct: ${plan.logPath}`);
+        await Promise.all(this.generations.map((generation) => this.waitForReady(generation)));
+    }
+
+    async stopAll(): Promise<void> {
+        await Promise.allSettled(
+            [...this.generations]
+                .reverse()
+                .filter(({ plan, server }) => this.activeServers.get(plan.port) === server)
+                .map(async ({ plan, server }) => {
+                    if (this.suspendedServers.has(server)) {
+                        try {
+                            server.child.kill('SIGCONT');
+                        }
+                        finally {
+                            this.suspendedServers.delete(server);
+                        }
+                    }
+                    await this.dependencies.stopServer(server.child, 'graceful');
+                    await server.streamsDrained;
+                    this.activeServers.delete(plan.port);
+                })
+        );
+    }
+
+    getLogPaths(): readonly string[] {
+        return this.generations.map(({ plan }) => plan.logPath);
+    }
+
+    getState(port: number): ManagedApiServerState {
+        if (!this.managedPorts.has(port)) {
+            return 'unmanaged';
         }
-        await dependencies.writeEmptyLogFile(plan.logPath);
-        const server = dependencies.startServer(input.serverCommand, plan, input.repoRootPath);
-        serverGenerations.push({ plan, server });
-        activeServers.set(plan.port, server);
-        logPaths.add(plan.logPath);
-        await dependencies.waitForReady({
+        const server = this.activeServers.get(port);
+        if (server === undefined) {
+            return 'stopped';
+        }
+        return this.suspendedServers.has(server) ? 'suspended' : 'running';
+    }
+
+    async stop(port: number, mode: ManagedApiStopMode): Promise<void> {
+        const server = this.requireActiveServer(port);
+        if (this.suspendedServers.has(server)) {
+            server.child.kill('SIGCONT');
+            this.suspendedServers.delete(server);
+        }
+        await this.dependencies.stopServer(server.child, mode);
+        await server.streamsDrained;
+        this.activeServers.delete(port);
+    }
+
+    async suspend(port: number): Promise<void> {
+        const server = this.requireActiveServer(port);
+        if (this.suspendedServers.has(server)) {
+            throw new Error(`Managed API-v1 port ${port} is already suspended.`);
+        }
+        server.child.kill('SIGSTOP');
+        this.suspendedServers.add(server);
+    }
+
+    async resume(port: number): Promise<void> {
+        const server = this.requireActiveServer(port);
+        if (!this.suspendedServers.has(server)) {
+            throw new Error(`Managed API-v1 port ${port} is not suspended.`);
+        }
+        server.child.kill('SIGCONT');
+        this.suspendedServers.delete(server);
+    }
+
+    async restart(port: number, replacementPlan: ManagedApiServerPlan): Promise<void> {
+        if (!this.managedPorts.has(port)) {
+            throw new Error(`Managed API-v1 port ${port} does not belong to this run.`);
+        }
+        if (replacementPlan.port !== port) {
+            throw new Error(`Managed API-v1 replacement port ${replacementPlan.port} does not match ${port}.`);
+        }
+        if (this.activeServers.has(port)) {
+            throw new Error(`Managed API-v1 port ${port} is already running.`);
+        }
+        if (this.logPaths.has(replacementPlan.logPath)) {
+            throw new Error(`Managed API-v1 restart log must be distinct: ${replacementPlan.logPath}`);
+        }
+        await this.waitForReady(await this.spawn(replacementPlan));
+    }
+
+    private async spawn(plan: ManagedApiServerPlan): Promise<ManagedApiServerGeneration> {
+        await this.dependencies.writeEmptyLogFile(plan.logPath);
+        const server = this.dependencies.startServer(this.input.serverCommand, plan, this.input.repoRootPath);
+        const generation = { plan, server };
+        this.generations.push(generation);
+        this.activeServers.set(plan.port, server);
+        this.logPaths.add(plan.logPath);
+        return generation;
+    }
+
+    private async waitForReady({ plan, server }: ManagedApiServerGeneration): Promise<void> {
+        await this.dependencies.waitForReady({
             baseUrl: plan.baseUrl,
             logPath: plan.logPath,
             childStatus: server.child.status,
             startup: server.startup,
             streamsDrained: server.streamsDrained,
-            diagnosticSecrets: dependencies.toDiagnosticSecrets(plan.env)
+            diagnosticSecrets: this.dependencies.toDiagnosticSecrets(plan.env)
         });
-    };
+    }
 
-    const stop = async (port: number, mode: ManagedApiStopMode): Promise<void> => {
-        const server = activeServers.get(port);
+    private requireActiveServer(port: number): ManagedApiServer {
+        const server = this.activeServers.get(port);
         if (!server) {
             throw new Error(`Managed API-v1 port ${port} is not running.`);
         }
-        if (suspendedServers.has(server)) {
-            server.child.kill('SIGCONT');
-            suspendedServers.delete(server);
-        }
-        await dependencies.stopServer(server.child, mode);
-        await server.streamsDrained;
-        activeServers.delete(port);
-    };
-
-    const controls: ManagedApiServerLifecycleControls = {
-        stop,
-        suspend: async (port) => {
-            const server = requireActiveServer(activeServers, port);
-            if (suspendedServers.has(server)) {
-                throw new Error(`Managed API-v1 port ${port} is already suspended.`);
-            }
-            server.child.kill('SIGSTOP');
-            suspendedServers.add(server);
-        },
-        resume: async (port) => {
-            const server = requireActiveServer(activeServers, port);
-            if (!suspendedServers.has(server)) {
-                throw new Error(`Managed API-v1 port ${port} is not suspended.`);
-            }
-            server.child.kill('SIGCONT');
-            suspendedServers.delete(server);
-        },
-        restart: async (port, replacementPlan) => {
-            if (!managedPorts.has(port)) {
-                throw new Error(`Managed API-v1 port ${port} does not belong to this run.`);
-            }
-            if (replacementPlan.port !== port) {
-                throw new Error(
-                    `Managed API-v1 replacement port ${replacementPlan.port} does not match ${port}.`
-                );
-            }
-            await start(replacementPlan);
-        }
-    };
-    try {
-        for (const plan of input.plans) {
-            await dependencies.writeEmptyLogFile(plan.logPath);
-            const server = dependencies.startServer(input.serverCommand, plan, input.repoRootPath);
-            serverGenerations.push({ plan, server });
-            activeServers.set(plan.port, server);
-            logPaths.add(plan.logPath);
-        }
-        await Promise.all(
-            serverGenerations.map(({ plan, server }) =>
-                dependencies.waitForReady({
-                    baseUrl: plan.baseUrl,
-                    logPath: plan.logPath,
-                    childStatus: server.child.status,
-                    startup: server.startup,
-                    streamsDrained: server.streamsDrained,
-                    diagnosticSecrets: dependencies.toDiagnosticSecrets(plan.env)
-                })
-            )
-        );
-        await dependencies.runRecipes(controls);
-        await dependencies.verifyFairness(
-            input.artifactDir,
-            serverGenerations.map(({ plan }) => plan.logPath)
-        );
-    }
-    finally {
-        await Promise.allSettled(
-            [...serverGenerations]
-                .reverse()
-                .filter(({ plan, server }) => activeServers.get(plan.port) === server)
-                .map(async ({ plan, server }) => {
-                    if (suspendedServers.has(server)) {
-                        try {
-                            server.child.kill('SIGCONT');
-                        }
-                        finally {
-                            suspendedServers.delete(server);
-                        }
-                    }
-                    await dependencies.stopServer(server.child, 'graceful');
-                    await server.streamsDrained;
-                    activeServers.delete(plan.port);
-                })
-        );
+        return server;
     }
 }
 
-function requireActiveServer(
-    activeServers: ReadonlyMap<number, ManagedApiServer>,
-    port: number
-): ManagedApiServer {
-    const server = activeServers.get(port);
-    if (!server) {
-        throw new Error(`Managed API-v1 port ${port} is not running.`);
+export async function withManagedApiServerPlans(
+    input: ManagedApiServerPlanLifecycleInput,
+    dependencies: ManagedApiServerPlanLifecycleDependencies
+): Promise<void> {
+    const servers = new ManagedApiServerGenerations(input, dependencies);
+    try {
+        await servers.startAll();
+        await dependencies.runRecipes(servers);
+        await dependencies.verifyFairness(input.artifactDir, servers.getLogPaths());
     }
-    return server;
+    finally {
+        await servers.stopAll();
+    }
 }

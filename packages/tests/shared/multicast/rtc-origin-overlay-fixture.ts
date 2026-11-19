@@ -222,12 +222,15 @@ export function writeAcceptedServerOverlay(overlayId: string, overlay: OverlayIn
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+        }
     );
 }
 
@@ -238,12 +241,15 @@ export function createOriginFrame(reliability: FrameReliability, resourceId: str
     return reliability === 'at-least-once'
         ? createOriginReceiverMulticast(resourceId)
         : newALMulticastMessage(
-            'a',
-            { topicId: 'position', resourceId, contextId: 'room' },
-            ORIGIN_ROOM,
-            'position.frame.v1',
-            { resourceId },
-            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'position', resourceId, contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'position.frame.v1',
+                resource: { resourceId },
+                options: { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+            }
         );
 }
 

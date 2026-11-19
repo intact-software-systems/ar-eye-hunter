@@ -393,14 +393,17 @@ describe('topology AppInbox transaction and idempotency', () => {
         });
         const wireEnqueue = decodeAppInboxEnqueue(enqueue);
         const message = newALUntargetedMessage(
-            'topology-transaction-test',
-            newALRoute(
-                requireTopologyIdentity(wireEnqueue.topicId, 'topicId'),
-                requireTopologyIdentity(wireEnqueue.contextId, 'contextId'),
-                requireTopologyIdentity(wireEnqueue.resourceId, 'resourceId')
-            ),
-            wireEnqueue.type,
-            wireEnqueue
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'topology-transaction-test',
+                route: newALRoute(
+                    requireTopologyIdentity(wireEnqueue.topicId, 'topicId'),
+                    requireTopologyIdentity(wireEnqueue.contextId, 'contextId'),
+                    requireTopologyIdentity(wireEnqueue.resourceId, 'resourceId')
+                ),
+                typeId: wireEnqueue.type,
+                resource: wireEnqueue
+            }
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(
             message,

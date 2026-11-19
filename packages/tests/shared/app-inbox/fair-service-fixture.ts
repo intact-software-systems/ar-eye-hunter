@@ -15,11 +15,14 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 export function createQueueMessage(resourceId: string): ALMessage {
     return newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.fair-service', 'test-scope', resourceId),
-        'test.fair-service',
-        { resourceId },
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.fair-service', 'test-scope', resourceId),
+            typeId: 'test.fair-service',
+            resource: { resourceId },
+            options: { ttlMs: 300_000 }
+        }
     );
 }
 

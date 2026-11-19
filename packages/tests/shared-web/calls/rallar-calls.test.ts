@@ -284,23 +284,26 @@ describe('Rallar calls', () => {
         await facade.connect();
 
         const incoming = newALUnicastMessage(
-            'peer-caller',
-            newALRoute('app.rallar.calls', 'call-1', 'invite-1'),
-            'session-1',
-            'app.rallar.calls.invite.v1',
             {
-                kind: 'invite',
-                callId: 'call-1',
-                fromPeerId: 'peer-caller',
-                toPeerIds: ['session-1'],
-                data: {
-                    laneIds: ['reliable']
-                },
-                media: {
-                    audio: true
-                },
-                message: 'voice?',
-                occurredAtEpochMs: 1
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-caller',
+                route: newALRoute('app.rallar.calls', 'call-1', 'invite-1'),
+                toPeerId: 'session-1',
+                typeId: 'app.rallar.calls.invite.v1',
+                resource: {
+                    kind: 'invite',
+                    callId: 'call-1',
+                    fromPeerId: 'peer-caller',
+                    toPeerIds: ['session-1'],
+                    data: {
+                        laneIds: ['reliable']
+                    },
+                    media: {
+                        audio: true
+                    },
+                    message: 'voice?',
+                    occurredAtEpochMs: 1
+                }
             }
         );
 

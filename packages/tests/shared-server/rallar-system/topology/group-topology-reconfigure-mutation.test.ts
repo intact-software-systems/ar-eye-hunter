@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
@@ -231,6 +232,7 @@ function createRead(actorIsPlatformAdmin = false) {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: 1_000
         },
         authorityGuard: createTopologyTestAuthorityGuard(),

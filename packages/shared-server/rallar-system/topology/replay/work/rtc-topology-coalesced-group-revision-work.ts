@@ -299,15 +299,15 @@ function toCoalescedDueAtEpochMs(work: PreviousCoalescedGroupRevisionWork): numb
 
 /**
  * Exhaustive origin classification for every persisted work kind: RTT
- * refreshes and the change-gated coalesced deltas (the presence-summary
- * channel, which also carries the lifecycle transitions' follow-ups) are
- * the machinery's own work; a per-command group-revision enqueue — the
- * reconfigure family and config receipts — carries application or operator
- * intent. A new work kind fails the anchor below instead of silently
- * classifying as `commanded` past the freeze.
+ * refreshes, held reshapes' wake-ups and the change-gated coalesced deltas
+ * (the presence-summary channel, which also carries the lifecycle
+ * transitions' follow-ups) are the machinery's own work; a per-command
+ * group-revision enqueue — the reconfigure family and config receipts —
+ * carries application or operator intent. A new work kind fails the anchor
+ * below instead of silently classifying as `commanded` past the freeze.
  */
 export function toTopologyWorkOrigin(work: PersistedRtcTopologyWork): TopologyWorkOrigin {
-    if (work.kind === 'rtt-refresh') {
+    if (work.kind === 'rtt-refresh' || work.kind === 'reshape-due') {
         return 'automatic';
     }
     work.kind satisfies 'group-revision';

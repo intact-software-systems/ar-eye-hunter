@@ -351,12 +351,15 @@ function createRoomBroadcast(
     ordering?: Readonly<{ orderingKey: string; epoch: number; seq?: number; }>
 ): ALMessage {
     return newALBroadcastMessage(
-        senderId,
-        newALRoute('room.carrier', ROOM.groupId, resourceId),
-        'room',
-        'room.carrier.v1',
-        { resourceId },
-        { groupRef: ROOM, reliability: qosCase.reliability, ack: qosCase.ack, ttlMs: 30_000, ordering }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: newALRoute('room.carrier', ROOM.groupId, resourceId),
+            scope: 'room',
+            typeId: 'room.carrier.v1',
+            resource: { resourceId },
+            options: { groupRef: ROOM, reliability: qosCase.reliability, ack: qosCase.ack, ttlMs: 30_000, ordering }
+        }
     );
 }
 

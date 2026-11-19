@@ -145,9 +145,8 @@ describe('toALStorageResetSink', () => {
         const events: ALStorageEvent[] = [];
         const reset = {
             dbName: 'rallar-al-runtime',
-            previousSchemaId: 'old',
             schemaId: 'current',
-            reason: 'schema-id-mismatch'
+            reason: 'other-context'
         } as const;
 
         toALStorageResetSink((event) => events.push(event), 'browser-ws-client:session-1')(reset);

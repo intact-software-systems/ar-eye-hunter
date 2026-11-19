@@ -9,9 +9,12 @@ export function toBrowserHeartbeatOptions(
     ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
 ): InitHeartbeatOptions {
     return {
+        creationEpochMs: input.rttCreationNowEpochMs,
+        expiryEpochMs: input.nowEpochMs,
         publicationKey: toGroupPresencePublicationKey(input.publicationCrypto),
         groupPresence: input.options.groupPresence,
         authSession: input.session,
+        policies: { command: { signal: input.options.signal } },
         scope: input.options.scope,
         ownWsConnectionGeneration,
         onAuthInvalid: input.options.onAuthInvalid

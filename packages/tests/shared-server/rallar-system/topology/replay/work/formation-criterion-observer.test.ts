@@ -9,6 +9,7 @@ import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topolog
 import type { RtcTopologyMutationRead } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyRttRefreshWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { computeFormationCriterionCommand } from '@shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts';
 import {
     createDeferredCriterionPetitioner,
@@ -116,6 +117,7 @@ class ObserverHarness {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: this.nowEpochMs
         };
     }
@@ -450,6 +452,7 @@ function stageTriggerAuthority(snapshot: GroupSnapshot): GroupTopologyPlanningAu
         rttMeasurements: [],
         rttReplanMinimumLayoutAgeMs: 15_000,
         replanning: 'auto',
+        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
         nowEpochMs: 4_000
     };
 }

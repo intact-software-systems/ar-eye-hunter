@@ -312,9 +312,8 @@ describe('the committed canonical message handed to dispatch', () => {
 
         storageResets.notify({
             dbName: 'handoff-reset',
-            previousSchemaId: undefined,
             schemaId: AL_ADMISSION_SCHEMA_ID,
-            reason: 'store-schema-mismatch'
+            reason: 'other-context'
         });
         counting.reset();
         await claims.release(runtime);

@@ -1,7 +1,9 @@
 import { vi } from 'vitest';
+import { createDefaultBrowserServerClockFixture } from './connection/browser-server-clock-fixture.ts';
 
 import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import { BrowserOutboundCongestionEpisodesSink } from '@shared-web/browser/connection/browser-outbound-congestion-episodes-sink.ts';
 import {
     createPassThroughALInboundRuntimeDiagnosticsSink,
     createPassThroughALOutboundRuntimeDiagnosticsSink
@@ -25,17 +27,23 @@ import { createDefaultVolatileSessionBudget } from './default-volatile-session-b
 /** The volatile ledger, the ordering counters and the diagnostics sinks are replaced whole: none has a meaningful partial. */
 export type MiddlewareTestOverrides =
     & {
-        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'orderingCounters' | 'outboundDiagnostics' | 'groupStateDiagnostics'>]?:
-            Partial<RallarBrowserMiddleware[K]>;
+        readonly [
+            K in Exclude<
+                keyof RallarBrowserMiddleware,
+                'volatileBudget' | 'orderingCounters' | 'congestionEpisodes' | 'outboundDiagnostics' | 'groupStateDiagnostics'
+            >
+        ]?: Partial<RallarBrowserMiddleware[K]>;
     }
     & {
         readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
         readonly orderingCounters?: RallarBrowserMiddleware['orderingCounters'];
+        readonly congestionEpisodes?: RallarBrowserMiddleware['congestionEpisodes'];
         readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
         readonly groupStateDiagnostics?: RallarBrowserMiddleware['groupStateDiagnostics'];
     };
 
 export interface ApiMiddlewareTestOverrides {
+    readonly serverTime?: ApiMiddleware['serverTime'];
     readonly session?: Partial<AuthSession>;
     readonly middleware?: MiddlewareTestOverrides;
 }
@@ -48,6 +56,7 @@ export function createDefaultApiMiddlewareTestDouble(
 
     return {
         session,
+        serverTime: overrides.serverTime ?? createDefaultBrowserServerClockFixture(),
         middleware: {
             qboxEngine: createQboxEngineDouble(middlewareOverrides.qboxEngine),
             webSocketQueueBox: createWebSocketQueueBoxDouble(
@@ -80,6 +89,11 @@ export function createDefaultApiMiddlewareTestDouble(
             volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
             orderingCounters: middlewareOverrides.orderingCounters ??
                 new BrowserInboundOrderingCountersSink(createPassThroughALInboundRuntimeDiagnosticsSink()),
+            congestionEpisodes: middlewareOverrides.congestionEpisodes ??
+                new BrowserOutboundCongestionEpisodesSink({
+                    diagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),
+                    settlements: { ws: () => {}, rtc: () => {} }
+                }),
             publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
             outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
             groupStateDiagnostics: middlewareOverrides.groupStateDiagnostics ?? createPassThroughGroupStateSnapshotChangeSink()

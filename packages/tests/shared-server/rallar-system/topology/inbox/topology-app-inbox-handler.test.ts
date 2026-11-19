@@ -33,6 +33,7 @@ import {
     computeRtcTopologyOutboxInsert,
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import type {
     GroupTopologyReconfigureComputed,
     GroupTopologyReconfigureRead
@@ -375,14 +376,17 @@ function createMessageContext(
     enqueue: AppInboxEnqueue
 ): AppInboxMessageContext<TopologyAppInboxResult> {
     const message = newALUntargetedMessage(
-        'topology-handler-test',
-        newALRoute(
-            enqueue.topicId ?? 'app-inbox.group-state',
-            enqueue.contextId ?? 'topology-handler-context',
-            requireResourceId(enqueue.resourceId)
-        ),
-        enqueue.type,
-        enqueue
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'topology-handler-test',
+            route: newALRoute(
+                enqueue.topicId ?? 'app-inbox.group-state',
+                enqueue.contextId ?? 'topology-handler-context',
+                requireResourceId(enqueue.resourceId)
+            ),
+            typeId: enqueue.type,
+            resource: enqueue
+        }
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, Temporal.Now.instant());
     return {
@@ -495,6 +499,7 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: NOW_EPOCH_MS
         },
         authorityGuard: groupAuthorityGuard(),

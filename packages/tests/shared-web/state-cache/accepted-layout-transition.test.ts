@@ -92,9 +92,17 @@ function publish(value: RallarOverlayTopologySnapshot, deferredTopologies: Defer
 
 function availability() {
     return computeRtcOutboundCarrierAvailability({
-        message: newALMulticastMessage('sender', { topicId: 'room.test', resourceId: 'message', contextId: 'room-test' }, roomRef, 'test', {}, {
-            reliability: 'best-effort',
-            ack: 'none'
+        message: newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'room.test', resourceId: 'message', contextId: 'room-test' },
+            groupRef: roomRef,
+            typeId: 'test',
+            resource: {},
+            options: {
+                reliability: 'best-effort',
+                ack: 'none'
+            }
         }),
         selfPeerId: 'sender',
         observation: {

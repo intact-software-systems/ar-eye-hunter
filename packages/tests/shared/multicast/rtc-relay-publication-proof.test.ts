@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -8,8 +9,13 @@ import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
+import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { toWsQueueBoxServerRecipientCopy } from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-recipient-copy.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
@@ -20,9 +26,11 @@ import {
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import {
+    createFrozenGrantedMulticast,
     PUBLICATION_TOPIC_ID,
     PUBLISH_AND_SUBSCRIBE,
     PUBLISH_ONLY,
+    signPublication,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
 import {
@@ -75,6 +83,45 @@ describe('a granted RTC publication at its relays and receivers', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
+    });
+
+    it.each([100_999, 101_000])('applies one signed deadline on RTC and the WS recipient copy at %i', async (now) => {
+        vi.setSystemTime(100_000);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const rtc = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
+        const frozen = createFrozenGrantedMulticast({
+            senderId: 'a',
+            resourceId: 'both-carriers',
+            recipientPeerIds: ['r'],
+            snapshotVersion: 3
+        });
+        const signed = await signPublication(chain.keys.a!, { ...frozen, constraints: { expiresAtMs: 101_000 } });
+        const copy = toWsQueueBoxServerRecipientCopy({ message: signed, recipientPeerId: 'r', sentPositions: null }).right!;
+        const creationNow = () => Temporal.Instant.fromEpochMilliseconds(now);
+        const ws = createDefaultWsQueueBoxClientService({
+            nowEpochMs: () => now,
+            creationNow,
+            outbox: new InMemoryQueueBox(undefined, creationNow),
+            socket: new JsonWebSocketClient('ws://clock-test', createPassThroughTransportFaultPort()),
+            sessionId: 'r',
+            serverPeerId: 'server',
+            qosProvider: {}
+        });
+        onTestFinished(() => ws.close());
+        const wsDeliveries: string[] = [];
+        ws.onAllInboxMessagesDo({
+            onMessage: async (message) => {
+                wsDeliveries.push(message.id.msgId);
+            }
+        });
+        vi.setSystemTime(now);
+        await rtc.receive(signed, 'a');
+        const admitted = await ws.acceptIncomingMessage(copy);
+        await vi.advanceTimersByTimeAsync(0);
+        const expected = now < 101_000 ? [signed.id.msgId] : [];
+        expect(rtc.delivered.map((message) => message.id.msgId)).toEqual(expected);
+        expect(admitted.right?.kind).toBe(expected.length ? 'admitted' : 'not-admitted');
+        await vi.waitFor(() => expect(wsDeliveries).toEqual(expected));
     });
 
     it('forwards at a relay without subscribe, delivering nothing there, and the copy verifies at the next hop', async () => {
@@ -148,12 +195,15 @@ describe('a granted RTC publication at its relays and receivers', () => {
         const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true, grantedTopicId: APP_TOPIC_ID });
         const forged = newALUnicastMessage(
-            'a',
-            { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
-            'r',
-            GRANTED_TYPE_ID,
-            { text: 'forged' },
-            { ttlMs: 30_000, traceId: 'trace-forged' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
+                toPeerId: 'r',
+                typeId: GRANTED_TYPE_ID,
+                resource: { text: 'forged' },
+                options: { ttlMs: 30_000, traceId: 'trace-forged' }
+            }
         );
 
         await relay.receive({ ...forged, targets: toTargets(forged) }, 'a');
@@ -477,17 +527,20 @@ async function admitAt(
 ): Promise<ALOutboundEnqueueResult> {
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            GRANTED_TYPE_ID,
-            { text: `feed ${resourceId}` },
             {
-                ack,
-                reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
-                ttlMs: 30_000,
-                traceId: `trace-${resourceId}`,
-                ...(durability === 'durable' ? { qos: { durability: { algo: 'local-outbox' } } } : {})
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: GRANTED_TYPE_ID,
+                resource: { text: `feed ${resourceId}` },
+                options: {
+                    ack,
+                    reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                    ttlMs: 30_000,
+                    traceId: `trace-${resourceId}`,
+                    ...(durability === 'durable' ? { qos: { durability: { algo: 'local-outbox' } } } : {})
+                }
             }
         ),
         'hold'
@@ -508,12 +561,15 @@ function toRepairControl(message: ALMessage, fromPeerId: string, toPeerId = 'a')
 /** A members-topic room multicast as the origin's transport copy to `r`. */
 function createMembersTransportCopy(): ALMessage {
     return toTransportCopy(newALMulticastMessage(
-        'a',
-        { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
-        ORIGIN_ROOM,
-        MEMBERS_TYPE_ID,
-        { text: 'hello' },
-        { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
+            groupRef: ORIGIN_ROOM,
+            typeId: MEMBERS_TYPE_ID,
+            resource: { text: 'hello' },
+            options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
+        }
     ));
 }
 

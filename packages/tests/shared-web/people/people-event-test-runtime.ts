@@ -143,11 +143,14 @@ export async function dispatchPeopleWsMessage(message: ALMessage): Promise<void>
 
 export function toPeopleEventMessage(event: ClientEvent) {
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
-        'all',
-        AppTopics.clientStateEvent,
-        event
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
+            scope: 'all',
+            typeId: AppTopics.clientStateEvent,
+            resource: event
+        }
     );
 }
 

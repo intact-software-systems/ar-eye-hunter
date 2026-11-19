@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import type { RtcTopologyPlanningObservation } from '../runtime/rtc-topology-metrics.ts';
 import type { RtcTopologyPlanDerivation } from './plan-record/rtc-topology-plan-derivation.ts';
@@ -42,6 +43,8 @@ export type ReconcileGroupTopologyResult =
         planningObservation: RtcTopologyPlanningObservation | null;
         /** How the planner derived the next hops; null for a removal tombstone, which has none. */
         derivation: RtcTopologyPlanDerivation | null;
+        /** The reshapes the plan held back; empty for a removal tombstone. */
+        heldReshapeReasons: readonly HeldTopologyReshapeReason[];
     }>
     | Readonly<{
         action: 'frozen';

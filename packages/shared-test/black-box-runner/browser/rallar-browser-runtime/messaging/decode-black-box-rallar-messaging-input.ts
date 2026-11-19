@@ -9,6 +9,7 @@ import {
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault, StorageFaultMatch } from '@shared/persistence/storage-fault-port.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { decodeSeededTransportFaultAction } from '@shared/transport-faults/seeded-transport-fault-action.ts';
 import type {
     ScriptedTransportFault,
     TransportFaultCarrier,
@@ -33,16 +34,17 @@ import {
 const FAULT_CARRIERS: readonly TransportFaultCarrier[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType']>[] = ['ack', 'nack', 'repair'];
 
+const FAULT_NAMED_ACTIONS = ['drop', 'not-ready', 'backpressure'] as const;
 const FAULT_RTC_ACTIONS: readonly ScriptedTransportFault['action'][] = ['drop', 'backpressure'];
 
 const PRODUCT_SOCKET_ACTIONS: readonly BlackBoxRallarProductSocketFault['action'][] = ['close', 'reopen'];
 
 /**
  * The RTC data channel treats a delay decision as pass and has no submission readiness port, so arming
- * either there would be inert.
+ * either there would be inert. A seeded loss is a drop some frames meet, so `rtc` offers it; a jitter is a delay.
  */
 const FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE =
-    'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.';
+    'fault.inject.action must be "drop", "backpressure" or an object naming loss or rewrite on the rtc carrier.';
 
 export function decodeBlackBoxRallarDeliveryHandleInput(
     value: unknown
@@ -156,7 +158,7 @@ function decodeTransportFault(
     return decodeFaultAction(value.action).flatMap(
         (issue) => Either.ofLeft(issue),
         (action) => {
-            if (carrier === 'rtc' && !FAULT_RTC_ACTIONS.includes(action)) {
+            if (carrier === 'rtc' && !FAULT_RTC_ACTIONS.includes(action) && !Object.hasOwn(Object(action), 'loss')) {
                 return toInputIssue(FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE);
             }
             const faultId = decodeBlackBoxCommandString(value.faultId);
@@ -218,12 +220,28 @@ export function decodeBlackBoxRallarStorageCountersInput(
 }
 
 function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {
-    if (value === 'drop' || value === 'not-ready' || value === 'backpressure') {
-        return Either.ofRight(value);
+    const named = FAULT_NAMED_ACTIONS.find((candidate) => candidate === value);
+    if (named !== undefined) {
+        return Either.ofRight(named);
     }
-    const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
+    return decodeSeededTransportFaultAction(value).flatMap(
+        (issue) => toInputIssue(`fault.inject.action.${issue}.`),
+        (seeded) => seeded === null ? decodeFaultDelayAction(value) : Either.ofRight(seeded)
+    );
+}
+
+/** The `delayMs` of an action object that names one. */
+function decodeFaultDelayMs(value: unknown): number | undefined {
+    return isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
+}
+
+function decodeFaultDelayAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {
+    const delayMs = decodeFaultDelayMs(value);
     return delayMs === undefined
-        ? toInputIssue('fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs.')
+        ? toInputIssue(
+            'fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs, ' +
+                'loss or jitter.'
+        )
         : Either.ofRight({ delayMs });
 }
 
@@ -231,7 +249,7 @@ function decodeStorageFaultAction(value: unknown): Either<BlackBoxRallarInputIss
     if (value === 'fail' || value === 'quota') {
         return Either.ofRight(value);
     }
-    const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
+    const delayMs = decodeFaultDelayMs(value);
     return delayMs === undefined
         ? toInputIssue(
             'fault.inject.action must be "fail", "quota" or an object naming delayMs on the storage carrier.'

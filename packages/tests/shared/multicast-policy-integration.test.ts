@@ -111,12 +111,15 @@ describe('multicast QoS integration', () => {
             const initial = new shared.WebRtcOverlayMulticastManager(dependencies);
             onTestFinished(() => initial.dispose());
             const message = shared.newALMulticastMessage(
-                'origin',
-                { topicId: 'chat', resourceId: 'pending-forward', contextId: 'group-1' },
-                groupRef('group-1'),
-                'chat.message',
-                { text: 'forwarded' },
-                { ttlMs: 1_000, ttlHops: 3 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'origin',
+                    route: { topicId: 'chat', resourceId: 'pending-forward', contextId: 'group-1' },
+                    groupRef: groupRef('group-1'),
+                    typeId: 'chat.message',
+                    resource: { text: 'forwarded' },
+                    options: { ttlMs: 1_000, ttlHops: 3 }
+                }
             );
             expect(await initial.forwardIfRequired(message, 'relay')).toHaveLength(1);
             expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
@@ -195,12 +198,15 @@ describe('multicast QoS integration', () => {
         });
         onTestFinished(() => manager.dispose());
         const message = shared.newALMulticastMessage(
-            'self',
-            { topicId: 'chat', resourceId: 'waiting-authority', contextId: 'group-1' },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'chat', resourceId: 'waiting-authority', contextId: 'group-1' },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }
         );
         const entry = shared.QueueBoxUtilities.toResourceEntryFromMsg(message, shared.EnqueuedType.RTC_OUTBOX, Temporal.Now.instant());
         await manager.outbox.enqueue(entry);
@@ -244,28 +250,31 @@ describe('multicast QoS integration', () => {
         );
         const msg = {
             ...shared.newALMulticastMessage(
-                'sender-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-1',
-                    contextId: 'group-1'
-                },
-                groupRef('group-1'),
-                'chat.typing.v1',
-                {
-                    text: 'typing'
-                },
-                {
-                    ttlHops: 2,
-                    qos: {
-                        fanout: {
-                            algo: 'limit',
-                            opts: {
-                                limit: 1
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-1',
+                        contextId: 'group-1'
+                    },
+                    groupRef: groupRef('group-1'),
+                    typeId: 'chat.typing.v1',
+                    resource: {
+                        text: 'typing'
+                    },
+                    options: {
+                        ttlHops: 2,
+                        qos: {
+                            fanout: {
+                                algo: 'limit',
+                                opts: {
+                                    limit: 1
+                                }
+                            },
+                            durability: {
+                                algo: 'volatile'
                             }
-                        },
-                        durability: {
-                            algo: 'volatile'
                         }
                     }
                 }
@@ -310,14 +319,17 @@ describe('multicast QoS integration', () => {
             throw new Error(failure.message);
         }, (key) => key);
         const message = shared.newALMulticastMessage(
-            'sender-1',
-            { topicId: 'chat', resourceId: 'msg-1', contextId: 'group-1' },
-            groupRef('group-1'),
-            'chat.typing.v1',
             {
-                text: 'typing'
-            },
-            { ttlHops: 2, qos: { durability: { algo: 'volatile' } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-1',
+                route: { topicId: 'chat', resourceId: 'msg-1', contextId: 'group-1' },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.typing.v1',
+                resource: {
+                    text: 'typing'
+                },
+                options: { ttlHops: 2, qos: { durability: { algo: 'volatile' } } }
+            }
         );
         const signed = (await signALPublicationProof({ subtle, keyPair, message })).fold((failure) => {
             throw new Error(failure.message);
@@ -377,21 +389,24 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-2',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.typing.v1',
-            {
-                text: 'typing'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-2',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.typing.v1',
+                resource: {
+                    text: 'typing'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -450,20 +465,23 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            {
-                reliability: 'at-least-once',
-                qos: { ack: { algo: 'subtree' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    qos: { ack: { algo: 'subtree' } }
+                }
             }
         );
 
@@ -520,20 +538,23 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3b',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello again'
-            },
-            {
-                reliability: 'at-least-once',
-                qos: { ack: { algo: 'subtree' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3b',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello again'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    qos: { ack: { algo: 'subtree' } }
+                }
             }
         );
 
@@ -587,47 +608,50 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3c',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'repair via alternate parent'
-            },
-            {
-                qos: {
-                    delivery: {
-                        algo: 'at-least-once'
-                    },
-                    durability: {
-                        algo: 'volatile'
-                    },
-                    ack: {
-                        algo: 'hop',
-                        opts: {
-                            timeoutMs: 100
-                        }
-                    },
-                    retry: {
-                        algo: 'exp-backoff',
-                        opts: {
-                            maxAttempts: 1
-                        }
-                    },
-                    repair: {
-                        algo: 'retransmit',
-                        opts: {
-                            maxRepairs: 1
-                        }
-                    },
-                    fanout: {
-                        algo: 'limit',
-                        opts: {
-                            limit: 1
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3c',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'repair via alternate parent'
+                },
+                options: {
+                    qos: {
+                        delivery: {
+                            algo: 'at-least-once'
+                        },
+                        durability: {
+                            algo: 'volatile'
+                        },
+                        ack: {
+                            algo: 'hop',
+                            opts: {
+                                timeoutMs: 100
+                            }
+                        },
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: {
+                                maxAttempts: 1
+                            }
+                        },
+                        repair: {
+                            algo: 'retransmit',
+                            opts: {
+                                maxRepairs: 1
+                            }
+                        },
+                        fanout: {
+                            algo: 'limit',
+                            opts: {
+                                limit: 1
+                            }
                         }
                     }
                 }
@@ -688,23 +712,26 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3d',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'repair just one peer'
-            },
-            {
-                reliability: 'at-least-once',
-                qos: {
-                    ack: { algo: 'subtree' },
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3d',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'repair just one peer'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    qos: {
+                        ack: { algo: 'subtree' },
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -780,16 +807,19 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
-            'sender-4',
             {
-                topicId: 'chat',
-                resourceId: 'msg-4',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'private hello'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-4',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-4',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'private hello'
+                }
             }
         );
 
@@ -844,21 +874,24 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
-            'sender-4b',
             {
-                topicId: 'chat',
-                resourceId: 'msg-4b',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'warming hello'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-4b',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-4b',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'warming hello'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -905,35 +938,38 @@ describe('multicast QoS integration', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = shared.newALUnicastMessage(
-            'sender-5',
             {
-                topicId: 'chat',
-                resourceId: 'msg-5',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'durable hello'
-            },
-            {
-                qos: {
-                    delivery: {
-                        algo: 'at-least-once'
-                    },
-                    durability: {
-                        algo: 'local-outbox'
-                    },
-                    ack: {
-                        algo: 'hop',
-                        opts: {
-                            timeoutMs: 1_500
-                        }
-                    },
-                    retry: {
-                        algo: 'exp-backoff',
-                        opts: {
-                            maxAttempts: 4
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-5',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-5',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'durable hello'
+                },
+                options: {
+                    qos: {
+                        delivery: {
+                            algo: 'at-least-once'
+                        },
+                        durability: {
+                            algo: 'local-outbox'
+                        },
+                        ack: {
+                            algo: 'hop',
+                            opts: {
+                                timeoutMs: 1_500
+                            }
+                        },
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: {
+                                maxAttempts: 4
+                            }
                         }
                     }
                 }

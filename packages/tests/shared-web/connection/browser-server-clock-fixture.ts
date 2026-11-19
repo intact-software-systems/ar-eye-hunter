@@ -38,6 +38,6 @@ class BrowserServerClockFixture implements BrowserServerClockSession.Port {
     }
 }
 
-export function createDefaultBrowserServerClockFixture(): BrowserServerClockSession.Port {
-    return new BrowserServerClockFixture(Date.now, Date.now());
+export function createDefaultBrowserServerClockFixture(nowMs: () => number = Date.now): BrowserServerClockSession.Port {
+    return new BrowserServerClockFixture(nowMs, 0);
 }

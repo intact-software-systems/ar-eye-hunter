@@ -725,9 +725,8 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
         storeId: 'browser-ws-client:session-1',
         event: {
             dbName: 'rallar-al-runtime',
-            previousSchemaId: 'rallar-alm-2026-08-f1',
             schemaId: 'rallar-alm-2026-09-f2',
-            reason: 'schema-id-mismatch'
+            reason: 'other-context'
         }
     });
 
@@ -737,9 +736,8 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
             topic: 'rallar.browser.alm.storage_reset',
             data: {
                 dbName: 'rallar-al-runtime',
-                previousSchemaId: 'rallar-alm-2026-08-f1',
                 schemaId: 'rallar-alm-2026-09-f2',
-                reason: 'schema-id-mismatch'
+                reason: 'other-context'
             }
         })
     ]));
@@ -829,7 +827,7 @@ it('records synchronous connection producer diagnostics once across reconnect', 
         ports?.storage?.({
             kind: 'reset',
             storeId: 'browser-ws-client:early',
-            event: { dbName: 'early', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+            event: { dbName: 'early', schemaId: 'current', reason: 'other-context' }
         });
     });
     await runtime.connect(connect);
@@ -944,7 +942,7 @@ it('preserves sanitized native signaling and live ordering usage through the sam
     ports?.storage?.({
         kind: 'reset',
         storeId: 'durable',
-        event: { dbName: 'joint', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+        event: { dbName: 'joint', schemaId: 'current', reason: 'other-context' }
     });
 
     expect(events.filter((event) => event.topic === 'rallar.browser.rtc.signaling_diagnostics').map((event) => event.data))
@@ -968,6 +966,6 @@ it('preserves sanitized native signaling and live ordering usage through the sam
         { kind: 'ordering-tracks', storeId: 'durable', tracks: 4 }
     ]);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset').map((event) => event.data))
-        .toEqual([{ dbName: 'joint', schemaId: 'current', reason: 'schema-id-mismatch' }]);
+        .toEqual([{ dbName: 'joint', schemaId: 'current', reason: 'other-context' }]);
     await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 9 });
 });

@@ -22,14 +22,14 @@ export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
 /**
- * A notified reset may describe an independent external schema reset. This opener only reports
- * observed other-context recreation; it never performs either schema-mismatch reset.
+ * Another context deleted and recreated the database: this opener observed the recreation after a
+ * `versionchange` closed this document's connection. The opener itself never resets a database; one
+ * that does not match its schema is refused and kept (`ALStorageSchemaMismatchError`).
  */
 export interface ALStorageResetEvent {
     readonly dbName: string;
-    readonly previousSchemaId: string | undefined;
     readonly schemaId: string;
-    readonly reason: 'schema-id-mismatch' | 'store-schema-mismatch' | 'other-context';
+    readonly reason: 'other-context';
 }
 
 /** The opener invokes this only after observing external recreation; callback failure closes its acquired handle. */
@@ -139,7 +139,6 @@ export async function openIndexedDbAdmissionStorage(
         if (opening.kind === 'reset') {
             input.onStorageReset({
                 dbName: input.dbName,
-                previousSchemaId: undefined,
                 schemaId: input.schemaId,
                 reason: 'other-context'
             });

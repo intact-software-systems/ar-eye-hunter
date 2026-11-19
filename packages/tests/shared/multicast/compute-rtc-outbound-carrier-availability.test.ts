@@ -124,10 +124,13 @@ describe('computeRtcOutboundCarrierAvailability', () => {
 
     it('passes a message without a room through as available without an overlay context', () => {
         const message = newALUntargetedMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'bare', contextId: 'room' },
-            'chat.message.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'bare', contextId: 'room' },
+                typeId: 'chat.message.v1',
+                resource: {}
+            }
         );
 
         expect(computeFor({ room: undefined, overlay: undefined, message })).toEqual({
@@ -229,11 +232,14 @@ function withIdentity(
 
 function createRoomMulticast(): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId: 'availability', contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        {},
-        { reliability: 'at-least-once', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId: 'availability', contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { reliability: 'at-least-once', ttlMs: 30_000 }
+        }
     );
 }

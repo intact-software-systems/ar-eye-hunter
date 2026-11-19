@@ -444,16 +444,19 @@ class RtcRecoveryOwner {
     original(senderId = this.sessionId): ALMessage {
         return {
             ...newALBroadcastMessage(
-                senderId,
                 {
-                    topicId: 'room.reload',
-                    contextId: this.roomRef.groupId,
-                    resourceId: 'original'
-                },
-                'room',
-                'reload.original',
-                { original: true },
-                { groupRef: this.roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+                    createdAtEpochMs: Date.now(),
+                    senderId,
+                    route: {
+                        topicId: 'room.reload',
+                        contextId: this.roomRef.groupId,
+                        resourceId: 'original'
+                    },
+                    scope: 'room',
+                    typeId: 'reload.original',
+                    resource: { original: true },
+                    options: { groupRef: this.roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+                }
             ),
             delivery: { reliability: 'at-least-once', ack: 'none' }
         };

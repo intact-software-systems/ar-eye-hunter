@@ -57,12 +57,15 @@ describe('state-sync routing group visibility', () => {
         const eventRecipients = resolveStateSyncRecipients(
             server,
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.groupStateEvent, 'room-1', 'event-1'),
-                'room',
-                AppTopics.groupStateEvent,
-                createGroupEventEnvelope(eventSnapshot, ['alice-session']),
-                { groupRef: eventSnapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(AppTopics.groupStateEvent, 'room-1', 'event-1'),
+                    scope: 'room',
+                    typeId: AppTopics.groupStateEvent,
+                    resource: createGroupEventEnvelope(eventSnapshot, ['alice-session']),
+                    options: { groupRef: eventSnapshot.group }
+                }
             ),
             {
                 findGroupSnapshotByRef: () => snapshot,

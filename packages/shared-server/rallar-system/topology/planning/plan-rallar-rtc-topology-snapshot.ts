@@ -8,6 +8,7 @@ import {
 } from '@shared/api/group-client-views.ts';
 import { toCanonicalGroupRef, type GroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
@@ -21,6 +22,7 @@ export function planRallarRtcTopologySnapshot(
         topology: RallarRtcTopologyKind;
         nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
         derivation: RtcTopologyPlanDerivation;
+        heldReshapeReasons: readonly HeldTopologyReshapeReason[];
         degreeLimit: number;
         nowEpochMs: number;
     }>
@@ -53,7 +55,13 @@ export function planRallarRtcTopologySnapshot(
     const snapshot = input.previous && rtcTopologySemanticEqual(candidate, input.previous)
         ? input.previous
         : candidate;
-    return { snapshot, changed, previous: input.previous ?? null, derivation: input.derivation };
+    return {
+        snapshot,
+        changed,
+        previous: input.previous ?? null,
+        derivation: input.derivation,
+        heldReshapeReasons: input.heldReshapeReasons
+    };
 }
 
 function isSameNextHopMap(

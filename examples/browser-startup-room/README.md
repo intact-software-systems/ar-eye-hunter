@@ -195,3 +195,39 @@ The owner reads all pages, deduplicates scoped references, and publishes complet
 reads pause when hidden or offline and resume immediately on return. Authentication and query
 changes fence late results; use `changeRequest` to replace the complete query. Discovery never joins
 or adopts a room. Scope, cadence, and per-request bounds are explicit application policy.
+
+## Display a live poll deadline
+
+Read the closing instant from the poll's current room record, including after
+rejoin. Each render can compare that same instant with the connected client's
+current server-time estimate.
+
+```ts
+import { rallar } from '@shared-web/browser/rallar.ts';
+
+function pollStatus(poll: { closesAtEpochMs: number }): string {
+    switch (rallar.compareDeadline(poll.closesAtEpochMs)) {
+        case 'before': return 'Voting open';
+        case 'overlaps': return 'Voting is closing';
+        case 'at-or-after': return 'Voting closed';
+        case 'unavailable': return 'Waiting for server time';
+    }
+}
+```
+
+At the exact cutoff, a window entirely at or beyond the closing instant is
+closed. A window that includes time on both sides of the cutoff, or just
+reaches it from below, displays “Voting is closing.” Compare again when the
+view refreshes. The poll authority checks the closing instant when it receives
+a vote and returns the result to the participant. A vote sent while the view
+showed “Voting open” can still arrive late.
+
+Run the [two-browser room poll](../shared-deadline-poll/README.md) to see an
+in-time vote count and a delayed vote arrive after closure.
+
+A room authority that grants a minimum grace period can call
+`rallar.deadlineAfter(10_000)` once when the absence begins and save the
+returned epoch in its checkpoint. An unavailable clock returns `undefined`.
+A successor compares the stored deadline with `rallar.compareDeadline`.
+Using the latest plausible server time at creation gives the participant the
+full grace period even when the creation window has nonzero width.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     decodeLocalBaselineRun,
+    decodeLocalBaselineSides,
     toLocalBaselineReport
 } from '../../../apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts';
 import type { DistributedRunEnvironment } from '../../shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
@@ -95,17 +96,55 @@ describe('decodeLocalBaselineRun', () => {
     });
 });
 
+describe('decodeLocalBaselineSides', () => {
+    it('reads the recorder directories of each side from the arguments after its flag', () => {
+        expect(decodeLocalBaselineSides(['--baseline', '/runs/a1', '/runs/a2', '--candidate', '/runs/b1', '/runs/b2']).right)
+            .toEqual({ baseline: ['/runs/a1', '/runs/a2'], candidate: ['/runs/b1', '/runs/b2'] });
+    });
+
+    // Two bare directories were the one-run-per-side form; a pair of runs of one commit read outside the band (D652).
+    it('refuses arguments that do not name both sides, each with a directory', () => {
+        for (
+            const argv of [
+                [],
+                ['/runs/a', '/runs/b'],
+                ['--baseline', '/runs/a'],
+                ['--baseline', '--candidate', '/runs/b'],
+                ['--baseline', '/runs/a', '--candidate'],
+                ['--candidate', '/runs/b', '--baseline', '/runs/a'],
+                ['--baseline', '/runs/a', '--candidate', '/runs/b', '--baseline', '/runs/c']
+            ]
+        ) {
+            expect(decodeLocalBaselineSides(argv).left, argv.join(' ')).toMatch(/^Usage: /u);
+        }
+    });
+});
+
 describe('toLocalBaselineReport', () => {
-    it('prints one line per figure and exits 0 when every figure is noise or an improvement', () => {
+    it('prints one line per figure with every run beside each median and exits 0 when no figure regressed', () => {
         expect(toLocalBaselineReport(Either.ofRight({
             figures: [
-                { name: 'commandTiming.p50Ms', baseline: 12, candidate: 13, verdict: 'noise' },
-                { name: 'runDurationMs', baseline: 60_000, candidate: 50_000, verdict: 'improvement' }
+                {
+                    name: 'commandTiming.p50Ms',
+                    baseline: 12,
+                    candidate: 13,
+                    baselineRuns: [12, 11, 14],
+                    candidateRuns: [13, 15, 12],
+                    verdict: 'noise'
+                },
+                {
+                    name: 'runDurationMs',
+                    baseline: 60_000,
+                    candidate: 50_000,
+                    baselineRuns: [60_000, 61_000, 59_000],
+                    candidateRuns: [50_000, 50_500, 49_000],
+                    verdict: 'improvement'
+                }
             ]
         }))).toEqual({
             lines: [
-                'commandTiming.p50Ms baseline 12 candidate 13 noise',
-                'runDurationMs baseline 60000 candidate 50000 improvement'
+                'commandTiming.p50Ms baseline 12 (12, 11, 14) candidate 13 (13, 15, 12) noise',
+                'runDurationMs baseline 60000 (60000, 61000, 59000) candidate 50000 (50000, 50500, 49000) improvement'
             ],
             exitCode: 0
         });
@@ -114,24 +153,40 @@ describe('toLocalBaselineReport', () => {
     it('exits 1 on a regression, naming the regressed figures', () => {
         expect(toLocalBaselineReport(Either.ofRight({
             figures: [
-                { name: 'commandTiming.p50Ms', baseline: 40, candidate: 90, verdict: 'regression' },
-                { name: 'runDurationMs', baseline: 60_000, candidate: 60_100, verdict: 'noise' }
+                {
+                    name: 'commandTiming.p50Ms',
+                    baseline: 40,
+                    candidate: 90,
+                    baselineRuns: [40],
+                    candidateRuns: [90],
+                    verdict: 'regression'
+                },
+                {
+                    name: 'runDurationMs',
+                    baseline: 60_000,
+                    candidate: 60_100,
+                    baselineRuns: [60_000],
+                    candidateRuns: [60_100],
+                    verdict: 'noise'
+                }
             ]
         }))).toEqual({
             lines: [
-                'commandTiming.p50Ms baseline 40 candidate 90 regression',
-                'runDurationMs baseline 60000 candidate 60100 noise',
+                'commandTiming.p50Ms baseline 40 (40) candidate 90 (90) regression',
+                'runDurationMs baseline 60000 (60000) candidate 60100 (60100) noise',
                 'regression in commandTiming.p50Ms'
             ],
             exitCode: 1
         });
     });
 
-    it('exits 1 on a refusal, naming every key that made the runs not comparable', () => {
+    it('exits 1 on a refusal, naming every key that made the sides not comparable', () => {
+        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'too-few-runs', keys: ['baseline', 'candidate'] })))
+            .toEqual({ lines: ['not comparable: fewer than 5 runs on baseline, candidate'], exitCode: 1 });
         expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-regime', keys: ['agentCount', 'apiMode'] })))
             .toEqual({ lines: ['not comparable: the regimes differ in agentCount, apiMode'], exitCode: 1 });
         expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-figures', keys: ['commandTiming.p50Ms'] })))
-            .toEqual({ lines: ['not comparable: only one run reports commandTiming.p50Ms'], exitCode: 1 });
+            .toEqual({ lines: ['not comparable: not every run reports commandTiming.p50Ms'], exitCode: 1 });
         expect(
             toLocalBaselineReport(
                 Either.ofLeft({ kind: 'non-finite-figures', keys: ['commandTiming.p50Ms', 'runDurationMs'] })
@@ -142,8 +197,8 @@ describe('toLocalBaselineReport', () => {
         });
     });
 
-    it('exits 1 when the runs share no figure, as nothing was compared', () => {
+    it('exits 1 when no run reports a figure, as nothing was compared', () => {
         expect(toLocalBaselineReport(Either.ofRight({ figures: [] })))
-            .toEqual({ lines: ['not comparable: neither run reports a figure'], exitCode: 1 });
+            .toEqual({ lines: ['not comparable: no run reports a figure'], exitCode: 1 });
     });
 });

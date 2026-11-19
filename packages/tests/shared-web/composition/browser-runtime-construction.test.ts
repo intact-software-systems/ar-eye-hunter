@@ -171,11 +171,14 @@ describe('browser runtime construction', () => {
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
         );
         const message = newALMulticastMessage(
-            'sender',
-            { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'one' },
-            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            'alm.lifecycle',
-            { marker: 'delivery-lifecycle', specimen: 'supersedence' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'one' },
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                typeId: 'alm.lifecycle',
+                resource: { marker: 'delivery-lifecycle', specimen: 'supersedence' }
+            }
         );
         const selectedPolicies: string[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {

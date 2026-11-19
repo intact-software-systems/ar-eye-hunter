@@ -12,6 +12,11 @@ import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     toStoredRtcTopologySnapshotRow
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    computeRtcTopologyReshapeGateWrite,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -60,6 +65,7 @@ describe('RTC topology queue conflict boundary', () => {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: 1_000
         });
         const handler = createRtcTopologyWorkHandler({
@@ -101,5 +107,84 @@ describe('RTC topology queue conflict boundary', () => {
         expect(begin).not.toHaveBeenCalled();
         expect(observeCommittedTopology).not.toHaveBeenCalled();
         expect([...runtime.data]).toEqual(before);
+    });
+
+    it('a gate row that moved after the read rolls the layout back and leaves the row unfinished', async () => {
+        const group = createRtcTopologyGroupSnapshot('group-1', ['session-a', 'session-b']);
+        const runtime = new FakeRuntimeStateRepository();
+        // A used gate: the room's first layout resets it, so the work writes the gate at the revision it read.
+        const usedGate = computeRtcTopologyReshapeGateWrite(group.group, {
+            gate: { lastPassAtEpochMs: 500, consecutiveHeldPasses: 1, heldAtEpochMs: null },
+            wantedReasons: []
+        }, null);
+        await runtime.upsert({
+            namespace: RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
+            key: usedGate.key,
+            value: usedGate.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+        const before = [...runtime.data];
+        // Another server's work writes the gate between this work's read and its write.
+        let raced = false;
+        runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (operation === 'upsertIfRevision' && namespace === RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE) {
+                raced = true;
+                await runtime.upsert({ namespace, key, value: usedGate.value, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+            }
+        };
+        const queue = new InMemoryQueueBox();
+        const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, { runtimeRepository: runtime });
+        const observeCommittedTopology = vi.fn();
+        const readTopologyPlanningAuthority = async () => ({
+            group,
+            config: resolveGroupTopologyConfig({}),
+            kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
+            rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
+            replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
+            nowEpochMs: 1_000
+        });
+        const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 1_000,
+            finishedRetentionMs: 3_600_000,
+            outboxQueueReader: new OutboxQueueReader(queue),
+            database,
+            executionRepository: new RtcTopologyExecutionRepository(runtime),
+            topologyPlanning: {
+                readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
+                readDurationNowMs: () => 0,
+                observeCommittedTopology,
+                recordTopologyPlanningObservation: vi.fn(),
+                recordTopologyPublication: vi.fn(),
+                recordTopologyPlanFrozen: vi.fn(),
+                recordTopologyRebuildSkippedFingerprint: vi.fn()
+            }
+        });
+        const queued = computeRtcTopologyOutboxInsert({
+            traceId: 'trace-rtc-topology-work-gate-conflict',
+            commandId: 'gate-conflict-command',
+            aggregateRef: group.group,
+            acceptedCausalRevision: group.causalRevision,
+            groupSnapshot: group,
+            effectKind: 'rtc-topology-recompute',
+            createdAtEpochMs: 1_000,
+            expireAtEpochMs: 4_102_444_800_000,
+            senderId: 'topology-service',
+            resourceId: 'gate-conflict-work',
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+            publish: false,
+            payloadKind: 'group-revision',
+            origin: 'automatic'
+        }).entry;
+        const entry = { ...queued, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+        await queue.enqueueIfAbsent(entry);
+
+        await expect(handler.onMessage(decodePersistedALMessage(entry.resource), entry)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(raced).toBe(true);
+        expect([...runtime.data]).toEqual(before);
+        expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
     });
 });

@@ -195,12 +195,15 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
 
 function createRelayedMessage(): ALMessage {
     const message = newALMulticastMessage(
-        'peer-1',
-        { topicId: 'chat', resourceId: 'acked-msg', contextId: 'group-1' },
-        { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
-        'chat.message.v1',
-        { text: 'relayed' },
-        { seq: 1, reliability: 'at-least-once', ack: 'none', qos: { durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: { topicId: 'chat', resourceId: 'acked-msg', contextId: 'group-1' },
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+            typeId: 'chat.message.v1',
+            resource: { text: 'relayed' },
+            options: { seq: 1, reliability: 'at-least-once', ack: 'none', qos: { durability: { algo: 'volatile' } } }
+        }
     );
     return { ...message, id: { ...message.id, msgId: 'acked-msg' } };
 }

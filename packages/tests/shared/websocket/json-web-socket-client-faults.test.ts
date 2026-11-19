@@ -8,10 +8,13 @@ import { TestWebSocket } from './test-web-socket.ts';
 /** The WS outbox writes `JSON.stringify(ALMessage)`, whose typeId sits under `payload`. */
 function alFrame(msgId: string, typeId: string): string {
     return JSON.stringify(newALUntargetedMessage(
-        'sender',
-        newALRoute(`room.${typeId}`, 'room-1', msgId),
-        typeId,
-        { marker: typeId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALRoute(`room.${typeId}`, 'room-1', msgId),
+            typeId,
+            resource: { marker: typeId }
+        }
     ));
 }
 

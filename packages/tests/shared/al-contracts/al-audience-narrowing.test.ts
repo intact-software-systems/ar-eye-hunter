@@ -43,14 +43,30 @@ describe('the audience a room send narrows to', () => {
         { label: 'a receiver room broadcast', message: createListedSend(), expected: false },
         {
             label: 'a group-leader principal broadcast',
-            message: newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {}, {
-                ack: 'group-leader'
+            message: newALPrincipalBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    ack: 'group-leader'
+                }
             }),
             expected: false
         },
         {
             label: 'a group-leader room multicast',
-            message: newALMulticastMessage('a', ROUTE, ORIGIN_ROOM, 'chat.message.v1', {}, { ack: 'group-leader' }),
+            message: newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: ROUTE,
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ack: 'group-leader' }
+            }),
             expected: false
         }
     ])('reads $label as addressing its room\'s leader: $expected', ({ message, expected }) => {
@@ -80,15 +96,38 @@ describe('the audience a room send narrows to', () => {
 });
 
 function createPrincipalSend(): ALMessage {
-    return newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {});
+    return newALPrincipalBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+        typeId: 'chat.message.v1',
+        resource: {}
+    });
 }
 
 function createLeaderSend(options: Readonly<{ groupRef?: typeof ORIGIN_ROOM; }>): ALMessage {
-    return newALBroadcastMessage('a', ROUTE, 'room', 'chat.message.v1', {}, { ...options, ack: 'group-leader' });
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { ...options, ack: 'group-leader' }
+    });
 }
 
 function createListedSend(): ALMessage {
-    return newALBroadcastMessage('a', ROUTE, 'room', 'chat.message.v1', {}, { groupRef: ORIGIN_ROOM, recipientPeerIds: ['c', 'z'] });
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { groupRef: ORIGIN_ROOM, recipientPeerIds: ['c', 'z'] }
+    });
 }
 
 function computeRtcFrozenRecipients(message: ALMessage, snapshot: GroupSnapshot): readonly string[] {

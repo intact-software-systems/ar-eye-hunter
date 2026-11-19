@@ -1345,6 +1345,14 @@ over the connect: `staged`, `superseded`, `expired`, `refused`, `cancelled`,
 boundary left for a later one, counted at each boundary that left them). A
 connect that staged no live value reads zeros under the same limits.
 
+`rallar.messages.readUsage().congestionEpisodes` reads how long the connect's
+carriers held messages back for backpressure: `durationMs`, a bounded
+histogram of each episode from a message's first deferral to the settlement of
+the attempt that was not deferred again, `openEpisodes`, the deferred messages
+not yet settled, and `unrecordedSamples`, the episodes it could not measure.
+It is cumulative over the connect and counts every message a carrier deferred,
+a relayed copy included.
+
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
 send is admitted and dispatched from memory and spends no storage operation on
 its way to the carrier; the tab that owns the session's work checkpoints what
@@ -1423,11 +1431,10 @@ undecodable identity rejects with `ALStorageSchemaIdentityError` and its origina
 Error cause. Acquired handles close on failure. Opening and cleanup never delete/recreate
 an incompatible database or silently rewrite its format.
 
-- `reset`: an externally notified reset (`ALStorageResetEvent`). The canonical
+- `reset`: another context's reset (`ALStorageResetEvent`). The canonical
   opener reports only recreation it observed after this document recorded
-  `versionchange`, with reason `other-context` and `previousSchemaId: undefined`.
-  Independently supplied `schema-id-mismatch`/`store-schema-mismatch` descriptors
-  remain valid observation inputs. A database-wide cleanup's external-reset
+  `versionchange`, with reason `other-context`, the database name and the
+  current schema id. A database-wide cleanup's external-reset
   observation names the database instead of a store; cleanup does not cause a reset;
 - `recovery`: what a durable store found when its lane started, once per store
   and connect (`ALStorageRecoveryOutcome`: `restored`, `expired-at-recovery`,
@@ -3016,7 +3023,9 @@ Room inspection routes also require current API admin authority and return `Cach
 - `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-plans`
   returns the live retained topology publications of one room with the plan record each was computed from
   (`plan`, null for a removal): `limit` (maximum 100) and `afterPublicationId`, pages in storage-key order, not time
-  order. It carries no member identities and no routing edges.
+  order. It carries no member identities and no routing edges. `reshapeGate` is the room's stored reshape gate (null
+  when it stores none): its back-off state, the reasons wanted, the wait in force (`intervalMs`) and when it opens
+  (`opensAtEpochMs`, null before the room's first reshape).
 - `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-work/:outboxId`
   observes the exact receipt's retained queue work. Its mandatory fields are `roomRef`, `outboxId`,
   `observedAtEpochMs`, `status`, `attempts` and `settledAtEpochMs`. Status is `unknown`, `pending`,

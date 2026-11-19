@@ -97,6 +97,8 @@ const CONTROL_SUBMISSION = {
     traceId: 'trace-acked-received'
 };
 
+const FAULT_ACTED_COUNTS = { drop: 1, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 };
+
 const SEND_DIAGNOSTICS = {
     handleId: 'handle-1',
     msgId: 'msg-1',
@@ -220,7 +222,7 @@ function createAlmBrowserRuntimeFake(
         },
         injectFault: async (input) => {
             captures.injectFault.push(input);
-            return undefined;
+            return input.carrier === 'ws' || input.carrier === 'rtc' ? FAULT_ACTED_COUNTS : null;
         },
         readStorageCounters: async (input) => {
             captures.readStorageCounters.push(input);
@@ -1351,6 +1353,66 @@ describe('ALM browser adapter execution', () => {
         expect(JSON.stringify(diagnostic)).not.toContain('trace-first');
     });
 
+    it.each([
+        ['ascends', [1, 2, 3], true],
+        ['skips a value and still ascends', [1, 2, 5], true],
+        ['arrives out of order', [1, 3, 2], false],
+        ['repeats a value', [1, 2, 2], false],
+        ['lacks the field in one copy', [1, undefined, 3], false],
+        ['holds a text where a number belongs', [1, '2', 3], false]
+    ])('claims that a payload field ascends in arrival order when it %s', async (_label, sequence, ascending) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        sequence.forEach((seq, index) => {
+            const event = inboundMessageEvent(`msg-${index}`);
+            runtime.receiveRallarBrowserEvent({
+                ...event,
+                data: { ...event.data, payload: seq === undefined ? { other: index } : { seq } }
+            });
+        });
+
+        const ordered = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-ordered',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 3,
+            ascendingBy: 'seq',
+            windowMs: 40
+        });
+
+        expect(ordered.ok).toBe(ascending);
+        expect(ordered.value).toMatchObject({ count: 3, observed: 3, ascending });
+        expect(ordered.error?.code).toBe(ascending ? undefined : 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING');
+        const diagnostic = runtime.state().events.find((event) => event.commandId === 'alm-received-ordered' && event.topic === 'rallar.bb.messages.received');
+        expect(isJsonRecordValue(diagnostic?.payload) ? diagnostic.payload.data : undefined).toMatchObject({ ascending });
+    });
+
+    it('reports a short count before an order, and still says whether the copies it saw ascend', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        const event = inboundMessageEvent('msg-1');
+        runtime.receiveRallarBrowserEvent({ ...event, data: { ...event.data, payload: { seq: 1 } } });
+
+        const short = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-short-ordered',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 2,
+            ascendingBy: 'seq',
+            windowMs: 40
+        });
+
+        expect(short.ok).toBe(false);
+        expect(short.error?.code).toBe('RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED');
+        expect(short.value).toMatchObject({ count: 2, observed: 1, ascending: true });
+    });
+
     it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
@@ -1466,7 +1528,7 @@ describe('ALM browser adapter execution', () => {
         });
 
         expect(injected.ok, injected.error?.message).toBe(true);
-        expect(injected.value).toEqual({ faultId: 'drop-first-ack', injected: true });
+        expect(injected.value).toEqual({ faultId: 'drop-first-ack', injected: true, acted: FAULT_ACTED_COUNTS });
         expect(captures.injectFault[0]).toMatchObject({
             faultId: 'drop-first-ack',
             carrier: 'ws',
@@ -1491,6 +1553,30 @@ describe('ALM browser adapter execution', () => {
                 'rallar.bb.agent.reload_requested'
             ])
         );
+    });
+
+    it.each([
+        ['no counts', null],
+        ['counts that miss a decision', { drop: 1, delay: 0, rewrite: 0, 'not-ready': 0 }]
+    ])('fails a transport fault injection whose page answers %s', async (_label, answer) => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...createAlmBrowserRuntimeFake(captures), injectFault: async () => answer }
+        });
+
+        const injected = await runtime.execute({
+            kind: 'fault.inject',
+            commandId: 'alm-fault',
+            faultId: 'lose-some',
+            carrier: 'rtc',
+            match: { typeId: 'alm.conformance' },
+            action: { loss: { ratio: 0.2, seed: 7 } },
+            remaining: 0
+        });
+
+        expect(injected.ok).toBe(false);
+        expect(injected.error?.message).toContain('fault.inject result');
     });
 
     it('awaits a reply through the page runtime, ending the page wait before the command budget so a timeout is its value', async () => {

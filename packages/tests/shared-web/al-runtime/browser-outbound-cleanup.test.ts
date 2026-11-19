@@ -423,7 +423,15 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
     const store = stores.admissionStore;
     await store.ready();
     const msg = decodeALDeadlinedMessage(
-        newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs })
+        newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'pending', contextId: 'room' },
+            toPeerId: sessionId,
+            typeId: 'chat',
+            resource: {},
+            options: { ttlMs }
+        })
     );
     const work = computeALInboundWorkEntry({
         signsForRecipient: false,
@@ -448,7 +456,15 @@ async function retainPendingUnderNamespace(db: IDBDatabase, namespace: string, e
         observer: createPassThroughIndexedDbOperationObserver()
     });
     const msg = decodeALDeadlinedMessage(
-        newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 })
+        newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'pending', contextId: 'room' },
+            toPeerId: 'recipient',
+            typeId: 'chat',
+            resource: {},
+            options: { ttlMs: 60_000 }
+        })
     );
     const work = computeALInboundWorkEntry({
         signsForRecipient: false,

@@ -85,7 +85,14 @@ it.each([
 });
 
 function toReceivedMessage(): RallarMessage<RallarMessagePayload> {
-    const raw = newALUnicastMessage('sender', { topicId: 'samples', contextId: 'room', resourceId: 'one' }, 'session-1', 'sample', { sequence: 7 });
+    const raw = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'samples', contextId: 'room', resourceId: 'one' },
+        toPeerId: 'session-1',
+        typeId: 'sample',
+        resource: { sequence: 7 }
+    });
     return {
         transport: 'rtc',
         senderId: 'sender',

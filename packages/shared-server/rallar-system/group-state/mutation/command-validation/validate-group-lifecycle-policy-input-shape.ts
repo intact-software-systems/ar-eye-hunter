@@ -66,7 +66,9 @@ const POLICY_FIELDS: readonly PolicyShapeField[] = [
             { key: 'replanning', kind: 'enum', values: ['auto', 'debounced', 'commanded'] },
             { key: 'reconfigureLanding', kind: 'enum', values: ['apply', 'hold'] },
             { key: 'debounceWindowMs', kind: 'number' },
-            { key: 'maxReplanWaitMs', kind: 'number' }
+            { key: 'maxReplanWaitMs', kind: 'number' },
+            { key: 'reshapeMinIntervalMs', kind: 'number' },
+            { key: 'reshapeMaxIntervalMs', kind: 'number' }
         ]
     },
     {

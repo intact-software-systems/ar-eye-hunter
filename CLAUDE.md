@@ -222,7 +222,7 @@ deleted architecture notes are not current authority.
 - **`packages/shared-graph`** — the only place `graphology` belongs. Topology generation, Vivaldi
   RTT helpers, graph CRDT.
 - **`packages/shared-test`** — `black-box-runner/` (provider-neutral JSON recipe runner: HTTP, WS,
-  RTC, ASSERT, SET, PARALLEL steps) and `rallar-bb-test/` (browser/control-agent recipe runtime).
+  RTC, ASSERT, SET, PARALLEL, SERVER steps) and `rallar-bb-test/` (browser/control-agent recipe runtime).
   It owns the black-box control protocol, distributed-run artifact contracts, and artifact analysis;
   `apps/rallar-black-box` only consumes them for UI/operator flows.
 - **`apps/api-v1`** — the generic Rallar Server shell (Bun + Hono + Prisma/Postgres). Owns auth,

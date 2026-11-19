@@ -169,18 +169,21 @@ export async function publishOrderedFromOrigin(input: OrderedOriginPublicationIn
     const sentBefore = origin.channels.r!.sent.length;
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId: `feed-${seq}`, contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            GRANTED_TYPE_ID,
-            { text: `feed ${seq}` },
             {
-                ack,
-                reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
-                ttlMs: 30_000,
-                traceId: `trace-feed-${seq}`,
-                orderingKey: ORDERED_TRACK_KEY,
-                seq
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: PUBLICATION_TOPIC_ID, resourceId: `feed-${seq}`, contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: GRANTED_TYPE_ID,
+                resource: { text: `feed ${seq}` },
+                options: {
+                    ack,
+                    reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                    ttlMs: 30_000,
+                    traceId: `trace-feed-${seq}`,
+                    orderingKey: ORDERED_TRACK_KEY,
+                    seq
+                }
             }
         ),
         'hold'

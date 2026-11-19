@@ -108,9 +108,17 @@ test('an inactive principal\'s row keeps co-members and drops the principal\'s o
 });
 
 test('a row naming no group and no principal keeps its candidates', async () => {
-    const message = newALUnicastMessage('alice', newALEventRoute('app.direct', 'direct', 'note'), 'bob', 'note.v1', { n: 1 }, {
-        reliability: 'at-least-once',
-        ack: 'receiver'
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'alice',
+        route: newALEventRoute('app.direct', 'direct', 'note'),
+        toPeerId: 'bob',
+        typeId: 'note.v1',
+        resource: { n: 1 },
+        options: {
+            reliability: 'at-least-once',
+            ack: 'receiver'
+        }
     });
 
     assert.deepEqual(await filterDurablyLiveWsSessionIds(durableInput(message, ['bob'])), ['bob']);
@@ -149,19 +157,35 @@ function createAuthority(liveSessionIds: readonly string[] = PRINCIPAL_IDS, room
 }
 
 function feedMessage(senderId: string, topicId = GRANTED_TOPIC): ALMessage {
-    return newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, 'feed'), 'room', 'feed.v1', { n: 1 }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 30_000
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, ROOM.groupId, 'feed'),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: { n: 1 },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 30_000
+        }
     });
 }
 
 /** A server's principal broadcast, as state sync addresses one: no room, only the principal. */
 function principalMessage(): ALMessage {
-    const base = newALBroadcastMessage(SERVER_PEER_ID, newALEventRoute('app.client-state', 'principal', 'event'), 'world', 'event.v1', {}, {
-        reliability: 'at-least-once',
-        ack: 'receiver'
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SERVER_PEER_ID,
+        route: newALEventRoute('app.client-state', 'principal', 'event'),
+        scope: 'world',
+        typeId: 'event.v1',
+        resource: {},
+        options: {
+            reliability: 'at-least-once',
+            ack: 'receiver'
+        }
     });
     return { ...base, targets: { mode: 'broadcast', scope: 'principal', principalRef: PRINCIPAL } };
 }

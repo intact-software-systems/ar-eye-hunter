@@ -55,9 +55,17 @@ describe('WS outbound callback deadline', () => {
                 callbacks.push('after-native');
             }
         });
-        const msg = newALUnicastMessage('self', { topicId: 'chat', contextId: 'room', resourceId: 'deadline' }, 'peer', 'chat', {}, {
-            ttlMs: 1_000,
-            qos: { durability: { algo: 'volatile' }, retry: { algo: 'none' } }
+        const msg = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'deadline' },
+            toPeerId: 'peer',
+            typeId: 'chat',
+            resource: {},
+            options: {
+                ttlMs: 1_000,
+                qos: { durability: { algo: 'volatile' }, retry: { algo: 'none' } }
+            }
         });
         const pending = service.enqueueOutboxIfAbsent(msg);
         await entered.promise;

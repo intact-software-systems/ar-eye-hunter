@@ -1,7 +1,7 @@
 import type { ManagedApiServerLifecycleControls } from '../managed-api/with-managed-api-server-plans.mts';
 
 export async function withManagedApiServerSuspended<T>(
-    controls: ManagedApiServerLifecycleControls,
+    controls: Pick<ManagedApiServerLifecycleControls, 'suspend' | 'resume'>,
     port: number,
     run: () => Promise<T>
 ): Promise<T> {

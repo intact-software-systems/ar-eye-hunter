@@ -335,7 +335,7 @@ class DeliveryLane {
                 throw new Error('The delivery diagnostics pair elects no granted topic.');
             },
             submitControl: async () => undefined,
-            injectFault: async () => undefined,
+            injectFault: async () => ({ drop: 0, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }),
             readStorageCounters: async () => ({ total: 0, byOwner: { 'al-admission': 0, 'al-work': 0 }, byKind: {} }),
             readAlmUsage: async () => undefined,
             readCongestionCounters: async () => undefined,

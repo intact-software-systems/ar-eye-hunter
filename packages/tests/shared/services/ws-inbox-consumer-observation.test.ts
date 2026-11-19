@@ -237,7 +237,7 @@ it('observes a returned RTC receiver when that receiver catches its native callb
     const fixture = createConsumerFixture({ sinkThrows: true });
     const original = new Error('private native callback failure');
     let calls = 0;
-    const transport = new WsRtcSignalingTransportUsingWsQBox(fixture.service, 'rtc-signaling');
+    const transport = new WsRtcSignalingTransportUsingWsQBox(fixture.service, 'rtc-signaling', Date.now);
     const connected = transport.connect({
         sessionId: 'receiver',
         token: 'test-token',

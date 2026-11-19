@@ -156,10 +156,13 @@ test('PGlite composed queue leases keep an AppInbox claim for 60 s and an outbox
 
 function toLeaseMessage(type: string, requestId: string): ALMessage {
     return newALUntargetedMessage(
-        SERVICE_ID,
-        newALRoute(CLIENT_STATE_APP_INBOX_TOPIC, 'lease-client', requestId),
-        type,
-        { requestId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: SERVICE_ID,
+            route: newALRoute(CLIENT_STATE_APP_INBOX_TOPIC, 'lease-client', requestId),
+            typeId: type,
+            resource: { requestId }
+        }
     );
 }
 

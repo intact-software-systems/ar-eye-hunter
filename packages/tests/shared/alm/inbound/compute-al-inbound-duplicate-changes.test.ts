@@ -125,12 +125,15 @@ interface RepeatedAck {
 /** A `receiver` room multicast its origin froze to this peer alone; a `seq` orders it on the sender's feed track. */
 function createFrozenReceiverMessage(msgId: string, seq?: number): ALMessage {
     const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
-        ROOM,
-        'room.feed.v1',
-        { text: msgId },
-        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'room.feed.v1',
+            resource: { text: msgId },
+            options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
+        }
     );
     return {
         ...message,
@@ -142,12 +145,15 @@ function createFrozenReceiverMessage(msgId: string, seq?: number): ALMessage {
 /** A room message acknowledged by every logical recipient, the shape a relay forwards down the RTC tree. */
 function createRelayedMessage(msgId: string): ALMessage {
     const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-        'chat.message.v1',
-        { text: msgId },
-        { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            typeId: 'chat.message.v1',
+            resource: { text: msgId },
+            options: { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
@@ -231,16 +237,19 @@ function toRetriedHopCopy(msg: ALMessage): ALMessage {
 /** A room unicast acknowledged by its addressee, relayed by this peer toward it. */
 function createRelayedUnicast(msgId: string, toPeerId: string): ALMessage {
     const message = newALUnicastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        toPeerId,
-        'chat.message.v1',
-        { text: msgId },
         {
-            reliability: 'at-least-once',
-            ack: 'all-logical-recipients',
-            ttlMs: 60_000,
-            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+            toPeerId,
+            typeId: 'chat.message.v1',
+            resource: { text: msgId },
+            options: {
+                reliability: 'at-least-once',
+                ack: 'all-logical-recipients',
+                ttlMs: 60_000,
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
+            }
         }
     );
     return { ...message, id: { ...message.id, msgId } };

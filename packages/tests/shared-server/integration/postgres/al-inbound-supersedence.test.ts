@@ -157,12 +157,15 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
 
 function createMessage(senderId: string, version: number, supersedenceKey = 'shared-topic'): ALMessage {
     const message = newALUnicastMessage(
-        senderId,
-        { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
-        'receiver',
-        'latest-value.v1',
-        { version },
-        { qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, supersedence: { algo: 'latest-wins', opts: { supersedenceKey } } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
+            toPeerId: 'receiver',
+            typeId: 'latest-value.v1',
+            resource: { version },
+            options: { qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, supersedence: { algo: 'latest-wins', opts: { supersedenceKey } } } }
+        }
     );
     const createdTs = Date.now() - 1_000 + version;
     return { ...message, id: { ...message.id, ts: createdTs }, audit: { ...message.audit, createdTs } };

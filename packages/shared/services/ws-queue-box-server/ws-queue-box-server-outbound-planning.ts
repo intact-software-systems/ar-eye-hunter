@@ -28,7 +28,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
+import { toProofPreservingALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
@@ -148,7 +148,7 @@ export class WsQueueBoxServerOutboundPlanning {
         request: WsQueueBoxServerOutboundPlanning.Request
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
         const normalized = this.resolvePolicy(request.message);
-        const message = toALOutboundMessage(request.message, normalized.effective);
+        const message = toProofPreservingALOutboundMessage(request.message, normalized.effective);
         const issues = validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey);
         if (issues.length > 0) {
             return {

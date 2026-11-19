@@ -572,15 +572,18 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         await onInboxMessage?.(
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(
-                    AppTopics.groupDirectorySnapshot,
-                    'room-a',
-                    'room-a'
-                ),
-                'all',
-                AppTopics.groupDirectorySnapshot,
-                incoming
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(
+                        AppTopics.groupDirectorySnapshot,
+                        'room-a',
+                        'room-a'
+                    ),
+                    scope: 'all',
+                    typeId: AppTopics.groupDirectorySnapshot,
+                    resource: incoming
+                }
             )
         );
 
@@ -664,13 +667,16 @@ describe('browser state cache lifecycle scope filtering', () => {
 
         await onInboxMessage?.(
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-1'),
-                'room',
-                AppTopics.overlayTopology,
-                topology,
                 {
-                    groupRef: groupSnapshot.group
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-1'),
+                    scope: 'room',
+                    typeId: AppTopics.overlayTopology,
+                    resource: topology,
+                    options: {
+                        groupRef: groupSnapshot.group
+                    }
                 }
             )
         );
@@ -698,22 +704,28 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
         await onInboxMessage?.(
             newALBroadcastMessage(
-                'server-2',
-                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-2'),
-                'room',
-                AppTopics.overlayTopology,
-                removed,
-                { groupRef: groupSnapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-2',
+                    route: newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-2'),
+                    scope: 'room',
+                    typeId: AppTopics.overlayTopology,
+                    resource: removed,
+                    options: { groupRef: groupSnapshot.group }
+                }
             )
         );
         await onInboxMessage?.(
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-stale'),
-                'room',
-                AppTopics.overlayTopology,
-                topology,
-                { groupRef: groupSnapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-stale'),
+                    scope: 'room',
+                    typeId: AppTopics.overlayTopology,
+                    resource: topology,
+                    options: { groupRef: groupSnapshot.group }
+                }
             )
         );
 
@@ -770,24 +782,30 @@ describe('browser state cache lifecycle scope filtering', () => {
         }
 
         await receive(newALBroadcastMessage(
-            'server-a',
-            newALEventRoute(AppTopics.overlayTopology, group.group.groupId, 'topology'),
-            'room',
-            AppTopics.overlayTopology,
-            topology,
-            { groupRef: group.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALEventRoute(AppTopics.overlayTopology, group.group.groupId, 'topology'),
+                scope: 'room',
+                typeId: AppTopics.overlayTopology,
+                resource: topology,
+                options: { groupRef: group.group }
+            }
         ));
         expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
 
         // The retired topic must be ignored before payload decoding, so this
         // sentinel is intentionally not a valid historical graph snapshot.
         await receive(newALBroadcastMessage(
-            'server-a',
-            newALEventRoute('graphs', group.group.groupId, 'graph'),
-            'room',
-            'graphs',
-            { intentionallyInvalid: true },
-            { groupRef: group.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALEventRoute('graphs', group.group.groupId, 'graph'),
+                scope: 'room',
+                typeId: 'graphs',
+                resource: { intentionallyInvalid: true },
+                options: { groupRef: group.group }
+            }
         ));
         expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
 
@@ -872,16 +890,19 @@ describe('browser state cache lifecycle scope filtering', () => {
 
             await receive(withTopologyMessageId(
                 newALBroadcastMessage(
-                    'server-a',
-                    newALEventRoute(
-                        AppTopics.overlayTopology,
-                        groupSnapshot.group.groupId,
-                        'historical-topology'
-                    ),
-                    'room',
-                    AppTopics.overlayTopology,
-                    historical,
-                    { groupRef: groupSnapshot.group }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'server-a',
+                        route: newALEventRoute(
+                            AppTopics.overlayTopology,
+                            groupSnapshot.group.groupId,
+                            'historical-topology'
+                        ),
+                        scope: 'room',
+                        typeId: AppTopics.overlayTopology,
+                        resource: historical,
+                        options: { groupRef: groupSnapshot.group }
+                    }
                 ),
                 JSON.stringify(['rtc-topology-publication', 'historical-work'])
             ));
@@ -1016,21 +1037,27 @@ describe('browser state cache lifecycle group changes for diagnostics', () => {
     function newDeltaMessage(resulting: ReturnType<typeof createRoomSnapshot>, predecessor: number): ALMessage {
         const envelope = createGroupStateDeltaEnvelope(resulting, { groupRevision: predecessor, presenceRevision: predecessor });
         return newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.groupStateEvent, 'room-applied', envelope.event.eventId),
-            'all',
-            AppTopics.groupStateEvent,
-            envelope
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.groupStateEvent, 'room-applied', envelope.event.eventId),
+                scope: 'all',
+                typeId: AppTopics.groupStateEvent,
+                resource: envelope
+            }
         );
     }
 
     function newDirectorySnapshotMessage(snapshot: ReturnType<typeof createRoomSnapshot>): ALMessage {
         return newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.groupDirectorySnapshot, 'room-applied', 'room-applied'),
-            'all',
-            AppTopics.groupDirectorySnapshot,
-            snapshot
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.groupDirectorySnapshot, 'room-applied', 'room-applied'),
+                scope: 'all',
+                typeId: AppTopics.groupDirectorySnapshot,
+                resource: snapshot
+            }
         );
     }
 

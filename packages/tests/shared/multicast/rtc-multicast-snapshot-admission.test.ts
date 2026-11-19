@@ -314,11 +314,27 @@ function createDefaultSnapshotAdmissionManager(
 function createRoomMessage(mode: 'multicast' | 'broadcast'): ALMessage {
     const route = { topicId: 'chat', contextId: 'room-1', resourceId: 'rtc-message' };
     if (mode === 'multicast') {
-        return newALMulticastMessage('peer-1', route, roomRef, 'chat.message', { text: 'hello' }, { minSnapshotVersion: 2 });
+        return newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route,
+            groupRef: roomRef,
+            typeId: 'chat.message',
+            resource: { text: 'hello' },
+            options: { minSnapshotVersion: 2 }
+        });
     }
-    return newALBroadcastMessage('peer-1', route, 'room', 'chat.message', { text: 'hello' }, {
-        groupRef: roomRef,
-        minSnapshotVersion: 2
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route,
+        scope: 'room',
+        typeId: 'chat.message',
+        resource: { text: 'hello' },
+        options: {
+            groupRef: roomRef,
+            minSnapshotVersion: 2
+        }
     });
 }
 

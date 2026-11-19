@@ -328,6 +328,7 @@ describe('a send its carrier refuses congested', () => {
             action: 'hand-over',
             priority: 0,
             msgId: handle.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-hand-over',
             corrId: 'corr-hand-over'
         }]);

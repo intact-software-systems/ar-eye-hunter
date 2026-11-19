@@ -33,7 +33,7 @@ describe('a members send on a declared granted topic naming no room', () => {
         const undeclared = toMessage(fixture.context.session.sessionId, 'app.chat');
 
         const [refused, carried] = await Promise.all([declared, undeclared].map(async (message) => {
-            const handle = fixture.deliveries.open(message, carrier);
+            const handle = fixture.deliveries.open({ message: message, carrier: carrier, readDeadlineEpochMs: Date.now });
             fixture.dispatch.send(toMembersDelivery(fixture.context, message, carrier));
             return (await handle.wait({ until: ['queued'] })).lifecycle;
         }));
@@ -55,7 +55,12 @@ function createGrantedDispatchFixture(): GrantedDispatchFixture {
     const context = createDefaultApiMiddlewareTestDouble({
         middleware: { webSocketQueueBox: admit('ws'), rtcRxStreamer: admit('rtc') }
     });
-    const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 100, maxEntries: 8, cancel: () => {} });
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 100,
+        maxEntries: 8,
+        cancel: () => {}
+    });
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
         readMiddleware: () => context,
@@ -70,8 +75,7 @@ function createGrantedDispatchFixture(): GrantedDispatchFixture {
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => undefined,
         grantedTopics
     });
@@ -99,15 +103,31 @@ function toMembersDelivery(
 }
 
 function toWorldBroadcast(senderId: string, topicId: string): ALMessage {
-    return newALBroadcastMessage(senderId, { topicId, contextId: 'all', resourceId: 'one' }, 'world', 'feed.v1', {}, {
-        ack: 'none',
-        ttlMs: 30_000
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: { topicId, contextId: 'all', resourceId: 'one' },
+        scope: 'world',
+        typeId: 'feed.v1',
+        resource: {},
+        options: {
+            ack: 'none',
+            ttlMs: 30_000
+        }
     });
 }
 
 function toRoomlessUnicast(senderId: string, topicId: string): ALMessage {
-    return newALUnicastMessage(senderId, { topicId, contextId: 'all', resourceId: 'one' }, 'peer-b', 'feed.v1', {}, {
-        ack: 'none',
-        ttlMs: 30_000
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: { topicId, contextId: 'all', resourceId: 'one' },
+        toPeerId: 'peer-b',
+        typeId: 'feed.v1',
+        resource: {},
+        options: {
+            ack: 'none',
+            ttlMs: 30_000
+        }
     });
 }

@@ -203,15 +203,18 @@ async function respondToDurableCatchUpRequest(
         peerId: input.context.senderId,
         scope,
         message: newALUntargetedMessage(
-            input.context.service.name,
-            newALEventRoute(
-                input.accepted.raw.route.topicId,
-                input.accepted.raw.route.contextId,
-                input.accepted.envelope.requestId
-            ),
-            RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
-            response,
-            { traceId: input.accepted.raw.id.traceId }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: input.context.service.name,
+                route: newALEventRoute(
+                    input.accepted.raw.route.topicId,
+                    input.accepted.raw.route.contextId,
+                    input.accepted.envelope.requestId
+                ),
+                typeId: RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
+                resource: response,
+                options: { traceId: input.accepted.raw.id.traceId }
+            }
         ),
         fanout: 'live-only'
     });

@@ -6,7 +6,14 @@ import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-deliver
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { writeALOutboundRelayForwardDiagnostic } from '@shared/alm/outbound/lane/write-al-outbound-relay-forward-diagnostic.ts';
 
-const FORWARDED = newALUnicastMessage('a', newALRoute('chat', 'room-1', 'room'), 'c', 'chat.message.v1', {});
+const FORWARDED = newALUnicastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'a',
+    route: newALRoute('chat', 'room-1', 'room'),
+    toPeerId: 'c',
+    typeId: 'chat.message.v1',
+    resource: {}
+});
 
 function writeVerdict(verdict: ALDeliveryAdmissionVerdict): readonly ALOutboundRuntimeDiagnosticsEvent[] {
     const events: ALOutboundRuntimeDiagnosticsEvent[] = [];

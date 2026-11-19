@@ -144,8 +144,7 @@ export function createDefaultRtcPublicationProofVerifier(
 ): RtcPublicationProofVerifier {
     return new RtcPublicationProofVerifier({
         crypto: toPublicationVerificationCrypto(foundation.subtle),
-        findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
-        nowEpochMs: Date.now
+        findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef)
     });
 }
 

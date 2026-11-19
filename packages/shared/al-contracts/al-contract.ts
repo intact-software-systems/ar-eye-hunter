@@ -88,7 +88,7 @@ export interface ALForwarding {
 
 export interface ALConstraints {
     readonly ttlHops?: number; // remaining hops; decremented by forwarders
-    readonly expiresAtMs?: number; // wall-clock expiry; drop if now > expiresAtMs
+    readonly expiresAtMs?: number; // wall-clock expiry; drop if now >= expiresAtMs
 }
 
 // -------------------------------------------------------
@@ -192,30 +192,41 @@ interface ALMessageBuilderOptions {
     readonly traceId?: string;
 }
 
-export interface ALBroadcastMessageBuilderOptions {
-    readonly exceptPeerIds?: readonly string[];
-    readonly minSnapshotVersion?: number;
-    readonly rosterVersion?: number;
-    readonly ttlHops?: number;
-    readonly ttlMs?: number;
+interface ALTargetedMessageBuilderOptions extends ALMessageBuilderOptions {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    readonly qos?: ALQosPolicyRequest;
-    readonly actions?: ALActions;
-    readonly traceId?: string;
+}
+
+interface ALUnicastMessageBuilderOptions extends ALTargetedMessageBuilderOptions {
+    readonly groupRef?: GroupRef;
+}
+
+interface ALRoomMessageBuilderOptions extends ALTargetedMessageBuilderOptions {
+    readonly minSnapshotVersion?: number;
+    readonly rosterVersion?: number;
+    readonly ttlHops?: number;
+}
+
+interface ALMulticastMessageBuilderOptions extends ALRoomMessageBuilderOptions {
+    readonly seq?: number;
+    readonly orderingKey?: string;
+    readonly nextHopPeerIds?: readonly string[];
+    readonly overlayId?: string;
+    readonly fanoutLimit?: number;
+}
+
+export interface ALBroadcastMessageBuilderOptions extends ALRoomMessageBuilderOptions {
+    readonly exceptPeerIds?: readonly string[];
     /** A sequence left out is minted by the WS server's outbound for its own publication. */
     readonly ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
 }
 
-type ALUnicastMessageBuilderOptions =
-    & ALMessageBuilderOptions
-    & Readonly<{
-        groupRef?: GroupRef;
-        reliability?: 'best-effort' | 'at-least-once';
-        ack?: ALAckMode;
-        ownership?: 'shared' | 'exclusive';
-    }>;
+interface ALScopedBroadcastMessageBuilderOptions extends ALBroadcastMessageBuilderOptions {
+    readonly groupRef?: GroupRef;
+    /** Room scope only: every recipient belongs to the same room. */
+    readonly recipientPeerIds?: readonly string[];
+}
 
 export function newALRoute(
     topicId: string,
@@ -237,25 +248,28 @@ export function newALEventRoute(
     return newALRoute(topicId, contextId, resourceId);
 }
 
-function buildALMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    typeId: string,
-    resource: T,
-    options?: ALMessageBuilderOptions,
-    msgId: string = crypto.randomUUID()
+interface ALMessageBuilderInput<T, Options extends ALMessageBuilderOptions = ALMessageBuilderOptions> {
+    readonly senderId: string;
+    readonly createdAtEpochMs: number;
+    readonly route: ALRoute;
+    readonly typeId: string;
+    readonly resource: T;
+    readonly options?: Options;
+}
+
+export function newALUntargetedMessage<T>(
+    { senderId, createdAtEpochMs, route, typeId, resource, options }: ALMessageBuilderInput<T>
 ): ALMessage {
-    const now = Date.now();
     const expiresAtMs = options?.ttlMs !== undefined
-        ? now + options.ttlMs
+        ? createdAtEpochMs + options.ttlMs
         : undefined;
 
     return {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
-            msgId,
-            ts: now,
-            senderId: senderId,
+            msgId: crypto.randomUUID(),
+            ts: createdAtEpochMs,
+            senderId,
             traceId: options?.traceId ?? newALTraceId()
         },
         route,
@@ -265,37 +279,23 @@ function buildALMessage<T>(
         qos: options?.qos,
         ...(options?.actions === undefined ? {} : { actions: options.actions }),
         payload: {
-            typeId: typeId,
+            typeId,
             contentType: 'application/json',
             resource: JSON.stringify(resource)
         },
         audit: {
             createdBy: senderId,
-            createdTs: now
+            createdTs: createdAtEpochMs
         }
     };
 }
 
-export function newALUntargetedMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    typeId: string,
-    resource: T,
-    options?: ALMessageBuilderOptions
-): ALMessage {
-    return buildALMessage(senderId, route, typeId, resource, options);
-}
-
 export function newALUnicastMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    toPeerId: string,
-    typeId: string,
-    resource: T,
-    options?: ALUnicastMessageBuilderOptions
+    input: ALMessageBuilderInput<T, ALUnicastMessageBuilderOptions> & Readonly<{ toPeerId: string; }>
 ): ALMessage {
+    const { toPeerId, options } = input;
     return {
-        ...newALUntargetedMessage(senderId, route, typeId, resource, options),
+        ...newALUntargetedMessage(input),
         targets: options?.groupRef === undefined
             ? { mode: 'unicast', toPeerId }
             : { mode: 'unicast', toPeerId, groupRef: toCanonicalGroupRef(options.groupRef) },
@@ -312,35 +312,10 @@ export function newALUnicastMessage<T>(
 }
 
 export function newALMulticastMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    groupRef: GroupRef,
-    typeId: string,
-    resource: T,
-    options?: Readonly<{
-        minSnapshotVersion?: number;
-        rosterVersion?: number;
-        ttlHops?: number;
-        ttlMs?: number;
-        seq?: number;
-        orderingKey?: string;
-        reliability?: 'best-effort' | 'at-least-once';
-        ack?: ALAckMode;
-        ownership?: 'shared' | 'exclusive';
-        nextHopPeerIds?: readonly string[];
-        overlayId?: string;
-        fanoutLimit?: number;
-        qos?: ALQosPolicyRequest;
-        actions?: ALActions;
-        traceId?: string;
-    }>
+    input: ALMessageBuilderInput<T, ALMulticastMessageBuilderOptions> & Readonly<{ groupRef: GroupRef; }>
 ): ALMessage {
-    const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
-        qos: options?.qos,
-        ttlMs: options?.ttlMs,
-        actions: options?.actions,
-        traceId: options?.traceId
-    });
+    const { groupRef, options } = input;
+    const untargeted = newALUntargetedMessage(input);
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
     const targetGroupRef = toCanonicalGroupRef(groupRef);
 
@@ -429,28 +404,13 @@ export function readALTargetGroupRef(message: Pick<ALMessage, 'targets'>): Group
 }
 
 export function newALBroadcastMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    scope: 'room' | 'world' | 'all',
-    typeId: string,
-    resource: T,
-    options?:
-        & ALBroadcastMessageBuilderOptions
-        & Readonly<{
-            groupRef?: GroupRef;
-            /** Room scope only: the canonical decoder refuses a list with another scope as malformed. */
-            recipientPeerIds?: readonly string[];
-        }>
+    input: ALMessageBuilderInput<T, ALScopedBroadcastMessageBuilderOptions> & Readonly<{ scope: 'room' | 'world' | 'all'; }>
 ): ALMessage {
+    const { scope, options } = input;
     const groupRef = scope === 'room' && options?.groupRef !== undefined
         ? toCanonicalGroupRef(options.groupRef)
         : undefined;
-    const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
-        qos: options?.qos,
-        ttlMs: options?.ttlMs,
-        actions: options?.actions,
-        traceId: options?.traceId
-    });
+    const untargeted = newALUntargetedMessage(input);
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
 
     return {
@@ -492,13 +452,11 @@ export interface ALPrincipalBroadcastTarget {
 
 /** A broadcast to the principal's live sessions in one room: room-bounded, so both carriers resolve it from the room. */
 export function newALPrincipalBroadcastMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    target: ALPrincipalBroadcastTarget,
-    typeId: string,
-    resource: T,
-    options?: ALBroadcastMessageBuilderOptions
+    input:
+        & ALMessageBuilderInput<T, ALBroadcastMessageBuilderOptions>
+        & Readonly<{ target: ALPrincipalBroadcastTarget; }>
 ): ALMessage {
-    const roomBroadcast = newALBroadcastMessage(senderId, route, 'room', typeId, resource, options);
+    const { target, options } = input;
+    const roomBroadcast = newALBroadcastMessage({ ...input, scope: 'room' });
     return { ...roomBroadcast, targets: toALPrincipalBroadcastTargets(target, options) };
 }

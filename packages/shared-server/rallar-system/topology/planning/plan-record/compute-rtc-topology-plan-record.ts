@@ -6,6 +6,7 @@ import {
     type TopologyLayoutDelta,
     type TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { computeLongestHopPath } from './compute-longest-hop-path.ts';
 import { computeTopologyLayoutDelta } from './compute-topology-layout-delta.ts';
@@ -18,6 +19,7 @@ export interface ComputeRtcTopologyPlanRecordInput {
     readonly rttRefresh: boolean;
     readonly changeGated: boolean;
     readonly derivation: RtcTopologyPlanDerivation;
+    readonly heldReshapeReasons: readonly HeldTopologyReshapeReason[];
     readonly nowEpochMs: number;
 }
 
@@ -50,7 +52,8 @@ export function computeRtcTopologyPlanRecord(input: ComputeRtcTopologyPlanRecord
         }),
         delta,
         longestPathHops: computeLongestHopPath(planned),
-        change: resolveTopologyPlanChange(input.derivation, delta)
+        change: resolveTopologyPlanChange(input.derivation, delta),
+        heldReshapeReasons: input.heldReshapeReasons
     };
 }
 

@@ -13,12 +13,15 @@ interface MalformedPriorSeqs {
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 const ORDERED: ALMessage = newALBroadcastMessage(
-    'server',
-    newALRoute('room.app.event', 'room-1', 'game-1:2'),
-    'room',
-    'app.event.v1',
-    {},
-    { groupRef: ROOM, ordering: { orderingKey: 'game-1', epoch: 2, seq: 5 } }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: newALRoute('room.app.event', 'room-1', 'game-1:2'),
+        scope: 'room',
+        typeId: 'app.event.v1',
+        resource: {},
+        options: { groupRef: ROOM, ordering: { orderingKey: 'game-1', epoch: 2, seq: 5 } }
+    }
 );
 
 function withPriorSeqs(priorSeqByRecipient: PersistedALValue): object {

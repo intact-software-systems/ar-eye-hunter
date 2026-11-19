@@ -54,12 +54,15 @@ function holdAtHighWatermark(captured: CapturedChannel): void {
 
 function createBestEffortMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { reliability: 'best-effort', ack: 'none', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { reliability: 'best-effort', ack: 'none', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+        }
     );
 }
 
@@ -67,12 +70,15 @@ const REJECT_UNDER_CONGESTION: ALQosPolicyRequest = { congestion: { algo: 'rejec
 
 function createRejectingMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000, qos: REJECT_UNDER_CONGESTION }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000, qos: REJECT_UNDER_CONGESTION }
+        }
     );
 }
 
@@ -125,6 +131,7 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
             action: 'drop',
             priority: 0,
             msgId: message.id.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-every-hop-full',
             corrId: message.id.msgId
         }]);
@@ -179,7 +186,7 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
 
         expect(verdict.kind).toBe('admitted');
         expect(fixture.channels.b!.sent).toEqual([]);
-        const trace = { traceId: 'trace-deferred', corrId: message.id.msgId };
+        const trace = { atMs: expect.any(Number), traceId: 'trace-deferred', corrId: message.id.msgId };
         expect(readCongestion(fixture)).toEqual([
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 5, msgId: message.id.msgId, ...trace },
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 5, msgId: message.id.msgId, ...trace }

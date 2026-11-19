@@ -52,6 +52,9 @@ const admittingPlanner: OutboundTestPlanner = (msg) => ({
     preparedMessages: [{ kind: 'send' }]
 });
 
+/** Read once: the runtime's clock stands still here, before every message's deadline. */
+const RUNTIME_NOW_MS = Date.now();
+
 interface ObservedRuntimeInput {
     readonly carrier: ALDeliveryCarrier;
     readonly planOutgoingMessage: OutboundTestPlanner;
@@ -65,6 +68,8 @@ function createObservedRuntime(input: ObservedRuntimeInput) {
         volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, input.budget),
         planOutgoingMessage: input.planOutgoingMessage,
         diagnostics: input.diagnostics,
+        // A fixed runtime clock, so a congestion decision's instant is the clock's reading and not a guess.
+        nowMs: () => RUNTIME_NOW_MS,
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 }
@@ -98,6 +103,7 @@ describe('the congestion decision of an outbound admission', () => {
             action: 'drop',
             priority: 0,
             msgId: message.id.msgId,
+            atMs: RUNTIME_NOW_MS,
             traceId: 'trace-congested',
             corrId: message.id.msgId
         }]);

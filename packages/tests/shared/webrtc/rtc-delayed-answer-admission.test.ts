@@ -52,7 +52,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         outboundStores,
         inboundDiagnostics: (event) => diagnostics.push(event)
     }).enableDefaultCallbacks();
-    const connectionService = new WebRtcConnectionService(new WsRtcSignalingTransportUsingWsQBox(queueBoxClient, 'rtc'), {
+    const connectionService = new WebRtcConnectionService(new WsRtcSignalingTransportUsingWsQBox(queueBoxClient, 'rtc', Date.now), {
         sessionId: 'receiver',
         token: 'test-token',
         dataChannelName: 'room',
@@ -96,7 +96,14 @@ it('settles an answer delayed by admission conflict without applying it to a rep
     connectionService.ensurePeerConnectionStarted('sender', true);
     const oldNative = nativeRuntime.createdConnections[0];
     await oldNative.onnegotiationneeded?.call(oldNative, new Event('negotiationneeded'));
-    socket.receive(JSON.stringify(newALUnicastMessage('sender', newALEventRoute('blocker', 'receiver'), 'receiver', 'blocker', null)));
+    socket.receive(JSON.stringify(newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: newALEventRoute('blocker', 'receiver'),
+        toPeerId: 'receiver',
+        typeId: 'blocker',
+        resource: null
+    })));
     await blockerStarted.promise;
     setNextInboundCommitConflicted(inboundStores.admissionStore);
     socket.receive(toAnswerEnvelope('delayed-answer', 'old-answer', 'offer-1'));
@@ -130,16 +137,23 @@ it('settles an answer delayed by admission conflict without applying it to a rep
 });
 
 function toAnswerEnvelope(messageId: string, sdp: string, offerId: string): string {
-    const message = newALUnicastMessage('sender', newALEventRoute('rtc', 'receiver'), 'receiver', 'rtc', {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: 'sender',
-        toId: 'receiver',
-        sessionId: 'sender',
-        token: 'test-token',
-        signalType: 'Answer',
-        offerId,
-        payload: { description: { type: 'answer', sdp }, candidate: null }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: newALEventRoute('rtc', 'receiver'),
+        toPeerId: 'receiver',
+        typeId: 'rtc',
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'sender',
+            toId: 'receiver',
+            sessionId: 'sender',
+            token: 'test-token',
+            signalType: 'Answer',
+            offerId,
+            payload: { description: { type: 'answer', sdp }, candidate: null }
+        }
     });
     return JSON.stringify({ ...message, id: { ...message.id, msgId: messageId } });
 }

@@ -28,6 +28,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { readBrowserServerExpiryEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
@@ -84,7 +85,6 @@ export namespace BrowserRallarMessageDispatch {
         readonly sessionDeliveries: BrowserSessionDeliveries;
         /** Built before `deliveries`, whose cancel reaches them before the carriers (D479); its owner stops them at session end. */
         readonly publicationStages: BrowserPublicationStages;
-        readonly nowMs: () => number;
         /** The session principal's effective permissions on a topic in the room's cached snapshot; none cached, undefined. */
         readPublicationPermissions(roomRef: GroupRef, topicId: string): GroupPublicationTopicPermissions | undefined;
         /** A lane send on a granted topic is a granted delivery as a granted channel's send is. */
@@ -117,7 +117,7 @@ export class BrowserRallarMessageDispatch {
             this.input.publicationStages.stage({
                 delivery: { ...delivery, publication },
                 epoch,
-                writeLeg: async () => await this.writeLeg(delivery, epoch, undefined)
+                writeLeg: async () => await this.writeLeg(delivery, epoch, this.readAdmissionRefusal(delivery))
             });
             return;
         }
@@ -161,7 +161,7 @@ export class BrowserRallarMessageDispatch {
                     msgId: delivery.message.id.msgId,
                     traceId: delivery.message.id.traceId,
                     carrier: delivery.carrier,
-                    atMs: this.input.nowMs(),
+                    atMs: delivery.context.serverTime.readWorkEpochMs(),
                     verdict: { kind: 'failed', detail: toError(caught).message },
                     trackedReceiptAlgo: 'none'
                 });
@@ -186,12 +186,18 @@ export class BrowserRallarMessageDispatch {
         const admission = this.toCarrierAdmission(delivery, result);
         this.watchFallbackLeg(delivery, result, lifetime);
         if (result.durabilityDowngrade !== undefined) {
-            sink(toDurabilityDowngradeSettlement(admission, result.durabilityDowngrade, this.input.nowMs()));
+            sink(
+                toDurabilityDowngradeSettlement(
+                    admission,
+                    result.durabilityDowngrade,
+                    delivery.context.serverTime.readWorkEpochMs()
+                )
+            );
         }
-        sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
+        sink(toCarrierAdmissionSettlement(admission, delivery.context.serverTime.readWorkEpochMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
-            writeCongestionHandOverDiagnostic(delivery, result);
+            writeCongestionHandOverDiagnostic(delivery, result, delivery.context.serverTime.readWorkEpochMs());
             const fallback: BrowserRallarMessageDispatch.Delivery = {
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
@@ -201,7 +207,7 @@ export class BrowserRallarMessageDispatch {
             await this.writeCapturedMessage(fallback, lifetime, this.readAdmissionRefusal(fallback));
             return;
         }
-        const end = toCarrierAdmissionEndSettlement(admission, this.input.nowMs());
+        const end = toCarrierAdmissionEndSettlement(admission, delivery.context.serverTime.readWorkEpochMs());
         if (end) {
             sink(end);
         }
@@ -248,7 +254,7 @@ export class BrowserRallarMessageDispatch {
                 ? computeFallbackDisposition(
                     result.verdict,
                     result.message.constraints?.expiresAtMs,
-                    this.input.nowMs()
+                    readBrowserServerExpiryEpochMs(delivery.context.serverTime)
                 )
                 : 'stop'
         };
@@ -295,7 +301,8 @@ export class BrowserRallarMessageDispatch {
                 });
             }
             if (
-                message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()
+                message.constraints?.expiresAtMs !== undefined &&
+                message.constraints.expiresAtMs <= readBrowserServerExpiryEpochMs(delivery.context.serverTime)
             ) {
                 return toUnadmittedAdmission(message, {
                     kind: 'expired',
@@ -356,7 +363,8 @@ export class BrowserRallarMessageDispatch {
  */
 function writeCongestionHandOverDiagnostic(
     delivery: BrowserRallarMessageDispatch.Delivery,
-    result: CapturedMessageAdmission
+    result: CapturedMessageAdmission,
+    atMs: number
 ): void {
     if (result.verdict.kind !== 'refused' || result.verdict.reason !== 'congested') {
         return;
@@ -368,6 +376,7 @@ function writeCongestionHandOverDiagnostic(
         action: 'hand-over',
         priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
         msgId: result.message.id.msgId,
+        atMs,
         ...toALMessageTrace(result.message)
     });
 }

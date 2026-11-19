@@ -13,6 +13,7 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { ALOutboundCongestionEpisodes } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -80,12 +81,15 @@ function roomSend(
     qos?: ALQosPolicyRequest
 ): ALMessage {
     return newALMulticastMessage(
-        'self',
-        { topicId: 'chat', resourceId, contextId: ROOM.groupId },
-        ROOM,
-        'chat.message.v1',
-        {},
-        { reliability, ack: 'none', ttlMs: 30_000, qos, traceId: `trace-${resourceId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { reliability, ack: 'none', ttlMs: 30_000, qos, traceId: `trace-${resourceId}` }
+        }
     );
 }
 
@@ -110,6 +114,13 @@ function acknowledgementOf(ackedMsgId: string, qos: ALQosPolicyRequest): ALMessa
 
 function readCongestion(client: BackpressureClient) {
     return client.diagnostics.filter((event) => event.kind === 'congestion');
+}
+
+function readCongestionEpisodes(client: BackpressureClient) {
+    const episodes = new ALOutboundCongestionEpisodes({ maxOpenEpisodes: 8 });
+    client.diagnostics.forEach((event) => episodes.recordDiagnostic(event));
+    client.settlements.forEach((settlement) => episodes.recordSettlement(settlement));
+    return episodes.readFigures();
 }
 
 function readNotReadyAttempts(client: BackpressureClient, msgId: string) {
@@ -143,6 +154,7 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
             action: 'drop',
             priority: 0,
             msgId: message.id.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-full-socket',
             corrId: message.id.msgId
         }]);
@@ -178,12 +190,20 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
             action: 'defer',
             priority: 5,
             msgId: message.id.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-deferred',
             corrId: message.id.msgId
         })));
         const fullSocketAttempts = readNotReadyAttempts(client, message.id.msgId)
             .filter((attempt) => attempt.detail === 'WS socket is backpressured');
         expect(congestion).toHaveLength(fullSocketAttempts.length);
+        // The carrier's own two streams make one congestion episode: its first deferral, on the diagnostics sink,
+        // to the attempt that wrote the frame, on the settlement sink. Both instants are the runtime clock's.
+        await expect.poll(() => readCongestionEpisodes(client)).toMatchObject({
+            openEpisodes: 0,
+            unrecordedSamples: 0,
+            durationMs: { count: 1 }
+        });
     });
 
     it('defers a reject-policy at-least-once send that meets a full socket when it is dequeued, never refusing it', async () => {

@@ -58,11 +58,14 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
         const message = {
             ...newALMulticastMessage(
-                'session-b',
-                newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-                workspaceB.group,
-                'chat.message.v1',
-                { text: 'workspace-b' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                    groupRef: workspaceB.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'workspace-b' }
+                }
             )
         };
 
@@ -90,13 +93,16 @@ describe('createGroupRoomWsAuthorizer', () => {
             readGroupSnapshot: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'workspace-b' },
             {
-                groupRef: workspaceB.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'workspace-b' },
+                options: {
+                    groupRef: workspaceB.group
+                }
             }
         );
 
@@ -124,8 +130,16 @@ describe('createGroupRoomWsAuthorizer', () => {
         const snapshot = { ...base, activeSessions: [...base.activeSessions, secondSession] };
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
         const message: ALMessage = {
-            ...newALBroadcastMessage('session-b', newALEventRoute('room.chat', 'principal-room', 'msg-principal'), 'room', 'chat.message.v1', {}, {
-                groupRef: snapshot.group
+            ...newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'principal-room', 'msg-principal'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    groupRef: snapshot.group
+                }
             }),
             targets: {
                 mode: 'broadcast',
@@ -164,8 +178,16 @@ describe('createGroupRoomWsAuthorizer', () => {
             snapshotVersion: 2
         });
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
-        const message = newALBroadcastMessage('session-a', newALEventRoute('room.chat', 'listed-room', 'msg-listed'), 'room', 'chat.message.v1', {}, {
-            groupRef: snapshot.group
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-a',
+            route: newALEventRoute('room.chat', 'listed-room', 'msg-listed'),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: snapshot.group
+            }
         });
         const listed: ALMessage = {
             ...message,
@@ -284,8 +306,16 @@ describe('createGroupRoomWsAuthorizer', () => {
             })
         });
         const members = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
-        const message = newALBroadcastMessage('session-a', newALEventRoute('room.command', 'leader-room', 'msg-granted'), 'room', 'command.v1', {}, {
-            groupRef: snapshot.group
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-a',
+            route: newALEventRoute('room.command', 'leader-room', 'msg-granted'),
+            scope: 'room',
+            typeId: 'command.v1',
+            resource: {},
+            options: {
+                groupRef: snapshot.group
+            }
         });
         const input = { ...leaderAuthorizationInput(message), senderId: 'session-a' };
 
@@ -341,14 +371,17 @@ describe('createGroupRoomWsAuthorizer', () => {
                 })
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'cold cache' },
             {
-                groupRef: group.group,
-                minSnapshotVersion: 3
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'cold cache' },
+                options: {
+                    groupRef: group.group,
+                    minSnapshotVersion: 3
+                }
             }
         );
 
@@ -408,13 +441,16 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
         const message = {
             ...newALMulticastMessage(
-                'session-b',
-                newALEventRoute('room.chat', 'shared-room', 'msg-2'),
-                currentGroup.group,
-                'chat.message.v1',
-                { text: 'refresh stale cache' },
                 {
-                    minSnapshotVersion: 4
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', 'shared-room', 'msg-2'),
+                    groupRef: currentGroup.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'refresh stale cache' },
+                    options: {
+                        minSnapshotVersion: 4
+                    }
                 }
             )
         };
@@ -468,13 +504,16 @@ describe('createGroupRoomWsAuthorizer', () => {
                 })
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'expired session' },
             {
-                groupRef: group.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'expired session' },
+                options: {
+                    groupRef: group.group
+                }
             }
         );
 
@@ -550,12 +589,15 @@ describe('createGroupRoomWsAuthorizer', () => {
             readGroupSnapshot: (ref) => currentService.readCurrentSnapshot(ref)
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', group.group.groupId, 'msg-stale-disconnect'),
-            'room',
-            'chat.message.v1',
-            { text: 'stale disconnect' },
-            { groupRef: group.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', group.group.groupId, 'msg-stale-disconnect'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'stale disconnect' },
+                options: { groupRef: group.group }
+            }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -600,12 +642,15 @@ describe('createGroupRoomWsAuthorizer', () => {
                     }
                 });
                 const message = newALBroadcastMessage(
-                    'session-b',
-                    newALEventRoute('room.chat', haltedSnapshot.group.groupId, `msg-halted-${lifecycleState}-${preActivationAppData}`),
-                    'room',
-                    'chat.message.v1',
-                    { text: 'halted' },
-                    { groupRef: haltedSnapshot.group }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'session-b',
+                        route: newALEventRoute('room.chat', haltedSnapshot.group.groupId, `msg-halted-${lifecycleState}-${preActivationAppData}`),
+                        scope: 'room',
+                        typeId: 'chat.message.v1',
+                        resource: { text: 'halted' },
+                        options: { groupRef: haltedSnapshot.group }
+                    }
                 );
 
                 await expect(Promise.resolve(authorizer({
@@ -642,12 +687,15 @@ describe('createGroupRoomWsAuthorizer', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.crdt', haltedSnapshot.group.groupId, 'msg-halted-crdt'),
-            'room',
-            'crdt.update.v1',
-            { update: 'halted document' },
-            { groupRef: haltedSnapshot.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.crdt', haltedSnapshot.group.groupId, 'msg-halted-crdt'),
+                scope: 'room',
+                typeId: 'crdt.update.v1',
+                resource: { update: 'halted document' },
+                options: { groupRef: haltedSnapshot.group }
+            }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -677,12 +725,15 @@ describe('createGroupRoomWsAuthorizer', () => {
                 readGroupSnapshot: () => snapshot
             });
             const message = newALBroadcastMessage(
-                'session-b',
-                newALEventRoute('room.chat', snapshot.group.groupId, `msg-${status}`),
-                'room',
-                'chat.message.v1',
-                { text: status },
-                { groupRef: snapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', snapshot.group.groupId, `msg-${status}`),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: status },
+                    options: { groupRef: snapshot.group }
+                }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -753,12 +804,15 @@ describe('createGroupRoomWsAuthorizer', () => {
                 nowEpochMs: () => 1
             });
             const message = newALBroadcastMessage(
-                'session-b',
-                newALEventRoute('room.chat', snapshot.group.groupId, `msg-${name}`),
-                'room',
-                'chat.message.v1',
-                { text: name },
-                { groupRef: snapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', snapshot.group.groupId, `msg-${name}`),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: name },
+                    options: { groupRef: snapshot.group }
+                }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -818,13 +872,16 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
         const message = {
             ...newALMulticastMessage(
-                'session-b',
-                newALEventRoute('room.chat', 'shared-room', 'msg-banned'),
-                currentGroup.group,
-                'chat.message.v1',
-                { text: 'refresh banned member' },
                 {
-                    minSnapshotVersion: 4
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', 'shared-room', 'msg-banned'),
+                    groupRef: currentGroup.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'refresh banned member' },
+                    options: {
+                        minSnapshotVersion: 4
+                    }
                 }
             )
         };
@@ -869,13 +926,16 @@ describe('createGroupRoomWsAuthorizer', () => {
             readGroupSnapshot: () => workspaceA
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-scope'),
-            'room',
-            'chat.message.v1',
-            { text: 'wrong scope' },
             {
-                groupRef: workspaceB.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-scope'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'wrong scope' },
+                options: {
+                    groupRef: workspaceB.group
+                }
             }
         );
 
@@ -905,12 +965,15 @@ describe('createGroupRoomWsAuthorizer', () => {
         });
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-behind'),
-            'room',
-            'chat.message.v1',
-            { text: 'roster behind' },
-            { groupRef: snapshot.group, minSnapshotVersion: 3, rosterVersion: 2 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-behind'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'roster behind' },
+                options: { groupRef: snapshot.group, minSnapshotVersion: 3, rosterVersion: 2 }
+            }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -942,12 +1005,15 @@ describe('createGroupRoomWsAuthorizer', () => {
         }).group;
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => undefined });
         const message = newALMulticastMessage(
-            'session-b',
-            newALEventRoute('room.chat', group.groupId, 'msg-roster-missing'),
-            group,
-            'chat.message.v1',
-            { text: 'roster missing' },
-            { rosterVersion: 2 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', group.groupId, 'msg-roster-missing'),
+                groupRef: group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'roster missing' },
+                options: { rosterVersion: 2 }
+            }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -983,12 +1049,15 @@ describe('createGroupRoomWsAuthorizer', () => {
         );
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
         const message = newALMulticastMessage(
-            'session-b',
-            newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-removed'),
-            snapshot.group,
-            'chat.message.v1',
-            { text: 'removed at the stamp' },
-            { minSnapshotVersion: 4, rosterVersion: 2 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-removed'),
+                groupRef: snapshot.group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'removed at the stamp' },
+                options: { minSnapshotVersion: 4, rosterVersion: 2 }
+            }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -1024,12 +1093,15 @@ describe('createGroupRoomWsAuthorizer', () => {
         const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
         for (const rosterVersion of [2, 3]) {
             const message = newALBroadcastMessage(
-                'session-b',
-                newALEventRoute('room.chat', snapshot.group.groupId, `msg-roster-${rosterVersion}`),
-                'room',
-                'chat.message.v1',
-                { text: 'current roster' },
-                { groupRef: snapshot.group, minSnapshotVersion: 5, rosterVersion }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-b',
+                    route: newALEventRoute('room.chat', snapshot.group.groupId, `msg-roster-${rosterVersion}`),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'current roster' },
+                    options: { groupRef: snapshot.group, minSnapshotVersion: 5, rosterVersion }
+                }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -1061,12 +1133,15 @@ describe('createGroupRoomWsAuthorizer', () => {
             readPreActivationAppData: () => 'blocked-until-active'
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', formingSnapshot.group.groupId, 'msg-forming'),
-            'room',
-            'chat.message.v1',
-            { text: 'before activation' },
-            { groupRef: formingSnapshot.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', formingSnapshot.group.groupId, 'msg-forming'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'before activation' },
+                options: { groupRef: formingSnapshot.group }
+            }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -1346,10 +1421,18 @@ function withDirector(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot
 }
 
 function leaderRoomMessage(snapshot: GroupSnapshot, senderId: string): ALMessage {
-    return newALBroadcastMessage(senderId, newALEventRoute('room.command', 'leader-room', 'msg-leader'), 'room', 'command.v1', {}, {
-        groupRef: snapshot.group,
-        reliability: 'at-least-once',
-        ack: 'group-leader'
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute('room.command', 'leader-room', 'msg-leader'),
+        scope: 'room',
+        typeId: 'command.v1',
+        resource: {},
+        options: {
+            groupRef: snapshot.group,
+            reliability: 'at-least-once',
+            ack: 'group-leader'
+        }
     });
 }
 

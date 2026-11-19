@@ -55,15 +55,18 @@ test('a server notification from a peer id wider than the creator column is stor
 
 function toServerNotification(serverPeerId: string): ALMessage {
     return newALBroadcastMessage(
-        serverPeerId,
-        newALRoute('server.notification', 'all', 'notification-1'),
-        'all',
-        'server.notification.v1',
-        { round: 1 },
         {
-            reliability: 'at-least-once',
-            ack: 'none',
-            ttlMs: 15_000
+            createdAtEpochMs: Date.now(),
+            senderId: serverPeerId,
+            route: newALRoute('server.notification', 'all', 'notification-1'),
+            scope: 'all',
+            typeId: 'server.notification.v1',
+            resource: { round: 1 },
+            options: {
+                reliability: 'at-least-once',
+                ack: 'none',
+                ttlMs: 15_000
+            }
         }
     );
 }

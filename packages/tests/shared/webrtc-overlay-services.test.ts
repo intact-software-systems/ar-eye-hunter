@@ -103,12 +103,15 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const message = newALUnicastMessage(
-            'self',
-            { topicId: 'chat', resourceId: 'dispose-owned-work', contextId: 'conversation-1' },
-            'peer-1',
-            'chat.private-text.v1',
-            { text: 'wait for the channel' },
-            { ttlMs: 120_000, qos: { durability: { algo: 'local-outbox' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'chat', resourceId: 'dispose-owned-work', contextId: 'conversation-1' },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: { text: 'wait for the channel' },
+                options: { ttlMs: 120_000, qos: { durability: { algo: 'local-outbox' } } }
+            }
         );
         await enqueueRtcAndDrain(manager, message);
         const key = (await manager.outbox.getAllKeys()).find((candidate) => candidate.topicId === 'AL_OUTBOUND');
@@ -179,16 +182,19 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
         const message = newALMulticastMessage(
-            'peer-1',
-            { topicId: 'chat', contextId: 'group-1', resourceId: 'snapshot-forward' },
-            groupRef('group-1'),
-            'chat.message.v1',
-            { text: 'forward only while current' },
             {
-                minSnapshotVersion: 5,
-                ack: 'none',
-                reliability: durable ? 'at-least-once' : 'best-effort',
-                qos: { durability: { algo: durable ? 'local-outbox' : 'volatile' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: { topicId: 'chat', contextId: 'group-1', resourceId: 'snapshot-forward' },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: { text: 'forward only while current' },
+                options: {
+                    minSnapshotVersion: 5,
+                    ack: 'none',
+                    reliability: durable ? 'at-least-once' : 'best-effort',
+                    qos: { durability: { algo: durable ? 'local-outbox' : 'volatile' } }
+                }
             }
         );
         try {
@@ -215,22 +221,25 @@ describe('WebRtc overlay services', () => {
         );
         const msg = {
             ...newALMulticastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-1',
-                    contextId: 'group-1'
-                },
-                groupRef('group-1'),
-                'chat.message.v1',
-                {
-                    text: 'hello'
-                },
-                {
-                    ttlHops: 3,
-                    qos: {
-                        durability: {
-                            algo: 'volatile'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-1',
+                        contextId: 'group-1'
+                    },
+                    groupRef: groupRef('group-1'),
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'hello'
+                    },
+                    options: {
+                        ttlHops: 3,
+                        qos: {
+                            durability: {
+                                algo: 'volatile'
+                            }
                         }
                     }
                 }
@@ -296,16 +305,19 @@ describe('WebRtc overlay services', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
-            'sender-2',
             {
-                topicId: 'chat',
-                resourceId: 'msg-2',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'send if present'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-2',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-2',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'send if present'
+                }
             }
         );
 
@@ -361,16 +373,19 @@ describe('WebRtc overlay services', () => {
 
         const msg: ALMessage = {
             ...newALUnicastMessage(
-                'sender-2',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-awaits-channel',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'send once the channel opens'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender-2',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-awaits-channel',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'send once the channel opens'
+                    }
                 }
             ),
             delivery: { reliability: 'at-least-once', ack: 'none' }
@@ -416,15 +431,18 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALUntargetedMessage(
-            'sender-no-targets',
             {
-                topicId: 'chat',
-                resourceId: 'msg-no-targets',
-                contextId: 'conversation-1'
-            },
-            'chat.private-text.v1',
-            {
-                text: 'no target'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-no-targets',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-no-targets',
+                    contextId: 'conversation-1'
+                },
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'no target'
+                }
             }
         );
 
@@ -470,16 +488,19 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'sender-missing-context',
             {
-                topicId: 'chat',
-                resourceId: 'msg-missing-context',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'missing context'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-missing-context',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-missing-context',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'missing context'
+                }
             }
         );
 
@@ -527,16 +548,19 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-no-next-hop',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'no next hop'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-no-next-hop',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'no next hop'
+                }
             }
         );
 
@@ -610,16 +634,19 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-scoped',
-                contextId: 'shared-room'
-            },
-            workspaceB.room.group,
-            'chat.message.v1',
-            {
-                text: 'scoped multicast'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-scoped',
+                    contextId: 'shared-room'
+                },
+                groupRef: workspaceB.room.group,
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'scoped multicast'
+                }
             }
         );
 
@@ -696,16 +723,19 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-cross-workspace-overlay',
-                contextId: 'shared-room'
-            },
-            workspaceB.room.group,
-            'chat.message.v1',
-            {
-                text: 'must not leak'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-cross-workspace-overlay',
+                    contextId: 'shared-room'
+                },
+                groupRef: workspaceB.room.group,
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'must not leak'
+                }
             }
         );
 
@@ -755,16 +785,19 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
-            'sender-immediate',
             {
-                topicId: 'chat',
-                resourceId: 'msg-immediate',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'send now'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-immediate',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-immediate',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'send now'
+                }
             }
         );
 
@@ -972,21 +1005,24 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
-            'sender-durable',
             {
-                topicId: 'chat',
-                resourceId: 'msg-durable',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'persist me'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'local-outbox'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-durable',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-durable',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'persist me'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'local-outbox'
+                        }
                     }
                 }
             }
@@ -1034,21 +1070,24 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
-            'sender-duplicate',
             {
-                topicId: 'chat',
-                resourceId: 'msg-duplicate',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'persist me once'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'local-outbox'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-duplicate',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-duplicate',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'persist me once'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'local-outbox'
+                        }
                     }
                 }
             }
@@ -1102,19 +1141,22 @@ describe('WebRtc overlay services', () => {
         );
         onTestFinished(() => manager.dispose());
         const msg = newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-expired',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'too late'
-            },
-            {
-                ttlMs: -10_000
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-expired',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'too late'
+                },
+                options: {
+                    ttlMs: -10_000
+                }
             }
         );
 
@@ -1164,35 +1206,38 @@ describe('WebRtc overlay services', () => {
         onTestFinished(() => manager.dispose());
 
         const msg = newALUnicastMessage(
-            'sender-3',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'retry me'
-            },
-            {
-                qos: {
-                    delivery: {
-                        algo: 'at-least-once'
-                    },
-                    durability: {
-                        algo: 'local-outbox'
-                    },
-                    ack: {
-                        algo: 'hop',
-                        opts: {
-                            timeoutMs: 1_000
-                        }
-                    },
-                    retry: {
-                        algo: 'exp-backoff',
-                        opts: {
-                            maxAttempts: 2
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-3',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'retry me'
+                },
+                options: {
+                    qos: {
+                        delivery: {
+                            algo: 'at-least-once'
+                        },
+                        durability: {
+                            algo: 'local-outbox'
+                        },
+                        ack: {
+                            algo: 'hop',
+                            opts: {
+                                timeoutMs: 1_000
+                            }
+                        },
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: {
+                                maxAttempts: 2
+                            }
                         }
                     }
                 }
@@ -1304,16 +1349,19 @@ function captureWarnings(): string[] {
 
 function createUnicastRtcMessage(senderId: string, resourceId: string): ALMessage {
     return newALUnicastMessage(
-        senderId,
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            }
         }
     );
 }
@@ -1436,9 +1484,17 @@ describe('RTC overlay owned outbound completion', () => {
             release.mockRestore();
             diagnostics.mockRestore();
         });
-        const message = newALUnicastMessage('self', { topicId: 'test', resourceId: 'owned-release', contextId: 'outbound' }, 'peer-1', 'received', {}, {
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'test', resourceId: 'owned-release', contextId: 'outbound' },
+            toPeerId: 'peer-1',
+            typeId: 'received',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
         expect((await manager.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
         await entered.promise;

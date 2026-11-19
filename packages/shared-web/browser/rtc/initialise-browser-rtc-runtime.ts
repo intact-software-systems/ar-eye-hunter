@@ -188,6 +188,7 @@ export function initialiseRtcRxStreamer(
 }
 
 export interface InitialiseRtcConnectionServiceInput {
+    readonly creationEpochMs: () => number;
     readonly webSocketQueueBox: WsQueueBoxClientService;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
@@ -213,7 +214,7 @@ export async function initialiseRtcConnectionService(
 ): Promise<BrowserRtcConnectionInitialization> {
     const signaler = new WsRtcSignalingTransportUsingWsQBox(
         input.webSocketQueueBox,
-        input.rtcSignalingTopicId,
+        input.rtcSignalingTopicId, input.creationEpochMs,
         () => input.qboxEngine.wake()
     );
     const nowEpochMs = Date.now;

@@ -730,12 +730,15 @@ function createPromotedOrigin(replacedLayoutOverlapMs: number): RtcOriginOverlay
 
 function createPromotionFrame(reliability: 'at-least-once' | 'best-effort'): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'position', resourceId: `frame-${reliability}`, contextId: 'room' },
-        ORIGIN_ROOM,
-        'position.frame.v1',
-        { reliability },
-        { reliability, ack: 'none', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'position', resourceId: `frame-${reliability}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'position.frame.v1',
+            resource: { reliability },
+            options: { reliability, ack: 'none', ttlMs: 60_000 }
+        }
     );
 }
 
@@ -1010,6 +1013,22 @@ function createMessage(mode: 'broadcast' | 'multicast'): ALMessage {
         qos: { durability: { algo: 'local-outbox' as const }, retry: { algo: 'exp-backoff' as const, opts: { maxAttempts: 2 } } }
     };
     return mode === 'broadcast'
-        ? newALBroadcastMessage('self', route, 'room', 'chat.message', { text: 'gap' }, { ...options, groupRef: roomRef })
-        : newALMulticastMessage('self', route, roomRef, 'chat.message', { text: 'gap' }, options);
+        ? newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            scope: 'room',
+            typeId: 'chat.message',
+            resource: { text: 'gap' },
+            options: { ...options, groupRef: roomRef }
+        })
+        : newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: roomRef,
+            typeId: 'chat.message',
+            resource: { text: 'gap' },
+            options
+        });
 }

@@ -629,7 +629,14 @@ describe('captured outbound audience read', () => {
 
     it('a captured policy narrowed to one session keeps that session\'s generation alone', () => {
         const policy = captureALOutboundPolicy({
-            msg: newALBroadcastMessage('server', newALRoute('room.topic', 'room-1', 'event-1'), 'room', 'room.topic', {}),
+            msg: newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: newALRoute('room.topic', 'room-1', 'event-1'),
+                scope: 'room',
+                typeId: 'room.topic',
+                resource: {}
+            }),
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
@@ -637,7 +644,14 @@ describe('captured outbound audience read', () => {
             admittedConnectionGenerationIds: { 'session-a': 'generation-a', 'session-b': 'generation-b' }
         });
         const members = captureALOutboundPolicy({
-            msg: newALBroadcastMessage('server', newALRoute('room.topic', 'room-1', 'event-1'), 'room', 'room.topic', {}),
+            msg: newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: newALRoute('room.topic', 'room-1', 'event-1'),
+                scope: 'room',
+                typeId: 'room.topic',
+                resource: {}
+            }),
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],
@@ -712,12 +726,15 @@ async function createFixture(
     const scope = 'server-scope';
     const namespace = 'server-namespace';
     const message = newALBroadcastMessage(
-        'server',
-        newALRoute('room.topic', 'room-1', 'event-1'),
-        'room',
-        'room.topic',
-        { value: 1 },
-        { ttlMs: 60_000, groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: newALRoute('room.topic', 'room-1', 'event-1'),
+            scope: 'room',
+            typeId: 'room.topic',
+            resource: { value: 1 },
+            options: { ttlMs: 60_000, groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
+        }
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const reference = toALOutboundMessageReference(scope, entry, message);

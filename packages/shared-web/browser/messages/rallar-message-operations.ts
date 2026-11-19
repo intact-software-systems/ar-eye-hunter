@@ -10,6 +10,7 @@ import type {
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import type { ALOutboundCongestionEpisodes } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -31,8 +32,9 @@ export interface RallarWsMessageLane {
 
 /**
  * The volatile ledger beside the matched replies this page's retained deliveries hold, its reply waits in flight,
- * the connect's publication stage: what its live channels hold against the stage's limits and what it settled, and
- * the ordering positions the connect's arrivals stated, by status.
+ * the connect's publication stage: what its live channels hold against the stage's limits and what it settled,
+ * the ordering positions the connect's arrivals stated, by status, and its congestion episodes: how long each message
+ * a carrier deferred waited, across both carriers, cumulative over the connect.
  */
 export interface RallarMessagesUsage extends ALVolatileSessionReport {
     readonly repliesHeld: number;
@@ -40,6 +42,7 @@ export interface RallarMessagesUsage extends ALVolatileSessionReport {
     readonly publication: ALOutboundPublicationStageReport;
     /** Cumulative over the connect, across both carriers; counts events, not distinct copies. */
     readonly ordering: ALInboundOrderingCounters;
+    readonly congestionEpisodes: ALOutboundCongestionEpisodes.Figures;
 }
 
 export interface RallarMessagesOperations {

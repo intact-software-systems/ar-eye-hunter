@@ -1,7 +1,8 @@
 // Minimal ambient surface for the `Bun` global used by imported runners
-// (control-artifact-storage.ts, api-v1-black-box-run.mts, api-v1-managed-process-lifecycle.mts).
+// (control-artifact-storage.ts, api-v1-black-box-run.mts, api-v1-managed-process-lifecycle.mts,
+// with-managed-api-server-fault-endpoint.mts).
 // bun-types' own declaration also augments the global `fetch` with Bun-only members, which breaks
-// the vitest `typeof fetch` mocks in this project, so we declare only the two APIs those runners
+// the vitest `typeof fetch` mocks in this project, so we declare only the APIs those runners
 // call instead of loading `types: ["bun"]` project-wide.
 declare var Bun: {
     file(path: string): {
@@ -18,5 +19,14 @@ declare var Bun: {
         stderr: ReadableStream<Uint8Array> | null;
         exited: Promise<number>;
         kill(signo?: NodeJS.Signals): void;
+    };
+    serve(input: {
+        hostname: string;
+        port: number;
+        idleTimeout: number;
+        fetch(request: Request): Response | Promise<Response>;
+    }): {
+        port: number | undefined;
+        stop(closeActiveConnections: boolean): Promise<void>;
     };
 };

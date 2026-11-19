@@ -1,4 +1,6 @@
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
+import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
+import { readConfirmedRoomArrival } from './room-presence.ts';
 
 import type {
     RallarRoomGovernanceOptions,
@@ -40,7 +42,6 @@ interface CreateRoomInviteInput extends RoomMembershipInput {
 }
 
 interface AcceptRoomInviteInput extends RoomMembershipInput {
-    readonly nowMs: () => number;
     readonly options?: RallarRoomGovernanceOptions;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
@@ -131,9 +132,9 @@ export async function acceptRoomInvite(
     return await runRoomTargetMutation({
         ...input,
         options: input.options ?? {},
-        execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) =>
-            await acceptStateGroupInvite({
-                nowMs: input.nowMs,
+        execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) => {
+            const snapshot = await acceptStateGroupInvite({
+                nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
                 groupPresence: context.middleware.heartbeat.groupPresence,
                 groupId: roomId,
                 actorPrincipalId: session.clientId,
@@ -144,7 +145,15 @@ export async function acceptRoomInvite(
                 scope,
                 policies,
                 assertCurrent
-            })
+            });
+            return await readConfirmedRoomArrival({
+                context,
+                snapshot,
+                generationId,
+                fence: { session, assertCurrent },
+                options: input.options ?? {}
+            });
+        }
     });
 }
 

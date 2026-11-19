@@ -10,7 +10,15 @@ import { createPostgresLiveWsNoticeTransport } from '../../src/db/create-postgre
 test('oversized native frame crosses bounded PostgreSQL notifications and emits only a complete, hash-checked notice', async () => {
     const groupRef = { applicationId: 'game-a', workspaceId: 'region-a', groupId: 'room' };
     const topic = AppTopics.serverRoomSnapshot;
-    const message = newALBroadcastMessage(PRODUCER_ID, newALRoute(topic, 'room', 'game'), 'room', topic, { data: 'é'.repeat(8000) }, { groupRef, ttlMs: 5000 });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: PRODUCER_ID,
+        route: newALRoute(topic, 'room', 'game'),
+        scope: 'room',
+        typeId: topic,
+        resource: { data: 'é'.repeat(8000) },
+        options: { groupRef, ttlMs: 5000 }
+    });
     const encoded = encodeLiveWsNotice({
         channel: 'test',
         publisherId: 'serverA',

@@ -18,7 +18,8 @@ const FIRST_LAYOUT_RECORD: RtcTopologyPlanRecord = {
         maxJoinerEdgesPerSession: 2
     },
     longestPathHops: 2,
-    change: { kind: 'attach' }
+    change: { kind: 'attach' },
+    heldReshapeReasons: []
 };
 
 const REPLACING_RECORD: RtcTopologyPlanRecord = {
@@ -115,6 +116,29 @@ describe('decodeRtcTopologyPlanRecord', () => {
         }
         const { change: _omitted, ...withoutChange } = REPLACING_RECORD;
         expect(decodeRtcTopologyPlanRecord(withoutChange).left).toBeTypeOf('string');
+    });
+
+    it('decodes the reshape reasons a plan held', () => {
+        const record: RtcTopologyPlanRecord = { ...REPLACING_RECORD, heldReshapeReasons: ['kind-change'] };
+
+        expect(decodeRtcTopologyPlanRecord(structuredClone(record)).right).toEqual(record);
+        expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, heldReshapeReasons: ['kind-change', 'leader-rooting'] }).right?.heldReshapeReasons)
+            .toEqual(['kind-change', 'leader-rooting']);
+    });
+
+    it('refuses a record without held reshape reasons, and a reason the gate never holds', () => {
+        const { heldReshapeReasons: _omitted, ...withoutHeld } = REPLACING_RECORD;
+        const variants = [
+            withoutHeld,
+            { ...REPLACING_RECORD, heldReshapeReasons: ['refinement'] },
+            { ...REPLACING_RECORD, heldReshapeReasons: ['kind-change', 'kind-change'] },
+            { ...REPLACING_RECORD, heldReshapeReasons: ['leader-rooting', 'kind-change'] },
+            { ...REPLACING_RECORD, heldReshapeReasons: 'kind-change' }
+        ];
+
+        for (const variant of variants) {
+            expect(decodeRtcTopologyPlanRecord(variant).left).toBeTypeOf('string');
+        }
     });
 
     it('accepts a record with no cause', () => {

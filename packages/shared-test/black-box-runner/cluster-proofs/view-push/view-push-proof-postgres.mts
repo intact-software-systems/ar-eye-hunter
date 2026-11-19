@@ -4,6 +4,7 @@ import {
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
+import { terminatePostgresBackends } from '../../managed-api/managed-api-database-sessions.mts';
 import { waitForProofCondition } from '../cluster-proof-socket.mts';
 
 /** Owns the isolated test database connection and exact listener fault, never an API administration hook. */
@@ -25,12 +26,7 @@ export class ViewPushProofPostgres {
     }
 
     async terminateListener(pid: number): Promise<void> {
-        const rows = await this.#sql<{ terminated: boolean; }[]>`select pg_terminate_backend(${pid}) as terminated`;
-        assert.deepEqual(rows[0]?.terminated, true);
-        await waitForProofCondition(async () => {
-            const live = await this.#sql`select pid from pg_stat_activity where pid = ${pid}`;
-            return live.length === 0;
-        }, 'old LISTEN backend disappearance');
+        assert.deepEqual(await terminatePostgresBackends(this.#sql, [pid]), 1);
     }
 
     async waitForPublication(traceId: string): Promise<WsOutboxProvenance> {

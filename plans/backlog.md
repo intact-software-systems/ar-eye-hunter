@@ -82,13 +82,10 @@ and it has no status list.
   worker; a per-message persistence barrier; the Temporal polyfill leaving the
   browser bundle (an estimated 39.7 KiB brotli, D110); and the fence-snapshot
   fold (§7.3), which merges the D17 fence snapshot into the decision read.
-- ALM schema mismatch: D3 deletes incompatible browser storage, but since #652
-  `openIndexedDbAdmissionStorage` refuses it with `ALStorageSchemaMismatchError`
-  and keeps the rows, so nothing reclaims it; the `reset-blocked` cause and the
-  `schema-id-mismatch` and `store-schema-mismatch` reset reasons have no
-  producer, and the QoS plan's sections 2 and 8 still describe deletion. Ruled
-  (D642): delete all three, and align D3 and the QoS plan to "refuse and keep"
-  (roadmap F9, PC10).
+- ALM schema mismatch: `openIndexedDbAdmissionStorage` refuses incompatible
+  browser storage with `ALStorageSchemaMismatchError` and keeps the rows (D663),
+  so nothing reclaims a store an older build left; a reclaim is unbuilt (roadmap
+  F9, PC10).
 - `packages/shared/alm/al-runtime-state-stores.ts` holds only snapshot
   interfaces and keeps its name (S9-i, D624): 26 importers and a `mod.ts` line
   would change for a name alone. Rename it for what it holds, with its
@@ -676,14 +673,13 @@ and it has no status list.
   workload family, not by ALM (D642): a receiver cannot compute it from the
   envelope, which carries only `expiresAtMs`
   (`packages/shared/al-contracts/al-contract.ts`).
-- Congestion duration has no measurable end (D651): the outbound runtime
-  decides congestion per attempt (`drop`, `defer`, `hand-over`), the
-  `congestion` diagnostic carries no instant and no clear action, and only the
-  RTC channel's own queue flush knows when its backpressure ended. Measuring it
-  needs a defined episode (for example a message's first `defer` to its
-  attempt's settlement) and an instant on the diagnostic. The maintainer ruled the episode (D656): a message's
-  first deferral to the settlement of its attempt, as a histogram and a count of episodes still open, with one
-  instant added to the congestion diagnostic; it is not built.
+- No lane cell asserts the congestion episode figure (D665): the `congestion` scenario cells read the action
+  counters only. A cell that holds a carrier backpressured, releases it and reads
+  `stats.rallar.alm.congestionEpisodes` needs the delta operator the paced cells also lack, or an invariant such
+  as `openEpisodes` of 0 after the release.
+- A congestion episode is keyed by carrier and message id (D665), so a message deferred on RTC and then on WS is two
+  episodes, and an attempt that settles `not-ready` for another reason than backpressure keeps the episode open
+  until the message sends or ends; whether either should read differently is the maintainer's.
 - Admission to native submission is not a stage figure (D651); it needs the
   carriers' `attempt-started` instant beside the stage's admission settlement.
 - The interpolating medians (two middle values averaged) stay in five
@@ -708,16 +704,65 @@ and it has no status list.
   counts need one (D652).
 - The bounded histogram has no quantile reader and no merge; the workload
   family adds them with its first reader (D650).
-- The local baseline's median command time is not stable inside its declared
-  band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
-  tell a regression from noise; the band or the figure for the median is the
-  maintainer's to set (D652). Ruled (D656): each side is several runs and the comparison uses the median of the
-  medians, in the same band, re-checked with a same-commit pair; it is not built.
-- The platform fault steps of D642 reach only managed API processes of a
+- The local baseline's median command time is not a regression figure, even as the median of several runs per
+  side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
+  against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
+  three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
+  noise in all five. Open for the maintainer: require a quiet machine, make alternating runs the protocol, or compare another
+  figure. The band is not widened.
+- The platform fault steps (D666) reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
   `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
   campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
+- An ordered receipted stream does not reliably recover from a seeded loss, on
+  `ws` or on `rtc` (D670): after three to six dropped frames in about 190 ms a
+  stream can stall, and a send the receiver delivered can read `failed`,
+  `receipt-exhausted`. No lane cell runs under a seeded loss, and a catalog
+  test pins that. Next slice by the maintainer's ruling (2026-11-18); the
+  `seeded-loss-stream` cell returns with the fix.
+- Three candidate causes of that stall, read from the code and not proven by
+  a test (D670): a repair attempt is named by its gap, so a lost repair frame
+  is never written again (`to-al-outbound-effect-id.ts`); ending a receipt
+  deletes the sender's repair-attempt row, so a receiver still behind a gap
+  is refused (`to-al-outbound-end-receipt-bundle.ts`); a conflicted control is
+  replayed on the generic backoff of up to 16 s while a receipt's budget is
+  three 2 s retries (`ResourceInboxRetryPolicy.ts`). Not determined: why sends
+  10 to 20 did not reach the `rtc` receiver for 28 s, and why a timed-out
+  handle shows one `sent` attempt.
+- Over `rtc`, the first send of a new ordered track is lost for good when a
+  later send reaches the receiver before it (D669, `lost-stream-start`): the
+  receiver enters at the first frame it sees and refuses the earlier one as
+  `before-entry`. It widens D646's one-frame limit. Recorded by ruling
+  (2026-11-18); a fix changes how a receiver enters a track and is its own
+  slice.
+- An ordered at-least-once send that names no `ack` took receipt mode
+  `receiver` over `rtc` in a lane run (D670). Read from the code and not
+  proven by a test: the channel's `command` purpose gives it. A caller that
+  meant an unreceipted stream gets handles that can end `receipt-exhausted`.
+  Whether that default is wanted is unruled.
+- A crash of the instance that holds the publisher's socket mid-publication,
+  and what the publisher reads after it reconnects, is unproven. The
+  subscriber's case is (D669); this one belongs with the held-send path.
+- A session whose server crashed stays in the room's presence: the receipt of
+  a later broadcast still expects it and ends `timed-out` (D669,
+  `api-v1-cluster-subscriber-instance-loss`). What ends such a presence, and
+  when, is not read by any recipe.
+- Unread: in an exploratory run of that recipe a second `admitted` receipt for
+  one broadcast reached the publisher after the first was consumed.
+- The database-session recipe (D666) proves delivery to the cut process's
+  socket resumes; it does not say by which path. The secondary's log shows one
+  `listener-subscribe`, at start, and no error after the cut, so whether the
+  notification listener was re-established or a poll delivered is unread.
+- A black-box recipe has no cleanup phase: `cleanupSteps` is in the recipe
+  schema and nothing executes it. The runner restores faulted servers itself
+  (D666); any other leftover of a failed recipe stays.
+- A fault's `acted` counts (D668) live with the page's connection: a reload
+  starts them again, so a cell that reloads between arming and release reads
+  only the frames since.
+- A seeded loss over `rtc` is a drop the channel reports to its sender, not a
+  silent wire loss, and the channel applies no delay (D667). A silent RTC loss
+  and an RTC delay need the data channel to honour both decisions.
 - A relay partition, one RTC edge cut while the others stay, has no fault
   step: `TransportFaultPort.decideSend` sees a carrier and a message, not an
   edge. It needs per-edge control in the transport fault port.
@@ -771,7 +816,35 @@ and it has no status list.
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
-  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+  rebuild: the reshape gate of the group dynamics damping plan (pull request #844) holds the optional leader
+  re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild after a failed update or a broken
+  invariant is not held. The quality bound for these paths, the tree-keeping gate of #810 that they skip, is still
+  open.
+- A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
+  reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
+  (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
+  the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
+  (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
+- Reshape gate leftovers (pull request #844):
+  - The plan record's `changeGated` input is overloaded for a `reshape-due` row, so a wake-up's plan has empty
+    `causes`; naming a cause for it would change the plan record contract.
+  - The work codec does not tie a `reshape-due` row's resource id to its payload.
+  - The OpenAPI schema has no `uniqueItems` or `maxItems` on `wantedReasons` and `heldReshapeReasons`.
+  - Bounds raised after a period's wake-up has run leave a later hold of that period without a row until the next
+    work.
+  - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
+  - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
+  - A room that empties while its gate is closed keeps its empty layout's kind until the gate opens, and that hold
+    counts as any other. Whether a layout of no or one member should pass the gate is not decided.
+  - `packages/shared/encoding` imports `packages/shared/api/exact-object-decoding.ts` at runtime (the GroupRef
+    and back-off gate decoders), while `api` imports `encoding`. Moving `exact-object-decoding.ts` into `encoding`
+    ends the cycle; it has about 140 importers.
+  - `toCoalescedGroupRevisionEntry` builds a topology work entry by hand beside `toRtcTopologyWorkEntry`.
+  - `BackoffGateState` says "never passed" two ways: a null state, and a state whose `lastPassAtEpochMs` is null.
+  - A `reshape-due` row carries `ordering: { epoch: 0, seq: 0 }` on the room's ordering key; what that value means
+    to the queue was not checked.
+  - Two older GroupRef decoders (`decode-stored-group-lifecycle-policy.ts`, `decode-rtc-topology-snapshot.ts`)
+    differ from `decodeExactGroupRef` in their checks and messages and were left as they are.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

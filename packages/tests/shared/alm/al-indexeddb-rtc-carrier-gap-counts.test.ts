@@ -63,16 +63,19 @@ describe('an RTC origin holding a durable send through a carrier gap', () => {
 
 function createDurableRoomMulticast(): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId: 'held-counted', contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: 'held' },
         {
-            ack: 'all-logical-recipients',
-            reliability: 'at-least-once',
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId: 'held-counted', contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: 'held' },
+            options: {
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 }

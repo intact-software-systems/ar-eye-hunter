@@ -95,7 +95,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         description: 'Counts messages of a typeId (optionally one msgId) on the whole inbound event log and ' +
             'compares against an expected count. A presence claim settles as soon as the count is ' +
             'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
-            '(at least one) arrived.',
+            '(at least one) arrived. ascendingBy names a payload field that must be a number in every matched copy ' +
+            'and ascend strictly in arrival order; the result then carries ascending, and an absence claim takes none.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -249,6 +250,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
             'optionally match.kind: fail, quota (writes only) or a delay. ' +
             'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it. ' +
+            'A transport injection returns acted: how many frames the fault of its faultId has dropped, delayed, ' +
+            'rewritten or held so far, so a release reads the totals. ' +
             'carrier product-socket names neither match nor remaining: action close closes the page\'s product socket ' +
             'with reconnect disabled, and reopen enables reconnect and opens a new authorised socket, whose connection ' +
             'generation is new.',

@@ -148,12 +148,15 @@ async function receiveAdmitted(receiver: BufferedTrackReceiver, message: ALMessa
 /** One message of the server's track to this session, at the browser's default lifetime. */
 function createTrackMessage(seq: number): ALMessage {
     const message = newALUnicastMessage(
-        'server',
-        { topicId: 'chat', resourceId: `track-${seq}`, contextId: 'conversation' },
-        clientData.sessionId,
-        TYPE_ID,
-        { seq },
-        { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'chat', resourceId: `track-${seq}`, contextId: 'conversation' },
+            toPeerId: clientData.sessionId,
+            typeId: TYPE_ID,
+            resource: { seq },
+            options: { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
+        }
     );
     return { ...message, id: { ...message.id, msgId: `track-${seq}` }, ordering: { orderingKey: 'chat', seq } };
 }

@@ -983,11 +983,14 @@ describe('QRtcDataChannel', () => {
         // sees the AL envelope: its typeId lives under `payload`, never at the top level.
         const result = channel.sendJson(
             newALMulticastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'room-1', 'resource-1'),
-                { applicationId: 'app', workspaceId: 'ws', groupId: 'room-1' },
-                'chat',
-                { text: 'hello' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'room-1', 'resource-1'),
+                    groupRef: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-1' },
+                    typeId: 'chat',
+                    resource: { text: 'hello' }
+                }
             ),
             {
                 onSettled: (settlement) => {

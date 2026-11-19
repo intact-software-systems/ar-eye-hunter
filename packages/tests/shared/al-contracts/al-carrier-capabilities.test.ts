@@ -50,7 +50,14 @@ describe('carrier capabilities', () => {
     });
 
     it('keeps the application defaults, authorization and live state as its own', () => {
-        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {});
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: room,
+            typeId: 'chat.v1',
+            resource: {}
+        });
         const application = {
             defaultsForMessage: () => ({ ack: { algo: 'hop', opts: { timeoutMs: 250 } } }) as const,
             authorizationForMessage: () => ({ maxDurability: 'volatile' }) as const,
@@ -81,7 +88,15 @@ describe('carrier capabilities', () => {
             { request: 'qos subtree', options: { qos: { ack: { algo: 'subtree' } } } }
         ] as const
     )('normalizes an inbound $request to the policy the default capabilities give it', ({ options }) => {
-        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, { reliability: 'at-least-once', ...options });
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: room,
+            typeId: 'chat.v1',
+            resource: {},
+            options: { reliability: 'at-least-once', ...options }
+        });
         const context = { direction: 'inbound' } as const;
         const carried = normalizeALQosPolicy(
             message,

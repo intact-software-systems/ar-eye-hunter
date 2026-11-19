@@ -100,7 +100,14 @@ describe('the children a peer owns while a replaced layout is in force', () => {
     };
 
     it('owns the replaced layout\'s children beside the accepted layout\'s', () => {
-        const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: { topicId: 'chat', resourceId: 'shot', contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'chat.v1',
+            resource: {}
+        });
 
         expect(resolveALOwnedChildPeerIds(message, {
             nowMs: 0,
@@ -200,7 +207,14 @@ describe('the children a peer owns while a replaced layout is in force', () => {
     });
 
     it('owns only the accepted layout\'s children when no replaced layout is given', () => {
-        const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: { topicId: 'chat', resourceId: 'shot', contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'chat.v1',
+            resource: {}
+        });
 
         expect(resolveALOwnedChildPeerIds(message, {
             nowMs: 0,
@@ -214,7 +228,14 @@ describe('the children a peer owns while a replaced layout is in force', () => {
 
 describe('the child a peer owns for a unicast', () => {
     it('keeps the unicast\'s immediate peer, whatever the frozen audience rule', () => {
-        const unicast = newALUnicastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, 'b', 'chat.v1', {});
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: { topicId: 'chat', resourceId: 'shot', contextId: 'room' },
+            toPeerId: 'b',
+            typeId: 'chat.v1',
+            resource: {}
+        });
 
         expect(resolveALOwnedChildPeerIds(unicast, { nowMs: 0, selfPeerId: 'r', overlayNeighborPeerIds: TREE.r })).toEqual(['b']);
     });
@@ -232,6 +253,13 @@ function resolveRelayChildren(recipientPeerIds: readonly string[]): readonly str
 }
 
 function createFrozenMulticast(recipientPeerIds: readonly string[]): ALMessage {
-    const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: { topicId: 'chat', resourceId: 'shot', contextId: 'room' },
+        groupRef: ROOM,
+        typeId: 'chat.v1',
+        resource: {}
+    });
     return toALFrozenMulticastMessage(message, { recipientPeerIds, snapshotVersion: 1 });
 }

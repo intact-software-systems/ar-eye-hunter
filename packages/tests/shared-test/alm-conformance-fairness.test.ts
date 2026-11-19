@@ -14,6 +14,7 @@ import type {
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
@@ -143,7 +144,8 @@ describe('own-share-under-inbound', () => {
         repliesHeld: 0,
         replyWaitsOpen: 0,
         publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-        ordering: createALInboundOrderingCounters()
+        ordering: createALInboundOrderingCounters(),
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
     };
 
     it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
@@ -323,7 +325,8 @@ describe('churn-bounded-tracks', () => {
         repliesHeld: 0,
         replyWaitsOpen: 0,
         publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-        ordering: createALInboundOrderingCounters()
+        ordering: createALInboundOrderingCounters(),
+        congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
     };
 
     it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {

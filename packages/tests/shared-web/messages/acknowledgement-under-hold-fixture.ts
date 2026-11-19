@@ -166,7 +166,12 @@ function createHoldSenderRuntime(): HoldSenderRuntime {
     const engine = new InboxOutboxEngine();
     return {
         faults: createScriptedTransportFaultPort(),
-        registry: new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} }),
+        registry: new BrowserRallarDeliveryRegistry({
+            nowMs: Date.now,
+            maxEntries: 10,
+            retainTerminalMs: 60_000,
+            cancel: () => {}
+        }),
         diagnostics: [],
         engine,
         drain: captureOutboundWorkRunnable(engine)
@@ -243,15 +248,23 @@ function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resource
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
-        return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
-            specimen: resourceId
-        }, {
-            ack: 'receiver',
-            reliability: 'at-least-once',
-            seq,
-            orderingKey,
-            ttlMs,
-            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        return newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' },
+            groupRef,
+            typeId: 'alm.lifecycle',
+            resource: {
+                specimen: resourceId
+            },
+            options: {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                seq,
+                orderingKey,
+                ttlMs,
+                qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+            }
         });
     };
 }
@@ -370,8 +383,16 @@ export async function openWsHoldSender(): Promise<HoldSender> {
 function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string; ttlMs: number; }>): ALMessage {
     const { sessionId, resourceId, ttlMs } = input;
     return {
-        ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
-            ttlMs
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'held', contextId: 'room', resourceId },
+            toPeerId: 'receiver',
+            typeId: 'held.message',
+            resource: { resourceId },
+            options: {
+                ttlMs
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         // A roomless WS unicast refuses `receiver` (D42): the server's own ACK counts as the hop's (R-S3a-4). The
@@ -437,7 +458,7 @@ function toSharedHoldSenderMembers(
         faults: runtime.faults,
         diagnostics: runtime.diagnostics,
         send: async (message) => {
-            const handle = runtime.registry.open(message, input.carrier);
+            const handle = runtime.registry.open({ message: message, carrier: input.carrier, readDeadlineEpochMs: Date.now });
             await input.admit(message);
             return handle;
         },

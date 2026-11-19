@@ -69,19 +69,22 @@ describe('installRallarCrdtWsTopics', () => {
             logRepository: new InMemoryRallarCrdtLogRepository({ now: () => 2_000, serverId: 'server-1' })
         });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', 'catch-up-scope'),
-            'all',
-            RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
             {
-                protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-                document: { applicationId: 'rallar-test', scope: 'app', documentType: 'checklist', documentId: 'app-doc' },
-                requestId: 'catch-up-scope',
-                replicaId: 'replica',
-                createdAtEpochMs: 3_000,
-                afterSequence: 0,
-                maxUpdateCount: 10,
-                includeSnapshot: false
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', 'catch-up-scope'),
+                scope: 'all',
+                typeId: RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
+                resource: {
+                    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+                    document: { applicationId: 'rallar-test', scope: 'app', documentType: 'checklist', documentId: 'app-doc' },
+                    requestId: 'catch-up-scope',
+                    replicaId: 'replica',
+                    createdAtEpochMs: 3_000,
+                    afterSequence: 0,
+                    maxUpdateCount: 10,
+                    includeSnapshot: false
+                }
             }
         );
         await router.route(message, {
@@ -105,13 +108,16 @@ describe('installRallarCrdtWsTopics', () => {
         });
         const update = createUpdateEnvelope();
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-            'room',
-            RALLAR_CRDT_UPDATE_TYPE_ID,
-            update,
             {
-                groupRef: roomRef
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                scope: 'room',
+                typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                resource: update,
+                options: {
+                    groupRef: roomRef
+                }
             }
         );
 
@@ -154,13 +160,16 @@ describe('installRallarCrdtWsTopics', () => {
                 operationVersion: 99
             });
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-                'room',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update,
                 {
-                    groupRef: roomRef
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                    scope: 'room',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update,
+                    options: {
+                        groupRef: roomRef
+                    }
                 }
             );
 
@@ -184,13 +193,16 @@ describe('installRallarCrdtWsTopics', () => {
             installRallarCrdtWsTopics(router);
             const update = createUpdateEnvelope();
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-                'room',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update,
                 {
-                    groupRef: roomRef
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                    scope: 'room',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update,
+                    options: {
+                        groupRef: roomRef
+                    }
                 }
             );
 
@@ -224,13 +236,16 @@ describe('installRallarCrdtWsTopics', () => {
             });
             const update = createUpdateEnvelope();
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-                'room',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update,
                 {
-                    groupRef: roomRef
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                    scope: 'room',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update,
+                    options: {
+                        groupRef: roomRef
+                    }
                 }
             );
 
@@ -263,11 +278,14 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             });
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
-                'all',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
+                    scope: 'all',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update
+                }
             );
 
             await router.route(message);
@@ -292,13 +310,16 @@ describe('installRallarCrdtWsTopics', () => {
             });
             const update = createUpdateEnvelope();
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-                'room',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update,
                 {
-                    groupRef: roomRef
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                    scope: 'room',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update,
+                    options: {
+                        groupRef: roomRef
+                    }
                 }
             );
 
@@ -337,13 +358,16 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             });
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-                'room',
-                RALLAR_CRDT_UPDATE_TYPE_ID,
-                update,
                 {
-                    groupRef: roomRef
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                    scope: 'room',
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    resource: update,
+                    options: {
+                        groupRef: roomRef
+                    }
                 }
             );
 
@@ -378,13 +402,16 @@ describe('installRallarCrdtWsTopics', () => {
         });
         const update = createUpdateEnvelope();
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-            'room',
-            RALLAR_CRDT_UPDATE_TYPE_ID,
-            update,
             {
-                groupRef: roomRef
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                scope: 'room',
+                typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                resource: update,
+                options: {
+                    groupRef: roomRef
+                }
             }
         );
 
@@ -444,14 +471,17 @@ describe('installRallarCrdtWsTopics', () => {
             includeSnapshot: true
         };
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', request.requestId),
-            'room',
-            RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
-            request,
             {
-                groupRef: roomRef,
-                traceId: 'trace-crdt-catch-up-request'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', request.requestId),
+                scope: 'room',
+                typeId: RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
+                resource: request,
+                options: {
+                    groupRef: roomRef,
+                    traceId: 'trace-crdt-catch-up-request'
+                }
             }
         );
 
@@ -491,11 +521,14 @@ describe('installRallarCrdtWsTopics', () => {
             document: principalDocumentRef
         });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
-            'all',
-            RALLAR_CRDT_UPDATE_TYPE_ID,
-            update
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', update.updateId),
+                scope: 'all',
+                typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                resource: update
+            }
         );
 
         await router.route(message);
@@ -530,13 +563,16 @@ describe('installRallarCrdtWsTopics', () => {
         });
         const update = createUpdateEnvelope();
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
-            'room',
-            RALLAR_CRDT_UPDATE_TYPE_ID,
-            update,
             {
-                groupRef: roomRef
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_CRDT_ROOM_TOPIC_ID, 'room-1', update.updateId),
+                scope: 'room',
+                typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                resource: update,
+                options: {
+                    groupRef: roomRef
+                }
             }
         );
 

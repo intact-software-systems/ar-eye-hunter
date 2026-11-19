@@ -1,6 +1,7 @@
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 import type { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import type { BrowserOutboundCongestionEpisodesSink } from '@shared-web/browser/connection/browser-outbound-congestion-episodes-sink.ts';
 import type { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
@@ -31,6 +32,7 @@ import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { BrowserServerClockSession } from './connection/server-clock/browser-server-clock-session.ts';
 
 export type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 
@@ -69,6 +71,7 @@ export interface RallarBrowserMiddleware {
     readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
     /** The ordering positions both carriers' runtimes stated on this connect, by status (S4ii-R6). */
     readonly orderingCounters: Pick<BrowserInboundOrderingCountersSink, 'readReport'>;
+    readonly congestionEpisodes: Pick<BrowserOutboundCongestionEpisodesSink, 'readReport'>;
     /** What the connect's publication stage holds at once (D477), read once when the connect began. */
     readonly publicationStageLimits: ALPublicationStageLimits;
     /**
@@ -82,6 +85,7 @@ export interface RallarBrowserMiddleware {
 
 /** Authenticated browser connection returned by setup and connect operations. */
 export interface ApiMiddleware {
+    readonly serverTime: Pick<BrowserServerClockSession.Port, 'readWindow' | 'readWorkEpochMs'>;
     readonly session: AuthSession;
     readonly middleware: RallarBrowserMiddleware;
 }
@@ -130,6 +134,12 @@ export interface RallarConnectionOperations {
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    /** Earliest closing instant that guarantees the full duration under the live clock bounds.
+     * Returns undefined without calibration. Invalid durations and unsafe epochs throw RangeError.
+     */
+    deadlineAfter(durationMs: number): number | undefined;
+    /** Compare an inclusive closing instant with the active server-time window. Invalid epochs throw RangeError. */
+    compareDeadline(deadlineEpochMs: number): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;

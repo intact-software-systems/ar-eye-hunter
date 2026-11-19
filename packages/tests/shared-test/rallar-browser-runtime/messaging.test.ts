@@ -117,7 +117,14 @@ it('applies a command-injected hold through the configured readiness owner and r
     if (!ports?.submissionReadinessFaultPort || !ports.transportFaultPort) {
         throw new Error('Scoped connection must install both fault capabilities.');
     }
-    const message = newALUnicastMessage('sender', { topicId: 'topic', contextId: 'room', resourceId: 'one' }, 'receiver', 'held', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'topic', contextId: 'room', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'held',
+        resource: {}
+    });
     const serialized = JSON.stringify(message);
     const fault = { faultId: 'hold', carrier: 'ws', action: 'not-ready', match: { msgId: message.id.msgId }, remaining: 2 };
     await runtime.injectFault(fault);
@@ -126,6 +133,45 @@ it('applies a command-injected hold through the configured readiness owner and r
     expect(facade.rallar.diagnostics.faults.getObservations()).toEqual([{ faultId: 'hold', carrier: 'ws', decision: 'not-ready' }]);
     await runtime.injectFault({ ...fault, remaining: 0 });
     expect(ports.submissionReadinessFaultPort.decideSubmissionReadiness(serialized)).toBe('ready');
+    await runtime.close();
+});
+
+it('answers from a transport fault injection what that fault has acted on so far', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.ws');
+    const message = newALUnicastMessage('sender', { topicId: 'topic', contextId: 'room', resourceId: 'one' }, 'receiver', 'lost', {});
+    const serialized = JSON.stringify(message);
+    const fault = { faultId: 'lose-two', carrier: 'ws', action: 'drop', match: { typeId: 'lost' }, remaining: 2 };
+    const nothingActedOn = { drop: 0, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 };
+
+    const armed = await runtime.injectFault(fault);
+    for (let frame = 0; frame < 3; frame += 1) {
+        facade.rallar.diagnostics.faults.decideSend('ws', serialized);
+    }
+    const released = await runtime.injectFault({ ...fault, remaining: 0 });
+    const releasedAgain = await runtime.injectFault({ ...fault, remaining: 0 });
+    const neverActed = await runtime.injectFault({ ...fault, faultId: 'idle', remaining: 0 });
+
+    expect(armed).toEqual(nothingActedOn);
+    expect(released).toEqual({ ...nothingActedOn, drop: 2 });
+    expect(releasedAgain).toEqual({ ...nothingActedOn, drop: 2 });
+    expect(neverActed).toEqual(nothingActedOn);
+    await runtime.close();
+});
+
+it('answers null from a storage or product-socket fault injection, which act on no frame', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.ws');
+
+    const storage = await runtime.injectFault({
+        faultId: 'quota',
+        carrier: 'storage',
+        match: { owner: 'al-admission', kind: 'write' },
+        action: 'quota',
+        remaining: 1
+    });
+    const productSocket = await runtime.injectFault({ faultId: 'drop-socket', carrier: 'product-socket', action: 'close' });
+
+    expect(storage).toBeNull();
+    expect(productSocket).toBeNull();
     await runtime.close();
 });
 
@@ -139,7 +185,14 @@ it('forges a sender by the principal the page resolves in its room snapshot, and
         ...createGroupSnapshotFixture({ ...roomRef, sessionIds: [] }),
         activeSessions: [charlie]
     });
-    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'granted',
+        resource: {}
+    });
     const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
     const fault = {
         faultId: 'forge',
@@ -175,7 +228,14 @@ it('releases a forging fault without resolving its principal again, even once th
     } as const;
     const room = createGroupSnapshotFixture({ ...roomRef, sessionIds: [] });
     facade.behavior.getRoomSnapshot.mockReturnValue({ ...room, activeSessions: [charlie] });
-    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'granted',
+        resource: {}
+    });
     const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
     const fault = {
         faultId: 'forge',

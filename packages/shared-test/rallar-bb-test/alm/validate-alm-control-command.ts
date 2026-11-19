@@ -1,5 +1,6 @@
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import { AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { decodeSeededTransportFaultAction } from '@shared/transport-faults/seeded-transport-fault-action.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from '../control/control-command-issue.ts';
 import {
     validateAllowedFields,
@@ -314,8 +315,23 @@ function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): rea
         ...validateStringField(command, 'msgId', path),
         ...validateIntegerField({ record: command, key: 'count', path, minimum: 0 }),
         ...validateBooleanField(command, 'absent', path),
+        ...validateMessagesReceivedOrderField(command),
         ...validateIntegerField({ record: command, key: 'windowMs', path, minimum: 0 })
     ];
+}
+
+function validateMessagesReceivedOrderField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const field = command.ascendingBy;
+    const path = 'messages.received.ascendingBy';
+    if (typeof field !== 'string') {
+        return validateStringField(command, 'ascendingBy', 'messages.received');
+    }
+    if (field.trim() === '') {
+        return [toControlCommandIssue(`${path} must name a payload field.`)];
+    }
+    return command.absent === true
+        ? [toControlCommandIssue(`${path} claims an order, which an absence claim (absent: true) has none of.`)]
+        : [];
 }
 
 function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
@@ -436,10 +452,17 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     if (rewrite.right !== null) {
         return [];
     }
+    const seeded = decodeSeededTransportFaultAction(action);
+    if (seeded.left !== undefined) {
+        return [toControlCommandIssue(`${path}.${seeded.left}.`)];
+    }
+    if (seeded.right != null && (command.carrier !== 'rtc' || 'loss' in seeded.right)) {
+        return [];
+    }
     if (command.carrier === 'rtc') {
         return [
             toControlCommandIssue(
-                `${path} must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.`
+                `${path} must be "drop", "backpressure" or an object naming loss or rewrite on the rtc carrier.`
             )
         ];
     }
@@ -448,7 +471,9 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     }
     if (!isJsonRecordValue(action)) {
         return [
-            toControlCommandIssue(`${path} must be "drop", "not-ready", "backpressure" or an object with delayMs.`)
+            toControlCommandIssue(
+                `${path} must be "drop", "not-ready", "backpressure" or an object with delayMs, loss or jitter.`
+            )
         ];
     }
     return validateFaultDelayAction(action, path);

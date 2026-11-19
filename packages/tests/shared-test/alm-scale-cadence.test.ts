@@ -55,6 +55,7 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -95,12 +96,12 @@ afterEach(() => {
 function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessageHandle {
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
-    const handle = registry.open({
+    const handle = registry.open({ message: {
         id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
         route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
         payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
         delivery: { ack: 'group-leader', reliability: 'at-least-once' }
-    }, 'rtc');
+    }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
     starts.push({ atMs: Date.now(), msgId, payload });
     registry.record({
         kind: 'admission',
@@ -263,7 +264,12 @@ class ScaleActor {
     readonly index: number;
     readonly role: 'director' | 'player';
     readonly session: AuthSession;
-    readonly registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1_000, cancel: () => undefined });
+    readonly registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 1_000,
+        cancel: () => undefined
+    });
     readonly native: BlackBoxRallarRuntime;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly recipe: RallarBlackBoxTestRecipe;
@@ -373,7 +379,8 @@ class ScaleActor {
                     repliesHeld: 0,
                     replyWaitsOpen: 0,
                     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-                    ordering: createALInboundOrderingCounters()
+                    ordering: createALInboundOrderingCounters(),
+                    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
                 }),
                 readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>
@@ -695,13 +702,13 @@ class ScaleCohort {
 
     send(actor: ScaleActor, payload: ScaleWirePayload): RallarMessageHandle {
         const msgId = `${actor.agentId}-message-${actor.starts.length + 1}`;
-        const handle = actor.registry.open({
+        const handle = actor.registry.open({ message: {
             id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
             route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
             payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
             delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },
             constraints: { expiresAtMs: Date.now() + 30_000 }
-        }, 'rtc');
+        }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
         actor.starts.push({ atMs: Date.now(), msgId, payload });
         const admit = () => {
             actor.registry.record({

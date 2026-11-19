@@ -81,11 +81,14 @@ describe('ALOutboundStoreLane readiness', () => {
 
 function createDequeuedMessage(resourceId: string) {
     return newALUnicastMessage(
-        'server',
-        { topicId: 'chat', resourceId, contextId: 'conversation-1' },
-        'peer-1',
-        'chat.private-text.v1',
-        { text: resourceId },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'chat', resourceId, contextId: 'conversation-1' },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: { text: resourceId },
+            options: { ttlMs: 30_000 }
+        }
     );
 }

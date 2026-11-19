@@ -8,3 +8,8 @@ export function getOwnCount(record: object, key: string): number | null {
     const count = getOwnField(record, key);
     return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
+
+/** Null for an own null field, the count for a non-negative safe integer, else undefined. */
+export function getOwnNullableCount(record: object, key: string): number | null | undefined {
+    return getOwnField(record, key) === null ? null : getOwnCount(record, key) ?? undefined;
+}

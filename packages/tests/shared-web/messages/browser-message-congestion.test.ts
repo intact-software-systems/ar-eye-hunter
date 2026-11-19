@@ -112,7 +112,11 @@ async function openCongestionCarriers(
 async function openCongestionFixture(): Promise<CongestionFixture> {
     const faults = createScriptedTransportFaultPort();
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        ...BROWSER_DELIVERY_RETENTION,
+        cancel: () => {}
+    });
     const { rtc, ws, socket } = await openCongestionCarriers(faults, deliveries, diagnostics);
     const context = createDefaultApiMiddlewareTestDouble({
         session: { sessionId: 'a' },
@@ -136,8 +140,7 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => undefined,
         grantedTopics: NO_RTC_GRANTED_TOPICS
     });
@@ -150,7 +153,7 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
             sequence += 1;
             const message = createCongestionMessage(sequence, reliability, ack);
             const carrier: ALDeliveryCarrier = strategy === 'ws' ? 'ws' : 'rtc';
-            const handle = deliveries.open(message, carrier);
+            const handle = deliveries.open({ message: message, carrier: carrier, readDeadlineEpochMs: Date.now });
             dispatch.send({
                 context,
                 carrier,
@@ -176,14 +179,17 @@ async function openCongestionFixture(): Promise<CongestionFixture> {
 
 function createCongestionMessage(sequence: number, reliability: 'best-effort' | 'at-least-once', ack: 'receiver' | undefined): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId: `congested-${sequence}`, contextId: 'room' },
-        ORIGIN_ROOM,
-        TYPE_ID,
-        { sequence },
-        ack === undefined
-            ? { reliability, ack: 'none', ttlMs: 30_000, traceId: `trace-congested-${sequence}` }
-            : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } }, traceId: `trace-congested-${sequence}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId: `congested-${sequence}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: TYPE_ID,
+            resource: { sequence },
+            options: ack === undefined
+                ? { reliability, ack: 'none', ttlMs: 30_000, traceId: `trace-congested-${sequence}` }
+                : { reliability, ack, ttlMs: 30_000, qos: { ack: { algo: 'hop' } }, traceId: `trace-congested-${sequence}` }
+        }
     );
 }
 
@@ -253,7 +259,7 @@ describe('a best-effort send its carrier holds at the watermark, through the fac
         expect(fixture.rtc.channels.b!.sent).toEqual([]);
         expect(fixture.rtc.channels.c!.sent).toEqual([]);
         expect(fixture.socket.sent.map((frame) => JSON.parse(frame).id.msgId)).toEqual([handle.msgId]);
-        const trace = { traceId: 'trace-congested-1', corrId: handle.msgId };
+        const trace = { atMs: expect.any(Number), traceId: 'trace-congested-1', corrId: handle.msgId };
         expect(fixture.readCongestion()).toEqual([
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'drop', priority: 0, msgId: handle.msgId, ...trace },
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'hand-over', priority: 0, msgId: handle.msgId, ...trace }
@@ -293,6 +299,7 @@ describe('a best-effort send its carrier holds at the watermark, through the fac
             action: 'drop',
             priority: 0,
             msgId: handle.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-congested-1',
             corrId: handle.msgId
         }]);

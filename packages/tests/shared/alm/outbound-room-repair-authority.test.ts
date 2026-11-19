@@ -35,9 +35,17 @@ describe('retained room authority through repair scheduling', () => {
             vi.useRealTimers();
         });
         const stores = createDefaultOutboundTestStores();
-        const message = newALBroadcastMessage('self', { topicId: 'raw-snapshot', resourceId: 'room', contextId: cause }, 'room', 'snapshot.v1', {}, {
-            ttlMs: 30_000,
-            groupRef: { ...SCOPE, groupId: 'room' }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'raw-snapshot', resourceId: 'room', contextId: cause },
+            scope: 'room',
+            typeId: 'snapshot.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                groupRef: { ...SCOPE, groupId: 'room' }
+            }
         });
         const entry = await admitDirect(stores, message, cause === 'ack-timeout' ? 5 : 60_000);
         const requests: ALOutboundRepairRequest[] = [];

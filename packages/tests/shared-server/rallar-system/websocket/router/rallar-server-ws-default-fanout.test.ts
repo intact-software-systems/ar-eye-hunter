@@ -194,7 +194,14 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
 }
 
 function createWorldSend(msgId: string): ALMessage {
-    const base = newALBroadcastMessage('origin', newALRoute('app.news', 'world', msgId), 'world', 'news.v1', {});
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: newALRoute('app.news', 'world', msgId),
+        scope: 'world',
+        typeId: 'news.v1',
+        resource: {}
+    });
     return { ...base, id: { ...base.id, msgId } };
 }
 
@@ -269,14 +276,17 @@ function createReceiverRoomSend(
     expiresAtMs: number | undefined
 ): ALMessage {
     const base = newALBroadcastMessage(
-        'origin',
-        newALRoute('room.chat', ROOM.groupId, msgId),
-        'room',
-        'chat.message.v1',
-        {},
         {
-            groupRef: ROOM,
-            exceptPeerIds: ['origin']
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: newALRoute('room.chat', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                exceptPeerIds: ['origin']
+            }
         }
     );
     return {

@@ -3,10 +3,15 @@ import { Command } from '@shared/cache/Command.ts';
 import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import {
+    readBrowserServerCreationEpochMs,
+    readBrowserServerExpiryEpochMs
+} from '../../connection/server-clock/browser-server-clock-session.ts';
 
 import { ApiHttpError } from '../../api/http-error.ts';
 import { isRetryableApiViewFailure } from '../../api/read-api-view.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
+import type { ApiMiddleware } from '../../rallar-connection-facade.ts';
 import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
@@ -58,13 +63,17 @@ export class SelectedRoomRecovery {
         this.input = input;
     }
 
-    observePresence(snapshot: GroupSnapshot | undefined): void {
+    observePresence(snapshot: GroupSnapshot | undefined, context: ApiMiddleware): void {
         const room = this.input.selected();
-        if (!this.socketOpen || this.changing || !room) {
+        const window = context.serverTime.readWindow().right;
+        if (!this.socketOpen || this.changing || !room || !window) {
             return;
         }
         const session = this.input.requireSession();
-        if (needsPresenceRestore({ room, session, snapshot, timers: this.input.timers })) {
+        const connectionGenerationId = context.middleware.ownWsConnectionGeneration.readKnown();
+        if (
+            needsPresenceRestore({ room, session, snapshot, nowEpochMs: window.latestEpochMs, connectionGenerationId })
+        ) {
             this.interrupted = room;
             this.resume();
         }
@@ -169,11 +178,12 @@ export class SelectedRoomRecovery {
         if (!isActiveMember(snapshot, fence.session)) {
             return;
         }
+        const latestEpochMs = readBrowserServerExpiryEpochMs(restore.context.serverTime);
         if (
             snapshot.activeSessions.some((row) =>
                 row.sessionId === fence.session.sessionId &&
                 row.principalId === fence.session.clientId && row.connectionGenerationId === connectionGenerationId &&
-                row.expiresAtEpochMs > this.input.timers.nowMs()
+                row.expiresAtEpochMs > latestEpochMs
             )
         ) {
             await this.accept(restore, snapshot);
@@ -188,11 +198,11 @@ export class SelectedRoomRecovery {
         const publicationKey = await this.input.readPublicationKey();
         this.assertCurrent(restore);
         const expiresAtEpochMs = toRoomPresenceLeaseExpiresAtEpochMs(
-            this.input.timers.nowMs(),
+            readBrowserServerCreationEpochMs(restore.context.serverTime),
             restore.context.middleware.heartbeat.groupPresence?.leaseMs
         );
         const command = createStateGroupPresenceCommand({
-            nowMs: this.input.timers.nowMs,
+            nowMs: () => readBrowserServerCreationEpochMs(restore.context.serverTime),
             groupPresence: restore.context.middleware.heartbeat.groupPresence,
             expiresAtEpochMs,
             groupId: room.groupId,
@@ -238,8 +248,7 @@ export class SelectedRoomRecovery {
     private async sendPresence(reconnect: PresenceReconnect): Promise<void> {
         const confirmed = await sendPresenceReconnect(
             reconnect,
-            () => this.assertCurrent(reconnect),
-            this.input.timers
+            () => this.assertCurrent(reconnect)
         );
         await this.accept(reconnect, confirmed);
     }
@@ -255,7 +264,9 @@ export class SelectedRoomRecovery {
                 { timeoutMs: reconnect.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000 }
             ).run();
             this.assertCurrent(reconnect);
-            if (isConfirmedPresence(reconnect, snapshot, this.input.timers.nowMs())) {
+            if (
+                isConfirmedPresence(reconnect, snapshot, readBrowserServerExpiryEpochMs(reconnect.context.serverTime))
+            ) {
                 await this.accept(reconnect, snapshot);
             }
             else if (isActiveMember(snapshot, fence.session)) {

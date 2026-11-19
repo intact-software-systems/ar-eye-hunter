@@ -58,7 +58,7 @@ function toDirectorPresence(
             sessionId: appointment.sessionId
         }));
     }
-    return activeSessions;
+    return activeSessions.map((row) => ({ ...row, expiresAtEpochMs: Date.now() + 120_000 }));
 }
 
 function toDirectorMembers(

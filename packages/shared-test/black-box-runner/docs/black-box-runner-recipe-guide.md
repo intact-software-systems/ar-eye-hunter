@@ -546,6 +546,46 @@ to read.
 }
 ```
 
+### SERVER
+
+Use a `server` step to fault an API server the run manages. The step type names
+the fault and `request.target` names the server: `primary`, `secondary` or
+`tertiary`, the order of the `RALLAR_API_BASE_URL` suffixes.
+
+```json
+{ "name": "theSecondaryCrashes", "type": "server.stop", "request": { "target": "secondary", "mode": "crash" } },
+{ "name": "theSecondaryRestarts", "type": "server.restart", "request": { "target": "secondary" } }
+```
+
+| Step type                         | `request`                               | Notes                                                                  |
+| --------------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| `server.stop`                     | `target`, `mode`: `crash` or `graceful` | A crashed process closes its sockets without a close frame.            |
+| `server.restart`                  | `target`                                | Ends when the replacement is ready. Only a stopped server restarts.    |
+| `server.suspend`, `server.resume` | `target`                                | The process is paused and continued; its sockets stay open.            |
+| `server.cut-database-sessions`    | `target`                                | PostgreSQL runs only. `actual.terminatedSessions` is the number ended. |
+| `server.restore`                  | none                                    | Resumes every suspended server and restarts every stopped one.         |
+
+Rules:
+
+- A fault the target's state cannot take fails the step and names the refusal
+  in `result`: `not-running`, `already-running`, `already-suspended`,
+  `not-suspended`, `unmanaged-target` or `no-database-sessions`.
+- A recipes-only run manages no servers: every `server` step fails there.
+  Register a recipe that names one in a managed cluster profile only.
+- A recipe that faulted a server and did not restore it has every server
+  restored when it ends, so the next recipe starts on a whole cluster. Do not
+  rely on it for a step that follows in the same recipe: restart or resume the
+  server before the steps that need it.
+- A restarted server is a new process: a socket that was open on it is gone,
+  and the recipe opens a new one with a new ticket.
+- Capture `actual.terminatedSessions` with `request.outputs` and assert a floor
+  on it, so a cut that found no session does not pass as a fault.
+
+Examples: `tests/api-v1/api-v1-cluster-instance-loss.json`,
+`tests/api-v1/api-v1-cluster-database-session-loss.json` and
+`tests/api-v1/api-v1-cluster-subscriber-instance-loss.json`, which crashes the
+server that holds a subscriber's socket and reads how the receipt ends.
+
 ## Safe Transforms
 
 Transforms are declarative and bounded. They are available on SET steps through

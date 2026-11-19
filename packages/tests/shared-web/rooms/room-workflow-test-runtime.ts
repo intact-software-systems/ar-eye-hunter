@@ -178,12 +178,24 @@ export function createRoomSnapshot(
     sessionIds: readonly string[],
     scope: RoomSnapshotScopeFixture = {}
 ): GroupSnapshot {
-    return createGroupSnapshotFixture({
+    const snapshot = createGroupSnapshotFixture({
         applicationId: scope.applicationId ?? 'app-1',
         workspaceId: scope.workspaceId ?? 'workspace-1',
         groupId,
         sessionIds
     });
+    const { clientId, sessionId } = roomWorkflowMocks.session;
+    const principal = (id: string) => id === sessionId ? clientId : id;
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, ownerPrincipalId: principal(snapshot.group.ownerPrincipalId) },
+        members: snapshot.members.map((row) => ({ ...row, principalId: principal(row.principalId) })),
+        activeSessions: snapshot.activeSessions.map((row) => ({
+            ...row,
+            principalId: principal(row.principalId),
+            expiresAtEpochMs: Date.now() + 60_000
+        }))
+    };
 }
 
 /** Seeding replaces what the cache holds; what it has ever held only grows, as in the repository. */

@@ -165,11 +165,14 @@ export function toRoomEventEnvelopeMessage(
         ? omitGroupFromEnvelope(envelope)
         : envelope;
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-        'all',
-        AppTopics.groupStateEvent,
-        payload
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+            scope: 'all',
+            typeId: AppTopics.groupStateEvent,
+            resource: payload
+        }
     );
 }
 

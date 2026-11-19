@@ -62,14 +62,17 @@ describe('WS room unicast scope authority', () => {
 
 function createRoomUnicast(): ALMessage {
     return newALUnicastMessage(
-        'server',
-        { topicId: 'room.chat', resourceId: 'resource', contextId: 'room' },
-        'peer',
-        'chat.message.v1',
-        {},
         {
-            ttlMs: 30_000,
-            groupRef: { ...SCOPE, groupId: 'room' }
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'room.chat', resourceId: 'resource', contextId: 'room' },
+            toPeerId: 'peer',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                groupRef: { ...SCOPE, groupId: 'room' }
+            }
         }
     );
 }

@@ -486,7 +486,20 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             { ...options, diagnosticsPorts }
         );
 
-        return { middleware: { session, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt, serverClock };
+        return {
+            middleware: {
+                session,
+                middleware,
+                serverTime: {
+                    readWindow: () => serverClock.readWindow(),
+                    readWorkEpochMs: () => serverClock.readWorkEpochMs()
+                }
+            },
+            diagnosticsPorts,
+            checkpoints,
+            rtcCaptureReceipt,
+            serverClock
+        };
     }
 
     private shutdownMiddleware(

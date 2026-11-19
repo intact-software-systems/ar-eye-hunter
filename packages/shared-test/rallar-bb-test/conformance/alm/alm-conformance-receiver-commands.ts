@@ -20,6 +20,8 @@ interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
      * means the send has no durable cost (R-S3b-20).
      */
     readonly durablePathBudgetMs?: number;
+    /** A payload field every arrival must hold as a number above the arrival before it; absent, no order is claimed. */
+    readonly ascendingBy?: string;
 }
 
 interface AlmConformancePayloadWaitInput {
@@ -63,6 +65,7 @@ export function toReceivedCommand(received: AlmConformanceReceivedInput): Rallar
         typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
+        ...(received.ascendingBy === undefined ? {} : { ascendingBy: received.ascendingBy }),
         windowMs: timeoutMs - RESPONSE_MARGIN_MS,
         timeoutMs
     };

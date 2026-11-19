@@ -11,6 +11,10 @@ import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import type { TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+import type {
+    HeldTopologyReshapeReason,
+    TopologyReshapePermission
+} from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
@@ -26,10 +30,15 @@ export interface EvolvePlannedTopologyInput {
     readonly kind: Extract<RallarRtcTopologyKind, 'tree' | 'mesh'>;
     readonly degreeLimit: number;
     readonly meshParamK: number;
+    readonly reshape: TopologyReshapePermission;
 }
 
 export type EvolvePlannedTopologyResult =
-    | Readonly<{ outcome: 'planned'; nextHopsBySessionId: Record<string, readonly string[]>; }>
+    | Readonly<{
+        outcome: 'planned';
+        nextHopsBySessionId: Record<string, readonly string[]>;
+        heldReshapeReasons: readonly HeldTopologyReshapeReason[];
+    }>
     | Readonly<{ outcome: 'full-rebuild'; reason: EvolvePlannedTopologyFullRebuildReason; }>;
 
 export type EvolvePlannedTopologyFullRebuildReason = Exclude<TopologyReshapeReason, 'kind-change' | 'refinement'>;
@@ -46,7 +55,8 @@ export function computeEvolvedTopologyNextHops(
     input: EvolvePlannedTopologyInput
 ): EvolvePlannedTopologyResult {
     const delta = computeTopologyMembershipDelta(input);
-    const rebuildReason = resolveEvolveFullRebuildReason(input, delta);
+    const leaderRootingOwed = isLeaderRootingOwed(input, delta);
+    const rebuildReason = resolveEvolveFullRebuildReason(input, delta, leaderRootingOwed);
     if (rebuildReason !== undefined) {
         return { outcome: 'full-rebuild', reason: rebuildReason };
     }
@@ -65,7 +75,11 @@ export function computeEvolvedTopologyNextHops(
         return { outcome: 'full-rebuild', reason: 'invariant-violation' };
     }
 
-    return { outcome: 'planned', nextHopsBySessionId: toNextHopsBySessionId(evolved, input.activeSessionIds) };
+    return {
+        outcome: 'planned',
+        nextHopsBySessionId: toNextHopsBySessionId(evolved, input.activeSessionIds),
+        heldReshapeReasons: leaderRootingOwed ? ['leader-rooting'] : []
+    };
 }
 
 interface TopologyMembershipDelta {
@@ -78,6 +92,11 @@ interface LeaderBreadthFirstJoinsInput {
     readonly graph: WeightedGraph;
     readonly leaderSessionId: string;
     readonly joinedSessionIds: readonly string[];
+}
+
+interface LeaderFirstJoins {
+    readonly addedSessionIds: readonly string[];
+    readonly leaderSessionId: string;
 }
 
 interface TopologyMembershipChange {
@@ -94,32 +113,44 @@ function computeTopologyMembershipDelta(input: EvolvePlannedTopologyInput): Topo
     };
 }
 
-/**
- * A tree's next hops are undirected, so a leader whose eccentricity in the
- * previous tree is within the depth of the no-RTT tree rooted at it is
- * re-rooted in place; a snapshot carries no root, so an unchanged leader and
- * a newly appointed one are judged alike.
- */
+/** With the reshape held, the room evolves in place whatever the size of its delta, and an owed re-root waits. */
 function resolveEvolveFullRebuildReason(
     input: EvolvePlannedTopologyInput,
-    delta: TopologyMembershipDelta
+    delta: TopologyMembershipDelta,
+    leaderRootingOwed: boolean
 ): EvolvePlannedTopologyFullRebuildReason | undefined {
-    const deltaSize = delta.addedSessionIds.length + delta.removedSessionIds.length;
-    if (input.kind === 'tree' && input.leaderSessionId !== undefined) {
-        if (delta.addedSessionIds.includes(input.leaderSessionId)) {
-            return 'leader-rooting';
-        }
-        if (deltaSize === 0 && computeLeaderDepthExcess(input, input.leaderSessionId) > 0) {
-            return 'leader-rooting';
-        }
+    if (input.reshape.reshape === 'held') {
+        return undefined;
     }
-
+    if (leaderRootingOwed) {
+        return 'leader-rooting';
+    }
+    const deltaSize = delta.addedSessionIds.length + delta.removedSessionIds.length;
     const joinsOnly = input.kind === 'tree' && delta.removedSessionIds.length === 0;
     const deltaBudget = Math.max(2, Math.ceil(input.previous.activeSessionIds.length / 4));
     if (!joinsOnly && deltaSize > deltaBudget) {
         return 'delta-too-large';
     }
     return undefined;
+}
+
+/**
+ * A tree's next hops are undirected, so a leader whose eccentricity in the
+ * previous tree is within the depth of the no-RTT tree rooted at it is
+ * re-rooted in place; a snapshot carries no root, so an unchanged leader and
+ * a newly appointed one are judged alike. The depth is judged only when
+ * nobody joined or left, unless a re-root held earlier is still wanted.
+ */
+function isLeaderRootingOwed(input: EvolvePlannedTopologyInput, delta: TopologyMembershipDelta): boolean {
+    if (input.kind !== 'tree' || input.leaderSessionId === undefined) {
+        return false;
+    }
+    if (delta.addedSessionIds.includes(input.leaderSessionId)) {
+        return true;
+    }
+    const deltaSize = delta.addedSessionIds.length + delta.removedSessionIds.length;
+    const rootingWanted = input.reshape.reshape === 'allowed' && input.reshape.wantedReasons.includes('leader-rooting');
+    return (deltaSize === 0 || rootingWanted) && computeLeaderDepthExcess(input, input.leaderSessionId) > 0;
 }
 
 function computeLeaderDepthExcess(input: EvolvePlannedTopologyInput, leaderSessionId: string): number {
@@ -151,11 +182,9 @@ function computeEvolvedGraph(
             evolved = applyMembershipChange(input, evolved, { sessionId, type: MessageType.TO_SERVER_LEAVE });
         }
         if (input.kind === 'tree' && input.leaderSessionId !== undefined) {
-            return computeLeaderBreadthFirstJoins({
-                evolve: input,
-                graph: evolved,
-                leaderSessionId: input.leaderSessionId,
-                joinedSessionIds: delta.addedSessionIds
+            return computeLeaderFirstJoins(input, evolved, {
+                addedSessionIds: delta.addedSessionIds,
+                leaderSessionId: input.leaderSessionId
             });
         }
         for (const sessionId of delta.addedSessionIds) {
@@ -166,6 +195,28 @@ function computeEvolvedGraph(
         return undefined;
     }
     return evolved;
+}
+
+/**
+ * A joining leader is not in the tree for the leader-rooted walk to start
+ * from, so it is attached first by the tree's ordinary insert; only a held
+ * reshape evolves a tree its leader joins.
+ */
+function computeLeaderFirstJoins(
+    input: EvolvePlannedTopologyInput,
+    graph: WeightedGraph,
+    joins: LeaderFirstJoins
+): WeightedGraph | undefined {
+    const leaderJoins = joins.addedSessionIds.includes(joins.leaderSessionId);
+    const rooted = leaderJoins
+        ? applyMembershipChange(input, graph, { sessionId: joins.leaderSessionId, type: MessageType.TO_SERVER_ENTER })
+        : graph;
+    return computeLeaderBreadthFirstJoins({
+        evolve: input,
+        graph: rooted,
+        leaderSessionId: joins.leaderSessionId,
+        joinedSessionIds: joins.addedSessionIds.filter((sessionId) => sessionId !== joins.leaderSessionId)
+    });
 }
 
 /** Attaching each join to the shallowest open session keeps the leader within the no-RTT rooted depth by construction. */

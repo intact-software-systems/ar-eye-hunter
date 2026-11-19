@@ -73,11 +73,14 @@ describe('WsQueueBoxClientService.sendLive', () => {
 
 function sendLiveMessage() {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'rtt', contextId: 'pair', resourceId: '1' },
-        'peer',
-        'rtt',
-        { rttMs: 10 },
-        { ttlMs: 15_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'rtt', contextId: 'pair', resourceId: '1' },
+            toPeerId: 'peer',
+            typeId: 'rtt',
+            resource: { rttMs: 10 },
+            options: { ttlMs: 15_000 }
+        }
     );
 }
