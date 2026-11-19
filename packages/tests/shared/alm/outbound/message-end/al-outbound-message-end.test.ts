@@ -213,7 +213,7 @@ describe('a terminal settlement ends its message', () => {
     });
 
     it.each(STORES)(
-        'on %s, a superseded receipt timer that runs in time re-writes the timer the terminal receipt completed, which stays completed',
+        'on %s, a superseded receipt timer that runs in time writes nothing for the kept row and states nothing',
         async (store) => {
             const fixture = await createEndedMessageFixture(store, { maxRepairs: 4 });
             const { second, kept } = await keepTimedOutReceiptOverSupersededTimers(fixture);
