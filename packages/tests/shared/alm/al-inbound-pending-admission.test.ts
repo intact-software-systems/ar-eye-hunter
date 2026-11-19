@@ -192,7 +192,11 @@ it('refuses to report pending when an existing admission attempt completed after
     });
     expect(admissionRead.dedupExpiresAt).toBeUndefined();
 
-    const admission = new ALInboundMessageAdmission({ ...dependencies, workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now }) });
+    const admission = new ALInboundMessageAdmission({
+        ...dependencies,
+        gapRenewalStretch: 1,
+        workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now })
+    });
     onTestFinished(() => admission.dispose());
     expect(await admission.retainPending(fixture.work.payload)).toMatchObject({ kind: 'not-admitted' });
     expect(await stores.workQueue.getItem(fixture.work.entry.key)).toEqual(terminal);
@@ -210,6 +214,7 @@ it.each(['payload', 'scope', 'deadline'] as const)('refuses a conflicting pendin
     const pending = fixture.work.payload;
     const admission = new ALInboundMessageAdmission({
         ...runtimeDependencies(stores, [], []),
+        gapRenewalStretch: 1,
         workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now })
     });
     if (field === 'scope') {
@@ -235,6 +240,7 @@ it('answers the same pending message from another source as retained, keeping th
     const before = await stores.workQueue.getItem(fixture.work.entry.key);
     const admission = new ALInboundMessageAdmission({
         ...runtimeDependencies(stores, [], []),
+        gapRenewalStretch: 1,
         workPort: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now })
     });
     onTestFinished(() => admission.dispose());

@@ -32,10 +32,12 @@ import {
     decodeALAdmissionCarrier,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
+    decodeALAdmissionSeqRanges,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
+import type { ALInboundGapRenewalEffect } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
@@ -236,7 +238,12 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         'seq',
         'source',
         'carrier',
-        'expiresAtMs'
+        'expiresAtMs',
+        'range',
+        'requestNumber',
+        'toPeerId',
+        'traceId',
+        'signsForRecipient'
     ]);
     switch (effect.kind) {
         case 'admit-message': {
@@ -296,9 +303,40 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
                 trackKey: decodeALAdmissionString(effect.trackKey),
                 seq: decodeALAdmissionNumber(effect.seq)
             };
+        case 'renew-gap':
+            return decodeALInboundGapRenewalEffect(effect);
         default:
             throw new TypeError('Persisted inbound effect payload kind is invalid');
     }
+}
+
+function decodeALInboundGapRenewalEffect(
+    value: PersistedALValue
+): ALInboundGapRenewalEffect {
+    const effect = decodeALAdmissionRecord(value, [
+        'kind',
+        'trackKey',
+        'range',
+        'requestNumber',
+        'toPeerId',
+        'message',
+        'traceId',
+        'signsForRecipient'
+    ]);
+    const [range] = decodeALAdmissionSeqRanges([effect.range]);
+    if (range === undefined || typeof effect.signsForRecipient !== 'boolean') {
+        throw new TypeError('Persisted gap renewal names no range or no signing rule');
+    }
+    return {
+        kind: 'renew-gap',
+        trackKey: decodeALAdmissionString(effect.trackKey),
+        range,
+        requestNumber: decodeALAdmissionNumber(effect.requestNumber),
+        toPeerId: decodeALAdmissionString(effect.toPeerId),
+        message: decodeALInboundMessageReference(effect.message),
+        traceId: decodeALAdmissionString(effect.traceId),
+        signsForRecipient: effect.signsForRecipient
+    };
 }
 
 export function validateALInboundWorkWrites(

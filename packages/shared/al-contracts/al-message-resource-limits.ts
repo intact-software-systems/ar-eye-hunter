@@ -23,7 +23,14 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     /** The sequences one execution of a repair hint retransmits; the rest is re-committed as one follow-up hint. */
     repairPageMessages: 32,
     bufferedMessages: 256,
-    bufferedBytes: 1024 * 1024
+    bufferedBytes: 1024 * 1024,
+    /**
+     * How long a receiver waits before each renewal of a sequence still missing: the first after it went missing, each
+     * later one after the previous renewal. A request numbered `n` waits `gapRenewalIntervalsMs[n - 2]`.
+     */
+    gapRenewalIntervalsMs: [1_000, 2_000, 4_000],
+    /** The most each interval is stretched, by a factor each receiver draws once, so receivers behind one gap spread. */
+    gapRenewalMaxStretch: 1.5
 } as const;
 
 /** Byte policy is selected by a trusted protocol owner, never by envelope fields. */

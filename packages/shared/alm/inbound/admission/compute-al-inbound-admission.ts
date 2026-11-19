@@ -32,6 +32,7 @@ import {
     computeALInboundOrderingAcceptance
 } from '../al-inbound-planner-snapshot.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { toALInboundGapRenewalEffects } from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
     prepareALInboundCommitBundle,
     type ALInboundEffectFacts
@@ -201,7 +202,8 @@ function computeALInboundAdmissionChanges(
             ...acknowledgements.immediateEffects,
             ...toALInboundForwardingEffects(controls, shouldForward),
             ...acknowledgements.completedEffects,
-            ...toALInboundBufferedReleaseEffects(read)
+            ...toALInboundBufferedReleaseEffects(read),
+            ...toALInboundGapRenewalEffects({ read, controls, selfPeerId: input.facts.selfPeerId })
         ]
     };
 }

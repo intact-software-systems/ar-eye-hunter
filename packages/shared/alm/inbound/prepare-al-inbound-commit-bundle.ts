@@ -48,7 +48,7 @@ interface ALInboundControlOrdering {
     readonly missingRanges?: readonly ALSeqRange[];
 }
 
-interface PrepareALInboundDurableEffectInput {
+export interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
     readonly traceId: string;
@@ -193,7 +193,8 @@ function toCanonicalMessageMutations(
     }];
 }
 
-function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput): ALInboundDurableEffect {
+/** The durable value of one effect intent: a control it sends becomes the envelope under this peer's own identity. */
+export function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput): ALInboundDurableEffect {
     const { payload, facts, index } = input;
     const id: ALMessage['id'] = {
         v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -259,6 +260,7 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
         case 'dispatch-local':
         case 'forward-message':
         case 'release-buffered':
+        case 'renew-gap':
             return payload;
     }
 }

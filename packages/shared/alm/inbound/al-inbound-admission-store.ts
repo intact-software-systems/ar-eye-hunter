@@ -7,7 +7,8 @@ import type {
 } from '../../al-contracts/al-policy.ts';
 import type {
     ALOrderingTrackSnapshot,
-    ALReadyable
+    ALReadyable,
+    ALSeqRange
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import {
@@ -351,6 +352,22 @@ export type ALInboundDurableEffect =
         kind: 'release-buffered';
         trackKey: string;
         seq: number;
+    }>
+    /**
+     * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks `toPeerId`
+     * again, under `requestNumber`, for what of `range` is still missing. `message` is that arrival, which the renewal
+     * names; the row holds no time, so the same arrival planned again computes the same row.
+     */
+    | Readonly<{
+        kind: 'renew-gap';
+        trackKey: string;
+        range: ALSeqRange;
+        requestNumber: number;
+        toPeerId: string;
+        message: ALInboundMessageReference;
+        traceId: string;
+        /** Whether the renewal's NACK is a counted recipient's own, which its writer signs, as the arrival's was. */
+        signsForRecipient: boolean;
     }>;
 
 export interface ALInboundCommitBundle {
@@ -398,6 +415,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     readBufferedRelease(input: ReadALInboundBufferedReleaseInput): Promise<ALInboundBufferedReleaseReadDto | undefined>;
 
     readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead>;
+
+    /** The track's live ordering snapshot; absent for a track never opened or past its TTL. */
+    readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined>;
 
     /**
      * The retained message and the planning state it is planned against, from one read session.
@@ -641,6 +661,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead> {
         return await this.effects.readOrderedDelivery(trackKey, beforeSeq);
+    }
+
+    async readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined> {
+        const snapshot = await this.backend.readWithin((session) =>
+            session.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot)
+        );
+        return snapshot !== undefined && snapshot.updatedAtMs + this.orderingTrackTtlMs > nowMs ? snapshot : undefined;
     }
 
     private async readDeliveryProgress(

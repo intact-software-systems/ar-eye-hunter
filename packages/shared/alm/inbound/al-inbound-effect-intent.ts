@@ -54,7 +54,7 @@ export interface ALInboundEffectIntent {
         }
         | Extract<
             ALInboundDurableEffect,
-            { readonly kind: 'dispatch-local' | 'forward-message' | 'release-buffered'; }
+            { readonly kind: 'dispatch-local' | 'forward-message' | 'release-buffered' | 'renew-gap'; }
         >;
 }
 

@@ -39,7 +39,7 @@ import {
     enqueueOutboundOrThrow
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
-import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
+import { waitForALInboundWorkDueNowSettled, waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 
@@ -113,8 +113,8 @@ describe('AL state retained across runtime recreation', () => {
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
 
-        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
-        await waitForSettledALInboundWork(stores.runtimeStores.workQueue);
+        // A gap retains no work due now, only its renewal's timer due later, so the queue is read once nothing is due.
+        await waitForALInboundWorkDueNowSettled(stores.runtimeStores.workQueue);
         await expect.poll(() =>
             stores.runtimeStores.admissionStore.readBufferedRelease({
                 trackKey: toALOrderingTrackKey(seq2)!,
