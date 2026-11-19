@@ -2,7 +2,9 @@
 
 The slice the maintainer ordered after the queue-order fix (D673): an ordered stream over `ws` must recover when a
 repair frame is lost. A unit reproduction came first, as ruled. It showed two defects, and the maintainer ruled on
-both. This document is the design for approval; nothing is built yet beyond the red tests.
+both. A builder's read of the first draft against the code then found gaps; two went to the maintainer and the rest
+are settled below as stated calls. This document is the design for approval; nothing is built yet beyond the red
+tests.
 
 ## What was found (2026-11-19)
 
@@ -23,28 +25,35 @@ both. This document is the design for approval; nothing is built yet beyond the 
 
 ## Goals
 
-- **B.** A WS client that sends a receipted room message resends it on its own hop until the server's `admitted`
-  receipt arrives, within the send's own receipt timeout and retries. A send the server never admits ends
-  `failed`, `receipt-exhausted`, as it does over `rtc`.
+- **B.** A WS client that sends a receipted room message resends it on its own hop until the server answers for it,
+  within the send's own receipt timeout and retries. A send the server never answers ends `failed`,
+  `receipt-exhausted`, as it does over `rtc`.
 - **A.** A receiver that still has a gap asks again, on a timer, and the sender answers a renewed request with a new
   frame. Reports that one burst of arrivals produces still collapse into one attempt (what D573 protects).
 - The lane cell `seeded-loss-stream` returns, green on `ws` and on `rtc`, three runs each.
-- A second lane cell runs the same loss over `ws` with `ack: 'none'`, so A is proven end to end and not only by B.
+- A second lane cell runs a loss over `ws` with `ack: 'none'`, so A is proven end to end and not only by B.
 
 ## Non-goals
 
 - A send with `ack: 'none'` whose only or last frame is lost. Nothing reports it: there is no receipt and no later
   frame to reveal a gap. It is recorded as a stated limit of `ack: 'none'` and pinned by a test.
+- Renewal through an `rtc` relay. A relay forwards a child's gap NACK only when it holds a pending row that waits on
+  that child, and it never forwards a repair request. Part A holds on direct links: a WS client and its server in
+  both directions, and `rtc` peers that send to each other directly. Relayed paths stay as today and are recorded
+  with the relay statement rules.
 - What a receiver does with a gap that is never filled. It stays as today.
+- A receipted `ws` send whose retry policy is `none`. It gets no first-hop resend and no first-hop failure; it waits
+  for the server as today.
 - The held-send path (D640), the lost stream start over `rtc`, the relay statement rules: their own slices.
-- Any change to a receipt after `admitted`: the server's receipts own the schedule from there, as today.
+- Any change to a receipt once the server has answered: the server's receipts own the schedule from there, as today.
 - Unicast sends, whose repair policy is `none`.
 
 ## Anti-goals
 
-- Two owners retrying the same send. The sender's first-hop timer ends at `admitted`; it never runs beside the
-  server's receipt schedule.
+- Two owners retrying the same send. The sender's first-hop wait ends at the server's first receipt for the message;
+  it never runs beside the server's receipt schedule, and it never becomes the receipt's deadline or attempts.
 - A resend per arriving frame. A burst of N later frames must not resend a sequence N times.
+- A renewal for a sequence that has only just gone missing. A frame that is merely late must not draw one.
 - A timeout, budget, page size or loss rate changed to make a cell green.
 - A second wire shape kept beside the first, or any compatibility path for the old one.
 
@@ -53,14 +62,16 @@ both. This document is the design for approval; nothing is built yet beyond the 
 - Maintainer, standing: no legacy, no migration code, no duplicated code, no business one-off where a shared library
   in `packages/shared/**` fits; the repository's code standard; authoritative writes follow
   `convergent-service-writing.md`.
-- D573's pin stays green unedited: `al-outbound-repair-exhaustion.test.ts`, "charges one attempt per gap … write no
-  new row".
-- The suites for receipts under a transport hold pass unedited
-  (`acknowledgement-under-transport-hold*.test.ts`).
-- The reproduction of part one stays byte for byte and green
-  (`outbound-work-readiness-starvation.test.ts`).
+- D573's pin `al-outbound-repair-exhaustion.test.ts`: its case "charges one attempt per gap … write no new row" keeps
+  every assertion. Two things in that file change and are named here so they are not a surprise: its hand-built
+  request payloads gain the new required field, and the statement that _another requester_ finds the budget spent is
+  restated to the per-requester budget the maintainer ruled.
+- The reproduction of part one stays byte for byte and green (`outbound-work-readiness-starvation.test.ts`).
 - The ALM lane cells that exist today pass unchanged, the jitter cell among them: it delays frames by up to 80 ms and
-  must not draw a renewed request.
+  must not draw a renewal.
+- The suite for receipts under a transport hold (`acknowledgement-under-transport-hold-indexeddb.test.ts`) passes
+  unedited. It does not exercise a room send's first-hop wait (its `ws` sender is a `hop` unicast), so part B brings
+  its own test for a held frame.
 
 ## Approaches (ruled by the maintainer, 2026-11-19)
 
@@ -68,68 +79,102 @@ both. This document is the design for approval; nothing is built yet beyond the 
 
 **B: who holds the first-hop timer.**
 
-1. _The sender, until `admitted`_ (chosen). One more stored row and one timer commit per receipted `ws` send; the
-   rule that the server's receipts own the schedule keeps holding from `admitted` on.
+1. _The sender, until the server answers_ (chosen: "Sender, until admitted"). One more stored row and one timer
+   commit per receipted `ws` send; the rule that the server's receipts own the schedule keeps holding from the
+   server's first receipt on.
 2. The sender, for the whole receipt. Reverses that rule and needs a guard against both sides retrying.
 3. The server re-reports gaps on a timer. Cannot cover a lost last frame or a lost single send.
+
+**B: a lost `admitted` receipt.** The server writes `admitted` once and answers a duplicate with nothing, so a lost
+`admitted` would end the send `failed` although the server delivered it.
+
+1. _The server answers a duplicate with `admitted` again_ (chosen).
+2. Accept and record it.
+3. Rethink part B.
 
 **A: what resends a lost repair frame.**
 
 1. _The requester asks again while the gap stands_ (chosen). Only the receiver knows the gap still stands, and it can
-   ask after the stream has ended. Needs a field on the request, a timer per track with a gap, a larger repair
-   budget and a rule for giving up.
+   ask after the stream has ended.
 2. The sender treats a late report as a new attempt. No wire change, but nothing arrives to trigger it when the
    stream has ended.
 3. No change; a stated limit for `ack: 'none'`.
 
+**A: how the repair budget counts.** Today it is per message and shared by every requester.
+
+1. _Per requester_ (chosen). Each requester gets its first attempt and its renewals for a sequence.
+2. Per message, as today. Renewals can be exhausted by other requesters' first reports.
+3. Per renewal round.
+
 ## Design
 
-### Part B: the sender owns the first hop until `admitted`
+### Part B: the sender owns the first hop until the server answers
 
 Today a WS client's receipted room send is written to the socket and forgotten until the server's `admitted` receipt
-creates the sender's receipt row. The change: at dispatch, the sender records that it is waiting for `admitted` from
-its own hop (the server), with a timer.
+creates the sender's receipt row. The change: at dispatch, the sender records that it is waiting for the server to
+answer for this message, with a timer.
 
 - **Which sends.** A room send from a composition that has an own hop (`hopPeerIds`, the WS client's server), with a
-  logical audience and a receipt mode other than `none`. Over `rtc` nothing changes: the sender already tracks its
-  peers.
+  logical audience, a receipt mode other than `none`, and a retry policy that allows at least one retry. Over `rtc`
+  nothing changes: the sender already tracks its peers.
 - **The timer.** The send's own receipt policy: its timeout (2 s by default) and its retries (3 by default). No new
   setting.
-- **When it fires.** The sender writes the same message again on its own hop, through the path an own-hop
-  acknowledgement timeout already takes (`retryPendingAck`, an `ack-timeout` repair hint with a new identity per
-  attempt), and waits again.
-- **When `admitted` arrives.** The wait ends and its timer work is removed in the same commit that today creates the
-  receipt row. From here the server's receipts own the schedule; the sender writes no `ack-timeout` work, as today.
+- **When it fires.** The sender writes the same message again on its own hop, with a new identity per attempt so a
+  frame is written, and waits again.
+- **What ends the wait.** Any receipt from the server for the message: `admitted`, `complete` or `timed-out`. Each
+  proves the server has it, and a terminal receipt can arrive before `admitted`. The wait and its timer work are
+  removed in the commit that admits that receipt. A timer already claimed by a running batch finds the wait ended
+  and does nothing.
+- **A receipt that arrives after a first-hop deadline** is admitted like any other. The first-hop wait's deadline and
+  attempts never become the receipt's: today a receipt row keeps its current deadline and attempts and refuses an
+  `admitted` that arrives after that deadline, so the wait cannot simply be the receipt row with the server as its
+  expected peer unless that admission resets it. The builder chooses the row; these are the requirements.
 - **When the retries are spent.** The handle ends `failed`, `receipt-exhausted`.
-- **A resend that crosses a slow first frame.** The server already admits a message once by its id; the second copy
-  is a duplicate. The builder confirms this with a test before relying on it.
-- **Under a transport hold.** The timer follows whatever rule the `rtc` receipt timer follows when a frame cannot be
-  written; no second rule.
+- **A duplicate at the server.** The server admits a message once by its id. Today a second copy gets no `admitted`.
+  The change: the server answers a duplicate of a message it has admitted with the `admitted` receipt again, to that
+  sender only. Where the server instance no longer holds the receipt (another cluster instance, a restart), nothing
+  is answered and the send can still end `failed` although delivered. That is recorded as a limit and pinned by a
+  test.
+- **Under a transport hold.** A frame that could not be written charges no attempt, as for the `rtc` receipt timer.
+  Part B's own test states it.
 
 ### Part A: the requester asks again
 
-Three changes, in the shared inbound and outbound code, so they hold for the WS server, for `rtc` peers and for a WS
-client that orders a server track.
+Changes in the shared inbound and outbound code. They hold on direct links: a WS client and its server in both
+directions, and `rtc` peers that send to each other directly.
 
-1. **The request carries a number.** A gap NACK (and the repair request sent with it) carries which request this is
-   for the gap it names: 1 for every report an arrival causes, and one more each time the receiver's timer renews
-   it. The field is required. The control's version changes as the repository changes a control contract; no reader
-   accepts the old shape.
-2. **The receiver renews a standing gap.** When a track gets a gap, the receiver arms one timer for that track. When
-   the timer runs and the track's contiguous head has not passed the missing range, the receiver sends the request
-   again with the next number and arms the timer once more. When the gap has closed, or the last renewal has gone
-   out, the timer ends. One timer per track with a gap, not per message; it lives in the inbound lane's durable work,
-   so it survives a reload and is claimed like other work.
-3. **The sender treats a new number as a new attempt.** The attempt identity becomes requester, track, sequence and
-   request number. Reports with the same number find the same attempt and write nothing more, exactly as D573 pins.
-   A higher number is a new attempt: it is charged against the repair budget and writes a frame.
+1. **A request carries a number, per missing sequence.** A gap NACK, and the repair request sent with it, carry for
+   the sequences they name which request this is: 1 for every report an arrival causes, and one more each time the
+   receiver's timer renews it. Both controls carry the same number, because over a direct `ws` link both reach the
+   sender and fold into one repair. The field is required on a gap request; other NACK reasons do not carry it. The
+   control's version and its proof tag change as the repository changes a control contract; no reader accepts the old
+   shape.
+2. **The number is part of the request's identity wherever a request is deduplicated.** A renewal after the stream has
+   ended has no new arriving frame to name, so it names the same message as the last report. Four places would
+   otherwise drop it as already seen: the receiver's own work id for the NACK and the repair request; the sender's
+   control admission history; the sender's repair-hint id; and the attempt identity. The number enters all four.
+3. **The receiver renews a sequence that has stayed missing.** When a track gets a gap, the receiver arms a timer.
+   When it runs, it renews only the sequences that have been missing for the whole interval since their last
+   request, names only those, and gives each its own next number. A sequence that went missing since the last run
+   already had its arrival report and waits its own interval. When no sequence is left to renew, the timer ends. A
+   later gap on the same track arms it again. The timer lives in the inbound lane's work: it needs a row that is due
+   in the future, which inbound work does not have today, and a key that a later gap on the same track can arm
+   again. On a durable lane it survives a reload; on a volatile lane it does not.
+4. **The sender treats a new number as a new attempt.** The attempt identity becomes requester, track, sequence and
+   request number. Requests with the same number find the same attempt and write nothing more, exactly as D573 pins.
+   A higher number is a new attempt: it is charged against the budget and writes a frame.
+5. **The budget counts per requester.** Each requester may spend `maxRepairs` attempts on a sequence. A request past
+   it ends `repair-exhausted` for that requester. The frames one message can cost are bounded by its requesters
+   times the budget, and a resend still goes to the requester alone.
 
 Values, proposed (my call; change them if you see it differently):
 
-- The receiver renews after 1 s, then 2 s, then 4 s: three renewals, the last 7 s after the gap appeared.
-- The repair budget (`maxRepairs`) for an at-least-once multicast send goes from 1 to 4: the first attempt and three
-  renewals. A request past the budget ends `repair-exhausted`, as today.
-- 1 s is twelve times the jitter cell's largest delay, so a delayed frame closes its gap long before a renewal.
+- A sequence is renewed after it has been missing 1 s, then 2 s more, then 4 s more: three renewals, the last 7 s
+  after it went missing. Each interval is stretched by a random factor between 1 and 1.5, drawn per receiver, so
+  receivers behind the same gap do not all ask at once.
+- `maxRepairs` for an at-least-once multicast send goes from 1 to 4, in both places it is set (the request and the
+  default policy): the first attempt and three renewals, per requester.
+- 1 s is twelve times the jitter cell's largest delay, so a late frame closes its gap long before a renewal.
 
 ### The reproduction's cases, restated
 
@@ -137,45 +182,57 @@ The six red cases were written before the rulings. Under the ruled design:
 
 - The two cases of B stay as written and turn green with part B.
 - The two `ack: 'receiver'` cases of A stay as written and turn green with part B (work is pending: the first-hop
-  timer).
+  wait).
 - The two `ack: 'none'` cases of A ask that a repeated report _caused by an arrival_ rewrites the frame or leaves
   work. The ruling keeps such a report collapsed. They are replaced by three statements, each red first: a sender
-  given a request with the next number writes the sequence again; a receiver with a standing gap sends the request
-  again when its timer runs, and stops when the gap closes; a sender and a receiver wired through a link that drops
-  the first repair frame deliver the whole stream.
+  given a request with the next number writes the sequence again; a receiver with a sequence that stays missing
+  sends the request again when its timer runs, and stops when the gap closes; a sender and a receiver wired through
+  a link that drops the first repair frame deliver the whole stream.
 
 ### The cells
 
 - `seeded-loss-stream` returns as it was (25 % loss, seed 7, every send `ack: 'receiver'`), from the kept patch.
-- A new cell, the same loss over `ws` with `ack: 'none'`: all twenty arrive in order. It proves the renewal.
+- A new cell over `ws` with `ack: 'none'`: the same loss is held while sends 1 to 19 are admitted and released
+  before send 20, so a later frame always reveals a gap and the cell does not depend on whether the seed spares the
+  last frame. All twenty arrive in order. The lost last frame is the stated limit, pinned at unit level.
 - Both are withheld from the hosted manifests, as the other fault cells are.
 - If either cell is not green on its carriers, three runs each, the work stops with a report of what remains.
 
 ## Validation
 
-- Unit: the restated reproduction, the receiver's timer, the sender's new identity, D573's pin unedited, the
-  under-hold suites unedited.
-- A PostgreSQL integration test for the server's inbound timer row (written, claimed, ended).
+- Unit: the restated reproduction; the first-hop wait (ended by each receipt phase, a late receipt admitted, a held
+  frame charging nothing, retries spent, retry `none` unchanged); the server's repeated `admitted`; the receiver's
+  timer (renews only what stayed missing, stops when closed, arms again); the sender's identity and the
+  per-requester budget; D573's pin as constrained above.
+- A PostgreSQL integration test for the server's inbound timer row (written, due later, claimed, ended).
 - Lane, full scope: each cell alone three times per carrier, then the two-agent family once per carrier.
-- The api-v1 black-box profiles (standard and cluster) and the medium-scale gate: the server's inbound lane and a
-  control contract change.
+- The api-v1 black-box profiles (standard and cluster) and the medium-scale gate: the server's inbound lane, its
+  receipts and a control contract change.
 - The unit, tooling and governance lanes; style, coupling, reachability, bundles; the tests typecheck.
 
 ## Left to the builder
 
-- The name and place of the request number, and how the control's version is changed, following the repository's
-  last control contract change.
-- Whether the first-hop wait reuses the pending-acknowledgement row with the own hop as its expected peer, or needs a
-  row of its own; the choice must not let the sender's timer outlive `admitted`.
-- The inbound work row for the gap timer: its key (one per track) and what it reads to decide the gap still stands.
-- Where the renewal intervals live (ALM's resource limits or the repair policy).
+- The name and place of the request number, and how the control's version and proof tag are changed, following the
+  repository's last control contract change.
+- The row that holds the first-hop wait, within the requirements above.
+- The inbound timer's row: how inbound work gets a future due time, its key, and what it stores about each missing
+  sequence (when it went missing, its number).
+- Where the renewal intervals and the random stretch live (ALM's resource limits or the repair policy), and how a
+  test fixes the draw.
+- How the budget's count is keyed per requester in the repair-attempt row.
 
 ## Calls made in this document
 
-- The first-hop timer uses the send's receipt timeout and retries; no new setting.
+- The first-hop wait uses the send's receipt timeout and retries; no new setting. A send with retry `none` is left
+  as today.
+- Any receipt phase from the server ends the first-hop wait, not `admitted` alone.
 - A lost only or last frame under `ack: 'none'` is a stated limit, not fixed.
-- The renewal intervals and the budget of 4.
-- A second lane cell for `ack: 'none'`.
+- Renewal holds on direct links; relayed `rtc` paths are left as today.
+- The request number is per missing sequence, and a sequence is renewed only after it stayed missing a whole
+  interval.
+- The renewal intervals, their random stretch, and the budget of 4.
+- A second lane cell for `ack: 'none'`, which releases its loss before the last send.
+- D573's pin file changes in the two named ways.
 - One pull request (#847) for both parts, B's commits first.
 
 ## Decisions (maintainer, 2026-11-19)
@@ -185,4 +242,6 @@ The six red cases were written before the rulings. Under the ruled design:
 | What follows the queue-order fix    | The lost repair frame, ahead of the alternating-runs baseline. |
 | Which defects this slice fixes      | Both, B first.                                                 |
 | B: who holds the first-hop timer    | The sender, until the server's `admitted` receipt.             |
+| B: a lost `admitted` receipt        | The server answers a duplicate with `admitted` again.          |
 | A: what resends a lost repair frame | The requester asks again while the gap stands.                 |
+| A: how the repair budget counts     | Per requester.                                                 |
