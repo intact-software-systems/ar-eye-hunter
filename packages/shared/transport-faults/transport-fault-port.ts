@@ -6,6 +6,12 @@ import {
     isALControlTypeId
 } from '../al-contracts/al-control-type-ids.ts';
 import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
+import {
+    isSeededTransportFaultAction,
+    type TransportFaultJitter,
+    type TransportFaultLoss
+} from './seeded-transport-fault-action.ts';
+import { SeededTransportFaultDraws } from './seeded-transport-fault-draws.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -47,7 +53,10 @@ export interface ScriptedTransportFault {
         | 'not-ready'
         | 'backpressure'
         | Readonly<{ delayMs: number; }>
+        | Readonly<{ loss: TransportFaultLoss; }>
+        | Readonly<{ jitter: TransportFaultJitter; }>
         | Readonly<{ rewrite: TransportFaultRewrite; }>;
+    /** Counts the frames the fault acted on: a frame a seeded loss let pass is not one. */
     readonly remaining: number | 'until-cleared';
 }
 
@@ -97,15 +106,21 @@ export function createScriptedTransportFaultPort(): ScriptedTransportFaultPort {
 
 class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     private readonly faults = new Map<string, ScriptedTransportFault>();
+    private readonly seededDraws = new SeededTransportFaultDraws();
     private readonly observations: TransportFaultObservation[] = [];
 
     inject(fault: ScriptedTransportFault): void {
         assertTransportFaultCarrierAction(fault);
+        this.seededDraws.rearm(
+            fault.faultId,
+            isSeededTransportFaultAction(fault.action) ? fault.action : undefined
+        );
         this.faults.set(fault.faultId, fault);
     }
 
     clear(): void {
         this.faults.clear();
+        this.seededDraws.clear();
         this.observations.length = 0;
     }
 
@@ -126,7 +141,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
         const fault = this.findMatchingFault(carrier, toSerializedFrameFacts(serialized), 'frame');
         const decision: TransportFaultDecision = fault === undefined
             ? { kind: 'pass' }
-            : toFrameFaultDecision(fault, serialized);
+            : toFrameFaultDecision(fault, serialized, this.seededDraws);
         if (fault !== undefined && decision.kind !== 'pass') {
             this.consumeFault(fault, decision.kind);
         }
@@ -175,13 +190,22 @@ function assertTransportFaultCarrierAction(fault: ScriptedTransportFault): void 
     }
 }
 
-function toFrameFaultDecision(fault: ScriptedTransportFault, serialized: string): TransportFaultDecision {
+/** A seeded action reads the next number of its own sequence in `seededDraws`; no other action reads it. */
+function toFrameFaultDecision(
+    fault: ScriptedTransportFault,
+    serialized: string,
+    seededDraws: SeededTransportFaultDraws
+): TransportFaultDecision {
     const { faultId, action } = fault;
     if (action === 'drop') {
         return { kind: 'drop', faultId };
     }
     if (typeof action === 'string') {
         return { kind: 'pass' };
+    }
+    if (isSeededTransportFaultAction(action)) {
+        const effect = seededDraws.decideFrame(faultId, action);
+        return effect.kind === 'pass' ? effect : { ...effect, faultId };
     }
     return 'rewrite' in action
         ? { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) }

@@ -1,0 +1,834 @@
+{
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrlSecondary": {
+      "env": "RALLAR_WS_BASE_URL_SECONDARY",
+      "default": "ws://127.0.0.1:18081"
+    },
+    "rallarWsBaseUrlTertiary": {
+      "env": "RALLAR_WS_BASE_URL_TERTIARY",
+      "default": "ws://127.0.0.1:18082"
+    },
+    "applicationId": "cluster-database-session-loss-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "cluster-database-session-loss-room-{runId}",
+    "clientPassword": {
+      "env": "RALLAR_BB_CDSL_PASSWORD",
+      "default": "api-v1-cdsl-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsAlicePrimary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "wsBobSecondary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/cdsl-register-alice-{runId}",
+        "body": {
+          "username": "cdsl-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/cdsl-login-alice-{runId}",
+        "body": {
+          "username": "cdsl-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/cdsl-register-bob-{runId}",
+        "body": {
+          "username": "cdsl-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/cdsl-login-bob-{runId}",
+        "body": {
+          "username": "cdsl-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "aliceCreatesTheRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/cdsl-create-room-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Cluster database session loss {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoinsTheRoomOnTheSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/cdsl-join-room-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "alicePresenceOnThePrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/cdsl-presence-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "cdsl-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "cdsl-connection-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bobPresenceOnTheSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/cdsl-presence-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "cdsl-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "cdsl-connection-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/cdsl-ws-ticket-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAlicePrimaryWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openAliceSocketOnThePrimary",
+      "type": "ws.open",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/cdsl-ws-ticket-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobSecondaryWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlSecondary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openBobSocketOnTheSecondary",
+      "type": "ws.open",
+      "connection": "wsBobSecondary",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "aliceSendsBroadcastOne",
+      "type": "ws.send",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "cdsl-broadcast-one-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "cdsl-broadcast-one-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "cdsl-broadcast-one-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            },
+            "exceptPeerIds": [
+              "{aliceSessionId}"
+            ]
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"before the sessions are cut\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobReceivesBroadcastOne",
+      "type": "ws.wait",
+      "connection": "wsBobSecondary",
+      "expect": {
+        "connection": "wsBobSecondary",
+        "withinMs": 15000,
+        "message": {
+          "id": {
+            "msgId": "cdsl-broadcast-one-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat"
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobAcknowledgesBroadcastOne",
+      "type": "ws.send",
+      "connection": "wsBobSecondary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "ack-bob-cdsl-broadcast-one-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "traceId": "trace-cdsl-ack-bob-one"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "cdsl-broadcast-one-{runId}",
+            "contextId": "{aliceSessionId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "qos": {
+            "delivery": {
+              "algo": "best-effort"
+            },
+            "durability": {
+              "algo": "volatile"
+            },
+            "ack": {
+              "algo": "none",
+              "opts": {
+                "timeoutMs": 250
+              }
+            }
+          },
+          "payload": {
+            "typeId": "al.control.ack.v3",
+            "contentType": "application/json",
+            "resource": "{\"ackedMsgId\":\"cdsl-broadcast-one-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0,\"proof\":null}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceReceivesTheCompleteReceiptOne",
+      "type": "ws.wait",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "outputs": {
+          "completeReceiptOneResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlicePrimary",
+        "withinMs": 15000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.receipt.v1",
+            "resource": {
+              "msgId": "cdsl-broadcast-one-{runId}",
+              "phase": "complete"
+            }
+          }
+        },
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ]
+      }
+    },
+    {
+      "name": "parseCompleteReceiptOne",
+      "type": "set",
+      "output": "completeReceiptOne",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.completeReceiptOneResource"
+        }
+      }
+    },
+    {
+      "name": "deriveBobConfirmedOne",
+      "type": "set",
+      "output": "bobConfirmedOne",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptOne.confirmedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.bobSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "assertEveryReceiverConfirmedBroadcastOne",
+      "type": "assert",
+      "actual": {
+        "msgId": "{completeReceiptOne.msgId}",
+        "phase": "{completeReceiptOne.phase}",
+        "bobConfirmedOne": "{bobConfirmedOne}",
+        "confirmedBeyondTheReceivers": "{completeReceiptOne.confirmedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "cdsl-broadcast-one-{runId}",
+          "phase": "complete",
+          "bobConfirmedOne": true,
+          "confirmedBeyondTheReceivers": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "theSecondaryLosesItsDatabaseSessions",
+      "type": "server.cut-database-sessions",
+      "request": {
+        "target": "secondary",
+        "outputs": {
+          "terminatedSessions": "actual.terminatedSessions"
+        }
+      }
+    },
+    {
+      "name": "assertTheSecondaryHeldSessionsToLose",
+      "type": "assert",
+      "actual": {
+        "terminatedSessions": "{terminatedSessions}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "terminatedSessions",
+            "gte": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "aliceSendsBroadcastTwo",
+      "type": "ws.send",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "cdsl-broadcast-two-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "cdsl-broadcast-two-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "cdsl-broadcast-two-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            },
+            "exceptPeerIds": [
+              "{aliceSessionId}"
+            ]
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"after the sessions were cut\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobReceivesBroadcastTwo",
+      "type": "ws.wait",
+      "connection": "wsBobSecondary",
+      "expect": {
+        "connection": "wsBobSecondary",
+        "withinMs": 15000,
+        "message": {
+          "id": {
+            "msgId": "cdsl-broadcast-two-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat"
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobAcknowledgesBroadcastTwo",
+      "type": "ws.send",
+      "connection": "wsBobSecondary",
+      "request": {
+        "send": {
+          "id": {
+            "v": 4,
+            "msgId": "ack-bob-cdsl-broadcast-two-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "traceId": "trace-cdsl-ack-bob-two"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "cdsl-broadcast-two-{runId}",
+            "contextId": "{aliceSessionId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "qos": {
+            "delivery": {
+              "algo": "best-effort"
+            },
+            "durability": {
+              "algo": "volatile"
+            },
+            "ack": {
+              "algo": "none",
+              "opts": {
+                "timeoutMs": 250
+              }
+            }
+          },
+          "payload": {
+            "typeId": "al.control.ack.v3",
+            "contentType": "application/json",
+            "resource": "{\"ackedMsgId\":\"cdsl-broadcast-two-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0,\"proof\":null}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceReceivesTheCompleteReceiptTwo",
+      "type": "ws.wait",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "outputs": {
+          "completeReceiptTwoResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlicePrimary",
+        "withinMs": 15000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.receipt.v1",
+            "resource": {
+              "msgId": "cdsl-broadcast-two-{runId}",
+              "phase": "complete"
+            }
+          }
+        },
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ]
+      }
+    },
+    {
+      "name": "parseCompleteReceiptTwo",
+      "type": "set",
+      "output": "completeReceiptTwo",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.completeReceiptTwoResource"
+        }
+      }
+    },
+    {
+      "name": "deriveBobConfirmedTwo",
+      "type": "set",
+      "output": "bobConfirmedTwo",
+      "transform": {
+        "includes": [
+          {
+            "path": "outputs.completeReceiptTwo.confirmedRecipientPeerIds"
+          },
+          {
+            "path": "outputs.bobSessionId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "assertEveryReceiverConfirmedBroadcastTwo",
+      "type": "assert",
+      "actual": {
+        "msgId": "{completeReceiptTwo.msgId}",
+        "phase": "{completeReceiptTwo.phase}",
+        "bobConfirmedTwo": "{bobConfirmedTwo}",
+        "confirmedBeyondTheReceivers": "{completeReceiptTwo.confirmedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "cdsl-broadcast-two-{runId}",
+          "phase": "complete",
+          "bobConfirmedTwo": true,
+          "confirmedBeyondTheReceivers": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "closeBobSocket",
+      "type": "ws.close",
+      "connection": "wsBobSecondary",
+      "request": {
+        "code": 1000,
+        "reason": "cluster database session loss recipe done"
+      }
+    },
+    {
+      "name": "closeAliceSocket",
+      "type": "ws.close",
+      "connection": "wsAlicePrimary",
+      "request": {
+        "code": 1000,
+        "reason": "cluster database session loss recipe done"
+      }
+    }
+  ]
+}

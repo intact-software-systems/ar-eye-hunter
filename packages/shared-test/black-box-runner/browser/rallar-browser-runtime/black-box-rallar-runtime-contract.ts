@@ -6,6 +6,7 @@ import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { TransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
@@ -93,7 +94,8 @@ export interface BlackBoxRallarRuntime {
     subscribeTopic(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Diagnostics>;
     unsubscribeTopic(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Diagnostics>;
     readTopicSubscriptions(input: unknown): Promise<BlackBoxRallarTopicSubscriptions.Readout>;
-    injectFault(input: unknown): Promise<void>;
+    /** What the named transport fault has acted on so far; `null` for a storage or product-socket fault. */
+    injectFault(input: unknown): Promise<TransportFaultActedCounts | null>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
     /**
      * The facade's `rallar.messages.readUsage()` beside the ordering snapshots the page's inbound stores state they

@@ -289,6 +289,7 @@ function computeLiveServiceRequirements(
         ...(transports.has('HTTP') ? ['reachable HTTP endpoints for HTTP steps'] : []),
         ...(transports.has('WS') ? ['reachable WebSocket endpoint and any required ticket/token for WS steps'] : []),
         ...(transports.has('RTC') || transports.has('WEBRTC') ? ['configured RTC provider for RTC steps'] : []),
+        ...(transports.has('SERVER') ? ['a run that manages its API servers for SERVER steps'] : []),
         ...(providers.has('rallar') || providers.has('rallar-browser')
             ? ['live Rallar API/signaling environment for browser-backed Rallar RTC']
             : []),

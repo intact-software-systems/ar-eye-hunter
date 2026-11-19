@@ -11,6 +11,7 @@ import {
 import { managedApiDiagnosticSecrets, waitForManagedApiReady } from '../managed-api/api-v1-managed-api-readiness.mts';
 import { withManagedPostgresRunDatabase } from '../managed-api/api-v1-managed-postgres-run-database.mts';
 import { startManagedApiServer, stopManagedApiServer } from '../managed-api/api-v1-managed-process-lifecycle.mts';
+import { toManagedApiDatabaseUrl } from '../managed-api/managed-api-database-sessions.mts';
 import {
     withManagedApiServerPlans,
     type ManagedApiServerLifecycleControls,
@@ -78,13 +79,11 @@ function labelProofPlan(
     index: number,
     applicationNamePrefix: string
 ): ManagedApiServerPlan {
-    const databaseUrl = new URL(plan.env.DATABASE_URL!);
-    databaseUrl.searchParams.set('application_name', `${applicationNamePrefix}-${plan.port}`);
     return {
         ...plan,
         env: {
             ...plan.env,
-            DATABASE_URL: databaseUrl.toString(),
+            DATABASE_URL: toManagedApiDatabaseUrl(plan.env.DATABASE_URL!, `${applicationNamePrefix}-${plan.port}`),
             RALLAR_API_QUEUE_WORKERS: index === 0 ? 'enabled' : 'disabled'
         }
     };

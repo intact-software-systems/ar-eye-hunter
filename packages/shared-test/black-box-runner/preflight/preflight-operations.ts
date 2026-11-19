@@ -19,7 +19,8 @@ export const PREFLIGHT_TRANSPORT_KEYS = [
     'CRDT',
     'ASSERT',
     'SET',
-    'PARALLEL'
+    'PARALLEL',
+    'SERVER'
 ] as const;
 
 export type BlackBoxRunnerPreflightTransportKey = typeof PREFLIGHT_TRANSPORT_KEYS[number];

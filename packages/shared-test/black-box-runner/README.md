@@ -1,7 +1,7 @@
 # Black-Box Runner Navigation Map
 
 Provider-neutral JSON recipe runner for api-v1: HTTP, WS, RTC, ASSERT, SET,
-and PARALLEL steps against managed or external servers. Recipes and their
+PARALLEL and SERVER steps against managed or external servers. Recipes and their
 matrix registration live beside the runner; formation-burst tiers and the
 convergence gates are recipes in `tests/api-v1/`, registered in
 `recipe-matrix.json`.
@@ -76,6 +76,38 @@ starting services.
 The PostgreSQL Release Gate (`postgres-integration`) runs the group-delta and auth-logout proofs too, through
 `npm run test:api-v1:black-box:postgres:group-delta` and `npm run test:api-v1:black-box:postgres:auth-logout`, and
 uploads their artifacts.
+
+## Server faults
+
+A recipe names a fault against an API server its run manages with a `server` step:
+
+| Step type                         | `request`                                | What happens                                                                                                                      |
+| --------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `server.stop`                     | `target`, `mode` (`crash` or `graceful`) | The process ends.                                                                                                                 |
+| `server.restart`                  | `target`                                 | A stopped server starts again under a log of its own (`<log>.restart-<n>`); the step ends when it is ready.                       |
+| `server.suspend`, `server.resume` | `target`                                 | The process is paused, then continued.                                                                                            |
+| `server.cut-database-sessions`    | `target`                                 | Every PostgreSQL session of the process ends, its notification listener among them; `actual.terminatedSessions` reports how many. |
+| `server.restore`                  | none                                     | Every suspended server resumes and every stopped one restarts.                                                                    |
+
+`target` is `primary`, `secondary` or `tertiary`, the order of the `RALLAR_API_BASE_URL` suffixes.
+
+- [ManagedApiServerFaults](./server-faults/managed-api-server-faults.mts#ManagedApiServerFaults) applies a
+  fault over the run's [lifecycle controls](./managed-api/with-managed-api-server-plans.mts). A fault the
+  target's state cannot take is refused as a value (`not-running`, `already-running`, `already-suspended`,
+  `not-suspended`, `unmanaged-target`, `no-database-sessions`) and fails the step.
+- A recipe runs two processes below the lifecycle owner, so
+  [withManagedApiServerFaultEndpoint](./server-faults/with-managed-api-server-fault-endpoint.mts#withManagedApiServerFaultEndpoint)
+  serves the faults on a loopback port the system picks and the run hands its URL to recipes in
+  `RALLAR_BB_SERVER_FAULTS_URL`. A recipes-only run manages no servers and sets no URL: its `server` steps fail
+  without a request.
+- [ServerFaultSteps](./server-faults/server-fault-steps.ts#ServerFaultSteps) executes the steps. A recipe that
+  faulted a server and did not restore it has every server restored when it ends, passed or failed, so the next
+  recipe of the matrix starts on a whole cluster.
+- Each managed process names its database sessions `rallar-bb-api-<port>`
+  ([toManagedApiDatabaseUrl](./managed-api/managed-api-database-sessions.mts#toManagedApiDatabaseUrl)); the
+  session cut finds them by that name. PGlite backends hold no such sessions and refuse the cut.
+
+A hosted run has no `server` step: the faults reach managed local processes only.
 
 ## Recipe execution and observations
 

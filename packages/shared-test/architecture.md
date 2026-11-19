@@ -8,7 +8,7 @@ server facade.
 ## Current Public Surface
 
 - `black-box-runner/` is the provider-neutral scenario runner for JSON recipes.
-  Its core step vocabulary is HTTP, WS, RTC, ASSERT, SET, PARALLEL, and related
+  Its core step vocabulary is HTTP, WS, RTC, ASSERT, SET, PARALLEL, SERVER, and related
   runner utilities.
 - `black-box-runner/docs/` contains the active recipe guide, artifact docs,
   provider docs, and historical iteration plans.

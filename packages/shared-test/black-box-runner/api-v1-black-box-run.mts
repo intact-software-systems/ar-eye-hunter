@@ -12,11 +12,18 @@ import {
     type ManagedPGliteRunStorage
 } from './managed-api/api-v1-managed-process-lifecycle.mts';
 import {
+    cutManagedApiDatabaseSessions,
+    toManagedApiDatabaseUrl
+} from './managed-api/managed-api-database-sessions.mts';
+import {
     withManagedApiServerPlans,
     type ManagedApiServerLifecycleControls,
     type ManagedApiServerPlan
 } from './managed-api/with-managed-api-server-plans.mts';
 import { parseApiV1BlackBoxArgs, type ApiV1BlackBoxOptions } from './parse-api-v1-black-box-options.mts';
+import { ManagedApiServerFaults } from './server-faults/managed-api-server-faults.mts';
+import { SERVER_FAULTS_URL_ENVIRONMENT_VARIABLE } from './server-faults/server-fault-command.ts';
+import { withManagedApiServerFaultEndpoint } from './server-faults/with-managed-api-server-fault-endpoint.mts';
 import {
     removeApiV1FairnessProofArtifact,
     verifyApiV1FairnessProof
@@ -223,7 +230,10 @@ function toManagedApiServerEnvironment(
         childEnvironment.RALLAR_SQL_BACKEND = 'postgres';
         childEnvironment.RALLAR_PGLITE_SCHEMA_INIT = 'disabled';
         childEnvironment.RALLAR_DB_PUBSUB = 'postgres';
-        childEnvironment.DATABASE_URL = requireManagedApiEnvironmentValue(env, 'DATABASE_URL');
+        childEnvironment.DATABASE_URL = toManagedApiDatabaseUrl(
+            requireManagedApiEnvironmentValue(env, 'DATABASE_URL'),
+            `rallar-bb-api-${port}`
+        );
     }
     else if (options.backend === 'pglite-file') {
         childEnvironment.RALLAR_SQL_BACKEND = 'pglite-file';
@@ -348,6 +358,28 @@ async function runRecipeMatrix(
     }
 }
 
+/** A run that manages its API servers lets its recipes fault them; a recipes-only run manages none. */
+async function runRecipeMatrixWithServerFaults(input: ManagedApiProofOrRecipeInput): Promise<void> {
+    if (input.options.recipesOnly) {
+        await runRecipeMatrix(input.options, input.env, input.artifactDir);
+        return;
+    }
+    const faults = new ManagedApiServerFaults({
+        plans: input.serverPlans,
+        controls: input.controls,
+        cutDatabaseSessions: input.options.backend === 'postgres'
+            ? async (plan) =>
+                await cutManagedApiDatabaseSessions(requireManagedApiEnvironmentValue(plan.env, 'DATABASE_URL'))
+            : undefined
+    });
+    await withManagedApiServerFaultEndpoint(faults, async (url) =>
+        await runRecipeMatrix(
+            input.options,
+            { ...input.env, [SERVER_FAULTS_URL_ENVIRONMENT_VARIABLE]: url },
+            input.artifactDir
+        ));
+}
+
 interface ManagedApiProofOrRecipeInput {
     readonly options: ApiV1BlackBoxOptions;
     readonly env: Record<string, string>;
@@ -361,7 +393,7 @@ async function runManagedProofOrRecipeMatrix(input: ManagedApiProofOrRecipeInput
         input.options.profile !== 'api-v1-black-box-topology-replay' &&
         input.options.clusterProfile !== 'api-v1-black-box-topology-replay'
     ) {
-        await runRecipeMatrix(input.options, input.env, input.artifactDir);
+        await runRecipeMatrixWithServerFaults(input);
         return;
     }
     const [primaryPlan, secondaryPlan, tertiaryPlan] = input.serverPlans;

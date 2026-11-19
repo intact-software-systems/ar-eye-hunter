@@ -40,10 +40,10 @@ describe('the fault.inject backpressure action', () => {
 
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
         expect(validateAlmControlCommand(command, 'fault.inject')).toEqual([
-            expect.objectContaining({ message: 'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.' })
+            expect.objectContaining({ message: 'fault.inject.action must be "drop", "backpressure" or an object naming loss or rewrite on the rtc carrier.' })
         ]);
         expect(decodeBlackBoxRallarFaultInput(command).left?.message).toBe(
-            'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.'
+            'fault.inject.action must be "drop", "backpressure" or an object naming loss or rewrite on the rtc carrier.'
         );
     });
 
@@ -53,11 +53,11 @@ describe('the fault.inject backpressure action', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
         expect(validateAlmControlCommand(command, 'fault.inject')).toEqual([
             expect.objectContaining({
-                message: 'fault.inject.action must be "drop", "not-ready", "backpressure" or an object with delayMs.'
+                message: 'fault.inject.action must be "drop", "not-ready", "backpressure" or an object with delayMs, loss or jitter.'
             })
         ]);
         expect(decodeBlackBoxRallarFaultInput(command).left?.message).toBe(
-            'fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs.'
+            'fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs, loss or jitter.'
         );
     });
 });
