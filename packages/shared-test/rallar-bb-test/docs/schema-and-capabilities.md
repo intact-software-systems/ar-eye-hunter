@@ -128,20 +128,29 @@ command is refused rather than dropped, so a mis-addressed field is reported
 instead of silently losing the fence or the landing it asked for.
 
 `formation.readiness` delegates to the browser's canonical event-driven room
-wait and returns the summary captured when that wait resolves. It observes
-only: it never refreshes the room and never opens lanes, which is what makes it
-evidence about the browser rather than about the harness that drove it. It
-resolves when the room's transport state is `open` **and** the room has at
+wait and returns the summary captured when that wait resolves. It observes the
+page: it never refreshes the room and never opens lanes, which is what makes it
+evidence about the browser rather than about the harness that drove it. Once
+the page's layout has settled it also reads the formation view, the one server
+read it makes. It resolves when the room's transport state is `open` **and** the room has at
 least one desired peer, because an accepted layout with no desired peers reads
 `open` immediately and would satisfy a bare state check vacuously.
 
 Once the page's accepted layout has been held for 3 500 ms with no planned
 layout pending, the observation also reads the formation view and reports
-`heldReshape` with `reading` `none` or `held`. Before that, or when the read
+`heldReshape` with `reading` `none`, `layout-stale` or `held`. Only `none` says
+the room owes nothing: the view states no held reshape and `layoutStale`
+false. `layout-stale` says the view states no hold but the server has planned
+past its accepted layout, as at the instant a hold is released and before the
+page holds the reshaped layout. Before the layout settles, or when the read
 fails, `reading` is `not-read` with `because` (`layout-not-settled` or
-`view-read-failed`); a failed read does not fail the observation. A `held`
-reading is repeated without a read until its `opensAtEpochMs`, and forgotten
-once the page's layout is no longer settled.
+`view-read-failed`); a failed read does not fail the observation. The read
+shares the command's own `timeoutMs`: a read that outlasts it fails the command
+with the timeout, as any command does, and a stable-layout wait reads again at
+its next poll, so `view-read-failed` reports only a read that fails within the
+command's time. A `held` reading is repeated without a read until its
+`opensAtEpochMs`, while the page holds the same accepted layout it was read
+under, and forgotten once the page's layout is no longer settled.
 
 Unlike `rtc.connect`, whose room fields are each independently optional, a
 formation command must name its room: an exact `roomRef`, or an
