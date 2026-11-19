@@ -22,6 +22,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import {
     toALOutboundAckTimeoutEffectId,
     toALOutboundFirstHopTimeoutEffectId
@@ -322,6 +323,114 @@ describe('a WS client\'s receipted send that waits on its first hop', () => {
     });
 });
 
+describe('a WS client\'s first-hop wait once its message has ended', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(START_MS);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it.each(['admitted', 'complete', 'timed-out'] as const)(
+        'a server receipt in phase %s that arrives after the first hop gave up rebuilds no receipt row and states nothing',
+        async (phase) => {
+            const fixture = createFirstHopFixture('memory');
+            const only = await sendOne(fixture, 'room broadcast', 'receiver');
+            for (let timeout = 0; timeout < 4; timeout += 1) {
+                await advance(fixture, 2_000);
+            }
+            expect(toTerminalKinds(fixture)).toEqual(['receipt-exhausted']);
+
+            expect(await fixture.ws.acceptReceipt(createServerReceipt(only, phase, ['peer-b']))).toEqual({
+                kind: 'rejected',
+                reason: expect.stringContaining('has ended')
+            });
+            expect(await readReceiptRow(fixture, only)).toBeUndefined();
+            expect(toTerminalKinds(fixture)).toEqual(['receipt-exhausted']);
+            await advance(fixture, 10_000);
+            expect(fixture.written).toHaveLength(4);
+        }
+    );
+
+    it.each(['admitted', 'complete', 'timed-out'] as const)(
+        'a server receipt in phase %s that arrives after a re-plan refused for good at a first-hop deadline rebuilds no receipt row and states nothing',
+        async (phase) => {
+            const fixture = createFirstHopFixture('memory');
+            const only = await sendOne(fixture, 'room broadcast', 'receiver');
+            fixture.revokePublishGrant();
+            await advance(fixture, 2_000);
+            expect(toTerminalKinds(fixture)).toEqual(['admission']);
+
+            expect(await fixture.ws.acceptReceipt(createServerReceipt(only, phase, ['peer-b']))).toEqual({
+                kind: 'rejected',
+                reason: expect.stringContaining('has ended')
+            });
+            expect(await readReceiptRow(fixture, only)).toBeUndefined();
+            expect(toTerminalKinds(fixture)).toEqual(['admission']);
+            await advance(fixture, 10_000);
+            expect(fixture.written).toHaveLength(1);
+        }
+    );
+
+    it('a terminal receipt that lands between a resend\'s two commits stops the resend\'s frame', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        admitBetweenResendCommits(
+            fixture,
+            createServerReceipt(only, 'complete', ['peer-b'], {
+                controlMsgId: `receipt-complete-${only.id.msgId}`,
+                confirmedRecipientPeerIds: ['peer-b']
+            })
+        );
+
+        await advance(fixture, 2_000);
+
+        expect(fixture.written).toHaveLength(1);
+        expect(fixture.settlements.filter((fact) => fact.kind === 'acknowledgement' || fact.kind === 'receipt-exhausted'))
+            .toEqual([expect.objectContaining({ kind: 'acknowledgement', msgId: only.id.msgId, complete: true })]);
+    });
+
+    it('an admitted receipt between a resend\'s two commits still lets that one frame out: admitted is not terminal', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        admitBetweenResendCommits(fixture, createServerReceipt(only, 'admitted', ['peer-b']));
+
+        await advance(fixture, 2_000);
+
+        expect(fixture.written).toHaveLength(2);
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        expect(await readWorkReadyAt(fixture)).toBeUndefined();
+        await advance(fixture, 10_000);
+        expect(fixture.settlements.filter((fact) => fact.kind === 'receipt-exhausted')).toEqual([]);
+    });
+
+    it('a wait whose message ended in a commit that did not read it is deleted at its deadline and states nothing', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        const read = await fixture.stores.admissionStore.readRepairMessage(only.id.msgId, createWsClientMintingPlanner(SESSION_ID));
+        expect(
+            await fixture.stores.admissionStore.commitBundle(toALOutboundMessageEndBundle({
+                senderId: only.id.senderId,
+                msgId: only.id.msgId,
+                stored: read.storedMessage,
+                expectedVersion: read.clientRecord?.version,
+                openReceipt: read.pendingAck,
+                firstHopWait: undefined
+            }))
+        ).toBe('committed');
+        expect(await readFirstHopWait(fixture, only)).toBeDefined();
+
+        await advance(fixture, 2_000);
+
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        expect(fixture.written).toHaveLength(1);
+        expect(toTerminalKinds(fixture)).toEqual([]);
+    });
+});
+
 describe('a WS client\'s receipt row when the server answers admitted twice', () => {
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['Date'] });
@@ -399,6 +508,29 @@ describe('a WS client\'s receipt row when the server answers admitted twice', ()
         expect(fixture.settlements.filter((fact) => fact.kind === 'receipt-exhausted')).toEqual([]);
     });
 });
+
+/** The kinds of the facts stated that end the message: a terminal receipt, an end of its first hop, a settled refusal. */
+function toTerminalKinds(fixture: FirstHopFixture): readonly string[] {
+    return fixture.settlements.flatMap((fact) =>
+        fact.kind === 'receipt-exhausted' || fact.kind === 'relay-rejected' ||
+            (fact.kind === 'admission' && fact.verdict.kind === 'refused') ||
+            (fact.kind === 'acknowledgement' && fact.complete)
+            ? [fact.kind]
+            : []
+    );
+}
+
+/** Lands `receipt` right after the commit that holds a resend's next wait, before the resend's dispatch commits. */
+function admitBetweenResendCommits(fixture: FirstHopFixture, receipt: ALMessage): void {
+    const commitBundle = fixture.stores.admissionStore.commitBundle.bind(fixture.stores.admissionStore);
+    vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
+        const status = await commitBundle(bundle, observation);
+        if (status === 'committed' && bundle.mutations.some((mutation) => mutation.kind === 'set-first-hop-wait')) {
+            expect(await fixture.ws.acceptReceipt(receipt)).toEqual({ kind: 'committed' });
+        }
+        return status;
+    });
+}
 
 function createFirstHopFixture(store: WsClientCarrierStoreKind, options: FirstHopFixtureOptions = {}): FirstHopFixture {
     const written: WrittenFrame[] = [];

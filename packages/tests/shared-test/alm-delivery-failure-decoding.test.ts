@@ -41,6 +41,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
             { kind: 'admission-failed' },
             { kind: 'storage-unavailable', cause: 'quota' },
             { kind: 'skipped', reason: 'planner-drop' },
+            { kind: 'skipped', reason: 'message-ended' },
             { kind: 'unroutable', reason: 'no-route' },
             { kind: 'attempt-failed', outcome: 'no-targets' },
             { kind: 'receipt-exhausted', cause: 'budget' },

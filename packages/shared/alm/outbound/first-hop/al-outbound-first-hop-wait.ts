@@ -19,6 +19,7 @@ import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
 import { toALOutboundAdmissionVerdict } from '../compute-al-outbound-dispatch.ts';
 import { resolveALOutboundReplanRefusalSettlement } from '../control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptExhaustedFact } from '../control/to-al-outbound-receipt-exhausted-fact.ts';
+import { toALOutboundReadMessageEndBundle } from '../message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import {
@@ -38,7 +39,7 @@ export namespace ALOutboundFirstHopWait {
         readonly settlements: ALOutboundSettlementEmitter;
     }
 
-    /** The message a wait resends: retained, re-planned with its receipt, and before its deadline. */
+    /** The message a wait resends: retained, not ended, re-planned with its receipt, and before its deadline. */
     export interface LiveMessage<TPrepared> {
         readonly msg: ALMessage;
         readonly plan: ALOutboundDispatchPlan<TPrepared>;
@@ -97,13 +98,12 @@ export class ALOutboundFirstHopWait<TPrepared> {
         timeout: ALOutboundFirstHopWait.LiveTimeout<TPrepared>
     ): Promise<void> {
         const { wait, live, decision } = timeout;
-        const end = { kind: 'delete-first-hop-wait', msgId: wait.msgId } as const;
         switch (decision.kind) {
             case 'refused':
-                await this.commitEnd(read, live, [end], decision.refusal);
+                await this.commitEnd(read, live, decision.refusal);
                 return;
             case 'exhausted':
-                await this.commitEnd(read, live, [end], toFirstHopExhaustedFact(wait, live));
+                await this.commitEnd(read, live, toFirstHopExhaustedFact(wait, live));
                 return;
             case 'early':
                 await this.commitWait(read, live, [], [toALOutboundFirstHopTimeoutEffect(wait, live.expiresAtMs)]);
@@ -145,19 +145,22 @@ export class ALOutboundFirstHopWait<TPrepared> {
         );
     }
 
-    /** The wait's end goes in the commit whose success states it, so the fact is stated once across replays. */
+    /** The message ends in the commit whose success states it, so the fact is stated once across replays and reloads. */
     private async commitEnd(
         read: ALOutboundRepairReadDto<TPrepared>,
         live: ALOutboundFirstHopWait.LiveMessage<TPrepared>,
-        mutations: ALOutboundCommitBundle<TPrepared>['mutations'],
         fact: ALOutboundSettlementFact
     ): Promise<void> {
-        if (await this.commitWait(read, live, mutations, []) === 'committed') {
+        const end = toALOutboundReadMessageEndBundle<TPrepared>(live.msg, read);
+        if (await this.commitBundle(end) === 'committed') {
             this.dependencies.settlements(fact);
         }
     }
 
-    /** A wait whose message is gone has nothing left to resend; without a sender record nothing fences its end. */
+    /**
+     * A wait whose message is gone, or ended in a commit that did not read the wait, has nothing left to resend;
+     * without a sender record nothing fences its end.
+     */
     private async commitOrphanedWait(read: ALOutboundRepairReadDto<TPrepared>, msgId: string): Promise<void> {
         if (read.clientRecord === undefined) {
             return;
@@ -217,7 +220,10 @@ function toLiveMessage<TPrepared>(
     const msg = read.sentSnapshot?.msg;
     const mode = read.plan?.ackTracking?.mode;
     const expiresAtMs = read.storedMessage?.reference.expiresAtMs;
-    if (msg === undefined || read.plan === undefined || mode === undefined || expiresAtMs === undefined) {
+    if (
+        msg === undefined || read.plan === undefined || mode === undefined || expiresAtMs === undefined ||
+        read.storedMessage?.ended
+    ) {
         return undefined;
     }
     return expiresAtMs > nowMs ? { msg, plan: read.plan, mode, expiresAtMs } : undefined;

@@ -19,11 +19,12 @@ import type {
 } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
+    isALOutboundTerminalReceipt,
     toALOutboundReceiptMutation,
     toALOutboundReceiptSettlement,
     toALOutboundReceiptTrackMutations,
     validateALOutboundReceiptAdmission,
-    type ALOutboundReceiptAdmissionSurface,
+    type ALOutboundReceiptAdmissionRead,
     type ALOutboundReceiptWrite
 } from './compute-al-outbound-receipt-admission.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
@@ -122,7 +123,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const status = await admissionStore.commitBundle(
-            toReceiptCommitBundle(surface, candidate.write, receipt)
+            toReceiptCommitBundle(candidate.read, candidate.write)
         );
         const settlement = status === 'committed'
             ? toALOutboundReceiptSettlement(candidate.read, candidate.write, control.id.traceId)
@@ -150,25 +151,35 @@ export class ALOutboundReceiptAdmission<TPrepared> {
 
 /**
  * The receipt's row and the shared-head rows it moves, and, when the sender still waits on the server to first answer
- * for the message, the end of that wait and its timer: any receipt proves the server has the message.
+ * for the message, the end of that wait and its timer: any receipt proves the server has the message. A terminal
+ * receipt also ends the message: its row stays as the final snapshot, its repair count goes and its row is marked.
  */
 function toReceiptCommitBundle<TPrepared>(
-    surface: ALOutboundReceiptAdmissionSurface,
-    write: ALOutboundReceiptWrite,
-    receipt: ALReceiptPayload
+    read: ALOutboundReceiptAdmissionRead,
+    write: ALOutboundReceiptWrite
 ): ALOutboundCommitBundle<TPrepared> {
-    const bundle: ALOutboundCommitBundle<TPrepared> = {
+    const { receipt, stored } = read;
+    const messageEnd = stored !== undefined && isALOutboundTerminalReceipt(read, write)
+        ? [
+            { kind: 'end-sent-message', stored } as const,
+            { kind: 'delete-repair-attempt', msgId: receipt.msgId } as const
+        ]
+        : [];
+    const waitEnd = read.firstHopWait === undefined
+        ? []
+        : [{ kind: 'delete-first-hop-wait', msgId: receipt.msgId } as const];
+    return {
         senderId: receipt.originPeerId,
-        expectedVersion: surface.clientRecord?.version,
+        expectedVersion: read.clientRecord?.version,
         mutations: [
             toALOutboundReceiptMutation(write, receipt),
-            ...toALOutboundReceiptTrackMutations(surface.trackPositions, write)
+            ...toALOutboundReceiptTrackMutations(read.trackPositions, write),
+            ...waitEnd,
+            ...messageEnd
         ],
-        durableEffects: []
-    };
-    return surface.firstHopWait === undefined ? bundle : {
-        ...bundle,
-        mutations: [...bundle.mutations, { kind: 'delete-first-hop-wait', msgId: receipt.msgId }],
-        endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(surface.firstHopWait)]
+        durableEffects: [],
+        ...(read.firstHopWait === undefined
+            ? {}
+            : { endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(read.firstHopWait)] })
     };
 }

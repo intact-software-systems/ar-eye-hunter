@@ -14,6 +14,7 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
+import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -30,6 +31,7 @@ import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundSettledMessageEnd } from './message-end/to-al-outbound-settled-message-end.ts';
 import {
     toALOutboundAckTimeoutEffectId,
     toALOutboundFirstHopTimeoutEffectId,
@@ -101,6 +103,8 @@ export interface ALControlAdmissionCandidate {
     readonly removeFirstHopWait: boolean;
     /** The timers of the receipt and the first-hop wait this control ended, which the same commit completes. */
     readonly endedTimeoutEffectIds: readonly string[];
+    /** The end of the message whose terminal settlement this control states; empty for every other control. */
+    readonly messageEnd: readonly ALOutboundAdmissionMutation[];
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
@@ -117,11 +121,16 @@ export function computeALOutboundControlAdmission(
     const terminal = read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload);
     const receiptEnded = terminal || pending.kind === 'remove' ||
         (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value));
+    const messageEnd = toALOutboundSettledMessageEnd(
+        read.sent,
+        toALOutboundControlSettlements({ read, history, pending }, read.targetMsgId)
+    );
     return {
         read,
         history,
         pending,
-        removeRepairAttempt: receiptEnded,
+        messageEnd,
+        removeRepairAttempt: receiptEnded || messageEnd.length > 0,
         ...toEndedTimers(read, receiptEnded, terminal || resolveALOutboundRelayRejection(read) !== undefined),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs
@@ -160,7 +169,7 @@ function toEndedTimers(
  * production because a control is built with it.
  */
 export function toALOutboundControlSettlements(
-    candidate: ALControlAdmissionCandidate,
+    candidate: Pick<ALControlAdmissionCandidate, 'read' | 'history' | 'pending'>,
     traceId: string
 ): readonly ALOutboundSettlementFact[] {
     const { read, history } = candidate;
@@ -217,7 +226,7 @@ export function controlTargetMsgId(parsed: ALParsedControlMessage): string {
 
 /** A `set` carries the receipt the commit wrote; a `remove` the one it tore down. */
 function resolveAcceptedReceipt(
-    candidate: ALControlAdmissionCandidate
+    candidate: Pick<ALControlAdmissionCandidate, 'read' | 'pending'>
 ): ALOutboundPendingAckSnapshot | undefined {
     switch (candidate.pending.kind) {
         case 'set':

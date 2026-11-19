@@ -21,6 +21,7 @@ import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-r
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { validateALOutboundRelayedNack } from './control/validate-al-outbound-relayed-nack.ts';
+import { validateALOutboundEndedMessageControl } from './message-end/validate-al-outbound-ended-message-control.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
@@ -48,6 +49,7 @@ export function validateALOutboundControlAdmission(
     if (isDuplicateControl(read)) {
         issues.push({ code: 'unauthorized', message: 'AL control was already admitted' });
     }
+    issues.push(...validateALOutboundEndedMessageControl(read));
     issues.push(...validateALOutboundRecipientProof(read.recipientProof));
     if (read.parsed.type === 'ack') {
         return [...issues, ...validateAcknowledgement(read, read.sent, read.parsed.payload)];

@@ -41,7 +41,7 @@ export interface ALOutboundReceiptAdmissionRead extends ALOutboundReceiptAdmissi
 
 /**
  * The receipt row a receipt leaves. Every phase keeps it until the message deadline plus the receipt
- * grace: a terminal receipt leaves its final snapshot, so a redelivered receipt finds nothing to move.
+ * grace: a terminal receipt leaves its final snapshot and ends the message, so a later receipt is refused.
  */
 export interface ALOutboundReceiptWrite {
     readonly value: ALOutboundPendingAckSnapshot;
@@ -89,6 +89,9 @@ export function validateALOutboundReceiptAdmission(
     candidate: ALOutboundReceiptAdmissionCandidate
 ): readonly ALMessageRejection[] {
     const { read, write } = candidate;
+    if (read.stored?.ended) {
+        return [refuseReceipt('AL receipt names a message that has ended')];
+    }
     if (write === undefined) {
         return [toMissingReceiptRejection(read)];
     }
@@ -145,6 +148,14 @@ export function toALOutboundReceiptTrackMutations(
     ];
 }
 
+/** A `timed-out` aggregate, or a receipt that confirms every recipient, is the message's terminal settlement. */
+export function isALOutboundTerminalReceipt(
+    read: ALOutboundReceiptAdmissionRead,
+    write: ALOutboundReceiptWrite
+): boolean {
+    return read.receipt.phase === 'timed-out' || isALOutboundReceiptComplete(write.value);
+}
+
 /**
  * The receipt as the delivery fact its commit states; a `timed-out` aggregate never completes it. Its hops
  * are the next hops the sent message named: none at a WS client, whose one hop is its unnamed server, and
@@ -162,7 +173,7 @@ export function toALOutboundReceiptSettlement(
             nextHopPeerIds,
             completedHopPeerIds: nextHopPeerIds.filter((peerId) => write.value.ackedPeerIds.includes(peerId))
         },
-        complete: read.receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value),
+        complete: read.receipt.phase !== 'timed-out' && isALOutboundTerminalReceipt(read, write),
         traceId
     });
 }

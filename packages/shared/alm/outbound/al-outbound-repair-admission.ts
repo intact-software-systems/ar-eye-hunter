@@ -33,6 +33,10 @@ import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-cla
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
+import {
+    toALOutboundReadMessageEndBundle,
+    type ALOutboundMessageEndRead
+} from './message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
@@ -215,14 +219,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;
-        const messageExpiresAtMs = read.storedMessage?.reference.expiresAtMs;
+        const stored = read.storedMessage;
         if (!pending) {
             return;
         }
-        if (!msg || messageExpiresAtMs === undefined) {
+        if (!msg || stored === undefined) {
             await this.commitOrphanedReceiptCleanup(msgId, read.clientRecord);
             return;
         }
+        const messageExpiresAtMs = stored.reference.expiresAtMs;
         if (pending.deadlineAtMs > this.readNowMs()) {
             await this.persistNextAckTimeout({ msg, pending, messageExpiresAtMs }, read.clientRecord?.version);
             return;
@@ -234,11 +239,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const refusal = read.plan &&
             resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan), 'ack-timeout');
         if (refusal) {
-            await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
+            await this.commitRefusedReceipt(msg, read, refusal);
             return;
         }
         if (pending.attempts >= pending.maxAttempts) {
-            await this.commitReceiptExhausted(msg, pending, read.clientRecord?.version);
+            await this.commitReceiptExhausted(msg, read, pending);
             return;
         }
         await this.commitAckTimeoutRetry({ msg, pending, messageExpiresAtMs }, {
@@ -267,17 +272,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * A re-plan refused for good ends the receipt under the version its decision read: a same-sender commit since, such
+     * A re-plan refused for good ends the message under the version its decision read: a same-sender commit since, such
      * as a completing ACK, conflicts and the retry decides again; the commit's success states the refusal once.
      */
     private async commitRefusedReceipt(
         msg: ALMessage,
-        refusal: ALOutboundSettlementFact,
-        expectedVersion: number | undefined
+        read: ALOutboundMessageEndRead,
+        refusal: ALOutboundSettlementFact
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(msg.id.senderId, msg.id.msgId, expectedVersion)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundReadMessageEndBundle(msg, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt refusal commit conflict');
         }
@@ -394,17 +397,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * The budget ran out: the row goes in the commit whose success states the terminal fact, so the fact
+     * The budget ran out: the message ends in the commit whose success states the terminal fact, so the fact
      * is stated once across replays and reloads, and a late ACK finds no row to complete (Q6).
      */
     private async commitReceiptExhausted(
         msg: ALMessage,
-        pending: ALOutboundPendingAckSnapshot,
-        expectedVersion: number | undefined
+        read: ALOutboundMessageEndRead,
+        pending: ALOutboundPendingAckSnapshot
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundReadMessageEndBundle(msg, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
         }

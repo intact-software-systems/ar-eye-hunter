@@ -45,14 +45,17 @@ export interface ALStoredOutboundMessage {
     readonly sentPositions: Readonly<Record<string, number>> | null;
     readonly policy: ALOutboundCapturedPolicy;
     readonly creationExpiry: string;
+    /** The sender stated a terminal settlement for the message: nothing more is sent, retried or repaired for it. */
+    readonly ended: boolean;
 }
 
 /**
  * The sent row as it is written: positions only once a recording kept them, so a row without them reads as one an
- * older build wrote, and an older build still reads every row that recorded nothing.
+ * older build wrote, and an older build still reads every row that recorded nothing; the end marker only once true.
  */
-export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions'> & {
+export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions' | 'ended'> & {
     readonly sentPositions?: Readonly<Record<string, number>>;
+    readonly ended?: true;
 };
 
 export interface ALOutboundCapturedPolicy {
@@ -172,7 +175,7 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
         'orderingSeq',
         'policy',
         'creationExpiry'
-    ], ['supersedenceKey', 'sentPositions']);
+    ], ['supersedenceKey', 'sentPositions', 'ended']);
     const reference = decodeALOutboundMessageReference(snapshot.reference);
     if (snapshot.msgId !== expectedMsgId || reference.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL outbound message identity does not match its slot');
@@ -185,10 +188,14 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
     }
     requirePersistedALNonEmptyString(snapshot.creationExpiry, 'outbound creation expiry observation');
     decodeALOutboundCapturedPolicy(snapshot.policy);
+    if (snapshot.ended !== undefined && snapshot.ended !== true) {
+        throw new TypeError('Persisted AL outbound message end marker is invalid');
+    }
     return {
         ...value as ALStoredOutboundMessage,
         reference,
-        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions)
+        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions),
+        ended: snapshot.ended === true
     };
 }
 

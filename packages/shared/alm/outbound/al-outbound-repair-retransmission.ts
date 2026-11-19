@@ -65,12 +65,6 @@ export namespace ALOutboundRepairRetransmission {
  */
 export class ALOutboundRepairRetransmission<TPrepared> {
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
-    /**
-     * The messages whose exhaustion this runtime has stated, so a later hint for one, by any requester,
-     * states nothing more. Memory rather than a row: the budget row keeps meaning what it means, and a
-     * reload states an exhaustion once more at most. Capped at the repair window, oldest out first.
-     */
-    private readonly exhaustedMsgIds = new Set<string>();
 
     constructor(dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
@@ -217,23 +211,11 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         }
     }
 
-    /** The terminal statement of a message whose repair budget dispatch found spent for a requester; a repeat states nothing. */
+    /** The terminal statement of a message whose repair budget a committed dispatch found spent for a requester. */
     private settleRepairExhausted(message: ALMessage, detail: string): void {
-        const msgId = message.id.msgId;
-        if (this.exhaustedMsgIds.has(msgId)) {
-            return;
-        }
-        this.exhaustedMsgIds.add(msgId);
-        if (this.exhaustedMsgIds.size > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
-            for (const oldest of this.exhaustedMsgIds) {
-                this.exhaustedMsgIds.delete(oldest);
-                break;
-            }
-        }
-
         this.dependencies.settlements({
             kind: 'admission',
-            msgId,
+            msgId: message.id.msgId,
             traceId: message.id.traceId,
             trackedReceiptAlgo: 'none',
             verdict: { kind: 'skipped', reason: 'repair-exhausted', detail }
@@ -325,11 +307,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 
     /**
-     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when
-     * it finds the budget spent; only that answer, never a read of this owner's own, states the exhaustion.
+     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when it finds the
+     * budget spent, in the commit that ends the message; only that commit's success, never a read of this owner's
+     * own, states the exhaustion, so it is stated once across replays and reloads.
      */
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
-        const { computed } = await this.dependencies.dispatchAdmission.commit({
+        const { computed, committed } = await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
             batchPredecessorSeqs: [],
             planner: () => repair.plan,
@@ -341,7 +324,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 attemptIdentity: repair.attemptIdentity
             }
         });
-        if (computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
+        if (committed && computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
             this.settleRepairExhausted(repair.msg, computed.verdict.detail);
         }
     }

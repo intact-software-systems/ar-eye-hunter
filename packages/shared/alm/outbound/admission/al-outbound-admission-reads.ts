@@ -305,7 +305,16 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     async isMessageSuperseded(session: ALAdmissionReadSession, msg: ALMessage): Promise<boolean> {
-        const tracking = (await this.readStoredMessage(session, msg.id.msgId))?.policy.supersedenceTracking;
+        return await this.isStoredMessageSuperseded(session, msg, await this.readStoredMessage(session, msg.id.msgId));
+    }
+
+    /** The supersedence of a message whose stored row the caller already read. */
+    async isStoredMessageSuperseded(
+        session: ALAdmissionReadSession,
+        msg: ALMessage,
+        stored: ALStoredOutboundMessage | undefined
+    ): Promise<boolean> {
+        const tracking = stored?.policy.supersedenceTracking;
         if (!tracking?.enabled || !tracking.key) {
             return false;
         }

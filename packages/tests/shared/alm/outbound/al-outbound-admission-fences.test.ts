@@ -32,7 +32,8 @@ import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
-    type ALOutboundNotYetInSyncRetrySchedule
+    type ALOutboundNotYetInSyncRetrySchedule,
+    type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -40,9 +41,10 @@ import {
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
-import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { computeALOutboundWorkEntry, toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
@@ -262,6 +264,53 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await control.scheduleNotYetInSyncRetry(schedule)).toEqual({ status: 'conflict' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('a repair dispatch decided before the message ended conflicts, and decided again it is refused', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = createOutboundMessage('ended-before-repair');
+        const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ text: planned.id.msgId }]
+        });
+        expect(
+            await fixture.store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: fixture.store,
+                    message,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner
+                })
+            )
+        ).toBe('committed');
+        const decideRepair = async () => {
+            const read = await fixture.store.readOutgoingMessage({
+                msg: message,
+                planner,
+                observedCanonicalEntry: undefined,
+                intent: 'repair'
+            });
+            return computeALOutboundDispatch({
+                read,
+                outboxEntry: createOutboundCanonicalEntry(fixture.store, read.msg, Temporal.Now.instant()),
+                dispatchAtMs: Date.now(),
+                intent: 'repair',
+                phase: 'immediate',
+                options: { attemptIdentity: 'decided-before-the-end' }
+            });
+        };
+        const decided = await decideRepair();
+        const repairRead = await fixture.store.readRepairMessage(message.id.msgId, planner);
+
+        expect(await fixture.store.commitBundle(toALOutboundReadMessageEndBundle(message, repairRead))).toBe('committed');
+        expect(await fixture.store.commitBundle(decided.bundle!)).toBe('conflict');
+        for (const effect of decided.bundle!.durableEffects) {
+            expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
+        }
+        expect((await decideRepair()).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
     });
 
     it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {

@@ -383,7 +383,7 @@ describe('outbound control admission identity', () => {
                     logicalRecipientPeerId: 'receiver',
                     toPeerId: 'sender',
                     msgId: 'message',
-                    reason: 'stale',
+                    reason: 'not-yet-in-sync',
                     observedAtEpochMs: serverSnapshotVersion,
                     serverSnapshotVersion
                 })

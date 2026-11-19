@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, newALNackControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundControlSource } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -27,7 +28,7 @@ const TRACK_KEY = 'game-1:self:1';
 
 interface OriginFixture {
     readonly msg: ALMessage;
-    accept(control: ALMessage): Promise<string>;
+    accept(control: ALMessage, source?: ALOutboundControlSource): Promise<string>;
 }
 
 /** Sequence 3 of the origin's track, sent with the receipt above. */
@@ -46,8 +47,8 @@ async function createOrderedOrigin(id: string): Promise<OriginFixture> {
     await enqueueOutboundOrThrow(runtime, msg);
     return {
         msg,
-        accept: async (control) => {
-            const result = await runtime.acceptControlMessage(control, 'peer');
+        accept: async (control, source = 'peer') => {
+            const result = await runtime.acceptControlMessage(control, source);
             return result.kind === 'rejected' ? result.reason : result.kind;
         }
     };
@@ -254,5 +255,46 @@ describe('a forwarded hop-end at the origin', () => {
             'AL acknowledgement confirms no peer of the pending outbound receipt'
         );
         expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe('committed');
+    });
+});
+
+describe('a control for a message that has ended', () => {
+    /** Both recipients confirmed the message: its receipt completed and ended it. */
+    async function createEndedOrigin(id: string): Promise<OriginFixture> {
+        const origin = await createOrderedOrigin(id);
+        expect([
+            await origin.accept(toForwardedAck(origin.msg, 'r1')),
+            await origin.accept(toForwardedAck(origin.msg, 'r2'))
+        ]).toEqual(['committed', 'committed']);
+        return origin;
+    }
+
+    function toNack(msg: ALMessage, reason: 'not-yet-in-sync' | 'expired' | 'no-publish-grant', fromPeerId: string): ALMessage {
+        return newALNackControlMessage(
+            { v: 4, msgId: `${reason}-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-ended' },
+            toTestALNackPayload({ msgId: msg.id.msgId, fromPeerId, toPeerId: 'self', reason, observedAtEpochMs: Date.now() })
+        );
+    }
+
+    it('admits a gap NACK numbered 4 and a missing-seq request: they name the message whose arrival revealed the gap', async () => {
+        const origin = await createEndedOrigin('ended-gap-requests');
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r2', logicalRecipientPeerId: 'r2', gapRequestNumber: 4 })),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'ended-missing-seq', 1))
+        ]).toEqual(['committed', 'committed']);
+    });
+
+    it.each(
+        [
+            { reason: 'not-yet-in-sync', fromPeerId: 'r2', source: 'peer' },
+            { reason: 'expired', fromPeerId: 'r2', source: 'peer' },
+            { reason: 'no-publish-grant', fromPeerId: 'server', source: 'trusted-server' }
+        ] as const
+    )('refuses a $reason NACK from $source', async ({ reason, fromPeerId, source }) => {
+        const origin = await createEndedOrigin(`ended-${reason}`);
+
+        expect(await origin.accept(toNack(origin.msg, reason, fromPeerId), source))
+            .toBe('AL control names a message that has ended');
     });
 });

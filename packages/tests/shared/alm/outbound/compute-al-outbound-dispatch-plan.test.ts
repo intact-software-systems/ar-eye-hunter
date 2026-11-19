@@ -104,6 +104,7 @@ function storedMessage(message: ALMessage, key: Key): ALStoredOutboundMessage {
             supersedenceTracking: null,
             admittedAudience: ['alice', 'bob', 'carol']
         },
-        creationExpiry: new Date(Date.now() + 30_000).toISOString()
+        creationExpiry: new Date(Date.now() + 30_000).toISOString(),
+        ended: false
     };
 }

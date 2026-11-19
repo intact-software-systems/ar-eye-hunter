@@ -122,6 +122,29 @@ describe('a WS client\'s ordered stream whose lost sequence the server reports a
             expect(fixture.skipped).toEqual([{ msgId: first!.id.msgId, reason: 'repair-exhausted' }]);
         }
     );
+
+    it.each(STORE_KINDS)('on %s, a written ack-none send carries no marker until its requester\'s budget runs out', async (store) => {
+        const fixture = createLostFrameFixture(store);
+        const [first, , third] = await sendRoomStream(fixture, ['first', 'second', 'third'], 'none');
+        const trackKey = toALOrderingTrackKey(first!)!;
+        const seqOneFrames = () => fixture.written.filter((frame) => frame.seq === 1).length;
+        const readEnded = async () => (await fixture.stores.admissionStore.readStoredMessage(first!.id.msgId))?.ended;
+        expect(await readEnded()).toBe(false);
+        for (const number of [1, 2, 3, 4]) {
+            await fixture.ws.acceptControlMessage(toServerGapNack(`request-${number}`, third!, trackKey, number), 'peer');
+            await drainOutboundWork(fixture);
+            expect(await readEnded()).toBe(false);
+            expect(seqOneFrames()).toBe(1 + number);
+        }
+        await fixture.ws.acceptControlMessage(toServerGapNack('request-5', third!, trackKey, 5), 'peer');
+        await drainOutboundWork(fixture);
+        expect(fixture.skipped).toEqual([{ msgId: first!.id.msgId, reason: 'repair-exhausted' }]);
+        expect(await readEnded()).toBe(true);
+        await fixture.ws.acceptControlMessage(toServerGapNack('request-6', third!, trackKey, 6), 'peer');
+        await drainOutboundWork(fixture);
+        expect(seqOneFrames()).toBe(5);
+        expect(fixture.skipped).toEqual([{ msgId: first!.id.msgId, reason: 'repair-exhausted' }]);
+    });
 });
 
 describe('a WS client\'s message whose store holds a repair-attempt row a previous build wrote', () => {

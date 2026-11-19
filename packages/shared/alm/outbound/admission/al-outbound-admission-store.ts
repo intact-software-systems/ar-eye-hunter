@@ -627,6 +627,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             backend: this.backend,
             effectStore: this.effectStore,
             reads: this.reads,
+            mutations: this.mutations,
             namespace: this.namespace,
             retention: this.retention,
             durability: this.durability

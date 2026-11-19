@@ -7,12 +7,23 @@ import {
     vi
 } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALOutboundRepairAttemptSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
-import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundMessageReadDto,
+    ALOutboundPlanner
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundRepairAttempt } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
-import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import {
+    computeALOutboundDispatch,
+    toALOutboundCommitSettlements,
+    type ALOutboundComputedDto,
+    type ALOutboundComputeIntent
+} from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -219,21 +230,9 @@ describe('outbound dispatch value ownership', () => {
         admission.dispose();
     });
 
-    it('uses the fresh repair count to stop an exhausted repair without creating work', async () => {
-        const stores = createDefaultOutboundTestStores();
-        const store = stores.admissionStore;
+    it('uses the fresh repair count to stop an exhausted repair without creating work: its bundle ends the message', async () => {
         const message = createOutboundMessage('exhausted-repair');
-        const observed = await store.readOutgoingMessage({
-            msg: message,
-            planner: () => ({
-                msg: message,
-                dropReasonCode: undefined,
-                lane: 'volatile',
-                preparedMessages: [{ resourceId: 'exhausted-repair' }]
-            }),
-            observedCanonicalEntry: undefined,
-            intent: 'enqueue'
-        });
+        const { store, read: observed } = await readAdmittedMessage(message, toVolatilePlanner(message, 'exhausted-repair'));
         const read: ALOutboundMessageReadDto<OutboundTestPayload> = freezeValues({
             ...observed,
             repairAttempt: { msgId: message.id.msgId, attemptsByRequester: { 'peer-1': 3 } }
@@ -249,7 +248,8 @@ describe('outbound dispatch value ownership', () => {
         });
 
         expect(computed.verdict.kind).toBe('skipped');
-        expect(computed.bundle).toBeUndefined();
+        expect(computed.bundle).toEqual(toALOutboundReadMessageEndBundle(read.msg, read));
+        expect(computed.bundle?.durableEffects).toEqual([]);
         expect(computed.entries).toEqual([]);
     });
 });
@@ -261,18 +261,7 @@ describe('the repair budget a dispatch charges', () => {
     async function createRepairCharge(): Promise<
         (attemptsByRequester: Readonly<Record<string, number>>, requesterKey: string, maxAttempts?: number) => ALOutboundComputedDto<OutboundTestPayload>
     > {
-        const store = createDefaultOutboundTestStores().admissionStore;
-        const observed = await store.readOutgoingMessage({
-            msg: message,
-            planner: () => ({
-                msg: message,
-                dropReasonCode: undefined,
-                lane: 'volatile',
-                preparedMessages: [{ resourceId: 'per-requester-repair' }]
-            }),
-            observedCanonicalEntry: undefined,
-            intent: 'enqueue'
-        });
+        const { store, read: observed } = await readAdmittedMessage(message, toVolatilePlanner(message, 'per-requester-repair'));
         return (attemptsByRequester, requesterKey, maxAttempts = 4) =>
             computeALOutboundDispatch({
                 read: freezeValues({ ...observed, repairAttempt: { msgId, attemptsByRequester } }),
@@ -343,6 +332,135 @@ describe('the repair budget a dispatch charges', () => {
         }
     });
 });
+
+describe('a dispatch and the end of its message', () => {
+    const message = createOutboundMessage('message-end-dispatch');
+    const msgId = message.id.msgId;
+    const RECEIPT = {
+        enabled: true,
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        expectedPeerIds: ['peer-1', 'peer-2'],
+        nextHopPeerIds: ['peer-1', 'peer-2'],
+        mode: 'receiver'
+    } as const;
+    const trackedPlanner: ALOutboundPlanner<OutboundTestPayload> = () => ({
+        msg: message,
+        dropReasonCode: undefined,
+        lane: 'volatile',
+        preparedMessages: [{ resourceId: 'message-end-dispatch' }],
+        ackTracking: RECEIPT
+    });
+    const OPEN_RECEIPT = {
+        msgId,
+        mode: 'receiver',
+        expectedPeerIds: ['peer-1', 'peer-2'],
+        ackedPeerIds: ['peer-1'],
+        outsideAudiencePeerIds: [],
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        attempts: 0,
+        deadlineAtMs: 3_000
+    } as const;
+
+    function dispatch(
+        store: ALOutboundAdmissionStore<OutboundTestPayload>,
+        read: ALOutboundMessageReadDto<OutboundTestPayload>,
+        intent: ALOutboundComputeIntent,
+        options: Parameters<typeof computeALOutboundDispatch<OutboundTestPayload>>[0]['options'] = {}
+    ): ALOutboundComputedDto<OutboundTestPayload> {
+        return computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
+            dispatchAtMs: Date.now(),
+            intent,
+            phase: 'immediate',
+            options
+        });
+    }
+
+    function toSentEnd(computed: ALOutboundComputedDto<OutboundTestPayload>): boolean | undefined {
+        const sent = computed.bundle?.mutations.find((mutation) => mutation.kind === 'set-sent-message');
+        return sent?.kind === 'set-sent-message' ? sent.ended : undefined;
+    }
+
+    it.each(['repair', 'dequeue'] as const)('answers a %s of an ended message skipped message-ended, with no bundle', async (intent) => {
+        const { store, read } = await readAdmittedMessage(message, trackedPlanner, intent);
+        const ended = freezeValues({ ...read, storedMessage: { ...read.storedMessage!, ended: true } });
+
+        const computed = dispatch(store, ended, intent);
+
+        expect(computed.verdict).toEqual({
+            kind: 'skipped',
+            reason: 'message-ended',
+            detail: `Message ${msgId} has ended: nothing more is sent for it.`
+        });
+        expect(computed.bundle).toBeUndefined();
+    });
+
+    it('answers an enqueue of an ended message duplicate', async () => {
+        const { store, read } = await readAdmittedMessage(message, trackedPlanner, 'enqueue');
+        const ended = freezeValues({ ...read, storedMessage: { ...read.storedMessage!, ended: true } });
+
+        expect(dispatch(store, ended, 'enqueue').verdict).toEqual({ kind: 'duplicate' });
+    });
+
+    it('answers a spent budget repair-exhausted with the end bundle of its read, which states nothing at its commit', async () => {
+        const { store, read: observed } = await readAdmittedMessage(message, trackedPlanner);
+        const read = freezeValues({
+            ...observed,
+            pendingAck: OPEN_RECEIPT,
+            repairAttempt: { msgId, attemptsByRequester: { 'peer-1': 1 } }
+        });
+
+        const computed = dispatch(store, read, 'repair', { repairBudget: { requesterKey: 'peer-1', maxAttempts: 1 } });
+
+        expect(computed.verdict).toMatchObject({ kind: 'skipped', reason: 'repair-exhausted' });
+        expect(computed.bundle).toEqual(toALOutboundReadMessageEndBundle(read.msg, read));
+        expect(toALOutboundCommitSettlements({ bundle: computed.bundle!, msg: message, read, intent: 'repair' })).toEqual([]);
+    });
+
+    it('marks the sent row ended exactly on the dispatch whose tracking completes its receipt, which states that completion', async () => {
+        const { store, read: observed } = await readAdmittedMessage(message, trackedPlanner);
+        const read = freezeValues({
+            ...observed,
+            pendingAck: OPEN_RECEIPT,
+            plan: { ...observed.plan, ackTracking: { ...RECEIPT, expectedPeerIds: ['peer-1'], expectedPeerIdsUpdate: 'replace' as const } }
+        });
+
+        const completing = dispatch(store, read, 'repair');
+
+        expect(toSentEnd(completing)).toBe(true);
+        expect(toALOutboundCommitSettlements({ bundle: completing.bundle!, msg: message, read, intent: 'repair' })).toEqual([
+            expect.objectContaining({ kind: 'acknowledgement', msgId, complete: true })
+        ]);
+        const untracked = freezeValues({ ...observed, plan: { ...observed.plan, ackTracking: undefined } });
+        expect(toSentEnd(dispatch(store, untracked, 'repair'))).toBe(false);
+    });
+});
+
+/** One prepared copy on the volatile lane, as each repair-budget statement here plans its message. */
+function toVolatilePlanner(message: ALMessage, resourceId: string): ALOutboundPlanner<OutboundTestPayload> {
+    return () => ({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ resourceId }] });
+}
+
+/** A message admitted and committed, then read again for a repair: the read holds its stored row, as a repair's does. */
+async function readAdmittedMessage(
+    message: ALMessage,
+    planner: ALOutboundPlanner<OutboundTestPayload>,
+    intent: ALOutboundComputeIntent = 'repair'
+): Promise<{ store: ALOutboundAdmissionStore<OutboundTestPayload>; read: ALOutboundMessageReadDto<OutboundTestPayload>; }> {
+    const store = createDefaultOutboundTestStores().admissionStore;
+    const admission = await readOutboundTestAdmission({
+        store,
+        message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: Date.now },
+        planner
+    });
+    expect(await store.commitBundle(admission)).toBe('committed');
+    return { store, read: await store.readOutgoingMessage({ msg: message, planner, observedCanonicalEntry: undefined, intent }) };
+}
 
 function freezeValues<T>(value: T): T {
     if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {

@@ -32,6 +32,7 @@ import {
     toALOutboundRepairAttemptKey,
     toALOutboundVersionKey
 } from '../admission/al-outbound-admission-keys.ts';
+import type { ALOutboundAdmissionMutations } from '../admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundAdmissionReads } from '../admission/al-outbound-admission-reads.ts';
 import type {
     ALOutboundDurableEffectWrite,
@@ -102,6 +103,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly backend: ALAdmissionWorkBackend;
     readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
     readonly reads: ALOutboundAdmissionReads<TPrepared>;
+    /** The store's mutation owner, which writes the end of a message a control settles for good. */
+    readonly mutations: ALOutboundAdmissionMutations;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
@@ -121,6 +124,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
+    private readonly mutations: ALOutboundAdmissionMutations;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly durability: ALStoreDurability;
@@ -135,6 +139,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.backend = input.backend;
         this.effectStore = input.effectStore;
         this.reads = input.reads;
+        this.mutations = input.mutations;
         this.namespace = input.namespace;
         this.retention = input.retention;
         this.durability = input.durability;
@@ -416,6 +421,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             )
         );
         await this.writePendingAckChange(tx, candidate);
+        await this.mutations.writeStateWrites(tx, this.mutations.computeStateWrites(candidate.messageEnd, read.nowMs));
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
         }

@@ -235,7 +235,8 @@ function storedRow(
             supersedenceTracking: null,
             ...(admittedAudience === undefined ? {} : { admittedAudience })
         },
-        creationExpiry: 'creation-expiry'
+        creationExpiry: 'creation-expiry',
+        ended: false
     };
 }
 

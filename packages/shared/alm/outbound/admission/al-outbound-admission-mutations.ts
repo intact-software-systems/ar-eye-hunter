@@ -36,6 +36,7 @@ import type {
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
+    type ALStoredOutboundMessage,
     type ALStoredOutboundMessageRow
 } from './al-outbound-admission-validation.ts';
 import {
@@ -95,7 +96,13 @@ export type ALOutboundAdmissionMutation =
         sentPositions: Readonly<Record<string, number>> | null;
         creationExpiry: string;
         snapshot: ALOutboundSentMessageSnapshot;
-        expireAtTimestamp?: number;
+        /** True exactly on the dispatch whose own tracking completes, and so deletes, its receipt. */
+        ended: boolean;
+    }>
+    | Readonly<{
+        /** The stored row as it was read, written again with its end marker. */
+        kind: 'end-sent-message';
+        stored: ALStoredOutboundMessage;
     }>
     | Readonly<{
         kind: 'delete-sent-message';
@@ -367,6 +374,8 @@ export class ALOutboundAdmissionMutations {
                 return this.computeMessageOwnerWrite(mutation, nowMs);
             case 'set-sent-message':
                 return this.computeSentMessageWrite(mutation, nowMs);
+            case 'end-sent-message':
+                return this.computeSentMessageRowWrite({ ...mutation.stored, ended: true }, nowMs);
             case 'set-repair-attempt':
             case 'set-pending-ack':
                 return this.computeReceiptWrite(mutation, nowMs);
@@ -511,23 +520,35 @@ export class ALOutboundAdmissionMutations {
         mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-sent-message'; }>,
         nowMs: number
     ): ALOutboundStateWrite {
+        return this.computeSentMessageRowWrite({
+            msgId: mutation.snapshot.msgId,
+            reference: mutation.reference,
+            supersedenceKey: mutation.snapshot.supersedenceKey ?? undefined,
+            unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
+                ? mutation.snapshot.msg.targets.toPeerId
+                : null,
+            orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
+            orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
+            sentPositions: mutation.sentPositions,
+            policy: mutation.policy,
+            creationExpiry: mutation.creationExpiry,
+            ended: mutation.ended
+        }, nowMs);
+    }
+
+    /** The row keeps its deadline in its reference, which bounds its expiry; positions and the marker only once held. */
+    private computeSentMessageRowWrite(stored: ALStoredOutboundMessage, nowMs: number): ALOutboundStateWrite {
+        const { sentPositions, ended, ...row } = stored;
+        const value: ALStoredOutboundMessageRow = {
+            ...row,
+            ...(sentPositions === null ? {} : { sentPositions }),
+            ...(ended ? { ended } : {})
+        };
         return {
-            key: toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId),
-            value: {
-                msgId: mutation.snapshot.msgId,
-                reference: mutation.reference,
-                supersedenceKey: mutation.snapshot.supersedenceKey ?? undefined,
-                unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
-                    ? mutation.snapshot.msg.targets.toPeerId
-                    : null,
-                orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
-                orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
-                ...(mutation.sentPositions === null ? {} : { sentPositions: mutation.sentPositions }),
-                policy: mutation.policy,
-                creationExpiry: mutation.creationExpiry
-            },
+            key: toALOutboundSentMessageKey(this.namespace, stored.msgId),
+            value,
             expireAtTimestamp: this.computeMessageRowExpiryMs(
-                mutation.expireAtTimestamp,
+                stored.reference.expiresAtMs,
                 nowMs,
                 this.retention.sentMessageTtlMs
             ),

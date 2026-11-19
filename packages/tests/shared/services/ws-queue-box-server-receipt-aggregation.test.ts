@@ -375,10 +375,10 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
         const commitBundle = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
         let conflicts = 0;
-        // Only the receipt admission writes a lone pending row with no work: its inline attempts all conflict.
+        // Only the receipt admission writes the pending row with no work: its inline attempts all conflict.
         vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
             const receiptOnly = bundle.durableEffects.length === 0 &&
-                bundle.mutations.every((mutation) => mutation.kind === 'set-pending-ack');
+                bundle.mutations.some((mutation) => mutation.kind === 'set-pending-ack');
             if (receiptOnly && conflicts < RECEIPT_ADMISSION_ATTEMPTS) {
                 conflicts += 1;
                 return 'conflict';

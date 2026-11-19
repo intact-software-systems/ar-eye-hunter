@@ -340,7 +340,7 @@ describe('the repair budget runs out', () => {
         expect([...stores.backend.workQueue.peekKeys()].sort()).toEqual(rows);
     });
 
-    it('a hint without ranges keeps the hint\'s identity', async () => {
+    it('a hint without ranges keeps the hint\'s identity, and the exhaustion it finds ends the message and its count', async () => {
         const repairs: string[] = [];
         const stores = createDefaultOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
@@ -368,15 +368,17 @@ describe('the repair budget runs out', () => {
             failedPeerIds: []
         };
 
-        // Two such hints are two identities, so the second finds the first's charge and the budget spent.
+        // Two such hints are two identities: the first charges one attempt, and the second finds the budget spent.
+        // That exhaustion ends the message, and its count with it.
         await retransmission.retransmitFromRepairHint(first.id.msgId, withoutRanges, 'repair-hint-a');
         await runOutboundWorkTask(runtime);
+        expect(await readRepairAttempts(stores, [first])).toEqual([1]);
         await retransmission.retransmitFromRepairHint(first.id.msgId, withoutRanges, 'repair-hint-b');
         await runOutboundWorkTask(runtime);
 
         expect(repairs).toEqual([first.id.msgId]);
-        expect(await readRepairAttempts(stores, [first])).toEqual([1]);
         expect(toSkippedRepairs(settlements)).toEqual([{ msgId: first.id.msgId, reason: 'repair-exhausted' }]);
+        expect(await readRepairAttempts(stores, [first])).toEqual([0]);
     });
 });
 

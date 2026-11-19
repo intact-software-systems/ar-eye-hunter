@@ -148,8 +148,8 @@ export class ALOutboundMessageEffects<TPrepared> {
             });
             return { status: 'completed' };
         }
-        // A complete receipt already stated the delivery; this attempt owes no settlement of its own.
-        if (guards.receiptState && isALOutboundReceiptComplete(guards.receiptState)) {
+        // An ended message, or a complete receipt, already stated its settlement; this attempt owes none of its own.
+        if (guards.kind === 'ended' || (guards.receiptState && isALOutboundReceiptComplete(guards.receiptState))) {
             return { status: 'completed' };
         }
         if (lifecycle.expiresAtMs !== undefined && lifecycle.expiresAtMs <= this.readNowMs()) {
