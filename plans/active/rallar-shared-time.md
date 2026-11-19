@@ -25,10 +25,12 @@ The connected SDK comparison and [runnable room poll](../../examples/shared-dead
 
 Grumpy Town now consumes the connected deadline APIs for away-seat recovery across host replacement on [PR #832](https://github.com/intact-software-systems/ar-eye-hunter/pull/832). A poll with two phase boundaries is the next test of read-only room timelines.
 
+The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator who joined before another participant voted still has an older snapshot at the closing transition.
+
 ## Next two slices
 
-1. **Publish a fixed poll schedule.** One authority publishes the opening and closing epochs together. Its receipt clock admits first ballots only in the half-open voting window. An early attempt can retry when voting opens. Clients show the question, voting or results, with an explicit uncertain state at either boundary. Validate opening and closing equality and retry behavior in the authority tests. Keep the schedule immutable for the poll lifetime. Editing published schedules and stabilizing an SDK timeline API need further consumer evidence.
-2. **Recover the phase on first entry.** Run a real browser through preview, voting and results. Open a fresh participant view after closing and verify it derives results from the published record, with the same schedule, tally and disabled voting. Preserve the delayed-ballot and reload checks with opposing device clocks. Run the focused memory-stack journey and typecheck the changed example and fixture.
+1. **Recover final results at the phase transition.** Once the connected clock establishes closure, refresh the participant's snapshot from the poll authority. Distinguish loading or failed reads from confirmed results. Retry transient failures with a bounded request rate, stop after success, and release the view on unmount. Keep ballot submission and its private disposition consistent with the read.
+2. **Qualify a spectator through closure and a failed read.** In the browser journey, keep a spectator mounted while another participant votes. Fail its first closing read, check the recovery state, then verify it sees the final tally without a reload or ballot of its own. Preserve the existing skew, late submission and late-entry checks. Run the focused browser journey, authority test and TypeScript check.
 
 ## Public product and launch evidence
 
