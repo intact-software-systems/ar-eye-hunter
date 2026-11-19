@@ -50,6 +50,7 @@ import {
     NO_POSTGRES_RUN_ROWS,
     readPostgresRunRowCounts
 } from '../../../../integration/postgres/test-support/delete-postgres-run-rows.ts';
+import { waitUntil } from '../../../../integration/postgres/test-support/wait-until.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createGroupAuthorityRead } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 
@@ -352,8 +353,4 @@ async function expirePublicationRows(h: HeadHarness): Promise<void> {
         where store_namespace in (${RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE}, ${RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE})
           and store_key like ${`%${h.state.group.group.applicationId}%`}
     `;
-}
-
-async function waitUntil(epochMs: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, epochMs - Date.now())));
 }

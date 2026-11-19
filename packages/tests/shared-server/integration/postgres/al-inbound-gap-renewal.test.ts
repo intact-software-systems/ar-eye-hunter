@@ -35,6 +35,7 @@ import {
     NO_POSTGRES_RUN_ROWS,
     readPostgresRunRowCounts
 } from './test-support/delete-postgres-run-rows.ts';
+import { waitUntil } from './test-support/wait-until.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 const RUN_ID = `al-inbound-gap-renewal-${crypto.randomUUID()}`;
@@ -210,8 +211,4 @@ function readRenewalNumbers(controls: readonly ALMessage[]): readonly number[] {
         const number = control?.type === 'nack' || control?.type === 'repair' ? control.payload.gapRequestNumber : undefined;
         return number !== undefined && number >= AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER ? [number] : [];
     });
-}
-
-async function waitUntil(epochMs: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, epochMs - Date.now())));
 }
