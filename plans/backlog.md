@@ -839,6 +839,14 @@ and it has no status list.
     to the queue was not checked.
   - Two older GroupRef decoders (`decode-stored-group-lifecycle-policy.ts`, `decode-rtc-topology-snapshot.ts`)
     differ from `decodeExactGroupRef` in their checks and messages and were left as they are.
+  - The ALM cell settle (`to-alm-cell-settle.ts`) polls the formation view and requires `pending` null and
+    `layoutStale` false, but not `heldReshape` null; a cell can settle while a reshape is held. Requiring it needs
+    the settle's own limit raised by one hold.
+  - The lanes' view read uses the readiness command's flat 5 s `timeoutMs`, while the same setup gives a cohort's
+    single REST read 5 s plus 250 ms per participant. Timeouts on `…-layout-readiness` in a hosted scale run would
+    be the sign to scale it.
+  - The scale setup's accepted-layout gate is a `formation.readiness` too, so a page already settled there reads
+    the formation view at the gate and again in the stable-layout wait.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

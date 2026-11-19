@@ -905,6 +905,12 @@ the formation view states no held reshape. A lane waits the hold out; it sends n
 
 - The view is read only once the page's own checks pass, and not again before the instant the last read
   gave. A hosted run has 50 agents polling twice a second, and the formation read is several queries.
+- A read counts as "no held reshape" only when the view also states `layoutStale: false`. The work clears a
+  hold and writes the reshaped layout in one transaction, and a page hears of that layout later, so at the
+  instant of a release the view can state no hold on a page whose layout has not changed yet. The route reads
+  the gate record before the planned slot for the same reason.
+- In the scale setup the `setup-complete` barrier shares the wait's limit, because a barrier's window opens at
+  the first arrival and one agent can wait a hold out that another did not see.
 - The wait's time limit covers one hold at the default upper bound (60 s) and the work's own latency, in the
   scale setup and in the paced cells.
 - A room that owes nothing passes as fast as today.
@@ -938,6 +944,8 @@ lower the lane rooms' upper bound to 15 s (the lanes would no longer run the def
 - `null` outside the stages where the gate applies, although reasons may still be stored.
 - The lanes' bounded reading of the view, which puts a small rule into the lane's readiness controller.
 - `pending` stays out of the lanes' wait.
+- The lanes' wait requires `layoutStale: false` beside no held reshape; `pending` still stays out.
+- The `setup-complete` barrier's window is the wait's limit; no other limit is raised.
 
 **Left to the builder.** The names in the lane's readiness diagnostics, and how they say "the view was not
 read at this observation" so the wait cannot pass on it. Which present member's session the measurement

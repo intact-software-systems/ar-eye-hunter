@@ -401,6 +401,7 @@ describe('API-v1 three-server recipe semantics', () => {
             connection: 'apiTertiary'
         });
     });
+
     it('reads the held reshape in the formation view while the gate holds it and after its release, under a member session', () => {
         const recipe = readApiV1Recipe(readApiV1MatrixEntry('api-v1-cluster-reshape-gate').recipe);
         const steps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
