@@ -8,11 +8,7 @@ import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multi
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import {
-    decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
-    type ALPersistedInboundEffect
-} from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { resolveALInboundWorkDueAtMs } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
 import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -31,6 +27,7 @@ import {
     INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
+    readInboundTestWorkRows,
     runInboundWorkDueNow,
     setNextInboundCommitConflicted,
     type InboundTestRuntime,
@@ -269,7 +266,7 @@ describe('a receiver whose ordered track has a gap', () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
         await advanceTo(fixture, 500);
-        const timer = (await readWorkRows(fixture)).find((effect) => effect.payload.kind === 'renew-gap');
+        const timer = (await readInboundTestWorkRows(fixture.stores)).find((effect) => effect.payload.kind === 'renew-gap');
         if (timer?.payload.kind !== 'renew-gap') {
             throw new Error('The gap admission armed no timer');
         }
@@ -284,9 +281,9 @@ describe('a receiver whose ordered track has a gap', () => {
             diagnostics: undefined
         });
         await renewal.renew(timer, timer.payload);
-        const afterFirstRun = await readWorkRows(fixture);
+        const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
         await renewal.renew(timer, timer.payload);
-        expect(await readWorkRows(fixture)).toEqual(afterFirstRun);
+        expect(await readInboundTestWorkRows(fixture.stores)).toEqual(afterFirstRun);
         expect(afterFirstRun.map((effect) => effect.effectId).filter((effectId) => effectId.includes('renewal')))
             .toHaveLength(2);
     });
@@ -297,7 +294,9 @@ describe('a receiver whose ordered track has a gap', () => {
         await fixture.runtime.admitIncomingMessage(second, INBOUND_TEST_SOURCE);
         await advanceTo(fixture, 1_000);
         expect(renewedRanges(fixture, 2)).toEqual([[{ from: 1, to: 1 }], [{ from: 1, to: 1 }]]);
-        const renewalRows = (await readWorkRows(fixture)).filter((effect) => effect.payload.kind === 'renew-gap' || effect.effectId.includes('renewal'));
+        const renewalRows = (await readInboundTestWorkRows(fixture.stores)).filter((effect) =>
+            effect.payload.kind === 'renew-gap' || effect.effectId.includes('renewal')
+        );
         expect(renewalRows).toHaveLength(4);
         expect(renewalRows.map((effect) => effect.expireAtTimestamp)).toEqual(
             renewalRows.map(() => second.constraints?.expiresAtMs)
@@ -403,26 +402,19 @@ function renewedRanges(fixture: InboundTestRuntime, requestNumber: number): read
 
 /** The effect ids of every row the lane has still to run. */
 async function readPendingInboundWork(fixture: InboundTestRuntime): Promise<readonly string[]> {
-    return (await readWorkRows(fixture))
+    return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => NOT_COMPLETED_RETRYABLE_STATUSES.has(effect.entry.status))
         .map((effect) => effect.effectId);
 }
 
 async function readRenewalDueTimes(fixture: InboundTestRuntime): Promise<readonly number[]> {
-    return (await readWorkRows(fixture))
+    return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => effect.payload.kind === 'renew-gap')
         .map((effect) => resolveALInboundWorkDueAtMs(effect.entry));
 }
 
 async function readRenewalExpiries(fixture: InboundTestRuntime): Promise<readonly number[]> {
-    return (await readWorkRows(fixture))
+    return (await readInboundTestWorkRows(fixture.stores))
         .filter((effect) => effect.payload.kind === 'renew-gap')
         .map((effect) => effect.expireAtTimestamp);
-}
-
-/** Every work row the lane's store holds, decoded. */
-async function readWorkRows(fixture: InboundTestRuntime): Promise<readonly ALPersistedInboundEffect[]> {
-    const { workQueue, admissionStore } = fixture.stores;
-    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
-    return rows.flatMap((row) => row === undefined || row === null ? [] : [decodeALInboundWorkEntry(row, admissionStore.namespace)]);
 }

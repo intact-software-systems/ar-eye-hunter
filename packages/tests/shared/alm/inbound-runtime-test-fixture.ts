@@ -33,6 +33,7 @@ import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inb
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     readALInboundEffectFacts,
@@ -277,6 +278,13 @@ export async function runInboundWorkDueNow(fixture: Pick<InboundTestRuntime, 'qu
         const dueAtMs = await readInboundTestWorkDueAtMs(fixture.stores.workQueue);
         settledRounds = dueAtMs !== undefined && dueAtMs <= Date.now() ? 0 : settledRounds + 1;
     }
+}
+
+/** Every work row the lane's store holds, decoded. */
+export async function readInboundTestWorkRows(stores: ALInboundRuntimeStores): Promise<readonly ALPersistedInboundEffect[]> {
+    const { workQueue, admissionStore } = stores;
+    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
+    return rows.flatMap((row) => row === undefined || row === null ? [] : [decodeALInboundWorkEntry(row, admissionStore.namespace)]);
 }
 
 export interface InboundTestMessageInput {

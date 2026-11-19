@@ -3,6 +3,7 @@ import { expect, onTestFinished, vi } from 'vitest';
 import { newALBroadcastMessage, newALRoute, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -10,6 +11,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import { ORIGIN_ROOM } from '../multicast/rtc-origin-overlay-fixture.ts';
@@ -17,11 +19,13 @@ import { readInboundTestWorkDueAtMs } from '../wait-for-al-inbound-work.ts';
 import {
     createInboundTestRuntime,
     createInboundTestStores,
+    readInboundTestWorkRows,
     runInboundWorkDueNow,
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
 import {
     createOutboundTestRuntimeFor,
+    createServerReceipt,
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
     drainOutboundWorkDueNow,
@@ -53,6 +57,11 @@ export interface LossyLinkFrame {
 export interface LossyLinkInput {
     /** True keeps the frame from the receiver: it left the sender's socket and was lost in transit. */
     readonly drop: (frame: LossyLinkFrame) => boolean;
+    /**
+     * When, in ms after the link's start, a frame `drop` keeps reaches the receiver; absent, or `undefined` for a frame,
+     * the link carries it at once. A held frame arrives after the receiver's work due at that instant has run.
+     */
+    readonly holdUntilMs?: (frame: LossyLinkFrame) => number | undefined;
 }
 
 export interface LossyLink {
@@ -66,11 +75,22 @@ export interface LossyLink {
     framesOf(seq: number): number;
     /** Every control the receiver sent toward the sender, in send order. */
     readonly controls: readonly ALMessage[];
+    /** When either end next has work to run, or a held frame next arrives; none once nothing is left to happen. */
+    readNextDueAtMs(): Promise<number | undefined>;
+    /** Every row the receiver has still to run. */
+    readPendingReceiverWork(): Promise<readonly ALPersistedInboundEffect[]>;
+}
+
+/** A frame the link carries later, and when it reaches the receiver. */
+interface HeldFrame {
+    readonly message: ALMessage;
+    readonly arrivesAtMs: number;
 }
 
 /**
- * A WS client's sender and a receiver standing for its server, wired through a link that loses what `drop` names. Every
- * control the receiver sends reaches the sender; one fake clock drives both.
+ * A WS client's sender and a receiver standing for its server, wired through a link that loses what `drop` names and
+ * delays what `holdUntilMs` names. Every control the receiver sends reaches the sender, and the server answers each
+ * receipted frame that reaches it `admitted`, naming nobody; one fake clock drives both.
  */
 export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLinkInput): LossyLink {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -80,25 +100,38 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
     });
     const frames: LossyLinkFrame[] = [];
     const inFlight: ALMessage[] = [];
+    const held: HeldFrame[] = [];
     const senderStores = createWsClientCarrierStores(SESSION_ID, store);
     const sender = createLinkSender(senderStores, (message) => {
         const seq = message.ordering?.seq;
         const frame = { seq, copy: frames.filter((written) => written.seq === seq).length + 1, message };
         frames.push(frame);
-        if (!input.drop(frame)) {
-            inFlight.push(message);
+        if (input.drop(frame)) {
+            return;
         }
+        const heldUntilMs = input.holdUntilMs?.(frame);
+        if (heldUntilMs === undefined) {
+            inFlight.push(message);
+            return;
+        }
+        held.push({ message, arrivesAtMs: LINK_START_MS + heldUntilMs });
     });
     const receiver = createLinkReceiver(store);
     let forwardedControls = 0;
     const exchange = async (): Promise<void> => {
         for (let round = 0; round < LINK_EXCHANGE_LIMIT; round += 1) {
+            const receipts: ALMessage[] = [];
             for (const frame of inFlight.splice(0)) {
                 await receiver.runtime.admitIncomingMessage(toWireMessage(frame), WS_CLIENT_SOURCE);
+                if (frame.delivery !== undefined && frame.delivery.ack !== 'none') {
+                    receipts.push(createServerReceipt(frame, 'admitted', []));
+                }
             }
             await runInboundWorkDueNow(receiver);
-            const controls = receiver.controlSends.flat().slice(forwardedControls);
-            forwardedControls += controls.length;
+            inFlight.push(...takeArrivedFrames(held));
+            const receiverControls = receiver.controlSends.flat().slice(forwardedControls);
+            forwardedControls += receiverControls.length;
+            const controls = [...receipts, ...receiverControls];
             for (const control of controls) {
                 await sender.acceptControlMessage(toWireMessage(control), 'peer');
             }
@@ -111,7 +144,8 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
     const readNextDueAtMs = async (): Promise<number | undefined> => {
         const due = [
             await readInboundTestWorkDueAtMs(receiver.stores.workQueue),
-            await peekOutboundWorkReadyAt(senderStores.workQueue, senderStores.admissionStore.namespace)
+            await peekOutboundWorkReadyAt(senderStores.workQueue, senderStores.admissionStore.namespace),
+            ...held.map((frame) => frame.arrivesAtMs)
         ].filter((dueAtMs) => dueAtMs !== undefined);
         return due.length === 0 ? undefined : Math.min(...due);
     };
@@ -142,8 +176,18 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
         framesOf: (seq) => frames.filter((frame) => frame.seq === seq).length,
         get controls() {
             return receiver.controlSends.flat();
-        }
+        },
+        readNextDueAtMs,
+        readPendingReceiverWork: async () =>
+            (await readInboundTestWorkRows(receiver.stores)).filter((effect) => NOT_COMPLETED_RETRYABLE_STATUSES.has(effect.entry.status))
     };
+}
+
+/** Removes and returns, in the order they were held, the frames whose time has come. */
+function takeArrivedFrames(held: HeldFrame[]): readonly ALMessage[] {
+    const arrived = held.filter((frame) => frame.arrivesAtMs <= Date.now());
+    held.splice(0, held.length, ...held.filter((frame) => frame.arrivesAtMs > Date.now()));
+    return arrived.map((frame) => frame.message);
 }
 
 /** The WS client's sender as `WsQueueBoxClientService` composes it: its own planner, the server as its one hop. */
