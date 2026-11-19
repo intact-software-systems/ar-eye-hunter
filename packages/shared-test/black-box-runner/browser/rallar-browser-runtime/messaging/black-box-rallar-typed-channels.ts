@@ -7,6 +7,7 @@ import type { RallarMessageSelector } from '@shared-web/browser/messages/rallar-
 import type {
     RallarMessage,
     RallarTypedMessageChannel,
+    RallarTypedMessageSendOptions,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/rallar.ts';
 import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
@@ -20,7 +21,8 @@ import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagn
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarEvent,
-    BlackBoxRallarMessageSelector
+    BlackBoxRallarMessageSelector,
+    BlackBoxRallarMessageSendInput
 } from '../black-box-rallar-operation-contracts.ts';
 import { blackBoxRallarRoomRefOf, blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
 import type {
@@ -54,6 +56,11 @@ export interface TypedChannelRoute {
     readonly publication: ALPublicationPolicy | undefined;
     /** The channel's recovery owner; undefined declares none, so a message the receiver cannot order is dropped. */
     readonly recovery: RallarChannelRecovery | undefined;
+}
+
+export interface BlackBoxRallarSendAudience {
+    readonly peerId: string | undefined;
+    readonly recipientPeerIds: readonly string[] | undefined;
 }
 
 interface TypedChannelMessageEvent {
@@ -306,4 +313,37 @@ function resolveRtcSelectorTypeIds(
         return [selector.typeId];
     }
     return [...new Set([...(config.rallar.messageTypeIds ?? []), resolveBlackBoxRallarTypeId(config)])];
+}
+
+export function toTypedSendOptions(
+    send: BlackBoxRallarMessageSendInput,
+    audience: BlackBoxRallarSendAudience
+): RallarTypedMessageSendOptions<RallarMessagePayload> {
+    const { peerId, recipientPeerIds } = audience;
+    return {
+        strategy: send.carrier,
+        ...(peerId === undefined ? {} : { peerId }),
+        ...(recipientPeerIds === undefined ? {} : { recipientPeerIds }),
+        ...(send.principalId === undefined ? {} : { principalId: send.principalId }),
+        ...(send.ownership === undefined ? {} : { ownership: send.ownership }),
+        ...(send.resourceId === undefined ? {} : { resourceId: send.resourceId }),
+        ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
+        ...(send.ack === undefined ? {} : { ack: send.ack }),
+        ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
+        ...(send.orderingKey === undefined ? {} : { orderingKey: send.orderingKey }),
+        ...(send.seq === undefined ? {} : { seq: send.seq }),
+        ...(send.scope === undefined ? {} : { scope: send.scope }),
+        ...toQosOption(send)
+    };
+}
+
+/** A stated repair budget travels in the one QoS request the send carries, beside a stated `qos.ack`. */
+function toQosOption(
+    send: Pick<BlackBoxRallarMessageSendInput, 'qos' | 'maxRepairs'>
+): Pick<RallarTypedMessageSendOptions<RallarMessagePayload>, 'qos'> {
+    const { qos, maxRepairs } = send;
+    if (maxRepairs === undefined) {
+        return qos === undefined ? {} : { qos };
+    }
+    return { qos: { ...qos, repair: { algo: 'retransmit', opts: { maxRepairs } } } };
 }

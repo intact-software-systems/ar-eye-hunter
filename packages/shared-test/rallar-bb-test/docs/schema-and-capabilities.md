@@ -185,7 +185,7 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
 `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
-`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
 the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
@@ -249,9 +249,9 @@ product stamps the sender's version. `aboveCurrentBy` fails the send when the
 sender has no cached snapshot for the room.
 
 `qos` is `{ ack: { algo } }`, where `algo` is `none`, `hop`, `subtree` or
-`receiver`, and nothing else is named. The page passes it unchanged to the
+`receiver`, and nothing else is named. The page passes it to the
 product's typed send option `qos`, the caller's QoS request, which the envelope
-carries and which overrides the ack algorithm `ack` implies. Absent, the product
+carries and which overrides the ack algorithm `ack` implies; a stated `maxRepairs` joins it there. Absent, the product
 normalizes the QoS the delivery options imply. The conformance recipes use it on
 every `rtc` or `rtc-with-ws-fallback` recipe send that asks for
 `ack: 'receiver'`, whichever carrier the send starts on: until the RTC overlay
@@ -259,12 +259,16 @@ tracks logical receipts it refuses `receiver`, so those sends ask for `hop` by
 name and keep reading hop receipts. `ws` recipe sends keep `receiver`, the
 logical algorithm.
 
+`maxRepairs` is an integer of at least 1: the retransmits each receiver's gap requests may draw for the message. The
+page sends it as `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }`, beside a stated `qos.ack` in the
+same request. Absent, the product's repair budget applies. Only `repair-exhausted` states it.
+
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `purpose`, `publication`, `roomRef`,
 `scope`, `principalId`, `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`,
-`durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and
-`toPeer` are each refused beside it, by the control validator and by
+`durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`,
+`maxRepairs` and `toPeer` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -815,16 +819,17 @@ receives as its own gap, so the hand-over of an ordered message is a carried lim
 The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
 released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
-ordering point, and it waits for no carrier acceptance of seq 1. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
-(`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
-The sender sends seq 4 too, whose arrival reports the gap again at both receivers; a later report names its
-requester's first attempt and charges nothing (D573), so it states nothing more. The sender then observes seq 2's
-handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
+ordering point, and it waits for no carrier acceptance of seq 1. Every send states `maxRepairs: 1`, a budget of one
+retransmit per receiver. Each receiver reports the gap once seq 3 arrives, and each first report spends that
+receiver's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at both
+receivers; that report repeats its requester's first request number and charges nothing (D573). The range stays
+missing, so each receiver renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
+its receiver's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
+10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
 receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
 arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
-absence window. The cell does not run over `ws`, a stated limit: there the server orders the track and is the one
-requester of its gaps, so a held frame's repeated reports are one attempt, the sender never states exhaustion, and
-the frame arrives on the hold's release. Both cells are withheld from the hosted
+absence window. The cell does not run over `ws`: there the server orders the track and is the one requester of its
+gaps, which the cell's receivers do not describe. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 Four fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.

@@ -779,6 +779,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         handleId: stringSchema,
         minSnapshotVersion: messagesSnapshotFloorSchema,
         qos: messagesQosSchema,
+        maxRepairs: { type: 'integer', minimum: 1 },
         toPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesToPeer },
         replayOnCarrier: messagesReplaySchema
     })),

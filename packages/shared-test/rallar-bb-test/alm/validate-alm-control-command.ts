@@ -135,6 +135,7 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         }),
         ...validateEnumField({ record: command, key: 'toPeer', path, allowed: values.messagesToPeer }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
+        ...validateIntegerField({ record: command, key: 'maxRepairs', path, minimum: 1 }),
         ...validateNumberField(command, 'seq', path),
         ...validateMessagesSnapshotFloorField(command),
         ...validateMessagesQosField(command)

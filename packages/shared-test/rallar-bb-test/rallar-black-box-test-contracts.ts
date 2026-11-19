@@ -412,6 +412,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         /** A harness floor, resolved to an absolute one at send time; absent, the product stamps the sender's version. */
         minSnapshotVersion?: Readonly<{ absolute: number; }> | Readonly<{ aboveCurrentBy: number; }>;
         qos?: Readonly<{ ack: Readonly<{ algo: ALAckAlgo; }>; }>;
+        /** The retransmits each receiver's gap requests may draw, at least 1; absent, the product's repair budget. */
+        maxRepairs?: number;
     }>;
 
 /**

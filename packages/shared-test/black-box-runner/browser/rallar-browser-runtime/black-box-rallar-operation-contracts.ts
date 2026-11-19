@@ -366,6 +366,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly minSnapshotVersion: BlackBoxRallarMessageSnapshotFloor | undefined;
     /** Absent, the product normalizes the QoS the delivery options imply. */
     readonly qos: Required<Pick<ALQosPolicyRequest, 'ack'>> | undefined;
+    /** Absent, the product's repair budget; stated, the typed send requests `retransmit` with it beside any `qos.ack`. */
+    readonly maxRepairs: number | undefined;
 }
 
 /** A harness floor: `aboveCurrentBy` resolves against the sender's room version at send time. */

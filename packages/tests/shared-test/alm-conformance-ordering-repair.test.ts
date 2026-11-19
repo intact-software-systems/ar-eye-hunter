@@ -410,6 +410,24 @@ describe('repair-exhausted', () => {
         });
     });
 
+    it.each(ALM_CONFORMANCE_RTC_ALONE_CARRIERS)('states a repair budget of one on each of its four %s ordered sends', (carrier) => {
+        const { sender } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
+
+        for (const seq of [1, 2, 3, 4]) {
+            expect(findCommand(sender, `send-${seq}`)).toMatchObject({ kind: 'messages.send', seq, maxRepairs: 1 });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('leaves the repair budget of every other %s cell\'s send to the product', (carrier) => {
+        const others = createAlmConformanceRecipes(toConformanceInput(carrier)).filter((scenario) => scenario.scenarioId !== 'repair-exhausted');
+
+        expect(others.length).toBeGreaterThan(0);
+        for (const scenario of others) {
+            const recipes = [...toRecipes(scenario), scenario.sibling, scenario.publisherB].filter((recipe) => recipe !== undefined);
+            expect(JSON.stringify(recipes), scenario.scenarioId).not.toContain('"maxRepairs"');
+        }
+    });
+
     it.each(ALM_CONFORMANCE_RTC_ALONE_CARRIERS)('proves both %s receivers delivered the first send only', (carrier) => {
         const { receiver, recipientB } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 
