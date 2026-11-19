@@ -1011,7 +1011,7 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v3","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                contains: '"typeId":"al.control.nack.v4","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
                     '"outcome":"committed"',
                 sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },

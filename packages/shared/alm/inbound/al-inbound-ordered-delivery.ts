@@ -281,7 +281,8 @@ function toResyncRequiredNackEffect(
             toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
             msgId: msg.id.msgId,
             reason: 'resync-required',
-            ordering
+            ordering,
+            gapRequestNumber: undefined
         }
     };
 }

@@ -92,8 +92,9 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             'observedAtEpochMs',
             'proof'
         ],
-        ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
+        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber', 'serverSnapshotVersion']
     );
+    const reason = decodeNackReason(record.reason);
     return {
         ...decodeControlRoute(record, 'NACK'),
         logicalRecipientPeerId: decodeControlIdentifier(
@@ -101,10 +102,14 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             'NACK logical recipient identity'
         ),
         originPeerId: decodeControlIdentifier(record.originPeerId, 'NACK origin identity'),
-        reason: decodeNackReason(record.reason),
+        reason,
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
+        ...decodeGapRequestNumber(record, reason === 'gap', {
+            misplaced: 'NACK gap request number is required on a gap and refused on any other reason',
+            invalid: 'NACK gap request number is invalid'
+        }),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
         proof: decodeControlProof(record.proof)
     };
@@ -114,14 +119,19 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
     const record = decodeControlRecord(
         value,
         ['msgId', 'fromPeerId', 'toPeerId', 'reason', 'observedAtEpochMs'],
-        ['orderingKey', 'expectedSeq', 'missingRanges']
+        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber']
     );
+    const reason = decodeRepairReason(record.reason);
     return {
         ...decodeControlRoute(record, 'repair'),
-        reason: decodeRepairReason(record.reason),
+        reason,
         ...decodeOptionalIdentifier(record, 'orderingKey', 'repair ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'repair expected sequence'),
-        ...decodeOptionalSeqRanges(record, 'missingRanges', 'repair missing ranges')
+        ...decodeOptionalSeqRanges(record, 'missingRanges', 'repair missing ranges'),
+        ...decodeGapRequestNumber(record, reason === 'missing-seq', {
+            misplaced: 'Repair gap request number is required on a missing-seq request and refused on any other reason',
+            invalid: 'Repair gap request number is invalid'
+        })
     };
 }
 
@@ -289,6 +299,35 @@ function decodeOptionalNumber(
     label: string
 ): Readonly<Record<string, number>> {
     return Object.hasOwn(record, key) ? { [key]: decodeControlNumber(record[key], label) } : {};
+}
+
+/** The control field a gap request number becomes: present exactly when there is a number. */
+export function toALGapRequestNumberField(gapRequestNumber: number | undefined): Readonly<{ gapRequestNumber?: number; }> {
+    return gapRequestNumber === undefined ? {} : { gapRequestNumber };
+}
+
+interface GapRequestNumberRefusals {
+    readonly misplaced: string;
+    readonly invalid: string;
+}
+
+/** Present exactly when the control's reason names a gap; a safe integer of at least 1. */
+function decodeGapRequestNumber(
+    record: ControlRecord,
+    namesGap: boolean,
+    refusals: GapRequestNumberRefusals
+): Readonly<{ gapRequestNumber?: number; }> {
+    if (Object.hasOwn(record, 'gapRequestNumber') !== namesGap) {
+        throw new TypeError(refusals.misplaced);
+    }
+    if (!namesGap) {
+        return {};
+    }
+    const value = record.gapRequestNumber;
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+        throw new TypeError(refusals.invalid);
+    }
+    return { gapRequestNumber: value };
 }
 
 function decodeOptionalSeqRanges(

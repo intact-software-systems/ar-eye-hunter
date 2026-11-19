@@ -61,13 +61,14 @@ snapshot names live registered no publication key, or a unicast names no room; a
 judged.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
-`al.control.nack.v3` and `al.control.repair.v2` payloads and the planner's NACK plan do;
+`al.control.nack.v4` and `al.control.repair.v3` payloads and the planner's NACK plan do;
 [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range decoder for the
 wire and the rows. A NACK and a repair request naming the same gap are one hint: the gap --
 requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
 effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never the control
 that reported it, so the second control is absorbed by the write-if-absent effect store rather than
-filed again. A relay's gap NACK for a recipient below it also names that recipient
+filed again. Both controls carry the same `gapRequestNumber`, which a `nack` hint copies; a hint that
+names no missing range carries none. A relay's gap NACK for a recipient below it also names that recipient
 (`logicalRecipientPeerId`, absent when the requester is the recipient): the origin admits it from a next hop
 for a recipient the receipt still owes, the responder admits the copy on that recipient while sending it to the
 relay, and the recipient joins the hint's identity, so each recipient a relay reports one gap for is its own

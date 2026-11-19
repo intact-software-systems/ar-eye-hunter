@@ -34,6 +34,8 @@ export interface ALInboundEffectIntent {
             readonly msgId: string;
             readonly reason: ALNackReason;
             readonly ordering: ALOrderingObservation | undefined;
+            /** A number on a `gap` NACK, `undefined` on every other reason. */
+            readonly gapRequestNumber: number | undefined;
         }
         /** A child's stored control a relay forwards again, readdressed to its parent. */
         | {
@@ -47,6 +49,8 @@ export interface ALInboundEffectIntent {
             readonly msgId: string;
             readonly reason: ALRepairReason;
             readonly ordering: ALOrderingObservation;
+            /** A number on a `missing-seq` request, `undefined` on every other reason. */
+            readonly gapRequestNumber: number | undefined;
         }
         | Extract<
             ALInboundDurableEffect,
@@ -157,7 +161,8 @@ export function toALInboundNegativeControlEffects(
             toPeerId,
             msgId: input.msg.id.msgId,
             reason,
-            ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
+            ordering: authorityRefusal ? undefined : input.plan.orderingRuntime,
+            gapRequestNumber: reason === 'gap' ? 1 : undefined
         }
     };
     return authorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
@@ -179,6 +184,7 @@ function toRepairEffects(
         return [];
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
+    const reason: ALRepairReason = input.plan.orderingRuntime.status === 'gap' ? 'missing-seq' : 'retransmit';
     return [{
         effectId: toALInboundEffectId([
             'repair',
@@ -196,8 +202,9 @@ function toRepairEffects(
             kind: 'send-repair',
             toPeerId,
             msgId: input.msg.id.msgId,
-            reason: input.plan.orderingRuntime.status === 'gap' ? 'missing-seq' : 'retransmit',
-            ordering: input.plan.orderingRuntime
+            reason,
+            ordering: input.plan.orderingRuntime,
+            gapRequestNumber: reason === 'missing-seq' ? 1 : undefined
         }
     }];
 }

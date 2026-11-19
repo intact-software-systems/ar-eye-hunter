@@ -30,6 +30,7 @@ import {
 } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
+import { toALOutboundRepairHintGapRequestNumber } from './control/to-al-outbound-repair-hint-gap-request-number.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
     toALOutboundAckTimeoutEffectId,
@@ -326,6 +327,7 @@ export function toALOutboundControlRepairHint(
             : {}),
         orderingTrackKey: payload.orderingKey,
         missingRanges,
+        ...toALOutboundRepairHintGapRequestNumber(payload),
         failedPeerIds: []
     };
 }

@@ -175,7 +175,7 @@ describe('outbound control admission identity', () => {
                         reason: 'gap'
                     })
                 )
-                : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
+                : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq', gapRequestNumber: 1 });
             const before = [...state.data];
             const wrongRoute = { ...accepted, route: { ...accepted.route, resourceId: 'another-locator' } };
             expect((await control.admit(wrongRoute, 'peer')).kind).toBe('not-handled');
@@ -446,6 +446,7 @@ describe('outbound control admission identity', () => {
                 requestedByPeerId: 'receiver',
                 orderingTrackKey: 'stream:sender:7',
                 missingRanges: gap,
+                gapRequestNumber: 1,
                 failedPeerIds: []
             }
         }]);
@@ -1218,7 +1219,8 @@ function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeq
             observedAtEpochMs: 1,
             orderingKey,
             expectedSeq: 2,
-            missingRanges
+            missingRanges,
+            gapRequestNumber: 1
         }
     );
 }

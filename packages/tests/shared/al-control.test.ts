@@ -12,6 +12,7 @@ import {
     AL_CONTROL_REPAIR_TYPE_ID,
     isALControlTypeId
 } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALRepairPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALControlMessage,
     newALAckControlMessage,
@@ -80,15 +81,68 @@ const controlId: ALMessage['id'] = {
 };
 
 describe('AL control message codec', () => {
-    it('names the v3 acknowledgement and NACK, the v2 repair and the v1 receipt as the four supported control ids', () => {
+    it('names the v3 acknowledgement, the v4 NACK, the v3 repair and the v1 receipt as the four supported control ids', () => {
         expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v3');
-        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v3');
-        expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v2');
         expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
-        expect(['al.control.ack.v3', 'al.control.nack.v3', 'al.control.repair.v2', 'al.control.receipt.v1']
+        expect(['al.control.ack.v3', 'al.control.nack.v4', 'al.control.repair.v3', 'al.control.receipt.v1']
             .every(isALControlTypeId)).toBe(true);
         expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.ack.v2', 'al.control.nack.v2']
             .some(isALControlTypeId)).toBe(false);
+    });
+
+    it('refuses the control ids it replaced', () => {
+        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v4');
+        expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v3');
+        expect(isALControlTypeId('al.control.nack.v3')).toBe(false);
+        expect(isALControlTypeId('al.control.repair.v2')).toBe(false);
+    });
+
+    it('requires a gap request number on a gap NACK and refuses one on any other reason', () => {
+        const gap = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            logicalRecipientPeerId: 'b',
+            originPeerId: 'a',
+            reason: 'gap',
+            observedAtEpochMs: 1,
+            orderingKey: 'k',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }],
+            proof: null
+        };
+        expect(() => decodeALNackPayload(gap)).toThrow(
+            'NACK gap request number is required on a gap and refused on any other reason'
+        );
+        expect(() => decodeALNackPayload({ ...gap, reason: 'expired', gapRequestNumber: 1 })).toThrow(
+            'NACK gap request number is required on a gap and refused on any other reason'
+        );
+        expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 0 })).toThrow('NACK gap request number is invalid');
+        expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 1.5 })).toThrow('NACK gap request number is invalid');
+        expect(decodeALNackPayload({ ...gap, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
+        expect(decodeALNackPayload({ ...gap, reason: 'expired' })).not.toHaveProperty('gapRequestNumber');
+    });
+
+    it('requires a gap request number on a missing-seq repair request and refuses one on any other reason', () => {
+        const missing = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            reason: 'missing-seq',
+            observedAtEpochMs: 1,
+            orderingKey: 'k',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }]
+        };
+        expect(() => decodeALRepairPayload(missing)).toThrow(
+            'Repair gap request number is required on a missing-seq request and refused on any other reason'
+        );
+        expect(() => decodeALRepairPayload({ ...missing, reason: 'retransmit', gapRequestNumber: 1 })).toThrow(
+            'Repair gap request number is required on a missing-seq request and refused on any other reason'
+        );
+        expect(() => decodeALRepairPayload({ ...missing, gapRequestNumber: 0 })).toThrow('Repair gap request number is invalid');
+        expect(decodeALRepairPayload({ ...missing, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
+        expect(decodeALRepairPayload({ ...missing, reason: 'retransmit' })).not.toHaveProperty('gapRequestNumber');
     });
 
     it('refuses an al.control.ack.v2 and an al.control.nack.v2 control unsupported', () => {

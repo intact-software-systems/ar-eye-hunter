@@ -219,7 +219,7 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v3`
+An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v4`
 ([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
 sender and receiver each names the message's origin (`originPeerId`, the
 message's `senderId`) and the recipient it speaks for
@@ -497,7 +497,7 @@ cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
 the list is estimated at about 117 B in a three-session star and at most about
 2.5 KB, well inside every envelope limit; it has not been measured on the wire.
 
-**Repair requests.** A peer attaches an `al.control.repair.v2` retransmit
+**Repair requests.** A peer attaches an `al.control.repair.v3` retransmit
 request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
 peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
@@ -593,6 +593,20 @@ page still running the old build sends is refused `unsupported` (`al.control.nac
 `al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
 above.
 
+**The gap-request-number window.** A gap NACK and a `missing-seq` repair request carry `gapRequestNumber`:
+which request for the sequences they name this is, 1 for every report an arrival causes. The NACK moved to
+`al.control.nack.v4` and the repair request to `al.control.repair.v3`, refusing `al.control.nack.v3` and
+`al.control.repair.v2` `unsupported`, and the NACK proof tag to `rallar-alm-nack-proof-v2`, which signs the number.
+The decoders require the number on a `gap` NACK and a `missing-seq` request and refuse it on every other reason. A
+stored `nacks` or `repairs` history row of the previous build that holds a gap NACK or a `missing-seq` request fails
+strict decoding until it expires (`controlHistoryTtlMs`, 30 minutes by default, in a browser's IndexedDB pair and in
+the server's PostgreSQL store; the deadline plus the receipt grace in the volatile lane), and a retained
+`send-control` or `admit-control` row that holds a previous-build control is dropped once as corrupt. A retained
+`repair-hint` row of the previous build decodes, as a hint that names no number. Nothing is migrated and
+`AL_ADMISSION_SCHEMA_ID` is not bumped. A page still running the previous build has its gap NACKs and repair
+requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
+symmetrically.
+
 **The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 (D147) made older browser schemas incompatible, which current opening refuses without resetting them.
 The trace bump (D447) moved the envelope from `v: 3` to `v: 4` with a required `id.traceId`. On the
@@ -625,8 +639,8 @@ obligation short-circuits, because the remaining checks read that obligation.
 arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
 most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
 observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
-buffered set; the planner's NACK (`al.control.nack.v3`) and repair request
-(`al.control.repair.v2`) carry them, and the sender retransmits them by range. A sequence past the
+buffered set; the planner's NACK (`al.control.nack.v4`) and repair request
+(`al.control.repair.v3`) carry them, and the sender retransmits them by range. A sequence past the
 window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
 sender is NACKed. When the admission accepts a message `resync-required`, or
 [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered

@@ -483,6 +483,7 @@ function toRepairControl(message: ALMessage, reason: ALRepairReason, observedAtE
             toPeerId: message.id.senderId,
             msgId: message.id.msgId,
             reason,
+            ...(reason === 'missing-seq' ? { gapRequestNumber: 1 } : {}),
             observedAtEpochMs
         }
     );

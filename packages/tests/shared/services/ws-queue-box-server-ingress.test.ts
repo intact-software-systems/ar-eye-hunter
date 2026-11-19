@@ -306,7 +306,7 @@ describe('WS server bounded and authorized admission', () => {
                 id: { senderId: 'server' },
                 targets: { mode: 'unicast', toPeerId: 'session-1' },
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' }, ack: { algo: 'none' } },
-                payload: { typeId: 'al.control.nack.v3' }
+                payload: { typeId: 'al.control.nack.v4' }
             }]);
             expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
                 fromPeerId: 'server',

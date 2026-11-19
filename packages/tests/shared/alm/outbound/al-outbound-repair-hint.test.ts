@@ -50,6 +50,7 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
             logicalRecipientPeerId: 'leaf',
             orderingTrackKey: 'feed:origin:1',
             missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1,
             failedPeerIds: []
         });
     });
@@ -68,7 +69,8 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
                 observedAtEpochMs: 1,
                 orderingKey: 'feed:origin:1',
                 expectedSeq: 2,
-                missingRanges: [{ from: 2, to: 2 }]
+                missingRanges: [{ from: 2, to: 2 }],
+                gapRequestNumber: 1
             }
         }));
     });
@@ -100,6 +102,16 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
         };
 
         expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
+    });
+
+    it('round-trips a nack hint\'s gap request number and refuses one that is invalid or on a hint naming no range', () => {
+        const request = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, gapRequestNumber: 2 } });
+        const noRange: ALOutboundRepairHint = { trigger: 'repair', missingRanges: [], failedPeerIds: [], gapRequestNumber: 1 };
+
+        expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
+        expect(() => toPersistedHint({ ...request, gapRequestNumber: 0 })).toThrow('Persisted AL repair gap request number is invalid');
+        expect(() => toPersistedHint(noRange))
+            .toThrow('Persisted AL repair gap request number is refused on a hint that names no missing range');
     });
 
     it('decodes a persisted hint without a recipient as one whose requester is the recipient', () => {

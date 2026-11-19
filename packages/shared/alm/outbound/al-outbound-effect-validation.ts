@@ -4,6 +4,7 @@ import {
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
+    requireOptionalPersistedALSafeInteger,
     requireOptionalPersistedALStringArray,
     requirePersistedALNonEmptyString
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
@@ -286,11 +287,16 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
     const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingRanges'], [
         'requestedByPeerId',
         'logicalRecipientPeerId',
-        'orderingTrackKey'
+        'orderingTrackKey',
+        'gapRequestNumber'
     ]);
     if (request.trigger !== 'ack-timeout' && request.trigger !== 'nack' && request.trigger !== 'repair') {
         throw new TypeError('Persisted AL repair trigger is invalid');
     }
+    if (request.trigger !== 'nack' && request.gapRequestNumber !== undefined) {
+        throw new TypeError('Persisted AL repair gap request number is refused on a hint that names no missing range');
+    }
+    requireOptionalPersistedALSafeInteger(request.gapRequestNumber, 1, 'repair gap request number');
     requireOptionalPersistedALNonEmptyString(request.requestedByPeerId, 'repair requester');
     requireOptionalPersistedALNonEmptyString(request.logicalRecipientPeerId, 'repair recipient');
     requireOptionalPersistedALNonEmptyString(request.orderingTrackKey, 'repair ordering track');

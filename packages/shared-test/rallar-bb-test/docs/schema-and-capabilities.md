@@ -448,7 +448,7 @@ only the owner removes one, so no cell removes.
   the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
   (`roster-stamp`, a `{resultCache...}` token in `contains`).
 - `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
-  for the `al.control.nack.v3` that refuses it `not-yet-in-sync`; only then does it send
+  for the `al.control.nack.v4` that refuses it `not-yet-in-sync`; only then does it send
   the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
   sender commits its NACK. Over `ws` the server retains the send as a pending admission
   and answers an advisory NACK, which the sender leaves not handled, so the wait matches
@@ -773,7 +773,7 @@ received, 298 past its position. The receiver waits for its own RTC `admission-o
 send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v3`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v4`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
 handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
@@ -794,7 +794,7 @@ sends seq 2, then holds that one message by the id its send returned (`hold-mess
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
 NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
-`control-admission` of that `al.control.nack.v3` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+`control-admission` of that `al.control.nack.v4` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
 the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
 typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
 resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.

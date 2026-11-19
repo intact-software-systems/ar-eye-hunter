@@ -12,6 +12,7 @@ import type {
     ALOutboundAckTrackingPlan,
     ALOutboundSettlementFact
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -354,5 +355,38 @@ describe('a gap NACK on a track the server relays to the audience it admitted (P
         const origin = await createRelayedTrack();
 
         expect(await origin.accept(toGapNack(origin.msg, 'c'))).toBe('AL repair sender has no retained outbound obligation');
+    });
+});
+
+describe('the repair hint a gap request raises', () => {
+    const gap = { orderingKey: 'track', expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] };
+
+    it('carries the gap request number of the NACK that raised it', () => {
+        const nack = toTestALNackPayload({ msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'gap', ...gap, gapRequestNumber: 3 });
+
+        expect(toALOutboundControlRepairHint({ type: 'nack', payload: nack })).toMatchObject({ gapRequestNumber: 3 });
+    });
+
+    it('is one hint for a gap NACK and the repair request sent with it', () => {
+        const nack = toTestALNackPayload({ msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'gap', ...gap });
+        const repair = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            reason: 'missing-seq' as const,
+            observedAtEpochMs: 1,
+            ...gap,
+            gapRequestNumber: 1
+        };
+
+        expect(toALOutboundControlRepairHint({ type: 'nack', payload: nack }))
+            .toEqual(toALOutboundControlRepairHint({ type: 'repair', payload: repair }));
+        expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).toMatchObject({ gapRequestNumber: 1 });
+    });
+
+    it('carries no number on a hint that names no missing range', () => {
+        const repair = { msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'missing-seq' as const, observedAtEpochMs: 1, gapRequestNumber: 1 };
+
+        expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).not.toHaveProperty('gapRequestNumber');
     });
 });

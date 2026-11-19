@@ -104,8 +104,8 @@ describe('ALInboundMessageRuntime', () => {
         });
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
         expect(dispatchedTexts).toEqual([]);
 
@@ -695,14 +695,14 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         // The round carried both and failed; each claim then answered for its own message alone, so
         // the repair went out and only the claim of the NACK waits for its retry.
-        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v2']);
-        expect(attemptedControls[0]).toEqual(['al.control.nack.v3', 'al.control.repair.v2']);
+        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v3']);
+        expect(attemptedControls[0]).toEqual(['al.control.nack.v4', 'al.control.repair.v3']);
 
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
     });
 
@@ -877,8 +877,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
     });
 

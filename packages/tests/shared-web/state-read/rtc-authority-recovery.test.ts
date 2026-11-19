@@ -1045,7 +1045,8 @@ function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
             observedAtEpochMs: Date.now(),
             orderingKey: '["app","workspace","room"]:sender:0',
             expectedSeq: 1,
-            missingRanges: [{ from: 1, to: 1 }]
+            missingRanges: [{ from: 1, to: 1 }],
+            gapRequestNumber: 1
         }
     );
 }
