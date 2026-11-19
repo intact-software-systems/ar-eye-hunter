@@ -3,13 +3,13 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { STREAM_SENDS, toSeededLossCommand, toSequences } from './seeded-loss-stream.ts';
+import { STREAM_SENDS, toOrderedStreamReceiverCommands, toSequences } from './ordered-stream.ts';
+import { toSeededLossCommand } from './seeded-loss-stream.ts';
 
 /** The server orders the track and asks for what it misses; over `rtc` a lost unreceipted frame has no such hop. */
 const UNRECEIPTED_LOSS_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -29,7 +29,7 @@ export const seededLossUnreceiptedStream: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toSeededLossUnreceiptedStreamSenderCommands,
-    toRecipientCommands: toSeededLossUnreceiptedStreamReceiverCommands
+    toRecipientCommands: toOrderedStreamReceiverCommands
 };
 
 function toSeededLossUnreceiptedStreamSenderCommands(
@@ -48,14 +48,5 @@ function toSeededLossUnreceiptedStreamSenderCommands(
             expected: 1
         }),
         ...toOrderedSendCommands(sender, STREAM_SENDS, { ack: 'none' })
-    ];
-}
-
-function toSeededLossUnreceiptedStreamReceiverCommands(
-    receiver: AlmConformanceStepInput
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS, count: STREAM_SENDS, absent: false, ascendingBy: 'seq' }),
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS + 1, count: STREAM_SENDS + 1, absent: true })
     ];
 }

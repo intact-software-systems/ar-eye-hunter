@@ -8,7 +8,6 @@ import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carri
 import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
 import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -16,8 +15,8 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
+import { STREAM_SENDS, toOrderedStreamReceiverCommands, toSequences } from './ordered-stream.ts';
 
-export const STREAM_SENDS = 20;
 /**
  * One draw per matching frame, retransmissions included: the seed fixes how many of the first frames are lost, whatever
  * the timing of a run.
@@ -43,7 +42,7 @@ export const seededLossStream: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toSeededLossStreamSenderCommands,
-    toRecipientCommands: toSeededLossStreamReceiverCommands
+    toRecipientCommands: toOrderedStreamReceiverCommands
 };
 
 function toSeededLossStreamSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
@@ -70,13 +69,6 @@ function toSeededLossStreamSenderCommands(sender: AlmConformanceStepInput): read
     ];
 }
 
-function toSeededLossStreamReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS, count: STREAM_SENDS, absent: false, ascendingBy: 'seq' }),
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS + 1, count: STREAM_SENDS + 1, absent: true })
-    ];
-}
-
 /** Held on the data frames of the cell's type until its release. A control frame carries another type and passes. */
 export function toSeededLossCommand(
     sender: AlmConformanceStepInput,
@@ -94,8 +86,4 @@ export function toSeededLossCommand(
         remaining: phase === 'arm' ? 'until-cleared' : 0,
         timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, sender.input.deadlineMs)
     };
-}
-
-export function toSequences(from: number, to: number): readonly number[] {
-    return Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
 }
