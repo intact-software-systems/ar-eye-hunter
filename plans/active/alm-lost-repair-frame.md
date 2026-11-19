@@ -205,20 +205,36 @@ holds for the message, and from then on the sender writes no frame and starts no
   budget of a requester ran out (`repair-exhausted`), a refusal settled for good, the message's deadline passed. A
   send with `ack: 'none'` that has merely been written is not settled: its obligation to repair runs to its deadline,
   which part A depends on.
-- **A durable marker.** The commit that states the terminal settlement writes a marker for the message, kept until
-  the message's deadline. It replaces the in-memory "stated once" guard, which a reload loses. The settlement is
-  stated once per message, across reloads.
-- **What that commit ends.** The receipt row and its timer, the first-hop wait and its timer, the repair budget's
-  count. `repair-exhausted` therefore ends the receipt at once: the other receivers lose its remaining retries. The
-  maintainer was told and chose this.
-- **What is refused afterwards.** A gap request or a repair request for the message is refused, with no frame and no
-  charge. A timer or a repair hint already queued finds the marker and ends without writing. A receipt that arrives
-  late changes nothing: no row is rebuilt and no second terminal fact is stated.
+- **A durable marker.** The commit that states the terminal settlement marks the message's stored row as ended. Every
+  later path already reads that row, so the marker adds no read and no second row; it lives as long as the row (past
+  the deadline, after which every path answers `expired` anyway). It replaces the in-memory "stated once" guard,
+  which a reload loses. The settlement is stated once per message, across reloads. The deadline itself writes no
+  marker: time is the marker.
+- **What that commit ends.** The open receipt and its timer, the first-hop wait and its timer, the repair budget's
+  count. A receipt row that is complete (acknowledged, or a server's final snapshot) is kept: a gap request is
+  admitted by reading the receipt row of the message whose arrival revealed the gap, so deleting acknowledged rows
+  would refuse the renewals part A needs. `repair-exhausted` therefore ends the open receipt at once: the other
+  receivers lose its remaining retries. The maintainer was told and chose this.
+- **What is refused afterwards.** A gap request names the message whose arrival revealed the gap, not the missing
+  one, so the request itself is admitted as today; the repair of an ended sequence writes no frame, charges nothing,
+  opens no receipt and states nothing. A receipt retry, a first-hop resend, a queued repair hint or a queued send for
+  an ended message ends the same way. A receipt that arrives late, and a terminal or `not-yet-in-sync` NACK for an
+  ended message, is rejected: no row is rebuilt and no second terminal fact is stated.
 - **What does not change.** What a receiver does with a gap that is never filled (a non-goal above); the receiver
-  goes on renewing until its own schedule ends, and is refused.
+  goes on renewing until its own schedule ends, and nothing answers it.
+- **What it costs.** Every commit that ends a message rewrites its stored row once: one more row write per
+  acknowledged receipted send, in the browser stores and on PostgreSQL, inside the commit that completes the receipt.
+  If a gate measures that as a regression it goes to the maintainer with the number; the alternative is to let the
+  kept complete receipt row stand as the marker for the acknowledged case (no write, two places to read).
 
-Two residuals recorded while building part B close with the same rule: a late server receipt after the first hop
-gave up no longer rebuilds a receipt row, and no frame follows a settlement.
+Of the two residuals recorded while building part B, the first closes with this rule: a late server receipt after
+the first hop gave up no longer rebuilds a receipt row. The second closes only in part: no frame follows a terminal
+settlement, but an `admitted` receipt (which is not terminal) that lands between a first-hop resend's two commits
+still lets that one frame out. Closing it means making the resend conditional on its wait, a separate change.
+
+Outside this part, left as they are and recorded in the backlog: cancel and hand-over end later work from memory
+only, so a reload forgets them; over `rtc` a gap request whose revealing message ended unacknowledged is refused at
+admission.
 
 ### The reproduction's cases, restated
 
