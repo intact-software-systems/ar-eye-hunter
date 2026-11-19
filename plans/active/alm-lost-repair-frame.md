@@ -181,6 +181,45 @@ Values, proposed (my call; change them if you see it differently):
   default policy): the first attempt and three renewals, per requester.
 - 1 s is twelve times the jitter cell's largest delay, so a late frame closes its gap long before a renewal.
 
+### Part C: a terminal settlement is final
+
+Added on 2026-11-19 after the restated `repair-exhausted` cell showed it, and a unit reproduction on this branch and
+on `main` established it: a sender keeps working for a message after it has told the handle the message is over.
+
+- After `repair-exhausted`, the message's receipt timer retries on (three frames, two seconds apart). The repair
+  budget does not govern those retries.
+- When the receipt then gives up, its end deletes the repair budget's count. A gap request that arrives later is
+  charged from zero and served, and its dispatch opens a new receipt with a new timer. The handle is told
+  `receipt-exhausted` a second time.
+- All of this predates the slice. Renewals make it routine: a receiver's last renewal lands at the receipt's end.
+  With a budget of one it happens every time; at the default budget it sits on the boundary (11 frames for one
+  receiver and one lost sequence where 8 are expected).
+
+The maintainer ruled "Full fix here": a terminal settlement ends all work for the message.
+
+**The rule.** When a sender states a terminal settlement for a message, that commit also ends everything the sender
+holds for the message, and from then on the sender writes no frame and starts no timer for it.
+
+- **What is terminal.** A settlement that ends the sender's obligation: the receipt completed (acknowledged), the
+  receipt ended without completing (`receipt-exhausted`, a `timed-out` receipt), the first hop gave up, the repair
+  budget of a requester ran out (`repair-exhausted`), a refusal settled for good, the message's deadline passed. A
+  send with `ack: 'none'` that has merely been written is not settled: its obligation to repair runs to its deadline,
+  which part A depends on.
+- **A durable marker.** The commit that states the terminal settlement writes a marker for the message, kept until
+  the message's deadline. It replaces the in-memory "stated once" guard, which a reload loses. The settlement is
+  stated once per message, across reloads.
+- **What that commit ends.** The receipt row and its timer, the first-hop wait and its timer, the repair budget's
+  count. `repair-exhausted` therefore ends the receipt at once: the other receivers lose its remaining retries. The
+  maintainer was told and chose this.
+- **What is refused afterwards.** A gap request or a repair request for the message is refused, with no frame and no
+  charge. A timer or a repair hint already queued finds the marker and ends without writing. A receipt that arrives
+  late changes nothing: no row is rebuilt and no second terminal fact is stated.
+- **What does not change.** What a receiver does with a gap that is never filled (a non-goal above); the receiver
+  goes on renewing until its own schedule ends, and is refused.
+
+Two residuals recorded while building part B close with the same rule: a late server receipt after the first hop
+gave up no longer rebuilds a receipt row, and no frame follows a settlement.
+
 ### The reproduction's cases, restated
 
 The six red cases were written before the rulings. Under the ruled design:
@@ -207,6 +246,8 @@ The six red cases were written before the rulings. Under the ruled design:
   `repair-exhausted`. `rallar-black-box-test-contracts.ts` is at its line backstop, so the field comes with a split of
   that file by owned feature.
 - If either cell is not green on its carriers, three runs each, the work stops with a report of what remains.
+- After part C every cell of this slice runs again (the two loss cells and `repair-exhausted`, three runs per carrier)
+  and the lane families once each, under the same stop rule.
 
 ## Validation
 
@@ -246,6 +287,8 @@ The six red cases were written before the rulings. Under the ruled design:
   attempt row's count follows the row's per-requester shape. No assertion changes.
 - One timer row per newly missing range, in place of one per track; the behaviour is the per-sequence rule above.
 - One pull request (#847) for both parts, B's commits first.
+- Part C: what counts as terminal (a written `ack: 'none'` send does not); the marker's lifetime (the message's
+  deadline); a late receipt after a terminal settlement is absorbed; a queued timer or hint ends without writing.
 
 ## Decisions (maintainer, 2026-11-19)
 
@@ -259,3 +302,4 @@ The six red cases were written before the rulings. Under the ruled design:
 | A: how the repair budget counts     | Per requester.                                                 |
 | B: which sends wait                 | Every receipted `ws` send, room or unicast.                    |
 | The `repair-exhausted` cell         | Restated with a budget of one.                                 |
+| Work after a terminal settlement    | "Full fix here": a terminal settlement ends all work.          |
