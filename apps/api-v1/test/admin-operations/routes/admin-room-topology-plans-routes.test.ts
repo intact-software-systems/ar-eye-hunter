@@ -160,6 +160,7 @@ test('the OpenAPI document describes the path and every field the route serves',
     const count = { type: 'integer', minimum: 0 };
     const nullableCount = { type: ['integer', 'null'], minimum: 0 };
     const layout = { $ref: '#/components/schemas/GroupLayoutIdentity' };
+    const heldReasons = { type: 'array', items: { $ref: '#/components/schemas/HeldTopologyReshapeReason' } };
     const expectedProperties: Record<string, Record<string, object>> = {
         AdminRoomTopologyPlansResponse: {
             roomRef: { $ref: '#/components/schemas/GroupRef' },
@@ -170,7 +171,7 @@ test('the OpenAPI document describes the path and every field the route serves',
         },
         AdminRoomReshapeGate: {
             gate: { $ref: '#/components/schemas/BackoffGateState' },
-            wantedReasons: { type: 'array', items: { type: 'string', enum: ['kind-change', 'leader-rooting'] } },
+            wantedReasons: heldReasons,
             intervalMs: count,
             opensAtEpochMs: nullableCount
         },
@@ -195,7 +196,7 @@ test('the OpenAPI document describes the path and every field the route serves',
             delta: { $ref: '#/components/schemas/TopologyLayoutDelta' },
             longestPathHops: count,
             change: { oneOf: [{ $ref: '#/components/schemas/TopologyPlanChange' }, { type: 'null' }] },
-            heldReshapeReasons: { type: 'array', items: { type: 'string', enum: ['kind-change', 'leader-rooting'] } }
+            heldReshapeReasons: heldReasons
         },
         ReplacedTopologyLayout: { layout, ageMs: count },
         TopologyLayoutDelta: {
@@ -213,6 +214,7 @@ test('the OpenAPI document describes the path and every field the route serves',
         assert.deepEqual(schemas[name].properties, properties, name);
         assert.deepEqual([...schemas[name].required].sort(), Object.keys(properties).sort(), name);
     }
+    assert.deepEqual(schemas.HeldTopologyReshapeReason, { type: 'string', enum: ['kind-change', 'leader-rooting'] });
     assert.deepEqual(schemas.TopologyPlanChange, {
         oneOf: [
             {
