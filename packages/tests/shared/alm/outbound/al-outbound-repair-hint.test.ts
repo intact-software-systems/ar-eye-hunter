@@ -188,10 +188,12 @@ describe('the gap attempt identity', () => {
 });
 
 describe('the requester a repair budget counts for', () => {
-    it('is the peer that asks, and a relay\'s recipient beside it', () => {
+    it('is the receiver that misses the sequence: a relay\'s recipient, else the peer that asks', () => {
         expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'leaf' })).toBe(toALOutboundEffectId(['leaf']));
-        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'member' }))
-            .toBe(toALOutboundEffectId(['relay', 'member']));
+        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'leaf' }))
+            .toBe(toALOutboundRepairRequesterKey({ requestedByPeerId: 'leaf' }));
+        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'other' }))
+            .not.toBe(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'leaf' }));
         expect(toALOutboundRepairRequesterKey({})).toBe(toALOutboundEffectId(['-']));
     });
 });

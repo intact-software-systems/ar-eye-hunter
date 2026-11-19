@@ -94,12 +94,12 @@ export function toALOutboundRepairGapAttemptIdentity(
     ]);
 }
 
-/** The requester a repair budget counts for: the peer that asks, and the recipient a relay asks for. */
+/**
+ * The requester a repair budget counts for: the receiver that misses the sequence -- the recipient a relay
+ * asks for, else the peer that asks. A hop that carries a receiver's request earns it no second budget.
+ */
 export function toALOutboundRepairRequesterKey(
     request: Pick<ALOutboundRepairHint, 'requestedByPeerId' | 'logicalRecipientPeerId'>
 ): string {
-    return toALOutboundEffectId([
-        request.requestedByPeerId ?? '-',
-        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
-    ]);
+    return toALOutboundEffectId([request.logicalRecipientPeerId ?? request.requestedByPeerId ?? '-']);
 }

@@ -148,7 +148,13 @@ function createRepairRetransmission(
 async function readRepairAttempts(stores: OutboundTestStores, messages: readonly ALMessage[]): Promise<readonly number[]> {
     return await Promise.all(
         messages.map(async (message) =>
-            (await stores.admissionStore.readRepairMessage(message.id.msgId, planOutgoingMessage)).repairAttempt?.attemptsByRequester['peer-1'] ?? 0
+            (await stores.admissionStore.readOutgoingMessage({
+                msg: message,
+                planner: planOutgoingMessage,
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue'
+            }))
+                .repairAttempt?.attemptsByRequester['peer-1'] ?? 0
         )
     );
 }

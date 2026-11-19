@@ -8,9 +8,12 @@ import {
 } from 'vitest';
 
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import type { ALOutboundRepairAttemptSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { decodeALOutboundRepairAttempt } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
-import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -249,10 +252,16 @@ describe('outbound dispatch value ownership', () => {
         expect(computed.bundle).toBeUndefined();
         expect(computed.entries).toEqual([]);
     });
-    it('charges a new requester its first attempt beside the others, and refuses one past the row\'s bound of requesters', async () => {
-        const stores = createDefaultOutboundTestStores();
-        const store = stores.admissionStore;
-        const message = createOutboundMessage('per-requester-repair');
+});
+
+describe('the repair budget a dispatch charges', () => {
+    const message = createOutboundMessage('per-requester-repair');
+    const msgId = message.id.msgId;
+
+    async function createRepairCharge(): Promise<
+        (attemptsByRequester: Readonly<Record<string, number>>, requesterKey: string, maxAttempts?: number) => ALOutboundComputedDto<OutboundTestPayload>
+    > {
+        const store = createDefaultOutboundTestStores().admissionStore;
         const observed = await store.readOutgoingMessage({
             msg: message,
             planner: () => ({
@@ -264,28 +273,74 @@ describe('outbound dispatch value ownership', () => {
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
-        const computeWith = (attemptsByRequester: Readonly<Record<string, number>>) =>
+        return (attemptsByRequester, requesterKey, maxAttempts = 4) =>
             computeALOutboundDispatch({
-                read: freezeValues({ ...observed, repairAttempt: { msgId: message.id.msgId, attemptsByRequester } }),
+                read: freezeValues({ ...observed, repairAttempt: { msgId, attemptsByRequester } }),
                 outboxEntry: createOutboundCanonicalEntry(store, observed.msg, Temporal.Now.instant()),
                 dispatchAtMs: 1_000,
                 intent: 'repair',
                 phase: 'immediate',
-                options: { repairBudget: { requesterKey: 'peer-2', maxAttempts: 4 } }
+                options: { repairBudget: { requesterKey, maxAttempts } }
             });
+    }
+
+    function toChargedRow(computed: ALOutboundComputedDto<OutboundTestPayload>): ALOutboundRepairAttemptSnapshot | undefined {
+        const charge = computed.bundle?.mutations.find((mutation) => mutation.kind === 'set-repair-attempt');
+        return charge?.kind === 'set-repair-attempt' ? charge.snapshot : undefined;
+    }
+
+    it('charges a new requester its first attempt beside the others', async () => {
+        const charge = await createRepairCharge();
+
+        expect(toChargedRow(charge({ 'peer-1': 4 }, 'peer-2'))).toEqual({ msgId, attemptsByRequester: { 'peer-1': 4, 'peer-2': 1 } });
+    });
+
+    it('refuses a new requester past the row\'s bound of requesters with a detail of its own', async () => {
+        const charge = await createRepairCharge();
         const full = Object.fromEntries(
             Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => [`peer-${index + 3}`, 1])
         );
 
-        expect(computeWith({ 'peer-1': 4 }).bundle?.mutations).toContainEqual({
-            kind: 'set-repair-attempt',
-            snapshot: { msgId: message.id.msgId, attemptsByRequester: { 'peer-1': 4, 'peer-2': 1 } }
-        });
-        expect(computeWith(full).verdict).toEqual({
+        expect(charge(full, 'peer-2').verdict).toEqual({
             kind: 'skipped',
             reason: 'repair-exhausted',
-            detail: `The repair of ${message.id.msgId} ran out of retransmits after 0 of 4.`
+            detail: `The repair of ${msgId} is refused to a new requester: ${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} requesters already hold its budget.`
         });
+        expect(charge(full, 'peer-3').verdict.kind).not.toBe('skipped');
+    });
+
+    it('gives a receiver one count whether its gap is reported directly or through a relay, and each receiver behind one relay its own', async () => {
+        const charge = await createRepairCharge();
+        const direct = toALOutboundRepairRequesterKey({ requestedByPeerId: 'member' });
+        const throughRelay = toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'member' });
+        const otherThroughRelay = toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'other' });
+        const afterDirect = toChargedRow(charge({}, direct, 1))!;
+
+        expect(charge(afterDirect.attemptsByRequester, throughRelay, 1).verdict).toEqual({
+            kind: 'skipped',
+            reason: 'repair-exhausted',
+            detail: `The repair of ${msgId} ran out of retransmits after 1 of 1.`
+        });
+        expect(toChargedRow(charge(afterDirect.attemptsByRequester, otherThroughRelay, 1))?.attemptsByRequester)
+            .toEqual({ [direct]: 1, [otherThroughRelay]: 1 });
+    });
+
+    it.each(['__proto__', 'constructor'])('charges and serves a requester named %s, an Object.prototype name, in a row that decodes', async (requester) => {
+        const charge = await createRepairCharge();
+        const requesterKey = toALOutboundRepairRequesterKey({ requestedByPeerId: requester });
+
+        const first = charge({}, requesterKey);
+        const row = toChargedRow(first)!;
+        expect(first.bundle?.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared')).toHaveLength(1);
+        expect(Object.hasOwn(row.attemptsByRequester, requesterKey)).toBe(true);
+        expect(Object.getPrototypeOf(row.attemptsByRequester)).toBe(Object.prototype);
+        expect(Object.entries(row.attemptsByRequester)).toEqual([[requesterKey, 1]]);
+        for (const stored of [JSON.parse(JSON.stringify(row)), structuredClone(row)]) {
+            const decoded = decodeALOutboundRepairAttempt(stored, msgId);
+            expect(Object.entries(decoded.attemptsByRequester)).toEqual([[requesterKey, 1]]);
+            expect(Object.entries(toChargedRow(charge(decoded.attemptsByRequester, requesterKey))!.attemptsByRequester))
+                .toEqual([[requesterKey, 2]]);
+        }
     });
 });
 

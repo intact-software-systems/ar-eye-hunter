@@ -24,6 +24,7 @@ import {
 import type { ALAdmissionReadSession, ALAdmissionWorkBackend } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
+    ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
 import {
@@ -205,10 +206,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const { msg, observedCanonicalEntry } = input;
         const nowMs = this.nowMs();
-        const [clientRecord, stored, control, repairs] = await Promise.all([
+        const [clientRecord, stored, control, repairAttempt, repairs] = await Promise.all([
             this.readClientRecord(session, msg.id.senderId),
             this.readStoredMessage(session, msg.id.msgId),
             this.readControlTracking(session, msg.id.msgId, msg.id.senderId),
+            this.readRepairAttempt(session, msg.id.msgId),
             this.readRepairs(session, msg.id.msgId)
         ]);
         const { entry: canonicalEntry, message: canonical, creationExpiry } = await readALOutboundCanonicalMessage({
@@ -247,6 +249,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             sentPositions,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
+            repairAttempt,
             firstHopWait,
             repairs,
             ...fences
@@ -737,18 +740,25 @@ export class ALOutboundAdmissionReads<TPrepared> {
         session: ALAdmissionReadSession,
         msgId: string,
         originPeerId: string | undefined
-    ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'repairAttempt' | 'acks' | 'nacks'>> {
-        const [pendingAck, repairAttempt, acks, nacks] = await Promise.all([
+    ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'acks' | 'nacks'>> {
+        const [pendingAck, acks, nacks] = await Promise.all([
             originPeerId === undefined ? undefined : this.readPendingAck(session, { originPeerId, msgId }),
-            this.readValue(
-                session,
-                toALOutboundRepairAttemptKey(this.namespace, msgId),
-                (value) => decodeALOutboundRepairAttempt(value, msgId)
-            ),
             this.readAcks(session, msgId),
             this.readNacks(session, msgId)
         ]);
-        return { pendingAck, repairAttempt, acks, nacks };
+        return { pendingAck, acks, nacks };
+    }
+
+    /** The repair attempts each requester has spent on the message: only a dispatch charges them. */
+    private async readRepairAttempt(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundRepairAttemptSnapshot | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundRepairAttemptKey(this.namespace, msgId),
+            (value) => decodeALOutboundRepairAttempt(value, msgId)
+        );
     }
 
     /** The message one sequence's index row names. */

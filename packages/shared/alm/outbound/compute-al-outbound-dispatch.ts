@@ -1,9 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
@@ -34,6 +32,10 @@ import {
 import { computeALOutboundFirstHopWaitWrites } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALCapacityRefusedVerdict } from './lane/admit-al-outbound-volatile-budget.ts';
 import {
+    computeALOutboundRepairAttemptCharge,
+    type ALOutboundRepairBudget
+} from './repair-budget/compute-al-outbound-repair-attempt-charge.ts';
+import {
     toALOutboundAckTimeoutEffectId,
     toALOutboundAttemptIdentity,
     toALOutboundSendEffectId
@@ -55,8 +57,7 @@ export interface ALOutboundCommitDispatchOptions {
     /** The outbox row exactly as this caller's own claim returned it; its commit fences that claim. */
     readonly claimedOutboxEntry?: ResourceEntry;
     readonly attemptIdentity?: string;
-    /** The requester a budgeted repair is charged to, and how many attempts each requester may spend. */
-    readonly repairBudget?: Readonly<{ requesterKey: string; maxAttempts: number; }>;
+    readonly repairBudget?: ALOutboundRepairBudget;
 }
 
 export interface ALOutboundComputedDto<TPrepared> {
@@ -78,12 +79,6 @@ export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly options: ALOutboundCommitDispatchOptions;
 }
 
-/** A repair budget one requester has spent on a message, as its exhaustion settlement states it. */
-interface ALOutboundRepairExhaustion {
-    readonly attempts: number;
-    readonly maxAttempts: number;
-}
-
 /** The state mutations and durable effects one commit writes together. */
 export interface ALOutboundDispatchWrites<TPrepared> {
     readonly mutations: readonly ALOutboundAdmissionMutation[];
@@ -98,9 +93,9 @@ export function computeALOutboundDispatch<TPrepared>(
         return { ...earlyResult, msg: input.read.msg };
     }
     const { read, options } = input;
-    const repairCharge = computeRepairAttemptCharge(read, options.repairBudget);
+    const repairCharge = computeALOutboundRepairAttemptCharge(read, options.repairBudget);
     if (repairCharge.left) {
-        const detail = toALOutboundRepairExhaustedDetail(read.msg.id.msgId, repairCharge.left);
+        const { detail } = repairCharge.left;
         return toALOutboundComputedResult({ kind: 'skipped', reason: 'repair-exhausted', detail }, detail);
     }
 
@@ -320,40 +315,6 @@ export function toALOutboundAdmissionVerdict<TPrepared>(
         case undefined:
             return { kind: 'skipped', reason: 'planner-drop', detail };
     }
-}
-
-/**
- * The one charge a budgeted repair makes to its requester, or the exhaustion it finds instead. The charge
- * belongs to the attempt's sends: a hint re-executed after a conflict or an expired lease finds them committed
- * and charges nothing more, so a budget is spent once per attempt identity. Each requester has its own budget;
- * a new requester past the row's bound of requesters finds the message's budget spent.
- */
-function computeRepairAttemptCharge<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>,
-    repairBudget: ALOutboundCommitDispatchOptions['repairBudget']
-): Either<ALOutboundRepairExhaustion, readonly ALOutboundAdmissionMutation[]> {
-    if (!repairBudget || read.repairAttemptCommitted) {
-        return Either.ofRight([]);
-    }
-    const { requesterKey, maxAttempts } = repairBudget;
-    const attemptsByRequester = read.repairAttempt?.attemptsByRequester ?? {};
-    const attempts = attemptsByRequester[requesterKey] ?? 0;
-    const isNewRequesterPastBound = !Object.hasOwn(attemptsByRequester, requesterKey) &&
-        Object.keys(attemptsByRequester).length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries;
-    if (attempts >= maxAttempts || isNewRequesterPastBound) {
-        return Either.ofLeft({ attempts, maxAttempts });
-    }
-    return Either.ofRight([{
-        kind: 'set-repair-attempt',
-        snapshot: {
-            msgId: read.msg.id.msgId,
-            attemptsByRequester: { ...attemptsByRequester, [requesterKey]: attempts + 1 }
-        }
-    }]);
-}
-
-function toALOutboundRepairExhaustedDetail(msgId: string, exhaustion: ALOutboundRepairExhaustion): string {
-    return `The repair of ${msgId} ran out of retransmits after ${exhaustion.attempts} of ${exhaustion.maxAttempts}.`;
 }
 
 function appendSupersedenceMutations<TPrepared>(

@@ -144,7 +144,12 @@ describe('a WS client\'s message whose store holds a repair-attempt row a previo
 
         expect(admitted.kind).toBe('committed');
         expect(fixture.written.filter((frame) => frame.seq === 1)).toHaveLength(2);
-        const read = await fixture.stores.admissionStore.readRepairMessage(first!.id.msgId, createWsClientMintingPlanner(SESSION_ID));
+        const read = await fixture.stores.admissionStore.readOutgoingMessage({
+            msg: first!,
+            planner: createWsClientMintingPlanner(SESSION_ID),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
         expect(read.repairAttempt?.attemptsByRequester).toEqual({
             [toALOutboundRepairRequesterKey({ requestedByPeerId: SERVER_PEER_ID })]: 1
         });

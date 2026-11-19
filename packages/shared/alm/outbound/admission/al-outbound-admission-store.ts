@@ -274,7 +274,6 @@ export interface ALOutboundRepairReadDto<TPrepared> {
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
-    readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     readonly plan?: ALOutboundDispatchPlan<TPrepared>;
