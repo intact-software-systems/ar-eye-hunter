@@ -828,7 +828,6 @@ and it has no status list.
   - Bounds raised after a period's wake-up has run leave a later hold of that period without a row until the next
     work.
   - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
-  - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
   - A room that empties while its gate is closed keeps its empty layout's kind until the gate opens, and that hold
     counts as any other. Whether a layout of no or one member should pass the gate is not decided.
   - `packages/shared/encoding` imports `packages/shared/api/exact-object-decoding.ts` at runtime (the GroupRef

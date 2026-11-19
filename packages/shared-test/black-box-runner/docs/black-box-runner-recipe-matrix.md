@@ -149,7 +149,8 @@ column is the smallest gap
 between two reshapes planned in that phase; a line under the table gives the closest two
 reshapes of the whole room, phase boundaries included. Each room entry also carries its
 `reshapeGate` as read once it converged. Before it reads convergence the measurement waits,
-for at most 75 s, until the room owes no held reshape. Run it with:
+for at most 75 s, until the formation view, read under the room creator's session, states no
+held reshape. Run it with:
 
 ```bash
 npm run perf:api-v1:topology-reshapes

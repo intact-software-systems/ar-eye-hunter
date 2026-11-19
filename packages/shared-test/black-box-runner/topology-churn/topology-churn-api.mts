@@ -13,6 +13,8 @@ import {
     validateAuthoritativeOverlayTopologySnapshot
 } from '@shared/api/authoritative-state-validation.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
+import { decodeGroupFormationView } from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupTopologyPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupRole, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
@@ -225,6 +227,23 @@ export class TopologyChurnApi {
             headers: toSessionHeaders(session)
         });
         return requireRight(decodeEffectiveGroupTopologyConfig(getOwnField(body, 'effective')));
+    }
+
+    async readFormationView(session: TopologyChurnSession, roomRef: GroupRef): Promise<GroupFormationView> {
+        const body = await this.#request(session.member.apiBaseUrl, `${toGroupPath(roomRef)}/formation`, {
+            method: 'GET',
+            headers: toSessionHeaders(session)
+        });
+        return decodeGroupFormationView(body, roomRef).fold(
+            (issues) => {
+                throw new TypeError(
+                    `Formation view for ${roomRef.groupId} is invalid: ${
+                        issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+                    }`
+                );
+            },
+            (view) => view
+        );
     }
 
     async readRoomTopologyPlans(
