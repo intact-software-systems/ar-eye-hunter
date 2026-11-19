@@ -12,7 +12,7 @@ import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
+import { readGroupPresenceCreationEpochMs } from '../session/group-presence-policy.ts';
 
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
@@ -86,7 +86,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
     const generationId = input.newPresenceGenerationId();
     const snapshot = await joinStateGroup({
-        nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
+        nowMs: () => readGroupPresenceCreationEpochMs(context),
         groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: roomId,
         principalId: session.clientId,
@@ -273,7 +273,7 @@ async function connectMovedSession(
 ): Promise<GroupSnapshot> {
     const generationId = input.newPresenceGenerationId();
     const connected = await createStateGroupPresenceCommand({
-        nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
+        nowMs: () => readGroupPresenceCreationEpochMs(context),
         groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: move.destination.groupId,
         principalId: fence.session.clientId,
@@ -436,7 +436,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
     input.assertCurrent();
     const generationId = input.dependencies.newPresenceGenerationId();
     const snapshot = await createStateGroupPresenceCommand({
-        nowMs: () => readBrowserServerCreationEpochMs(input.context.serverTime),
+        nowMs: () => readGroupPresenceCreationEpochMs(input.context),
         groupPresence: input.context.middleware.heartbeat.groupPresence,
         groupId: input.joinedRoom.group.groupId,
         principalId: input.session.clientId,

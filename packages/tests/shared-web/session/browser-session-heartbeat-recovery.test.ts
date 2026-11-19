@@ -128,6 +128,27 @@ describe('heartbeat group recovery', () => {
         expect(handle.groupPresence).toEqual({ leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 });
     });
 
+    it('renews the client through a wide clock window and resumes group renewal once it narrows', async () => {
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        let width = 307;
+        await initHeartbeat(client, {
+            creationEpochMs: () => Date.now(),
+            expiryEpochMs: () => Date.now() + width,
+            publicationKey: null,
+            authSession: session,
+            scope,
+            groupPresence: { leaseMs: 250, requestTimeoutMs: 50, renewalIntervalMs: 50, retryMs: 20 }
+        });
+        await vi.advanceTimersByTimeAsync(50);
+        expect(server.clientHeartbeats).toHaveLength(1);
+        expect(server.groupHeartbeats).toEqual([]);
+        width = 5;
+        await vi.advanceTimersByTimeAsync(50);
+        expect(server.groupHeartbeats.length).toBeGreaterThan(0);
+    });
+
     it('keeps a short lease live through slow requests and one failed renewal', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         const server = new HeartbeatServer();

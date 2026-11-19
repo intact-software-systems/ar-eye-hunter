@@ -9,7 +9,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
+import { readGroupPresenceCreationEpochMs } from '../session/group-presence-policy.ts';
 
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { leaveRoom } from './leave-room.ts';
@@ -55,7 +55,7 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
     const session = fence.session;
     const scope = input.resolveOperationScope(createInput.scope);
     const snapshot = await createAndJoinStateGroup({
-        nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
+        nowMs: () => readGroupPresenceCreationEpochMs(context),
         newGroupId: input.newGroupId,
         displayName: createInput.displayName,
         principalId: session.clientId,

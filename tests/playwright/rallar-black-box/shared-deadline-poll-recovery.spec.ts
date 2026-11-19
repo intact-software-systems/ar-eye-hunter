@@ -12,10 +12,14 @@ test.beforeEach(async ({ page }) => {
             contentType: 'text/javascript',
             body: `export const rallar = {
             async connect() {
+                if (document.body.dataset.holdReconnect) {
+                    document.body.dataset.reconnecting = 'true';
+                    await new Promise(resolve => window.addEventListener('release-connect', resolve, { once: true }));
+                }
                 if (document.body.dataset.offline) throw new Error('Network unavailable');
                 delete document.body.dataset.uncalibrated;
             },
-            rooms: { async enter() {} },
+            rooms: { async enter(room) { document.body.dataset.selected = room.groupId; } },
             compareDeadline(deadline) {
                 if (document.body.dataset.uncalibrated) return 'unavailable';
                 if (document.body.dataset.uncertain) return 'overlaps';
@@ -32,7 +36,13 @@ test.beforeEach(async ({ page }) => {
         const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
             viewUrl
         );
-        await showPoll({ root: document.body, roomRef, endpoint: '/poll-snapshot', participantGrant: 'test' });
+        const dispose = await showPoll({
+            root: document.body,
+            roomRef,
+            endpoint: '/poll-snapshot',
+            participantGrant: 'test'
+        });
+        window.addEventListener('leave-poll', dispose, { once: true });
     }, { viewUrl, roomRef });
     await expect(page.getByRole('button', { name: 'Yes' })).toBeEnabled();
 });
@@ -69,4 +79,20 @@ test('a click crossing into an uncertain boundary sends no ballot', async ({ pag
     await expect(page.getByText('Voting boundary uncertain')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
     expect(ballots).toEqual([]);
+});
+
+test('disposing a poll during reconnect preserves the next room selection', async ({ page }) => {
+    await page.evaluate(() => {
+        document.body.dataset.holdReconnect = 'true';
+        document.body.dataset.uncalibrated = 'true';
+    });
+    await expect(page.locator('body')).toHaveAttribute('data-reconnecting', 'true');
+    const selected = await page.evaluate(async () => {
+        window.dispatchEvent(new Event('leave-poll'));
+        document.body.dataset.selected = 'next-room';
+        window.dispatchEvent(new Event('release-connect'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return document.body.dataset.selected;
+    });
+    expect(selected).toBe('next-room');
 });

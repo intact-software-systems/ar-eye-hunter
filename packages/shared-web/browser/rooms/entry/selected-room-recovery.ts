@@ -4,9 +4,9 @@ import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
-    readBrowserServerCreationEpochMs,
     readBrowserServerExpiryEpochMs
 } from '../../connection/server-clock/browser-server-clock-session.ts';
+import { readGroupPresenceCreationEpochMs } from '../../session/group-presence-policy.ts';
 
 import { ApiHttpError } from '../../api/http-error.ts';
 import { isRetryableApiViewFailure } from '../../api/read-api-view.ts';
@@ -198,11 +198,11 @@ export class SelectedRoomRecovery {
         const publicationKey = await this.input.readPublicationKey();
         this.assertCurrent(restore);
         const expiresAtEpochMs = toRoomPresenceLeaseExpiresAtEpochMs(
-            readBrowserServerCreationEpochMs(restore.context.serverTime),
+            readGroupPresenceCreationEpochMs(restore.context),
             restore.context.middleware.heartbeat.groupPresence?.leaseMs
         );
         const command = createStateGroupPresenceCommand({
-            nowMs: () => readBrowserServerCreationEpochMs(restore.context.serverTime),
+            nowMs: () => readGroupPresenceCreationEpochMs(restore.context),
             groupPresence: restore.context.middleware.heartbeat.groupPresence,
             expiresAtEpochMs,
             groupId: room.groupId,

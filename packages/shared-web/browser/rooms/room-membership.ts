@@ -1,5 +1,5 @@
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
-import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
+import { readGroupPresenceCreationEpochMs } from '../session/group-presence-policy.ts';
 import { readConfirmedRoomArrival } from './room-presence.ts';
 
 import type {
@@ -134,7 +134,7 @@ export async function acceptRoomInvite(
         options: input.options ?? {},
         execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) => {
             const snapshot = await acceptStateGroupInvite({
-                nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
+                nowMs: () => readGroupPresenceCreationEpochMs(context),
                 groupPresence: context.middleware.heartbeat.groupPresence,
                 groupId: roomId,
                 actorPrincipalId: session.clientId,

@@ -48,8 +48,12 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         const current = generation;
         try {
             if (restored !== current) {
-                await rallar.connect();
-                await rallar.rooms.enter(roomRef);
+                const options = { signal: lifetime.signal };
+                await rallar.connect(options);
+                if (current !== generation || lifetime.signal.aborted) {
+                    return;
+                }
+                await rallar.rooms.enter(roomRef, options);
             }
             const snapshot = await requestPollSnapshot(input, lifetime.signal);
             if (current !== generation || lifetime.signal.aborted) {
