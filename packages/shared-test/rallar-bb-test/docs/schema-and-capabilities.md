@@ -111,7 +111,9 @@ naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
 
 `formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
 no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
-seconds when no layout is accepted.
+seconds when no layout is accepted. The loop also requires `heldReshape.reading` to be `none`, so it waits
+out a reshape the gate holds; its limit is the setup allowance plus 60 000 ms, one hold at the default
+policy's upper bound.
 
 ## Formation Commands
 

@@ -60,7 +60,7 @@ export function createAlmScaleSetupCommands(
             timeoutMs: computeGroupRequestTimeoutMs(input)
         },
         createAcceptedLayoutGate(input, prefix),
-        createStableRtcLayoutWait({ group: input.group, prefix, timeoutMs: input.readyTimeoutMs }),
+        createStableRtcLayoutWait({ group: input.group, prefix, settleTimeoutMs: input.readyTimeoutMs }),
         createSetupBarrier(input, prefix, 'setup-complete'),
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
         createSetupBarrier(input, prefix, 'traffic-ready')

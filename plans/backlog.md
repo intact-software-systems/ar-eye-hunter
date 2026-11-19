@@ -820,11 +820,6 @@ and it has no status list.
   re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild after a failed update or a broken
   invariant is not held. The quality bound for these paths, the tree-keeping gate of #810 that they skip, is still
   open.
-- A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
-  reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
-  (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
-  the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
-  (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
 - Reshape gate leftovers (pull request #844):
   - The plan record's `changeGated` input is overloaded for a `reshape-due` row, so a wake-up's plan has empty
     `causes`; naming a cause for it would change the plan record contract.

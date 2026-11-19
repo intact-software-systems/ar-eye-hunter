@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createAlmScaleSetupCommands } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
+import { toStableRtcLayoutWaitTimeoutMs } from '@shared-test/rallar-bb-test/fixtures/create-stable-rtc-layout-wait.ts';
 import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -40,7 +42,47 @@ function createTransitionRuntime(recoveryAtMs: number | undefined): LayoutTransi
                     hasPendingLayout: false,
                     acceptedHeldSinceEpochMs: heldSince,
                     acceptedHeldForMs: now - heldSince,
+                    heldReshape: { reading: 'none', readAtEpochMs: now },
                     formation: { causalRevision: { groupRevision: now < 10_300 ? 36 : 38, presenceRevision: 26 } }
+                }
+            };
+        }
+    });
+    return { runtime, observations, now: () => now };
+}
+
+type HeldReshapeFixtureReading =
+    | { readonly reading: 'not-read'; readonly because: 'view-read-failed'; readonly message: string; }
+    | { readonly reading: 'none'; readonly readAtEpochMs: number; }
+    | { readonly reading: 'held'; readonly readAtEpochMs: number; readonly wantedReasons: readonly string[]; readonly opensAtEpochMs: number; };
+
+/** A settled page whose formation view reads as `toReading` says; a release replaces the layout at `releasedAtMs`. */
+function createHeldReshapeRuntime(
+    releasedAtMs: number | undefined,
+    toReading: (now: number) => HeldReshapeFixtureReading
+): LayoutTransitionFixture {
+    let now = 10_000;
+    const observations: number[] = [];
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        now: () => now,
+        sleep: async (ms) => {
+            now += ms;
+        },
+        commandExecutor: (command) => {
+            if (command.kind !== 'formation.readiness') {
+                return undefined;
+            }
+            observations.push(now);
+            const heldSince = releasedAtMs !== undefined && now >= releasedAtMs ? releasedAtMs : 0;
+            return {
+                status: 'ok',
+                value: {
+                    readyAtEpochMs: now,
+                    hasPendingLayout: false,
+                    acceptedHeldSinceEpochMs: heldSince,
+                    acceptedHeldForMs: now - heldSince,
+                    heldReshape: toReading(now),
+                    formation: { causalRevision: { groupRevision: 36, presenceRevision: 26 } }
                 }
             };
         }
@@ -77,6 +119,52 @@ describe('RTC layout stability before a measured send', () => {
         expect(result.status).toBe('ok');
         expect(fixture.now()).toBeGreaterThanOrEqual(15_500);
         expect(fixture.observations).toContain(12_000);
+    });
+});
+
+describe('a held reshape before a measured send', () => {
+    it('waits a hold of the default upper bound out and then a quiet window on the reshaped layout', async () => {
+        const releasedAtMs = 10_000 + 60_000;
+        const fixture = createHeldReshapeRuntime(releasedAtMs, (now) =>
+            now < releasedAtMs
+                ? { reading: 'held', readAtEpochMs: 10_000, wantedReasons: ['kind-change'], opensAtEpochMs: releasedAtMs }
+                : { reading: 'none', readAtEpochMs: now });
+        const result = await fixture.runtime.execute(stableLayoutCommand());
+
+        expect(result.status).toBe('ok');
+        expect(fixture.now()).toBeGreaterThanOrEqual(releasedAtMs + 3_500);
+        expect(fixture.now()).toBeLessThan(releasedAtMs + 5_000);
+    });
+
+    it('fails at its limit when the reshape stays held', async () => {
+        const fixture = createHeldReshapeRuntime(undefined, () => ({
+            reading: 'held',
+            readAtEpochMs: 10_000,
+            wantedReasons: ['leader-rooting'],
+            opensAtEpochMs: 5_000
+        }));
+        const result = await fixture.runtime.execute(stableLayoutCommand());
+
+        expect(result.status).toBe('failed');
+        // It kept observing for longer than one hold of the upper bound.
+        expect(fixture.observations.at(-1)! - 10_000).toBeGreaterThan(60_000);
+    });
+
+    it('never passes on an observation that did not read the view', async () => {
+        const fixture = createHeldReshapeRuntime(undefined, () => ({
+            reading: 'not-read',
+            because: 'view-read-failed',
+            message: 'Formation view read timed out'
+        }));
+        const result = await fixture.runtime.execute(stableLayoutCommand());
+
+        expect(result.status).toBe('failed');
+        expect(fixture.observations.length).toBeGreaterThan(1);
+    });
+
+    it('allows for one hold at the default policy\'s upper bound', () => {
+        expect(toStableRtcLayoutWaitTimeoutMs(45_000))
+            .toBe(45_000 + createDefaultGroupLifecyclePolicy().topology.reshapeMaxIntervalMs);
     });
 });
 
