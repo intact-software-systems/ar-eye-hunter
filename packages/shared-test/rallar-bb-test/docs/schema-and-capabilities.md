@@ -827,8 +827,9 @@ requester of its gaps, so a held frame's repeated reports are one attempt, the s
 the frame arrives on the hold's release. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
-Two fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
-Every send of both names `ack: 'receiver'` and the cell's ordering key. `lost-stream-start` runs over `rtc` alone and
+Four fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
+Every send of each names the cell's ordering key, and every send but `seeded-loss-unreceipted-stream`'s names
+`ack: 'receiver'`. `lost-stream-start` runs over `rtc` alone and
 pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
 the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
 `entered` at seq 2 and `before-entry` for seq 1, and proves the absence of a third; the sender observes handle 1 `failed` with
@@ -837,8 +838,16 @@ delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twe
 acknowledged. Two facts prove the jitter disturbed the stream: its release must read at least twenty delayed frames
 (`acted.delay`, one per send), and the sender must have admitted a gap NACK about its track, which the server sends
 only when a later sequence reached it first. The receiver reads twenty arrivals in sequence order and proves the
-absence of a twenty-first. No cell runs under a seeded loss: an ordered
-receipted stream does not reliably recover from one (D670), and a catalog test pins that none claims it.
+absence of a twenty-first. `seeded-loss-stream` runs over `ws` and `rtc`, where one hop carries the track: a seeded
+loss of 25 % (seed 7) is held (`until-cleared`) on the cell's data frames while twenty sends are sent and admitted,
+then released; the release must read at least one dropped frame (`acted.drop`), and every handle is then read
+`acknowledged`. Over `rtc` send 1 is acknowledged before the loss is armed, so the receiver enters the track at its
+start. The receiver reads twenty arrivals in sequence order and proves the absence of a twenty-first.
+`seeded-loss-unreceipted-stream` runs over `ws` alone and holds the same loss over nineteen sends with `ack: 'none'`,
+each admitted; the release must read at least one dropped frame, and only then is send 20 sent. The loss ends before
+the last send because a later frame always reveals a gap, while a lost last frame under `ack: 'none'` is a stated limit,
+pinned by `lost-repair-frame-stream.test.ts`. The receiver reads twenty arrivals in sequence order and proves the
+absence of a twenty-first.
 
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
 `rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC

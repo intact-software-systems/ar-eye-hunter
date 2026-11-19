@@ -19,8 +19,15 @@ type Carrier = (typeof ALM_CONFORMANCE_CARRIERS)[number];
 
 const STREAM_SENDS = 20;
 const CELL_CARRIERS = [
+    ['seeded-loss-stream', ['ws', 'rtc']],
+    ['seeded-loss-unreceipted-stream', ['ws']],
     ['lost-stream-start', ['rtc']],
     ['seeded-jitter-stream', ['ws']]
+] as const;
+const STREAM_CELLS = [
+    ['seeded-loss-stream', 'ws'],
+    ['seeded-loss-stream', 'rtc'],
+    ['seeded-jitter-stream', 'ws']
 ] as const;
 
 function findCell(key: string, carrier: Carrier): AlmConformanceScenario | undefined {
@@ -84,28 +91,26 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each(
-        [
-            ['lost-stream-start', 'rtc'],
-            ['seeded-jitter-stream', 'ws']
-        ] as const
-    )('%s over %s sends only receipted at-least-once sends on its own track, in sequence', (key, carrier) => {
-        const sends = toSends(requireCell(key, carrier).sender);
+    it.each([...STREAM_CELLS, ['lost-stream-start', 'rtc'] as const])(
+        '%s over %s sends only receipted at-least-once sends on its own track, in sequence',
+        (key, carrier) => {
+            const sends = toSends(requireCell(key, carrier).sender);
 
-        expect(sends.length).toBe(key === 'lost-stream-start' ? 3 : STREAM_SENDS);
-        sends.forEach((send, index) => {
-            expect(send).toMatchObject({
-                ack: 'receiver',
-                reliability: 'at-least-once',
-                orderingKey: toOrderingKey(toSenderStep(carrier, key)),
-                seq: index + 1,
-                payload: { marker: key, seq: index + 1 }
+            expect(sends.length).toBe(key === 'lost-stream-start' ? 3 : STREAM_SENDS);
+            sends.forEach((send, index) => {
+                expect(send).toMatchObject({
+                    ack: 'receiver',
+                    reliability: 'at-least-once',
+                    orderingKey: toOrderingKey(toSenderStep(carrier, key)),
+                    seq: index + 1,
+                    payload: { marker: key, seq: index + 1 }
+                });
             });
-        });
-    });
+        }
+    );
 
-    it('seeded-jitter-stream settles every send acknowledged', () => {
-        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
+    it.each(STREAM_CELLS)('%s over %s settles every send acknowledged', (key, carrier) => {
+        const sender = requireCell(key, carrier).sender;
         const settles = Array.from({ length: STREAM_SENDS }, (_, index) => `assert-acknowledged-${index + 1}`);
         const places = toPlaces(sender, settles);
 
@@ -116,8 +121,128 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it('seeded-jitter-stream claims twenty arrivals in sequence order and no twenty-first', () => {
-        const receiver = requireCell('seeded-jitter-stream', 'ws').receiver;
+    it.each(STREAM_CELLS)('%s over %s claims twenty arrivals in sequence order and no twenty-first', (key, carrier) => {
+        const receiver = requireCell(key, carrier).receiver;
+
+        expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
+            { count: STREAM_SENDS, ascendingBy: 'seq' },
+            { count: STREAM_SENDS + 1, absent: true }
+        ]);
+        expect(findCommand(receiver, `received-${STREAM_SENDS}`)).not.toHaveProperty('absent', true);
+        expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
+    });
+
+    it.each(['ws', 'rtc'] as const)(
+        'seeded-loss-stream over %s holds its loss until the last send is admitted, and recovers after its release',
+        (carrier) => {
+            const sender = requireCell('seeded-loss-stream', carrier).sender;
+            const places = toPlaces(sender, [
+                'loss-arm',
+                `send-${STREAM_SENDS}`,
+                `assert-admitted-${STREAM_SENDS}`,
+                'loss-release',
+                'assert-loss-dropped',
+                `observe-acknowledged-${STREAM_SENDS}`
+            ]);
+
+            expect(places.every((place) => place >= 0)).toBe(true);
+            expect([...places].sort((left, right) => left - right)).toEqual(places);
+            expect(toPlaces(sender, ['observe-acknowledged-2'])[0]).toBeGreaterThan(places[4]);
+        }
+    );
+
+    it.each(['ws', 'rtc'] as const)('seeded-loss-stream over %s proves its seeded loss dropped a frame', (carrier) => {
+        const sender = requireCell('seeded-loss-stream', carrier).sender;
+        const arm = findCommand(sender, 'loss-arm');
+        const release = findCommand(sender, 'loss-release');
+        const typeId = `alm.conformance.${carrier}.seeded-loss-stream`;
+
+        expect(arm).toMatchObject({ kind: 'fault.inject', carrier, match: { typeId }, faultId: `loss-${carrier}-${typeId}` });
+        expect(arm).toMatchObject({ action: { loss: { ratio: 0.25, seed: 7 } }, remaining: 'until-cleared' });
+        expect(release).toMatchObject({ kind: 'fault.inject', carrier, faultId: `loss-${carrier}-${typeId}`, remaining: 0 });
+        expect(findCommand(sender, 'assert-loss-dropped')).toEqual(expect.objectContaining({
+            kind: 'assert',
+            source: `resultCache.${release.commandId}.value.acted.drop`,
+            operator: 'gte',
+            expected: 1
+        }));
+        expect(toPlaces(sender, ['loss-release', 'assert-loss-dropped'])).toEqual([
+            sender.commands.indexOf(release),
+            sender.commands.indexOf(release) + 1
+        ]);
+    });
+
+    it('seeded-loss-stream arms its loss before the first send over ws', () => {
+        const places = toPlaces(requireCell('seeded-loss-stream', 'ws').sender, ['loss-arm', 'send-1']);
+
+        expect(places[0]).toBeGreaterThanOrEqual(0);
+        expect(places[0]).toBeLessThan(places[1]);
+    });
+
+    it('seeded-loss-stream enters its track over rtc before the loss: send 1 is acknowledged, then the loss is armed', () => {
+        const places = toPlaces(requireCell('seeded-loss-stream', 'rtc').sender, [
+            'send-1',
+            'assert-acknowledged-1',
+            'loss-arm',
+            'send-2'
+        ]);
+
+        expect(places.every((place) => place >= 0)).toBe(true);
+        expect([...places].sort((left, right) => left - right)).toEqual(places);
+    });
+
+    it('seeded-loss-unreceipted-stream sends twenty unreceipted at-least-once sends on its own track, in sequence', () => {
+        const sends = toSends(requireCell('seeded-loss-unreceipted-stream', 'ws').sender);
+
+        expect(sends.length).toBe(STREAM_SENDS);
+        sends.forEach((send, index) => {
+            expect(send).toMatchObject({
+                ack: 'none',
+                reliability: 'at-least-once',
+                orderingKey: toOrderingKey(toSenderStep('ws', 'seeded-loss-unreceipted-stream')),
+                seq: index + 1,
+                payload: { marker: 'seeded-loss-unreceipted-stream', seq: index + 1 }
+            });
+        });
+    });
+
+    it('seeded-loss-unreceipted-stream holds its loss over the first nineteen sends and sends the twentieth after the release', () => {
+        const sender = requireCell('seeded-loss-unreceipted-stream', 'ws').sender;
+        const typeId = 'alm.conformance.ws.seeded-loss-unreceipted-stream';
+        const release = findCommand(sender, 'loss-release');
+        const places = toPlaces(sender, [
+            'loss-arm',
+            'send-1',
+            `send-${STREAM_SENDS - 1}`,
+            `assert-admitted-${STREAM_SENDS - 1}`,
+            'loss-release',
+            'assert-loss-dropped',
+            `send-${STREAM_SENDS}`,
+            `assert-admitted-${STREAM_SENDS}`
+        ]);
+
+        expect(places.every((place) => place >= 0)).toBe(true);
+        expect([...places].sort((left, right) => left - right)).toEqual(places);
+        expect(findCommand(sender, 'loss-arm')).toMatchObject({
+            kind: 'fault.inject',
+            carrier: 'ws',
+            match: { typeId },
+            faultId: `loss-ws-${typeId}`,
+            action: { loss: { ratio: 0.25, seed: 7 } },
+            remaining: 'until-cleared'
+        });
+        expect(release).toMatchObject({ kind: 'fault.inject', carrier: 'ws', faultId: `loss-ws-${typeId}`, remaining: 0 });
+        expect(findCommand(sender, 'assert-loss-dropped')).toEqual(expect.objectContaining({
+            kind: 'assert',
+            source: `resultCache.${release.commandId}.value.acted.drop`,
+            operator: 'gte',
+            expected: 1
+        }));
+        expect(toNames(sender).filter((name) => name.startsWith('observe-acknowledged-'))).toEqual([]);
+    });
+
+    it('seeded-loss-unreceipted-stream claims twenty arrivals in sequence order and no twenty-first', () => {
+        const receiver = requireCell('seeded-loss-unreceipted-stream', 'ws').receiver;
 
         expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
             { count: STREAM_SENDS, ascendingBy: 'seq' },
@@ -169,18 +294,6 @@ describe('ALM fault stream cells', () => {
         expect(toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])).toEqual(
             [...toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])].sort((left, right) => left - right)
         );
-    });
-
-    it('no cell runs under a seeded loss: a stream does not reliably recover from one, so none can claim it', () => {
-        const lossy = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            createAlmConformanceRecipes(toConformanceInput(carrier)).flatMap((scenario) =>
-                [scenario.sender, scenario.receiver].flatMap((recipe) =>
-                    recipe.commands.filter((command) => command.kind === 'fault.inject' && typeof command.action === 'object' && 'loss' in command.action)
-                )
-            )
-        );
-
-        expect(lossy).toEqual([]);
     });
 
     it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {

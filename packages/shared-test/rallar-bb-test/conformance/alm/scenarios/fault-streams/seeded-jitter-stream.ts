@@ -46,7 +46,7 @@ function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): re
     const sequences = Array.from({ length: STREAM_SENDS }, (_, index) => index + 1);
     return [
         toJitterCommand(sender, 'arm'),
-        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, 'receiver')),
+        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, { ack: 'receiver' })),
         ...sequences.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
         toDiagnosticWait({
             step: sender,

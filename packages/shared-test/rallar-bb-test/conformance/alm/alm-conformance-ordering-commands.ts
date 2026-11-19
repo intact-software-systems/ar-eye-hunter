@@ -20,8 +20,9 @@ import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 export function toOrderedSendCommands(
     sender: AlmConformanceStepInput,
     seq: number,
-    ack?: 'receiver'
+    options?: Readonly<{ ack?: 'receiver' | 'none'; }>
 ): readonly RallarBlackBoxTestCommand[] {
+    const ack = options?.ack;
     return [
         toSendCommand({
             ...sender,
