@@ -33,8 +33,12 @@ export class PollAuthority {
         if (!this.ballots.has(principalId)) {
             const ballot = this.nowEpochMs() >= this.closesAtEpochMs ? 'late' : choice;
             this.ballots.set(principalId, ballot);
-            if (ballot === 'yes') this.yes++;
-            if (ballot === 'no') this.no++;
+            if (ballot === 'yes') {
+                this.yes++;
+            }
+            if (ballot === 'no') {
+                this.no++;
+            }
         }
         return this.read(principalId);
     }

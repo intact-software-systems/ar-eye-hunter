@@ -221,3 +221,6 @@ reaches it from below, displays “Voting is closing.” Compare again when the
 view refreshes. The poll authority checks the closing instant when it receives
 a vote and returns the result to the participant. A vote sent while the view
 showed “Voting open” can still arrive late.
+
+Run the [two-browser room poll](../shared-deadline-poll/README.md) to see an
+in-time vote count and a delayed vote arrive after closure.

@@ -19,15 +19,11 @@ The first customer-facing product should be **shared deadlines**. A live-poll de
 
 The foundation PR supplies an uncached server observation, a connection-scoped time window, calibrated RTC and WebSocket checks, and a separate clock for settling already-owned work. It also makes room presence timing configurable. Signed browser sends now capture the creation epoch before signing. Delivery handles and RTC proof checks use the same connection’s expiry bound. Room entry and renewal stamp leases from the earliest plausible server time. Arrival and reconnect compare the returned session, socket generation and expiry with the live connection. Checkpoint disposal can finish previously owned writes after calibration closes. Director freshness uses the same window and expires with the director’s room presence. Grumpy Town passed all 14 browser scenarios for clock skew, room entry, host loss, timed rounds and rematch. Physical-device suspension remains to be qualified before a mobile recovery claim. [Foundation PR](https://github.com/intact-software-systems/ar-eye-hunter/pull/845) · [Skew qualification and builder decision](https://github.com/intact-software-systems/ar-eye-hunter/issues/836)
 
-## Next two independently testable slices
+## Shared deadline demonstration
 
-### 1. Give the example poll one authority
+The connected SDK comparison and [runnable room poll](../../examples/shared-deadline-poll/README.md) demonstrate a server-owned cutoff, first-ballot replay and recovery after browser reload. The two Chromium sessions run with opposite two-minute wall-clock offsets. One submission arrives in time, and another crosses the cutoff in transit. The example authority lives in one process and receives ballots over HTTP.
 
-Keep a single room poll in a server process for the lifetime of the example. Publish its immutable room ID and closing instant, accept one ballot per admitted participant, and retain that participant's disposition across retries. Use the authority clock at receipt. An arrival exactly at close is late. Verify the cutoff and replay behavior with controlled server time. Production database persistence and host replacement remain separate investments.
-
-### 2. Prove the participant journey
-
-Run two isolated Chromium sessions against the in-memory Rallar API. Give their wall clocks opposite offsets and read one poll through the example authority. Both connected facades must report open before the cutoff. Hold a participant's submission until the other browser observes closure, then deliver it and check the authority's late disposition. Reload and reconnect to recover the same deadline, disposition and tally. Include the journey in the existing full-stack memory suite and publish the runnable command. This demonstration qualifies browser recovery and authoritative receipt over the example transport. Carrier-specific fallback and physical suspension remain separate qualification.
+The next product decision is whether a second application can consume the same public comparison without duplicating phase or recovery policy. Grumpy Town and physical-device testing remain the candidates described below.
 
 ## Public product and launch evidence
 
