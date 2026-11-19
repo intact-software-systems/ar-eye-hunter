@@ -666,8 +666,8 @@ that is early by the local clock is retried, as the formation timer does; a row 
 or that finds nothing wanted completes without planning. A wake-up that finds the room frozen, or
 held by a `commanded` or unreadable policy, completes with the want kept; so a change-gated re-plan
 does not take the input-fingerprint skip while the gate applies, is open and a reshape is wanted,
-and the next re-plan the room's policy lets plan releases the reshape; in a `commanded` room that is the next
-command.
+and the next re-plan the room's policy lets plan releases the reshape; in a room whose policy is `commanded` or
+unreadable that is the next command.
 
 **A hold can be the whole outcome.** A leader appointed in a quiet room with the gate closed changes
 no layout. Today that work ends with nothing to store. It now writes the gate state and the wake-up
@@ -823,13 +823,13 @@ their last phase: a re-root held near the end of `leader-churn` and released whe
   `kind-change`. The room's gate stood at its 60 s interval when the run ended.
 - The ramps are unchanged at 2 kind changes each. Their kind changes are 21 to 33 s apart, wider than the gate.
 - `leader`: at most 2 re-roots in the phase's 40 s, where three of the four rooms had 3 or 4. Of the 32
-  appointments in the two runs, 5 re-rooted at once, 9 met a closed gate and 18 were planned with the gate open
-  and left the layout as it was. Three re-roots inside the phase were released by the wake-up row, 15 015, 15 027
+  `leader`-phase appointments in the two runs, 5 re-rooted at once, 9 met a closed gate and 18 were planned with
+  the gate open and left the layout as it was. Three re-roots inside the phase were released by the wake-up row, 15 015, 15 027
   and 15 064 ms after the previous reshape.
 - `leader-churn`: 1 to 3 re-roots per room next to its 8 attaches and 7 repairs, where there were 2 to 4.
-- Over both runs a wake-up row planned a room 35 times. It released a reshape 17 times, found the want gone and
-  left the layout as it was 7 times, and planned a pending join without a reshape twice. The other 9 ran while
-  the rooms were being emptied, after the report was read.
+- Over both runs a wake-up row planned a room 35 times. It released a reshape 17 times, found the layout unchanged
+  with the gate open and so cleared the want 7 times, and planned a pending join without a reshape twice. The
+  other 9 were among the last rows of their rooms, while the rooms were being emptied.
 
 **What the measurement does not show.**
 
