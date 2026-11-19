@@ -2,6 +2,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
+import { pollPhase } from './poll-phase.ts';
 
 export interface ShowPollInput {
     readonly root: HTMLElement;
@@ -52,13 +53,19 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let submitting = false;
     let refreshing = false;
     let retryAt = 0;
-    async function refreshResults(): Promise<void> {
+    let unacknowledged: PollAuthority.Choice | undefined;
+    let checkingReceipt = false;
+    async function refreshSnapshot(): Promise<void> {
         refreshing = true;
         try {
             record = await request();
+            checkingReceipt = false;
+            if (record.closed || record.disposition !== 'pending') {
+                unacknowledged = undefined;
+            }
         }
         catch {
-            // The view retries while mounted. A failed read cannot confirm a final tally.
+            // A failed read leaves the receipt or closing tally unresolved.
         }
         finally {
             refreshing = false;
@@ -66,40 +73,30 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function render(): void {
-        const opening = rallar.compareDeadline(record.schedule.opensAtEpochMs);
-        const closing = rallar.compareDeadline(record.schedule.closesAtEpochMs);
-        let label: string;
-        if (record.closed) {
-            label = 'Voting closed · Results';
+        const currentPhase = pollPhase(record, rallar);
+        const needsSnapshot = checkingReceipt || currentPhase === 'Voting closed';
+        if (needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
+            void refreshSnapshot();
         }
-        else if (opening === 'unavailable' || closing === 'unavailable') {
-            label = 'Waiting for server time';
-        }
-        else if (closing === 'at-or-after') {
-            label = 'Voting closed';
-            if (!submitting && !refreshing && performance.now() >= retryAt) {
-                void refreshResults();
-            }
-        }
-        else if (opening === 'before') {
-            label = 'Question preview';
-        }
-        else if (opening === 'overlaps' || closing === 'overlaps') {
-            label = 'Voting boundary uncertain';
-        }
-        else {
-            label = 'Voting open';
-        }
-        phase.textContent = label;
-        const disabled = record.closed || refreshing || submitting || opening !== 'at-or-after' ||
-            closing !== 'before' ||
+        phase.textContent = currentPhase;
+        const disabled = checkingReceipt || refreshing || submitting || currentPhase !== 'Voting open' ||
             record.disposition !== 'pending';
-        yes.disabled = disabled;
-        no.disabled = disabled;
-        if (!record.closed && closing === 'at-or-after') {
+        yes.disabled = disabled || unacknowledged === 'no';
+        no.disabled = disabled || unacknowledged === 'yes';
+        yes.textContent = unacknowledged === 'yes' ? 'Retry Yes' : 'Yes';
+        no.textContent = unacknowledged === 'no' ? 'Retry No' : 'No';
+        if (checkingReceipt) {
+            result.textContent = 'Checking your vote with the poll authority';
+            return;
+        }
+        if (currentPhase === 'Voting closed') {
             result.textContent = retryAt && !refreshing
                 ? 'Final results unavailable · Retrying'
                 : 'Loading final results';
+            return;
+        }
+        if (unacknowledged) {
+            result.textContent = 'The authority has no receipt yet for your vote.';
             return;
         }
         result.textContent = `Yes ${record.yes} · No ${record.no} · Your vote: ${record.disposition}`;
@@ -109,15 +106,15 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         render();
         try {
             record = await request(choice);
+            unacknowledged = undefined;
         }
-        catch (error) {
+        catch {
             if (lifetime.signal.aborted) {
                 return;
             }
-            const message = document.createElement('p');
-            message.setAttribute('role', 'alert');
-            message.textContent = String(error);
-            root.append(message);
+            unacknowledged = choice;
+            checkingReceipt = true;
+            retryAt = 0;
         }
         finally {
             submitting = false;

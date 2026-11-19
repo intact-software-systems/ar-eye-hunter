@@ -9,7 +9,7 @@ npm run test:rallar:full-stack:memory -- --grep 'delayed ballot' --workers=1
 
 The journey starts the Rallar memory API, signs in two room participants and
 opens a Yes/No poll with device clocks two minutes ahead and behind. The pages
-display the same UTC opening and closing times. The question preview gives way to voting once the clock bounds place the client inside the voting window. An uncertain boundary disables voting until the client can resolve the phase. One Yes arrives in time. The other participant
+display the same UTC opening and closing times. The question preview gives way to voting once the clock bounds place the client inside the voting window. An uncertain boundary disables voting until the client can resolve the phase. The first Yes request is dropped before receipt. The browser reads the participant’s snapshot, offers Retry Yes, and the participant retries. The authority accepts that ballot, but its response is lost. A second snapshot read confirms one Yes without another submission. The other participant
 clicks No while open, but the journey holds that HTTP request until voting
 closes. A fresh browser first opens the poll after closing and reads the results directly. Reloading the delayed voter’s page shows the original cutoff, one Yes, zero No and
 the authority's late disposition.

@@ -65,8 +65,26 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await expect(guest.locator('time')).toHaveText(schedule);
         await expect(spectator.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
         await spectator.route(poll.url, (route) => route.abort('failed'), { times: 1 });
+        let ballotAttempts = 0;
+        await page.route(poll.url, async (route) => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+            ballotAttempts++;
+            if (ballotAttempts === 2) {
+                const receipt = await route.fetch();
+                expect(await receipt.json()).toMatchObject({ yes: 1, no: 0, disposition: 'accepted' });
+            }
+            await route.abort('failed');
+        });
         await page.getByRole('button', { name: 'Yes' }).click();
+        await expect(page.getByText('The authority has no receipt yet for your vote.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'No', exact: true })).toBeDisabled();
+        await page.getByRole('button', { name: 'Retry Yes' }).click();
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+        expect(ballotAttempts).toBe(2);
+        await expect(page.getByRole('button', { name: 'Yes', exact: true })).toBeDisabled();
         await guest.route(poll.url, async (route) => {
             if (route.request().method() === 'POST') {
                 voteSent.resolve();
