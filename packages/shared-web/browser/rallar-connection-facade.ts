@@ -128,6 +128,11 @@ export interface RallarSetupInput extends RallarApiClientConfig, RallarDefaults 
     readonly start?: RallarStartOptions;
 }
 
+/** Maintained deployment bound between the sampled node and the deadline authority, in either direction. */
+export interface RallarDeadlineAuthority {
+    readonly maxAuthorityOffsetMs: number;
+}
+
 export interface RallarConnectionOperations {
     configure(config: RallarApiClientConfig): void;
     setDefaults(defaults?: RallarDefaults): void;
@@ -135,11 +140,14 @@ export interface RallarConnectionOperations {
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     /** Earliest closing instant that guarantees the full duration under the live clock bounds.
-     * Returns undefined without calibration. Invalid durations and unsafe epochs throw RangeError.
+     * Returns undefined without calibration. Invalid durations, offset bounds and unsafe epochs throw RangeError.
      */
-    deadlineAfter(durationMs: number): number | undefined;
-    /** Compare an inclusive closing instant with the active server-time window. Invalid epochs throw RangeError. */
-    compareDeadline(deadlineEpochMs: number): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
+    deadlineAfter(durationMs: number, authority?: RallarDeadlineAuthority): number | undefined;
+    /** Compare an inclusive closing instant with the active server-time window. Invalid epochs and offset bounds throw RangeError. */
+    compareDeadline(
+        deadlineEpochMs: number,
+        authority?: RallarDeadlineAuthority
+    ): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;

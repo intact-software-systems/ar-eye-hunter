@@ -255,6 +255,24 @@ error at most 2 ms, round trips within 500 ms and samples at most 2 seconds old.
 Exit 0 means the entire interval fits the budget. Exit 1 means the interval
 is outside the budget or straddles its boundary (inconclusive). Exit 2 means
 the input or measurement was unusable. Repeat measurements from representative
-paths and under load. A passing sample describes that instant only. The browser
-SDK uses the sampled server's time window directly. This probe measures node
-offset and does not widen that window or enforce a deployment skew policy.
+paths and under load. A passing sample describes that instant only.
+
+If your deployment maintains an absolute offset bound between the sampled node
+and the deadline authority throughout the operation, supply it to both SDK
+calls. For example, with a maintained 25 ms bound:
+
+```ts
+const authority = { maxAuthorityOffsetMs: 25 };
+const closesAt = rallar.deadlineAfter(10_000, authority);
+if (closesAt !== undefined) {
+    const phase = rallar.compareDeadline(closesAt, authority);
+    // Reuse the stored closesAt when checking again or on another participant.
+}
+```
+
+With a sampled window of [90, 100] ms and an offset bound of 5 ms, the
+authority could be at [85, 105] ms. A cutoff of 105 overlaps that window,
+and creating a ten-millisecond grace period yields 115. Omitting the bound
+uses zero. If the deployment loses its offset guarantee, suspend cross-node
+deadline decisions until the guarantee is restored. The probe supplies
+measurement evidence at a point in time.
