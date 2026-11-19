@@ -754,13 +754,12 @@ and it has no status list.
   `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`
   ("a NEW-only claim reads its first sixteen rows by key") pins today's
   behaviour.
-- The PostgreSQL `due` work page has no fitting index (D673): it reads the
-  type and status's rows through `resource_inbox_runnable_ix` and top-N sorts
-  them, 13.6 ms on a 26.7 k-row lane against 0.03 ms for the `key` page, and
-  the server's ALM readiness probe now issues four `due` page statements of
-  its six. Open with the maintainer: no index; a new index on
-  `(ri_type_id, ri_status, next_ts, ri_row_id)`; or `resource_inbox_runnable_ix`
-  reordered to put `next_ts` before `expire_ts`, so no index is added.
+- The state-write cost of `resource_inbox_due_ix` (D674) is not measured:
+  every write to the queue table maintains one more index, and the one-type
+  claim read about 50 more buffers per 16 rows on a 200 k-row copy.
+  `perf:api-v1:state-write` was not run; it must run by its protocol, on the
+  pinned perf-bench container (`docker-compose.perf-bench.yml`, port 5433)
+  with this branch against its base, before the index is taken as free.
 - No store orders RESERVED rows by lease end, so ALM's readiness scan pages
   them by key, and with more than a page of reserved rows a lease that has
   ended can be advertised up to one lease (10 s) late (D673). Pinned as
@@ -777,11 +776,6 @@ and it has no status list.
   `before-entry`. It widens D646's one-frame limit. Recorded by ruling
   (2026-11-18); a fix changes how a receiver enters a track and is its own
   slice.
-- An ordered at-least-once send that names no `ack` took receipt mode
-  `receiver` over `rtc` in a lane run (D670). Read from the code and not
-  proven by a test: the channel's `command` purpose gives it. A caller that
-  meant an unreceipted stream gets handles that can end `receipt-exhausted`.
-  Whether that default is wanted is unruled.
 - A crash of the instance that holds the publisher's socket mid-publication,
   and what the publisher reads after it reconnects, is unproven. The
   subscriber's case is (D669); this one belongs with the held-send path.

@@ -1551,7 +1551,8 @@ stream does not reliably recover from a seeded loss on either carrier (D670),
 so no advertised mode may yet claim recovery under loss. That recovery is
 partly built: the shared queue now hands out work in the order it comes due,
 on every store, so timers that come due later no longer hide work that is due
-now (D671). After it the loss cell was green in three of three runs over `rtc`
+now (D671). On PostgreSQL an index of its own serves that order, and a send
+that names no `ack` keeps the receipt its channel's purpose gives (D674). After it the loss cell was green in three of three runs over `rtc`
 and in two of three over `ws`. What remains is the `ws` stall: as read from
 the code and not yet proven by a test, a repair frame that is lost is never
 sent again, because a repair attempt is named by its gap (D673). The next
