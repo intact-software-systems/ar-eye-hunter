@@ -36,7 +36,7 @@ function toRuleDueOrder(rows: readonly ResourceEntry[], now: Temporal.Instant): 
     return rows.filter((row) => isDue(row) && isLive(row)).sort((left, right) => nextMs(left) - nextMs(right));
 }
 
-function toResourceIds(rows: Iterable<ResourceEntry>): string[] {
+export function toResourceIds(rows: Iterable<ResourceEntry>): string[] {
     return [...rows].map((row) => row.key.resourceId);
 }
 
@@ -79,16 +79,28 @@ function newRow(scope: DueOrderScope, resourceId: string, dueInSeconds: number |
     return { resourceId, typeId: scope.typeA, status: EntityStatus.NEW, dueInSeconds, expired: false };
 }
 
-async function claimDue(scope: DueOrderScope): Promise<ResourceEntry[]> {
-    const claimed = await scope.queue.reserveEntries({
-        typeIds: new Set([scope.typeA, scope.typeB]),
+export interface DueClaim {
+    readonly typeIds: Set<string>;
+    readonly maxToReserve: number;
+    readonly excludedContextIds?: ReadonlySet<string>;
+}
+
+/** A due claim: the pending statuses of `typeIds`, at most `maxToReserve` rows. */
+export async function claimDue(queue: QueueBoxResourceEntryRepository, claim: DueClaim): Promise<ResourceEntry[]> {
+    const claimed = await queue.reserveEntries({
+        typeIds: claim.typeIds,
         statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
-        reservationInput: CLAIM_LIMIT
+        reservationInput: claim.maxToReserve,
+        contextClaim: claim.excludedContextIds === undefined ? undefined : { excludedContextIds: claim.excludedContextIds }
     });
     return [...claimed.values()];
 }
 
-function toIds(count: number, prefix: string): string[] {
+async function claimDueOfScope(scope: DueOrderScope): Promise<ResourceEntry[]> {
+    return await claimDue(scope.queue, { typeIds: new Set([scope.typeA, scope.typeB]), maxToReserve: CLAIM_LIMIT });
+}
+
+export function toDueIds(count: number, prefix: string): string[] {
     return Array.from({ length: count }, (_, index) => `${prefix}-${String(index).padStart(2, '0')}`);
 }
 
@@ -101,12 +113,12 @@ export function describeQueueDueOrderContract(
         it('a claim takes the rows that are due although a full claim of rows due later sorts before them', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, [
-                ...toIds(20, 'a').map((id) => newRow(scope, id, LATER_SECONDS)),
+                ...toDueIds(20, 'a').map((id) => newRow(scope, id, LATER_SECONDS)),
                 ...['z-0', 'z-1', 'z-2'].map((id) => newRow(scope, id, 0))
             ]);
 
             const claimedAt = Temporal.Now.instant();
-            const claimed = await claimDue(scope);
+            const claimed = await claimDueOfScope(scope);
 
             const expected = toRuleDueOrder(scope.written, claimedAt).slice(0, CLAIM_LIMIT);
             expect(toResourceIds(claimed).sort()).toEqual(toResourceIds(expected).sort());
@@ -129,8 +141,8 @@ export function describeQueueDueOrderContract(
         it('a claim\'s bound is a total across statuses and types', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, [
-                ...toIds(10, 'a').map((id, index): DueOrderRow => newRow(scope, id, -22 - 2 * index)),
-                ...toIds(10, 'b').map((id, index): DueOrderRow => ({
+                ...toDueIds(10, 'a').map((id, index): DueOrderRow => newRow(scope, id, -22 - 2 * index)),
+                ...toDueIds(10, 'b').map((id, index): DueOrderRow => ({
                     resourceId: id,
                     typeId: scope.typeB,
                     status: EntityStatus.RETRY,
@@ -139,7 +151,7 @@ export function describeQueueDueOrderContract(
                 }))
             ]);
 
-            const claimed = await claimDue(scope);
+            const claimed = await claimDueOfScope(scope);
 
             const expected = toRuleDueOrder(scope.written, Temporal.Now.instant()).slice(0, CLAIM_LIMIT);
             expect(toResourceIds(claimed)).toEqual(toResourceIds(expected));
@@ -149,7 +161,7 @@ export function describeQueueDueOrderContract(
             const scope = await createScope(createQueue);
             await writeRows(scope, [newRow(scope, 'now', 0)]);
 
-            const claimed = await claimDue(scope);
+            const claimed = await claimDueOfScope(scope);
 
             expect(toResourceIds(claimed)).toEqual(toResourceIds(toRuleDueOrder(scope.written, Temporal.Now.instant())));
         });
@@ -157,7 +169,7 @@ export function describeQueueDueOrderContract(
         it('a due page holds the earliest rows', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, [
-                ...toIds(20, 'a').map((id) => newRow(scope, id, LATER_SECONDS)),
+                ...toDueIds(20, 'a').map((id) => newRow(scope, id, LATER_SECONDS)),
                 newRow(scope, 'z-due', 0)
             ]);
 
@@ -178,7 +190,7 @@ export function describeQueueDueOrderContract(
         it('a due page reads past expired rows that are due before a live row', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, [
-                ...toIds(PAGE_SIZE + 4, 'a').map((id, index): DueOrderRow => ({ ...newRow(scope, id, -60 + index), expired: true })),
+                ...toDueIds(PAGE_SIZE + 4, 'a').map((id, index): DueOrderRow => ({ ...newRow(scope, id, -60 + index), expired: true })),
                 newRow(scope, 'z-live', -1)
             ]);
 
@@ -195,7 +207,7 @@ export function describeQueueDueOrderContract(
 
         it('a key page pages with its cursor as before', async () => {
             const scope = await createScope(createQueue);
-            await writeRows(scope, toIds(21, 'k').map((id) => newRow(scope, id, LATER_SECONDS)));
+            await writeRows(scope, toDueIds(21, 'k').map((id) => newRow(scope, id, LATER_SECONDS)));
             const request = {
                 typeId: scope.typeA,
                 status: EntityStatus.NEW,
@@ -216,7 +228,7 @@ export function describeQueueDueOrderContract(
             const scope = await createScope(createQueue);
             await writeRows(scope, [newRow(scope, 'undated', null), newRow(scope, 'later', LATER_SECONDS)]);
 
-            const claimed = await claimDue(scope);
+            const claimed = await claimDueOfScope(scope);
 
             expect(toResourceIds(claimed)).toEqual(toResourceIds(toRuleDueOrder(scope.written, Temporal.Now.instant())));
         });
@@ -224,11 +236,11 @@ export function describeQueueDueOrderContract(
         it('expired rows that are due do not keep live due rows out', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, [
-                ...toIds(16, 'a').map((id, index): DueOrderRow => ({ ...newRow(scope, id, -60 + index), expired: true })),
+                ...toDueIds(16, 'a').map((id, index): DueOrderRow => ({ ...newRow(scope, id, -60 + index), expired: true })),
                 newRow(scope, 'z-live', -1)
             ]);
 
-            const claimed = await claimDue(scope);
+            const claimed = await claimDueOfScope(scope);
 
             expect(toResourceIds(claimed)).toEqual(toResourceIds(toRuleDueOrder(scope.written, Temporal.Now.instant())));
         });

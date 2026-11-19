@@ -3,22 +3,21 @@ import { expect, it } from 'vitest';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { claimDue, toResourceIds } from './queue-due-order-contract.ts';
 import {
-    claimDue,
     createDueEntry,
-    describeQueueDueOrderBrowserStoreCases,
+    describeQueueDueOrderInjectedClockAndSpentAttemptCases,
     describeQueueDueOrderStoreCases,
     DUE_CREATED_AT,
     DUE_NOW,
-    DUE_TYPE_ID,
-    toResourceIds
+    DUE_TYPE_ID
 } from './queue-due-order-store-cases.ts';
 
 function createQueueAt(): InMemoryQueueBox {
     return new InMemoryQueueBox(new Map(), () => DUE_NOW);
 }
 
-describeQueueDueOrderBrowserStoreCases('memory', async () => createQueueAt());
+describeQueueDueOrderInjectedClockAndSpentAttemptCases('memory', async () => createQueueAt());
 describeQueueDueOrderStoreCases('memory', async () => createQueueAt());
 
 it('places an undated row among dated rows by its creation instant, ties in arrival order', async () => {
@@ -35,7 +34,7 @@ it('places an undated row among dated rows by its creation instant, ties in arri
         order: 'due',
         cursor: null
     });
-    const claimed = await claimDue(queue, { maxToReserve: 16 });
+    const claimed = await claimDue(queue, { typeIds: new Set([DUE_TYPE_ID]), maxToReserve: 16 });
 
     const expected = ['d-earlier', 'b-tie', 'a-undated', 'c-later'];
     expect({ page: toResourceIds(page.entries), claimed: toResourceIds(claimed) })

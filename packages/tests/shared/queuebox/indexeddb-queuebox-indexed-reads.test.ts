@@ -25,15 +25,14 @@ import {
     vi
 } from 'vitest';
 
+import { toDueIds, toResourceIds } from './queue-due-order-contract.ts';
 import {
     createDueEntry,
-    describeQueueDueOrderBrowserStoreCases,
+    describeQueueDueOrderInjectedClockAndSpentAttemptCases,
     describeQueueDueOrderStoreCases,
     DUE_CREATED_AT,
     DUE_NOW,
-    DUE_TYPE_ID,
-    toDueIds,
-    toResourceIds
+    DUE_TYPE_ID
 } from './queue-due-order-store-cases.ts';
 
 const SEEDED_TYPES = ['seeded.type-a.v1', 'seeded.type-b.v1', 'seeded.type-c.v1'];
@@ -350,7 +349,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
     });
 });
 
-describeQueueDueOrderBrowserStoreCases('IndexedDB', async (queueName) => createQueueAt(queueName));
+describeQueueDueOrderInjectedClockAndSpentAttemptCases('IndexedDB', async (queueName) => createQueueAt(queueName));
 describeQueueDueOrderStoreCases('IndexedDB', async (queueName) => createQueueAt(queueName));
 
 describe('IndexedDbQueueBox due order', () => {

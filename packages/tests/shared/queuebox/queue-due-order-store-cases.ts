@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { claimDue, toDueIds, toResourceIds } from './queue-due-order-contract.ts';
+
 export const DUE_TYPE_ID = 'due.order.v1';
 /** Sub-millisecond, so a row one nanosecond later shares a millisecond index and only the instant decides. */
 export const DUE_NOW = Temporal.Instant.from('2026-11-18T12:00:00.000000500Z');
@@ -45,35 +47,14 @@ export function createDueEntry(resourceId: string, options: DueEntryOptions): Re
     };
 }
 
-export async function claimDue(
-    queue: QueueBoxResourceEntryRepository,
-    claim: Readonly<{ maxToReserve: number; excludedContextIds?: ReadonlySet<string>; }>
-): Promise<ResourceEntry[]> {
-    const claimed = await queue.reserveEntries({
-        typeIds: new Set([DUE_TYPE_ID]),
-        statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
-        reservationInput: claim.maxToReserve,
-        contextClaim: claim.excludedContextIds === undefined ? undefined : { excludedContextIds: claim.excludedContextIds }
-    });
-    return [...claimed.values()];
-}
-
-export function toDueIds(count: number, prefix: string): string[] {
-    return Array.from({ length: count }, (_, index) => `${prefix}-${String(index).padStart(2, '0')}`);
-}
-
-export function toResourceIds(entries: Iterable<ResourceEntry>): string[] {
-    return [...entries].map((entry) => entry.key.resourceId);
-}
-
 /** `createQueueAt` answers a new, empty queue whose clock reads `DUE_NOW`. */
 export type DueOrderQueueFactory = (name: string) => Promise<QueueBoxResourceEntryRepository>;
 
 /**
- * Cases only the browser stores can be set up for: a claim clock the test sets (PostgreSQL's claims read the
- * database's clock), and pending rows that carry spent attempts (PostgreSQL refuses a NEW row with attempts as corrupt).
+ * Cases that need a claim clock the test sets and pending rows that carry spent attempts: a store that reads its
+ * database's clock for a claim, or refuses a NEW row with attempts as corrupt, as PostgreSQL does, cannot run them.
  */
-export function describeQueueDueOrderBrowserStoreCases(storeName: string, createQueueAt: DueOrderQueueFactory): void {
+export function describeQueueDueOrderInjectedClockAndSpentAttemptCases(storeName: string, createQueueAt: DueOrderQueueFactory): void {
     describe(`the ${storeName} queue's due order at its own clock and with spent attempts`, () => {
         it('claims a row due exactly at the store\'s now past a full claim of rows due a millisecond later', async () => {
             const queue = await createQueueAt('boundary');
@@ -83,7 +64,7 @@ export function describeQueueDueOrderBrowserStoreCases(storeName: string, create
             await queue.enqueue(createDueEntry('z-at-now', { nextTs: DUE_NOW }));
             await queue.enqueue(createDueEntry('z-after-now', { nextTs: DUE_NOW.add({ nanoseconds: 1 }) }));
 
-            const claimed = await claimDue(queue, { maxToReserve: 16 });
+            const claimed = await claimDue(queue, { typeIds: new Set([DUE_TYPE_ID]), maxToReserve: 16 });
 
             expect(toResourceIds(claimed)).toEqual(['z-at-now']);
         });
@@ -116,7 +97,7 @@ export function describeQueueDueOrderStoreCases(storeName: string, createQueueAt
             await queue.enqueue(createDueEntry('c-only', { nextTs: DUE_NOW.subtract({ seconds: 20 }), contextId: 'ctx-2' }));
             await queue.enqueue(createDueEntry('d-excluded', { nextTs: DUE_NOW.subtract({ seconds: 40 }), contextId: 'ctx-3' }));
 
-            const claimed = await claimDue(queue, { maxToReserve: 16, excludedContextIds: new Set(['ctx-3']) });
+            const claimed = await claimDue(queue, { typeIds: new Set([DUE_TYPE_ID]), maxToReserve: 16, excludedContextIds: new Set(['ctx-3']) });
 
             expect(toResourceIds(claimed)).toEqual(['b-earlier', 'c-only']);
         });
@@ -148,7 +129,7 @@ export function describeQueueDueOrderStoreCases(storeName: string, createQueueAt
             await queue.enqueue(undated);
 
             const pending = await queue.getItem(undated.key);
-            const claimed = await claimDue(queue, { maxToReserve: 16 });
+            const claimed = await claimDue(queue, { typeIds: new Set([DUE_TYPE_ID]), maxToReserve: 16 });
 
             expect([pending?.dequeueAudit.nextTs, toResourceIds(claimed)]).toEqual([undefined, ['undated']]);
         });

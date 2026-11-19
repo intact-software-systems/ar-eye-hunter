@@ -99,10 +99,12 @@ describe.each(['memory', 'indexeddb'] as const)('inbound work behind rows in ret
             expect(await selector.readNextReadyAtMs(port, nowMs), `round ${round} advertises due work`)
                 .toBeLessThanOrEqual(nowMs);
             const selection = await selector.selectReady(port, AL_INBOUND_WORK_PAGE_SIZE);
-            if (selection.claims.some((claim) => toKeyAsString(claim.entry.key) === toKeyAsString(due.key))) {
+            const claimedKeys = selection.claims.map((claim) => toKeyAsString(claim.entry.key));
+            if (claimedKeys.includes(toKeyAsString(due.key))) {
                 claimedAtRound.push(round);
             }
-            expect(selection.claims.map((claim) => claim.entry.key)).not.toContainEqual(rows[0].key);
+            expect(claimedKeys.filter((key) => key !== toKeyAsString(due.key)), `round ${round} claims no row but the due one`)
+                .toEqual([]);
         }
 
         expect(claimedAtRound).toEqual([rotationRounds]);
