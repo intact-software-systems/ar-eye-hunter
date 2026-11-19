@@ -10,7 +10,7 @@ import { loginThroughUi, readFullStackConfig, uniqueSuffix } from './full-stack-
 
 const config = readFullStackConfig();
 const rallarUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
-const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadline-poll/poll-view.ts', import.meta.url));
+const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadline-poll/show-poll.ts', import.meta.url));
 
 test('a delayed ballot and a returning browser share one room cutoff', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
@@ -87,10 +87,10 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
             rallar.configure({ apiBaseUrl });
             rallar.setDefaults(roomRef);
-            const { showPoll }: typeof import('../../../examples/shared-deadline-poll/poll-view.ts') = await import(
+            const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
                 viewUrl
             );
-            await showPoll(document.querySelector('main')!, roomRef, endpoint, grant);
+            await showPoll({ root: document.querySelector('main')!, roomRef, endpoint, participantGrant: grant });
         }, { viewUrl, rallarUrl, roomRef, endpoint: poll.url, grant, apiBaseUrl: config.apiBaseUrl });
     }
 });
@@ -98,7 +98,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
 async function prepareMember(page: Page, roomRef: GroupRef, host: boolean): Promise<void> {
     await loginThroughUi({ page, config, user: host ? config.userA : config.userB, suffix: uniqueSuffix() });
     await page.unroute('**/api/**');
-    await page.goto(viewUrl.replace('poll-view.ts', 'index.html'));
+    await page.goto(viewUrl.replace('show-poll.ts', 'index.html'));
     await page.evaluate(async ({ rallarUrl, apiBaseUrl, roomRef }) => {
         const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
         rallar.configure({ apiBaseUrl });

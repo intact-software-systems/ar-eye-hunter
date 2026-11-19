@@ -3,13 +3,16 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
 
+export interface ShowPollInput {
+    readonly root: HTMLElement;
+    readonly roomRef: GroupRef;
+    readonly endpoint: string;
+    readonly participantGrant: string;
+}
+
 /** Mount after login. The application supplies the URL and a participant grant for this poll alone. */
-export async function showPoll(
-    root: HTMLElement,
-    roomRef: GroupRef,
-    endpoint: string,
-    participantGrant: string
-): Promise<() => void> {
+export async function showPoll(input: ShowPollInput): Promise<() => void> {
+    const { root, roomRef, endpoint, participantGrant } = input;
     await rallar.connect();
     await rallar.rooms.enter(roomRef);
     async function request(choice?: PollAuthority.Choice): Promise<PollAuthority.Snapshot> {

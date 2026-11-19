@@ -20,7 +20,7 @@ first ballot only before the cutoff. A retry returns the retained decision and
 the latest tally. This example keeps the poll in one server process. Restarting
 that process ends the poll.
 
-[showPoll](./poll-view.ts) connects the authenticated Rallar client, enters the
+[showPoll](./show-poll.ts) connects the authenticated Rallar client, enters the
 scoped room, fetches its poll record and renders the deadline using
 `rallar.compareDeadline`. Call it again on page load. Each vote response
 refreshes the displayed tally. Its returned function releases the display timer
