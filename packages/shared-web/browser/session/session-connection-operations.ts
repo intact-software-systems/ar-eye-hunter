@@ -28,6 +28,19 @@ export function createRallarSessionConnectionOperations(
         defaults: () => input.connectionRuntime.defaults(),
         connect: (options) => input.authLifecycle.connect(options),
         disconnect: () => input.authLifecycle.disconnect(),
+        compareDeadline(deadlineEpochMs) {
+            if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs < 0) {
+                throw new RangeError('Deadline must be a nonnegative safe integer epoch in milliseconds.');
+            }
+            const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
+            if (window === undefined) {
+                return 'unavailable';
+            }
+            if (window.latestEpochMs < deadlineEpochMs) {
+                return 'before';
+            }
+            return window.earliestEpochMs >= deadlineEpochMs ? 'at-or-after' : 'overlaps';
+        },
         rtcCapture: () => input.transportRuntime.readRtcCaptureReceipt(),
         status: () => input.connectionRuntime.readConnectState(),
         isConnected: () =>

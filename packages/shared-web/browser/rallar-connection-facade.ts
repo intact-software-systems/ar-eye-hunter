@@ -134,6 +134,8 @@ export interface RallarConnectionOperations {
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    /** Compare an inclusive closing instant with the active server-time window. Invalid epochs throw RangeError. */
+    compareDeadline(deadlineEpochMs: number): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;
