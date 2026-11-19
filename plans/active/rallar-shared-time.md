@@ -27,10 +27,12 @@ Grumpy Town now consumes the connected deadline APIs for away-seat recovery acro
 
 The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. The voter also recovers a missing receipt after request or response loss. The operator probe now measures the signed interval between directly addressed calibration and enforcement nodes. One observation can check a deployment assumption for that instant. A deployment that independently maintains a bound can also use it in client deadline decisions.
 
+The connected SDK now accepts the deployment bound for both comparison and minimum-duration creation. The poll currently uses the default zero bound.
+
 ## Next two slices
 
-1. **Compare a deadline on a separate authority clock.** Accept an optional, explicitly named maximum absolute offset in milliseconds on the connected SDK comparison. For a bound B and calibration window [L,U], compare the deadline against [L−B,U+B]. Default to zero for existing callers. Reject invalid bounds even when disconnected. Verify equality, both skew directions, unavailable calibration and safe-integer extremes through the public facade.
-2. **Create a minimum-duration deadline for that authority.** Accept the same bound for creation, yielding U+B+duration or undefined without calibration. Reject unsafe output and document passing the deployment bound at creation and comparison. Keep a probe observation distinct from a maintained offset guarantee. Run focused facade tests, shared-web typechecking and browser boundary checks.
+1. **Apply the maintained bound to the room poll.** Let the application supply the SDK deadline-authority option at mount. Use it for both opening and closing comparisons, including after reload. Preserve one-argument SDK semantics for callers that omit it. The receiver still owns acceptance and the published schedule.
+2. **Exercise a separate enforcement clock in Chromium.** Give the loopback poll authority a known offset from the Rallar API clock. Use that bound in the mounted example and verify that uncertain opening and closing boundaries disable voting even when a zero-bound comparison would permit it. Retain delayed ballot, lost receipt, spectator and late-entry coverage. Run the focused memory-stack journey and typecheck the example and fixture. This qualifies a controlled clock difference on one host.
 
 ## Public product and launch evidence
 
