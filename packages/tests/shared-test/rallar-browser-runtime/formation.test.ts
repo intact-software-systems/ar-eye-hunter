@@ -1081,6 +1081,19 @@ it('reports a failed view read as not read without failing the readiness', async
     expect(observation.formation.room.state).toBe('open');
 });
 
+it('reports a view that states no hold on a stale layout as layout-stale', async () => {
+    const harness = createOpenFormationHarness();
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.formationView = createFormationView(roomRef, { lifecycleState: 'active', layoutStale: true });
+
+    harness.nowEpochMs = 20_000;
+    await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 30_000;
+    const observation = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(observation.heldReshape).toEqual({ reading: 'layout-stale', readAtEpochMs: 30_000 });
+});
+
 it('restarts the accepted hold after a group-first transition temporarily removes the layout body', async () => {
     const harness = createOpenFormationHarness();
     const unsubscribe = harness.controller.installDiagnostics(roomRef);

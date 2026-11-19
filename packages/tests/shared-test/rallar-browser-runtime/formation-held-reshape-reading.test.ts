@@ -14,6 +14,8 @@ const HELD: HeldTopologyReshape = { wantedReasons: ['leader-rooting'], opensAtEp
 class ReadingFixture {
     nowEpochMs = 20_000;
     served: HeldTopologyReshape | null | Error = null;
+    layoutStale = false;
+    acceptedHeldSinceEpochMs = 10_000;
     readonly reads: (readonly [string, number, number])[] = [];
     readonly reading = new FormationHeldReshapeReading({
         readView: (roomRef, timeoutMs) => this.readView(roomRef, timeoutMs),
@@ -22,14 +24,22 @@ class ReadingFixture {
 
     observeAt(nowEpochMs: number, settled = true, roomRef = ROOM) {
         this.nowEpochMs = nowEpochMs;
-        return this.reading.observe({ roomRef, settled, timeoutMs: 5_000 });
+        return this.reading.observe(
+            settled
+                ? { roomRef, settled, acceptedHeldSinceEpochMs: this.acceptedHeldSinceEpochMs, timeoutMs: 5_000 }
+                : { roomRef, settled }
+        );
     }
 
     private readView(roomRef: GroupRef, timeoutMs: number): Promise<GroupFormationView> {
         this.reads.push([roomRef.groupId, timeoutMs, this.nowEpochMs]);
         return this.served instanceof Error
             ? Promise.reject(this.served)
-            : Promise.resolve(createFormationView(roomRef, { lifecycleState: 'active', heldReshape: this.served }));
+            : Promise.resolve(createFormationView(roomRef, {
+                lifecycleState: 'active',
+                heldReshape: this.served,
+                layoutStale: this.layoutStale
+            }));
     }
 }
 
@@ -98,4 +108,61 @@ it('keeps one reading for each room', async () => {
     expect(await fixture.observeAt(20_500, true, OTHER_ROOM)).toEqual({ reading: 'none', readAtEpochMs: 20_500 });
     expect(await fixture.observeAt(21_000)).toMatchObject({ reading: 'held', readAtEpochMs: 20_000 });
     expect(fixture.reads.map(([room]) => room)).toEqual(['room-1', 'room-2']);
+});
+
+it('reads a view that states no hold on a stale layout as layout-stale, and reads again until it is not stale', async () => {
+    const fixture = new ReadingFixture();
+    fixture.layoutStale = true;
+
+    expect(await fixture.observeAt(20_000)).toEqual({ reading: 'layout-stale', readAtEpochMs: 20_000 });
+    expect(await fixture.observeAt(20_500)).toEqual({ reading: 'layout-stale', readAtEpochMs: 20_500 });
+    fixture.layoutStale = false;
+    expect(await fixture.observeAt(21_000)).toEqual({ reading: 'none', readAtEpochMs: 21_000 });
+    expect(fixture.reads.map(([, , at]) => at)).toEqual([20_000, 20_500, 21_000]);
+});
+
+it('states a held reshape on a stale layout as held', async () => {
+    const fixture = new ReadingFixture();
+    fixture.layoutStale = true;
+    fixture.served = HELD;
+
+    expect(await fixture.observeAt(20_000))
+        .toEqual({ reading: 'held', readAtEpochMs: 20_000, wantedReasons: ['leader-rooting'], opensAtEpochMs: 80_000 });
+});
+
+it('reads again rather than repeat a held reading once the accepted layout\'s hold start differs', async () => {
+    const fixture = new ReadingFixture();
+    fixture.served = HELD;
+
+    await fixture.observeAt(20_000);
+    fixture.acceptedHeldSinceEpochMs = 21_000;
+    expect(await fixture.observeAt(25_000)).toMatchObject({ reading: 'held', readAtEpochMs: 25_000 });
+    expect(fixture.reads.map(([, , at]) => at)).toEqual([20_000, 25_000]);
+});
+
+it('does not bring back a read that was in flight when the room was forgotten for a later layout', async () => {
+    let nowEpochMs = 20_000;
+    const resolvers: ((view: GroupFormationView) => void)[] = [];
+    const readAt: number[] = [];
+    const reading = new FormationHeldReshapeReading({
+        readView: () => {
+            readAt.push(nowEpochMs);
+            return new Promise((resolve) => resolvers.push(resolve));
+        },
+        now: () => nowEpochMs
+    });
+    const settledAt = (acceptedHeldSinceEpochMs: number) => reading.observe({ roomRef: ROOM, settled: true, acceptedHeldSinceEpochMs, timeoutMs: 5_000 });
+
+    const inFlight = settledAt(10_000);
+    nowEpochMs = 20_100;
+    expect(await reading.observe({ roomRef: ROOM, settled: false }))
+        .toEqual({ reading: 'not-read', because: 'layout-not-settled' });
+    resolvers[0](createFormationView(ROOM, { lifecycleState: 'active', heldReshape: HELD }));
+    await inFlight;
+    nowEpochMs = 25_000;
+    const later = settledAt(21_000);
+    resolvers[1](createFormationView(ROOM, { lifecycleState: 'active' }));
+
+    expect(await later).toEqual({ reading: 'none', readAtEpochMs: 25_000 });
+    expect(readAt).toEqual([20_000, 25_000]);
 });

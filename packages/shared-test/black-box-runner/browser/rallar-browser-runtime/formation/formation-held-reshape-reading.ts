@@ -17,21 +17,34 @@ export namespace FormationHeldReshapeReading {
         readView(roomRef: GroupRef, timeoutMs: number): Promise<GroupFormationView>;
         now(): number;
     }
-    export interface Observation {
+    export interface UnsettledObservation {
         readonly roomRef: GroupRef;
-        /** Nothing pending, and the accepted layout held for FORMATION_LAYOUT_QUIET_WINDOW_MS. */
-        readonly settled: boolean;
+        readonly settled: false;
+    }
+    /** Nothing pending, and the accepted layout held for FORMATION_LAYOUT_QUIET_WINDOW_MS. */
+    export interface SettledObservation {
+        readonly roomRef: GroupRef;
+        readonly settled: true;
+        /** When the page began holding its accepted layout; a held reading is reused only under the same one. */
+        readonly acceptedHeldSinceEpochMs: number;
         readonly timeoutMs: number;
     }
+    export type Observation = UnsettledObservation | SettledObservation;
+}
+
+interface RememberedHeldReading {
+    readonly held: HeldReading;
+    readonly acceptedHeldSinceEpochMs: number;
 }
 
 /**
  * What each room's settled page last read of the reshape the server holds. The view is several server queries, so a
- * held reading is repeated without a read until its gate opens; `none` comes only from a read at this observation.
+ * held reading is repeated without a read until its gate opens, while the page holds the same accepted layout;
+ * `none` and `layout-stale` come only from a read at this observation.
  */
 export class FormationHeldReshapeReading {
     readonly #dependencies: FormationHeldReshapeReading.Dependencies;
-    readonly #held = new Map<string, HeldReading>();
+    readonly #held = new Map<string, RememberedHeldReading>();
 
     constructor(dependencies: FormationHeldReshapeReading.Dependencies) {
         this.#dependencies = dependencies;
@@ -44,32 +57,36 @@ export class FormationHeldReshapeReading {
             return LAYOUT_NOT_SETTLED;
         }
         const remembered = this.#held.get(key);
-        if (remembered !== undefined && this.#dependencies.now() < remembered.opensAtEpochMs) {
-            return remembered;
+        if (
+            remembered !== undefined &&
+            remembered.acceptedHeldSinceEpochMs === observation.acceptedHeldSinceEpochMs &&
+            this.#dependencies.now() < remembered.held.opensAtEpochMs
+        ) {
+            return remembered.held;
         }
         return this.#read(key, observation);
     }
 
     async #read(
         key: string,
-        observation: FormationHeldReshapeReading.Observation
+        observation: FormationHeldReshapeReading.SettledObservation
     ): Promise<BlackBoxRallarFormationHeldReshape> {
         const view = await this.#dependencies.readView(observation.roomRef, observation.timeoutMs).catch(toError);
         if (view instanceof Error) {
             return { reading: 'not-read', because: 'view-read-failed', message: view.message };
         }
         const readAtEpochMs = this.#dependencies.now();
-        if (view.heldReshape === null) {
-            this.#held.delete(key);
-            return { reading: 'none', readAtEpochMs };
+        if (view.heldReshape !== null) {
+            const held: HeldReading = {
+                reading: 'held',
+                readAtEpochMs,
+                wantedReasons: view.heldReshape.wantedReasons,
+                opensAtEpochMs: view.heldReshape.opensAtEpochMs
+            };
+            this.#held.set(key, { held, acceptedHeldSinceEpochMs: observation.acceptedHeldSinceEpochMs });
+            return held;
         }
-        const held: HeldReading = {
-            reading: 'held',
-            readAtEpochMs,
-            wantedReasons: view.heldReshape.wantedReasons,
-            opensAtEpochMs: view.heldReshape.opensAtEpochMs
-        };
-        this.#held.set(key, held);
-        return held;
+        this.#held.delete(key);
+        return view.layoutStale ? { reading: 'layout-stale', readAtEpochMs } : { reading: 'none', readAtEpochMs };
     }
 }

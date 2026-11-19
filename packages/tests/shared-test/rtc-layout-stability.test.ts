@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import type { BlackBoxRallarFormationHeldReshape } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createAlmScaleSetupCommands } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
 import { toStableRtcLayoutWaitTimeoutMs } from '@shared-test/rallar-bb-test/fixtures/create-stable-rtc-layout-wait.ts';
-import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestRuntime
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 
@@ -51,15 +55,10 @@ function createTransitionRuntime(recoveryAtMs: number | undefined): LayoutTransi
     return { runtime, observations, now: () => now };
 }
 
-type HeldReshapeFixtureReading =
-    | { readonly reading: 'not-read'; readonly because: 'view-read-failed'; readonly message: string; }
-    | { readonly reading: 'none'; readonly readAtEpochMs: number; }
-    | { readonly reading: 'held'; readonly readAtEpochMs: number; readonly wantedReasons: readonly string[]; readonly opensAtEpochMs: number; };
-
-/** A settled page whose formation view reads as `toReading` says; a release replaces the layout at `releasedAtMs`. */
+/** A settled page whose formation view reads as `toReading` says; its layout is replaced at `replacedAtMs`. */
 function createHeldReshapeRuntime(
-    releasedAtMs: number | undefined,
-    toReading: (now: number) => HeldReshapeFixtureReading
+    replacedAtMs: number | undefined,
+    toReading: (now: number) => BlackBoxRallarFormationHeldReshape
 ): LayoutTransitionFixture {
     let now = 10_000;
     const observations: number[] = [];
@@ -73,7 +72,7 @@ function createHeldReshapeRuntime(
                 return undefined;
             }
             observations.push(now);
-            const heldSince = releasedAtMs !== undefined && now >= releasedAtMs ? releasedAtMs : 0;
+            const heldSince = replacedAtMs !== undefined && now >= replacedAtMs ? replacedAtMs : 0;
             return {
                 status: 'ok',
                 value: {
@@ -136,6 +135,21 @@ describe('a held reshape before a measured send', () => {
         expect(fixture.now()).toBeLessThan(releasedAtMs + 5_000);
     });
 
+    it('waits out the layout-stale gap between a release and the page holding the reshaped layout', async () => {
+        const releasedAtMs = 10_000 + 20_000;
+        const replacedAtMs = releasedAtMs + 400;
+        const fixture = createHeldReshapeRuntime(replacedAtMs, (now) => {
+            if (now < releasedAtMs) {
+                return { reading: 'held', readAtEpochMs: 10_000, wantedReasons: ['kind-change'], opensAtEpochMs: releasedAtMs };
+            }
+            return now < replacedAtMs ? { reading: 'layout-stale', readAtEpochMs: now } : { reading: 'none', readAtEpochMs: now };
+        });
+        const result = await fixture.runtime.execute(stableLayoutCommand());
+
+        expect(result.status).toBe('ok');
+        expect(fixture.now()).toBeGreaterThanOrEqual(replacedAtMs + 3_500);
+    });
+
     it('fails at its limit when the reshape stays held', async () => {
         const fixture = createHeldReshapeRuntime(undefined, () => ({
             reading: 'held',
@@ -146,8 +160,9 @@ describe('a held reshape before a measured send', () => {
         const result = await fixture.runtime.execute(stableLayoutCommand());
 
         expect(result.status).toBe('failed');
-        // It kept observing for longer than one hold of the upper bound.
-        expect(fixture.observations.at(-1)! - 10_000).toBeGreaterThan(60_000);
+        // It kept observing to its limit: the 10 s settle allowance and one hold of the upper bound.
+        expect(fixture.observations.at(-1)! - 10_000).toBeGreaterThanOrEqual(69_000);
+        expect(fixture.observations.at(-1)! - 10_000).toBeLessThanOrEqual(70_000);
     });
 
     it('never passes on an observation that did not read the view', async () => {
@@ -159,7 +174,11 @@ describe('a held reshape before a measured send', () => {
         const result = await fixture.runtime.execute(stableLayoutCommand());
 
         expect(result.status).toBe('failed');
-        expect(fixture.observations.length).toBeGreaterThan(1);
+        expect(fixture.observations.at(-1)! - 10_000).toBeGreaterThanOrEqual(69_000);
+        expect(fixture.observations.at(-1)! - 10_000).toBeLessThanOrEqual(70_000);
+        const { results } = result.value as RallarBlackBoxTestLoopResultValue;
+        expect([...new Set(results.filter((child) => !child.result.ok).map((child) => child.originalCommandId))])
+            .toEqual(['alm-scale-director-assert-no-held-reshape']);
     });
 
     it('allows for one hold at the default policy\'s upper bound', () => {

@@ -927,13 +927,15 @@ export interface BlackBoxRallarFormationReadinessDiagnostics {
 
 /**
  * What a readiness observation knows of a reshape the server's gate holds for the room. Only `none` says the room
- * owes nothing, and only a read of the formation view at this observation produces it. `held` repeats the last
- * read until its gate opens.
+ * owes nothing: the view states no held reshape and the server's accepted layout is its planned one. `layout-stale`
+ * says the view states no hold but the server has planned past its accepted layout. Only a read of the formation
+ * view at this observation produces either. `held` repeats the last read until its gate opens.
  */
 export type BlackBoxRallarFormationHeldReshape =
     | Readonly<{ reading: 'not-read'; because: 'layout-not-settled'; }>
     | Readonly<{ reading: 'not-read'; because: 'view-read-failed'; message: string; }>
     | Readonly<{ reading: 'none'; readAtEpochMs: number; }>
+    | Readonly<{ reading: 'layout-stale'; readAtEpochMs: number; }>
     | Readonly<{
         reading: 'held';
         readAtEpochMs: number;

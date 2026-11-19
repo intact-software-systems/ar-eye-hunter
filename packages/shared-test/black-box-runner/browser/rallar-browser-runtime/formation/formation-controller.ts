@@ -109,11 +109,16 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
         const settled = !hasPendingLayout &&
             acceptedHeld !== undefined &&
             acceptedHeld.acceptedHeldForMs >= FORMATION_LAYOUT_QUIET_WINDOW_MS;
-        const heldReshape = await this.#heldReshape.observe({
-            roomRef: room.roomRef,
-            settled,
-            timeoutMs: room.timeoutMs
-        });
+        const heldReshape = await this.#heldReshape.observe(
+            settled
+                ? {
+                    roomRef: room.roomRef,
+                    settled,
+                    acceptedHeldSinceEpochMs: acceptedHeld.acceptedHeldSinceEpochMs,
+                    timeoutMs: room.timeoutMs
+                }
+                : { roomRef: room.roomRef, settled }
+        );
         return { readyAtEpochMs, formation: summary, hasPendingLayout, ...acceptedHeld, heldReshape };
     };
 
