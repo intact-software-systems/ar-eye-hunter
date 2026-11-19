@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
@@ -58,6 +58,8 @@ interface GapNackInput {
     readonly logicalRecipientPeerId: string;
     readonly orderingKey?: string;
     readonly originPeerId?: string;
+    readonly controlMsgId?: string;
+    readonly gapRequestNumber?: number;
 }
 
 /** A gap NACK for sequence 2: a recipient's own, or one a relay forwards for the recipient it names. */
@@ -65,7 +67,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
     return newALNackControlMessage(
         {
             v: 4,
-            msgId: `gap-${input.fromPeerId}-${input.logicalRecipientPeerId}`,
+            msgId: input.controlMsgId ?? `gap-${input.fromPeerId}-${input.logicalRecipientPeerId}`,
             ts: Date.now(),
             senderId: input.fromPeerId,
             traceId: 'trace-relayed-gap'
@@ -80,8 +82,27 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             observedAtEpochMs: Date.now(),
             orderingKey: input.orderingKey ?? TRACK_KEY,
             expectedSeq: 2,
-            missingRanges: [{ from: 2, to: 2 }]
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: input.gapRequestNumber ?? 1
         })
+    );
+}
+
+/** A recipient's own `missing-seq` request for sequence 2, its request number `gapRequestNumber`. */
+function toMissingSeqRequest(msg: ALMessage, controlMsgId: string, gapRequestNumber: number): ALMessage {
+    return newALRepairControlMessage(
+        { v: 4, msgId: controlMsgId, ts: Date.now(), senderId: 'r2', traceId: 'trace-relayed-gap' },
+        {
+            msgId: msg.id.msgId,
+            fromPeerId: 'r2',
+            toPeerId: 'self',
+            reason: 'missing-seq',
+            observedAtEpochMs: Date.now(),
+            orderingKey: TRACK_KEY,
+            expectedSeq: 2,
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber
+        }
     );
 }
 
@@ -190,6 +211,29 @@ describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
 
         expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' })))
             .toBe('committed');
+    });
+});
+
+describe('a gap request asked again at the origin', () => {
+    it('refuses a gap NACK equal to one it admitted, and admits the same NACK with the next number', async () => {
+        const origin = await createOrderedOrigin('gap-asked-again');
+        const gap = { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' };
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1' })),
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1-again' })),
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-2', gapRequestNumber: 2 }))
+        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
+    });
+
+    it('refuses a repair request equal to one it admitted, and admits the same request with the next number', async () => {
+        const origin = await createOrderedOrigin('repair-asked-again');
+
+        expect([
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1', 1)),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1-again', 1)),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-2', 2))
+        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
     });
 });
 

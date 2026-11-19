@@ -9,12 +9,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
-import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
-import {
-    createDefaultIndexedDbALOutboundRuntimeStores,
-    createDefaultInMemoryALOutboundRuntimeStores
-} from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundMessageRuntime,
@@ -31,8 +26,6 @@ import {
     toALOutboundAckTimeoutEffectId,
     toALOutboundFirstHopTimeoutEffectId
 } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
-import { createInMemoryALAdmissionState } from '@shared/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import '../../../../setup-browser-indexeddb.ts';
@@ -43,12 +36,14 @@ import {
     createDefaultOutboundTestStores,
     createOutboundTestRuntimeFor,
     createServerReceipt,
+    createWsClientCarrierStores,
     createWsClientMintingPlanner,
+    drainOutboundWorkDueNow,
     OUTBOUND_LEASE_RECOVERY_BOUND_MS,
     OUTBOUND_TEST_SEND_PLANNER,
     peekOutboundWorkReadyAt,
-    runOutboundWorkTask,
-    trackOutboundTestAcks
+    trackOutboundTestAcks,
+    type WsClientCarrierStoreKind
 } from '../../outbound-runtime-test-fixture.ts';
 
 import { toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
@@ -58,10 +53,9 @@ const SESSION_ID = 'origin';
 const SERVER_PEER_ID = 'server';
 const START_MS = Date.UTC(2026, 10, 19, 12);
 
-type StoreKind = 'memory' | 'indexeddb';
 type SendShape = 'room broadcast' | 'room unicast';
 
-const STORE_KINDS: readonly StoreKind[] = ['memory', 'indexeddb'];
+const STORE_KINDS: readonly WsClientCarrierStoreKind[] = ['memory', 'indexeddb'];
 const SEND_SHAPES: readonly SendShape[] = ['room broadcast', 'room unicast'];
 
 /** One frame the WS client wrote to its socket: whether the server got it is the loss's decision, not the sender's. */
@@ -406,12 +400,12 @@ describe('a WS client\'s receipt row when the server answers admitted twice', ()
     });
 });
 
-function createFirstHopFixture(store: StoreKind, options: FirstHopFixtureOptions = {}): FirstHopFixture {
+function createFirstHopFixture(store: WsClientCarrierStoreKind, options: FirstHopFixtureOptions = {}): FirstHopFixture {
     const written: WrittenFrame[] = [];
     const settlements: ALDeliverySettlement[] = [];
     let transportReady = options.transport !== 'not-ready';
     let publishGranted = true;
-    const stores = createCarrierStores(store);
+    const stores = createWsClientCarrierStores(SESSION_ID, store);
     const plan = createWsClientMintingPlanner(SESSION_ID);
     const ws = createOutboundTestRuntimeFor({
         stores,
@@ -449,25 +443,6 @@ function createFirstHopFixture(store: StoreKind, options: FirstHopFixtureOptions
     };
 }
 
-/** The WS client pair as the browser keys it, over a memory backend or the session's IndexedDB database. */
-function createCarrierStores(store: StoreKind): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
-    const input = {
-        namespace: `browser:ws-client:${SESSION_ID}`,
-        canonicalScope: `browser-session:${SESSION_ID}`,
-        orderingHeadNamespace: `browser:session-${SESSION_ID}-ordering`,
-        decodePrepared: decodeALOutboundTransportMessage
-    };
-    return store === 'memory'
-        ? createDefaultInMemoryALOutboundRuntimeStores({
-            ...input,
-            outboundBackend: new InMemoryAdmissionBackend(
-                createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())),
-                Date.now
-            )
-        })
-        : createDefaultIndexedDbALOutboundRuntimeStores({ ...input, dbName: `first-hop-wait-${crypto.randomUUID()}` });
-}
-
 async function sendOne(
     fixture: FirstHopFixture,
     shape: SendShape,
@@ -503,16 +478,7 @@ async function advance(fixture: FirstHopFixture, ms: number): Promise<void> {
 /** Moves the clock, then runs the owner's batches until it advertises nothing due now, as the engine's wakes would. */
 async function advanceDrained<TPrepared>(drained: DrainedRuntime<TPrepared>, ms: number): Promise<void> {
     vi.setSystemTime(Date.now() + ms);
-    for (let batch = 0; batch < 20; batch += 1) {
-        await runOutboundWorkTask(drained.runtime);
-        const readyAtMs = await peekOutboundWorkReadyAt(
-            drained.stores.workQueue,
-            drained.stores.admissionStore.namespace
-        );
-        if (readyAtMs === undefined || readyAtMs > Date.now()) {
-            return;
-        }
-    }
+    await drainOutboundWorkDueNow(drained.runtime, drained.stores);
 }
 
 async function readWorkReadyAt(fixture: FirstHopFixture): Promise<number | undefined> {

@@ -170,6 +170,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                     prior.logicalRecipientPeerId === payload.logicalRecipientPeerId &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
                     prior.serverSnapshotVersion === payload.serverSnapshotVersion &&
+                    prior.gapRequestNumber === payload.gapRequestNumber &&
                     equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }
@@ -179,6 +180,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                 read.history.values.some((prior) =>
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
+                    prior.gapRequestNumber === payload.gapRequestNumber &&
                     equalSeqRanges(prior.missingRanges, payload.missingRanges)
                 );
         }

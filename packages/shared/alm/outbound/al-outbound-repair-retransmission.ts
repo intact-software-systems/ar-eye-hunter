@@ -17,7 +17,11 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
-import { toALOutboundRepairGapAttemptIdentity, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
+import {
+    toALOutboundRepairGapAttemptIdentity,
+    toALOutboundRepairHintEffectId,
+    toALOutboundRepairRequesterKey
+} from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundCompletedHopPeerIds
@@ -30,7 +34,8 @@ interface ALOutboundRetransmitOptions {
 interface ALOutboundCommitRepairInput<TPrepared> {
     readonly msg: ALMessage;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
-    readonly priorAttempts: number;
+    /** The requester the attempt is charged to: `toALOutboundRepairRequesterKey` of its hint. */
+    readonly requesterKey: string;
     readonly maxAttempts: number;
     readonly attemptIdentity: string;
 }
@@ -61,9 +66,9 @@ export namespace ALOutboundRepairRetransmission {
 export class ALOutboundRepairRetransmission<TPrepared> {
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
     /**
-     * The messages whose exhaustion this runtime has stated, so a later hint for one states nothing more.
-     * Memory rather than a row: the budget row keeps meaning what it means, and a reload states an
-     * exhaustion once more at most. Capped at the repair window, oldest out first.
+     * The messages whose exhaustion this runtime has stated, so a later hint for one, by any requester,
+     * states nothing more. Memory rather than a row: the budget row keeps meaning what it means, and a
+     * reload states an exhaustion once more at most. Capped at the repair window, oldest out first.
      */
     private readonly exhaustedMsgIds = new Set<string>();
 
@@ -76,8 +81,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
      * hint, so a wide gap costs a bounded page of indexed reads and dispatch commits per execution. A hint
      * without ordering, or without ranges, repairs the message it names instead. A page whose sequences
      * have left the sent cache retransmits nothing: the message the hint names is not the gap. Each paged
-     * sequence is repaired under its own gap attempt identity; the fallback, an ack-timeout's included,
-     * keeps the hint's identity.
+     * sequence is repaired under its own gap attempt identity, which names the request's number; the
+     * fallback, an ack-timeout's included, keeps the hint's identity. Every repair is charged to the hint's
+     * requester.
      */
     async retransmitFromRepairHint(
         fallbackMsgId: string,
@@ -175,7 +181,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         await this.commitRepairPlan({
             msg,
             plan: repairedPlan,
-            priorAttempts: read.repairAttempt?.attempts ?? 0,
+            requesterKey: toALOutboundRepairRequesterKey(request),
             maxAttempts: repair.maxAttempts,
             attemptIdentity
         });
@@ -211,7 +217,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         }
     }
 
-    /** The terminal statement of a message whose repair budget dispatch found spent; a repeat states nothing. */
+    /** The terminal statement of a message whose repair budget dispatch found spent for a requester; a repeat states nothing. */
     private settleRepairExhausted(message: ALMessage, detail: string): void {
         const msgId = message.id.msgId;
         if (this.exhaustedMsgIds.has(msgId)) {
@@ -331,7 +337,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             phase: 'immediate',
             origin: 'repair',
             options: {
-                repairBudget: { priorAttempts: repair.priorAttempts, maxAttempts: repair.maxAttempts },
+                repairBudget: { requesterKey: repair.requesterKey, maxAttempts: repair.maxAttempts },
                 attemptIdentity: repair.attemptIdentity
             }
         });

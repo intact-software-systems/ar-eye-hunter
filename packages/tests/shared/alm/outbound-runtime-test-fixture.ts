@@ -19,6 +19,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import {
+    createDefaultIndexedDbALOutboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
@@ -71,7 +72,10 @@ import {
     type ALOutboundAdmissionStore,
     type ResourceEntry
 } from '@shared/mod.ts';
-import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import {
+    createPassThroughIndexedDbOperationObserver,
+    type IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
@@ -315,6 +319,20 @@ export async function peekOutboundWorkReadyAt(
     );
 }
 
+/** Runs the owner's batches until it advertises nothing due now, as the engine's wakes would. */
+export async function drainOutboundWorkDueNow<TPrepared>(
+    runtime: object,
+    stores: ALOutboundRuntimeStores<TPrepared>
+): Promise<void> {
+    for (let batch = 0; batch < 20; batch += 1) {
+        await runOutboundWorkTask(runtime);
+        const readyAtMs = await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
+        if (readyAtMs === undefined || readyAtMs > Date.now()) {
+            return;
+        }
+    }
+}
+
 /**
  * Resolves once the owner advertises no work at all: nothing new, nothing retried and nothing claimed
  * in flight, so every effect the runtime's own engine owed has run and committed whatever followed it.
@@ -404,6 +422,35 @@ export function createSharedHeadCarrierStores(sessionId: string, backend: ALAdmi
             decodePrepared: decodeALOutboundTransportMessage
         });
     return { ws: createCarrierStores('ws-client'), rtc: createCarrierStores('rtc-overlay'), headNamespace };
+}
+
+/** Where a WS client pair keeps its rows: a memory backend, or the session's IndexedDB database. */
+export type WsClientCarrierStoreKind = 'memory' | 'indexeddb';
+
+/** A WS client pair, and the backend it was built over, so a test can write a row the way another build did. */
+export interface WsClientCarrierStores extends ALOutboundRuntimeStores<ALOutboundTransportMessage> {
+    readonly backend: ALAdmissionWorkBackend;
+}
+
+/** The WS client pair of one browser session as the browser keys it, each IndexedDB pair in a database of its own. */
+export function createWsClientCarrierStores(sessionId: string, store: WsClientCarrierStoreKind): WsClientCarrierStores {
+    const backend = store === 'memory'
+        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())), Date.now)
+        : createIndexedDbTestAdmissionBackend(
+            `ws-client-${sessionId}-${crypto.randomUUID()}`,
+            createPassThroughIndexedDbOperationObserver()
+        );
+    const input = {
+        namespace: `browser:ws-client:${sessionId}`,
+        canonicalScope: `browser-session:${sessionId}`,
+        orderingHeadNamespace: `browser:session-${sessionId}-ordering`,
+        decodePrepared: decodeALOutboundTransportMessage,
+        outboundBackend: backend
+    };
+    const stores = store === 'memory'
+        ? createDefaultInMemoryALOutboundRuntimeStores(input)
+        : createDefaultIndexedDbALOutboundRuntimeStores(input);
+    return { ...stores, backend };
 }
 
 /** A carrier runtime's planner as the WS client plans: its dispatch plan, then the minting plan at a first admission. */
@@ -593,15 +640,10 @@ export interface IndexedDbOutboundTestStoresInput {
 export function createIndexedDbOutboundTestStores(
     input: IndexedDbOutboundTestStoresInput
 ): ALOutboundRuntimeStores<OutboundTestPayload> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName: input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer: input.observer
-    });
+    const backend = createIndexedDbTestAdmissionBackend(
+        input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
+        input.observer
+    );
     return {
         admissionStore: createALOutboundAdmissionStore({
             nowMs: Date.now,
@@ -615,6 +657,19 @@ export function createIndexedDbOutboundTestStores(
         workQueue: backend.workQueue,
         storageResets: input.storageResets
     };
+}
+
+/** An admission backend over fake-indexeddb that reports every logical operation to `observer`. */
+function createIndexedDbTestAdmissionBackend(dbName: string, observer: IndexedDbOperationObserver): IndexedDbAdmissionBackend {
+    return new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer
+    });
 }
 
 /** One durable copy to a single peer, with no ack, retry or supersedence tracking. */

@@ -11,7 +11,11 @@ import type { ALReceiptProofKeys } from '../../../al-contracts/receipt-proof/al-
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { decodeGroupPresencePublicationKey } from '../../../api/group-presence/decode-group-presence-publication-key.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
+import {
+    decodeALAdmissionCountRecord,
+    decodeALAdmissionRecord,
+    decodeALAdmissionString
+} from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -354,13 +358,15 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
 }
 
 export function decodeALOutboundRepairAttempt(value: unknown, expectedMsgId: string): ALOutboundRepairAttemptSnapshot {
-    const snapshot = decodeALAdmissionRecord(value, ['msgId', 'attempts']);
+    const snapshot = decodeALAdmissionRecord(value, ['msgId', 'attemptsByRequester']);
     requirePersistedALNonEmptyString(snapshot.msgId, 'repair attempt message id');
     if (snapshot.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL repair attempt identity does not match its slot');
     }
-    requirePersistedALSafeInteger(snapshot.attempts, 0, 'repair attempts');
-    return value as ALOutboundRepairAttemptSnapshot;
+    return {
+        msgId: snapshot.msgId as string,
+        attemptsByRequester: decodeALAdmissionCountRecord(snapshot.attemptsByRequester, 'outbound repair attempts')
+    };
 }
 
 export function decodeALOutboundNotYetInSyncRetry(

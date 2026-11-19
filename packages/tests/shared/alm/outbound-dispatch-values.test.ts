@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
@@ -232,7 +233,7 @@ describe('outbound dispatch value ownership', () => {
         });
         const read: ALOutboundMessageReadDto<OutboundTestPayload> = freezeValues({
             ...observed,
-            repairAttempt: { msgId: message.id.msgId, attempts: 3 }
+            repairAttempt: { msgId: message.id.msgId, attemptsByRequester: { 'peer-1': 3 } }
         });
 
         const computed = computeALOutboundDispatch({
@@ -241,12 +242,50 @@ describe('outbound dispatch value ownership', () => {
             dispatchAtMs: 1_000,
             intent: 'repair',
             phase: 'immediate',
-            options: { repairBudget: { priorAttempts: 1, maxAttempts: 3 } }
+            options: { repairBudget: { requesterKey: 'peer-1', maxAttempts: 3 } }
         });
 
         expect(computed.verdict.kind).toBe('skipped');
         expect(computed.bundle).toBeUndefined();
         expect(computed.entries).toEqual([]);
+    });
+    it('charges a new requester its first attempt beside the others, and refuses one past the row\'s bound of requesters', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('per-requester-repair');
+        const observed = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ resourceId: 'per-requester-repair' }]
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computeWith = (attemptsByRequester: Readonly<Record<string, number>>) =>
+            computeALOutboundDispatch({
+                read: freezeValues({ ...observed, repairAttempt: { msgId: message.id.msgId, attemptsByRequester } }),
+                outboxEntry: createOutboundCanonicalEntry(store, observed.msg, Temporal.Now.instant()),
+                dispatchAtMs: 1_000,
+                intent: 'repair',
+                phase: 'immediate',
+                options: { repairBudget: { requesterKey: 'peer-2', maxAttempts: 4 } }
+            });
+        const full = Object.fromEntries(
+            Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => [`peer-${index + 3}`, 1])
+        );
+
+        expect(computeWith({ 'peer-1': 4 }).bundle?.mutations).toContainEqual({
+            kind: 'set-repair-attempt',
+            snapshot: { msgId: message.id.msgId, attemptsByRequester: { 'peer-1': 4, 'peer-2': 1 } }
+        });
+        expect(computeWith(full).verdict).toEqual({
+            kind: 'skipped',
+            reason: 'repair-exhausted',
+            detail: `The repair of ${message.id.msgId} ran out of retransmits after 0 of 4.`
+        });
     });
 });
 

@@ -30,9 +30,10 @@ export interface ALOutboundPendingAckSnapshot {
     readonly deadlineAtMs: number;
 }
 
+/** The repair attempts each requester has spent on one message, keyed by `toALOutboundRepairRequesterKey`. */
 export interface ALOutboundRepairAttemptSnapshot {
     readonly msgId: string;
-    readonly attempts: number;
+    readonly attemptsByRequester: Readonly<Record<string, number>>;
 }
 
 export interface ALOutboundNotYetInSyncRetrySnapshot {

@@ -526,7 +526,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(
             await admissionStore.commitBundle({
                 ...bundle,
-                mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attempts: 1 } }]
+                mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attemptsByRequester: { 'peer-1': 1 } } }]
             })
         ).toBe('committed');
 
@@ -547,7 +547,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(beforeExpiry.sentSnapshot).toBeDefined();
-        expect(beforeExpiry.repairAttempt?.attempts).toBe(1);
+        expect(beforeExpiry.repairAttempt?.attemptsByRequester).toEqual({ 'peer-1': 1 });
         expect(beforeExpiry.nacks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);

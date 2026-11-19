@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
-import { decodeALOutboundPendingAck } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import {
+    decodeALOutboundPendingAck,
+    decodeALOutboundRepairAttempt
+} from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 
 const ROW: ALOutboundPendingAckSnapshot = {
     msgId: 'message',
@@ -29,5 +33,36 @@ describe('persisted outbound receipt row', () => {
     it('refuses a row whose outside-audience list repeats a recipient', () => {
         expect(() => decodeALOutboundPendingAck({ ...ROW, outsideAudiencePeerIds: ['r2', 'r2'] }, 'message'))
             .toThrow(TypeError);
+    });
+});
+
+describe('persisted outbound repair-attempt row', () => {
+    const requesters = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`peer-${index}`, 1]));
+
+    it('decodes each requester\'s count', () => {
+        const row = { msgId: 'message', attemptsByRequester: { 'peer-1': 2, 'relay:member': 0 } };
+
+        expect(decodeALOutboundRepairAttempt(structuredClone(row), 'message')).toEqual(row);
+        expect(
+            decodeALOutboundRepairAttempt({ msgId: 'message', attemptsByRequester: requesters(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries) }, 'message')
+                .attemptsByRequester
+        )
+            .toEqual(requesters(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries));
+    });
+
+    it.each([
+        { label: 'the one count a row held before it counted per requester', value: { msgId: 'message', attempts: 1 } },
+        { label: 'that count beside the requesters', value: { msgId: 'message', attempts: 1, attemptsByRequester: {} } },
+        { label: 'a negative count', value: { msgId: 'message', attemptsByRequester: { 'peer-1': -1 } } },
+        { label: 'a fractional count', value: { msgId: 'message', attemptsByRequester: { 'peer-1': 0.5 } } },
+        { label: 'an empty requester', value: { msgId: 'message', attemptsByRequester: { '': 1 } } },
+        { label: 'a list of counts', value: { msgId: 'message', attemptsByRequester: [1] } },
+        {
+            label: 'more requesters than the collection limit',
+            value: { msgId: 'message', attemptsByRequester: requesters(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1) }
+        },
+        { label: 'another message\'s row', value: { msgId: 'other', attemptsByRequester: {} } }
+    ])('refuses $label', ({ value }) => {
+        expect(() => decodeALOutboundRepairAttempt(value, 'message')).toThrow(TypeError);
     });
 });

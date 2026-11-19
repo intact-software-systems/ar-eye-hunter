@@ -338,6 +338,20 @@ describe('AL QoS policy', () => {
         expect(plan.repair.enabled).toBe(repairs);
     });
 
+    it('gives an at-least-once multicast four repairs, from its request and, when its request names none, from the default policy', () => {
+        const route = { topicId: 'chat', resourceId: 'msg-repairs', contextId: 'group-1' };
+        const requested = newALMulticastMessage('sender', route, groupRef('group-1'), 'chat.message.v1', {}, {
+            reliability: 'at-least-once'
+        });
+        const defaulted = newALMulticastMessage('sender', route, groupRef('group-1'), 'chat.message.v1', {}, {
+            qos: { delivery: { algo: 'at-least-once' }, repair: { algo: 'retransmit' } }
+        });
+
+        expect(normalizeALQosPolicy(requested).requested.repair).toEqual({ algo: 'retransmit', opts: { maxRepairs: 4 } });
+        expect(normalizeALQosPolicy(requested).effective.repair).toEqual({ algo: 'retransmit', opts: { maxRepairs: 4 } });
+        expect(normalizeALQosPolicy(defaulted).effective.repair).toEqual({ algo: 'retransmit', opts: { maxRepairs: 4 } });
+    });
+
     it('never asks for a retransmit as the addressee of a unicast', () => {
         const msg = {
             ...newALUnicastMessage('a', { topicId: 'tasks', resourceId: 'job', contextId: 'queue' }, 'b', 'tasks.v1', {}, {

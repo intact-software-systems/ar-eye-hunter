@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -54,7 +55,8 @@ export interface ALOutboundCommitDispatchOptions {
     /** The outbox row exactly as this caller's own claim returned it; its commit fences that claim. */
     readonly claimedOutboxEntry?: ResourceEntry;
     readonly attemptIdentity?: string;
-    readonly repairBudget?: Readonly<{ priorAttempts: number; maxAttempts: number; }>;
+    /** The requester a budgeted repair is charged to, and how many attempts each requester may spend. */
+    readonly repairBudget?: Readonly<{ requesterKey: string; maxAttempts: number; }>;
 }
 
 export interface ALOutboundComputedDto<TPrepared> {
@@ -76,7 +78,7 @@ export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly options: ALOutboundCommitDispatchOptions;
 }
 
-/** A repair budget a message has spent, as its exhaustion settlement states it. */
+/** A repair budget one requester has spent on a message, as its exhaustion settlement states it. */
 interface ALOutboundRepairExhaustion {
     readonly attempts: number;
     readonly maxAttempts: number;
@@ -321,9 +323,10 @@ export function toALOutboundAdmissionVerdict<TPrepared>(
 }
 
 /**
- * The one charge a budgeted repair makes, or the exhaustion it finds instead. The charge belongs to the
- * attempt's sends: a hint re-executed after a conflict or an expired lease finds them committed and
- * charges nothing more, so a budget is spent once per attempt identity.
+ * The one charge a budgeted repair makes to its requester, or the exhaustion it finds instead. The charge
+ * belongs to the attempt's sends: a hint re-executed after a conflict or an expired lease finds them committed
+ * and charges nothing more, so a budget is spent once per attempt identity. Each requester has its own budget;
+ * a new requester past the row's bound of requesters finds the message's budget spent.
  */
 function computeRepairAttemptCharge<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
@@ -332,13 +335,20 @@ function computeRepairAttemptCharge<TPrepared>(
     if (!repairBudget || read.repairAttemptCommitted) {
         return Either.ofRight([]);
     }
-    const attempts = read.repairAttempt?.attempts ?? repairBudget.priorAttempts;
-    if (attempts >= repairBudget.maxAttempts) {
-        return Either.ofLeft({ attempts, maxAttempts: repairBudget.maxAttempts });
+    const { requesterKey, maxAttempts } = repairBudget;
+    const attemptsByRequester = read.repairAttempt?.attemptsByRequester ?? {};
+    const attempts = attemptsByRequester[requesterKey] ?? 0;
+    const isNewRequesterPastBound = !Object.hasOwn(attemptsByRequester, requesterKey) &&
+        Object.keys(attemptsByRequester).length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries;
+    if (attempts >= maxAttempts || isNewRequesterPastBound) {
+        return Either.ofLeft({ attempts, maxAttempts });
     }
     return Either.ofRight([{
         kind: 'set-repair-attempt',
-        snapshot: { msgId: read.msg.id.msgId, attempts: attempts + 1 }
+        snapshot: {
+            msgId: read.msg.id.msgId,
+            attemptsByRequester: { ...attemptsByRequester, [requesterKey]: attempts + 1 }
+        }
     }]);
 }
 

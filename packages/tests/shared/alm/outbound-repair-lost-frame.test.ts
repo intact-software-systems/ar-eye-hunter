@@ -3,29 +3,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newALBroadcastMessage, newALRoute, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import {
-    createDefaultIndexedDbALOutboundRuntimeStores,
-    createDefaultInMemoryALOutboundRuntimeStores
-} from '@shared/alm/al-runtime-stores.ts';
-import type {
-    ALOutboundMessageRuntime,
-    ALOutboundRuntimeStores
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { createInMemoryALAdmissionState } from '@shared/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import { ORIGIN_ROOM } from '../multicast/rtc-origin-overlay-fixture.ts';
 import {
     createOutboundTestRuntimeFor,
+    createWsClientCarrierStores,
     createWsClientMintingPlanner,
+    drainOutboundWorkDueNow,
     peekOutboundWorkReadyAt,
-    runOutboundWorkTask
+    type WsClientCarrierStoreKind,
+    type WsClientCarrierStores
 } from './outbound-runtime-test-fixture.ts';
 
 import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
@@ -42,10 +36,17 @@ interface WrittenFrame {
 
 interface LostFrameFixture {
     readonly ws: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
-    readonly stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+    readonly stores: WsClientCarrierStores;
     readonly written: WrittenFrame[];
     /** The message of every committed repair dispatch, as the lane's `commit-phases` diagnostic names it. */
     readonly repairCommits: string[];
+    /** Every admission the lane settled skipped, by message and reason. */
+    readonly skipped: SkippedAdmission[];
+}
+
+interface SkippedAdmission {
+    readonly msgId: string;
+    readonly reason: string;
 }
 
 /** What the sender holds that could still put the missing sequence on the wire. */
@@ -56,9 +57,7 @@ interface RecoveryPath {
 
 const NO_RECOVERY: RecoveryPath = { framesWrittenAfterTheLoss: [], workReadyAtMs: undefined };
 
-type StoreKind = 'memory' | 'indexeddb';
-
-const STORE_KINDS: readonly StoreKind[] = ['memory', 'indexeddb'];
+const STORE_KINDS: readonly WsClientCarrierStoreKind[] = ['memory', 'indexeddb'];
 
 describe('a WS client\'s ordered stream whose lost sequence the server reports again', () => {
     afterEach(() => {
@@ -68,21 +67,21 @@ describe('a WS client\'s ordered stream whose lost sequence the server reports a
     // Breaks when a repeated gap report for a sequence whose repair frame was lost finds the first attempt's
     // completed send row and writes nothing (the per-gap attempt identity, D573), while nothing else on the
     // sender is left to resend it: the server's track waits on that sequence for good.
-    it.each(STORE_KINDS.flatMap((store) => (['none', 'receiver'] as const).map((ack) => [store, ack] as const)))(
+    it.each(STORE_KINDS.map((store) => [store, 'receiver'] as const))(
         'on %s with ack %s, writes the sequence again, or keeps work that will, once its repair frame is lost',
         async (store, ack) => {
             const fixture = createLostFrameFixture(store);
             const [first, second, third] = await sendRoomStream(fixture, ['first', 'second', 'third'], ack);
             const trackKey = toALOrderingTrackKey(first!)!;
             // The loss took seq 1's frame. Seq 2 reveals the gap to the server, which reports it.
-            await fixture.ws.acceptControlMessage(toServerGapNack('gap-revealed-by-2', second!, trackKey), 'peer');
+            await fixture.ws.acceptControlMessage(toServerGapNack('gap-revealed-by-2', second!, trackKey, 1), 'peer');
             await drainOutboundWork(fixture);
             expect(fixture.written.filter((frame) => frame.seq === 1).map((frame) => frame.phase))
                 .toEqual(['immediate', 'immediate']);
 
             // The loss took the repair frame too. Seq 3 reveals the same gap, which the server reports again.
             const writtenBeforeTheRepeat = fixture.written.length;
-            await fixture.ws.acceptControlMessage(toServerGapNack('gap-revealed-by-3', third!, trackKey), 'peer');
+            await fixture.ws.acceptControlMessage(toServerGapNack('gap-revealed-by-3', third!, trackKey, 1), 'peer');
             await drainOutboundWork(fixture);
             // The repeat is admitted and its repair of seq 1 commits, as the lane's nineteen did.
             expect(fixture.repairCommits.filter((msgId) => msgId === first!.id.msgId)).toHaveLength(2);
@@ -95,6 +94,61 @@ describe('a WS client\'s ordered stream whose lost sequence the server reports a
                 .not.toEqual(NO_RECOVERY);
         }
     );
+
+    it.each(STORE_KINDS)(
+        'on %s, a sender given a request with the next number writes the sequence again, and nothing more for the same number',
+        async (store) => {
+            const fixture = createLostFrameFixture(store);
+            const [first, second, third] = await sendRoomStream(fixture, ['first', 'second', 'third'], 'none');
+            const trackKey = toALOrderingTrackKey(first!)!;
+            const seqOneFrames = () => fixture.written.filter((frame) => frame.seq === 1).length;
+            await fixture.ws.acceptControlMessage(toServerGapNack('gap-by-2', second!, trackKey, 1), 'peer');
+            await drainOutboundWork(fixture);
+            expect(seqOneFrames()).toBe(2);
+            await fixture.ws.acceptControlMessage(toServerGapNack('gap-by-3', third!, trackKey, 1), 'peer');
+            await drainOutboundWork(fixture);
+            expect(seqOneFrames()).toBe(2);
+            await fixture.ws.acceptControlMessage(toServerGapNack('renewal-2', third!, trackKey, 2), 'peer');
+            await drainOutboundWork(fixture);
+            expect(seqOneFrames()).toBe(3);
+            await fixture.ws.acceptControlMessage(toServerGapNack('renewal-2-again', third!, trackKey, 2), 'peer');
+            await drainOutboundWork(fixture);
+            expect(seqOneFrames()).toBe(3);
+            for (const [controlId, number] of [['renewal-3', 3], ['renewal-4', 4], ['renewal-5', 5]] as const) {
+                await fixture.ws.acceptControlMessage(toServerGapNack(controlId, third!, trackKey, number), 'peer');
+                await drainOutboundWork(fixture);
+            }
+            expect(seqOneFrames()).toBe(5);
+            expect(fixture.skipped).toEqual([{ msgId: first!.id.msgId, reason: 'repair-exhausted' }]);
+        }
+    );
+});
+
+describe('a WS client\'s message whose store holds a repair-attempt row a previous build wrote', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    // Breaks when the per-requester row shares the previous build's key: its strict decoder refuses the old row,
+    // and every repair of the message throws until the row ends.
+    it.each(STORE_KINDS)('on %s, admits a gap request, charges its requester 1 under the new row and writes the repair frame', async (store) => {
+        const fixture = createLostFrameFixture(store);
+        const [first, second] = await sendRoomStream(fixture, ['first', 'second'], 'none');
+        const namespace = fixture.stores.admissionStore.namespace;
+        await fixture.stores.backend.write(async (tx) => {
+            await tx.set(`${namespace}:repair-attempt:${first!.id.msgId}`, { msgId: first!.id.msgId, attempts: 1 }, Date.now() + 60_000);
+        });
+
+        const admitted = await fixture.ws.acceptControlMessage(toServerGapNack('gap-by-2', second!, toALOrderingTrackKey(first!)!, 1), 'peer');
+        await drainOutboundWork(fixture);
+
+        expect(admitted.kind).toBe('committed');
+        expect(fixture.written.filter((frame) => frame.seq === 1)).toHaveLength(2);
+        const read = await fixture.stores.admissionStore.readRepairMessage(first!.id.msgId, createWsClientMintingPlanner(SESSION_ID));
+        expect(read.repairAttempt?.attemptsByRequester).toEqual({
+            [toALOutboundRepairRequesterKey({ requestedByPeerId: SERVER_PEER_ID })]: 1
+        });
+    });
 });
 
 describe('a WS client\'s receipted room send whose only frame never reaches the server', () => {
@@ -102,9 +156,9 @@ describe('a WS client\'s receipted room send whose only frame never reaches the 
         vi.restoreAllMocks();
     });
 
-    // Breaks when a `receiver` room send over WS writes no receipt row and no `ack-timeout` work at admission (the
-    // server's receipts own its schedule) and the server, having admitted nothing, holds no receipt either: no
-    // timer anywhere resends the message, and no gap report comes when no later frame arrives.
+    // Breaks when a `receiver` room send over WS keeps no first-hop wait and no `first-hop-timeout` work at admission:
+    // the server, having admitted nothing, holds no receipt, so nothing resends the message, and no gap report comes
+    // when no later frame arrives.
     it.each(STORE_KINDS)('on %s, keeps work pending to retry it before its message deadline', async (store) => {
         const fixture = createLostFrameFixture(store);
         await sendRoomStream(fixture, ['only'], 'receiver');
@@ -119,16 +173,22 @@ describe('a WS client\'s receipted room send whose only frame never reaches the 
     });
 });
 
-function createLostFrameFixture(store: StoreKind): LostFrameFixture {
+function createLostFrameFixture(store: WsClientCarrierStoreKind): LostFrameFixture {
     const written: WrittenFrame[] = [];
     const repairCommits: string[] = [];
-    const stores = createCarrierStores(store);
+    const skipped: SkippedAdmission[] = [];
+    const stores = createWsClientCarrierStores(SESSION_ID, store);
     const ws = createOutboundTestRuntimeFor({
         stores,
         decodePreparedMessage: decodeALOutboundTransportMessage,
         planOutgoingMessage: createWsClientMintingPlanner(SESSION_ID),
         planRepairMessage: undefined,
         hopPeerIds: [SERVER_PEER_ID],
+        settlements: (settlement) => {
+            if (settlement.kind === 'admission' && settlement.verdict.kind === 'skipped') {
+                skipped.push({ msgId: settlement.msgId, reason: settlement.verdict.reason });
+            }
+        },
         diagnostics: (event) => {
             if (event.kind === 'commit-phases' && event.origin === 'repair' && event.commitOutcome === 'committed') {
                 repairCommits.push(event.msgId);
@@ -140,26 +200,7 @@ function createLostFrameFixture(store: StoreKind): LostFrameFixture {
             return { status: 'sent', submissionAttempted: true };
         }
     });
-    return { ws, stores, written, repairCommits };
-}
-
-/** The WS client pair as the browser keys it, over a memory backend or the session's IndexedDB database. */
-function createCarrierStores(store: StoreKind): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
-    const input = {
-        namespace: `browser:ws-client:${SESSION_ID}`,
-        canonicalScope: `browser-session:${SESSION_ID}`,
-        orderingHeadNamespace: `browser:session-${SESSION_ID}-ordering`,
-        decodePrepared: decodeALOutboundTransportMessage
-    };
-    return store === 'memory'
-        ? createDefaultInMemoryALOutboundRuntimeStores({
-            ...input,
-            outboundBackend: new InMemoryAdmissionBackend(
-                createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())),
-                Date.now
-            )
-        })
-        : createDefaultIndexedDbALOutboundRuntimeStores({ ...input, dbName: `lost-repair-frame-${crypto.randomUUID()}` });
+    return { ws, stores, written, repairCommits, skipped };
 }
 
 /** Each send admitted in order as its minted copy, and its first frame written. */
@@ -178,22 +219,17 @@ async function sendRoomStream(
     return sent;
 }
 
-/** Runs the owner's batches until it advertises nothing due now, as the engine's wakes would. */
 async function drainOutboundWork(fixture: LostFrameFixture): Promise<void> {
-    for (let batch = 0; batch < 10; batch += 1) {
-        await runOutboundWorkTask(fixture.ws);
-        const readyAtMs = await peekOutboundWorkReadyAt(
-            fixture.stores.workQueue,
-            fixture.stores.admissionStore.namespace
-        );
-        if (readyAtMs === undefined || readyAtMs > Date.now()) {
-            return;
-        }
-    }
+    await drainOutboundWorkDueNow(fixture.ws, fixture.stores);
 }
 
-/** The WS server's gap NACK: the frame `revealing` arrived while seq 1 of its track is still missing. */
-function toServerGapNack(controlMsgId: string, revealing: ALMessage, trackKey: string): ALMessage {
+/** The WS server's gap NACK, its request `gapRequestNumber` for seq 1: the frame `revealing` arrived while seq 1 is missing. */
+function toServerGapNack(
+    controlMsgId: string,
+    revealing: ALMessage,
+    trackKey: string,
+    gapRequestNumber: number
+): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: SERVER_PEER_ID, traceId: 'trace-outbound-repair-lost-frame' },
         toTestALNackPayload({
@@ -205,7 +241,8 @@ function toServerGapNack(controlMsgId: string, revealing: ALMessage, trackKey: s
             observedAtEpochMs: 1,
             orderingKey: trackKey,
             expectedSeq: 1,
-            missingRanges: [{ from: 1, to: 1 }]
+            missingRanges: [{ from: 1, to: 1 }],
+            gapRequestNumber
         })
     );
 }

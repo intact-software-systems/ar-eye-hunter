@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALStoreDurability } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -124,6 +125,16 @@ describe('the positions a sent row or a send keeps', () => {
         { label: 'a bare number', value: 3 }
     ])('refuses $label as corrupt', ({ value }) => {
         expect(() => decodeALOutboundSentPositionRecord(value)).toThrow(TypeError);
+    });
+
+    it('refuses a list and more recipients than one audience holds, each by its own statement', () => {
+        const recipients = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`r${index}`, 1]));
+
+        expect(Object.keys(decodeALOutboundSentPositionRecord(recipients(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries))!))
+            .toHaveLength(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries);
+        expect(() => decodeALOutboundSentPositionRecord(recipients(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1)))
+            .toThrow('Stored outbound sent positions exceed the audience limit');
+        expect(() => decodeALOutboundSentPositionRecord([1])).toThrow('Stored outbound sent positions must be a plain record');
     });
 });
 

@@ -53,12 +53,13 @@ export function toALOutboundFirstHopTimeoutEffectId(
 
 /**
  * The hint a NACK or repair request raises, and the follow-up that carries what a served page left. The
- * gap names it -- the requester, the track and the missing ranges, and the recipient a relay asked for --
- * never the control that reported it: a NACK and a repair request naming the same gap are one hint, served
- * once, and so is the rest of one page. A later frame's report of the same gap is a new hint, whose
- * sequences name the first attempt by their gap identity. Per gap means per (requester, track, sequence[,
- * recipient]): a page of N sequences is N attempt identities. Each recipient a relay reports one gap for is
- * its own hint; a hint without a recipient keeps the identity it always had.
+ * gap names it -- the requester, the track and the missing ranges, the recipient a relay asked for, and the
+ * request's number -- never the control that reported it: a NACK and a repair request naming the same gap
+ * with one number are one hint, served once, and so is the rest of one page. A later frame's report of the
+ * same gap is a new hint, whose sequences name the attempt of their number by their gap identity. Per gap
+ * means per (requester, track, sequence[, recipient], number): a page of N sequences is N attempt
+ * identities. Each recipient a relay reports one gap for is its own hint; a hint without ranges carries
+ * no number.
  */
 export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboundRepairHint): string {
     return toALOutboundEffectId([
@@ -67,14 +68,16 @@ export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboun
         request.requestedByPeerId ?? '-',
         request.orderingTrackKey ?? '-',
         toALSeqRangesText(request.missingRanges),
-        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
+        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId]),
+        ...(request.gapRequestNumber === undefined ? [] : [request.gapRequestNumber])
     ]);
 }
 
 /**
  * The attempt one paged sequence's repair belongs to: the gap names it -- the requester, the track, the
- * sequence and the recipient a relay asked for -- so every later report of that gap by the same requester
- * (and for the same recipient) finds the first attempt's sends and charges nothing more.
+ * sequence, the recipient a relay asked for and the request's number -- so every later report of that gap
+ * with the same number finds the attempt's sends and charges nothing more, while the next number is a new
+ * attempt that writes the sequence again.
  */
 export function toALOutboundRepairGapAttemptIdentity(
     request: ALOutboundRepairHint,
@@ -86,6 +89,17 @@ export function toALOutboundRepairGapAttemptIdentity(
         request.requestedByPeerId ?? '-',
         trackKey,
         seq,
+        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId]),
+        ...(request.gapRequestNumber === undefined ? [] : [request.gapRequestNumber])
+    ]);
+}
+
+/** The requester a repair budget counts for: the peer that asks, and the recipient a relay asks for. */
+export function toALOutboundRepairRequesterKey(
+    request: Pick<ALOutboundRepairHint, 'requestedByPeerId' | 'logicalRecipientPeerId'>
+): string {
+    return toALOutboundEffectId([
+        request.requestedByPeerId ?? '-',
         ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
     ]);
 }
