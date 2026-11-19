@@ -216,7 +216,7 @@ describe('Postgres list predicates', () => {
         });
     });
 
-    postgresIt('read a due page by an ordered scan of the due index with no sort, planned for its values or generically', async () => {
+    postgresIt('read a due page by an ordered scan of the due index with no sort, planned for its values or as a generic plan', async () => {
         await withStorage(async (storage) => {
             await seedEligibleBacklog(storage.sql);
             const request = { typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW, maxToRead: 16, order: 'due', cursor: null } as const;
@@ -224,11 +224,9 @@ describe('Postgres list predicates', () => {
             const genericPlans: PlanNode[][] = [];
 
             await new PSqlResourceInboxReservationRepository(toJsonExplainingSql(storage.sql, customPlans)).readWorkPage(request);
-            await storage.sql.begin(async (transaction) => {
-                await transaction`set local plan_cache_mode = force_generic_plan`;
-                await new PSqlResourceInboxReservationRepository(toJsonExplainingSql(transaction, genericPlans)).readWorkPage(request);
-            });
+            await new PSqlResourceInboxReservationRepository(toGenericExplainingSql(storage.sql, genericPlans)).readWorkPage(request);
 
+            expect(genericPlans.flat().map((node) => node['Index Cond'] ?? '').join(' ')).toMatch(/ri_type_id\)::text = \$1/u);
             for (const nodes of [...customPlans, ...genericPlans]) {
                 expect(nodes).toContainEqual(expect.objectContaining({ 'Node Type': 'Index Scan', 'Index Name': 'resource_inbox_due_ix' }));
                 expect(nodes.map((node) => node['Node Type'])).not.toContain('Sort');
@@ -385,6 +383,7 @@ interface PlanNode {
     readonly 'Node Type': string;
     readonly 'Relation Name'?: string;
     readonly 'Index Name'?: string;
+    readonly 'Index Cond'?: string;
     readonly Alias?: string;
     readonly Plans?: readonly PlanNode[];
 }
@@ -409,6 +408,50 @@ function toJsonExplainingSql(source: PSqlSql, explained: PlanNode[][]): PSqlSql 
         });
     }
     return Object.assign(explaining, { begin: source.begin.bind(source) });
+}
+
+/**
+ * Prepares each statement with its parameters as `$n` and explains its execution under `force_generic_plan`, so the plan
+ * is the one a cached statement uses without its values; a parameterised `explain` would plan the values as constants.
+ */
+function toGenericExplainingSql(source: PSqlSql, explained: PlanNode[][]): PSqlSql {
+    function explaining<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
+    function explaining(values: readonly PSqlParameter[]): object;
+    function explaining<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object {
+        if (!Object.hasOwn(stringsOrValues, 'raw')) {
+            return source(stringsOrValues as readonly PSqlParameter[]);
+        }
+        const strings = stringsOrValues as TemplateStringsArray;
+        const text = strings.reduce((joined, part, index) => `${joined}$${index}${part}`);
+        return source.begin(async (transaction) => {
+            await transaction`set local plan_cache_mode = force_generic_plan`;
+            await transaction(toTemplate(`prepare generic_explained as ${text}`));
+            const rows = await transaction<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode; }[]; }[]>(
+                toTemplate(`explain (format json) execute generic_explained(${values.map(toSqlLiteral).join(', ')})`)
+            );
+            await transaction(toTemplate('deallocate generic_explained'));
+            explained.push(rows.flatMap((row) => row['QUERY PLAN'].flatMap((plan) => toPlanNodes(plan.Plan))));
+            return [] as Result;
+        });
+    }
+    return Object.assign(explaining, { begin: source.begin.bind(source) });
+}
+
+function toTemplate(text: string): TemplateStringsArray {
+    return Object.assign([text], { raw: [text] });
+}
+
+function toSqlLiteral(value: PSqlParameter): string {
+    if (typeof value === 'number') {
+        return String(value);
+    }
+    if (typeof value === 'string') {
+        return `'${value.replaceAll('\'', '\'\'')}'`;
+    }
+    throw new TypeError(`no literal form for ${typeof value}`);
 }
 
 function toPlanNodes(node: PlanNode): readonly PlanNode[] {
