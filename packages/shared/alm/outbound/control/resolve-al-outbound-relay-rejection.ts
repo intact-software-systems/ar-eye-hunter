@@ -28,6 +28,11 @@ export function resolveALOutboundRelayRejection(read: ALControlAdmissionRead): A
         : undefined;
 }
 
+/** A reason some relay may refuse a whole send with, before its source and the send's receipt are read. */
+export function isALOutboundRelayRejectionReason(reason: ALNackReason): boolean {
+    return isTrustedServerSendRefusal(reason) || isTrustedServerAdmissionRefusal(reason);
+}
+
 function isTrustedServerSendRefusal(
     reason: ALNackReason
 ): reason is 'resync-required' | 'held-by-other' | 'unsupported' | 'no-publish-grant' {

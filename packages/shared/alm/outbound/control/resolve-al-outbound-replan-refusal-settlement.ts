@@ -12,15 +12,19 @@ export interface ToALOutboundReplanRefusalComputedInput<TPrepared> {
     readonly intent: ALOutboundComputeIntent;
 }
 
-/** Where a stored message is re-planned: its dispatch's own compute intent, or its receipt's ack-timeout retry. */
-export type ALOutboundReplanSite = ALOutboundComputeIntent | 'ack-timeout';
+/**
+ * Where a stored message is re-planned: its dispatch's own compute intent, its receipt's ack-timeout retry, or the
+ * first-hop retry of a send its own hop has not answered for yet.
+ */
+export type ALOutboundReplanSite = ALOutboundComputeIntent | 'ack-timeout' | 'first-hop-timeout';
 
 /**
  * A re-plan of a stored message its carrier refuses because the sender holds no `publish` any more ends the message
  * at every site (S3-R8), as the trusted server's own `no-publish-grant` refusal of a send does: a revoke is a terminal
  * policy fact, so the handle settles `rejected`. A dequeue also ends an `unsupported` re-plan (S8ii-R2): a held send its
  * carrier cannot take, as a keyless counted recipient or a room past the RTC room limit makes it, has no fallback to
- * wait for. Every other refusal, and an `unsupported` one met by a retransmit or an ack-timeout, keeps its silent drop.
+ * wait for. Every other refusal, and an `unsupported` one met by a retransmit or a timeout retry, keeps its silent
+ * drop.
  */
 export function resolveALOutboundReplanRefusalSettlement(
     msg: ALMessage,

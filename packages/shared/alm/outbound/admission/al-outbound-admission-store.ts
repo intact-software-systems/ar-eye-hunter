@@ -54,7 +54,7 @@ import {
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
 import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
-import { writeALOutboundTimeoutCompletion } from '../control/write-al-outbound-timeout-completion.ts';
+import { writeALOutboundTimeoutCompletions } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import type {
     ALOrderingIndexedSequence,
@@ -957,9 +957,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 }
                 this.effectStore.writeEffects(tx, effects);
                 await this.mutations.writeStateWrites(tx, mutations);
-                for (const effectId of endedTimeoutEffectIds) {
-                    await writeALOutboundTimeoutCompletion(tx, this.namespace, effectId);
-                }
+                await writeALOutboundTimeoutCompletions(tx, this.namespace, endedTimeoutEffectIds);
                 await tx.setFence(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));

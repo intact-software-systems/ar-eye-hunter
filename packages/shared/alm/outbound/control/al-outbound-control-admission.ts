@@ -64,7 +64,7 @@ import {
     toALOutboundProofRefusal,
     type ALOutboundRecipientAuthentication
 } from './read-al-outbound-recipient-proof.ts';
-import { writeALOutboundTimeoutCompletion } from './write-al-outbound-timeout-completion.ts';
+import { writeALOutboundTimeoutCompletions } from './write-al-outbound-timeout-completions.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -346,27 +346,11 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                ...await this.readOwnedControlSurface(session, owner, targetMsgId),
+                ...await this.reads.readControlOwnerSurface(session, owner, parsed),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
-    }
-
-    /** What only a known owner has: its version fence, and the receipt and first-hop wait it holds for the message. */
-    private async readOwnedControlSurface(
-        session: ALAdmissionReadSession,
-        owner: string | undefined,
-        msgId: string
-    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending' | 'firstHopWait'>> {
-        if (owner === undefined) {
-            return {};
-        }
-        return {
-            ownerVersion: await this.reads.readClientRecord(session, owner),
-            pending: await this.reads.readReceiptState(session, { originPeerId: owner, msgId }),
-            firstHopWait: await this.reads.readFirstHopWait(session, msgId)
-        };
     }
 
     /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
@@ -429,11 +413,10 @@ export class ALOutboundControlAdmission<TPrepared> {
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
         }
-        await writeALOutboundTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
-        if (candidate.endedFirstHopTimeoutEffectId !== undefined) {
+        if (candidate.removeFirstHopWait) {
             await tx.remove(toALOutboundFirstHopWaitKey(this.namespace, read.targetMsgId));
-            await writeALOutboundTimeoutCompletion(tx, this.namespace, candidate.endedFirstHopTimeoutEffectId);
         }
+        await writeALOutboundTimeoutCompletions(tx, this.namespace, candidate.endedTimeoutEffectIds);
         await tx.setFence(
             toALOutboundVersionKey(this.namespace, read.owner!),
             candidate.nextVersion!,

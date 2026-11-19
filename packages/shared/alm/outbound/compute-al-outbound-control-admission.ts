@@ -24,6 +24,7 @@ import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts'
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
+    isALOutboundRelayRejectionReason,
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
@@ -97,10 +98,10 @@ export interface ALControlAdmissionCandidate {
     readonly history: ALControlHistory;
     readonly pending: ALPendingAckWrite;
     readonly removeRepairAttempt: boolean;
-    /** The timeout check of a receipt this control ended, which the same commit completes; undefined otherwise. */
-    readonly endedAckTimeoutEffectId: string | undefined;
-    /** The timer of a first-hop wait a refusal of the whole send ended, which the same commit removes and completes. */
-    readonly endedFirstHopTimeoutEffectId: string | undefined;
+    /** The first-hop wait a refusal of the whole send ended, which the same commit removes. */
+    readonly removeFirstHopWait: boolean;
+    /** The timers of the receipt and the first-hop wait this control ended, which the same commit completes. */
+    readonly endedTimeoutEffectIds: readonly string[];
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
@@ -122,13 +123,7 @@ export function computeALOutboundControlAdmission(
         history,
         pending,
         removeRepairAttempt: receiptEnded,
-        endedAckTimeoutEffectId: receiptEnded && read.pending !== undefined
-            ? toALOutboundAckTimeoutEffectId(read.pending)
-            : undefined,
-        endedFirstHopTimeoutEffectId: (terminal || resolveALOutboundRelayRejection(read) !== undefined) &&
-                read.firstHopWait !== undefined
-            ? toALOutboundFirstHopTimeoutEffectId(read.firstHopWait)
-            : undefined,
+        ...toEndedTimers(read, receiptEnded, terminal || resolveALOutboundRelayRejection(read) !== undefined),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs
             : Math.max(
@@ -139,6 +134,23 @@ export function computeALOutboundControlAdmission(
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
         versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
         nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
+    };
+}
+
+/** The receipt's timer when the control ended the receipt; the first-hop wait and its timer when it ended the send. */
+function toEndedTimers(
+    read: ALControlAdmissionRead,
+    receiptEnded: boolean,
+    sendEnded: boolean
+): Pick<ALControlAdmissionCandidate, 'removeFirstHopWait' | 'endedTimeoutEffectIds'> {
+    const endedReceipt = receiptEnded ? read.pending : undefined;
+    const endedWait = sendEnded ? read.firstHopWait : undefined;
+    return {
+        removeFirstHopWait: endedWait !== undefined,
+        endedTimeoutEffectIds: [
+            ...(endedReceipt === undefined ? [] : [toALOutboundAckTimeoutEffectId(endedReceipt)]),
+            ...(endedWait === undefined ? [] : [toALOutboundFirstHopTimeoutEffectId(endedWait)])
+        ]
     };
 }
 
@@ -316,6 +328,12 @@ export function toALOutboundControlRepairHint(
         missingRanges,
         failedPeerIds: []
     };
+}
+
+/** A NACK whose reason may end the whole send: the one control whose admission reads the send's first-hop wait. */
+export function mayALOutboundControlEndSend(parsed: ALPeerControlMessage): boolean {
+    return parsed.type === 'nack' &&
+        (isTerminalNack(parsed.payload) || isALOutboundRelayRejectionReason(parsed.payload.reason));
 }
 
 /**

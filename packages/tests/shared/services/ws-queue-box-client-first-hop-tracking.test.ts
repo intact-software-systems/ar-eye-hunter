@@ -30,6 +30,7 @@ const CONTEXT = {
 describe('the first hop a WS client waits on for its receipted send', () => {
     it.each([
         ['a receiver room broadcast', roomBroadcast('receiver')],
+        ['a leader room broadcast', roomBroadcast('group-leader')],
         ['a receiver unicast to a session that names its room', sessionUnicast('receiver', ROOM)]
     ])('waits on the server for %s within its receipt timeout and retries', (_name, msg) => {
         expect(toWsQueueBoxClientFirstHopTrackingPlan(toEffective(msg), msg, SERVER_PEER_ID))

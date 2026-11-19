@@ -25,6 +25,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
     toALOutboundAckTimeoutEffectId,
     toALOutboundFirstHopTimeoutEffectId
@@ -75,6 +76,8 @@ interface FirstHopFixture {
     readonly settlements: ALDeliverySettlement[];
     /** Lets a transport that answered `not-ready` write from now on. */
     releaseTransport(): void;
+    /** From now on every re-plan of a send is refused for good, as a revoked publish grant refuses it. */
+    revokePublishGrant(): void;
 }
 
 interface FirstHopFixtureOptions {
@@ -261,6 +264,54 @@ describe('a WS client\'s receipted send that waits on its first hop', () => {
         expect(fixture.settlements.filter((fact) => fact.kind === 'receipt-exhausted')).toEqual([]);
     });
 
+    it('a re-plan refused for good at a first-hop deadline ends the wait with the refusal alone', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        fixture.revokePublishGrant();
+
+        await advance(fixture, 2_000);
+        await advance(fixture, 10_000);
+
+        expect(fixture.written).toHaveLength(1);
+        expect(fixture.settlements.filter((fact) => fact.kind === 'admission' || fact.kind === 'receipt-exhausted'))
+            .toEqual([
+                expect.objectContaining({
+                    kind: 'admission',
+                    msgId: only.id.msgId,
+                    verdict: expect.objectContaining({ kind: 'refused', reason: 'no-publish-grant' })
+                })
+            ]);
+        expect(await readWorkReadyAt(fixture)).toBeUndefined();
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+    });
+
+    it('writes no frame when the commit of the next attempt does not land', async () => {
+        const fixture = createFirstHopFixture('memory');
+        await sendOne(fixture, 'room broadcast', 'receiver');
+        const commitBundle = fixture.stores.admissionStore.commitBundle.bind(fixture.stores.admissionStore);
+        vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) =>
+            bundle.mutations.some((mutation) => mutation.kind === 'set-first-hop-wait')
+                ? 'expired'
+                : await commitBundle(bundle, observation)
+        );
+
+        await advance(fixture, 2_000);
+
+        expect(fixture.written).toHaveLength(1);
+    });
+
+    it('a terminal NACK that refuses no relay hop still ends the wait', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        expect(await fixture.ws.acceptControlMessage(toServerRefusal(only, 'expired'), 'trusted-server')).toEqual({
+            kind: 'committed'
+        });
+        expect(await readWorkReadyAt(fixture)).toBeUndefined();
+        await advance(fixture, 10_000);
+        expect(fixture.written).toHaveLength(1);
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+    });
+
     it('a repeated admitted after the wait ended is refused and writes nothing', async () => {
         const fixture = createFirstHopFixture('memory');
         const only = await sendOne(fixture, 'room broadcast', 'receiver');
@@ -280,11 +331,19 @@ function createFirstHopFixture(store: StoreKind, options: FirstHopFixtureOptions
     const written: WrittenFrame[] = [];
     const settlements: ALDeliverySettlement[] = [];
     let transportReady = options.transport !== 'not-ready';
+    let publishGranted = true;
     const stores = createCarrierStores(store);
+    const plan = createWsClientMintingPlanner(SESSION_ID);
     const ws = createOutboundTestRuntimeFor({
         stores,
         decodePreparedMessage: decodeALOutboundTransportMessage,
-        planOutgoingMessage: createWsClientMintingPlanner(SESSION_ID),
+        planOutgoingMessage: (msg, authority) =>
+            publishGranted ? plan(msg, authority) : {
+                ...plan(msg, authority),
+                dropReason: 'The sender holds no publish grant any more',
+                dropReasonCode: 'no-publish-grant',
+                preparedMessages: []
+            },
         planRepairMessage: undefined,
         hopPeerIds: [SERVER_PEER_ID],
         settlements: (fact) => settlements.push(fact),
@@ -304,6 +363,9 @@ function createFirstHopFixture(store: StoreKind, options: FirstHopFixtureOptions
         settlements,
         releaseTransport: () => {
             transportReady = true;
+        },
+        revokePublishGrant: () => {
+            publishGranted = false;
         }
     };
 }
@@ -387,16 +449,24 @@ async function readWorkStatus<TPrepared>(
 }
 
 /** The WS server refuses the send: for the unicast, an addressee outside the audience its room admitted. */
-function toServerRefusal(refused: ALMessage): ALMessage {
+function toServerRefusal(refused: ALMessage, reason: 'unauthorized' | 'expired' = 'unauthorized'): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `refusal-${refused.id.msgId}`, ts: 1, senderId: SERVER_PEER_ID, traceId: 'trace-first-hop-wait' },
         toTestALNackPayload({
             msgId: refused.id.msgId,
             fromPeerId: SERVER_PEER_ID,
             toPeerId: SESSION_ID,
-            reason: 'unauthorized'
+            reason
         })
     );
+}
+
+async function readFirstHopWait(
+    fixture: FirstHopFixture,
+    msg: ALMessage
+): Promise<ALOutboundFirstHopWaitSnapshot | undefined> {
+    return (await fixture.stores.admissionStore.readRepairMessage(msg.id.msgId, createWsClientMintingPlanner(SESSION_ID)))
+        .firstHopWait;
 }
 
 function toRoomBroadcast(ack: ALAckMode, qos?: ALQosPolicyRequest): ALMessage {

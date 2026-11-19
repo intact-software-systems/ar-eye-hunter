@@ -12,15 +12,19 @@ import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admiss
 import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
-    ALOutboundSettlementEmitter
+    ALOutboundSettlementEmitter,
+    ALOutboundSettlementFact
 } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import { toALOutboundAdmissionVerdict } from '../compute-al-outbound-dispatch.ts';
+import { resolveALOutboundReplanRefusalSettlement } from '../control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptExhaustedFact } from '../control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import {
     computeALOutboundFirstHopTimeout,
     toALOutboundFirstHopTimeoutEffect,
+    type ALOutboundFirstHopTimeoutDecision,
     type ALOutboundFirstHopWaitSnapshot
 } from './compute-al-outbound-first-hop-wait.ts';
 
@@ -40,6 +44,13 @@ export namespace ALOutboundFirstHopWait {
         readonly plan: ALOutboundDispatchPlan<TPrepared>;
         readonly mode: ALReceiptMode;
         readonly expiresAtMs: number;
+    }
+
+    /** A deadline of a live message's wait, and what it decided. */
+    export interface LiveTimeout<TPrepared> {
+        readonly wait: ALOutboundFirstHopWaitSnapshot;
+        readonly live: LiveMessage<TPrepared>;
+        readonly decision: ALOutboundFirstHopTimeoutDecision;
     }
 }
 
@@ -64,32 +75,51 @@ export class ALOutboundFirstHopWait<TPrepared> {
             wait,
             messageLive: live !== undefined,
             attemptRows: wait !== undefined && live !== undefined ? await this.readAttemptRows(wait, live.plan) : [],
+            replanRefusal: live && resolveALOutboundReplanRefusalSettlement(
+                live.msg,
+                toALOutboundAdmissionVerdict(live.plan),
+                'first-hop-timeout'
+            ),
             nowMs
         });
         if (wait === undefined || decision.kind === 'ended') {
             return;
         }
         if (live === undefined || decision.kind === 'orphaned') {
-            await this.commitWait(read, [{ kind: 'delete-first-hop-wait', msgId }], []);
+            await this.commitOrphanedWait(read, msgId);
             return;
         }
+        await this.commitDecision(read, { wait, live, decision });
+    }
+
+    private async commitDecision(
+        read: ALOutboundRepairReadDto<TPrepared>,
+        timeout: ALOutboundFirstHopWait.LiveTimeout<TPrepared>
+    ): Promise<void> {
+        const { wait, live, decision } = timeout;
+        const end = { kind: 'delete-first-hop-wait', msgId: wait.msgId } as const;
         switch (decision.kind) {
+            case 'refused':
+                await this.commitEnd(read, live, [end], decision.refusal);
+                return;
             case 'exhausted':
-                await this.commitExhausted(read, wait, live);
+                await this.commitEnd(read, live, [end], toFirstHopExhaustedFact(wait, live));
                 return;
             case 'early':
-                await this.commitWait(read, [], [toALOutboundFirstHopTimeoutEffect(wait, live.expiresAtMs)]);
+                await this.commitWait(read, live, [], [toALOutboundFirstHopTimeoutEffect(wait, live.expiresAtMs)]);
                 return;
             case 'unwritten':
-            case 'resend':
-                await this.commitWait(
+            case 'resend': {
+                const status = await this.commitWait(
                     read,
+                    live,
                     [{ kind: 'set-first-hop-wait', snapshot: decision.next, expireAtTimestamp: live.expiresAtMs }],
                     [toALOutboundFirstHopTimeoutEffect(decision.next, live.expiresAtMs)]
                 );
-                if (decision.kind === 'resend') {
+                if (decision.kind === 'resend' && status === 'committed') {
                     await this.resend(live, decision.next);
                 }
+            }
         }
     }
 
@@ -116,27 +146,28 @@ export class ALOutboundFirstHopWait<TPrepared> {
     }
 
     /** The wait's end goes in the commit whose success states it, so the fact is stated once across replays. */
-    private async commitExhausted(
+    private async commitEnd(
         read: ALOutboundRepairReadDto<TPrepared>,
-        wait: ALOutboundFirstHopWaitSnapshot,
-        live: ALOutboundFirstHopWait.LiveMessage<TPrepared>
+        live: ALOutboundFirstHopWait.LiveMessage<TPrepared>,
+        mutations: ALOutboundCommitBundle<TPrepared>['mutations'],
+        fact: ALOutboundSettlementFact
     ): Promise<void> {
-        const status = await this.commitWait(read, [{ kind: 'delete-first-hop-wait', msgId: wait.msgId }], []);
-        if (status !== 'committed') {
+        if (await this.commitWait(read, live, mutations, []) === 'committed') {
+            this.dependencies.settlements(fact);
+        }
+    }
+
+    /** A wait whose message is gone has nothing left to resend; without a sender record nothing fences its end. */
+    private async commitOrphanedWait(read: ALOutboundRepairReadDto<TPrepared>, msgId: string): Promise<void> {
+        if (read.clientRecord === undefined) {
             return;
         }
-        this.dependencies.settlements(toALOutboundReceiptExhaustedFact({
-            receipt: {
-                msgId: wait.msgId,
-                mode: live.mode,
-                expectedPeerIds: [],
-                ackedPeerIds: [],
-                outsideAudiencePeerIds: []
-            },
-            exhaustion: { cause: 'budget' },
-            detail: `The first hop did not answer after ${wait.attempts} of ${wait.maxAttempts} retries.`,
-            traceId: live.msg.id.traceId
-        }));
+        await this.commitBundle({
+            senderId: read.clientRecord.senderId,
+            expectedVersion: read.clientRecord.version,
+            mutations: [{ kind: 'delete-first-hop-wait', msgId }],
+            durableEffects: []
+        });
     }
 
     private async resend(
@@ -158,19 +189,20 @@ export class ALOutboundFirstHopWait<TPrepared> {
     /** A commit fenced on the sender version the read saw; a conflict retries the deadline from a fresh read. */
     private async commitWait(
         read: ALOutboundRepairReadDto<TPrepared>,
+        live: ALOutboundFirstHopWait.LiveMessage<TPrepared>,
         mutations: ALOutboundCommitBundle<TPrepared>['mutations'],
         durableEffects: ALOutboundCommitBundle<TPrepared>['durableEffects']
-    ): Promise<'committed' | 'expired' | 'none'> {
-        const senderId = read.clientRecord?.senderId;
-        if (senderId === undefined) {
-            return 'none';
-        }
-        const status = await this.dependencies.admissionStore.commitBundle({
-            senderId,
+    ): Promise<'committed' | 'expired'> {
+        return await this.commitBundle({
+            senderId: live.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             mutations,
             durableEffects
         });
+    }
+
+    private async commitBundle(bundle: ALOutboundCommitBundle<TPrepared>): Promise<'committed' | 'expired'> {
+        const status = await this.dependencies.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound first-hop wait commit conflict');
         }
@@ -189,4 +221,22 @@ function toLiveMessage<TPrepared>(
         return undefined;
     }
     return expiresAtMs > nowMs ? { msg, plan: read.plan, mode, expiresAtMs } : undefined;
+}
+
+function toFirstHopExhaustedFact<TPrepared>(
+    wait: ALOutboundFirstHopWaitSnapshot,
+    live: ALOutboundFirstHopWait.LiveMessage<TPrepared>
+): ALOutboundSettlementFact {
+    return toALOutboundReceiptExhaustedFact({
+        receipt: {
+            msgId: wait.msgId,
+            mode: live.mode,
+            expectedPeerIds: [],
+            ackedPeerIds: [],
+            outsideAudiencePeerIds: []
+        },
+        exhaustion: { cause: 'budget' },
+        detail: `The first hop did not answer after ${wait.attempts} of ${wait.maxAttempts} retries.`,
+        traceId: live.msg.id.traceId
+    });
 }

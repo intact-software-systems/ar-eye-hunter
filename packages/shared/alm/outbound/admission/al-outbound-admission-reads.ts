@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
+    ALPeerControlMessage,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
@@ -39,6 +40,11 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import {
+    controlTargetMsgId,
+    mayALOutboundControlEndSend,
+    type ALControlAdmissionRead
+} from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import { decodeALOutboundFirstHopWait } from '../first-hop/decode-al-outbound-first-hop-wait.ts';
 import {
@@ -488,6 +494,26 @@ export class ALOutboundAdmissionReads<TPrepared> {
             toALOutboundFirstHopWaitKey(this.namespace, msgId),
             (value) => decodeALOutboundFirstHopWait(value, msgId)
         );
+    }
+
+    /**
+     * What only a control's known owner has: its version fence, the receipt it originated for the message, and, for a
+     * NACK that may end the whole send, the first-hop wait that NACK would end.
+     */
+    async readControlOwnerSurface(
+        session: ALAdmissionReadSession,
+        owner: string | undefined,
+        parsed: ALPeerControlMessage
+    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending' | 'firstHopWait'>> {
+        if (owner === undefined) {
+            return {};
+        }
+        const msgId = controlTargetMsgId(parsed);
+        return {
+            ownerVersion: await this.readClientRecord(session, owner),
+            pending: await this.readReceiptState(session, { originPeerId: owner, msgId }),
+            firstHopWait: mayALOutboundControlEndSend(parsed) ? await this.readFirstHopWait(session, msgId) : undefined
+        };
     }
 
     async readAcks(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALAckPayload[]> {

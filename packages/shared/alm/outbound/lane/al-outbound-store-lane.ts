@@ -806,9 +806,9 @@ function createALOutboundLaneReceiptAdmission<TPrepared>(
 
 /**
  * The effect kinds whose claim may commit work rows without the lane's own commit, which announces
- * what it writes: a timeout attempt writes the next timeout and a repair hint, a repair or retry
- * commits a fresh dispatch, a retained admission commits its message, and a replayed control its
- * repair and retry schedule.
+ * what it writes: a receipt timeout attempt writes the next timeout and a repair hint, a first-hop
+ * timeout its next timeout and the resend's fresh dispatch, a repair or retry commits a fresh dispatch,
+ * a retained admission commits its message, and a replayed control its repair and retry schedule.
  */
 function commitsALOutboundWorkOutsideLane<TPrepared>(kind: ALOutboundDurableEffect<TPrepared>['kind']): boolean {
     return kind !== 'send-prepared' && kind !== 'dequeue-message';

@@ -78,7 +78,8 @@ export namespace ALOutboundRepairAdmission {
  * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
  * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
  * own hop asked for it, the one repair that cannot widen a room audience; that hop's not-yet-in-sync
- * NACK on a room send stays not handled, as the hop owns that retry.
+ * NACK on a room send stays not handled and schedules no retry here. A WS client's first-hop wait
+ * still writes such a send again until the server first answers for it.
  */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;

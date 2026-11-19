@@ -1,6 +1,6 @@
 import { EntityStatus, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALOutboundDurableEffectWrite } from '../admission/al-outbound-admission-store.ts';
-import type { ALOutboundDispatchPhase } from '../al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPhase, ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundDispatchWrites, ComputeALOutboundDispatchInput } from '../compute-al-outbound-dispatch.ts';
 import {
     toALOutboundAttemptIdentity,
@@ -21,6 +21,7 @@ export interface ALOutboundFirstHopWaitSnapshot {
 
 export type ALOutboundFirstHopTimeoutDecision =
     | Readonly<{ kind: 'ended' | 'orphaned' | 'early' | 'exhausted'; }>
+    | Readonly<{ kind: 'refused'; refusal: ALOutboundSettlementFact; }>
     | Readonly<{ kind: 'unwritten' | 'resend'; next: ALOutboundFirstHopWaitSnapshot; }>;
 
 export interface ComputeALOutboundFirstHopTimeoutInput {
@@ -29,6 +30,8 @@ export interface ComputeALOutboundFirstHopTimeoutInput {
     readonly messageLive: boolean;
     /** The send rows of the attempt the wait stands on, one per prepared copy. */
     readonly attemptRows: readonly (ResourceEntry | undefined)[];
+    /** The settlement a re-plan the carrier refuses for good states; undefined when the re-plan may still send. */
+    readonly replanRefusal: ALOutboundSettlementFact | undefined;
     readonly nowMs: number;
 }
 
@@ -64,8 +67,9 @@ export function computeALOutboundFirstHopWaitWrites<TPrepared>(
 }
 
 /**
- * What a first-hop deadline does. A frame its transport has not written yet charges nothing and waits a whole timeout
- * more; a written one that drew no answer is written again under a new attempt identity, so a new frame goes out.
+ * What a first-hop deadline does. A re-plan refused for good ends the wait with that refusal, as it ends a receipt.
+ * A frame its transport has not written yet charges nothing and waits a whole timeout more; a written one that drew
+ * no answer is written again under a new attempt identity, so a new frame goes out.
  */
 export function computeALOutboundFirstHopTimeout(
     input: ComputeALOutboundFirstHopTimeoutInput
@@ -79,6 +83,9 @@ export function computeALOutboundFirstHopTimeout(
     }
     if (wait.deadlineAtMs > nowMs) {
         return { kind: 'early' };
+    }
+    if (input.replanRefusal !== undefined) {
+        return { kind: 'refused', refusal: input.replanRefusal };
     }
     const deadlineAtMs = nowMs + wait.timeoutMs;
     if (input.attemptRows.some((row) => row !== undefined && isUnwrittenALOutboundSend(row))) {
