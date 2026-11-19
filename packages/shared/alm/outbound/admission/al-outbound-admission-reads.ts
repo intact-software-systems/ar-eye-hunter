@@ -2,7 +2,6 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
-    ALPeerControlMessage,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
@@ -40,11 +39,7 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
-import {
-    controlTargetMsgId,
-    mayALOutboundControlEndSend,
-    type ALControlAdmissionRead
-} from '../compute-al-outbound-control-admission.ts';
+import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import { decodeALOutboundFirstHopWait } from '../first-hop/decode-al-outbound-first-hop-wait.ts';
 import {
@@ -123,6 +118,14 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
+}
+
+/** The rows a control's admission asks of the message's owner; the admission decides whether it reads the wait. */
+export interface ALOutboundControlOwnerReadInput {
+    readonly owner: string | undefined;
+    readonly msgId: string;
+    /** The control may end the whole send, and the composition has an own hop a first-hop wait can wait on. */
+    readonly readsFirstHopWait: boolean;
 }
 
 export interface ReadALOutboundCapturedPolicyInput {
@@ -496,23 +499,19 @@ export class ALOutboundAdmissionReads<TPrepared> {
         );
     }
 
-    /**
-     * What only a control's known owner has: its version fence, the receipt it originated for the message, and, for a
-     * NACK that may end the whole send, the first-hop wait that NACK would end.
-     */
+    /** What only a control's known owner has: its version fence, its receipt of the message, the wait it asks for. */
     async readControlOwnerSurface(
         session: ALAdmissionReadSession,
-        owner: string | undefined,
-        parsed: ALPeerControlMessage
+        input: ALOutboundControlOwnerReadInput
     ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending' | 'firstHopWait'>> {
+        const { owner, msgId } = input;
         if (owner === undefined) {
             return {};
         }
-        const msgId = controlTargetMsgId(parsed);
         return {
             ownerVersion: await this.readClientRecord(session, owner),
             pending: await this.readReceiptState(session, { originPeerId: owner, msgId }),
-            firstHopWait: mayALOutboundControlEndSend(parsed) ? await this.readFirstHopWait(session, msgId) : undefined
+            firstHopWait: input.readsFirstHopWait ? await this.readFirstHopWait(session, msgId) : undefined
         };
     }
 

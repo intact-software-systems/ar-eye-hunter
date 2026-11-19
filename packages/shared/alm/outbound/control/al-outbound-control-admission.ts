@@ -52,6 +52,7 @@ import {
 import {
     computeALOutboundControlAdmission,
     controlTargetMsgId,
+    mayALOutboundControlEndSend,
     toALOutboundControlSettlements,
     type ALControlAdmissionCandidate,
     type ALControlAdmissionRead,
@@ -346,7 +347,12 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                ...await this.reads.readControlOwnerSurface(session, owner, parsed),
+                // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
+                ...await this.reads.readControlOwnerSurface(session, {
+                    owner,
+                    msgId: targetMsgId,
+                    readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
+                }),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
