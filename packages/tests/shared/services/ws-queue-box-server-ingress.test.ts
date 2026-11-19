@@ -7,7 +7,8 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -658,6 +659,43 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
+    it.each([
+        { state: 'buffered behind a gap', sends: [2], resent: 2, then: [1], delivered: ['message-1', 'message-2'] },
+        { state: 'delivered with the track head at it', sends: [1], resent: 1, then: [], delivered: ['message-1'] },
+        {
+            state: 'delivered with the track head two sequences past it',
+            sends: [1, 2, 3],
+            resent: 1,
+            then: [],
+            delivered: ['message-1', 'message-2', 'message-3']
+        }
+    ])('delivers a re-sent ordered copy $state once and answers its sender alone admitted again', async ({ sends, resent, then, delivered }) => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        const resentMsgId = `message-${resent}`;
+        for (const seq of sends) {
+            expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
+        }
+        await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted']);
+
+        const again = await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(resent), 'session-1');
+        for (const seq of then) {
+            await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1');
+        }
+
+        expect(again.right?.kind).toBe('duplicate');
+        await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted', 'admitted']);
+        await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(delivered);
+        expect(readReceiptPhases(peer, resentMsgId)).toEqual([]);
+        expect(peer.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === resentMsgId)).toHaveLength(1);
+    });
+
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {
         const fixture = await createServerIngressFixture();
         const message: ALMessage = { ...createIncomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
@@ -675,3 +713,24 @@ describe('WS server bounded and authorized admission', () => {
         }).toBe('RETRY');
     });
 });
+
+/** `session-1`'s receipted room message at `seq` of its one ordered track. */
+function createOrderedRoomMessage(seq: number): ALMessage {
+    const message = createRoomMessage();
+    return {
+        ...message,
+        id: { ...message.id, msgId: `message-${seq}` },
+        constraints: { expiresAtMs: Date.now() + 60_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        ordering: { orderingKey: 'stream', epoch: 1, seq }
+    };
+}
+
+function readReceiptPhases(socket: SimulatedWebSocket, msgId: string): readonly string[] {
+    return socket.sent
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))
+        .filter((receipt) => receipt.msgId === msgId)
+        .map((receipt) => receipt.phase);
+}

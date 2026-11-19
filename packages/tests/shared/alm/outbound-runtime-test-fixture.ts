@@ -424,19 +424,24 @@ export function createWsClientMintingPlanner(sessionId: string): ALOutboundPlann
         );
 }
 
-/** The WS server's receipt to the origin of `message` naming the audience it routed; it confirms nobody yet. */
+/**
+ * The WS server's receipt to the origin of `message` naming the audience it routed; it confirms nobody unless it
+ * names whom it has counted. A later answer of the same phase is a new control: `answer` keeps its id apart.
+ */
 export function createServerReceipt(
     message: ALMessage,
     phase: ALReceiptPayload['phase'],
-    expectedRecipientPeerIds: readonly string[]
+    expectedRecipientPeerIds: readonly string[],
+    counted: Readonly<{ answer: number; confirmedRecipientPeerIds: readonly string[]; }> = { answer: 1, confirmedRecipientPeerIds: [] }
 ): ALMessage {
+    const answer = counted.answer === 1 ? '' : `-${counted.answer}`;
     return newALReceiptControlMessage(
-        { v: 4, msgId: `receipt-${phase}-${message.id.msgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-server-receipt' },
+        { v: 4, msgId: `receipt-${phase}-${message.id.msgId}${answer}`, senderId: 'server', ts: Date.now(), traceId: 'trace-server-receipt' },
         {
             msgId: message.id.msgId,
             originPeerId: message.id.senderId,
             expectedRecipientPeerIds,
-            confirmedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: counted.confirmedRecipientPeerIds,
             outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 1,
             phase,

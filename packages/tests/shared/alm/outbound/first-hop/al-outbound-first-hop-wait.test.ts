@@ -10,6 +10,7 @@ import {
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import {
     createDefaultIndexedDbALOutboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
@@ -327,6 +328,78 @@ describe('a WS client\'s receipted send that waits on its first hop', () => {
     });
 });
 
+describe('a WS client\'s receipt row when the server answers admitted twice', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(START_MS);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('a second admitted that counts no one more changes no state, states nothing and writes no frame', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        await advance(fixture, 2_000);
+        expect(fixture.written).toHaveLength(2);
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(only, 'admitted', ['peer-b', 'peer-c']))).toEqual({
+            kind: 'committed'
+        });
+        const first = await readReceiptRow(fixture, only);
+        const factsBefore = fixture.settlements.length;
+        vi.setSystemTime(Date.now() + 300);
+
+        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], { answer: 2, confirmedRecipientPeerIds: [] });
+        expect(await fixture.ws.acceptReceipt(second)).toEqual({
+            kind: 'rejected',
+            reason: 'AL receipt moves no receipt of its message'
+        });
+
+        expect(first).toMatchObject({
+            expectedPeerIds: ['peer-b', 'peer-c'],
+            ackedPeerIds: [],
+            attempts: 0,
+            deadlineAtMs: resolveALMessageExpireAtMs(only)
+        });
+        expect(await readReceiptRow(fixture, only)).toEqual(first);
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        expect(await readWorkReadyAt(fixture)).toBeUndefined();
+        await advance(fixture, 10_000);
+        expect(fixture.written).toHaveLength(2);
+        expect(fixture.settlements.slice(factsBefore)).toEqual([]);
+    });
+
+    it('a second admitted that counts a recipient moves the row to it, keeps its deadline and attempts, and states one partial fact', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room broadcast', 'receiver');
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(only, 'admitted', ['peer-b', 'peer-c']))).toEqual({
+            kind: 'committed'
+        });
+        const first = await readReceiptRow(fixture, only);
+        const factsBefore = fixture.settlements.length;
+
+        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], { answer: 2, confirmedRecipientPeerIds: ['peer-b'] });
+        expect(await fixture.ws.acceptReceipt(second)).toEqual({ kind: 'committed' });
+
+        expect(await readReceiptRow(fixture, only)).toEqual({ ...first, ackedPeerIds: ['peer-b'] });
+        expect(fixture.settlements.slice(factsBefore)).toEqual([
+            expect.objectContaining({
+                kind: 'acknowledgement',
+                msgId: only.id.msgId,
+                confirmedRecipientPeerIds: ['peer-b'],
+                unconfirmedRecipientPeerIds: ['peer-c'],
+                complete: false
+            })
+        ]);
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        await advance(fixture, 10_000);
+        expect(fixture.written).toHaveLength(1);
+        expect(fixture.settlements.filter((fact) => fact.kind === 'receipt-exhausted')).toEqual([]);
+    });
+});
+
 function createFirstHopFixture(store: StoreKind, options: FirstHopFixtureOptions = {}): FirstHopFixture {
     const written: WrittenFrame[] = [];
     const settlements: ALDeliverySettlement[] = [];
@@ -459,6 +532,10 @@ function toServerRefusal(refused: ALMessage, reason: 'unauthorized' | 'expired' 
             reason
         })
     );
+}
+
+async function readReceiptRow(fixture: FirstHopFixture, msg: ALMessage): Promise<ALOutboundPendingAckSnapshot | undefined> {
+    return await fixture.stores.admissionStore.readPendingAck({ originPeerId: SESSION_ID, msgId: msg.id.msgId });
 }
 
 async function readFirstHopWait(
