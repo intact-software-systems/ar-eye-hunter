@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ALNackPayload, ALPeerRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairHint } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 import {
     toALOutboundEffectId,
     toALOutboundRepairGapAttemptIdentity,

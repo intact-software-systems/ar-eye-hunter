@@ -4,7 +4,6 @@ import type {
     ALNackPayload,
     ALParsedControlMessage,
     ALPeerControlMessage,
-    ALPeerRepairControlMessage,
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
@@ -22,15 +21,14 @@ import type {
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
-import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
     isALOutboundRelayRejectionReason,
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundRepairHintGapRequestNumber } from './control/to-al-outbound-repair-hint-gap-request-number.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
     toALOutboundAckTimeoutEffectId,
@@ -303,32 +301,6 @@ function toRepairHintEffect(
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
         retryAtMs: read.nowMs,
         expireAtTimestamp: read.sent.reference.expiresAtMs
-    };
-}
-
-/**
- * The hint a peer's gap NACK or repair request raises. The gap is the hint's identity, so its payload
- * follows the gap too, never the control: `nack` names missing ranges, `repair` asks for the message
- * itself. The two controls a receiver sends for one gap thus build one hint, written once and absorbed
- * the second time rather than refused as conflicting content. A relay's gap NACK also names the
- * recipient it asks the repair for, which the responder admits the copy on and which names the hint
- * apart (S4ii-R3): each recipient a relay reports one gap for raises its own hint.
- */
-export function toALOutboundControlRepairHint(
-    control: ALPeerRepairControlMessage
-): ALOutboundRepairHint {
-    const { payload } = control;
-    const missingRanges = payload.missingRanges ?? [];
-    return {
-        trigger: missingRanges.length > 0 ? 'nack' : 'repair',
-        requestedByPeerId: payload.fromPeerId,
-        ...(isALOutboundRelayedGapNack(control)
-            ? { logicalRecipientPeerId: control.payload.logicalRecipientPeerId }
-            : {}),
-        orderingTrackKey: payload.orderingKey,
-        missingRanges,
-        ...toALOutboundRepairHintGapRequestNumber(payload),
-        failedPeerIds: []
     };
 }
 

@@ -19,10 +19,7 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
-import {
-    toALOutboundControlRepairHint,
-    type ALOutboundControlSource
-} from './compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAdmissionVerdict } from './compute-al-outbound-dispatch.ts';
 import type {
     ALOutboundControlAdmission,
@@ -30,6 +27,7 @@ import type {
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
+import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';

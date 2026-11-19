@@ -12,7 +12,7 @@ import type {
     ALOutboundAckTrackingPlan,
     ALOutboundSettlementFact
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 
 import {
     createDefaultOutboundTestRuntime,
