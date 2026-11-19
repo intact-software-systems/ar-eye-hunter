@@ -109,6 +109,8 @@ describe('group formation view decoding', () => {
         expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['kind-change', 'kind-change'] } })))
             .toEqual(['heldReshape']);
         expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['refinement'] } }))).toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['leader-rooting', 'kind-change'] } })))
+            .toEqual(['heldReshape']);
         expect(issuePaths(JSON.stringify({ ...view, heldReshape: {} }))).toEqual(['heldReshape']);
     });
 });
