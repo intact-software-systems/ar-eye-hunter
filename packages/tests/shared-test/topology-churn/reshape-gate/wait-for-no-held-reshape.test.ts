@@ -1,4 +1,4 @@
-import { waitForNoHeldReshape } from '@shared-test/black-box-runner/topology-churn/wait-for-no-held-reshape.ts';
+import { waitForNoHeldReshape } from '@shared-test/black-box-runner/topology-churn/reshape-gate/wait-for-no-held-reshape.ts';
 import type { HeldTopologyReshape } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { describe, expect, it } from 'vitest';
 

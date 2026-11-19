@@ -26,6 +26,7 @@ import {
     type TopologyChurnPhaseSchedule
 } from './phases/compute-topology-churn-phase-schedule.ts';
 import type { TopologyChurnRoomSpec } from './phases/topology-churn-room-specs.ts';
+import { waitForNoHeldReshape } from './reshape-gate/wait-for-no-held-reshape.ts';
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
@@ -42,7 +43,6 @@ import type {
     TopologyChurnRoomTopologyPlans,
     TopologyChurnSession
 } from './topology-churn-api.mts';
-import { waitForNoHeldReshape } from './wait-for-no-held-reshape.ts';
 
 const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;

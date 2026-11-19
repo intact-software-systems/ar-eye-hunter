@@ -1,7 +1,7 @@
-import { computeTopologyChurnReshapeGaps } from '@shared-test/black-box-runner/topology-churn/compute-topology-churn-reshape-gaps.ts';
+import { computeTopologyChurnReshapeGaps } from '@shared-test/black-box-runner/topology-churn/reshape-gate/compute-topology-churn-reshape-gaps.ts';
 import { describe, expect, it } from 'vitest';
 
-import { createTopologyChurnPlan, createTopologyChurnRemoval } from './topology-churn-plan-fixtures.ts';
+import { createTopologyChurnPlan, createTopologyChurnRemoval } from '../topology-churn-plan-fixtures.ts';
 
 describe('computeTopologyChurnReshapeGaps', () => {
     it('gives the gaps between consecutive reshapes in planned order, skipping the attaches between them', () => {
