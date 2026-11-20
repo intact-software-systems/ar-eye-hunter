@@ -1559,7 +1559,8 @@ budget of four per requester (D675 to D683). A terminal settlement ends its
 message (D684 to D687), and a receipt waits for its first frame to leave (D688
 to D691). Two cells prove the recovery they run: `seeded-loss-stream`, twenty
 ordered receipted sends under a 25 % seeded loss, is green in three of three
-runs over `ws` and over `rtc`, every handle `acknowledged`, and
+runs over `ws` (two of three before, D673) and stays three of three over `rtc`,
+where no renewal reached a sender (D683), every handle `acknowledged`, and
 `seeded-loss-unreceipted-stream`, the same loss under `ack: 'none'` over `ws`,
 is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
@@ -1567,7 +1568,8 @@ over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
 not recovered, renewal holds on direct links and not through an `rtc` relay,
 and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D683, D693 and the backlog). The next outcome is the local
+its receipt (D678, D680, D683, D693 and the backlog), and the lost stream
+start over `rtc` is its own slice (D669). The next outcome is the local
 baseline's alternating runs, their own small change (D672). After them, the
 held-send path, where a retained admission starts its `admitted` receipt only
 once its replay commits, and of which a receipt's first attempt is built

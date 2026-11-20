@@ -92,7 +92,8 @@ misses the sequence, which is the logical recipient a request names or else the 
 carries a request earns it no second budget. The charge is
 [`computeALOutboundRepairAttemptCharge`](./repair-budget/compute-al-outbound-repair-attempt-charge.ts); a message can
 cost its requesters times the budget in frames, and each resend goes to its requester alone. At the defaults no gap
-request is past a budget; a send that lowers `maxRepairs` meets one. When dispatch finds a requester's budget spent it
+request on one route is past a budget; a send that lowers `maxRepairs` meets one, and so can a receiver reported both
+directly and through a relay, whose two attempts per request number spend one budget. When dispatch finds a requester's budget spent it
 answers `skipped`/`repair-exhausted`, and that commit ends the message: it marks the stored row ended and deletes the
 open receipt with its timer, the first-hop wait with its timer and the repair-attempt row
 ([Receipt ends and the hand-over](#receipt-ends-and-the-hand-over)). Once it lands the retransmitter
@@ -1485,7 +1486,8 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `relay-rejected` (D50).
 - **Completion at a re-plan.** A retry whose plan replaces the expected set (the RTC missing-recipient
   repair, under `hop` and `receiver`) and so completes the row deletes it, marks the message ended and states the
-  acknowledgement that completed it.
+  acknowledgement that completed it; the copies that dispatch queued meet the marker at `readSendGuards` and are never
+  written.
 - **A receipt no row tracks.** An admission whose plan writes no row -- a `qos.ack` timeout of 0, or a
   `hop`/`subtree` receipt that expects nobody -- reports `trackedReceiptAlgo: 'none'`, so the handle ends
   at `transport-accepted` with the downgrade in evidence (R-S3a-4). A `receiver` receipt with an empty

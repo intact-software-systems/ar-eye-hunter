@@ -796,7 +796,9 @@ live session or no active member at its admission and its dispatch-time re-autho
 receiving WS client trusts it. Behind either floor at its admission the WS server retains the
 message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
-the floor is met or the deadline passes; the sender retries nothing.
+the floor is met or the deadline passes; the sender handles that NACK no further, though a receipted send the server
+has not yet answered for is still written again by its first-hop wait after each receipt timeout (outbound README,
+"Server receipts on WS").
 
 **Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
 to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin

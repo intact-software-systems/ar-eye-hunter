@@ -2089,7 +2089,10 @@ receiver, and numbers each request, so the sender answers a renewal with a new
 retransmission while the reports later arrivals make of the same gap draw
 nothing more. A frame that is only late, by well under a second, draws no
 renewal. Renewal holds on direct links (a WS client and its server, RTC peers
-that send to each other directly), not through an RTC relay. Each receiver
+that send to each other directly); over an RTC relay a renewal reaches the
+sender only while the relay still holds a receipted row that waits on that
+receiver, since a relay forwards a gap NACK only then and never forwards a
+repair request. Each receiver
 that misses a sequence may draw `maxRepairs` retransmits of it (4 by default:
 its first report and three renewals; `qos: { repair: { algo: 'retransmit',
 opts: { maxRepairs } } }` sets it); a request past one receiver's budget
@@ -2097,7 +2100,10 @@ settles the message `skipped` with reason `repair-exhausted`, once, so its
 handle reads `failed` with `failure: { kind: 'skipped', reason:
 'repair-exhausted' }`, and ends the message for every receiver: nothing is
 sent for it afterwards, so its other receivers also lose its remaining receipt
-retries. At the defaults no request is past a budget. The receiver's later
+retries. At the defaults no request on one route is past a budget; a receiver
+reported both directly and through a relay spends two attempts of its one
+budget per request. The
+receiver's later
 sequences stay buffered behind the missing one until the
 track expires or the sender's next epoch opens a new track. Repair never serves
 below a recipient's entry: a responder serves only the audience the message was
