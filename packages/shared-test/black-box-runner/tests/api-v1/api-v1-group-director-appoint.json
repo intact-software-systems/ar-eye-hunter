@@ -759,6 +759,9 @@
       "expect": {
         "status": 409,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 409,
           "code": "room-director-changed"
         }
       }
@@ -786,6 +789,9 @@
       "expect": {
         "status": 409,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 409,
           "code": "room-director-changed"
         }
       }
@@ -814,6 +820,9 @@
       "expect": {
         "status": 400,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 400,
           "code": "group-mutation-rejected"
         }
       }
@@ -878,6 +887,9 @@
       "expect": {
         "status": 409,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 409,
           "code": "room-deadline-revision-conflict"
         }
       }
@@ -958,6 +970,9 @@
       "expect": {
         "status": 409,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "status": 409,
           "code": "room-director-changed"
         }
       }
