@@ -67,6 +67,7 @@ import {
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
 import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
+import { toWsQueueBoxServerReplayedAdmittedMessage } from './to-ws-queue-box-server-replayed-admitted-message.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -515,6 +516,12 @@ export class WsQueueBoxServerService {
             sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
+            },
+            onReplayAdmitted: async (replayed) => {
+                const admitted = toWsQueueBoxServerReplayedAdmittedMessage(replayed);
+                if (admitted !== undefined) {
+                    await this.receipts.writeAdmittedReceipt(admitted);
+                }
             },
             readRelayedAckRejection: (ack, controlIdentity) =>
                 this.readRuntimeProtocolAckRejection(ack, controlIdentity),

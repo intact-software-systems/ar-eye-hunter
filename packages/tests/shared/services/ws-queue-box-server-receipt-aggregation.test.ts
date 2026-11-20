@@ -513,12 +513,24 @@ describe('WS server receipt aggregate', () => {
         }]);
     });
 
+    it('starts no receipt for a message kept for admission', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+
+        await aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'pending-admission' }));
+
+        expect(enqueued).toEqual([]);
+        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+            .toBe('AL acknowledgement names no receipt this server aggregates');
+    });
+
     it.each(['pending-admission', 'duplicate'] as const)(
         'answers a copy the runtime accepts %s while its aggregate lives with admitted again, from the aggregate it started',
         async (kind) => {
             const enqueued: ALMessage[] = [];
             const aggregation = createAggregation(enqueued);
-            const admitted = admittedRoomMessage({ kind: 'pending-admission' });
+            const admitted = admittedRoomMessage({ kind: 'admitted' });
 
             await aggregation.writeAdmittedReceipt(admitted);
             await aggregation.writeAdmittedReceipt({ ...admitted, acceptance: { kind } });

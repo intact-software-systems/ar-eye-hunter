@@ -388,8 +388,8 @@ export class WsQueueBoxServerInboundAuthority {
                 ? { kind: 'retry', retryAfterMs: WsQueueBoxServerInboundAuthority.READINESS_RETRY_AFTER_MS }
                 : { kind: 'rejected' };
         }
-        const audience = authority.roomAudience?.recipientPeerIds;
-        if (source.kind !== 'ws-client' || audience === undefined) {
+        const { roomAudience } = authority;
+        if (source.kind !== 'ws-client' || roomAudience === undefined) {
             return { kind: 'authorized', source };
         }
         const captured = source.groupRecipientPeerIds;
@@ -397,8 +397,11 @@ export class WsQueueBoxServerInboundAuthority {
             kind: 'authorized',
             source: {
                 ...source,
-                groupRecipientPeerIds: audience.filter((peerId) => captured === undefined || captured.includes(peerId))
-            }
+                groupRecipientPeerIds: roomAudience.recipientPeerIds.filter((peerId) =>
+                    captured === undefined || captured.includes(peerId)
+                )
+            },
+            snapshotVersion: roomAudience.snapshotVersion
         };
     }
 

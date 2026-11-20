@@ -368,10 +368,10 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * A message the server admitted, or retained for admission, starts its receipt here, once. A copy its
-     * sender sent again that ingress accepts as a duplicate or a pending admission finds the aggregate live
-     * and is answered `admitted` again with what the aggregate has counted, to that sender alone, so a lost
-     * `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
+     * A message the server admitted starts its receipt here, once; one it keeps for admission starts none until its
+     * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission finds
+     * the aggregate live and is answered `admitted` again with what the aggregate has counted, to that sender alone,
+     * so a lost `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
      * nothing. Where no aggregate is live (it has ended, or another instance holds it) a copy is answered
      * nothing either: the stated limit.
      */
@@ -391,7 +391,7 @@ export class WsQueueBoxServerReceiptAggregation {
             }
             return;
         }
-        if (kind !== 'admitted' && kind !== 'pending-admission') {
+        if (kind !== 'admitted') {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
