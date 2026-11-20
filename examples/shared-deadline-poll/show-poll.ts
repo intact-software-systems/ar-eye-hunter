@@ -2,7 +2,9 @@ import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connect
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
-import { pollPhase, pollResultText } from './poll-phase.ts';
+import { pollPhase } from './poll-phase.ts';
+import { loadPollOnEntry } from './load-poll-on-entry.ts';
+import { PollView } from './poll-view.ts';
 import { requestPollSnapshot } from './request-poll-snapshot.ts';
 
 export interface ShowPollInput {
@@ -10,34 +12,28 @@ export interface ShowPollInput {
     readonly roomRef: GroupRef;
     readonly endpoint: string;
     readonly participantGrant: string;
+    readonly signal?: AbortSignal;
     readonly authority?: RallarDeadlineAuthority;
 }
 
 /** Mount after login. The application supplies the URL and a participant grant for this poll alone. */
 export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const { root, roomRef } = input;
-    await rallar.connect();
-    await rallar.rooms.enter(roomRef);
     const lifetime = new AbortController();
-    let record = await requestPollSnapshot(input, lifetime.signal);
-    const title = document.createElement('h1');
-    title.textContent = 'Hold another round?';
-    const opening = document.createElement('time');
-    opening.dateTime = new Date(record.schedule.opensAtEpochMs).toISOString();
-    opening.textContent = 'Opens at ' + opening.dateTime;
-    const closing = document.createElement('time');
-    closing.dateTime = new Date(record.schedule.closesAtEpochMs).toISOString();
-    closing.textContent = 'Closes at ' + closing.dateTime;
-    const phase = document.createElement('p');
-    const result = document.createElement('p');
-    const yes = document.createElement('button');
-    const no = document.createElement('button');
-    yes.textContent = 'Yes';
-    no.textContent = 'No';
-    root.replaceChildren(title, opening, closing, phase, yes, no, result);
+    const signal = input.signal ? AbortSignal.any([input.signal, lifetime.signal]) : lifetime.signal;
+    signal.throwIfAborted();
+    await rallar.connect({ signal });
+    signal.throwIfAborted();
+    await rallar.rooms.enter(roomRef, { signal });
+    signal.throwIfAborted();
+    let record = await loadPollOnEntry(input, signal);
+    signal.throwIfAborted();
+    const view = new PollView(root);
+    const { yes, no, extend } = view;
     let submitting = false;
     let refreshing = false;
     let retryAt = 0;
+    let nextRevisionRead = performance.now() + 5_000;
     let unacknowledged: PollAuthority.Choice | undefined;
     let checkingReceipt = false;
     let away = document.visibilityState === 'hidden';
@@ -48,15 +44,17 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         const current = generation;
         try {
             if (restored !== current) {
-                const options = { signal: lifetime.signal };
+                const options = { signal };
                 await rallar.connect(options);
-                if (current !== generation || lifetime.signal.aborted) {
+                signal.throwIfAborted();
+                if (current !== generation) {
                     return;
                 }
                 await rallar.rooms.enter(roomRef, options);
             }
-            const snapshot = await requestPollSnapshot(input, lifetime.signal);
-            if (current !== generation || lifetime.signal.aborted) {
+            const snapshot = await requestPollSnapshot(input, signal, { previous: record });
+            signal.throwIfAborted();
+            if (current !== generation) {
                 return;
             }
             restored = current;
@@ -70,6 +68,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             // A failed read leaves the receipt or closing tally unresolved.
         }
         finally {
+            nextRevisionRead = performance.now() + 5_000;
             refreshing = false;
             retryAt = performance.now() + 2_000;
         }
@@ -83,24 +82,12 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             currentPhase = 'Recovering room poll';
         }
         const restoring = currentPhase === 'Recovering room poll';
-        const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed';
+        const revisionDue = record.revision === 0 && !record.closed && performance.now() >= nextRevisionRead;
+        const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed' || revisionDue;
         if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
         }
-        phase.textContent = currentPhase;
-        const disabled = checkingReceipt || refreshing || submitting || currentPhase !== 'Voting open' ||
-            record.disposition !== 'pending';
-        yes.disabled = disabled || unacknowledged === 'no';
-        no.disabled = disabled || unacknowledged === 'yes';
-        yes.textContent = unacknowledged === 'yes' ? 'Retry Yes' : 'Yes';
-        no.textContent = unacknowledged === 'no' ? 'Retry No' : 'No';
-        result.textContent = pollResultText({
-            phase: currentPhase,
-            checkingReceipt,
-            retryingFinalRead: retryAt > 0 && !refreshing,
-            unacknowledged,
-            record
-        });
+        view.render({ record, currentPhase, checkingReceipt, refreshing, submitting, unacknowledged, retryAt });
     }
     async function submit(choice: PollAuthority.Choice): Promise<void> {
         render();
@@ -111,11 +98,11 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, lifetime.signal, choice);
+            record = await requestPollSnapshot(input, signal, { previous: record, action: choice });
             unacknowledged = undefined;
         }
         catch {
-            if (lifetime.signal.aborted) {
+            if (signal.aborted) {
                 return;
             }
             unacknowledged = choice;
@@ -124,7 +111,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            if (!lifetime.signal.aborted) {
+            if (!signal.aborted) {
                 render();
             }
         }
@@ -139,7 +126,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         retryAt = 0;
         render();
     }
-    const listeners = { signal: lifetime.signal };
+    const listeners = { signal };
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
             suspend();
@@ -152,14 +139,36 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     document.addEventListener('resume', resume, listeners);
     window.addEventListener('pagehide', suspend, listeners);
     window.addEventListener('pageshow', resume, listeners);
+    extend.onclick = async () => {
+        render();
+        if (extend.disabled) {
+            return;
+        }
+        submitting = true;
+        render();
+        try {
+            record = await requestPollSnapshot(input, signal, { previous: record, action: { expectedRevision: 0 } });
+        }
+        catch {
+            nextRevisionRead = 0;
+            retryAt = 0;
+        }
+        finally {
+            submitting = false;
+            if (!signal.aborted) {
+                render();
+            }
+        }
+    };
     yes.onclick = () => void submit('yes');
     no.onclick = () => void submit('no');
     render();
     const timer = window.setInterval(render, 200);
-    return () => {
+    signal.addEventListener('abort', () => {
         window.clearInterval(timer);
+        extend.onclick = null;
         yes.onclick = null;
         no.onclick = null;
-        lifetime.abort();
-    };
+    }, { once: true });
+    return () => lifetime.abort();
 }

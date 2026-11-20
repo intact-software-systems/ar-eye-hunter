@@ -4,7 +4,7 @@ Run the example from the repository root with Chromium installed. Add
 `--headed` to watch both participants.
 
 ```sh
-npm run test:rallar:full-stack:memory -- --grep 'delayed ballot|fallback ballot' --workers=1
+npm run test:rallar:full-stack:memory -- --grep 'delayed ballot|fallback ballot|visiting another active room' --workers=1
 ```
 
 The journey starts the Rallar memory API, signs in two room participants and
@@ -31,16 +31,14 @@ that process ends the poll.
 [showPoll](./show-poll.ts) connects the authenticated Rallar client, enters the
 scoped room, fetches its poll record and renders the deadline using
 `rallar.compareDeadline`. Call it again on page load. Each vote response refreshes the displayed tally. At closure a mounted spectator reads again until the authority confirms the final tally, retrying a failed read after two seconds. The browser journey interrupts this read once. A snapshot already marked closed can display results immediately. The cleanup function cancels pending requests and releases the display timer
-when the host unmounts the view.
+when the host unmounts the view. For SPA navigation, create an AbortController before calling showPoll and pass its signal. Abort the previous selection when switching rooms, even if its first load is still pending. A cancelled initial load rejects with the signal’s abort reason.
 
 The [Playwright journey](../../tests/playwright/rallar-black-box/full-stack-shared-deadline-poll.spec.ts)
 supplies a loopback HTTP endpoint and a separate poll-specific grant for each
 fixture member. In a deployed application, the poll route owns participant
-authorization. A durable implementation can use the [server AppInbox
-example](../server-app-inbox/README.md) to commit ballots and retain replay
+authorization. A durable implementation can use the [server AppInbox example](../server-app-inbox/README.md) to commit ballots and retain replay
 results. RTC fallback, a server restart, and suspension on a physical phone
 have separate qualification requirements.
-
 
 ## Recover after a phone is backgrounded
 
@@ -63,3 +61,27 @@ delivery in the receiving browser. The receiver binds the authenticated
 sender session to the fixture voter. An in-time ballot and a repeated submission
 count once. In the late case the authority reaches its cutoff during handover
 and records a late receipt while the transport envelope is still valid.
+
+## Extend a live vote
+
+Supply the host principal when creating the poll authority to enable a single one-minute extension. The authenticated host uses the browser control while voting is open. PATCH carries the expected schedule revision and uses the same poll-specific grant as the snapshot read. A revision mismatch returns the current snapshot. An ordinary participant cannot publish a change. Foreground participants check for a revision every five seconds while the extension is available, and returning participants refresh before voting. Accepted ballots survive a revision. The example authority lives for the lifetime of its server process.
+
+### Recover after changing rooms
+
+The full-stack journey creates two open Rallar rooms in one scope. The host votes Yes in the first room and a guest explicitly enters the second. The host extends the first deadline while the guest casts an independent No in the second. After the original cutoff, the guest re-enters the first room, reads its revised cutoff, and can still vote Yes before the revised cutoff. A stale snapshot on a subsequent recovery leaves the revised cutoff intact and voting disabled until the current snapshot arrives.
+
+Dispose the current view before switching rooms. Pass the destination's full room reference, endpoint and member grant when mounting its view. The application authority owns the revision and enforces the cutoff. Rallar supplies room entry, selected-room identity and the bounded deadline comparison. A revision detected in one room never implies permission to select it.
+
+If the first snapshot request loses its connection or receives HTTP 502, 503 or
+504, the room shows **Retry room snapshot**. Selecting it repeats only the read.
+Voting becomes available once the poll authority returns the participant’s
+snapshot and the clock permits voting. Switching rooms cancels the pending
+prompt through the selection’s abort signal. Authorization and wrong-room
+errors propagate to the application.
+
+The schedule revision changes only when the host extends the deadline. During a
+mount, each snapshot must also preserve confirmed poll facts. Vote counts can
+increase, a pending receipt can settle, and an open poll can close. A response
+that reverses any of those facts is discarded. A returning voter stays in
+recovery until a consistent snapshot arrives. A new room entry starts with
+that room's own snapshot.
