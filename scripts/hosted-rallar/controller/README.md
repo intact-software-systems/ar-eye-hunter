@@ -605,10 +605,13 @@ When registration reports that the user already exists, the black-box auth flow
 falls back to a normal login with the same credentials.
 
 The GitHub Free workflow registers its agents' users itself: each agent shard
-registers its own `<prefix>-NN` users through the public register endpoint
-before its worker starts (an existing user is accepted), and its workers then
-run without `RALLAR_BLACK_BOX_REGISTER`, so a recipe's sign-in logs in only and
-pays one password derivation per agent instead of two.
+registers its own `<prefix>-NN-<digest>` users through the public register
+endpoint before its worker starts (an existing user is accepted), and its
+workers then run without `RALLAR_BLACK_BOX_REGISTER`, so a recipe's sign-in logs
+in only and pays one password derivation per agent instead of two. It names them
+by the same rule, from its `room_id` input. That input defaults to the fixed
+`hetzner-headless-room`, so a run gets users no earlier run used only when it is
+dispatched with a `room_id` of its own.
 
 The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
 `register_before_login=true` for Hetzner runs so first-run agent identities are

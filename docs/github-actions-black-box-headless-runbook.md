@@ -100,7 +100,8 @@ comparison; success cannot establish CPU-only causality or replace hosted scale 
   `RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable
   runner in both `prepare-hetzner` and `operator` phases. It is the reusable
   runner's operator credential, not a GitHub-hosted per-agent username; the
-  `github-agents` job uses each global agent ID as that agent's username.
+  `github-agents` job names each agent's user after its global agent ID and the
+  `room_id` input (`<prefix>-NN-<room digest>`).
 - Public endpoint inputs point at production or the intended staging target:
   `spa_url`, `api_base_url`, `control_url`, and `control_http_url`.
 - The workflow always runs the immutable `${{ github.sha }}` associated with
@@ -207,8 +208,10 @@ Hosted Hetzner agents also sign in as one user per agent, as the all-local
 lifecycle and these shards do, because one shared principal fans every connect
 out to a full snapshot for each of its sessions and stalls the 15-agent room
 join. Their users are named after the agent id and the run's room
-(`controller-NN-<room digest>`); these shards' users are named after the agent
-id alone.
+(`controller-NN-<room digest>`), and these shards' users by the same rule from
+the workflow's `room_id` input (`<prefix>-NN-<room digest>`). That input
+defaults to the fixed `hetzner-headless-room`, so a run gets users no earlier
+run used only when it is dispatched with a `room_id` of its own.
 The 30- and 50-agent runs occupy 16 and 18 of the account's roughly 20
 concurrent jobs, so dispatch them when no other workflow is running. TURN is
 configured on the Hetzner plane, so cross-runner RTC edges form.

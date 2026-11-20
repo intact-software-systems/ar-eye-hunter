@@ -602,8 +602,8 @@ describe('GitHub Free headless shard process environment', () => {
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
             RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN: 'synthetic-local-token-1',
             RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN: 'synthetic-local-token-2',
-            RALLAR_BLACK_BOX_AGENT_1_USERNAME: 'actions-agent-08',
-            RALLAR_BLACK_BOX_AGENT_2_USERNAME: 'actions-agent-09',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: toRoomUsername('actions-agent-08', 'input-room'),
+            RALLAR_BLACK_BOX_AGENT_2_USERNAME: toRoomUsername('actions-agent-09', 'input-room'),
             RALLAR_BLACK_BOX_AGENT_1_PASSWORD: 'synthetic-local-password'
         });
         expect(record.environment).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
@@ -875,8 +875,8 @@ async function writeSyntheticShardTokens(fixture: HeadlessEnvironmentFixture): P
         [
             'RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN=synthetic-local-token-1',
             'RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN=synthetic-local-token-2',
-            'RALLAR_BLACK_BOX_AGENT_1_USERNAME=actions-agent-08',
-            'RALLAR_BLACK_BOX_AGENT_2_USERNAME=actions-agent-09',
+            `RALLAR_BLACK_BOX_AGENT_1_USERNAME=${toRoomUsername('actions-agent-08', 'input-room')}`,
+            `RALLAR_BLACK_BOX_AGENT_2_USERNAME=${toRoomUsername('actions-agent-09', 'input-room')}`,
             'RALLAR_BLACK_BOX_AGENT_1_PASSWORD=synthetic-local-password',
             'RALLAR_BLACK_BOX_AGENT_2_PASSWORD=synthetic-local-password',
             ''

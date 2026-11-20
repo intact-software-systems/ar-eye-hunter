@@ -37,31 +37,40 @@ rallar_headless_worker_registers_agents() {
 	[[ "${register}" == 1 || "${register}" == true || "${register}" == yes || "${register}" == on ]]
 }
 
-# A registered run gives every agent its own user, named after its agent id and its room. Member
+# Every registered agent signs in as its own user, named after its agent id and its room. Member
 # rows never expire and a connect lists every group its user is a member of, so a user shared by
 # runs in different rooms carries each earlier room into every later connect. A run in a room of its
 # own therefore signs in as users no earlier run used, and a run that reuses a room reuses its users.
+to_rallar_headless_worker_agent_username() {
+	local agent_id="$1"
+	local room_id="$2"
+	if [[ -z "${room_id}" ]]; then
+		echo "Per-agent users need RALLAR_BLACK_BOX_ROOM_ID for their names." >&2
+		return 1
+	fi
+	local room_digest
+	room_digest="$(printf '%s' "${room_id}" | sha256sum | cut -c1-12)" || return $?
+	# A caller without pipefail would otherwise name every user with an empty suffix.
+	if ! [[ "${room_digest}" =~ ^[0-9a-f]{12}$ ]]; then
+		echo "sha256sum gave no digest of RALLAR_BLACK_BOX_ROOM_ID to name the per-agent users." >&2
+		return 1
+	fi
+	printf '%s-%s' "${agent_id}" "${room_digest}"
+}
+
 write_rallar_headless_worker_registered_agent_credentials() {
 	local destination="$1"
 	if [[ -z "${RALLAR_BLACK_BOX_PASSWORD-}" ]]; then
 		echo "RALLAR_BLACK_BOX_REGISTER needs RALLAR_BLACK_BOX_PASSWORD for the per-agent users." >&2
 		return 1
 	fi
-	if [[ -z "${RALLAR_BLACK_BOX_ROOM_ID-}" ]]; then
-		echo "RALLAR_BLACK_BOX_REGISTER needs RALLAR_BLACK_BOX_ROOM_ID to name the per-agent users." >&2
-		return 1
-	fi
 
-	local room_digest local_index agent_id
-	room_digest="$(printf '%s' "${RALLAR_BLACK_BOX_ROOM_ID}" | sha256sum | cut -c1-12)" || return $?
-	# A caller without pipefail would otherwise name every user with an empty suffix.
-	if ! [[ "${room_digest}" =~ ^[0-9a-f]{12}$ ]]; then
-		echo "sha256sum gave no digest of RALLAR_BLACK_BOX_ROOM_ID to name the per-agent users." >&2
-		return 1
-	fi
+	local local_index agent_id username
 	for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
 		agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))")"
-		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${agent_id}-${room_digest}" || return $?
+		# The room alone decides a refusal, so it comes before the first agent's lines are written.
+		username="$(to_rallar_headless_worker_agent_username "${agent_id}" "${RALLAR_BLACK_BOX_ROOM_ID-}")" || return $?
+		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${username}" || return $?
 		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "${RALLAR_BLACK_BOX_PASSWORD}" || return $?
 	done
 }

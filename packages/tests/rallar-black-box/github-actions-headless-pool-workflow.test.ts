@@ -205,9 +205,14 @@ function resolveManualModeJobs(jobs: Readonly<Record<string, WorkflowJob>>, exec
     }).map(([name]) => name).toSorted();
 }
 
+/** Derived apart from the workflow: twelve hex digits of the room id's SHA-256 after the agent id. */
+function toRoomUsername(agentId: string, roomId: string): string {
+    return `${agentId}-${createHash('sha256').update(roomId).digest('hex').slice(0, 12)}`;
+}
+
 async function existingUsernameRegistrationResponse(): Promise<string> {
     const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
-    const request = { username: 'controller-05', password: 'test-password' };
+    const request = { username: 'controller-05-minted', password: 'test-password' };
     const registered = await runAuthInboxCommand({
         pending: auth.service.registerUser({ traceId: 'trace-test-fixture', requestId: 'RegistrationFirst_01', request }),
         queue: auth.queue,
@@ -750,6 +755,10 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
         const githubAgents = required((await readWorkflow()).jobs?.['github-agents'], 'github-agents job');
         const mint = findStep(githubAgents, 'Mint per-agent control run tokens');
         const worker = findStep(githubAgents, 'Run headless worker shard');
+        // The Hetzner worker env writer owns the user naming rule; the mint step names its users through it.
+        expect(mint.env?.RALLAR_BLACK_BOX_ROOM_ID).toBe('${{ inputs.room_id }}');
+        expect(mint.run).toContain('source scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
+        expect(mint.run).toContain('to_rallar_headless_worker_agent_username "${agent_id}" "${RALLAR_BLACK_BOX_ROOM_ID}"');
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-github-free-credentials-'));
         try {
             await writeFile(path.join(directory, 'curl'), `#!/bin/sh\nprintf '%s\\n' '{"token":"test-agent-token"}'\n`);
@@ -766,9 +775,11 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
                     RALLAR_BLACK_BOX_AGENT_COUNT: '2',
                     RALLAR_BLACK_BOX_AGENT_START_INDEX: '4',
                     RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: 'test-admin-token',
-                    RALLAR_BLACK_BOX_PASSWORD: 'test-password'
+                    RALLAR_BLACK_BOX_PASSWORD: 'test-password',
+                    RALLAR_BLACK_BOX_ROOM_ID: 'test-room'
                 }
             });
+            expect(result.stderr).toBe('');
             expect(result.status).toBe(0);
             const credentialFile = path.join(directory, 'rallar-github-headless-token.env');
             expect((await stat(credentialFile)).mode & 0o777).toBe(0o600);
@@ -782,7 +793,12 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
                 env: { PATH: process.env.PATH }
             });
             expect(consume.status).toBe(0);
-            expect(JSON.parse(consume.stdout)).toEqual(['controller-04', 'controller-05', 'test-password', 'test-agent-token']);
+            expect(JSON.parse(consume.stdout)).toEqual([
+                toRoomUsername('controller-04', 'test-room'),
+                toRoomUsername('controller-05', 'test-room'),
+                'test-password',
+                'test-agent-token'
+            ]);
             expect(await readFile(credentialFile, 'utf8')).not.toContain('test-admin-token');
             expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
             expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_PASSWORD');
@@ -801,12 +817,11 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
 
         expect(register.if).toBe('inputs.register_before_login');
         expect(stepNames.indexOf('Register shard agent users')).toBeLessThan(stepNames.indexOf('Run headless worker shard'));
-        expect(register.env).toMatchObject({
+        // The step registers the users the mint step named; it has no room or agent range to name them again.
+        expect(register.env).toEqual({
             RALLAR_API_BASE_URL: '${{ inputs.api_base_url }}',
             RALLAR_BLACK_BOX_RUN_ID: '${{ needs.plan.outputs.run_id }}',
-            RALLAR_BLACK_BOX_AGENT_PREFIX: '${{ inputs.agent_prefix }}',
             RALLAR_BLACK_BOX_AGENT_COUNT: '${{ matrix.shard.agent_count }}',
-            RALLAR_BLACK_BOX_AGENT_START_INDEX: '${{ matrix.shard.agent_start_index }}',
             RALLAR_BLACK_BOX_PASSWORD: '${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}'
         });
         expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_REGISTER');
@@ -830,8 +845,21 @@ esac
 `
             );
             await chmod(path.join(directory, 'curl'), 0o700);
-            const runRegistration = (agentCount: string, startIndex = '4') =>
-                spawnSync('bash', ['-c', required(register.run, 'register command')], {
+            // Names no rule derives: the step can only have read them from the minted env file.
+            const writeMintedUsers = async (agentCount: string, startIndex: string): Promise<void> => {
+                const lines = Array.from({ length: Number(agentCount) }, (_, offset) => {
+                    const ordinal = String(Number(startIndex) + offset).padStart(2, '0');
+                    return [
+                        `RALLAR_BLACK_BOX_AGENT_${offset + 1}_CONTROL_TOKEN=test-agent-token`,
+                        `RALLAR_BLACK_BOX_AGENT_${offset + 1}_USERNAME=controller-${ordinal}-minted`,
+                        `RALLAR_BLACK_BOX_AGENT_${offset + 1}_PASSWORD=test-password`
+                    ];
+                });
+                await writeFile(path.join(directory, 'rallar-github-headless-token.env'), [...lines.flat(), ''].join('\n'), { mode: 0o600 });
+            };
+            const runRegistration = async (agentCount: string, startIndex = '4') => {
+                await writeMintedUsers(agentCount, startIndex);
+                return spawnSync('bash', ['-c', required(register.run, 'register command')], {
                     cwd: repoRoot,
                     encoding: 'utf8',
                     env: {
@@ -841,27 +869,30 @@ esac
                         CURL_LOG: path.join(directory, 'curl.log'),
                         RALLAR_API_BASE_URL: 'https://api.example.test/',
                         RALLAR_BLACK_BOX_RUN_ID: 'gh-free-7.1',
-                        RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
                         RALLAR_BLACK_BOX_AGENT_COUNT: agentCount,
-                        RALLAR_BLACK_BOX_AGENT_START_INDEX: startIndex,
                         RALLAR_BLACK_BOX_PASSWORD: 'test-password'
                     }
                 });
+            };
 
-            const registered = runRegistration('2');
+            const registered = await runRegistration('2');
             expect(registered.status).toBe(0);
             expect((await readFile(path.join(directory, 'curl.log'), 'utf8')).trim().split('\n')).toEqual([
-                'https://api.example.test/api/auth/register/requests/register-controller-04-gh-free-7-1 ' +
-                '{"username":"controller-04","password":"test-password"}',
-                'https://api.example.test/api/auth/register/requests/register-controller-05-gh-free-7-1 ' +
-                '{"username":"controller-05","password":"test-password"}'
+                'https://api.example.test/api/auth/register/requests/register-controller-04-minted-gh-free-7-1 ' +
+                '{"username":"controller-04-minted","password":"test-password"}',
+                'https://api.example.test/api/auth/register/requests/register-controller-05-minted-gh-free-7-1 ' +
+                '{"username":"controller-05-minted","password":"test-password"}'
             ]);
             // A registration response can carry a session, so none is left behind on the runner.
             expect((await readdir(directory)).filter((name) => name.startsWith('rallar-register-'))).toEqual([]);
 
-            const staticUserConflict = createApiMutationFailure({ code: 'auth-user-exists', status: 409, message: 'Auth user already exists: controller-05' });
+            const staticUserConflict = createApiMutationFailure({
+                code: 'auth-user-exists',
+                status: 409,
+                message: 'Auth user already exists: controller-05-minted'
+            });
             await writeFile(path.join(directory, 'existing-user.json'), JSON.stringify(staticUserConflict));
-            expect(runRegistration('1', '5').status).toBe(0);
+            expect((await runRegistration('1', '5')).status).toBe(0);
 
             const otherConflict = createApiMutationFailure({ code: 'auth-mutation-rejected', status: 409, message: 'Auth client identity already exists' });
             for (
@@ -877,23 +908,23 @@ esac
                 ]
             ) {
                 await writeFile(path.join(directory, 'existing-user.json'), body);
-                const invalid = runRegistration('1', '5');
+                const invalid = await runRegistration('1', '5');
                 expect(invalid.status).toBe(1);
-                expect(invalid.stderr).toContain('Registering controller-05 returned HTTP 409.');
+                expect(invalid.stderr).toContain('Registering controller-05-minted returned HTTP 409.');
                 expect(`${invalid.stdout}${invalid.stderr}`).not.toContain('test-password');
                 expect((await readdir(directory)).filter((name) => name.startsWith('rallar-register-'))).toEqual([]);
             }
 
             await writeFile(path.join(directory, 'existing-user.json'), existingUsernameResponse);
 
-            const refused = runRegistration('3');
+            const refused = await runRegistration('3');
             expect(refused.status).toBe(1);
-            expect(refused.stderr).toContain('Registering controller-06 returned HTTP 500.');
+            expect(refused.stderr).toContain('Registering controller-06-minted returned HTTP 500.');
             expect(`${refused.stdout}${refused.stderr}`).not.toContain('test-password');
 
-            const unreachable = runRegistration('1', '7');
+            const unreachable = await runRegistration('1', '7');
             expect(unreachable.status).toBe(1);
-            expect(unreachable.stderr).toContain('::error::Registering controller-07 failed before an HTTP response.');
+            expect(unreachable.stderr).toContain('::error::Registering controller-07-minted failed before an HTTP response.');
         }
         finally {
             await rm(directory, { force: true, recursive: true });
