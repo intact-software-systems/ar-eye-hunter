@@ -54,17 +54,24 @@ export function computeGroupDeadlineChange(
     return { ...next, metadata: { ...next.metadata, [ROOM_DEADLINES_METADATA_KEY]: revised } };
 }
 
+interface DirectorDeadlineExtensionInput {
+    readonly update: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>['input'];
+    readonly snapshot: GroupSnapshot;
+    readonly expectedEpoch: number;
+    readonly nowEpochMs: number;
+}
+
 /** A director intent never inherits the session's other room privileges. */
-export function refuseDirectorDeadlineExtension(
-    input: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>['input'],
-    snapshot: GroupSnapshot,
-    expectedEpoch: number,
-    nowEpochMs: number
-): DeadlineRefusal | null {
+export function refuseDirectorDeadlineExtension({
+    update,
+    snapshot,
+    expectedEpoch,
+    nowEpochMs
+}: DirectorDeadlineExtensionInput): DeadlineRefusal | null {
     const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
     if (
-        appointment?.epoch !== expectedEpoch || appointment.sessionId !== input.actorSessionId ||
-        appointment.principalId !== input.actorPrincipalId ||
+        appointment?.epoch !== expectedEpoch || appointment.sessionId !== update.actorSessionId ||
+        appointment.principalId !== update.actorPrincipalId ||
         !isRallarGroupDirectorSessionActive(snapshot, appointment, nowEpochMs)
     ) {
         return {
@@ -72,8 +79,8 @@ export function refuseDirectorDeadlineExtension(
             message: 'The requesting session no longer holds this room director appointment.'
         };
     }
-    const { actorPrincipalId, actorSessionId, reason, roomDeadline, ...groupSettings } = input;
-    if (Object.values(groupSettings).some((value) => value !== null && value !== undefined)) {
+    const allowed = ['actorPrincipalId', 'actorSessionId', 'reason', 'roomDeadline'];
+    if (Object.entries(update).some(([key, value]) => value != null && !allowed.includes(key))) {
         return {
             rejectionCode: 'group-mutation-rejected',
             message: 'Director deadline extensions cannot change other room settings.'

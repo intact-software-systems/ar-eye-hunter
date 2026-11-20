@@ -67,7 +67,9 @@ export function computeUpdate(
     const directorEpoch = command.input.roomDeadline?.expectedDirectorEpoch;
     if (directorEpoch !== undefined) {
         const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
-        const refusal = refuseDirectorDeadlineExtension(command.input, snapshot, directorEpoch, facts.attemptAtEpochMs);
+        const refusal = refuseDirectorDeadlineExtension({
+            update: command.input, snapshot, expectedEpoch: directorEpoch, nowEpochMs: facts.attemptAtEpochMs
+        });
         if (refusal) {
             return rejected({ command, read, facts, ...refusal });
         }

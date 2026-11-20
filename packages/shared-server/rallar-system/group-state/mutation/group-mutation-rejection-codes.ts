@@ -49,7 +49,7 @@ export class GroupConnectDeniedError extends Error {
     }
 }
 
-export class RoomDirectorChangedError extends Error {
+export class GroupDirectorChangedError extends Error {
     readonly status = 409;
     readonly code = 'room-director-changed';
 }
