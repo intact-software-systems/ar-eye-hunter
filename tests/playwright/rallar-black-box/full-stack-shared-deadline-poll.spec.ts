@@ -160,7 +160,10 @@ async function mountPoll(member: Page, grant: string, roomRef: GroupRef, endpoin
         );
         window.disposeMountedPoll?.();
         document.querySelector('main')!.replaceChildren();
-        window.disposeMountedPoll = await showPoll({
+        const selection = new AbortController();
+        window.disposeMountedPoll = () => selection.abort();
+        await showPoll({
+            signal: selection.signal,
             root: document.querySelector('main')!,
             roomRef,
             endpoint,

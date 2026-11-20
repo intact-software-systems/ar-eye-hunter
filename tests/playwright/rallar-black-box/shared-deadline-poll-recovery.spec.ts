@@ -96,3 +96,22 @@ test('disposing a poll during reconnect preserves the next room selection', asyn
     });
     expect(selected).toBe('next-room');
 });
+
+test('leaving during initial connection preserves the newly selected room and its controls', async ({ page }) => {
+    const result = await page.evaluate(async ({ viewUrl, roomRef }) => {
+        window.dispatchEvent(new Event('leave-poll'));
+        const { showPoll } = await import(viewUrl);
+        const selection = new AbortController();
+        document.body.dataset.holdReconnect = 'true';
+        const previous = showPoll({
+            root: document.body, roomRef, endpoint: '/poll-snapshot', participantGrant: 'test',
+            signal: selection.signal
+        }).then(() => 'mounted', (error: DOMException) => error.name);
+        selection.abort();
+        document.body.dataset.selected = 'next-room';
+        document.body.textContent = 'Next room';
+        window.dispatchEvent(new Event('release-connect'));
+        return { outcome: await previous, room: document.body.dataset.selected, view: document.body.textContent };
+    }, { viewUrl, roomRef });
+    expect(result).toEqual({ outcome: 'AbortError', room: 'next-room', view: 'Next room' });
+});

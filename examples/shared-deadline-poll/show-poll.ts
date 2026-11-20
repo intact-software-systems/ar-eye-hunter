@@ -11,16 +11,22 @@ export interface ShowPollInput {
     readonly roomRef: GroupRef;
     readonly endpoint: string;
     readonly participantGrant: string;
+    readonly signal?: AbortSignal;
     readonly authority?: RallarDeadlineAuthority;
 }
 
 /** Mount after login. The application supplies the URL and a participant grant for this poll alone. */
 export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const { root, roomRef } = input;
-    await rallar.connect();
-    await rallar.rooms.enter(roomRef);
     const lifetime = new AbortController();
-    let record = await requestPollSnapshot(input, lifetime.signal);
+    const signal = input.signal ? AbortSignal.any([input.signal, lifetime.signal]) : lifetime.signal;
+    signal.throwIfAborted();
+    await rallar.connect({ signal });
+    signal.throwIfAborted();
+    await rallar.rooms.enter(roomRef, { signal });
+    signal.throwIfAborted();
+    let record = await requestPollSnapshot(input, signal);
+    signal.throwIfAborted();
     const view = new PollView(root);
     const { yes, no, extend } = view;
     let submitting = false;
@@ -37,15 +43,15 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         const current = generation;
         try {
             if (restored !== current) {
-                const options = { signal: lifetime.signal };
+                const options = { signal };
                 await rallar.connect(options);
-                if (current !== generation || lifetime.signal.aborted) {
+                if (current !== generation || signal.aborted) {
                     return;
                 }
                 await rallar.rooms.enter(roomRef, options);
             }
-            const snapshot = await requestPollSnapshot(input, lifetime.signal);
-            if (current !== generation || lifetime.signal.aborted) {
+            const snapshot = await requestPollSnapshot(input, signal);
+            if (current !== generation || signal.aborted) {
                 return;
             }
             if ((snapshot.revision ?? 0) < (record.revision ?? 0)) {
@@ -92,11 +98,11 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, lifetime.signal, choice);
+            record = await requestPollSnapshot(input, signal, choice);
             unacknowledged = undefined;
         }
         catch {
-            if (lifetime.signal.aborted) {
+            if (signal.aborted) {
                 return;
             }
             unacknowledged = choice;
@@ -105,7 +111,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            if (!lifetime.signal.aborted) {
+            if (!signal.aborted) {
                 render();
             }
         }
@@ -120,7 +126,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         retryAt = 0;
         render();
     }
-    const listeners = { signal: lifetime.signal };
+    const listeners = { signal };
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
             suspend();
@@ -141,7 +147,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, lifetime.signal, { expectedRevision: 0 });
+            record = await requestPollSnapshot(input, signal, { expectedRevision: 0 });
         }
         catch {
             nextRevisionRead = 0;
@@ -149,7 +155,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            if (!lifetime.signal.aborted) {
+            if (!signal.aborted) {
                 render();
             }
         }
@@ -158,11 +164,11 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     no.onclick = () => void submit('no');
     render();
     const timer = window.setInterval(render, 200);
-    return () => {
+    signal.addEventListener('abort', () => {
         window.clearInterval(timer);
         extend.onclick = null;
         yes.onclick = null;
         no.onclick = null;
-        lifetime.abort();
-    };
+    }, { once: true });
+    return () => lifetime.abort();
 }

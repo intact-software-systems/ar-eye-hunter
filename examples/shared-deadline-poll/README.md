@@ -31,7 +31,7 @@ that process ends the poll.
 [showPoll](./show-poll.ts) connects the authenticated Rallar client, enters the
 scoped room, fetches its poll record and renders the deadline using
 `rallar.compareDeadline`. Call it again on page load. Each vote response refreshes the displayed tally. At closure a mounted spectator reads again until the authority confirms the final tally, retrying a failed read after two seconds. The browser journey interrupts this read once. A snapshot already marked closed can display results immediately. The cleanup function cancels pending requests and releases the display timer
-when the host unmounts the view.
+when the host unmounts the view. For SPA navigation, create an AbortController before calling showPoll and pass its signal. Abort the previous selection when switching rooms, even if its first load is still pending. A cancelled initial load rejects with the signal’s abort reason.
 
 The [Playwright journey](../../tests/playwright/rallar-black-box/full-stack-shared-deadline-poll.spec.ts)
 supplies a loopback HTTP endpoint and a separate poll-specific grant for each
