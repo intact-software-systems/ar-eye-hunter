@@ -61,7 +61,7 @@ export interface WsReceiptedSendLink {
     /** Admits at the client and writes its frame, to ingress or to the hold; runs no server work. */
     send(message: ALMessage): Promise<ALMessage>;
     holdFrames(): void;
-    /** Hands the held frames to ingress side by side, as two frames of one socket; the acceptance of each, in send order. */
+    /** Hands the held frames to ingress side by side, as two frames of one socket, and ends the hold; the acceptance of each, in send order. */
     writeHeldFramesSideBySide(): Promise<readonly string[]>;
     /** Hands one more copy of a written frame to ingress; its acceptance kind, or `rejected`. */
     writeCopy(msg: ALMessage): Promise<string>;

@@ -21,16 +21,25 @@ describe('a WS client\'s receipted room send the server retains behind its room 
         vi.restoreAllMocks();
     });
 
-    it('a server in step answers admitted, and the one frame is delivered', async () => {
+    it('a server in step answers admitted, the one frame is delivered, and the send nobody acknowledges ends at the server\'s timed-out', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const sent = await link.send(toRoomNotice());
         await link.advance(0);
         await advanceThroughDeadline(link);
 
-        expect(link.serverControls.map((answer) => answer.control)).toContain('receipt:admitted');
+        expect(link.serverControls).toEqual([
+            { msgId: sent.id.msgId, control: 'receipt:admitted', admission: 'committed' },
+            { msgId: sent.id.msgId, control: 'receipt:timed-out', admission: 'committed' }
+        ]);
         expect(link.written).toEqual([sent.id.msgId]);
         expect(link.deliveredToPeer(sent)).toBe(1);
-        expect(toTerminalKinds(link)).toEqual([]);
+        expect(link.settlements.filter((fact) => fact.kind === 'acknowledgement').at(-1)).toMatchObject({
+            complete: false,
+            expectedRecipientPeerIds: ['peer-b'],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: ['peer-b']
+        });
+        expect((await link.readSenderRows(sent)).ended).toBe(true);
     });
 
     it.each([1_000, 9_000])(

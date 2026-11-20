@@ -178,6 +178,26 @@ describe('a server receipt and the end of its message', () => {
         expect((await fixture.stores.ws.admissionStore.readStoredMessage(send!.id.msgId))?.ended).toBe(false);
     });
 
+    it('a timed-out receipt that confirms nobody after the admitted one ends the message as it stands', async () => {
+        const fixture = createReceiptAdmissionFixture();
+        const [send] = await sendRoomBroadcasts(fixture, ['first']);
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(send!, 'admitted', ['a', 'b']))).toEqual({ kind: 'committed' });
+
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(send!, 'timed-out', ['a', 'b']))).toEqual({ kind: 'committed' });
+
+        expect(fixture.commits.at(-1)).toEqual({
+            kinds: ['set-pending-ack', 'end-sent-message', 'delete-repair-attempt'],
+            status: 'committed'
+        });
+        expect((await fixture.stores.ws.admissionStore.readStoredMessage(send!.id.msgId))?.ended).toBe(true);
+        expect(
+            await fixture.ws.acceptReceipt(createServerReceipt(send!, 'timed-out', ['a', 'b'], {
+                controlMsgId: 'receipt-timed-out-again',
+                confirmedRecipientPeerIds: []
+            }))
+        ).toEqual({ kind: 'rejected', reason: 'AL receipt names a message that has ended' });
+    });
+
     it.each(['admitted', 'complete', 'timed-out'] as const)('a %s receipt after a terminal one is refused: the message has ended', async (phase) => {
         const fixture = createReceiptAdmissionFixture();
         const [send] = await sendRoomBroadcasts(fixture, ['first']);
