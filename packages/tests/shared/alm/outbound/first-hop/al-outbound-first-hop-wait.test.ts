@@ -320,6 +320,56 @@ describe('a WS client\'s receipted send that waits on its first hop', () => {
     });
 });
 
+describe('a WS client\'s receipted unicast when the server answers not-yet-in-sync', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(START_MS);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('is a room unicast, so the answer ends its wait as a room broadcast\'s does: one frame, no retry row, nothing stated, the row not ended', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const only = await sendOne(fixture, 'room unicast', 'receiver');
+
+        expect(await fixture.ws.acceptControlMessage(toServerNotYetInSync(only), 'trusted-server')).toEqual({ kind: 'committed' });
+
+        expect(await readFirstHopWait(fixture, only)).toBeUndefined();
+        expect(
+            await readWorkStatus(
+                fixture.stores,
+                toALOutboundFirstHopTimeoutEffectId({ msgId: only.id.msgId, attempts: 0, deadlineAtMs: START_MS + 2_000 })
+            )
+        ).toBe(EntityStatus.COMPLETED);
+        expect(await readWorkReadyAt(fixture)).toBeUndefined();
+        for (let elapsedMs = 0; elapsedMs <= 30_000; elapsedMs += 1_000) {
+            await advance(fixture, 1_000);
+        }
+        expect(fixture.written).toHaveLength(1);
+        expect(fixture.settlements.filter((fact) => fact.kind === 'not-yet-in-sync-exhausted')).toEqual([]);
+        expect(toTerminalKinds(fixture)).toEqual([]);
+        expect(await readReceiptRow(fixture, only)).toBeUndefined();
+        expect((await fixture.stores.admissionStore.readStoredMessage(only.id.msgId))?.ended).toBe(false);
+    });
+
+    it('has no form outside a room: a receiver unicast that names no room is refused at admission', async () => {
+        const fixture = createFirstHopFixture('memory');
+        const result = await fixture.ws.enqueueIfAbsent(
+            newALUnicastMessage(SESSION_ID, newALRoute('command', 'context', 'to-peer-b'), 'peer-b', 'command.v1', {}, {
+                ttlMs: 30_000,
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            })
+        );
+
+        expect(result.verdict).toMatchObject({ kind: 'refused' });
+        expect(fixture.written).toEqual([]);
+    });
+});
+
 describe('a WS client\'s first-hop wait once its message has ended', () => {
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['Date'] });
@@ -628,6 +678,20 @@ function toServerRefusal(refused: ALMessage, reason: 'unauthorized' | 'expired' 
             fromPeerId: SERVER_PEER_ID,
             toPeerId: SESSION_ID,
             reason
+        })
+    );
+}
+
+/** The WS server's `not-yet-in-sync` for a send it retains behind its room view. */
+function toServerNotYetInSync(retained: ALMessage): ALMessage {
+    return newALNackControlMessage(
+        { v: 4, msgId: `not-yet-in-sync-${retained.id.msgId}`, ts: 1, senderId: SERVER_PEER_ID, traceId: 'trace-first-hop-wait' },
+        toTestALNackPayload({
+            msgId: retained.id.msgId,
+            fromPeerId: SERVER_PEER_ID,
+            toPeerId: SESSION_ID,
+            reason: 'not-yet-in-sync',
+            serverSnapshotVersion: 1
         })
     );
 }
