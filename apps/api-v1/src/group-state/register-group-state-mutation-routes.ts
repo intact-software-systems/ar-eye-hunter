@@ -67,9 +67,7 @@ function registerUpdateGroupRoute(
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
                 const request = await readGroupStateRouteRequest<UpdateGroupRequest>(context);
-                if (request.roomDeadline?.expectedDirectorEpoch === undefined) {
-                    await authorization.assertCanUpdateGroup(authSession.clientId, { ...scope, groupId });
-                }
+                await authorization.assertCanUpdateGroup(authSession.clientId, { ...scope, groupId }, request);
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
