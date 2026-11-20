@@ -200,7 +200,13 @@ or adopts a room. Scope, cadence, and per-request bounds are explicit applicatio
 
 Read the closing instant from the poll's current room record, including after
 rejoin. Each render can compare that same instant with the connected client's
-current server-time estimate.
+current server-time estimate. Each comparison is local. On a healthy connection the SDK
+reads server time once over HTTP during startup, then measures a round trip on the
+existing WebSocket about every 20 seconds. It accounts for elapsed time, drift and
+round-trip uncertainty between observations. A slow or missed reply can leave the
+previous sample usable until its 30-second validity budget expires. When that
+budget expires, deadline comparisons return `unavailable`. Presence and message
+expiry use the same clock bounds.
 
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';

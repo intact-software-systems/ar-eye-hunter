@@ -95,6 +95,7 @@ async function createWsConnectFixture(
     const upgradeEvents: WSEvents<ConnectionContext.Socket>[] = [];
     const app = createTracedApiTestApp();
     registerWsRoutes(app, {
+        serverPeerId: 'test-server',
         socketServer,
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) => (await sessions.findWebSocketTicketByDigestEntry(ticketDigest))?.value,

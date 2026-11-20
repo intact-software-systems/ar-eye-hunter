@@ -22,6 +22,7 @@ export namespace BrowserServerClockSession {
         readonly timers: Timers;
         readonly page: BrowserPageLifecycleFlush.Page;
         readonly refreshIntervalMs: number;
+        readonly renewClock: () => ReturnType<BrowserServerClock['refresh']>;
     }
 }
 
@@ -110,6 +111,10 @@ export class BrowserServerClockSession {
             timers: this.#input.timers,
             intervalMs: this.#input.refreshIntervalMs,
             firstRun: 'after-interval',
+            retryBackoff: {
+                baseMs: Math.min(2_000, this.#input.refreshIntervalMs),
+                maxMs: this.#input.refreshIntervalMs
+            },
             run: () => this.#refresh()
         });
         return acquired;
@@ -134,10 +139,9 @@ export class BrowserServerClockSession {
         if (this.signal.aborted) {
             return;
         }
-        await this.#input.clock.refresh();
-        const available = this.readWindow();
-        if (available.left !== undefined) {
-            await this.close(available.left.cause);
+        const result = await this.#input.renewClock();
+        if (this.readWindow().right !== undefined && result.left !== undefined) {
+            throw result.left.cause;
         }
     }
 }

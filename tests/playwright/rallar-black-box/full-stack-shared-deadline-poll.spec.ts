@@ -26,22 +26,23 @@ const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadlin
 test('an idle connection renews bounded server time over its existing socket', async ({ page }) => {
     test.skip(!config.enabled, config.skipReason);
     test.setTimeout(120_000);
-    const httpSamples: number[] = [];
-    const socketSamples: number[] = [];
+    let httpSamples = 0;
+    let socketSamples = 0;
     page.on('request', request => {
         if (new URL(request.url()).pathname === '/api/time') {
-            httpSamples.push(Date.now());
+            httpSamples++;
         }
     });
     page.on('websocket', ws => ws.on('framesent', ({ payload }) => {
         if (String(payload).startsWith('rallar.clock.request.v1 ')) {
-            socketSamples.push(Date.now());
+            socketSamples++;
         }
     }));
     await prepareMember(page, {
         applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: 'clock-measurement'
     }, true);
-    const start = Date.now();
+    httpSamples = 0;
+    socketSamples = 0;
     const observations = await page.evaluate(async url => {
         const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
         const observations = [];
@@ -52,8 +53,8 @@ test('an idle connection renews bounded server time over its existing socket', a
         return observations;
     }, rallarUrl);
     const idle = {
-        http: httpSamples.filter(time => time >= start).length,
-        websocket: socketSamples.filter(time => time >= start).length
+        http: httpSamples,
+        websocket: socketSamples
     };
     console.log('60-second idle clock samples', idle);
     expect(observations).toEqual(Array(6).fill('before'));

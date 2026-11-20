@@ -1,4 +1,5 @@
-import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { readServerClockEpoch } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RemoteClockObservation } from '@shared/resilience/remote-clock.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -40,18 +41,15 @@ export async function readServerClockSample(
         }
         const value: ApiJsonValue = await response.json();
         input.signal?.throwIfAborted();
-        if (
-            !isApiJsonObject(value) || value.serverPeerId !== input.expectedServerPeerId ||
-            typeof value.serverNowEpochMs !== 'number' ||
-            !Number.isSafeInteger(value.serverNowEpochMs) || value.serverNowEpochMs < 0
-        ) {
+        const remoteEpochMs = readServerClockEpoch(value, input.expectedServerPeerId);
+        if (remoteEpochMs === undefined) {
             return Either.ofLeft({
                 code: 'invalid-response',
                 cause: new Error('Server clock response has an invalid time or server identity.')
             });
         }
         return Either.ofRight({
-            remoteEpochMs: value.serverNowEpochMs,
+            remoteEpochMs,
             requestStartedAtMonotonicMs,
             responseReceivedAtMonotonicMs: dependencies.nowMonotonicMs()
         });

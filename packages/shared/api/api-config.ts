@@ -1,5 +1,5 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import type { ApiJsonObject } from './api-json-value.ts';
+import { isApiJsonObject, type ApiJsonValue, type ApiJsonObject } from './api-json-value.ts';
 
 /** The browser keeps a dropped edge open for its 15 s overlay transition grace, so a longer overlap could never take effect. */
 export const MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
@@ -22,6 +22,15 @@ export interface ApiConfigResponse extends ApiConfig {
 export interface ServerTimeResponse {
     readonly serverPeerId: string;
     readonly serverNowEpochMs: number;
+}
+
+export function readServerClockEpoch(value: ApiJsonValue, expectedPeerId: string): number | undefined {
+    if (!isApiJsonObject(value) || value.serverPeerId !== expectedPeerId ||
+        typeof value.serverNowEpochMs !== 'number' || !Number.isSafeInteger(value.serverNowEpochMs) ||
+        value.serverNowEpochMs < 0) {
+        return undefined;
+    }
+    return value.serverNowEpochMs;
 }
 
 export interface AuthSession {

@@ -99,6 +99,7 @@ describe('the page lifecycle of a connected browser transport', () => {
             checkpoints: [],
             serverClock: await startDefaultBrowserServerClockSession({
                 baseUrl: 'https://test',
+                readSocket: () => undefined,
                 serverPeerId: 'server',
                 signal: options.signal
             })
@@ -140,6 +141,7 @@ describe('the page lifecycle of a connected browser transport', () => {
             checkpoints: [],
             serverClock: await startDefaultBrowserServerClockSession({
                 baseUrl: 'https://test',
+                readSocket: () => undefined,
                 serverPeerId: 'server',
                 signal: options.signal
             })
@@ -171,6 +173,7 @@ describe('the page lifecycle of a connected browser transport', () => {
         vi.stubGlobal('fetch', async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() }));
         const serverClock = await startDefaultBrowserServerClockSession({
             baseUrl: 'https://test',
+            readSocket: () => undefined,
             serverPeerId: 'server',
             signal: undefined
         });

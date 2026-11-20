@@ -301,13 +301,14 @@ export async function initialiseMiddleware(
     const apiBaseUrl = readApiBaseUrl();
     const publicationCrypto = await options.publicationCrypto;
     const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }, apiBaseUrl), options);
+    let transports: BrowserTransports | undefined;
     const serverClock = await startDefaultBrowserServerClockSession({
         baseUrl: apiBaseUrl,
         serverPeerId: apiConfig.serverPeerId,
+        readSocket: () => transports?.webSocketTransport.webSocketQueueBox.socket.ws,
         signal: options.signal
     });
     const runtimeStorage = new ALRuntimeStorage();
-    let transports: BrowserTransports | undefined;
     let presence: BrowserSessionPresence | undefined;
     try {
         const storageAvailability = initialiseBrowserRuntimeStores(
