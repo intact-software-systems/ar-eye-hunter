@@ -67,7 +67,6 @@ import {
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
 import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
-import { toWsQueueBoxServerReplayedAdmittedMessage } from './to-ws-queue-box-server-replayed-admitted-message.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -94,7 +93,10 @@ import {
     type WsQueueBoxServerOutboundPhase,
     type WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
-import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
+import {
+    toWsQueueBoxServerReplayedAdmittedMessage,
+    WsQueueBoxServerReceiptAggregation
+} from './ws-queue-box-server-receipt-aggregation.ts';
 import {
     recordWsQueueBoxServerReceiptObservation,
     toWsQueueBoxServerReceiptAckFacts,

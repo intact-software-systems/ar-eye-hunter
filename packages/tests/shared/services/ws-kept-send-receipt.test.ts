@@ -55,7 +55,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect((await link.readSenderRows(sent)).ended).toBe(true);
     });
 
-    it('kept behind the room view to its deadline: not-yet-in-sync and nothing after it', async () => {
+    it('characterization: kept behind the room view to its deadline: not-yet-in-sync and nothing after it', async () => {
         const link = await createWsReceiptedSendLink('behind');
         const sent = await link.send(toRoomNotice());
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
@@ -117,7 +117,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.deliveredToPeer(sent)).toBe(1);
     });
 
-    it('a copy admitted after the view caught up and before the replay ran: one admitted, and the replay adds none', async () => {
+    it('characterization: a copy admitted after the view caught up and before the replay ran: one admitted, and the replay adds none', async () => {
         const link = await createWsReceiptedSendLink('behind');
         const sent = await link.send(toRoomNotice());
         await link.advance(0);
