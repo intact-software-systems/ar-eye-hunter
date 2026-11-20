@@ -1835,13 +1835,13 @@ read as noise in all five comparisons (37 780 to 39 637 ms over the twenty
 runs, a spread of 4.9 %). The band was not widened and no figure was dropped.
 The median command time is still not a local regression gate. The maintainer
 ruled (2026-11-18) that the baseline alternates its runs between the two sides,
-with no quiet-machine requirement and no other figure, and the comparison
-enforces it (D695): it reads the instant each run was taken from
-`createdAtEpochMs` of the run's `observation/distributed-run.json` and refuses
-two sides whose runs, in that order, are not baseline, candidate, baseline, …,
-and two runs taken at one instant. No comparison of one commit with itself has
-been taken under the enforced order, so whether alternating brings the median
-inside the band is not measured (backlog).
+with no quiet-machine requirement and no other figure, and chose (2026-11-20)
+that the comparison enforces it (D695): it reads the instant each run was taken
+from `createdAtEpochMs` of the run's `observation/distributed-run.json` and
+refuses two sides whose runs, in that order, are not baseline, candidate,
+baseline, …, and two runs taken at one instant. No comparison of one commit
+with itself has been taken under the enforced order, so whether alternating
+brings the median inside the band is not measured (backlog).
 
 The workload varies publication rate above/below cadence, N, drain
 message/byte budgets, payload size, key/group/consumer count, subscription and

@@ -75,7 +75,7 @@ describe('decodeLocalBaselineRun', () => {
     });
 
     it('reads the instant the run was taken from the distributed run\'s createdAtEpochMs', () => {
-        expect(decodeLocalBaselineRun(createRecorderTexts()).right?.takenAtEpochMs).toBe(1_763_600_000_123);
+        expect(decodeLocalBaselineRun(createRecorderTexts()).right?.takenAtEpochMs).toBe(CREATED_AT_EPOCH_MS);
     });
 
     it('names the directory and the file of every part it cannot decode', () => {
@@ -205,7 +205,7 @@ describe('toLocalBaselineReport', () => {
         });
     });
 
-    it('exits 1 on runs not taken one at a time, alternately and baseline first, naming the sides or the order taken', () => {
+    it('exits 1 on runs of one instant, or not taken alternately and baseline first, naming the sides or the order taken', () => {
         expect(toLocalBaselineReport(Either.ofLeft({ kind: 'unordered-runs', keys: ['baseline', 'candidate'] })))
             .toEqual({
                 lines: [

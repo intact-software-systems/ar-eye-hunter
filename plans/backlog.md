@@ -709,9 +709,9 @@ and it has no status list.
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
   three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
   noise in all five. Ruled (2026-11-18): the runs alternate between the two sides, with no quiet-machine requirement
-  and no other figure, and the comparison refuses sides that did not alternate (D695). What remains: no comparison of
-  one commit with itself has been taken under the enforced order, so whether alternating brings the median inside the
-  band is not measured. The band is not widened.
+  and no other figure; as the maintainer chose on 2026-11-20, the comparison refuses sides that did not alternate,
+  baseline first (D695). What remains: no comparison of one commit with itself has been taken under the enforced
+  order, so whether alternating brings the median inside the band is not measured. The band is not widened.
 - The platform fault steps (D666) reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in

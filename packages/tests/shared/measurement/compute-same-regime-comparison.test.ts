@@ -230,8 +230,8 @@ function compareTimed(
 describe('computeSameRegimeComparison over the instants the runs were taken', () => {
     it('compares sides taken alternately whatever order each lists its runs in, and refuses them taken as two blocks', () => {
         const shuffled = compareTimed(
-            [[8, 18], [0, 10], [4, 14], [2, 12], [6, 16]].map(([at, p50]) => createRunAt(at, p50)),
-            [[5, 25], [1, 21], [9, 29], [3, 23], [7, 27]].map(([at, p50]) => createRunAt(at, p50)),
+            [[24, 18], [0, 10], [12, 14], [6, 12], [18, 16]].map(([at, p50]) => createRunAt(at, p50)),
+            [[15, 25], [3, 21], [27, 29], [9, 23], [21, 27]].map(([at, p50]) => createRunAt(at, p50)),
             5
         );
         const blocks = compareTimed(
@@ -294,15 +294,16 @@ describe('computeSameRegimeComparison over the instants the runs were taken', ()
     it('refuses two runs taken at one instant, or a run of no finite instant, naming each side that holds one', () => {
         const acrossSides = compareTimed([createRunAt(0, 1), createRunAt(2, 1)], [createRunAt(1, 1), createRunAt(2, 1)], 2);
         const withinBaseline = compareTimed([createRunAt(0, 1), createRunAt(0, 1)], [createRunAt(1, 1), createRunAt(3, 1)], 2);
-        const notFinite = compareTimed(
-            [createRunAt(0, 1), createRunAt(2, 1)],
-            [createRunAt(1, 1), createRunAt(Number.NaN, 1)],
-            2
+        const notFinite = [Number.NaN, Number.POSITIVE_INFINITY].map((instant) =>
+            compareTimed([createRunAt(0, 1), createRunAt(2, 1)], [createRunAt(1, 1), createRunAt(instant, 1)], 2).left
         );
 
         expect(acrossSides.left).toEqual({ kind: 'unordered-runs', keys: ['baseline', 'candidate'] });
         expect(withinBaseline.left).toEqual({ kind: 'unordered-runs', keys: ['baseline'] });
-        expect(notFinite.left).toEqual({ kind: 'unordered-runs', keys: ['candidate'] });
+        expect(notFinite).toEqual([
+            { kind: 'unordered-runs', keys: ['candidate'] },
+            { kind: 'unordered-runs', keys: ['candidate'] }
+        ]);
     });
 
     it('reports too few runs before the order of the runs, and the order before a differing regime', () => {
