@@ -222,7 +222,8 @@ function toRoomViewAuthorization(view: WsReceiptedSendRoomView): WsServerInbound
     return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID, LINK_PEER_ID], snapshotVersion: 2 } };
 }
 
-function toControlLabel(frame: ALMessage): Omit<WsReceiptedSendServerControl, 'admission'> {
+/** One server-sent frame as `nack:<reason>` or `receipt:<phase>`, under the msgId it answers; any other frame by its typeId. */
+export function toControlLabel(frame: ALMessage): Omit<WsReceiptedSendServerControl, 'admission'> {
     if (frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID) {
         const receipt = decodeALReceiptPayload(JSON.parse(frame.payload.resource));
         return { msgId: receipt.msgId, control: `receipt:${receipt.phase}` };

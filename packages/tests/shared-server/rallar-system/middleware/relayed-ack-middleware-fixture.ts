@@ -8,8 +8,8 @@ import type {
 } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RelayedAckNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { isRoomScopedALMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -22,6 +22,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { toControlLabel } from '../../../shared/services/ws-receipted-send-link-fixture.ts';
 import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
@@ -202,18 +203,9 @@ export function readReceiptPhases(socket: TestWebSocket, msgId: string): readonl
 /** The control frames a socket was sent for `msgId`, as `nack:<reason>` or `receipt:<phase>`. */
 function readSentControls(socket: TestWebSocket, msgId: string): readonly string[] {
     return socket.sent
-        .map((frame) => decodePersistedALMessage(frame))
-        .flatMap((message) => {
-            if (message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID) {
-                const receipt = decodeALReceiptPayload(JSON.parse(message.payload.resource));
-                return receipt.msgId === msgId ? [`receipt:${receipt.phase}`] : [];
-            }
-            if (message.payload.typeId === AL_CONTROL_NACK_TYPE_ID) {
-                const nack = decodeALNackPayload(JSON.parse(message.payload.resource));
-                return nack.msgId === msgId ? [`nack:${nack.reason}`] : [];
-            }
-            return message.id.msgId === msgId ? [message.payload.typeId] : [];
-        });
+        .map((frame) => toControlLabel(decodePersistedALMessage(frame)))
+        .filter((label) => label.msgId === msgId)
+        .map(({ control }) => control);
 }
 
 function authorizeRoomAudience(runtime: RallarMiddlewareInfrastructure, input: RelayedAckMiddlewareInstanceInput): void {
