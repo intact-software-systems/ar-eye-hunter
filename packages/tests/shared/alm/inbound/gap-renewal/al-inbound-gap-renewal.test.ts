@@ -36,6 +36,10 @@ import {
 
 const START_MS = Date.UTC(2026, 10, 19, 12);
 const STORAGES: readonly InboundTestStorage[] = ['memory', 'indexeddb'];
+/** How far one step moves the fake clock while a started engine runs by itself. */
+const ENGINE_STEP_MS = 20;
+/** Turns of the event loop each step gives the store, more than one engine pass needs. */
+const STORAGE_TURNS_PER_STEP = 100;
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
 const RTC_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const CRYPTO = await createAvailablePublicationCryptoFixture();
@@ -102,22 +106,25 @@ describe('a receiver whose ordered track has a gap', () => {
 
     // Breaks when nothing wakes the lane for a timer that comes due with nothing else arriving: today the rotation's
     // per-round probe keeps the engine passing, and the due time it advertises at the end of a turn is the second path.
-    // Without both, only the engine's idle backoff reaches the row, near 3 s; the 2 s ceiling tells the two apart.
+    // Without both, only the engine's idle backoff reaches the row, near 3 s; the 2 s ceiling tells the two apart. The
+    // engine's own timers run on the fake clock, so the ceiling reads the engine's schedule, not the machine's speed.
     it.each(STORAGES)('on %s, a started engine runs the first renewal by itself, about a second after the gap', async (storage) => {
-        vi.useRealTimers();
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        vi.setSystemTime(START_MS);
         const fixture = createRenewalFixture(storage);
         fixture.queueEngine.start();
         onTestFinished(async () => {
             await fixture.queueEngine.stop();
         });
         await fixture.runtime.ready();
-        const admittedAtMs = Date.now();
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
-        await expect.poll(() => renewedRanges(fixture, 2), { timeout: 2_000, interval: 20 }).toEqual([
-            [{ from: 1, to: 1 }],
-            [{ from: 1, to: 1 }]
-        ]);
-        expect(Date.now() - admittedAtMs).toBeGreaterThanOrEqual(1_000);
+        while (renewedRanges(fixture, 2).length === 0 && Date.now() - START_MS <= 2_000) {
+            await vi.advanceTimersByTimeAsync(ENGINE_STEP_MS);
+            await yieldToStorage();
+        }
+        expect(renewedRanges(fixture, 2)).toEqual([[{ from: 1, to: 1 }], [{ from: 1, to: 1 }]]);
+        expect(Date.now() - START_MS).toBeGreaterThanOrEqual(1_000);
+        expect(Date.now() - START_MS).toBeLessThanOrEqual(2_000);
     });
 
     it('stops when the gap closes', async () => {
@@ -352,6 +359,16 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
         { recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }
     );
     return { ...frozen, ordering: { orderingKey: 'chat', seq } };
+}
+
+/**
+ * Lets the engine's pass finish its IndexedDB requests before the fake clock moves on: the store schedules each step on
+ * a real immediate, which the fake clock does not run. Counted in turns of the event loop, not in time.
+ */
+async function yieldToStorage(): Promise<void> {
+    for (let turn = 0; turn < STORAGE_TURNS_PER_STEP; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
 }
 
 async function advanceTo(fixture: InboundTestRuntime, ms: number): Promise<void> {
