@@ -37,19 +37,26 @@ rallar_headless_worker_registers_agents() {
 	[[ "${register}" == 1 || "${register}" == true || "${register}" == yes || "${register}" == on ]]
 }
 
-# A registered run gives every agent its own user, named after its agent id, so no
-# two agents share one principal's connect-time snapshot fan-out.
+# A registered run gives every agent its own user, named after its agent id and its room. Member
+# rows never expire and a connect lists every group its user is a member of, so a user shared by
+# runs in different rooms carries each earlier room into every later connect. A run in a room of its
+# own therefore signs in as users no earlier run used, and a run that reuses a room reuses its users.
 write_rallar_headless_worker_registered_agent_credentials() {
 	local destination="$1"
 	if [[ -z "${RALLAR_BLACK_BOX_PASSWORD-}" ]]; then
 		echo "RALLAR_BLACK_BOX_REGISTER needs RALLAR_BLACK_BOX_PASSWORD for the per-agent users." >&2
 		return 1
 	fi
+	if [[ -z "${RALLAR_BLACK_BOX_ROOM_ID-}" ]]; then
+		echo "RALLAR_BLACK_BOX_REGISTER needs RALLAR_BLACK_BOX_ROOM_ID to name the per-agent users." >&2
+		return 1
+	fi
 
-	local local_index agent_id
+	local room_digest local_index agent_id
+	room_digest="$(printf '%s' "${RALLAR_BLACK_BOX_ROOM_ID}" | sha256sum | cut -c1-12)" || return $?
 	for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
 		agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))")"
-		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${agent_id}" || return $?
+		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${agent_id}-${room_digest}" || return $?
 		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "${RALLAR_BLACK_BOX_PASSWORD}" || return $?
 	done
 }

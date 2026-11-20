@@ -203,10 +203,12 @@ target_agent_count=50   agents_per_job=3   max_parallel_jobs=17
 All three set `metadata.rtcTopologyEnv` (mesh min size N + 1), so
 `rollout_control_plane=true` or `rollout_control_plane=preserve-public-settings`
 is required, and `register_before_login=true`.
-Hosted Hetzner agents now also sign in as one user per agent (`controller-NN`),
-matching the all-local lifecycle and these shards, because one shared principal
-fans every connect out to a full snapshot for each of its sessions and stalls
-the 15-agent room join.
+Hosted Hetzner agents also sign in as one user per agent, as the all-local
+lifecycle and these shards do, because one shared principal fans every connect
+out to a full snapshot for each of its sessions and stalls the 15-agent room
+join. Their users are named after the agent id and the run's room
+(`controller-NN-<room digest>`); these shards' users are named after the agent
+id alone.
 The 30- and 50-agent runs occupy 16 and 18 of the account's roughly 20
 concurrent jobs, so dispatch them when no other workflow is running. TURN is
 configured on the Hetzner plane, so cross-runner RTC edges form.

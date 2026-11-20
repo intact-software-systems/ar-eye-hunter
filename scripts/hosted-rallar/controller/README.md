@@ -592,8 +592,11 @@ Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
 `register_before_login` input, when disposable test users may not yet exist.
 With
 it enabled, the worker env file gives each agent its own user named after its
-agent id (`<prefix>-NN`) with the shared `RALLAR_BLACK_BOX_PASSWORD`, and
-`RALLAR_BLACK_BOX_USERNAME` stays an operator-only credential. Leave it
+agent id and its room (`<prefix>-NN-<digest>`, the digest being the first twelve
+hex digits of the SHA-256 of `RALLAR_BLACK_BOX_ROOM_ID`) with the shared
+`RALLAR_BLACK_BOX_PASSWORD`, and `RALLAR_BLACK_BOX_USERNAME` stays an
+operator-only credential. Agents started in the same room sign in as the same
+users again; agents started in another room sign in as other users. Leave it
 disabled for pre-provisioned or persistent auth users; every agent then signs in
 with `RALLAR_BLACK_BOX_USERNAME` or its `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME`.
 When registration reports that the user already exists, the black-box auth flow
