@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import * as auth from '@shared/api/auth.ts';
 import {
     configureGroupStateSnapshotRepository,
@@ -13,8 +14,8 @@ import {
 import { createAcceptedGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import {
     ACK_UNDER_HOLD_MESSAGE_TTL_MS,
+    advanceAndRun,
     openWsHoldSender,
-    type HoldSender,
     type WsHoldSender
 } from './acknowledgement-under-hold-fixture.ts';
 
@@ -32,48 +33,52 @@ describe('a handed-over send whose WS copy is held too', () => {
         vi.unstubAllGlobals();
     });
 
-    it('sends nothing, keeps no receipt row and states no terminal fact; it reads submitted until its deadline and expired after it, and nothing leaves once the hold lifts', async () => {
+    it.each(['volatile', 'local-outbox'] as const)(
+        'on the %s lane it sends nothing, keeps no receipt row and states no terminal fact; it reads submitted until its deadline and expired after it, and nothing leaves once the hold lifts',
+        async (durability) => {
+            const sender = await openPresentWsHoldSender();
+            sender.faults.inject(sender.hold);
+            const message = toHandedOverMessage(sender.selfPeerId, durability);
+            const msgId = message.id.msgId;
+            const handle = await sender.sendHandedOver(message);
+            await sender.drain();
+            const expiresAtMs = handle.lifecycle().expiresAtMs ?? Number.NaN;
+            expect(expiresAtMs).toBeGreaterThan(Date.now());
+
+            await advanceAndRun(sender, expiresAtMs - 1 - Date.now());
+            expect(sender.readSentFrames(msgId)).toEqual([]);
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+            expect(sender.readFaultedTypeIds()).toContain('held.message');
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'submitted',
+                evidence: { attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }] }
+            });
+
+            await advanceAndRun(sender, 2);
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'expired',
+                evidence: {
+                    attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }],
+                    failure: { kind: 'expired' },
+                    reason: 'The deadline elapsed before a terminal settlement.'
+                },
+                lateSettlementCount: 0
+            });
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+
+            await advanceAndRun(sender, ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+            sender.faults.inject({ ...sender.hold, remaining: 0 });
+            await advanceAndRun(sender, 100);
+            expect(sender.readSentFrames(msgId)).toEqual([]);
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+            expect(handle.lifecycle()).toMatchObject({ state: 'expired', lateSettlementCount: 0 });
+        }
+    );
+
+    it('lets its one frame out at the lift when the hold lifts before the deadline', async () => {
         const sender = await openPresentWsHoldSender();
         sender.faults.inject(sender.hold);
-        const message = toHandedOverMessage(sender.selfPeerId);
-        const msgId = message.id.msgId;
-        const handle = await sender.sendHandedOver(message);
-        await sender.drain();
-        const expiresAtMs = handle.lifecycle().expiresAtMs!;
-
-        await advanceAndRun(sender, expiresAtMs - 1 - Date.now());
-        expect(sender.readSentFrames(msgId)).toEqual([]);
-        expect(await sender.readPendingAck(msgId)).toBeUndefined();
-        expect(sender.readFaultedTypeIds()).toContain('held.message');
-        expect(handle.lifecycle()).toMatchObject({
-            state: 'submitted',
-            evidence: { attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }] }
-        });
-
-        await advanceAndRun(sender, 2);
-        expect(handle.lifecycle()).toMatchObject({
-            state: 'expired',
-            evidence: {
-                attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }],
-                failure: { kind: 'expired' },
-                reason: 'The deadline elapsed before a terminal settlement.'
-            },
-            lateSettlementCount: 0
-        });
-        expect(await sender.readPendingAck(msgId)).toBeUndefined();
-
-        await advanceAndRun(sender, ACK_UNDER_HOLD_MESSAGE_TTL_MS);
-        sender.faults.inject({ ...sender.hold, remaining: 0 });
-        await advanceAndRun(sender, 100);
-        expect(sender.readSentFrames(msgId)).toEqual([]);
-        expect(await sender.readPendingAck(msgId)).toBeUndefined();
-        expect(handle.lifecycle()).toMatchObject({ state: 'expired', lateSettlementCount: 0 });
-    });
-
-    it('lets exactly one frame out when the hold lifts before the deadline', async () => {
-        const sender = await openPresentWsHoldSender();
-        sender.faults.inject(sender.hold);
-        const message = toHandedOverMessage(sender.selfPeerId);
+        const message = toHandedOverMessage(sender.selfPeerId, 'volatile');
         const handle = await sender.sendHandedOver(message);
         await sender.drain();
         await advanceAndRun(sender, 10_000);
@@ -111,10 +116,10 @@ async function openPresentWsHoldSender(): Promise<WsHoldSender> {
 
 /**
  * The copy the cell's RTC admission hands to WS: an ordered at-least-once `receiver` room send of the held typeId
- * whose audience that admission froze and whose sequence it fixed. It opts into `local-outbox`, since the case reads
- * its receipt row back from the carrier's durable store.
+ * whose audience that admission froze and whose sequence it fixed, on the lane `durability` names. The cell's copy is
+ * `volatile`; only on `local-outbox` does a receipt row land in the durable store the sender reads back.
  */
-function toHandedOverMessage(sessionId: string): ALMessage {
+function toHandedOverMessage(sessionId: string, durability: ALDurabilityAlgo): ALMessage {
     const message = newALMulticastMessage(
         sessionId,
         { topicId: 'held', contextId: 'group-1', resourceId: 'handed-over' },
@@ -127,17 +132,9 @@ function toHandedOverMessage(sessionId: string): ALMessage {
             seq: 2,
             orderingKey: 'held-track',
             ttlMs: ACK_UNDER_HOLD_MESSAGE_TTL_MS,
-            qos: { durability: { algo: 'local-outbox' } }
+            qos: { durability: { algo: durability } }
         }
     );
     const frozen = toALFrozenMulticastMessage(message, { recipientPeerIds: FROZEN_RECIPIENT_PEER_IDS, snapshotVersion: 1 });
     return { ...frozen, ordering: { orderingKey: 'held-track', seq: 2, priorSeqByRecipient: {} } };
-}
-
-/** Moves the sender's clock and runs the work then due, as a page's engine would. */
-async function advanceAndRun(sender: HoldSender, ms: number): Promise<void> {
-    await sender.advance(ms);
-    await sender.drain();
-    await sender.drain();
-    await sender.settle();
 }

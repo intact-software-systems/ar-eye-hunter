@@ -197,6 +197,14 @@ function toSentFramesOf(
     });
 }
 
+/** Moves the sender's clock and runs the work then due, as a page's engine would. */
+export async function advanceAndRun(sender: HoldSender, ms: number): Promise<void> {
+    await sender.advance(ms);
+    await sender.drain();
+    await sender.drain();
+    await sender.settle();
+}
+
 async function runQueuedTurns(turn: () => Promise<void>): Promise<void> {
     for (let index = 0; index < ACK_UNDER_HOLD_SETTLE_TURNS; index += 1) {
         await turn();
