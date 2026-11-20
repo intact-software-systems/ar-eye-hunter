@@ -21,6 +21,8 @@ import {
     type ALControlAdmissionRead
 } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -543,5 +545,78 @@ describe('the end of the message a control admission writes', () => {
         if (end.length > 0) {
             expect(candidate.removeRepairAttempt).toBe(true);
         }
+    });
+});
+
+describe('a not-yet-in-sync NACK while the sender waits on its first hop', () => {
+    const WAIT: ALOutboundFirstHopWaitSnapshot = {
+        msgId: 'held',
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        attempts: 0,
+        deadlineAtMs: 3_000,
+        attemptIdentity: 'initial',
+        phase: 'immediate'
+    };
+    const SENT: ALStoredOutboundMessage = {
+        msgId: 'held',
+        reference: {
+            key: { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: 'held' },
+            typeId: 'AL_OUTBOUND_MESSAGE',
+            scope: 'scope',
+            msgId: 'held',
+            senderId: 'self',
+            identity: 'held',
+            expiresAtMs: 60_000
+        },
+        supersedenceKey: undefined,
+        unicastPeerId: null,
+        orderingTrackKey: null,
+        orderingSeq: null,
+        sentPositions: null,
+        policy: { persist: true, ackTracking: null, retryTracking: null, repairTracking: null, supersedenceTracking: null },
+        creationExpiry: 'creation-expiry',
+        ended: false
+    };
+
+    function toRead(source: ALControlAdmissionRead['source']): ALControlAdmissionRead {
+        return {
+            parsed: {
+                type: 'nack',
+                payload: toTestALNackPayload({ msgId: 'held', fromPeerId: 'server', toPeerId: 'self', reason: 'not-yet-in-sync' })
+            },
+            source,
+            carrier: 'ws',
+            hopPeerIds: ['server'],
+            targetMsgId: 'held',
+            nowMs: 1_000,
+            owner: 'self',
+            ownerVersion: { senderId: 'self', version: 4 },
+            sent: SENT,
+            firstHopWait: WAIT,
+            history: { kind: 'nacks', values: [] },
+            acknowledgements: [],
+            recipientProof: 'carrier-authenticated'
+        };
+    }
+
+    it('from the trusted server, the own hop, ends the wait and its timer and states and ends nothing', () => {
+        const candidate = computeALOutboundControlAdmission(toRead('trusted-server'), normalizeALRuntimeStoreRetention());
+
+        expect(candidate).toMatchObject({
+            pending: { kind: 'unchanged' },
+            removeFirstHopWait: true,
+            endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(WAIT)],
+            messageEnd: [],
+            removeRepairAttempt: false
+        });
+        expect(toALOutboundControlSettlements(candidate, 'trace')).toEqual([]);
+    });
+
+    it('from a peer, leaves the wait and its timer as they are', () => {
+        const candidate = computeALOutboundControlAdmission(toRead('peer'), normalizeALRuntimeStoreRetention());
+
+        expect(candidate).toMatchObject({ removeFirstHopWait: false, endedTimeoutEffectIds: [], messageEnd: [] });
+        expect(toALOutboundControlSettlements(candidate, 'trace')).toEqual([]);
     });
 });

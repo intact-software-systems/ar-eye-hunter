@@ -430,6 +430,7 @@ export type WsClientCarrierStoreKind = 'memory' | 'indexeddb';
 /** A WS client pair, and the backend it was built over, so a test can write a row the way another build did. */
 export interface WsClientCarrierStores extends ALOutboundRuntimeStores<ALOutboundTransportMessage> {
     readonly backend: ALAdmissionWorkBackend;
+    readonly sessionId: string;
 }
 
 /** The WS client pair of one browser session as the browser keys it, each IndexedDB pair in a database of its own. */
@@ -450,7 +451,25 @@ export function createWsClientCarrierStores(sessionId: string, store: WsClientCa
     const stores = store === 'memory'
         ? createDefaultInMemoryALOutboundRuntimeStores(input)
         : createDefaultIndexedDbALOutboundRuntimeStores(input);
-    return { ...stores, backend };
+    return { ...stores, backend, sessionId };
+}
+
+/** What a test gives the WS client's sender: its rows, what it observes, and its socket; a planner only to change it. */
+export interface WsClientSenderInput extends Pick<OutboundTestRuntimeInput<ALOutboundTransportMessage>, 'settlements' | 'diagnostics' | 'sendPreparedMessage'> {
+    readonly stores: WsClientCarrierStores;
+    /** Absent, the session's own minting planner. */
+    readonly planOutgoingMessage?: ALOutboundPlanner<ALOutboundTransportMessage>;
+}
+
+/** The WS client's sender as `WsQueueBoxClientService` composes it: its own planner, the server as its one hop. */
+export function createWsClientSender(input: WsClientSenderInput): ALOutboundMessageRuntime<ALOutboundTransportMessage> {
+    return createOutboundTestRuntimeFor({
+        ...input,
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        planOutgoingMessage: input.planOutgoingMessage ?? createWsClientMintingPlanner(input.stores.sessionId),
+        planRepairMessage: undefined,
+        hopPeerIds: ['server']
+    });
 }
 
 /** A carrier runtime's planner as the WS client plans: its dispatch plan, then the minting plan at a first admission. */

@@ -125,7 +125,11 @@ export function computeALOutboundControlAdmission(
         pending,
         messageEnd,
         removeRepairAttempt: receiptEnded || messageEnd.length > 0,
-        ...toEndedTimers(read, receiptEnded, terminal || resolveALOutboundRelayRejection(read) !== undefined),
+        ...toEndedTimers(
+            read,
+            receiptEnded,
+            terminal || resolveALOutboundRelayRejection(read) !== undefined || isOwnHopNotYetInSync(read)
+        ),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs
             : Math.max(
@@ -137,6 +141,15 @@ export function computeALOutboundControlAdmission(
         versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
         nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
     };
+}
+
+/**
+ * The own hop's `not-yet-in-sync`: that hop has the send, retained until its room view catches up, and answers for it
+ * no more, so the sender's wait on it ends. Nothing ends with it: the message stays open to its deadline.
+ */
+function isOwnHopNotYetInSync(read: ALControlAdmissionRead): boolean {
+    return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
+        read.parsed.payload.reason === 'not-yet-in-sync';
 }
 
 /** The receipt's timer when the control ended the receipt; the first-hop wait and its timer when it ended the send. */
@@ -303,10 +316,14 @@ function toRepairHintEffect(
     };
 }
 
-/** A NACK whose reason may end the whole send: the one control whose admission reads the send's first-hop wait. */
+/**
+ * A NACK whose reason may end the whole send, or the sender's wait on its own hop (`not-yet-in-sync`): the one control
+ * whose admission reads the send's first-hop wait.
+ */
 export function mayALOutboundControlEndSend(parsed: ALPeerControlMessage): boolean {
     return parsed.type === 'nack' &&
-        (isTerminalNack(parsed.payload) || isALOutboundRelayRejectionReason(parsed.payload.reason));
+        (isTerminalNack(parsed.payload) || isALOutboundRelayRejectionReason(parsed.payload.reason) ||
+            parsed.payload.reason === 'not-yet-in-sync');
 }
 
 /**

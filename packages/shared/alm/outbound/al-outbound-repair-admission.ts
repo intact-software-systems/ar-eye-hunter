@@ -81,10 +81,9 @@ export namespace ALOutboundRepairAdmission {
 
 /**
  * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
- * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
- * own hop asked for it, the one repair that cannot widen a room audience; that hop's not-yet-in-sync
- * NACK on a room send stays not handled and schedules no retry here. A WS client's first-hop wait
- * still writes such a send again until the server first answers for it.
+ * Without a repair planner a room-scoped gap, repair or not-yet-in-sync control carries authority only when the
+ * sender's own hop sent it, the one repair that cannot widen a room audience. That hop retains a room send it answers
+ * not-yet-in-sync, so the answer ends a WS client's first-hop wait and schedules no retry here.
  */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
@@ -160,8 +159,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return true;
         }
         if (this.dependencies.planRepairMessage === undefined) {
-            const asksForGapRepair = control.type === 'repair' || control.payload.reason === 'gap';
-            return asksForGapRepair && read.plan !== undefined &&
+            return read.plan !== undefined &&
                 isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
         }
         const planned = await this.dependencies.planRepairMessage(msg, {
@@ -184,11 +182,16 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
+    /** A room send this composition plans no repair for: only its own hop speaks for it. */
+    private isOwnHopRoomSend(msg: ALMessage): boolean {
+        return isRoomScopedALMessage(msg) && this.dependencies.planRepairMessage === undefined;
+    }
+
     private async scheduleNotYetInSyncRetry(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
-        if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
+        if (!msg || !retry?.enabled || retry.maxAttempts <= 0 || this.isOwnHopRoomSend(msg)) {
             return;
         }
 

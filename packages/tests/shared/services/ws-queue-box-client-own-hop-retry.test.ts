@@ -132,7 +132,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         expect(effectKinds).toContain('first-hop-timeout');
     });
 
-    it('leaves the server\'s not-yet-in-sync NACK on a room send unhandled: no retry is scheduled for it, and only the first-hop wait the server has not answered writes a second frame', async () => {
+    it('admits the server\'s not-yet-in-sync NACK on a room send, which ends its first-hop wait: no retry is scheduled for it and no second frame follows', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
         const roomSend = receiverRoomSend();
@@ -143,8 +143,8 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         await runOutboundWorkTask(fixture.service);
 
         expect(admitted.right).toEqual({ kind: 'control', handled: false });
-        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'not-handled' }]);
-        expect(fixture.sentFrames).toHaveLength(2);
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'committed' }]);
+        expect(fixture.sentFrames).toHaveLength(1);
         expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('nack-retry');
     });
 
