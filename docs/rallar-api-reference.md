@@ -1218,7 +1218,9 @@ after each receipt timeout (2 s by default) the server has not answered, up to
 its retries (3 by default), and then reads `failed` with `failure.kind:
 'receipt-exhausted'`. A frame the page's carrier has not taken yet charges no
 retry. Any receipt from the server ends that wait, and so does its
-`not-yet-in-sync` answer for a send it retains, which states nothing. The server answers a
+`not-yet-in-sync` answer for a send it retains, which states nothing; the
+server answers that send again when it admits it, with its `admitted` receipt,
+or when it refuses it, with the refusal's NACK. The server answers a
 duplicate of a message it admitted with its `admitted` receipt again, to that
 sender alone, while it holds the receipt; where it no longer does (another
 server instance, a restart) a send whose `admitted` receipt was lost can read
@@ -1840,11 +1842,11 @@ outcomes, none of them a new handle state (D175):
   key is admitted too and moves the claim's expiry to its own.
 - **Held by another.** An exclusive send from another session on a key whose
   claim is live is dropped at the server's admission and NACKed
-  `held-by-other`; it reaches no one. A dropped claim starts no receipt; a
-  claim retained on a conflict may have started one, which the `held-by-other`
-  NACK then ends. The handle reads it as a trusted-server relay rejection
-  whatever receipt it already holds (unlike `no-leader`, which counts only
-  before a receipt): with a receipt-bearing `ack`
+  `held-by-other`; it reaches no one. A dropped claim starts no receipt, and
+  neither does a claim retained on a conflict and dropped at its replay: the
+  `held-by-other` NACK is its one answer. The handle reads it as a
+  trusted-server relay rejection whatever receipt it already holds (unlike
+  `no-leader`, which counts only before a receipt): with a receipt-bearing `ack`
   it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
   `evidence.relayRejection` reading
   `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it
@@ -2246,8 +2248,11 @@ A receiver judges a room send against the room snapshot it holds:
   until its room meets the floor or the message's deadline passes. Over WS
   that NACK ends the sender's wait for its server to answer, so the sender
   writes the send no more and states nothing. A send the server retains this
-  way starts no receipt aggregate, so a `receiver` receipt never completes for
-  it: its handle stays open to the message's deadline, then reads `expired`.
+  way starts its receipt when its room catches up and the server admits it, so
+  a `receiver` receipt completes for it as for any send; one its room then
+  refuses for another reason is answered with that refusal's NACK, when the
+  refusal sends one; one still retained at the message's deadline is answered
+  nothing, and its handle reads `expired`.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`

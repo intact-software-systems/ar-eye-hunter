@@ -18,7 +18,14 @@ RTC ingress is wired by
 These composition owners supply the planner, delivery, forwarding, and control ports. The WS
 client and RTC ingress also pass the optional `onResyncRequired` sink
 (`ALInboundMessageRuntime.Dependencies`), which the browser fills with its resynchronization
-recovery (see "Ordering gaps and resynchronization" below); the WS server passes none.
+recovery (see "Ordering gaps and resynchronization" below); the WS server passes none. The WS
+server alone passes the optional `onReplayAdmitted` dependency: the runtime hands it each kept
+message a replay admits, as a `ReplayedAdmission` (`msg`, the `source` the replay ran under and the
+room `snapshotVersion` its authority read), after the attempt's commit and before the replaying work
+batch returns, and not while the runtime shuts down. The server starts that message's receipt from it
+(outbound README, "Server receipts on WS"). A hand-over that rejects leaves the attempt committed:
+the replay is retried, reads `duplicate` and hands nothing over again, so the message's diagnostic
+states that `duplicate`, and the delivery it wrote waits for the rotation.
 
 The runtime constructs its [`ALWorkQueuePort`](../work/al-work-queue-port.ts),
 [`ALInboundMessageAdmission`](./al-inbound-message-admission.ts) and
@@ -628,7 +635,7 @@ Web and API deploy together.
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves that round unannounced — the rotation reads a page every engine round either way.                                                                                                        |
-| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline, whether its plan admitted or dropped it: a bundle that writes nothing never meets the fence, so the rolled-back one carried rows or effects (a drop's NACK among them) that the replay plans afresh against the winner. Retention checks exact content and identity on reuse.                                      | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. Pending storage earns no ACK; the WS server still starts its `admitted` receipt.                                                                 |
+| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline, whether its plan admitted or dropped it: a bundle that writes nothing never meets the fence, so the rolled-back one carried rows or effects (a drop's NACK among them) that the replay plans afresh against the winner. Retention checks exact content and identity on reuse.                                      | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. Pending storage earns no ACK and, on the WS server, no receipt: the replay that admits the message starts it.                                    |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
 | Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
@@ -797,8 +804,10 @@ receiving WS client trusts it. Behind either floor at its admission the WS serve
 message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
 the floor is met or the deadline passes. The NACK ends the sending WS client's first-hop wait and nothing else, so
-the client writes the send no more and its message stays open to its deadline (outbound README, "Server receipts on
-WS").
+the client writes the send no more. A replay that admits the message starts its receipt, and the sender reads
+`admitted`, then `complete` or `timed-out`; a replay its room refuses answers the sender with that refusal's NACK (see
+"Replay authority and deadlines"); a message still kept at its deadline is answered nothing, and the handle reads
+`expired` (outbound README, "Server receipts on WS").
 
 **Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
 to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin
@@ -835,14 +844,11 @@ deadline of its own (no `expiresAtMs`, no expiry policy) holds the key until the
 (`durableEffectTtlMs`, the store's retention default); every browser send carries a `ttlMs`. Two claimants that both
 read a free key conflict at the commit, and the loser's retained admission is replayed and planned against the winner.
 Every conflicted admission is retained (D640), so on the WS server every replayed drop of a receipted room send, a
-`held-by-other` claim, a `resync-required` gap or any other drop its replay NACKs, first answers `pending-admission` and
-starts its `admitted` receipt. The replay's NACK ends the origin's receipt, because the origin reads a NACK as a refusal
-of the whole send whatever its receipt, and the handle reads `rejected`. The `admitted` receipt can reach the origin
-before or after that NACK: after it, the receipt re-creates the receipt row the NACK ended, which lives until the
-message deadline, and settles an `acknowledgement` after `relay-rejected`; the handle still reads `rejected`. The
-server's own aggregate runs to its deadline and ends `timed-out`. A `shared` message neither reads nor writes an
-exclusive claim, and an `rtc-peer` or `trusted-server` admission never reads or writes one, so a browser never drops a
-message for it.
+`held-by-other` claim, a `resync-required` gap or any other drop its replay NACKs, first answers `pending-admission`,
+which starts no receipt. The replay's NACK is the one answer the origin reads: it ends the send whatever its receipt,
+and the handle reads `rejected`. A kept send its replay admits starts its receipt then. A `shared` message neither
+reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never reads or writes one, so a
+browser never drops a message for it.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
@@ -962,15 +968,19 @@ owner's own commit starts when the worker is idle, or in the follow-up batch `co
 schedules when a batch is already running (in either case one batch later when a head batch ran
 since the last rotation read); it never waits for the rotation to come round to it.
 
-Pending replay uses the currently configured planner. The WS server additionally
-supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
-authority owner before admission. Current authorized recipients intersect the
-captured recipients. An admitted room multicast counts the server among its group
-members, so the server delivers it locally to the topic router, which owns the
-room's fanout; the server never forwards it. Revocation retires pending work
-without admission metadata or receipts. Temporary authority catch-up uses the
-existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`, preserving the
-processing attempt count.
+Pending replay uses the currently configured planner. The WS server additionally supplies
+`readPendingAdmissionAuthority`, which calls its existing asynchronous authority owner before
+admission and applies the addressee check ingress applies, so a kept unicast whose addressee has
+left the audience is refused, not admitted to nobody. Current authorized recipients intersect the
+captured recipients, and the answer states the room snapshot version they were read at. An admitted
+room multicast counts the server among its group members, so the server delivers it locally to the
+topic router, which owns the room's fanout; the server never forwards it. A refusal answers the
+sender as the same refusal at ingress would: when the refusal's `sendNack` is set, the server sends
+its advisory NACK with that reason, then retires the pending work without admission metadata or
+receipts. An application refusal, or a room message with no authorizer installed, retires it with no
+NACK, as at ingress. Temporary authority catch-up (`not-yet-in-sync`, or a server being disposed)
+sends nothing and uses the existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`,
+preserving the processing attempt count.
 
 Each replay that reaches a verdict states its own `admission-outcome` after the
 `pending` / `pending-admission` its ingress stated; a replay whose authority asks for a retry,

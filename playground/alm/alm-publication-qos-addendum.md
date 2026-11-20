@@ -1570,14 +1570,21 @@ over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
 not recovered, renewal holds on direct links and not through an `rtc` relay,
 and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D680, D683, D693 and the backlog); a send the server retains
-behind its room view stays open to its deadline, since the server never reports
-one it later refuses or lets expire, nor one it loses in a restart (D694); and the lost stream
-start over `rtc` is its own slice (D669). The next outcome is the local
-baseline's alternating runs, their own small change (D672). After them, the
-held-send path, where a retained admission starts its `admitted` receipt only
-once its replay commits, and of which a receipt's first attempt is built
-(D689), and the relay statement rules.
+its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
+start over `rtc` is its own slice (D669). The held-send path is built (D696 to
+D700): a send the server keeps starts its receipt when the server admits it, at
+ingress or at its replay, so a send kept behind its room view and then admitted
+reads `admitted` and then `complete` or `timed-out` (D697); a kept send its room
+later refuses is answered with the refusal's NACK (D698); and a `timed-out`
+receipt always ends its receipt at the WS client (D699). Its stated limits: a
+kept send that expires is not reported, since the handle's own deadline says so
+(the maintainer's ruling); a kept send that names no deadline keeps the kept
+row's; without a relay publisher an ACK on another instance than the one that
+admitted the send is lost; a send the server loses in a restart reads `expired`
+at its deadline (D694); and a receipt does not survive its server's crash, which
+`api-v1-cluster-publisher-instance-loss` pins (D700). The local baseline's
+alternating runs stay their own small change (D672). The next outcome is the
+relay statement rules.
 With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world
