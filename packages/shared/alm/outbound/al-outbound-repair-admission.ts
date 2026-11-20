@@ -155,14 +155,14 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (!msg) {
             return false;
         }
-        if (!isRoomScopedALMessage(msg)) {
-            return true;
-        }
-        if (this.dependencies.planRepairMessage === undefined) {
+        if (this.isOwnHopRoomSend(msg)) {
             return read.plan !== undefined &&
                 isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
         }
-        const planned = await this.dependencies.planRepairMessage(msg, {
+        if (!isRoomScopedALMessage(msg)) {
+            return true;
+        }
+        const planned = await this.dependencies.planRepairMessage?.(msg, {
             ...toALOutboundControlRepairHint(control),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
