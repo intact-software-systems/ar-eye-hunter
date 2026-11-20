@@ -311,7 +311,16 @@ for (const location of ['foreground', 'offline', 'another room'] as const) {
             await expect(guest.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
             expect(await selectedRoom()).toEqual(otherRef);
             const otherEnd = await guest.locator('time').last().getAttribute('datetime');
-            await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
+            await page.evaluate(async ({ rallarUrl, roomRef, name, oldEnd }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                const { appointment } = await rallar.director.appoint(roomRef);
+                if (!appointment) {
+                    throw new Error('Missing room director appointment.');
+                }
+                await rallar.rooms.setDeadline(roomRef, {
+                    name, expectedRevision: 1, expectedDirectorEpoch: appointment.epoch, atEpochMs: oldEnd + 60_000
+                }, crypto.randomUUID());
+            }, { rallarUrl, roomRef, name: pollDeadlineName, oldEnd });
             const revised = new Date(oldEnd + 60000).toISOString();
             await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
             await expect(guest.locator('time').last()).toHaveAttribute('datetime', otherEnd!);

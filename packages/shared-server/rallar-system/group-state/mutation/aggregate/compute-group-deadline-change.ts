@@ -1,10 +1,12 @@
-import type { Group } from '@shared/api/group-types.ts';
 import {
     MAX_ROOM_DEADLINES,
     readRoomDeadlines,
     ROOM_DEADLINES_METADATA_KEY,
     type RoomDeadlineChange
 } from '@shared/api/group-deadlines/room-deadline.ts';
+import { isRallarGroupDirectorSessionActive, readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
+import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 
 interface ComputeGroupDeadlineChangeInput {
     readonly current: Group;
@@ -14,7 +16,7 @@ interface ComputeGroupDeadlineChangeInput {
 }
 
 interface DeadlineRefusal {
-    readonly rejectionCode: 'group-mutation-rejected' | 'room-deadline-revision-conflict';
+    readonly rejectionCode: 'group-mutation-rejected' | 'room-deadline-revision-conflict' | 'room-director-changed';
     readonly message: string;
 }
 
@@ -50,4 +52,32 @@ export function computeGroupDeadlineChange(
         revision: change.expectedRevision + 1
     };
     return { ...next, metadata: { ...next.metadata, [ROOM_DEADLINES_METADATA_KEY]: revised } };
+}
+
+/** A director intent never inherits the session's other room privileges. */
+export function refuseDirectorDeadlineExtension(
+    input: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>['input'],
+    snapshot: GroupSnapshot,
+    expectedEpoch: number,
+    nowEpochMs: number
+): DeadlineRefusal | null {
+    const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+    if (
+        appointment?.epoch !== expectedEpoch || appointment.sessionId !== input.actorSessionId ||
+        appointment.principalId !== input.actorPrincipalId ||
+        !isRallarGroupDirectorSessionActive(snapshot, appointment, nowEpochMs)
+    ) {
+        return {
+            rejectionCode: 'room-director-changed',
+            message: 'The requesting session no longer holds this room director appointment.'
+        };
+    }
+    const { actorPrincipalId, actorSessionId, reason, roomDeadline, ...groupSettings } = input;
+    if (Object.values(groupSettings).some((value) => value !== null && value !== undefined)) {
+        return {
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Director deadline extensions cannot change other room settings.'
+        };
+    }
+    return null;
 }

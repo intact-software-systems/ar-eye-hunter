@@ -1,3 +1,4 @@
+import { RALLAR_GROUP_DIRECTOR_METADATA_KEY } from '@shared/api/group-director.ts';
 import {
     DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
     normalizeRallarGroupDirectorHeartbeatTtlMs
@@ -142,6 +143,7 @@ function toCreateCommand(
 function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
     const retention = toInitialGroupRetentionState(request.retention);
     const metadata = { ...structuredClone(request.metadata ?? {}) };
+    delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     delete metadata.rallarSpectatorCapacity;
     return {
         ...metadata,

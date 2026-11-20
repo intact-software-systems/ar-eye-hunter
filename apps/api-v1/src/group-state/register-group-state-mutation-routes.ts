@@ -66,7 +66,10 @@ function registerUpdateGroupRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
-                await authorization.assertCanUpdateGroup(authSession.clientId, { ...scope, groupId });
+                const request = await readGroupStateRouteRequest<UpdateGroupRequest>(context);
+                if (request.roomDeadline?.expectedDirectorEpoch === undefined) {
+                    await authorization.assertCanUpdateGroup(authSession.clientId, { ...scope, groupId });
+                }
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -77,7 +80,7 @@ function registerUpdateGroupRoute(
                             scope,
                             traceId: readApiRequestTraceId(context),
                             groupId,
-                            request: await readGroupStateRouteRequest<UpdateGroupRequest>(context)
+                            request
                         })
                     )
                 });

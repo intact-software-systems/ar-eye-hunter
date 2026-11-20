@@ -66,6 +66,20 @@ it('addresses the same receipt on replay and returns the acknowledged revision',
     await expect(rooms.setDeadline(room, change, 'poll-create-request-0001')).resolves.toEqual(deadline);
 });
 
+it.each(['room-director-changed', 'room-deadline-revision-conflict'])('exposes %s to the director', async code => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const extension = { name: change.name, expectedRevision: 1, expectedDirectorEpoch: 3, atEpochMs: 12_000 };
+    vi.stubGlobal('fetch', (_path: string, init: RequestInit) => {
+        expect(JSON.parse(String(init.body)).roomDeadline).toEqual(extension);
+        return Promise.resolve(Response.json({
+            type: 'api-mutation-failure', version: 'canonical.v2', code, status: 409,
+            message: 'Conflict', issues: null, denial: null, retry: null
+        }, { status: 409 }));
+    });
+    await expect(createRallarFacade().rooms.setDeadline(room, extension, 'director-extend-request'))
+        .rejects.toMatchObject({ status: 409, mutationFailure: { code } });
+});
+
 it.each(['read', 'set'] as const)('rejects an obsolete session and a wrong-room %s response', async (method) => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const { rooms } = createRallarFacade();

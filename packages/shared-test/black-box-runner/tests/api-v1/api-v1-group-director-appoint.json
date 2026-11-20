@@ -667,6 +667,305 @@
           "message": "Forbidden: Cannot appoint a fallback director while another director is active."
         }
       }
+    },
+    {
+      "name": "publishMatchDeadline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/publishMatchDeadline-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 0,
+            "atEpochMs": 4102444800000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarRoomDeadlines": [
+                {
+                  "name": "match",
+                  "revision": 1,
+                  "atEpochMs": 4102444800000
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "refusePreviousDirectorDespiteOwnerRole",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/refusePreviousDirectorDespiteOwnerRole-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 1,
+            "atEpochMs": 4102444860000,
+            "expectedDirectorEpoch": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "room-director-changed"
+        }
+      }
+    },
+    {
+      "name": "refuseStaleAppointmentFromSameSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/refuseStaleAppointmentFromSameSession-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 1,
+            "atEpochMs": 4102444860000,
+            "expectedDirectorEpoch": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "room-director-changed"
+        }
+      }
+    },
+    {
+      "name": "keepDirectorAuthorityLimitedToDeadline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/keepDirectorAuthorityLimitedToDeadline-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 1,
+            "atEpochMs": 4102444860000,
+            "expectedDirectorEpoch": 2
+          },
+          "displayName": "unrelated change"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "group-mutation-rejected"
+        }
+      }
+    },
+    {
+      "name": "fallbackDirectorExtendsMatch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/fallbackDirectorExtendsMatch-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 1,
+            "atEpochMs": 4102444860000,
+            "expectedDirectorEpoch": 2
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarRoomDeadlines": [
+                {
+                  "name": "match",
+                  "revision": 2,
+                  "atEpochMs": 4102444860000
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "currentDirectorGetsRevisionConflict",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/currentDirectorGetsRevisionConflict-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 1,
+            "atEpochMs": 4102444860000,
+            "expectedDirectorEpoch": 2
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "room-deadline-revision-conflict"
+        }
+      }
+    },
+    {
+      "name": "returnOriginalDirector",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{ownerSessionId}/requests/returnOriginalDirector-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "generationId": "returned-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "dirapt-connection-generation-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "reappointOriginalDirector",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/reappointOriginalDirector-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarDirector": {
+                "epoch": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectOldTermAfterReappointment",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/rejectOldTermAfterReappointment-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 2,
+            "atEpochMs": 4102444920000,
+            "expectedDirectorEpoch": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "room-director-changed"
+        }
+      }
+    },
+    {
+      "name": "reappointedDirectorExtendsWithCurrentTerm",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/reappointedDirectorExtendsWithCurrentTerm-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "roomDeadline": {
+            "name": "match",
+            "expectedRevision": 2,
+            "atEpochMs": 4102444920000,
+            "expectedDirectorEpoch": 3
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "rallarRoomDeadlines": [
+                {
+                  "name": "match",
+                  "revision": 3,
+                  "atEpochMs": 4102444920000
+                }
+              ]
+            }
+          }
+        }
+      }
     }
   ],
   "postRunAssertions": [

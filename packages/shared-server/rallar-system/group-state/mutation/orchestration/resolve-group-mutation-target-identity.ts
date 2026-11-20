@@ -22,5 +22,9 @@ export function resolveGroupMutationTargetSessionId(command: GroupMutationComman
     if ('sessionId' in command) {
         return command.sessionId;
     }
-    return command.operation === 'appointDirector' ? command.input.actorSessionId : null;
+    if (command.operation === 'appointDirector' ||
+        (command.operation === 'updateGroup' && command.input.roomDeadline?.expectedDirectorEpoch !== undefined)) {
+        return command.input.actorSessionId;
+    }
+    return null;
 }
