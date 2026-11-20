@@ -44,7 +44,9 @@ so first-run disposable auth users are created; an existing user signs in with
 the same credentials. A full rollout preserves the controller API's Postgres store.
 With registration on, each headless agent gets its own user, named after its
 agent id and the run's room (`<prefix>-NN-<room digest>`), so a run in a room of
-its own signs in as users that carry no earlier room's membership. Override it
+its own signs in as users that carry no earlier room's membership. Only a
+spawned run with a blank `room_id` has such a room; a mixed or external run, or
+one with an explicit `room_id`, signs in as its room's users again. Override it
 with `--register-before-login false` only for
 persistent pre-provisioned users signing in as the shared account.
 

@@ -191,7 +191,12 @@ group its user is a member of, so a user shared by runs in different rooms
 would carry each earlier room into every later connect. A default dispatch has
 a room of its own and therefore users no earlier run used; a run that reuses a
 room with `--room-id` reuses that room's users, so a stable room's roster does
-not grow with each run. Agent ids stay `controller-NN`. The
+not grow with each run. Only a spawned run (`agent_source=hetzner`) with a
+blank `room_id` gets a room of its own: mixed and external runs keep the
+manifest's room, and `hetzner-headless-browsers.yml` defaults to
+`hetzner-headless-room`, so their agents sign in as that room's users every
+time. Each run in a new room leaves its users in the kept store, one per
+agent; nothing removes them. Agent ids stay `controller-NN`. The
 `RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
 controller smoke and other operator phases. The ALM scale recipes (19–21 and
 their diagnostic checkpoints) sign in as their first step, a read of the

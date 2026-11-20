@@ -336,6 +336,22 @@ describe('headless worker EnvironmentFile', () => {
         expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
     });
 
+    it('refuses registered agents when the room digest is not twelve hex digits, before writing the destination', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const brokenTools = path.join(fixture.directory, 'broken-tools');
+        await mkdir(brokenTools);
+        await writeFile(path.join(brokenTools, 'sha256sum'), '#!/bin/bash\ncat >/dev/null\n', { mode: 0o755 });
+        const result = await writeWorkerEnvironment(context, fixture, {
+            ...existingWorkerValues,
+            PATH: `${brokenTools}:${osEnvironment.PATH}`,
+            RALLAR_BLACK_BOX_REGISTER: 'true'
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('sha256sum');
+        expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
+    });
+
     it('preserves the destination on pre-rename filesystem refusal, cleans its private temp and preserves caller traps', async (context) => {
         const fixture = await createHeadlessEnvironmentFixture(context);
         await writeFile(fixture.destination, 'prior sentinel\n');

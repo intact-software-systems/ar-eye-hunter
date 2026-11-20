@@ -54,6 +54,11 @@ write_rallar_headless_worker_registered_agent_credentials() {
 
 	local room_digest local_index agent_id
 	room_digest="$(printf '%s' "${RALLAR_BLACK_BOX_ROOM_ID}" | sha256sum | cut -c1-12)" || return $?
+	# A caller without pipefail would otherwise name every user with an empty suffix.
+	if ! [[ "${room_digest}" =~ ^[0-9a-f]{12}$ ]]; then
+		echo "sha256sum gave no digest of RALLAR_BLACK_BOX_ROOM_ID to name the per-agent users." >&2
+		return 1
+	fi
 	for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
 		agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))")"
 		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${agent_id}-${room_digest}" || return $?

@@ -596,7 +596,9 @@ agent id and its room (`<prefix>-NN-<digest>`, the digest being the first twelve
 hex digits of the SHA-256 of `RALLAR_BLACK_BOX_ROOM_ID`) with the shared
 `RALLAR_BLACK_BOX_PASSWORD`, and `RALLAR_BLACK_BOX_USERNAME` stays an
 operator-only credential. Agents started in the same room sign in as the same
-users again; agents started in another room sign in as other users. Leave it
+users again; agents started in another room sign in as other users, which stay
+in the API's store afterwards. The API accepts usernames of at most 64
+characters, so the prefix can be at most 48. Leave it
 disabled for pre-provisioned or persistent auth users; every agent then signs in
 with `RALLAR_BLACK_BOX_USERNAME` or its `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME`.
 When registration reports that the user already exists, the black-box auth flow
