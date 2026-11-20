@@ -45,13 +45,15 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             if (restored !== current) {
                 const options = { signal };
                 await rallar.connect(options);
-                if (current !== generation || signal.aborted) {
+                signal.throwIfAborted();
+                if (current !== generation) {
                     return;
                 }
                 await rallar.rooms.enter(roomRef, options);
             }
             const snapshot = await requestPollSnapshot(input, signal);
-            if (current !== generation || signal.aborted) {
+            signal.throwIfAborted();
+            if (current !== generation) {
                 return;
             }
             if ((snapshot.revision ?? 0) < (record.revision ?? 0)) {
