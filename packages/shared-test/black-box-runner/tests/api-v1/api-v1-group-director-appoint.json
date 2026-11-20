@@ -705,6 +705,38 @@
       }
     },
     {
+      "name": "metadataReplacementKeepsCurrentAppointment",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/dirapt-topic-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "metadata": {
+            "topic": "second half"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "topic": "second half",
+              "rallarDirector": {
+                "principalId": "{memberaClientId}",
+                "epoch": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "refusePreviousDirectorDespiteOwnerRole",
       "type": "http",
       "connection": "api",
