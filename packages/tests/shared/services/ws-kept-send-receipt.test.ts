@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 
 import {
     createWsReceiptedSendLink,
@@ -8,6 +10,7 @@ import {
     LINK_START_MS,
     toOrderedRoomNotice,
     toRoomNotice,
+    toRoomUnicast,
     type WsReceiptedSendLink,
     type WsReceiptedSendServerControl
 } from './ws-receipted-send-link-fixture.ts';
@@ -68,6 +71,64 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect((await link.readSenderRows(sent)).ended).toBe(false);
     });
 
+    it('kept behind the room view, then refused: not-yet-in-sync, then the refusal\'s NACK; the send ends rejected', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomNotice());
+        await link.advance(1_000);
+        link.setRoomView('fenced');
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([
+            { control: 'nack:not-yet-in-sync', admission: 'committed' },
+            { control: 'nack:membership-fenced', admission: 'committed' }
+        ]);
+        const facts = link.settlements.filter((fact) => fact.msgId === sent.id.msgId);
+        expect(facts.map(({ kind }) => kind)).toEqual(['attempt-started', 'attempt-settled', 'relay-rejected']);
+        expect(facts.at(-1)).toMatchObject({ relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' } });
+        const lifecycle = facts.reduce(
+            computeALDeliveryLifecycle,
+            createInitialALDeliveryLifecycle({
+                msgId: sent.id.msgId,
+                typeId: 'notice.v1',
+                ackMode: 'receiver',
+                receiptAlgo: 'receiver',
+                expiresAtMs: undefined,
+                submittedAtMs: 0
+            })
+        );
+        expect(lifecycle.state).toBe('rejected');
+        expect((await link.readSenderRows(sent)).ended).toBe(true);
+        expect(link.deliveredToPeer(sent)).toBe(0);
+
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+        expect(toControlsOf(link, sent)).toHaveLength(2);
+    });
+
+    it('a kept send polled while the view stays behind is sent nothing more', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomNotice());
+        for (let step = 0; step < 30; step += 1) {
+            await link.advance(1_000);
+        }
+
+        expect(toControlsOf(link, sent)).toEqual([{ control: 'nack:not-yet-in-sync', admission: 'committed' }]);
+    });
+
+    it('a kept unicast whose addressee is outside the audience at catch-up is refused, not admitted to nobody', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomUnicast('peer-c'));
+        await link.advance(1_000);
+        link.setRoomView('in-sync');
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([
+            { control: 'nack:not-yet-in-sync', admission: 'committed' },
+            { control: 'nack:unauthorized', admission: 'committed' }
+        ]);
+        expect(link.settlements.filter((fact) => fact.msgId === sent.id.msgId).at(-1)?.kind).toBe('relay-rejected');
+        expect(link.readReceiptsToOrigin(sent)).toEqual([]);
+    });
+
     it('kept after a lost race, then admitted: no receipt exists before the replay, then admitted and complete', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
@@ -85,7 +146,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         ]);
     });
 
-    it('kept after a lost race, then refused by its room: no receipt is ever written for it', async () => {
+    it('kept after a lost race, then refused by its room: no receipt is ever written for it, and the refusal\'s NACK ends it', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
         link.setRoomView('fenced');
@@ -94,6 +155,10 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.readReceiptsToOrigin(second)).toEqual([]);
         expect(link.deliveredToPeer(second)).toBe(0);
         expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        expect(toControlsOf(link, second)).toEqual([{ control: 'nack:membership-fenced', admission: 'committed' }]);
+        expect(link.settlements.filter((fact) => fact.msgId === second.id.msgId).at(-1)?.kind).toBe('relay-rejected');
+        expect((await link.readSenderRows(second)).ended).toBe(true);
+        expect(link.written.filter((id) => id === second.id.msgId)).toHaveLength(1);
     });
 
     it('a copy written while the original is kept behind the view: one admitted, delivered once', async () => {

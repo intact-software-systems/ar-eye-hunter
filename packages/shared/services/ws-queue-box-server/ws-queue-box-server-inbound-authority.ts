@@ -382,11 +382,21 @@ export class WsQueueBoxServerInboundAuthority {
         message: ALMessage,
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageRuntime.PendingAuthority> {
-        const authority = await this.readCurrentDispatchAuthority(message);
-        if (typeof authority === 'string') {
-            return authority === 'retry'
+        const current = await this.readCurrentAuthorization(message);
+        if (typeof current === 'string') {
+            return current === 'retry'
                 ? { kind: 'retry', retryAfterMs: WsQueueBoxServerInboundAuthority.READINESS_RETRY_AFTER_MS }
                 : { kind: 'rejected' };
+        }
+        const authority = toWsQueueBoxServerAddresseeAuthorization({
+            message,
+            serverPeerId: this.#serverPeerId,
+            sendNack: this.#authorizer?.sendNacks ?? false,
+            authorization: current
+        });
+        if (!authority.authorized) {
+            await this.sendAdvisoryNack(message, authority);
+            return { kind: 'rejected' };
         }
         const { roomAudience } = authority;
         if (source.kind !== 'ws-client' || roomAudience === undefined) {
@@ -408,6 +418,13 @@ export class WsQueueBoxServerInboundAuthority {
     async readCurrentDispatchAuthority(
         message: ALMessage
     ): Promise<Extract<WsServerInboundAuthorization, { authorized: true; }> | 'completed' | 'retry'> {
+        const current = await this.readCurrentAuthorization(message);
+        return typeof current === 'string' || current.authorized ? current : 'completed';
+    }
+
+    private async readCurrentAuthorization(
+        message: ALMessage
+    ): Promise<WsServerInboundAuthorization | 'completed' | 'retry'> {
         if (this.#disposed) {
             return 'retry';
         }
@@ -422,10 +439,7 @@ export class WsQueueBoxServerInboundAuthority {
         if (this.#disposed) {
             return 'retry';
         }
-        if (authorization.authorized) {
-            return authorization;
-        }
-        return authorization.reason === 'not-yet-in-sync' ? 'retry' : 'completed';
+        return !authorization.authorized && authorization.reason === 'not-yet-in-sync' ? 'retry' : authorization;
     }
 
     async rejectIncomingMessage(
