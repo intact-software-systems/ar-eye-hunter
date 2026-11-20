@@ -202,147 +202,159 @@ async function mountPoll(
 }
 
 for (const location of ['foreground', 'offline', 'another room'] as const) {
-test('a participant recovers a revised deadline from ' + location, async ({ page, browser, baseURL }) => {
-    test.skip(!config.enabled, config.skipReason);
-    const guest = await browser.newPage({ baseURL });
-    const roomRef = {
-        applicationId: config.applicationId,
-        workspaceId: config.workspaceId,
-        groupId: 'extend-' + uniqueSuffix()
-    };
-    const hostGrant = randomUUID();
-    const guestGrant = randomUUID();
-    const otherRef = { ...roomRef, groupId: 'other-' + uniqueSuffix() };
-    const otherGuestGrant = randomUUID();
-    const endpoints: Awaited<ReturnType<typeof startPollEndpoint>>[] = [];
-    async function selectedRoom() {
-        return await guest.evaluate(async (url) => {
-            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
-            return rallar.rooms.selected();
-        }, rallarUrl);
-    }
-    try {
-        await Promise.all([prepareMember(page, roomRef, true), prepareMember(guest, roomRef, false)]);
-        const startsAt = Date.now() + enforcementOffsetMs;
-        const oldEnd = startsAt + 24_000;
-        const otherEndEpochMs = startsAt + 90_000;
-        await page.evaluate(async ({ rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name }) => {
-            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
-            for (const [room, cutoff] of [[otherRef, otherEndEpochMs], [roomRef, oldEnd]] as const) {
-                await rallar.rooms.create({ displayName: room.groupId, groupId: room.groupId, joinMode: 'open' });
-                await rallar.rooms.setDeadline(
-                    room,
-                    { name, expectedRevision: 0, atEpochMs: cutoff },
-                    crypto.randomUUID()
-                );
-            }
-        }, { rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name: pollDeadlineName });
-
-        configureApiClient({ apiBaseUrl: config.apiBaseUrl });
-        const authSession = await readBrowserAuthSession(page);
-        const schedule: PollAuthority.RoomSchedule = {
-            hostId: 'host',
-            opensAtEpochMs: startsAt,
-            async readDeadline(room, name) {
-                const result = await readStateGroupSnapshot(room.groupId, room, {
-                    authSession,
-                    signal: AbortSignal.timeout(5_000)
-                });
-                if (result.source !== 'durable') {
-                    throw new Error('The ballot receiver requires a durable room deadline.');
-                }
-                return readRoomDeadline(result.snapshot.group.metadata, name);
-            }
+    test('a participant recovers a revised deadline from ' + location, async ({ page, browser, baseURL }) => {
+        test.skip(!config.enabled, config.skipReason);
+        const guest = await browser.newPage({ baseURL });
+        const roomRef = {
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            groupId: 'extend-' + uniqueSuffix()
         };
-        const grants = new Map([[hostGrant, 'host'], [guestGrant, 'guest']]);
-        const poll = await startPollEndpoint(new URL(baseURL!).origin, roomRef, grants, schedule);
-        endpoints.push(poll);
-        const otherPoll = await startPollEndpoint(
-            new URL(baseURL!).origin,
-            otherRef,
-            new Map([[otherGuestGrant, 'guest']]),
-            schedule
-        );
-        endpoints.push(otherPoll);
-        await Promise.all([
-            mountPoll(page, hostGrant, roomRef, poll.url, 'room'),
-            mountPoll(guest, guestGrant, roomRef, poll.url, 'room')
-        ]);
-        await expect(page.locator('time').last()).toHaveAttribute('datetime', new Date(oldEnd).toISOString());
-        await page.getByRole('button', { name: 'Yes' }).click({ timeout: 20000 });
-        await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
-        const stale = await (await guest.request.get(poll.url, { headers: { Authorization: 'Bearer ' + guestGrant } }))
-            .json();
-        const foreignBallot = await guest.request.post(otherPoll.url, {
-            headers: { Authorization: 'Bearer ' + guestGrant },
-            data: 'yes'
-        });
-        expect(foreignBallot.status()).toBe(403);
-        if (location !== 'another room') {
-            if (location === 'offline') {
-                await guest.context().setOffline(true);
-                await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        const hostGrant = randomUUID();
+        const guestGrant = randomUUID();
+        const otherRef = { ...roomRef, groupId: 'other-' + uniqueSuffix() };
+        const otherGuestGrant = randomUUID();
+        const endpoints: Awaited<ReturnType<typeof startPollEndpoint>>[] = [];
+        async function selectedRoom() {
+            return await guest.evaluate(async (url) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+                return rallar.rooms.selected();
+            }, rallarUrl);
+        }
+        try {
+            await Promise.all([prepareMember(page, roomRef, true), prepareMember(guest, roomRef, false)]);
+            const startsAt = Date.now() + enforcementOffsetMs;
+            const oldEnd = startsAt + 24_000;
+            const otherEndEpochMs = startsAt + 90_000;
+            await page.evaluate(async ({ rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                for (const [room, cutoff] of [[otherRef, otherEndEpochMs], [roomRef, oldEnd]] as const) {
+                    await rallar.rooms.create({ displayName: room.groupId, groupId: room.groupId, joinMode: 'open' });
+                    await rallar.rooms.setDeadline(
+                        room,
+                        { name, expectedRevision: 0, atEpochMs: cutoff },
+                        crypto.randomUUID()
+                    );
+                }
+            }, { rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name: pollDeadlineName });
+
+            configureApiClient({ apiBaseUrl: config.apiBaseUrl });
+            const authSession = await readBrowserAuthSession(page);
+            const schedule: PollAuthority.RoomSchedule = {
+                hostId: 'host',
+                opensAtEpochMs: startsAt,
+                async readDeadline(room, name) {
+                    const result = await readStateGroupSnapshot(room.groupId, room, {
+                        authSession,
+                        signal: AbortSignal.timeout(5_000)
+                    });
+                    if (result.source !== 'durable') {
+                        throw new Error('The ballot receiver requires a durable room deadline.');
+                    }
+                    return readRoomDeadline(result.snapshot.group.metadata, name);
+                }
+            };
+            const grants = new Map([[hostGrant, 'host'], [guestGrant, 'guest']]);
+            const poll = await startPollEndpoint(new URL(baseURL!).origin, roomRef, grants, schedule);
+            endpoints.push(poll);
+            const otherPoll = await startPollEndpoint(
+                new URL(baseURL!).origin,
+                otherRef,
+                new Map([[otherGuestGrant, 'guest']]),
+                schedule
+            );
+            endpoints.push(otherPoll);
+            await Promise.all([
+                mountPoll(page, hostGrant, roomRef, poll.url, 'room'),
+                mountPoll(guest, guestGrant, roomRef, poll.url, 'room')
+            ]);
+            await expect(page.locator('time').last()).toHaveAttribute('datetime', new Date(oldEnd).toISOString());
+            await page.getByRole('button', { name: 'Yes' }).click({ timeout: 20000 });
+            await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+            const stale = await (await guest.request.get(poll.url, { headers: { Authorization: 'Bearer ' + guestGrant } }))
+                .json();
+            const foreignBallot = await guest.request.post(otherPoll.url, {
+                headers: { Authorization: 'Bearer ' + guestGrant },
+                data: 'yes'
+            });
+            expect(foreignBallot.status()).toBe(403);
+            if (location !== 'another room') {
+                if (location === 'foreground') {
+                    await guest.evaluate(async ({ rallarUrl, roomRef }) => {
+                        const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                        rallar.rooms.onEvent((_event, message) => {
+                            document.body.dataset.revisionTransport = message.transport;
+                        }, { roomRef, eventTypes: ['group-updated'] });
+                    }, { rallarUrl, roomRef });
+                }
+                if (location === 'offline') {
+                    await guest.context().setOffline(true);
+                    await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
+                }
+                await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
+                const revised = new Date(oldEnd + 60_000).toISOString();
+                await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
+                if (location === 'offline') {
+                    await guest.context().setOffline(false);
+                }
+                await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+                if (location === 'foreground') {
+                    await expect(guest.locator('body')).toHaveAttribute('data-revision-transport', 'ws');
+                    expect(Date.now() + enforcementOffsetMs).toBeLessThan(oldEnd);
+                }
+                await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30_000 }).toBeGreaterThan(oldEnd);
+                await guest.getByRole('button', { name: 'Yes' }).click();
+                await expect(guest.getByText('Yes 2 · No 0 · Your vote: accepted')).toBeVisible();
+                return;
             }
+            await mountPoll(guest, otherGuestGrant, otherRef, otherPoll.url, 'room');
+            await expect(guest.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
+            expect(await selectedRoom()).toEqual(otherRef);
+            const otherEnd = await guest.locator('time').last().getAttribute('datetime');
             await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
-            const revised = new Date(oldEnd + 60_000).toISOString();
+            const revised = new Date(oldEnd + 60000).toISOString();
             await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
-            if (location === 'offline') {
-                await guest.context().setOffline(false);
-            }
+            await expect(guest.locator('time').last()).toHaveAttribute('datetime', otherEnd!);
+            await guest.getByRole('button', { name: 'No' }).click();
+            await expect(guest.getByText('Yes 0 · No 1 · Your vote: accepted')).toBeVisible();
+            await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30000 }).toBeGreaterThan(oldEnd);
+            expect(await selectedRoom()).toEqual(otherRef);
+            await mountPoll(guest, guestGrant, roomRef, poll.url, 'room');
+            expect(await selectedRoom()).toEqual(roomRef);
             await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
-            await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30_000 }).toBeGreaterThan(oldEnd);
+            await expect(guest.getByText('Voting open')).toBeVisible();
+            await expect(guest.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
+            let retryStarted = false;
+            const releaseFreshRead = Promise.withResolvers<void>();
+            await guest.route(poll.url, async (route) => {
+                retryStarted = true;
+                await releaseFreshRead.promise;
+                await route.continue();
+            }, { times: 1 });
+            await guest.route(poll.url, (route) => route.fulfill({ json: stale }), { times: 1 });
+            await guest.evaluate(() => {
+                window.dispatchEvent(new PageTransitionEvent('pagehide'));
+                window.dispatchEvent(new PageTransitionEvent('pageshow'));
+            });
+            try {
+                await expect.poll(() => retryStarted).toBe(true);
+                await expect(guest.getByText('Recovering room poll')).toBeVisible();
+                await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
+                await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+            }
+            finally {
+                releaseFreshRead.resolve();
+            }
+            await expect(guest.getByText('Voting open')).toBeVisible();
+            await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
             await guest.getByRole('button', { name: 'Yes' }).click();
             await expect(guest.getByText('Yes 2 · No 0 · Your vote: accepted')).toBeVisible();
-            return;
-        }
-        await mountPoll(guest, otherGuestGrant, otherRef, otherPoll.url, 'room');
-        await expect(guest.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
-        expect(await selectedRoom()).toEqual(otherRef);
-        const otherEnd = await guest.locator('time').last().getAttribute('datetime');
-        await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
-        const revised = new Date(oldEnd + 60000).toISOString();
-        await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
-        await expect(guest.locator('time').last()).toHaveAttribute('datetime', otherEnd!);
-        await guest.getByRole('button', { name: 'No' }).click();
-        await expect(guest.getByText('Yes 0 · No 1 · Your vote: accepted')).toBeVisible();
-        await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30000 }).toBeGreaterThan(oldEnd);
-        expect(await selectedRoom()).toEqual(otherRef);
-        await mountPoll(guest, guestGrant, roomRef, poll.url, 'room');
-        expect(await selectedRoom()).toEqual(roomRef);
-        await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
-        await expect(guest.getByText('Voting open')).toBeVisible();
-        await expect(guest.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
-        let retryStarted = false;
-        const releaseFreshRead = Promise.withResolvers<void>();
-        await guest.route(poll.url, async (route) => {
-            retryStarted = true;
-            await releaseFreshRead.promise;
-            await route.continue();
-        }, { times: 1 });
-        await guest.route(poll.url, (route) => route.fulfill({ json: stale }), { times: 1 });
-        await guest.evaluate(() => {
-            window.dispatchEvent(new PageTransitionEvent('pagehide'));
-            window.dispatchEvent(new PageTransitionEvent('pageshow'));
-        });
-        try {
-            await expect.poll(() => retryStarted).toBe(true);
-            await expect(guest.getByText('Recovering room poll')).toBeVisible();
-            await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
-            await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
         }
         finally {
-            releaseFreshRead.resolve();
+            await guest.close();
+            await Promise.all(endpoints.map((endpoint) => endpoint.close()));
         }
-        await expect(guest.getByText('Voting open')).toBeVisible();
-        await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
-        await guest.getByRole('button', { name: 'Yes' }).click();
-        await expect(guest.getByText('Yes 2 · No 0 · Your vote: accepted')).toBeVisible();
-    }
-    finally {
-        await guest.close();
-        await Promise.all(endpoints.map((endpoint) => endpoint.close()));
-    }
-});
+    });
 }
 
 for (const disposition of ['accepted', 'late'] as const) {

@@ -96,6 +96,8 @@ export function createBrowserRoomsComposition(
         changeRoom: (operation) => recovery.changeRoom(operation),
         stateStore: input.state.roomStateStore,
         roomEvents: input.stateEvents.roomEvents,
+        ws: input.realtime.wsController.facade,
+        auth: input.session.auth,
         roomLayoutSlots: input.state.roomLayoutSlots,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,

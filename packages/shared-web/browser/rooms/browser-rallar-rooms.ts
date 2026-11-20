@@ -8,7 +8,7 @@ import {
     toRallarWorkflowPolicies,
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,
@@ -16,6 +16,7 @@ import type {
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
@@ -118,6 +119,8 @@ export interface CreateBrowserRallarRoomsInput {
     readonly changeRoom: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly stateStore: RallarRoomStateStorePort;
     readonly roomEvents: RallarRoomEventsPort;
+    readonly ws: Pick<RallarWsFacade, 'onLifecycle' | 'status'>;
+    readonly auth: Pick<RallarAuthFacade, 'onChange'>;
     readonly messages: RallarMessagesOperations;
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
@@ -279,7 +282,7 @@ export function createBrowserRallarRooms(
         });
 
     return {
-        ...createRoomDeadlineOperations(input.requireSession),
+        ...createRoomDeadlineOperations(input),
         ...createRoomReadOperations(input, refresh),
         ...createRoomEntryOperations({
             rooms: input,

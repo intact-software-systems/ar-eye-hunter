@@ -79,3 +79,15 @@ workspace, and group reference. To create one, use
 The returned deadline carries its committed revision. An authorized extension supplies that revision
 and a later instant before the current deadline expires. Keep one request ID (such as
 `crypto.randomUUID()`) per intended write and reuse it when retrying after a lost response.
+
+Call `rallar.rooms.watchDeadline(roomRef, name, listener, { signal })` after connecting
+and entering the room. The listener receives `{ status, deadline }`. A current
+null means the name is absent. A stale value is the previous observation during
+initial load, suspension, disconnection or read failure. Dispose with the returned
+function or abort the signal when switching rooms.
+
+The initial durable read is followed by server WebSocket group events. A higher
+named revision triggers a durable read. Unchanged deadlines generate no periodic
+requests. Reconnect and page resume reread current authority. A failed read has
+three backoff retries per wakeup. Display countdowns locally using the calibrated
+clock and enforce time-sensitive actions at their receiving authority.

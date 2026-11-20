@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import type { RoomDeadlineObservation } from '@shared-web/browser/rallar.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
@@ -101,7 +102,8 @@ it('requires authentication and an explicit workspace before issuing requests', 
 
 it('marks a suspended watch stale, recovers the revision and ignores a late disposed read', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-    const { rooms } = createRallarFacade();
+    const { rooms, ws } = createRallarFacade();
+    vi.spyOn(ws, 'status').mockReturnValue({ ...ws.status(), isOpen: true });
     const page = new EventTarget();
     vi.stubGlobal('window', page);
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
@@ -112,7 +114,7 @@ it('marks a suspended watch stale, recovers the revision and ignores a late disp
         .mockResolvedValueOnce(groupResponse([{ ...deadline, revision: 2, atEpochMs: 12000 }]))
         .mockReturnValue(pending.promise);
     vi.stubGlobal('fetch', reads);
-    const states: unknown[] = [];
+    const states: RoomDeadlineObservation[] = [];
     const dispose = rooms.watchDeadline(room, change.name, state => states.push(state));
     await vi.waitFor(() => expect(states.at(-1)).toEqual({ status: 'current', deadline }));
     vi.useFakeTimers();

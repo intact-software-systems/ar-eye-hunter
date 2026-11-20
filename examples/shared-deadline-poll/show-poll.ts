@@ -35,7 +35,9 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let submitting = false;
     let refreshing = false;
     let retryAt = 0;
-    let nextRevisionRead = performance.now() + 5_000;
+    let deadlineStale = false;
+    let watchedRevision = 0;
+    let extensionUnconfirmed = false;
     let unacknowledged: PollAuthority.Choice | undefined;
     let checkingReceipt = false;
     let away = document.visibilityState === 'hidden';
@@ -60,6 +62,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
                 return;
             }
             restored = current;
+            extensionUnconfirmed = false;
             record = snapshot;
             checkingReceipt = false;
             if (record.closed || record.disposition !== 'pending') {
@@ -70,7 +73,6 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             // A failed read leaves the receipt or closing tally unresolved.
         }
         finally {
-            nextRevisionRead = performance.now() + 5_000;
             refreshing = false;
             retryAt = performance.now() + 2_000;
         }
@@ -84,10 +86,14 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             currentPhase = 'Recovering room poll';
         }
         const restoring = currentPhase === 'Recovering room poll';
-        const revisionDue = record.revision !== null && performance.now() >= nextRevisionRead;
-        const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed' || revisionDue;
+        const revisionDue = watchedRevision > (record.revision ?? 0);
+        const needsSnapshot = restoring || checkingReceipt || extensionUnconfirmed ||
+            currentPhase === 'Voting closed' || revisionDue;
         if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
+        }
+        if (deadlineStale || revisionDue || extensionUnconfirmed) {
+            currentPhase = 'Recovering room poll';
         }
         view.render({ record, currentPhase, checkingReceipt, refreshing, submitting, unacknowledged, retryAt });
     }
@@ -141,6 +147,14 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     document.addEventListener('resume', resume, listeners);
     window.addEventListener('pagehide', suspend, listeners);
     window.addEventListener('pageshow', resume, listeners);
+    if (input.deadlineSource === 'room') {
+        rallar.rooms.watchDeadline(roomRef, pollDeadlineName, observation => {
+            deadlineStale = observation.status === 'stale' || observation.deadline === null;
+            watchedRevision = observation.deadline?.revision ?? 0;
+            retryAt = 0;
+            render();
+        }, { signal });
+    }
     const extensionRequestId = crypto.randomUUID();
     extend.onclick = async () => {
         render();
@@ -163,7 +177,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             record = await requestPollSnapshot(input, signal, { previous: record });
         }
         catch {
-            nextRevisionRead = 0;
+            extensionUnconfirmed = true;
             retryAt = 0;
         }
         finally {
