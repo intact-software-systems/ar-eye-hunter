@@ -444,18 +444,23 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         expect(receipt.value.state).toEqual('acknowledged');
     });
 
-    // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
+    // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed. Over ws the
+    // sender's read of the kept send's handle runs last, after the delivery it waits for.
     test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
         writeAlmCellStartEvents(ports.receiver, receiver.commands);
         writeAlmCellStartEvents(ports.recipientB, recipientB.commands);
+        const [senderSends, keptSendRead] = splitAtKeptSendRead(sender);
 
         const results = [
-            await ports.sender.execute(toRecipeRun(sender)),
+            await ports.sender.execute(toRecipeRun(senderSends)),
             await ports.recipientB.execute(toRecipeRun(recipientB)),
-            await ports.receiver.execute(toRecipeRun(receiver))
+            await ports.receiver.execute(toRecipeRun(receiver)),
+            ...(keptSendRead === undefined
+                ? []
+                : [await ports.sender.execute({ ...toRecipeRun(keptSendRead), commandId: `${keptSendRead.recipeId}-kept-send-read-run` })])
         ];
 
         for (const result of results) {
@@ -471,11 +476,20 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             handleId: message.command.handleId
         });
         assert(receipt.ok && isJsonRecordValue(receipt.value));
-        expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
-        expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
-        expect(receipt.value.unconfirmedRecipientPeerIds).toEqual(['recipient-b-stored-session']);
-        expect(receipt.value.submitted).toEqual(true);
-        expect(receipt.value.state).toEqual('transport-accepted');
+        if (carrier === 'ws') {
+            expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.unconfirmedRecipientPeerIds).toEqual([]);
+            expect(receipt.value.submitted).toEqual(true);
+            expect(receipt.value.state).toEqual('acknowledged');
+        }
+        else {
+            expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
+            expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.unconfirmedRecipientPeerIds).toEqual(['recipient-b-stored-session']);
+            expect(receipt.value.submitted).toEqual(true);
+            expect(receipt.value.state).toEqual('transport-accepted');
+        }
     });
 
     test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
@@ -538,6 +552,14 @@ test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced
         reason: 'membership-fenced'
     }]]);
 });
+
+/** The sender's recipe before its read of the kept send's handle, and that read with what follows it, if it has one. */
+function splitAtKeptSendRead(sender: RallarBlackBoxTestRecipe): readonly [RallarBlackBoxTestRecipe, RallarBlackBoxTestRecipe | undefined] {
+    const read = sender.commands.findIndex((command) => command.commandId === `${sender.recipeId}-observe-acknowledged-1`);
+    return read < 0
+        ? [sender, undefined]
+        : [{ ...sender, commands: sender.commands.slice(0, read) }, { ...sender, commands: sender.commands.slice(read) }];
+}
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
     return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };
