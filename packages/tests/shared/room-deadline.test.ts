@@ -1,4 +1,4 @@
-import { assertRoomDeadlineChange, readRoomDeadline } from '@shared/api/room-deadline.ts';
+import { assertRoomDeadlineChange, readRoomDeadline } from '@shared/api/group-deadlines/room-deadline.ts';
 import { expect, it } from 'vitest';
 
 const deadline = { name: 'round.close', atEpochMs: 3_000, revision: 2 };

@@ -24,7 +24,7 @@ that cannot be restored, including a missing or inactive room.
 | Adopt admitted snapshots and recover conflicting observations              | `adopt-joined-room.ts`                                                            |
 | Leave membership and presence                                              | `leave-room.ts`                                                                   |
 | Invite, revoke, rotate codes, and govern members                           | `room-membership.ts`                                                              |
-| Read or conditionally extend a durable named room deadline                 | `room-deadlines.ts`                                                               |
+| Read or conditionally extend a durable named room deadline                 | `deadlines/room-deadlines.ts`                                                     |
 | Apply a targeted room mutation and accept its snapshot                     | `update-room.ts`                                                                  |
 | Resolve scope and fence replaced sessions or aborted operations            | `room-target.ts`, `room-session-fence.ts`                                         |
 | Observe current state, presence readiness, and accepted transport targets  | `room-state-store.ts`, `room-presence.ts`, `room-transport-target-observation.ts` |

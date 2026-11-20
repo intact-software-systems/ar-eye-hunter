@@ -45,6 +45,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
+import { createRoomDeadlineOperations, type RoomDeadlineOperations } from './deadlines/room-deadlines.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
@@ -81,7 +82,6 @@ import type {
     RallarUpdateRoomInput
 } from './rallar-room-contracts.ts';
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
-import { createRoomDeadlineOperations, type RoomDeadlineOperations } from './room-deadlines.ts';
 import type { RallarRoomEventsPort } from './room-events.ts';
 import type {
     GroupEvent,

@@ -48,6 +48,12 @@ describe('room request translation', () => {
             .not.toHaveProperty('directoryListing');
     });
 
+    it('forwards a revision-checked deadline as an update command', () => {
+        const roomDeadline = { name: 'vote', expectedRevision: 1, atEpochMs: 9_000 };
+        expect(toUpdateGroupStateRequest({ request: { roomDeadline }, ...actor }))
+            .toEqual({ roomDeadline, ...actor });
+    });
+
     it('translates minimal and fully populated create fields with literal defaults', () => {
         expect(
             toCreateGroupStateRequest({

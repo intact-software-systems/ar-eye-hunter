@@ -48,7 +48,7 @@ export class GroupConnectDeniedError extends Error {
     }
 }
 
-export class RoomDeadlineRevisionConflictError extends Error {
+export class GroupDeadlineRevisionConflictError extends Error {
     readonly status = 409;
     readonly code = 'room-deadline-revision-conflict';
 }

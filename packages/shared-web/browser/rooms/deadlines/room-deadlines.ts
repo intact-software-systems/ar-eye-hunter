@@ -1,18 +1,18 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
-import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import {
     assertRoomDeadlineChange,
     readRoomDeadline,
     type RoomDeadline,
     type RoomDeadlineChange
-} from '@shared/api/room-deadline.ts';
+} from '@shared/api/group-deadlines/room-deadline.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
-import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
-import { captureRoomSession } from './room-session-fence.ts';
+import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
+import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
+import { captureRoomSession } from '../room-session-fence.ts';
 
 export interface RoomDeadlineOperations {
     /** Reads durable room authority. A missing name returns null. */

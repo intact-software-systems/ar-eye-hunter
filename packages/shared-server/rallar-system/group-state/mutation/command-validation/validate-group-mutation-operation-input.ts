@@ -1,4 +1,3 @@
-import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
@@ -9,7 +8,6 @@ import {
     assertGroupSessionChange,
     GROUP_SESSION_SCHEDULE_METADATA_KEY
 } from '@shared/api/group-sessions/group-session-schedule.ts';
-import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/room-deadline.ts';
 import { formatRallarValidation, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
@@ -19,6 +17,7 @@ import {
     validateGroupInputKeys,
     type GroupInputFieldRule
 } from './group-input-validation-issues.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecycle-policy-input-shape.ts';
 
 interface GroupMutationOperationInput {
@@ -121,7 +120,7 @@ export function validateGroupMutationOperationInput(
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
         ...(operation === 'createGroup' || operation === 'updateGroup'
-            ? validateGroupMetadataInput(input.metadata)
+            ? validateGroupMetadataInput(input.metadata, input.roomDeadline)
             : [])
     ];
     if (
@@ -136,14 +135,9 @@ export function validateGroupMutationOperationInput(
     ) {
         issues.push(new TypeError('Group session schedule metadata is server-owned; use the scheduling commands'));
     }
-    if (operation === 'changeGroupSession' || (operation === 'updateGroup' && input.roomDeadline !== undefined)) {
+    if (operation === 'changeGroupSession') {
         try {
-            if (operation === 'changeGroupSession') {
-                assertGroupSessionChange(input);
-            }
-            else {
-                assertRoomDeadlineChange(input.roomDeadline);
-            }
+            assertGroupSessionChange(input);
         }
         catch (error) {
             if (!(error instanceof TypeError)) {
@@ -282,18 +276,4 @@ function validateExpectedLayout(value: JsonWireValue | undefined): readonly Type
             { key: 'state', kind: 'enum', required: true, allowed: GROUP_LAYOUT_IDENTITY_STATES }
         ], label)
     ];
-}
-
-/** Metadata is an external extension map; a present platform listing setting has a closed vocabulary. */
-export function validateGroupMetadataInput(metadata: JsonWireValue | undefined): readonly TypeError[] {
-    if (isGroupInputRecord(metadata) && Object.hasOwn(metadata, ROOM_DEADLINES_METADATA_KEY)) {
-        return [new TypeError('Room deadline metadata is server-owned; use roomDeadline')];
-    }
-    return isGroupInputRecord(metadata)
-        ? validateGroupInputFields(metadata, [{
-            key: GROUP_DIRECTORY_LISTING_METADATA_KEY,
-            kind: 'enum',
-            allowed: ['listed', 'unlisted']
-        }], 'Group metadata')
-        : [];
 }

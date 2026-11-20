@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 
-import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from './room-workflow-test-runtime.ts';
+import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
+import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
 
 const room = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const groupPath = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';

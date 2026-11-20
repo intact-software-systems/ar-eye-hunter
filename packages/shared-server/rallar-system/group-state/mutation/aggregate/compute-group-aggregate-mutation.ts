@@ -21,7 +21,7 @@ import {
     readGroupSpectatorCapacity
 } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
-import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/room-deadline.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { countGroupSessionOccupiedSeats } from '../../schedule/group-session-reservations.ts';
@@ -43,7 +43,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeRoomDeadlineChange } from './compute-room-deadline-change.ts';
+import { computeGroupDeadlineChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
@@ -92,11 +92,11 @@ export function computeUpdate(
     let next = computeUpdatedGroup(command, current, audit);
     const change = command.input.roomDeadline;
     if (change !== undefined) {
-        const deadline = computeRoomDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
+        const deadline = computeGroupDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
         if ('rejectionCode' in deadline) {
             return rejected({ command, read, facts, ...deadline });
         }
-        next = deadline.group;
+        next = deadline;
     }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {

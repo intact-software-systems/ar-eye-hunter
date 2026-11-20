@@ -1,6 +1,5 @@
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
-import { assertRoomDeadlineChange } from '@shared/api/room-deadline.ts';
 import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
@@ -18,10 +17,10 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
     validateCreationPublicationGrants,
-    validateGroupMetadataInput,
     validateGroupMutationOperationInput
 } from './validate-group-mutation-operation-input.ts';
 
@@ -122,7 +121,7 @@ function assertAggregateOperationInput(
         if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
             throw new TypeError('Group maxSpectators must be at most 64');
         }
-        const metadataIssues = validateGroupMetadataInput(input.metadata);
+        const metadataIssues = validateGroupMetadataInput(input.metadata, input.roomDeadline);
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
         }
@@ -174,9 +173,6 @@ function assertCreateGroupInput(input: JsonWireObject): void {
 }
 
 function assertUpdateGroupInput(input: JsonWireObject): void {
-    if (input.roomDeadline !== undefined) {
-        assertRoomDeadlineChange(input.roomDeadline);
-    }
     assertNullableString(input, 'slug');
     assertNullableString(input, 'displayName');
     assertNullableString(input, 'description');

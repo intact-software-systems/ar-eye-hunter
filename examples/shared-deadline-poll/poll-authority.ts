@@ -1,5 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RoomDeadline } from '@shared/api/room-deadline.ts';
+import type { RoomDeadline } from '@shared/api/group-deadlines/room-deadline.ts';
 
 export const pollDeadlineName = 'voting-close';
 

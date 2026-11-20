@@ -9,6 +9,7 @@ import {
     readGroupDisplayName,
     readGroupId
 } from '@shared/api/group-client-views.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
@@ -16,7 +17,6 @@ import type {
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/room-deadline.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
@@ -526,31 +526,25 @@ function toActorRequest({
 }
 
 function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody {
-    return {
-        ...(request.slug === undefined ? {} : { slug: request.slug }),
-        ...(request.displayName === undefined ? {} : { displayName: request.displayName }),
-        ...(request.description === undefined ? {} : { description: request.description }),
-        ...(request.kind === undefined ? {} : { kind: request.kind }),
-        ...(request.status === undefined ? {} : { status: request.status }),
-        ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
-        ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
-        ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
-        ...(request.maxSpectators === undefined ? {} : { maxSpectators: request.maxSpectators }),
-        ...(request.maxSessionsPerMember === undefined
-            ? {}
-            : { maxSessionsPerMember: request.maxSessionsPerMember }),
-        ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-        ...(request.expiresAtEpochMs === undefined
-            ? {}
-            : { expiresAtEpochMs: request.expiresAtEpochMs }),
-        ...(request.emptySinceEpochMs === undefined
-            ? {}
-            : { emptySinceEpochMs: request.emptySinceEpochMs }),
-        ...(request.purgeAfterEpochMs === undefined
-            ? {}
-            : { purgeAfterEpochMs: request.purgeAfterEpochMs }),
-        ...toMutationAuditFields(request)
-    };
+    const fields = {
+        slug: request.slug,
+        displayName: request.displayName,
+        description: request.description,
+        kind: request.kind,
+        status: request.status,
+        joinMode: request.joinMode,
+        directoryListing: request.directoryListing,
+        maxMembers: request.maxMembers,
+        maxSpectators: request.maxSpectators,
+        maxSessionsPerMember: request.maxSessionsPerMember,
+        metadata: request.metadata,
+        roomDeadline: request.roomDeadline,
+        expiresAtEpochMs: request.expiresAtEpochMs,
+        emptySinceEpochMs: request.emptySinceEpochMs,
+        purgeAfterEpochMs: request.purgeAfterEpochMs,
+        reason: request.reason
+    } satisfies UpdateStateGroupBody;
+    return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
 
 function toMutationAuditFields(

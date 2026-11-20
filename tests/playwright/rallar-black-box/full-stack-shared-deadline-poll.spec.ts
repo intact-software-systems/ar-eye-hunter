@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { readRoomDeadline } from '@shared/api/room-deadline.ts';
+import { readRoomDeadline } from '@shared/api/group-deadlines/room-deadline.ts';
 
 import { PollAuthority, pollDeadlineName } from '../../../examples/shared-deadline-poll/poll-authority.ts';
 import {

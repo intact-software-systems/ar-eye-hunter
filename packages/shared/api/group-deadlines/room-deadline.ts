@@ -1,5 +1,5 @@
-import type { ApiJsonObject, ApiJsonValue } from './api-json-value.ts';
-import { requireEpoch, requireExactKeys, requireRecord } from './exact-object-decoding.ts';
+import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
+import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
 
 export interface RoomDeadline {
     readonly name: string;

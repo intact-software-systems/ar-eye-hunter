@@ -4,9 +4,9 @@ import {
     readRoomDeadlines,
     ROOM_DEADLINES_METADATA_KEY,
     type RoomDeadlineChange
-} from '@shared/api/room-deadline.ts';
+} from '@shared/api/group-deadlines/room-deadline.ts';
 
-interface ComputeRoomDeadlineChangeInput {
+interface ComputeGroupDeadlineChangeInput {
     readonly current: Group;
     readonly next: Group;
     readonly change: RoomDeadlineChange;
@@ -19,9 +19,9 @@ interface DeadlineRefusal {
 }
 
 /** The enclosing group CAS fences this decision against concurrent room and membership changes. */
-export function computeRoomDeadlineChange(
-    { current, next, change, nowEpochMs }: ComputeRoomDeadlineChangeInput
-): DeadlineRefusal | { readonly group: Group } {
+export function computeGroupDeadlineChange(
+    { current, next, change, nowEpochMs }: ComputeGroupDeadlineChangeInput
+): DeadlineRefusal | Group {
     if (current.kind !== 'room' || next.kind !== 'room' || current.status !== 'active' || next.status !== 'active') {
         return { rejectionCode: 'group-mutation-rejected', message: 'Deadlines require an active room.' };
     }
@@ -49,5 +49,5 @@ export function computeRoomDeadlineChange(
         atEpochMs: change.atEpochMs,
         revision: change.expectedRevision + 1
     };
-    return { group: { ...next, metadata: { ...next.metadata, [ROOM_DEADLINES_METADATA_KEY]: revised } } };
+    return { ...next, metadata: { ...next.metadata, [ROOM_DEADLINES_METADATA_KEY]: revised } };
 }
