@@ -67,6 +67,7 @@ export namespace ALInboundMessageAdmission {
             | 'readRelayedAckRejection'
             | 'readRelayedRepairRequestRejection'
             | 'onResyncRequired'
+            | 'onReplayAdmitted'
             | 'orderingObserver'
             | 'receiptProofs'
             | 'diagnostics'
@@ -287,14 +288,15 @@ export class ALInboundMessageAdmission {
         if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
             return REPLAY_STORED_SCOPE_REFUSED;
         }
-        return await this.replayAuthorized(pending.msg, authority.source);
+        return await this.replayAuthorized(pending.msg, authority);
     }
 
-    /** One fresh attempt under the source its current authority answered with. */
+    /** One fresh attempt under the source its current authority answered with; an admission is handed to its owner. */
     private async replayAuthorized(
         msg: ALMessage,
-        source: ALInboundMessageRuntime.Source
+        authority: Extract<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>
     ): Promise<ALInboundMessageAdmission.ReplayResult> {
+        const { source } = authority;
         const authorization = await readALInboundMessageAuthorization(
             msg,
             source,
@@ -311,7 +313,11 @@ export class ALInboundMessageAdmission {
         if (result.left) {
             return toRejectedReplay(result.left);
         }
-        return toAttemptReplay(result.right!, this.shutdown.signal.aborted);
+        const attempt = result.right!;
+        if (attempt.kind === 'completed' && attempt.acceptance.kind === 'admitted' && !this.shutdown.signal.aborted) {
+            await this.dependencies.onReplayAdmitted?.({ msg, source, snapshotVersion: authority.snapshotVersion });
+        }
+        return toAttemptReplay(attempt, this.shutdown.signal.aborted);
     }
 }
 
