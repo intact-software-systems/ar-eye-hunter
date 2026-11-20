@@ -187,11 +187,14 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return isRoomScopedALMessage(msg) && this.dependencies.planRepairMessage === undefined;
     }
 
+    /** Re-read after the NACK's commit: a message ended since is retried and stated no more. */
     private async scheduleNotYetInSyncRetry(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
-        if (!msg || !retry?.enabled || retry.maxAttempts <= 0 || this.isOwnHopRoomSend(msg)) {
+        if (
+            !msg || read.storedMessage?.ended || !retry?.enabled || retry.maxAttempts <= 0 || this.isOwnHopRoomSend(msg)
+        ) {
             return;
         }
 
