@@ -1547,20 +1547,32 @@ new ordered track is lost for good when a later send arrives before it; an
 ordered receipted stream keeps its order under a seeded jitter over `ws`; and
 a receipt whose subscriber's server is lost ends `timed-out`, naming the
 subscriber it could not confirm. They also found that an ordered receipted
-stream does not reliably recover from a seeded loss on either carrier (D670),
-so no advertised mode may yet claim recovery under loss. That recovery is
-partly built: the shared queue now hands out work in the order it comes due,
-on every store, so timers that come due later no longer hide work that is due
-now (D671). On PostgreSQL an index of its own serves that order, and a send
-that names no `ack` keeps the receipt its channel's purpose gives (D674). After it the loss cell was green in three of three runs over `rtc`
-and in two of three over `ws`. What remains is the `ws` stall: as read from
-the code and not yet proven by a test, a repair frame that is lost is never
-sent again, because a repair attempt is named by its gap (D673). The next
-outcome is that repair rule, starting with a unit reproduction; the local
-baseline's alternating runs are their own small change after the recovery
-slice (D672), and whether that change comes before or after the repair rule
-has not been ruled. After them, the held-send path, where a retained admission starts its `admitted`
-receipt only once its replay commits, and the relay statement rules. With the figures in place, recovery proven and the contracts adopted,
+stream did not reliably recover from a seeded loss on either carrier (D670). That recovery is built for a stream
+over `ws` and over direct `rtc` links. The shared queue hands out work in the
+order it comes due, on every store, so timers that come due later no longer
+hide work that is due now (D671); on PostgreSQL an index of its own serves that
+order, and a send that names no `ack` keeps the receipt its channel's purpose
+gives (D674). A WS client holds a first-hop wait until the server answers for
+its receipted send, and the server answers a duplicate with `admitted` again; a
+receiver asks again while a gap stands, each request numbered, under a repair
+budget of four per requester (D675 to D683). A terminal settlement ends its
+message (D684 to D687), and a receipt waits for its first frame to leave (D688
+to D691). Two cells prove the recovery they run: `seeded-loss-stream`, twenty
+ordered receipted sends under a 25 % seeded loss, is green in three of three
+runs over `ws` and over `rtc`, every handle `acknowledged`, and
+`seeded-loss-unreceipted-stream`, the same loss under `ack: 'none'` over `ws`,
+is green in three of three; in both all twenty arrive in order and none twice.
+In the first nine runs a lost repair frame was renewed end to end in two, both
+over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
+recovery has stated limits: a lost only or last frame under `ack: 'none'` is
+not recovered, renewal holds on direct links and not through an `rtc` relay,
+and a send can end `failed` although delivered when the server no longer holds
+its receipt (D678, D683, D693 and the backlog). The next outcome is the local
+baseline's alternating runs, their own small change (D672). After them, the
+held-send path, where a retained admission starts its `admitted` receipt only
+once its replay commits, and of which a receipt's first attempt is built
+(D689), and the relay statement rules.
+With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world
 testing, outside this document: a publication workload family, probes at the

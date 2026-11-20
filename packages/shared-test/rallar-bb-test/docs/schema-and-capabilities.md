@@ -828,12 +828,11 @@ its receiver's budget spent, and the sender settles seq 2. The sender observes s
 10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`. The
 settlement ends the message: its last command, `no-repair-commit-after-failed-2`, an absent wait on
 `rallar.browser.alm.outbound_diagnostics`, reads no `commit-phases` event of seq 2 with `origin: 'repair'` and
-`commitOutcome: 'committed'` in the 5 s after the handle read `failed`. The exhausting renewal's own commit, which
-ends the message, precedes the settlement, so the wait starts its history at its own first event
-(`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame: whether a frame left
-the page is not in the snapshot. Both receivers
-receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
-arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
+`commitOutcome: 'committed'` in the 5 s from the wait's own start, a few events after the handle read `failed`. The
+exhausting renewal's own commit, which ends the message, precedes the settlement, so the wait starts its history at
+its own first event (`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame:
+whether a frame left the page is not in the snapshot. Both receivers receive the first send once and prove the
+absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
 absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
 untested there since the repair budget became per requester. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
