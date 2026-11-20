@@ -101,6 +101,12 @@ export interface HoldSender {
     readSentFrames(msgId: string): readonly ALMessage[];
 }
 
+/** The WS hold sender, which can also take a copy another carrier already admitted (D56). */
+export interface WsHoldSender extends HoldSender {
+    /** Opens the registry handle and admits the message as a hand-over; the caller drains. */
+    sendHandedOver(message: ALMessage): Promise<RallarMessageHandle>;
+}
+
 /**
  * A lane variable added on top of the hold, to the armed and the unarmed case alike: the submission's
  * own retransmission under the held typeId (`ack-timeout`), the lane's cancel of the held send, or,
@@ -340,7 +346,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
     return manager;
 }
 
-export async function openWsHoldSender(): Promise<HoldSender> {
+export async function openWsHoldSender(): Promise<WsHoldSender> {
     // fake-indexeddb completes on `setImmediate`, so it stays real, as in `ws-durable-owner-recovery.test.ts`.
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
@@ -360,6 +366,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
             turn: () => vi.advanceTimersByTimeAsync(0).then(() => undefined),
             admit: (message) => service.enqueueOutboxIfAbsent(message)
         }),
+        sendHandedOver: toRegistrySend(runtime, 'ws', (message) => service.enqueueHandedOverIfAbsent(message)),
         selfPeerId: sessionId,
         outboundAdmissionNamespace: resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.namespace,
         hold: WS_HOLD,
@@ -445,13 +452,21 @@ function toSharedHoldSenderMembers(
         carrier: input.carrier,
         faults: runtime.faults,
         diagnostics: runtime.diagnostics,
-        send: async (message) => {
-            const handle = runtime.registry.open(message, input.carrier);
-            await input.admit(message);
-            return handle;
-        },
+        send: toRegistrySend(runtime, input.carrier, input.admit),
         drain: runtime.drain,
         settle: () => runQueuedTurns(input.turn)
+    };
+}
+
+function toRegistrySend(
+    runtime: HoldSenderRuntime,
+    carrier: HoldSender['carrier'],
+    admit: HoldSenderCarrierInput['admit']
+): HoldSender['send'] {
+    return async (message) => {
+        const handle = runtime.registry.open(message, carrier);
+        await admit(message);
+        return handle;
     };
 }
 

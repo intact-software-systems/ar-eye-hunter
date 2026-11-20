@@ -39,7 +39,8 @@ const ONE_REPAIR: AlmConformanceOrderedSendOptions = { maxRepairs: 1 };
  * first send only: the third and fourth wait for a second that never arrives. The cell is not run over `ws`, where the
  * server orders the track and requests its gaps; it is untested there since the budget became per requester. Over
  * `rtc-with-ws-fallback` the held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the
- * RTC repair's to exhaust; what a handed-over held frame ends as is undocumented, so the cell asserts `rtc` alone.
+ * RTC repair's to exhaust; held there too, it sends nothing and ends `expired` at its deadline, past the observe window
+ * (`handed-over-send-held-on-ws.test.ts`), so the cell asserts `rtc` alone.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
