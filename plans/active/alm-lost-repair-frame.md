@@ -236,6 +236,47 @@ Outside this part, left as they are and recorded in the backlog: cancel and hand
 only, so a reload forgets them; over `rtc` a gap request whose revealing message ended unacknowledged is refused at
 admission.
 
+### Part D: a receipt waits for its frame
+
+Added on 2026-11-20. The lane's two-agent family over `rtc`, green before part C, went red in two existing cells
+(`delivery-reload`, `checkpoint-recovery`), three runs of three each alone. A unit reproduction established the
+cause, the same in every run:
+
+- Both cells hold the carrier, send one receipted message on a lane that survives a reload, reload the sender about
+  17 s later and expect the receiver to get the message.
+- The receipt's clock runs from the commit, not from a submission. Its budget (2 s, three retries) runs out at 8 s
+  while the first transmission has never left, and each retry stacks another held copy.
+- Before part C the handle read `receipt-exhausted` and the message was then delivered, four times. With part C the
+  end marks the message, every held copy meets the marker and completes without a frame, and the message is never
+  sent.
+
+Part C did what it says ("a queued send for an ended message ends the same way"); what it did not consider is that
+the queued send can be the first transmission. The maintainer ruled "Receipt waits for first send": while no copy
+of the message has been handed to the carrier, the receipt charges no attempt and queues no retry copy.
+
+**The rule.** At a receipt deadline, an attempt whose frame has not been handed to the carrier is not charged and no
+further copy is queued: the receipt waits one more timeout for the copy that is already queued. It is the rule part
+B built for the first-hop wait ("a frame that could not be written charges no attempt"), read the same way, from the
+attempt's own send rows, and now stated once for both timers.
+
+- **What the wait ends on.** The copy is handed to the carrier (the budget then runs as it does today, from the next
+  deadline); the message's deadline passes (`expired`, as today); another terminal settlement ends the message.
+- **What it changes for a caller.** A send whose carrier submits nothing no longer fails after the receipt budget
+  (about 8 s at the defaults): its handle stays pending until the frame leaves or the message's deadline passes. A
+  message is not delivered more than once after a hold.
+- **What does not change.** The budget once a frame has left; what a server-owned receipt does; part C: a terminal
+  settlement still ends every queued copy, the first one included, when it is stated for another reason.
+- **Scope.** The ruling's words cover the first transmission. This document applies the same rule to every attempt
+  (a retry whose copy is still held is not charged either), because that is the one rule the first-hop timer
+  already has; if an existing test or cell depends on a held retry being charged, the builder stops and reports
+  rather than narrowing or widening on its own.
+
+This is one piece of the held-send path (D640) pulled forward. The rest of that slice stays where it is: what a
+relay's refusal of a held send means, and the handle's states while held.
+
+After part D the two red cells run again alone (three runs each over `rtc`), then every cell of this slice and the
+three lane families, under the same stop rule.
+
 ### The reproduction's cases, restated
 
 The six red cases were written before the rulings. Under the ruled design:
@@ -308,14 +349,15 @@ The six red cases were written before the rulings. Under the ruled design:
 
 ## Decisions (maintainer, 2026-11-19)
 
-| Question                            | Ruling                                                         |
-| ----------------------------------- | -------------------------------------------------------------- |
-| What follows the queue-order fix    | The lost repair frame, ahead of the alternating-runs baseline. |
-| Which defects this slice fixes      | Both, B first.                                                 |
-| B: who holds the first-hop timer    | The sender, until the server's `admitted` receipt.             |
-| B: a lost `admitted` receipt        | The server answers a duplicate with `admitted` again.          |
-| A: what resends a lost repair frame | The requester asks again while the gap stands.                 |
-| A: how the repair budget counts     | Per requester.                                                 |
-| B: which sends wait                 | Every receipted `ws` send, room or unicast.                    |
-| The `repair-exhausted` cell         | Restated with a budget of one.                                 |
-| Work after a terminal settlement    | "Full fix here": a terminal settlement ends all work.          |
+| Question                                  | Ruling                                                         |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| What follows the queue-order fix          | The lost repair frame, ahead of the alternating-runs baseline. |
+| Which defects this slice fixes            | Both, B first.                                                 |
+| B: who holds the first-hop timer          | The sender, until the server's `admitted` receipt.             |
+| B: a lost `admitted` receipt              | The server answers a duplicate with `admitted` again.          |
+| A: what resends a lost repair frame       | The requester asks again while the gap stands.                 |
+| A: how the repair budget counts           | Per requester.                                                 |
+| B: which sends wait                       | Every receipted `ws` send, room or unicast.                    |
+| The `repair-exhausted` cell               | Restated with a budget of one.                                 |
+| Work after a terminal settlement          | "Full fix here": a terminal settlement ends all work.          |
+| A send still held at its receipt deadline | "Receipt waits for first send" (2026-11-20).                   |
