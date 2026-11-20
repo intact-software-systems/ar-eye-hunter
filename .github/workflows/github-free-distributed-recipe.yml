@@ -185,8 +185,8 @@ jobs:
             echo "::error::target_agent_count must be a positive integer." >&2
             exit 1
           fi
-          if [[ "${TARGET_AGENT_COUNT}" -gt 1 && "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then
-            echo "::error::GitHub free multi-agent runs require register_before_login=true." >&2
+          if [[ "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then
+            echo "::error::GitHub free runs require register_before_login=true: each agent signs in as a user named after its room, which only this run registers." >&2
             exit 1
           fi
           if [[ ! -r "${MANIFEST_PATH}" ]]; then

@@ -205,11 +205,6 @@ function resolveManualModeJobs(jobs: Readonly<Record<string, WorkflowJob>>, exec
     }).map(([name]) => name).toSorted();
 }
 
-/** Derived apart from the workflow: twelve hex digits of the room id's SHA-256 after the agent id. */
-function toRoomUsername(agentId: string, roomId: string): string {
-    return `${agentId}-${createHash('sha256').update(roomId).digest('hex').slice(0, 12)}`;
-}
-
 async function existingUsernameRegistrationResponse(): Promise<string> {
     const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
     const request = { username: 'controller-05-minted', password: 'test-password' };
@@ -758,7 +753,6 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
         // The Hetzner worker env writer owns the user naming rule; the mint step names its users through it.
         expect(mint.env?.RALLAR_BLACK_BOX_ROOM_ID).toBe('${{ inputs.room_id }}');
         expect(mint.run).toContain('source scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
-        expect(mint.run).toContain('to_rallar_headless_worker_agent_username "${agent_id}" "${RALLAR_BLACK_BOX_ROOM_ID}"');
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-github-free-credentials-'));
         try {
             await writeFile(path.join(directory, 'curl'), `#!/bin/sh\nprintf '%s\\n' '{"token":"test-agent-token"}'\n`);
@@ -794,8 +788,9 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
             });
             expect(consume.status).toBe(0);
             expect(JSON.parse(consume.stdout)).toEqual([
-                toRoomUsername('controller-04', 'test-room'),
-                toRoomUsername('controller-05', 'test-room'),
+                // The agent id, then the first twelve hex digits of the SHA-256 of `test-room`.
+                'controller-04-876af21d3bda',
+                'controller-05-876af21d3bda',
                 'test-password',
                 'test-agent-token'
             ]);
@@ -940,7 +935,7 @@ esac
         expect(jobs.operator.with?.server_timing).toBe('${{ inputs.server_timing }}');
     });
 
-    it('rejects registration-disabled multi-agent plans before manifest processing', async () => {
+    it('rejects registration-disabled plans, one agent included, before manifest processing', async () => {
         const workflow = await readWorkflow();
         const plan = required(workflow.jobs?.plan, 'plan job');
         const buildMatrix = findStep(plan, 'Build matrix');
@@ -958,7 +953,7 @@ esac
                 env: {
                     PATH: process.env.PATH,
                     INPUT_RUN_ID: 'gh-free-registration-contract',
-                    TARGET_AGENT_COUNT: '2',
+                    TARGET_AGENT_COUNT: '1',
                     AGENTS_PER_JOB: '1',
                     MAX_PARALLEL_JOBS: '1',
                     AGENT_PREFIX: 'controller',
@@ -970,7 +965,7 @@ esac
 
         expect(result.status).toBe(1);
         expect(result.stderr).toContain(
-            'GitHub free multi-agent runs require register_before_login=true.'
+            'GitHub free runs require register_before_login=true'
         );
         expect(result.stderr).not.toContain('Manifest path does not exist');
     });

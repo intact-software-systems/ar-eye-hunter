@@ -153,10 +153,11 @@ after it reaches `passed`, `failed`, `cancelled`, or `timed-out`.
 Before launching a shard, the workflow calls
 `POST /runs/{runId}/agents/{agentId}/tokens` for each local agent and exports
 the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. It also
-writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` using that global `agentId` and
-the configured password as `RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
-(`register_before_login`) is enabled by default and required for every
-multi-agent run (the `plan` job fails otherwise), so every global agent ID
+writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` from that global `agentId` and the
+`room_id` input, and the configured password as
+`RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
+(`register_before_login`) is enabled by default and required for every run
+(the `plan` job fails otherwise), so every global agent ID
 registers and uses one distinct username. The short-lived run tokens are the only control tokens
 forwarded into browser-agent URLs. The admin/operator read token stays in the
 Node-side worker environment.
