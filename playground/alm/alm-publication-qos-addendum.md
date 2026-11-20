@@ -1202,8 +1202,9 @@ in `packages/shared/signature/`, builds both signing inputs, and
 `ALPublicationProof` is `SignatureProof` with no alias; a granted frame's signed
 bytes are pinned unmoved. One test builder,
 `packages/tests/al-control-test-payloads.ts`, builds the ACK and NACK fixtures
-of 93 test files. The control ids are `al.control.ack.v3` and
-`al.control.nack.v3` on both carriers: each payload carries a required nullable
+of 93 test files. The control ids were then `al.control.ack.v3` and
+`al.control.nack.v3` on both carriers (the NACK is `al.control.nack.v4` since
+it carries the gap request number, D679): each payload carries a required nullable
 `proof`, whose `null` means the carrier's admission authenticates the sender,
 and a NACK a required `originPeerId`, checked against the owner row at a relay
 and at the origin; `v2` is refused `unsupported` by the existing id check, the
@@ -1215,7 +1216,8 @@ black-box recipes and the hosted manifests 18 and 22 carry the new ids. The
 receipt proof (`al-contracts/receipt-proof/al-receipt-proof.ts`) signs every
 field a recipient states and none of the hop fields (`fromPeerId`, `toPeerId`,
 an ACK's `carrier`), under the domain tags `rallar-alm-ack-proof-v1` and
-`rallar-alm-nack-proof-v1`, so an ACK's signature never verifies as a NACK's.
+`rallar-alm-nack-proof-v1` (now `rallar-alm-nack-proof-v2`, D679), so an ACK's
+signature never verifies as a NACK's.
 The RTC planner states `receiptProofKeys`, each counted recipient's
 `{ keyId, publicJwk }`, on the plan that freezes the audience: at admission when
 the room snapshot is cached, at the dequeue that first has it otherwise; the
@@ -1568,7 +1570,9 @@ over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
 not recovered, renewal holds on direct links and not through an `rtc` relay,
 and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D680, D683, D693 and the backlog), and the lost stream
+its receipt (D678, D680, D683, D693 and the backlog); a send the server retains
+behind its room view stays open to its deadline, since the server never reports
+one it later refuses or lets expire, nor one it loses in a restart (D694); and the lost stream
 start over `rtc` is its own slice (D669). The next outcome is the local
 baseline's alternating runs, their own small change (D672). After them, the
 held-send path, where a retained admission starts its `admitted` receipt only

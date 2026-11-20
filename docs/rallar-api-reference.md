@@ -1217,7 +1217,8 @@ that is not addressed to the server and has at least one retry is written again
 after each receipt timeout (2 s by default) the server has not answered, up to
 its retries (3 by default), and then reads `failed` with `failure.kind:
 'receipt-exhausted'`. A frame the page's carrier has not taken yet charges no
-retry. Any receipt from the server ends that wait. The server answers a
+retry. Any receipt from the server ends that wait, and so does its
+`not-yet-in-sync` answer for a send it retains, which states nothing. The server answers a
 duplicate of a message it admitted with its `admitted` receipt again, to that
 sender alone, while it holds the receipt; where it no longer does (another
 server instance, a restart) a send whose `admitted` receipt was lost can read
@@ -2095,7 +2096,9 @@ receiver, since a relay forwards a gap NACK only then and never forwards a
 repair request. Each receiver
 that misses a sequence may draw `maxRepairs` retransmits of it (4 by default:
 its first report and three renewals; `qos: { repair: { algo: 'retransmit',
-opts: { maxRepairs } } }` sets it); a request past one receiver's budget
+opts: { maxRepairs } } }` sets it); on a receipted WS send whose wait for its
+server ran out (about 8 s at the defaults), a later renewal finds the message
+ended and is served nothing; a request past one receiver's budget
 settles the message `skipped` with reason `repair-exhausted`, once, so its
 handle reads `failed` with `failure: { kind: 'skipped', reason:
 'repair-exhausted' }`, and ends the message for every receiver: nothing is
@@ -2239,12 +2242,12 @@ A receiver judges a room send against the room snapshot it holds:
   catches up on the existing bounded path: an RTC receiver NACKs its hop,
   refreshes the room once and re-admits the message once, and the sender
   retries; the WS server retains the send as a pending admission, answers an
-  advisory NACK the sender leaves unhandled, and re-authorizes it every 50 ms
-  until its room meets the floor or the message's deadline passes. The sender
-  handles that NACK no further over WS; a receipted send the server has not
-  yet answered for is still written again by the sender's first-hop wait,
-  after each receipt timeout. A send the server retains this way starts no receipt
-  aggregate, so a `receiver` receipt never completes for it.
+  advisory NACK, and re-authorizes it every 50 ms
+  until its room meets the floor or the message's deadline passes. Over WS
+  that NACK ends the sender's wait for its server to answer, so the sender
+  writes the send no more and states nothing. A send the server retains this
+  way starts no receipt aggregate, so a `receiver` receipt never completes for
+  it: its handle stays open to the message's deadline, then reads `expired`.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`

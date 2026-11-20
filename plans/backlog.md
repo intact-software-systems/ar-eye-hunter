@@ -754,7 +754,29 @@ and it has no status list.
   aggregate that completed and whose `complete` was also lost, or a runtime
   being disposed (D678). The server's repeated `admitted` answers only from a
   live aggregate. Open decision: a stored or cluster-wide receipt lookup on a
-  duplicate.
+  duplicate. A send the server retains behind its room view no longer ends so:
+  the server's `not-yet-in-sync` ends the first-hop wait and states nothing
+  (D694). What remains of that case: a retained send the server then loses (a
+  restart) is not recovered by the client, and its handle reads `expired` at
+  its deadline. No step ruled; for the maintainer.
+- The WS server never reports to its sender a retained send it later refuses
+  or lets expire, so the handle stays open and reads `expired` at the deadline
+  (predates the slice; D694). No step ruled; for the maintainer (the held-send
+  slice, D642, is where a replay's own receipt is ruled).
+- On a receipted WS send the first-hop wait gives up at about 8 s while a gap
+  renewal runs to 7 s and 10.5 s with its stretch, so the last renewal mostly
+  finds the message ended and is served nothing (a run showed request 4 at
+  8.5 s writing no frame). Open decision: whether the renewal schedule should
+  fit inside the first-hop budget, or a gap repair's frame count as activity
+  for the wait.
+- `to-al-outbound-effect-id.ts` now holds a decoder, the attempt identity and
+  the requester key, so its name no longer says what it holds; moving them to
+  their owners trips the directory density of `outbound/` (22 files). No step
+  ruled; for the maintainer.
+- The first-hop timer's `early` branch re-arms under the running timer's id
+  (`first-hop/al-outbound-first-hop-wait.ts`), which the effect store would not
+  write again; no path to it was found (final review, low confidence). No step
+  ruled; for the maintainer.
 - Gap renewal holds on direct links only (D680): a WS client and its server in
   both directions, and `rtc` peers that send to each other directly. A relay
   forwards a child's gap NACK only while it holds a pending row that waits on
@@ -827,7 +849,8 @@ and it has no status list.
   `web-rtc-overlay-frozen-audience.test.ts`, for which no production path to a
   whole-message targeted repair other than a ranged gap NACK was established.
   Next step: restate each to its production shape, then refuse a rangeless gap
-  NACK.
+  NACK. Open decision: whether the rangeless gap NACK leaves the wire now, in
+  the id move to `al.control.nack.v4` (D679), rather than after the restatement.
 - The control-server model of `repair-exhausted` records no commit for a
   repeated request number, so it states two repair commits before the
   settlement where the product commits four (each requester's repeat finds its
@@ -856,14 +879,19 @@ and it has no status list.
   from its deadline, so a frame released just before a deadline can be resent
   under 2 s after it was written. No step ruled; for the maintainer.
 - A held send costs one timer commit per receipt timeout until its message's
-  deadline (up to 15 at a 30 s deadline), and on the WS server a single
-  re-planned recipient whose connection answers `not-ready` now waits to the
-  message deadline where it stated `receipt-exhausted` after about 8 s
-  (D693; unpinned). No step ruled; for the maintainer.
+  deadline (up to 15 at a 30 s deadline). On the WS server part D changes
+  nothing for a send it dequeued: the receipt timer's re-plan (phase
+  `immediate`) plans no copy for a route it awaits, so a recipient whose
+  connection answers `not-ready` is charged as before and the receipt is
+  exhausted at about 9 s (D693). No step ruled; for the maintainer.
 - A send that the `ended` guard completes leaves no diagnostic and no
   settlement (`al-outbound-message-effects.ts`), so the six red runs of D688
-  showed only a completed count. Next step: a `message-ended` diagnostic at the
-  guard.
+  showed only a completed count, and the attempt the lane stated
+  `attempt-started` for keeps no outcome on its handle. Its neighbours settle
+  theirs `superseded` or `cancelled`, values of the attempt outcome, which has
+  none for an ended message, and `message-ended` is an admission reason, not an
+  outcome. Open decision: an attempt outcome for an ended message, or a
+  `message-ended` diagnostic at the guard.
 - No path states `expired` for a held send's lapsed row: the row is never
   claimed past its expiry, so the lane states nothing, and a handle reads
   `expired` only because the browser registry applies the deadline when it is
