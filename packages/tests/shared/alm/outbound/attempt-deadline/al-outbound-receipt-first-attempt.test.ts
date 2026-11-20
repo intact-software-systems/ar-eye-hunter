@@ -7,26 +7,28 @@ import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
-    ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundPreparedSendResult,
-    ALOutboundRepairRequest,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 
 import {
-    createDefaultOutboundTestRuntime,
     createOutboundMessage,
     enqueueOutboundOrThrow
 } from '../../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
 import {
     advanceOutboundClockTo,
+    createOutboundTimelineRuntime,
     createReopenableOutboundTestStores,
     readPendingOutboundWorkKinds,
     readPendingOutboundWorkPayloads,
+    reloadOutboundTimelinePage,
     toOutboundTerminalFacts,
+    toOutboundTimelineReceiptTracking,
+    toOutboundTimelineRepairPlan,
+    type OutboundTimelineSender,
     type OutboundTimelineStoreKind,
     type ReopenableOutboundTestStores
 } from '../outbound-timeline-test-fixture.ts';
@@ -61,14 +63,7 @@ interface HeldSendFixtureOptions {
     readonly ttlMs?: number;
 }
 
-const RECEIPT_TRACKING = {
-    enabled: true,
-    timeoutMs: 2_000,
-    maxAttempts: 3,
-    expectedPeerIds: ['peer-1'],
-    nextHopPeerIds: ['peer-1'],
-    mode: 'receiver'
-} as const;
+const RECEIPT_TRACKING = toOutboundTimelineReceiptTracking(['peer-1']);
 
 describe('a receipt waits for its first frame', () => {
     beforeEach(() => {
@@ -96,7 +91,7 @@ describe('a receipt waits for its first frame', () => {
             });
             expect((await fixture.stores.admissionStore.readStoredMessage(fixture.message.id.msgId))?.ended).toBe(false);
 
-            await reload(fixture);
+            await reloadOutboundTimelinePage(fixture, toSender(fixture.transport));
             fixture.transport.hold = 'none';
             await advanceTo(fixture, 9_100);
             expect(framesOf(fixture).map(([cause]) => cause)).toEqual(['first-send']);
@@ -229,7 +224,7 @@ async function createHeldSendFixture(
     const transport: HeldSendTransport = { frames: [], hold: options.hold };
     const settlements: ALDeliverySettlement[] = [];
     const fixture: HeldSendFixture = {
-        runtime: createFixtureRuntime(reopenable.stores, settlements, transport),
+        runtime: createOutboundTimelineRuntime(reopenable.stores, settlements, toSender(transport)),
         stores: reopenable.stores,
         settlements,
         reopenable,
@@ -240,17 +235,17 @@ async function createHeldSendFixture(
     return fixture;
 }
 
-function createFixtureRuntime(
-    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
-    settlements: ALDeliverySettlement[],
-    transport: HeldSendTransport
-): ALOutboundMessageRuntime<OutboundTestPayload> {
-    return createDefaultOutboundTestRuntime({
-        stores,
-        carrier: 'rtc',
+/** The planners of the one message, and a transport that holds what `transport.hold` names `not-ready`. */
+function toSender(transport: HeldSendTransport): OutboundTimelineSender {
+    return {
         planOutgoingMessage: SEND_PLANNER,
-        planRepairMessage,
-        settlements: (settlement) => settlements.push(settlement),
+        planRepairMessage: async (msg, request) =>
+            toOutboundTimelineRepairPlan({
+                msg,
+                request,
+                tracking: RECEIPT_TRACKING,
+                copy: { kind: 'repair', msgId: msg.id.msgId, cause: 'receipt-retry' }
+            }),
         sendPreparedMessage: async (prepared): Promise<ALOutboundPreparedSendResult> => {
             if (transport.hold === 'all' || (transport.hold === 'retries' && prepared.kind === 'repair')) {
                 return { status: 'not-ready', submissionAttempted: false, retryAfterMs: 50 };
@@ -258,7 +253,7 @@ function createFixtureRuntime(
             transport.frames.push([prepared.cause!, Date.now() - START_MS]);
             return { status: 'sent', submissionAttempted: true };
         }
-    });
+    };
 }
 
 const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
@@ -269,28 +264,6 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     ackTracking: RECEIPT_TRACKING,
     repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 4 }
 });
-
-/** As the RTC planner: a repair copy carries the receipt's tracking, whose receiver mode replaces the expected set. */
-async function planRepairMessage(
-    msg: ALMessage,
-    request: ALOutboundRepairRequest
-): Promise<ALOutboundDispatchPlan<OutboundTestPayload>> {
-    return {
-        msg,
-        dropReasonCode: undefined,
-        lane: 'durable',
-        preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId, cause: 'receipt-retry' }],
-        ackTracking: { ...RECEIPT_TRACKING, expectedPeerIdsUpdate: 'replace' },
-        repairTracking: request.repair
-    };
-}
-
-async function reload(fixture: HeldSendFixture): Promise<void> {
-    await fixture.runtime.dispose();
-    fixture.stores = fixture.reopenable.reopen();
-    fixture.settlements = [];
-    fixture.runtime = createFixtureRuntime(fixture.stores, fixture.settlements, fixture.transport);
-}
 
 async function advanceTo(fixture: HeldSendFixture, ms: number): Promise<void> {
     await advanceOutboundClockTo(fixture, START_MS + ms);

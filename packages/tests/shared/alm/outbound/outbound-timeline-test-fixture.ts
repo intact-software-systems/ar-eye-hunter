@@ -1,12 +1,20 @@
 import { vi } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundDurableEffect } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDurableEffect, ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundAckTrackingPlan,
+    ALOutboundDispatchPlan,
+    ALOutboundMessageRuntime,
+    ALOutboundRepairRequest,
+    ALOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isPendingALOutboundWork, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
+    createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createIndexedDbOutboundTestStores,
     drainOutboundWorkDueNow
@@ -28,6 +36,85 @@ export interface ReopenableOutboundTestStores {
 export interface OutboundTimelinePage {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+}
+
+/** A sender page a reload replaces: its runtime, the stores it runs over and the settlements it has stated. */
+export interface ReloadableOutboundTimelinePage {
+    runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    settlements: ALDeliverySettlement[];
+    readonly reopenable: ReopenableOutboundTestStores;
+}
+
+/** How a timeline's sender plans a send and a repair, and what its transport does with each copy. */
+export interface OutboundTimelineSender {
+    readonly planOutgoingMessage: ALOutboundPlanner<OutboundTestPayload>;
+    readonly planRepairMessage: (
+        msg: ALMessage,
+        request: ALOutboundRepairRequest
+    ) => Promise<ALOutboundDispatchPlan<OutboundTestPayload>>;
+    readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
+}
+
+/** A repair re-plan of one message: the request, the receipt it retries and the one copy it is planned with. */
+export interface OutboundTimelineRepairPlanInput {
+    readonly msg: ALMessage;
+    readonly request: ALOutboundRepairRequest;
+    readonly tracking: ALOutboundAckTrackingPlan;
+    readonly copy: OutboundTestPayload;
+}
+
+/** A `receiver` receipt on `peerIds`, each its own next hop: two-second windows and three retries. */
+export function toOutboundTimelineReceiptTracking(peerIds: readonly string[]): ALOutboundAckTrackingPlan {
+    return {
+        enabled: true,
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        expectedPeerIds: peerIds,
+        nextHopPeerIds: peerIds,
+        mode: 'receiver'
+    };
+}
+
+/** As the RTC planner: a repair copy carries the receipt's tracking, whose receiver mode replaces the expected set. */
+export function toOutboundTimelineRepairPlan(
+    input: OutboundTimelineRepairPlanInput
+): ALOutboundDispatchPlan<OutboundTestPayload> {
+    return {
+        msg: input.msg,
+        dropReasonCode: undefined,
+        lane: 'durable',
+        preparedMessages: [input.copy],
+        ackTracking: { ...input.tracking, expectedPeerIdsUpdate: 'replace' },
+        repairTracking: input.request.repair
+    };
+}
+
+/** A timeline's sender over RTC, stating every settlement into `settlements`. */
+export function createOutboundTimelineRuntime(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
+    settlements: ALDeliverySettlement[],
+    sender: OutboundTimelineSender
+): ALOutboundMessageRuntime<OutboundTestPayload> {
+    return createDefaultOutboundTestRuntime({
+        stores,
+        carrier: 'rtc',
+        planOutgoingMessage: sender.planOutgoingMessage,
+        planRepairMessage: sender.planRepairMessage,
+        settlements: (settlement) => settlements.push(settlement),
+        sendPreparedMessage: sender.sendPreparedMessage
+    });
+}
+
+/** A reload: the page's runtime goes, its stores open again, and a new runtime starts with nothing stated. */
+export async function reloadOutboundTimelinePage(
+    page: ReloadableOutboundTimelinePage,
+    sender: OutboundTimelineSender
+): Promise<void> {
+    await page.runtime.dispose();
+    page.stores = page.reopenable.reopen();
+    page.settlements = [];
+    page.runtime = createOutboundTimelineRuntime(page.stores, page.settlements, sender);
 }
 
 /** Memory stores reopen as themselves; IndexedDB stores reopen on the same database, as a reloaded page does. */

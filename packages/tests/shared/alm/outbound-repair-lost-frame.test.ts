@@ -1,21 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { newALBroadcastMessage, newALRoute, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import '../../setup-browser-indexeddb.ts';
-import { ORIGIN_ROOM } from '../multicast/rtc-origin-overlay-fixture.ts';
+import { createOrderedRoomBroadcast } from './lost-repair-frame-link.ts';
 import {
-    createOutboundTestRuntimeFor,
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
+    createWsClientSender,
     drainOutboundWorkDueNow,
     peekOutboundWorkReadyAt,
     type WsClientCarrierStoreKind,
@@ -206,12 +203,8 @@ function createLostFrameFixture(store: WsClientCarrierStoreKind): LostFrameFixtu
     const repairCommits: string[] = [];
     const skipped: SkippedAdmission[] = [];
     const stores = createWsClientCarrierStores(SESSION_ID, store);
-    const ws = createOutboundTestRuntimeFor({
+    const ws = createWsClientSender({
         stores,
-        decodePreparedMessage: decodeALOutboundTransportMessage,
-        planOutgoingMessage: createWsClientMintingPlanner(SESSION_ID),
-        planRepairMessage: undefined,
-        hopPeerIds: [SERVER_PEER_ID],
         settlements: (settlement) => {
             if (settlement.kind === 'admission' && settlement.verdict.kind === 'skipped') {
                 skipped.push({ msgId: settlement.msgId, reason: settlement.verdict.reason });
@@ -272,16 +265,5 @@ function toServerGapNack(
             missingRanges: [{ from: 1, to: 1 }],
             gapRequestNumber
         })
-    );
-}
-
-function createOrderedRoomBroadcast(name: string, ack: ALAckMode): ALMessage {
-    return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.stream', ORIGIN_ROOM.groupId, name),
-        'room',
-        'stream.message.v1',
-        { name },
-        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack, ordering: { orderingKey: 'stream' } }
     );
 }

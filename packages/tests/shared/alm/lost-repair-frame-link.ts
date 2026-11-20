@@ -4,12 +4,7 @@ import { newALBroadcastMessage, newALRoute, type ALAckMode, type ALMessage } fro
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    reconstructALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { reconstructALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -24,14 +19,12 @@ import {
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
 import {
-    createOutboundTestRuntimeFor,
     createServerReceipt,
     createWsClientCarrierStores,
-    createWsClientMintingPlanner,
+    createWsClientSender,
     drainOutboundWorkDueNow,
     peekOutboundWorkReadyAt,
-    type WsClientCarrierStoreKind,
-    type WsClientCarrierStores
+    type WsClientCarrierStoreKind
 } from './outbound-runtime-test-fixture.ts';
 
 /** The WS client's session, and the WS server it names as its one hop, as `WsQueueBoxClientService` composes it. */
@@ -102,7 +95,7 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
     const inFlight: ALMessage[] = [];
     const held: HeldFrame[] = [];
     const senderStores = createWsClientCarrierStores(SESSION_ID, store);
-    const sender = createLinkSender(senderStores, (message) => {
+    const write = (message: ALMessage): void => {
         const seq = message.ordering?.seq;
         const frame = { seq, copy: frames.filter((written) => written.seq === seq).length + 1, message };
         frames.push(frame);
@@ -115,6 +108,13 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
             return;
         }
         held.push({ message, arrivesAtMs: LINK_START_MS + heldUntilMs });
+    };
+    const sender = createWsClientSender({
+        stores: senderStores,
+        sendPreparedMessage: async (prepared, _phase, lifecycle) => {
+            write(reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage));
+            return { status: 'sent', submissionAttempted: true };
+        }
     });
     const receiver = createLinkReceiver(store);
     let forwardedControls = 0;
@@ -193,24 +193,6 @@ function takeArrivedFrames(held: HeldFrame[]): readonly ALMessage[] {
     return arrived.map((frame) => frame.message);
 }
 
-/** The WS client's sender as `WsQueueBoxClientService` composes it: its own planner, the server as its one hop. */
-function createLinkSender(
-    stores: WsClientCarrierStores,
-    write: (message: ALMessage) => void
-): ALOutboundMessageRuntime<ALOutboundTransportMessage> {
-    return createOutboundTestRuntimeFor({
-        stores,
-        decodePreparedMessage: decodeALOutboundTransportMessage,
-        planOutgoingMessage: createWsClientMintingPlanner(SESSION_ID),
-        planRepairMessage: undefined,
-        hopPeerIds: [SERVER_PEER_ID],
-        sendPreparedMessage: async (prepared, _phase, lifecycle) => {
-            write(reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage));
-            return { status: 'sent', submissionAttempted: true };
-        }
-    });
-}
-
 /** The server's inbound owner: it orders every track it admits, and its renewal stretch is drawn as 1. */
 function createLinkReceiver(store: WsClientCarrierStoreKind): InboundTestRuntime {
     return createInboundTestRuntime({
@@ -240,7 +222,8 @@ function toWireMessage(message: ALMessage): ALMessage {
     return decoded.right!;
 }
 
-function createOrderedRoomBroadcast(name: string, ack: ALAckMode): ALMessage {
+/** The WS client's ordered room send named `name` on the track `stream`, at least once. */
+export function createOrderedRoomBroadcast(name: string, ack: ALAckMode): ALMessage {
     return newALBroadcastMessage(
         SESSION_ID,
         newALRoute('room.stream', ORIGIN_ROOM.groupId, name),

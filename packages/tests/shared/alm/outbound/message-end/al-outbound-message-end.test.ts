@@ -14,17 +14,14 @@ import type {
     ALOutboundRepairReadDto
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
-    ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundPreparedSendResult,
-    ALOutboundRepairRequest,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import {
-    createDefaultOutboundTestRuntime,
     createOutboundMessage,
     createServerReceipt,
     drainOutboundWorkDueNow,
@@ -33,10 +30,15 @@ import {
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
 import {
     advanceOutboundClockTo,
+    createOutboundTimelineRuntime,
     createReopenableOutboundTestStores,
     OUTBOUND_TIMELINE_STEP_MS,
     readPendingOutboundWorkKinds,
+    reloadOutboundTimelinePage,
     toOutboundTerminalFacts,
+    toOutboundTimelineReceiptTracking,
+    toOutboundTimelineRepairPlan,
+    type OutboundTimelineSender,
     type OutboundTimelineStoreKind,
     type ReopenableOutboundTestStores
 } from '../outbound-timeline-test-fixture.ts';
@@ -151,7 +153,7 @@ describe('a terminal settlement ends its message', () => {
         const fixture = await createEndedMessageFixture(store, { maxRepairs: 1 });
         await exhaustSeqTwo(fixture);
         expect(terminalFactsOf(fixture, 2)).toEqual([['admission', 'repair-exhausted']]);
-        await reload(fixture);
+        await reloadOutboundTimelinePage(fixture, toSender(fixture.transport, fixture.maxRepairs));
         for (const [atMs, number] of [[3_950, 3], [20_000, 5]] as const) {
             await advanceTo(fixture, atMs);
             expect(await requestSeqTwo(fixture, 'peer-1', number)).toEqual({ kind: 'committed' });
@@ -328,7 +330,7 @@ async function createEndedMessageFixture(
     const transport: FixtureTransport = { frames: [], holdRepairs: options.holdRepairs ?? false };
     const settlements: ALDeliverySettlement[] = [];
     const fixture: EndedMessageFixture = {
-        runtime: createFixtureRuntime(reopenable.stores, settlements, transport, options.maxRepairs),
+        runtime: createOutboundTimelineRuntime(reopenable.stores, settlements, toSender(transport, options.maxRepairs)),
         stores: reopenable.stores,
         settlements,
         reopenable,
@@ -347,18 +349,25 @@ async function createEndedMessageFixture(
     return fixture;
 }
 
-function createFixtureRuntime(
-    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
-    settlements: ALDeliverySettlement[],
-    transport: FixtureTransport,
-    maxRepairs: number
-): ALOutboundMessageRuntime<OutboundTestPayload> {
-    return createDefaultOutboundTestRuntime({
-        stores,
-        carrier: 'rtc',
+/** The planners of the five sends, and a transport that records each copy, holding repairs while asked to. */
+function toSender(transport: FixtureTransport, maxRepairs: number): OutboundTimelineSender {
+    return {
         planOutgoingMessage: toSendPlanner(maxRepairs),
-        planRepairMessage,
-        settlements: (settlement) => settlements.push(settlement),
+        planRepairMessage: async (msg, request) =>
+            toOutboundTimelineRepairPlan({
+                msg,
+                request,
+                tracking: RECEIPT_TRACKING,
+                copy: {
+                    kind: 'repair',
+                    msgId: msg.id.msgId,
+                    seq: String(msg.ordering?.seq),
+                    cause: request.trigger === 'ack-timeout'
+                        ? 'receipt-retry'
+                        // The hint's request number rides on the request the planner is handed, beyond its declared fields.
+                        : `gap-repair(${request.requestedByPeerId}#${'gapRequestNumber' in request ? String(request.gapRequestNumber) : '?'})`
+                }
+            }),
         sendPreparedMessage: async (prepared): Promise<ALOutboundPreparedSendResult> => {
             if (transport.holdRepairs && prepared.kind === 'repair') {
                 return { status: 'not-ready', submissionAttempted: false, retryAfterMs: 500 };
@@ -366,24 +375,10 @@ function createFixtureRuntime(
             transport.frames.push({ seq: prepared.seq!, cause: prepared.cause! });
             return { status: 'sent', submissionAttempted: true };
         }
-    });
+    };
 }
 
-async function reload(fixture: EndedMessageFixture): Promise<void> {
-    await fixture.runtime.dispose();
-    fixture.stores = fixture.reopenable.reopen();
-    fixture.settlements = [];
-    fixture.runtime = createFixtureRuntime(fixture.stores, fixture.settlements, fixture.transport, fixture.maxRepairs);
-}
-
-const RECEIPT_TRACKING = {
-    enabled: true,
-    timeoutMs: 2_000,
-    maxAttempts: 3,
-    expectedPeerIds: RECEIVERS,
-    nextHopPeerIds: RECEIVERS,
-    mode: 'receiver'
-} as const;
+const RECEIPT_TRACKING = toOutboundTimelineReceiptTracking(RECEIVERS);
 
 function toSendPlanner(maxRepairs: number): ALOutboundPlanner<OutboundTestPayload> {
     return (msg) => ({
@@ -394,29 +389,6 @@ function toSendPlanner(maxRepairs: number): ALOutboundPlanner<OutboundTestPayloa
         ackTracking: RECEIPT_TRACKING,
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: maxRepairs }
     });
-}
-
-/** As the RTC planner: a repair copy carries the receipt's tracking, whose receiver mode replaces the expected set. */
-async function planRepairMessage(
-    msg: ALMessage,
-    request: ALOutboundRepairRequest
-): Promise<ALOutboundDispatchPlan<OutboundTestPayload>> {
-    return {
-        msg,
-        dropReasonCode: undefined,
-        lane: 'durable',
-        preparedMessages: [{
-            kind: 'repair',
-            msgId: msg.id.msgId,
-            seq: String(msg.ordering?.seq),
-            cause: request.trigger === 'ack-timeout'
-                ? 'receipt-retry'
-                // The hint's request number rides on the request the planner is handed, beyond its declared fields.
-                : `gap-repair(${request.requestedByPeerId}#${'gapRequestNumber' in request ? String(request.gapRequestNumber) : '?'})`
-        }],
-        ackTracking: { ...RECEIPT_TRACKING, expectedPeerIdsUpdate: 'replace' },
-        repairTracking: request.repair
-    };
 }
 
 /** Moves the clock to `ms` after the start in 25 ms steps, draining the work due at each. */

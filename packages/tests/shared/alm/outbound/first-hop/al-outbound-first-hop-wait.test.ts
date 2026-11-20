@@ -16,10 +16,7 @@ import type {
     ALOutboundPreparedSendResult,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALOutboundMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
@@ -35,10 +32,10 @@ import {
     claimOutboundTestWork,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
-    createOutboundTestRuntimeFor,
     createServerReceipt,
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
+    createWsClientSender,
     drainOutboundWorkDueNow,
     OUTBOUND_LEASE_RECOVERY_BOUND_MS,
     OUTBOUND_TEST_SEND_PLANNER,
@@ -539,9 +536,8 @@ function createFirstHopFixture(store: WsClientCarrierStoreKind, options: FirstHo
     let publishGranted = true;
     const stores = createWsClientCarrierStores(SESSION_ID, store);
     const plan = createWsClientMintingPlanner(SESSION_ID);
-    const ws = createOutboundTestRuntimeFor({
+    const ws = createWsClientSender({
         stores,
-        decodePreparedMessage: decodeALOutboundTransportMessage,
         planOutgoingMessage: (msg, authority) =>
             publishGranted ? plan(msg, authority) : {
                 ...plan(msg, authority),
@@ -549,8 +545,6 @@ function createFirstHopFixture(store: WsClientCarrierStoreKind, options: FirstHo
                 dropReasonCode: 'no-publish-grant',
                 preparedMessages: []
             },
-        planRepairMessage: undefined,
-        hopPeerIds: [SERVER_PEER_ID],
         settlements: (fact) => settlements.push(fact),
         // A dropped frame leaves the socket as a sent one does: the loss is in transit, after the write.
         sendPreparedMessage: async (_prepared, phase, lifecycle): Promise<ALOutboundPreparedSendResult> => {
