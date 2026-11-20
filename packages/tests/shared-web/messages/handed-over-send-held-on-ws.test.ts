@@ -47,6 +47,7 @@ describe('a handed-over send whose WS copy is held too', () => {
 
             await advanceAndRun(sender, expiresAtMs - 1 - Date.now());
             expect(sender.readSentFrames(msgId)).toEqual([]);
+            // Bites on `local-outbox` only: a volatile send writes no row to the durable store this reads.
             expect(await sender.readPendingAck(msgId)).toBeUndefined();
             expect(sender.readFaultedTypeIds()).toContain('held.message');
             expect(handle.lifecycle()).toMatchObject({
@@ -117,7 +118,7 @@ async function openPresentWsHoldSender(): Promise<WsHoldSender> {
 /**
  * The copy the cell's RTC admission hands to WS: an ordered at-least-once `receiver` room send of the held typeId
  * whose audience that admission froze and whose sequence it fixed, on the lane `durability` names. The cell's copy is
- * `volatile`; only on `local-outbox` does a receipt row land in the durable store the sender reads back.
+ * `volatile`.
  */
 function toHandedOverMessage(sessionId: string, durability: ALDurabilityAlgo): ALMessage {
     const message = newALMulticastMessage(
