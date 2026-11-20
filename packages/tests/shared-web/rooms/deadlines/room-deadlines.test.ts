@@ -109,28 +109,34 @@ it('marks a suspended watch stale, recovers the revision and ignores a late disp
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     const pending = Promise.withResolvers<Response>();
-    const reads = vi.fn()
-        .mockResolvedValueOnce(groupResponse([deadline]))
-        .mockResolvedValueOnce(groupResponse([{ ...deadline, revision: 2, atEpochMs: 12000 }]))
-        .mockReturnValue(pending.promise);
-    vi.stubGlobal('fetch', reads);
+    let stored = deadline;
+    let holdResponse = false;
+    const requestPaths: string[] = [];
+    vi.stubGlobal('fetch', async (path: string) => {
+        requestPaths.push(path);
+        return holdResponse ? await pending.promise : groupResponse([stored]);
+    });
     const states: RoomDeadlineObservation[] = [];
     const dispose = rooms.watchDeadline(room, change.name, state => states.push(state));
     await vi.waitFor(() => expect(states.at(-1)).toEqual({ status: 'current', deadline }));
     vi.useFakeTimers();
     try {
-        const idleReads = reads.mock.calls.length;
+        requestPaths.length = 0;
         await vi.advanceTimersByTimeAsync(60_000);
-        expect(reads.mock.calls.length).toBe(idleReads);
+        expect(requestPaths).toEqual([]);
     }
     finally {
         vi.useRealTimers();
     }
     page.dispatchEvent(new Event('pagehide'));
     expect(states.at(-1)).toEqual({ status: 'stale', deadline });
+    stored = { ...deadline, revision: 2, atEpochMs: 12000 };
     page.dispatchEvent(new Event('pageshow'));
     await vi.waitFor(() => expect(states.at(-1)).toMatchObject({ status: 'current', deadline: { revision: 2 } }));
+    holdResponse = true;
+    requestPaths.length = 0;
     page.dispatchEvent(new Event('pageshow'));
+    await vi.waitFor(() => expect(requestPaths).toContain(groupPath));
     dispose();
     const before = states.slice();
     pending.resolve(groupResponse([{ ...deadline, revision: 3, atEpochMs: 14000 }]));
