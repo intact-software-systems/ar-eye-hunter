@@ -1,6 +1,7 @@
 import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connection-facade.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+
 import { loadPollOnEntry } from './load-poll-on-entry.ts';
 import { pollDeadlineName, type PollAuthority } from './poll-authority.ts';
 import { pollPhase } from './poll-phase.ts';

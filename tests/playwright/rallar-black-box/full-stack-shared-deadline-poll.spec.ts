@@ -212,6 +212,7 @@ test('a participant recovers a revised deadline after visiting another active ro
     const hostGrant = randomUUID();
     const guestGrant = randomUUID();
     const otherRef = { ...roomRef, groupId: 'other-' + uniqueSuffix() };
+    const otherGuestGrant = randomUUID();
     const endpoints: Awaited<ReturnType<typeof startPollEndpoint>>[] = [];
     async function selectedRoom() {
         return await guest.evaluate(async (url) => {
@@ -255,7 +256,12 @@ test('a participant recovers a revised deadline after visiting another active ro
         const grants = new Map([[hostGrant, 'host'], [guestGrant, 'guest']]);
         const poll = await startPollEndpoint(new URL(baseURL!).origin, roomRef, grants, schedule);
         endpoints.push(poll);
-        const otherPoll = await startPollEndpoint(new URL(baseURL!).origin, otherRef, grants, schedule);
+        const otherPoll = await startPollEndpoint(
+            new URL(baseURL!).origin,
+            otherRef,
+            new Map([[otherGuestGrant, 'guest']]),
+            schedule
+        );
         endpoints.push(otherPoll);
         await Promise.all([
             mountPoll(page, hostGrant, roomRef, poll.url, 'room'),
@@ -266,7 +272,13 @@ test('a participant recovers a revised deadline after visiting another active ro
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
         const stale = await (await guest.request.get(poll.url, { headers: { Authorization: 'Bearer ' + guestGrant } }))
             .json();
-        await mountPoll(guest, guestGrant, otherRef, otherPoll.url, 'room');
+        const foreignBallot = await guest.request.post(otherPoll.url, {
+            headers: { Authorization: 'Bearer ' + guestGrant },
+            data: 'yes'
+        });
+        expect(foreignBallot.status()).toBe(403);
+        await mountPoll(guest, otherGuestGrant, otherRef, otherPoll.url, 'room');
+        await expect(guest.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
         expect(await selectedRoom()).toEqual(otherRef);
         const otherEnd = await guest.locator('time').last().getAttribute('datetime');
         await page.getByRole('button', { name: 'Extend voting by one minute' }).click();

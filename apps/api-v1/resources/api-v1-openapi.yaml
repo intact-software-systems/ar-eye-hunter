@@ -7751,6 +7751,23 @@ components:
         hasMore:
           type: boolean
 
+    RoomDeadline:
+      type: object
+      additionalProperties: false
+      required: [name, revision, atEpochMs]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        atEpochMs:
+          type: integer
+          minimum: 0
+          maximum: 8640000000000000
+
     Group:
       type: object
       required:
@@ -7848,6 +7865,13 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          properties:
+            rallarRoomDeadlines:
+              type: array
+              maxItems: 32
+              description: Server-owned named deadlines. Absent until a deadline is first published.
+              items:
+                $ref: '#/components/schemas/RoomDeadline'
         activeMemberCount:
           type: integer
           format: int64

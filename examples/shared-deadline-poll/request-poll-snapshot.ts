@@ -1,7 +1,6 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-
 import { requireEpoch, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { assertValidRallarGroupRef } from '@shared/api/rallar-validation.ts';
 
@@ -27,21 +26,25 @@ export async function requestPollSnapshot(
         cache: 'no-store',
         signal: requestSignal
     };
-    let body: unknown;
-    try {
-        const response = await fetch(input.endpoint, request);
-        if ([502, 503, 504].includes(response.status)) {
-            throw new PollServiceUnavailable(`Poll service unavailable (HTTP ${response.status}).`);
+    function decodeRequestFailure(cause: unknown): never {
+        signal.throwIfAborted();
+        if (
+            cause instanceof TypeError || (cause instanceof DOMException && cause.name === 'TimeoutError') ||
+            (cause instanceof ApiHttpError && [502, 503, 504].includes(cause.status))
+        ) {
+            throw new PollServiceUnavailable('The poll service could not complete the request.', { cause });
         }
-        if (!response.ok) {
-            throw new Error(`Poll request failed (HTTP ${response.status}).`);
-        }
-        body = await response.json();
+        throw cause instanceof Error ? cause : new Error('Poll request failed.', { cause });
     }
-    catch (cause) {
-        throwPollRequestError(cause, signal);
+
+    const response = await fetch(input.endpoint, request).catch(decodeRequestFailure);
+    if ([502, 503, 504].includes(response.status)) {
+        throw new PollServiceUnavailable(`Poll service unavailable (HTTP ${response.status}).`);
     }
-    const record = decodePollSnapshot(body);
+    if (!response.ok) {
+        throw new Error(`Poll request failed (HTTP ${response.status}).`);
+    }
+    const record = decodePollSnapshot(await response.json().catch(decodeRequestFailure));
     if (!isSameGroupRef(record.roomRef, input.roomRef)) {
         throw new Error('Unexpected poll room.');
     }
@@ -50,7 +53,7 @@ export async function requestPollSnapshot(
     }
     if (input.deadlineSource === 'room') {
         const deadline = await rallar.rooms.readDeadline(input.roomRef, pollDeadlineName, { signal: requestSignal })
-            .catch((cause) => throwPollRequestError(cause, signal));
+            .catch(decodeRequestFailure);
         if (
             !deadline || deadline.revision !== record.revision || deadline.atEpochMs !== record.schedule.closesAtEpochMs
         ) {
@@ -73,17 +76,6 @@ function regressesConfirmedPollState(previous: PollAuthority.Snapshot, received:
         received.yes < previous.yes || received.no < previous.no ||
         (previous.closed && !received.closed && sameRevision) ||
         (previous.disposition !== 'pending' && received.disposition !== previous.disposition);
-}
-
-function throwPollRequestError(cause: unknown, signal: AbortSignal): never {
-    signal.throwIfAborted();
-    if (
-        cause instanceof TypeError || (cause instanceof DOMException && cause.name === 'TimeoutError') ||
-        (cause instanceof ApiHttpError && [502, 503, 504].includes(cause.status))
-    ) {
-        throw new PollServiceUnavailable('The poll service could not complete the request.', { cause });
-    }
-    throw cause;
 }
 
 function decodePollSnapshot(body: unknown): PollAuthority.Snapshot {
