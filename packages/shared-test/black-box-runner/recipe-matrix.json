@@ -3182,6 +3182,41 @@
       "description": "No-browser API-v1 loss of a subscriber's server on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. The secondary is crashed, and Alice sends an at-least-once room broadcast with a receiver receipt. Its admitted receipt expects Bob and Carol: the audience is frozen from the room's presence, which still holds Bob. Carol receives and acknowledges; the receipt ends timed-out with Carol alone confirmed and Bob expected and unconfirmed, and no complete receipt arrives. The secondary is restarted and Dave registers, joins and opens his socket on it. The next broadcast reaches Carol and Dave, who acknowledge; its receipt also ends timed-out, confirming both and still expecting Bob, whose presence stands because nothing ended it."
     },
     {
+      "id": "api-v1-cluster-publisher-instance-loss",
+      "recipe": "tests/api-v1/api-v1-cluster-publisher-instance-loss.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cluster-publisher-instance-loss",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 loss of the server that admitted a receipted broadcast, on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. Alice sends an at-least-once room broadcast with a receiver receipt and a 10 s deadline; its admitted receipt expects Bob and Carol and nobody else, and both receive it. The primary is crashed after admitted, and Bob and Carol acknowledge on the survivors. Alice reconnects on the secondary with the same session; her next broadcast from the new socket reaches Bob and Carol, who acknowledge, and its receipt completes. For the first broadcast, the new socket receives neither a complete nor a timed-out receipt through its deadline and the receipt grace (41 s)."
+    },
+    {
       "id": "api-v1-admin-authorization-boundary",
       "recipe": "tests/api-v1/api-v1-admin-authorization-boundary.json",
       "category": "api-v1-black-box",
