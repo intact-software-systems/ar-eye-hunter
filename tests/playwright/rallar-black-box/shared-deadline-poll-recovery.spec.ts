@@ -115,3 +115,49 @@ test('leaving during initial connection preserves the newly selected room and it
     }, { viewUrl, roomRef });
     expect(result).toEqual({ outcome: 'AbortError', room: 'next-room', view: 'Next room' });
 });
+
+test('a participant retries an unavailable room on entry and sees its revised deadline', async ({ page }) => {
+    const destination = { ...roomRef, groupId: 'other' };
+    await page.route('**/destination', route => route.fulfill({
+        json: {
+            roomRef: destination, schedule: { ...schedule, closesAtEpochMs: 60000 }, revision: 1,
+            canExtend: false, closed: false, yes: 2, no: 1, disposition: 'accepted'
+        }
+    }));
+    await page.route('**/destination', route => route.fulfill({ status: 503 }), { times: 1 });
+    const entry = page.evaluate(async ({ viewUrl, destination }) => {
+        window.dispatchEvent(new Event('leave-poll'));
+        const { showPoll } = await import(viewUrl);
+        await showPoll({ root: document.body, roomRef: destination, endpoint: '/destination', participantGrant: 'test' });
+    }, { viewUrl, destination }).catch(error => String(error));
+    await expect(page.getByRole('button', { name: 'Yes' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Retry room snapshot' }).click();
+    expect(await entry).toBeUndefined();
+    await expect(page.locator('time').last()).toHaveAttribute('datetime', '1970-01-01T00:01:00.000Z');
+    await expect(page.getByText('Yes 2 · No 1 · Your vote: accepted')).toBeVisible();
+});
+
+test('leaving an unavailable room cancels its retry prompt', async ({ page }) => {
+    await page.route('**/unreachable', route => route.abort('connectionrefused'));
+    const entry = page.evaluate(async ({ viewUrl, roomRef }) => {
+        window.dispatchEvent(new Event('leave-poll'));
+        const selection = new AbortController();
+        window.addEventListener('select-other-room', () => {
+            selection.abort();
+            document.body.textContent = 'Other room';
+        }, { once: true });
+        const { showPoll } = await import(viewUrl);
+        try {
+            await showPoll({
+                root: document.body, roomRef, endpoint: '/unreachable', participantGrant: 'test', signal: selection.signal
+            });
+        }
+        catch (error) {
+            return error instanceof DOMException ? error.name : 'Unexpected error';
+        }
+    }, { viewUrl, roomRef });
+    await expect(page.getByRole('button', { name: 'Retry room snapshot' })).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('select-other-room')));
+    expect(await entry).toBe('AbortError');
+    await expect(page.locator('body')).toHaveText('Other room');
+});

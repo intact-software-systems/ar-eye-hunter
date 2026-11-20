@@ -71,3 +71,10 @@ Supply the host principal when creating the poll authority to enable a single on
 The full-stack journey creates two open Rallar rooms in one scope. The host votes Yes in the first room and a guest explicitly enters the second. The host extends the first deadline while the guest casts an independent No in the second. After the original cutoff, the guest re-enters the first room, reads its revised cutoff, and can still vote Yes before the revised cutoff. A stale snapshot on a subsequent recovery leaves the revised cutoff intact and voting disabled until the current snapshot arrives.
 
 Dispose the current view before switching rooms. Pass the destination's full room reference, endpoint and member grant when mounting its view. The application authority owns the revision and enforces the cutoff. Rallar supplies room entry, selected-room identity and the bounded deadline comparison. A revision detected in one room never implies permission to select it.
+
+If the first snapshot request loses its connection or receives HTTP 502, 503 or
+504, the room shows **Retry room snapshot**. Selecting it repeats only the read.
+Voting becomes available once the poll authority returns the participant’s
+snapshot and the clock permits voting. Switching rooms cancels the pending
+prompt through the selection’s abort signal. Authorization and wrong-room
+errors propagate to the application.

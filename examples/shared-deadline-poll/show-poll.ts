@@ -3,6 +3,7 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
 import { pollPhase } from './poll-phase.ts';
+import { loadPollOnEntry } from './load-poll-on-entry.ts';
 import { PollView } from './poll-view.ts';
 import { requestPollSnapshot } from './request-poll-snapshot.ts';
 
@@ -25,7 +26,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     signal.throwIfAborted();
     await rallar.rooms.enter(roomRef, { signal });
     signal.throwIfAborted();
-    let record = await requestPollSnapshot(input, signal);
+    let record = await loadPollOnEntry(input, signal);
     signal.throwIfAborted();
     const view = new PollView(root);
     const { yes, no, extend } = view;
