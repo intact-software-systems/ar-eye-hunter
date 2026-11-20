@@ -10,6 +10,7 @@ import {
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
@@ -21,6 +22,7 @@ import {
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
+import { readPendingOutboundWorkKinds } from './outbound-timeline-test-fixture.ts';
 
 interface ExhaustionFixture {
     readonly stores: OutboundTestStores;
@@ -42,6 +44,14 @@ const SPENT_RECEIPT: ReceiptRow = {
     attempts: 3,
     deadlineAtMs: 900
 };
+
+/** The message on the durable lane with no copy to send: these cases run the receipt timer alone. */
+const NO_COPY_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg,
+    dropReasonCode: undefined,
+    lane: 'durable',
+    preparedMessages: []
+});
 
 async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionFixture> {
     const stores = createDefaultOutboundTestStores();
@@ -74,12 +84,7 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             hopPeerIds: undefined
         }),
         clock,
-        planOutgoingMessage: (msg) => ({
-            msg,
-            dropReasonCode: undefined,
-            lane: 'durable',
-            preparedMessages: []
-        }),
+        planOutgoingMessage: NO_COPY_PLANNER,
         planRepairMessage: undefined,
         hopPeerIds: undefined,
         diagnostics: undefined,
@@ -188,24 +193,26 @@ describe('the receipt timer of a message that has ended', () => {
         const fixture = await createExhaustionFixture({ ...SPENT_RECEIPT, attempts: 1 });
         await endMessage(fixture);
         const kept = await readReceipt(fixture);
-        const commits = vi.spyOn(fixture.stores.admissionStore, 'commitBundle');
+        const work = await readPendingOutboundWorkKinds(fixture.stores, fixture.message.id.msgId);
+        const version = await readSenderVersion(fixture);
 
         await fixture.repair.retryPendingAck(fixture.message.id.msgId);
 
         expect(await readReceipt(fixture)).toEqual(kept);
-        expect(commits).not.toHaveBeenCalled();
+        expect(await readPendingOutboundWorkKinds(fixture.stores, fixture.message.id.msgId)).toEqual(work);
+        expect(await readSenderVersion(fixture)).toBe(version);
         expect(fixture.facts).toEqual([]);
     });
 });
 
+/** The sender version every commit of the message's sender moves. */
+async function readSenderVersion(fixture: ExhaustionFixture): Promise<number | undefined> {
+    return (await fixture.stores.admissionStore.readRepairMessage(fixture.message.id.msgId, NO_COPY_PLANNER)).clientRecord?.version;
+}
+
 /** Marks the message's stored row ended, as a terminal commit that keeps its receipt row does. */
 async function endMessage(fixture: ExhaustionFixture): Promise<void> {
-    const read = await fixture.stores.admissionStore.readRepairMessage(fixture.message.id.msgId, (msg) => ({
-        msg,
-        dropReasonCode: undefined,
-        lane: 'durable',
-        preparedMessages: []
-    }));
+    const read = await fixture.stores.admissionStore.readRepairMessage(fixture.message.id.msgId, NO_COPY_PLANNER);
     expect(
         await fixture.stores.admissionStore.commitBundle({
             senderId: fixture.message.id.senderId,

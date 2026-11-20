@@ -6,7 +6,8 @@ import {
     ACK_UNDER_HOLD_MESSAGE_TTL_MS,
     openRtcHoldSender,
     openWsHoldSender,
-    runAckTimeoutClaimsToExhaustion
+    runAckTimeoutClaimsToExhaustion,
+    type HoldSender
 } from './acknowledgement-under-hold-fixture.ts';
 
 describe('a receipt waits for its first frame on the browser carriers, over IndexedDB stores', () => {
@@ -23,10 +24,9 @@ describe('a receipt waits for its first frame on the browser carriers, over Inde
             const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
             const handle = await sender.send(submission);
             await sender.drain();
-            // The hold fixture records no admission on the handle, so a send it holds stays `submitted`.
-            const heldState = handle.lifecycle().state;
             await runAckTimeoutClaimsToExhaustion(sender, submission.id.msgId);
-            expect(handle.lifecycle().state).toBe(heldState);
+            // The hold fixture records no admission on the handle, so a send it holds reads `submitted`.
+            expect(handle.lifecycle().state).toBe('submitted');
             expect(await sender.readPendingAck(submission.id.msgId)).toMatchObject({ attempts: 0 });
             expect(sender.readSentFrames(submission.id.msgId)).toEqual([]);
 
@@ -38,4 +38,39 @@ describe('a receipt waits for its first frame on the browser carriers, over Inde
             expect(await sender.readPendingAck(submission.id.msgId)).toMatchObject({ attempts: 0 });
         }
     );
+
+    it.each(['rtc', 'ws'] as const)(
+        'a %s send whose first frame is held to its deadline reads submitted until then and expired after it, and nothing leaves once the hold lifts',
+        async (carrier) => {
+            const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+            sender.faults.inject(sender.hold);
+            const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+            const msgId = submission.id.msgId;
+            const handle = await sender.send(submission);
+            await sender.drain();
+            const expiresAtMs = handle.lifecycle().expiresAtMs!;
+            await runAckTimeoutClaimsToExhaustion(sender, msgId);
+
+            await advanceAndRun(sender, expiresAtMs - 1 - Date.now());
+            expect(handle.lifecycle().state).toBe('submitted');
+            await advanceAndRun(sender, 2);
+            expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { failure: { kind: 'expired' } } });
+            expect(await handle.wait({ timeoutMs: 10 })).toMatchObject({ status: 'settled', lifecycle: { state: 'expired' } });
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+
+            await advanceAndRun(sender, ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+            sender.faults.inject({ ...sender.hold, remaining: 0 });
+            await advanceAndRun(sender, 100);
+            expect(sender.readSentFrames(msgId)).toEqual([]);
+        }
+    );
 });
+
+/** Moves the sender's clock and runs the work then due, as a page's engine would. */
+async function advanceAndRun(sender: HoldSender, ms: number): Promise<void> {
+    await sender.advance(ms);
+    await sender.drain();
+    await sender.drain();
+    await sender.settle();
+}

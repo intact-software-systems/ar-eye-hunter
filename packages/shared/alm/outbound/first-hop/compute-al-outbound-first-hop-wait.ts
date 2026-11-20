@@ -28,7 +28,10 @@ export interface ComputeALOutboundFirstHopTimeoutInput {
     readonly wait: ALOutboundFirstHopWaitSnapshot | undefined;
     /** The message is still retained, re-planned and before its deadline. */
     readonly messageLive: boolean;
-    /** A copy of the attempt the wait stands on is still queued for its carrier. */
+    /**
+     * The attempt the wait stands on is planned with at least one copy, and every copy is still queued for its
+     * carrier.
+     */
     readonly attemptHeld: boolean;
     /** The settlement a re-plan the carrier refuses for good states; undefined when the re-plan may still send. */
     readonly replanRefusal: ALOutboundSettlementFact | undefined;

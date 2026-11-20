@@ -2,8 +2,8 @@ import { vi } from 'vitest';
 
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDurableEffect } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { isPendingALOutboundWork, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
@@ -26,7 +26,7 @@ export interface ReopenableOutboundTestStores {
 
 /** A sender page: its runtime and the stores it runs over, both replaced by a reload. */
 export interface OutboundTimelinePage {
-    readonly runtime: object;
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
 }
 
@@ -58,15 +58,16 @@ export async function advanceOutboundClockTo(page: OutboundTimelinePage, atMs: n
     await drainOutboundWorkDueNow(page.runtime, page.stores);
 }
 
-/** The payloads of the pending work rows that name `msgId`, in key order. */
+/** The payloads of the store's pending work rows that name `msgId`, in key order. */
 export async function readPendingOutboundWorkPayloads(
     stores: ALOutboundRuntimeStores<OutboundTestPayload>,
     msgId: string
 ): Promise<readonly ALOutboundDurableEffect<OutboundTestPayload>[]> {
     const payloads: ALOutboundDurableEffect<OutboundTestPayload>[] = [];
+    const workType = toALOutboundWorkType(stores.admissionStore.namespace);
     for (const key of await stores.workQueue.getAllKeys()) {
         const entry = await stores.workQueue.getItem(key);
-        if (entry === undefined || !isPendingALOutboundWork(entry)) {
+        if (entry === undefined || entry.typeId !== workType || !isPendingALOutboundWork(entry)) {
             continue;
         }
         const { payload } = await stores.admissionStore.readWorkSnapshot(entry, undefined);

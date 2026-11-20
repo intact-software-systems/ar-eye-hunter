@@ -150,7 +150,7 @@ describe('a receipt waits for its first frame', () => {
     );
 
     it.each(STORES)(
-        'on %s, a message whose deadline passes while its first frame is held ends expired: no frame and no exhaustion',
+        'on %s, a message whose deadline passes while its first frame is held lapses with no frame, no exhaustion and no settlement of its own',
         async (store) => {
             const fixture = await createHeldSendFixture(store, { hold: 'all', ttlMs: 5_000 });
             await advanceTo(fixture, 4_999);
