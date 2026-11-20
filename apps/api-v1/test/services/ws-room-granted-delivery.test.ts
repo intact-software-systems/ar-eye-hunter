@@ -111,10 +111,10 @@ test('each of socket admission, pending replay, inbox dispatch and route refuses
             assert.equal(readDelivered(bobFrames, message), 0, pass);
             // The refusing pass is the last to read: a pass after it never runs.
             assert.equal(harness.readCount(), grantedReads + 1, pass);
-            // Socket admission and route answer with the NACK; a pending replay or inbox dispatch drops the message.
+            // Socket admission, a pending replay and route answer with the NACK; inbox dispatch drops the message.
             assert.deepEqual(
                 readNackReasons(aliceFrames, message).filter((reason) => reason === 'no-publish-grant'),
-                pass === 'socket admission' || pass === 'route' ? ['no-publish-grant'] : [],
+                pass === 'inbox dispatch' ? [] : ['no-publish-grant'],
                 pass
             );
         });

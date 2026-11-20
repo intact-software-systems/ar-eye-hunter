@@ -48,7 +48,7 @@ test('a second session\'s exclusive send on a claimed resource is NACKed held-by
     }
 });
 
-test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay and reaches no one', async () => {
+test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay, reaches no one and starts no receipt', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const first = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
@@ -69,8 +69,7 @@ test('two sessions claiming one free resource at once: the loser is retained on 
             ['session-2', first.id.msgId],
             ['session-3', first.id.msgId]
         ]);
-        // The retained claim started its receipt before the replay judged it; the NACK is what ends it at the origin.
-        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-2'), [[second.id.msgId, 'admitted']]);
+        assert.deepEqual(readReceiptPhases(runtime.sent, 'session-2'), []);
         assert.deepEqual(readReceiptPhases(runtime.sent, 'session-1'), [[first.id.msgId, 'admitted']]);
     }
     finally {
