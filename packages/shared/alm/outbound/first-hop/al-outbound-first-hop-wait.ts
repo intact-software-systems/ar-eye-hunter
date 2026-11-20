@@ -55,11 +55,11 @@ export namespace ALOutboundFirstHopWait {
 /**
  * The sender's wait for its own hop to first answer for a receipted send: at each silent deadline it writes the send
  * again under a new attempt identity, within the send's own receipt budget, and charges nothing while the frame is
- * still queued. It ends when the hop answers: a receipt in any phase, a terminal NACK or a relay's refusal of the send, or the hop's
- * `not-yet-in-sync`, which retains the send and states nothing. It also ends when its retries run out, stating
- * `receipt-exhausted`, and when its message ends. A resend is two commits, each fenced on the sender's version: the
- * wait's next attempt and its timer, then the dispatch that writes the frame. A crash between them spends one attempt
- * that wrote no frame.
+ * still queued. It ends when the hop answers: a receipt in any phase, a terminal NACK or a relay's refusal of the
+ * send, or the hop's `not-yet-in-sync`, which retains the send and states nothing. It also ends when its retries run
+ * out, stating `receipt-exhausted`, and when its message ends. A resend is two commits, each fenced on the sender's
+ * version: the wait's next attempt and its timer, then the dispatch that writes the frame. A crash between them
+ * spends one attempt that wrote no frame.
  */
 export class ALOutboundFirstHopWait<TPrepared> {
     private readonly dependencies: ALOutboundFirstHopWait.Dependencies<TPrepared>;
