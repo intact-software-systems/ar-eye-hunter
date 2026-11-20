@@ -78,6 +78,9 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function render(): void {
+        if (signal.aborted) {
+            return;
+        }
         let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || restored !== generation
             ? 'Recovering room poll'
             : pollPhase(record, rallar, input.authority);
@@ -119,9 +122,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            if (!signal.aborted) {
-                render();
-            }
+            render();
         }
     }
     function suspend(): void {
@@ -182,9 +183,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            if (!signal.aborted) {
-                render();
-            }
+            render();
         }
     };
     yes.onclick = () => void submit('yes');
