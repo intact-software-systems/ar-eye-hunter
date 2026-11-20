@@ -31,13 +31,30 @@ shows the smallest copyable use of each surface.
 
 ## Recovering a room deadline
 
-An application can publish a revised deadline while a participant is active in
-another room. On explicit entry, the application reads the destination's
-authoritative snapshot and uses Rallar's calibrated clock to decide the phase.
-The authority checks who may edit and which revision the editor saw. The browser
-keeps its controls disabled during recovery and discards older revisions.
-The [two-room poll example](../examples/shared-deadline-poll/README.md) demonstrates
-this flow with independent room state and an application-owned schedule.
+An active room owner or admin can publish a named UTC deadline through
+`rallar.rooms.setDeadline(roomRef, change, requestId)`. Use expected revision
+zero to create it. To extend it, supply the last accepted revision and a later
+instant before the current deadline expires. Two editors can propose different
+extensions from the same revision. One succeeds, and the other receives a
+revision conflict. Reusing the same request ID and payload recovers the original
+acknowledgement after a lost response.
+
+A member can call `rallar.rooms.readDeadline(roomRef, name)` without switching
+the selected room. It reads the durable deadline or returns `null` for a name
+that has never been published. PostgreSQL deployments retain the instant and
+revision across API restarts. Each room supports up to 32 distinct names over
+its lifetime. Once a deadline expires, its name retains the final instant and
+revision. Plan for this limit when reusing a room across rounds.
+
+Deploy the deadline-aware API on all writers before publishing the first
+deadline. Applications that replace room metadata must omit the reserved
+`rallarRoomDeadlines` field. Upgrade browser clients that use
+`rooms.updateMetadata` before enabling deadlines in those rooms.
+
+The [two-room poll](../examples/shared-deadline-poll/README.md) uses the closing
+instant to decide whether to accept a ballot. Rallar owns the deadline and its
+revision. The application owns voting rules and receipts. The deadline causes
+no automatic action when it passes.
 
 ## Sharing rooms
 
