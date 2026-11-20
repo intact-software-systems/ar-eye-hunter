@@ -201,7 +201,8 @@ async function mountPoll(
     );
 }
 
-test('a participant recovers a revised deadline after visiting another active room', async ({ page, browser, baseURL }) => {
+for (const location of ['foreground', 'offline', 'another room'] as const) {
+test('a participant recovers a revised deadline from ' + location, async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });
     const roomRef = {
@@ -277,6 +278,23 @@ test('a participant recovers a revised deadline after visiting another active ro
             data: 'yes'
         });
         expect(foreignBallot.status()).toBe(403);
+        if (location !== 'another room') {
+            if (location === 'offline') {
+                await guest.context().setOffline(true);
+                await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
+            }
+            await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
+            const revised = new Date(oldEnd + 60_000).toISOString();
+            await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
+            if (location === 'offline') {
+                await guest.context().setOffline(false);
+            }
+            await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+            await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30_000 }).toBeGreaterThan(oldEnd);
+            await guest.getByRole('button', { name: 'Yes' }).click();
+            await expect(guest.getByText('Yes 2 · No 0 · Your vote: accepted')).toBeVisible();
+            return;
+        }
         await mountPoll(guest, otherGuestGrant, otherRef, otherPoll.url, 'room');
         await expect(guest.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
         expect(await selectedRoom()).toEqual(otherRef);
@@ -325,6 +343,7 @@ test('a participant recovers a revised deadline after visiting another active ro
         await Promise.all(endpoints.map((endpoint) => endpoint.close()));
     }
 });
+}
 
 for (const disposition of ['accepted', 'late'] as const) {
     test(`fallback ballot is ${disposition} at authority receipt`, async ({ page, browser, baseURL }) => {

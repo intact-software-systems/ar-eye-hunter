@@ -98,3 +98,40 @@ it('requires authentication and an explicit workspace before issuing requests', 
     await expect(rooms.readDeadline(room, change.name)).rejects.toThrow(/auth session/i);
     await expect(rooms.setDeadline(room, change, 'poll-create-request-0001')).rejects.toThrow(/auth session/i);
 });
+
+it('marks a suspended watch stale, recovers the revision and ignores a late disposed read', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const { rooms } = createRallarFacade();
+    const page = new EventTarget();
+    vi.stubGlobal('window', page);
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    const pending = Promise.withResolvers<Response>();
+    const reads = vi.fn()
+        .mockResolvedValueOnce(groupResponse([deadline]))
+        .mockResolvedValueOnce(groupResponse([{ ...deadline, revision: 2, atEpochMs: 12000 }]))
+        .mockReturnValue(pending.promise);
+    vi.stubGlobal('fetch', reads);
+    const states: unknown[] = [];
+    const dispose = rooms.watchDeadline(room, change.name, state => states.push(state));
+    await vi.waitFor(() => expect(states.at(-1)).toEqual({ status: 'current', deadline }));
+    vi.useFakeTimers();
+    try {
+        const idleReads = reads.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(reads.mock.calls.length).toBe(idleReads);
+    }
+    finally {
+        vi.useRealTimers();
+    }
+    page.dispatchEvent(new Event('pagehide'));
+    expect(states.at(-1)).toEqual({ status: 'stale', deadline });
+    page.dispatchEvent(new Event('pageshow'));
+    await vi.waitFor(() => expect(states.at(-1)).toMatchObject({ status: 'current', deadline: { revision: 2 } }));
+    page.dispatchEvent(new Event('pageshow'));
+    dispose();
+    const before = states.slice();
+    pending.resolve(groupResponse([{ ...deadline, revision: 3, atEpochMs: 14000 }]));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(states).toEqual(before);
+});
