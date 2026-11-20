@@ -12,6 +12,7 @@ import {
     removeAcceptedOverlayByGroupRef,
     removeAcceptedOverlayById,
     removeAcceptedOverlayByIdIfUnchanged,
+    removePlannedOverlayByIdIfReachedBy,
     setAcceptedOverlayById,
     setCurrentAcceptedServerOverlayById,
     setPlannedOverlayById
@@ -498,6 +499,15 @@ describe('overlay repository planned layout the accepted identity has passed', (
             roomRef: ROOM,
             acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 }))
         })).toBe(false);
+
+        expect(findPlannedOverlayById(OVERLAY_ID)).toEqual(bootstrap);
+    });
+
+    it('an accepted identity that has passed a bootstrap planned layout does not remove it', () => {
+        const bootstrap = overlay({ version: 1, provenance: 'bootstrap' });
+        setPlannedOverlayById(OVERLAY_ID, bootstrap);
+
+        expect(removePlannedOverlayByIdIfReachedBy(OVERLAY_ID, toOverlayLayoutIdentity(overlay({ version: 2 })))).toBe(false);
 
         expect(findPlannedOverlayById(OVERLAY_ID)).toEqual(bootstrap);
     });

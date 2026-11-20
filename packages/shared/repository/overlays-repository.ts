@@ -336,10 +336,7 @@ export function removePlannedOverlayByIdIfIdentity(
     identity: GroupLayoutIdentity,
     manager?: RepositoryManager
 ): boolean {
-    const planned = readObservableLatestRepositoryValue(plannedOverlayRepositoryToken, overlayId, manager);
-    return planned !== undefined && isOverlayIdentity(planned, identity)
-        ? removePlannedOverlayById(overlayId, manager)
-        : false;
+    return removePlannedOverlayByIdIf(overlayId, (planned) => isOverlayIdentity(planned, identity), manager);
 }
 
 /**
@@ -353,10 +350,11 @@ export function removePlannedOverlayByIdIfReachedBy(
     acceptedIdentity: GroupLayoutIdentity,
     manager?: RepositoryManager
 ): boolean {
-    const planned = readObservableLatestRepositoryValue(plannedOverlayRepositoryToken, overlayId, manager);
-    return planned !== undefined && isPlannedOverlayReachedBy(planned, acceptedIdentity)
-        ? removePlannedOverlayById(overlayId, manager)
-        : false;
+    return removePlannedOverlayByIdIf(
+        overlayId,
+        (planned) => isPlannedOverlayReachedBy(planned, acceptedIdentity),
+        manager
+    );
 }
 
 export function reconcileAcceptedOverlayIdentity(
@@ -394,6 +392,17 @@ function compareOverlayInfoIdentity(
     right: OverlayInfo
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
     return compareOverlayLayoutIdentity(toOverlayLayoutIdentity(left), toOverlayLayoutIdentity(right));
+}
+
+function removePlannedOverlayByIdIf(
+    overlayId: string,
+    isRemovable: (planned: OverlayInfo) => boolean,
+    manager?: RepositoryManager
+): boolean {
+    const planned = readObservableLatestRepositoryValue(plannedOverlayRepositoryToken, overlayId, manager);
+    return planned !== undefined && isRemovable(planned)
+        ? removePlannedOverlayById(overlayId, manager)
+        : false;
 }
 
 function isPlannedOverlayReachedBy(
