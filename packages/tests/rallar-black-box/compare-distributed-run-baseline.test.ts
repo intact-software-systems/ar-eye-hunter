@@ -45,6 +45,9 @@ const ENVIRONMENT: DistributedRunEnvironment = {
     loadAverage: { oneMinute: 4.4, atStart: true }
 };
 
+// Distinct from every other instant of the fixture, so only createdAtEpochMs can be read as the instant the run was taken.
+const CREATED_AT_EPOCH_MS = 1_763_600_000_123;
+
 function createRecorderTexts() {
     return {
         recorderDirectory: '/runs/a',
@@ -55,6 +58,7 @@ function createRecorderTexts() {
             controlRunId: 'run-a',
             state: 'passed',
             agentIds: ['agent-1', 'agent-2'],
+            createdAtEpochMs: CREATED_AT_EPOCH_MS,
             startedAtEpochMs: 1_000,
             completedAtEpochMs: 61_000
         }))
@@ -68,6 +72,10 @@ describe('decodeLocalBaselineRun', () => {
         expect(run?.figures).toEqual({ runDurationMs: 60_000 });
         expect(run?.regime).toMatchObject({ apiMode: 'memory', agentCount: 2, 'topology.degreeLimit': 5 });
         expect(run?.regime).not.toHaveProperty('sourceCommit');
+    });
+
+    it('reads the instant the run was taken from the distributed run\'s createdAtEpochMs', () => {
+        expect(decodeLocalBaselineRun(createRecorderTexts()).right?.takenAtEpochMs).toBe(1_763_600_000_123);
     });
 
     it('names the directory and the file of every part it cannot decode', () => {
@@ -193,6 +201,26 @@ describe('toLocalBaselineReport', () => {
             )
         ).toEqual({
             lines: ['not comparable: a run reports a figure that is not a finite number: commandTiming.p50Ms, runDurationMs'],
+            exitCode: 1
+        });
+    });
+
+    it('exits 1 on runs not taken one at a time, alternately and baseline first, naming the sides or the order taken', () => {
+        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'unordered-runs', keys: ['baseline', 'candidate'] })))
+            .toEqual({
+                lines: [
+                    'not comparable: a run was taken at the same instant as another, or at no finite instant, on baseline, candidate'
+                ],
+                exitCode: 1
+            });
+        expect(
+            toLocalBaselineReport(
+                Either.ofLeft({ kind: 'sides-not-alternating', keys: ['baseline', 'baseline', 'candidate', 'candidate'] })
+            )
+        ).toEqual({
+            lines: [
+                'not comparable: the runs were not taken alternately, baseline first, but as baseline, baseline, candidate, candidate'
+            ],
             exitCode: 1
         });
     });

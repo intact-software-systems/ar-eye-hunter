@@ -5,13 +5,35 @@ import { computeSameRegimeComparison, type SameRegimeComparison } from '@shared/
 const BAND: SameRegimeComparison.Band = { relative: 0.1, absolute: 5 };
 const REGIME: SameRegimeComparison.Run['regime'] = { apiMode: 'memory', agentCount: 15, 'host.cpuCount': 12, worktreeClean: true };
 
-function createRun(figures: Readonly<Record<string, number>>, regime = REGIME): SameRegimeComparison.Run {
+type UntimedRun = Omit<SameRegimeComparison.Run, 'takenAtEpochMs'>;
+
+interface AlternateComparisonInput {
+    readonly baseline: readonly UntimedRun[];
+    readonly candidate: readonly UntimedRun[];
+    readonly minimumRunsPerSide: number;
+}
+
+function createRun(figures: SameRegimeComparison.Run['figures'], regime = REGIME): UntimedRun {
     return { regime, figures };
 }
 
+function createRunAt(takenAtEpochMs: number, p50: number): SameRegimeComparison.Run {
+    return { takenAtEpochMs, regime: REGIME, figures: { p50 } };
+}
+
+/** The sides' runs taken alternately, baseline first: baseline at 0, 2, 4…, candidate at 1, 3, 5…. */
+function compareAlternately(input: AlternateComparisonInput) {
+    return computeSameRegimeComparison({
+        baseline: input.baseline.map((run, index) => ({ ...run, takenAtEpochMs: 2 * index })),
+        candidate: input.candidate.map((run, index) => ({ ...run, takenAtEpochMs: 2 * index + 1 })),
+        band: BAND,
+        minimumRunsPerSide: input.minimumRunsPerSide
+    });
+}
+
 /** One run per side, for the rules that do not depend on how many runs a side holds. */
-function compareOneRunEach(baseline: SameRegimeComparison.Run, candidate: SameRegimeComparison.Run) {
-    return computeSameRegimeComparison({ baseline: [baseline], candidate: [candidate], band: BAND, minimumRunsPerSide: 1 });
+function compareOneRunEach(baseline: UntimedRun, candidate: UntimedRun) {
+    return compareAlternately({ baseline: [baseline], candidate: [candidate], minimumRunsPerSide: 1 });
 }
 
 describe('computeSameRegimeComparison', () => {
@@ -113,10 +135,9 @@ describe('computeSameRegimeComparison over several runs per side', () => {
     // The defect this pins: one run per side read 71 against 54 ms as an improvement and 54 against 67 ms as a
     // regression for one commit (D652). Each side's figure is the median of its runs, so one odd run moves nothing.
     it('compares the median of each side\'s runs and keeps every run\'s value beside it', () => {
-        const compared = computeSameRegimeComparison({
+        const compared = compareAlternately({
             baseline: [71, 54, 67, 66, 68].map((p50) => createRun({ p50 })),
             candidate: [54, 70, 69, 66, 95].map((p50) => createRun({ p50 })),
-            band: BAND,
             minimumRunsPerSide: 5
         });
 
@@ -133,10 +154,9 @@ describe('computeSameRegimeComparison over several runs per side', () => {
     });
 
     it('reads a side whose median moved outside the band as a regression', () => {
-        const compared = computeSameRegimeComparison({
+        const compared = compareAlternately({
             baseline: [60, 62, 64].map((p50) => createRun({ p50 })),
             candidate: [61, 80, 82].map((p50) => createRun({ p50 })),
-            band: BAND,
             minimumRunsPerSide: 3
         });
 
@@ -145,42 +165,35 @@ describe('computeSameRegimeComparison over several runs per side', () => {
     });
 
     it('takes the lower middle run of an even number of runs, with no interpolated value', () => {
-        const compared = computeSameRegimeComparison({
+        const compared = compareAlternately({
             baseline: [10, 40, 20, 30].map((p50) => createRun({ p50 })),
-            candidate: [30, 20].map((p50) => createRun({ p50 })),
-            band: BAND,
-            minimumRunsPerSide: 2
+            candidate: [35, 15, 25, 45].map((p50) => createRun({ p50 })),
+            minimumRunsPerSide: 4
         });
 
-        expect(compared.right?.figures.map((figure) => [figure.baseline, figure.candidate])).toEqual([[20, 20]]);
+        expect(compared.right?.figures.map((figure) => [figure.baseline, figure.candidate])).toEqual([[20, 25]]);
     });
 
     it('refuses a side with fewer runs than the caller declared, naming the side, before anything else', () => {
         const three = [1, 2, 3].map((p50) => createRun({ p50 }));
         const two = [1, 2].map((p50) => createRun({ p50 }, { ...REGIME, apiMode: 'postgres' }));
 
-        expect(computeSameRegimeComparison({ baseline: three, candidate: two, band: BAND, minimumRunsPerSide: 3 }).left)
+        expect(compareAlternately({ baseline: three, candidate: two, minimumRunsPerSide: 3 }).left)
             .toEqual({ kind: 'too-few-runs', keys: ['candidate'] });
-        expect(computeSameRegimeComparison({ baseline: two, candidate: two, band: BAND, minimumRunsPerSide: 3 }).left)
+        expect(compareAlternately({ baseline: two, candidate: two, minimumRunsPerSide: 3 }).left)
             .toEqual({ kind: 'too-few-runs', keys: ['baseline', 'candidate'] });
     });
 
     it('refuses a side with no run whatever minimum was declared', () => {
-        const compared = computeSameRegimeComparison({
-            baseline: [],
-            candidate: [createRun({ p50: 1 })],
-            band: BAND,
-            minimumRunsPerSide: 0
-        });
+        const compared = compareAlternately({ baseline: [], candidate: [createRun({ p50: 1 })], minimumRunsPerSide: 0 });
 
         expect(compared.left).toEqual({ kind: 'too-few-runs', keys: ['baseline'] });
     });
 
     it('refuses when any run of either side is of another regime', () => {
-        const compared = computeSameRegimeComparison({
+        const compared = compareAlternately({
             baseline: [createRun({ p50: 1 }), createRun({ p50: 1 }, { ...REGIME, agentCount: 30 })],
             candidate: [createRun({ p50: 1 }), createRun({ p50: 1 }, { ...REGIME, extra: true })],
-            band: BAND,
             minimumRunsPerSide: 2
         });
 
@@ -188,20 +201,122 @@ describe('computeSameRegimeComparison over several runs per side', () => {
     });
 
     it('refuses when any run lacks a figure another run reports, or reports one that is not finite', () => {
-        const missing = computeSameRegimeComparison({
+        const missing = compareAlternately({
             baseline: [createRun({ p50: 1, runDurationMs: 9 }), createRun({ p50: 1 })],
             candidate: [createRun({ p50: 1, runDurationMs: 9 }), createRun({ p50: 1, runDurationMs: 9 })],
-            band: BAND,
             minimumRunsPerSide: 2
         });
-        const nonFinite = computeSameRegimeComparison({
+        const nonFinite = compareAlternately({
             baseline: [createRun({ p50: 1 }), createRun({ p50: 1 })],
             candidate: [createRun({ p50: 1 }), createRun({ p50: Number.NaN })],
-            band: BAND,
             minimumRunsPerSide: 2
         });
 
         expect(missing.left).toEqual({ kind: 'different-figures', keys: ['runDurationMs'] });
         expect(nonFinite.left).toEqual({ kind: 'non-finite-figures', keys: ['p50'] });
+    });
+});
+
+function compareTimed(
+    baseline: readonly SameRegimeComparison.Run[],
+    candidate: readonly SameRegimeComparison.Run[],
+    minimumRunsPerSide: number
+) {
+    return computeSameRegimeComparison({ baseline, candidate, band: BAND, minimumRunsPerSide });
+}
+
+// Runs are taken by hand, one at a time on one machine; two blocks of runs let the machine's drift between the blocks
+// read as a difference between the builds. Only the instant each run was taken decides the order (D695).
+describe('computeSameRegimeComparison over the instants the runs were taken', () => {
+    it('compares sides taken alternately whatever order each lists its runs in, and refuses them taken as two blocks', () => {
+        const shuffled = compareTimed(
+            [[8, 18], [0, 10], [4, 14], [2, 12], [6, 16]].map(([at, p50]) => createRunAt(at, p50)),
+            [[5, 25], [1, 21], [9, 29], [3, 23], [7, 27]].map(([at, p50]) => createRunAt(at, p50)),
+            5
+        );
+        const blocks = compareTimed(
+            [0, 1, 2, 3, 4].map((at) => createRunAt(at, 10)),
+            [5, 6, 7, 8, 9].map((at) => createRunAt(at, 10)),
+            5
+        );
+
+        expect(shuffled.right).toEqual({
+            figures: [{
+                name: 'p50',
+                baseline: 14,
+                candidate: 25,
+                baselineRuns: [18, 10, 14, 12, 16],
+                candidateRuns: [25, 21, 29, 23, 27],
+                verdict: 'regression'
+            }]
+        });
+        expect(blocks.left).toEqual({
+            kind: 'sides-not-alternating',
+            keys: [
+                'baseline',
+                'baseline',
+                'baseline',
+                'baseline',
+                'baseline',
+                'candidate',
+                'candidate',
+                'candidate',
+                'candidate',
+                'candidate'
+            ]
+        });
+    });
+
+    it('compares a baseline side one run longer, and refuses candidate first or a candidate side one run longer', () => {
+        const baselineLonger = compareTimed(
+            [[0, 10], [2, 12], [4, 14]].map(([at, p50]) => createRunAt(at, p50)),
+            [[1, 11], [3, 13]].map(([at, p50]) => createRunAt(at, p50)),
+            2
+        );
+        const candidateFirst = compareTimed([createRunAt(1, 1), createRunAt(3, 1)], [createRunAt(0, 1), createRunAt(2, 1)], 2);
+        const candidateLonger = compareTimed(
+            [createRunAt(0, 1), createRunAt(2, 1)],
+            [createRunAt(1, 1), createRunAt(3, 1), createRunAt(5, 1)],
+            2
+        );
+
+        expect(baselineLonger.right?.figures.map((figure) => [figure.baseline, figure.candidate])).toEqual([[12, 11]]);
+        expect(candidateFirst.left).toEqual({
+            kind: 'sides-not-alternating',
+            keys: ['candidate', 'baseline', 'candidate', 'baseline']
+        });
+        expect(candidateLonger.left).toEqual({
+            kind: 'sides-not-alternating',
+            keys: ['baseline', 'candidate', 'baseline', 'candidate', 'candidate']
+        });
+    });
+
+    it('refuses two runs taken at one instant, or a run of no finite instant, naming each side that holds one', () => {
+        const acrossSides = compareTimed([createRunAt(0, 1), createRunAt(2, 1)], [createRunAt(1, 1), createRunAt(2, 1)], 2);
+        const withinBaseline = compareTimed([createRunAt(0, 1), createRunAt(0, 1)], [createRunAt(1, 1), createRunAt(3, 1)], 2);
+        const notFinite = compareTimed(
+            [createRunAt(0, 1), createRunAt(2, 1)],
+            [createRunAt(1, 1), createRunAt(Number.NaN, 1)],
+            2
+        );
+
+        expect(acrossSides.left).toEqual({ kind: 'unordered-runs', keys: ['baseline', 'candidate'] });
+        expect(withinBaseline.left).toEqual({ kind: 'unordered-runs', keys: ['baseline'] });
+        expect(notFinite.left).toEqual({ kind: 'unordered-runs', keys: ['candidate'] });
+    });
+
+    it('reports too few runs before the order of the runs, and the order before a differing regime', () => {
+        const tooFew = compareTimed([createRunAt(0, 1)], [createRunAt(0, 1), createRunAt(1, 1)], 2);
+        const blocksOfTwoRegimes = compareTimed(
+            [createRunAt(0, 1), createRunAt(1, 1)],
+            [{ ...createRunAt(2, 1), regime: { ...REGIME, apiMode: 'postgres' } }, createRunAt(3, 1)],
+            2
+        );
+
+        expect(tooFew.left).toEqual({ kind: 'too-few-runs', keys: ['baseline'] });
+        expect(blocksOfTwoRegimes.left).toEqual({
+            kind: 'sides-not-alternating',
+            keys: ['baseline', 'baseline', 'candidate', 'candidate']
+        });
     });
 });
