@@ -23,7 +23,7 @@ import type {
 } from '../../al-runtime-state-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
+import { decodeALOutboundSendAttemptIdentity, toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { decodeALAccountViewAuthority, type ALAccountViewAuthority } from './al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
@@ -343,7 +343,7 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         'attempts',
         'deadlineAtMs'
     ];
-    const snapshot = decodeALAdmissionRecord(value, fields);
+    const snapshot = decodeALAdmissionRecord(value, fields, ['firstAttempt']);
     requirePersistedALNonEmptyString(snapshot.msgId, 'pending acknowledgement message id');
     if (snapshot.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL pending acknowledgement identity does not match its slot');
@@ -362,6 +362,12 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
     requirePersistedALSafeInteger(snapshot.maxAttempts, 0, 'acknowledgement maximum attempts');
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'acknowledgement attempts');
     requirePersistedALSafeInteger(snapshot.deadlineAtMs, 0, 'acknowledgement deadline');
+    if (snapshot.firstAttempt !== undefined) {
+        decodeALOutboundSendAttemptIdentity(
+            decodeALAdmissionRecord(snapshot.firstAttempt, ['attemptIdentity', 'phase']),
+            'receipt first attempt'
+        );
+    }
     return value as ALOutboundPendingAckSnapshot;
 }
 

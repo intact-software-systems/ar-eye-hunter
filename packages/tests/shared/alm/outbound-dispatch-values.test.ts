@@ -9,9 +9,13 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
-import type { ALOutboundRepairAttemptSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import type {
+    ALOutboundPendingAckSnapshot,
+    ALOutboundRepairAttemptSnapshot
+} from '@shared/alm/al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundCommitBundle,
     ALOutboundMessageReadDto,
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -381,9 +385,15 @@ describe('a dispatch and the end of its message', () => {
             outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent,
-            phase: 'immediate',
+            phase: intent === 'dequeue' ? 'dequeue' : 'immediate',
             options
         });
+    }
+
+    /** The receipt row a dispatch's bundle writes, if it writes one. */
+    function toTrackedRow(bundle: ALOutboundCommitBundle<OutboundTestPayload> | undefined): ALOutboundPendingAckSnapshot | undefined {
+        const tracked = bundle?.mutations.find((mutation) => mutation.kind === 'set-pending-ack');
+        return tracked?.kind === 'set-pending-ack' ? tracked.snapshot : undefined;
     }
 
     function toSentEnd(computed: ALOutboundComputedDto<OutboundTestPayload>): boolean | undefined {
@@ -431,6 +441,38 @@ describe('a dispatch and the end of its message', () => {
         expect(computed.bundle?.endedTimeoutEffectIds).toEqual([toALOutboundAckTimeoutEffectId(OPEN_RECEIPT)]);
         expect(computed.bundle?.expectedVersion).toBe(read.clientRecord?.version);
         expect(toALOutboundCommitSettlements({ bundle: computed.bundle!, msg: message, read, intent: 'repair' })).toEqual([]);
+    });
+
+    it('names the first send on the receipt row an enqueue opens: `initial`, `immediate`', async () => {
+        const admission = await readOutboundTestAdmission({
+            store: createDefaultOutboundTestStores().admissionStore,
+            message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: Date.now },
+            planner: trackedPlanner
+        });
+
+        expect(toTrackedRow(admission)?.firstAttempt).toEqual({ attemptIdentity: 'initial', phase: 'immediate' });
+    });
+
+    it('names its claim on the receipt row a dequeue dispatch opens', async () => {
+        const { store, read: observed } = await readAdmittedMessage(message, trackedPlanner, 'dequeue');
+        const read = freezeValues({ ...observed, pendingAck: undefined });
+
+        expect(toTrackedRow(dispatch(store, read, 'dequeue', { attemptIdentity: 'claim-1' }).bundle)?.firstAttempt).toEqual({
+            attemptIdentity: 'claim-1',
+            phase: 'dequeue'
+        });
+    });
+
+    it('writes the open row\'s own first attempt back on a repair, and none over a row that names none', async () => {
+        const { store, read: observed } = await readAdmittedMessage(message, trackedPlanner);
+        const firstAttempt = { attemptIdentity: 'initial', phase: 'immediate' } as const;
+        const named = freezeValues({ ...observed, pendingAck: { ...OPEN_RECEIPT, firstAttempt } });
+        const unnamed = freezeValues({ ...observed, pendingAck: OPEN_RECEIPT });
+
+        expect(toTrackedRow(dispatch(store, named, 'repair', { attemptIdentity: 'repair-1' }).bundle)?.firstAttempt).toEqual(firstAttempt);
+        expect(toTrackedRow(dispatch(store, unnamed, 'repair', { attemptIdentity: 'repair-1' }).bundle)).not.toHaveProperty('firstAttempt');
     });
 
     it('marks the sent row ended exactly on the dispatch whose tracking completes its receipt, which states that completion', async () => {

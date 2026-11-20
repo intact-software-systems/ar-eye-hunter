@@ -2,7 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALOutboundPendingAckSnapshot, ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
     toALOutboundOrderingTrackMutations,
@@ -159,7 +159,7 @@ function computeDispatchWrites<TPrepared>(
     const { read } = input;
     const messageExpiresAtMs = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs;
     const ackTracking = read.plan.preparedMessages.length > 0
-        ? computeAckTrackingWrites(read, messageExpiresAtMs)
+        ? computeAckTrackingWrites(input, messageExpiresAtMs)
         : NO_ACK_TRACKING_WRITES;
     const firstHop = computeALOutboundFirstHopWaitWrites(input, messageExpiresAtMs);
     return {
@@ -428,9 +428,10 @@ const NO_ACK_TRACKING_WRITES: ALOutboundAckTrackingWrites<never> = {
 };
 
 function computeAckTrackingWrites<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>,
+    input: ComputeALOutboundDispatchInput<TPrepared>,
     messageExpiresAtMs: number
 ): ALOutboundAckTrackingWrites<TPrepared> {
+    const { read } = input;
     const tracking = read.plan.ackTracking;
     if (tracking === undefined || !isALOutboundAckTrackingWritable(tracking)) {
         return NO_ACK_TRACKING_WRITES;
@@ -456,12 +457,18 @@ function computeAckTrackingWrites<TPrepared>(
             : NO_ACK_TRACKING_WRITES;
     }
 
+    const opened: ALOutboundPendingAckSnapshot = read.pendingAck === undefined
+        ? {
+            ...pending,
+            firstAttempt: { attemptIdentity: toALOutboundAttemptIdentity(input.options), phase: input.phase }
+        }
+        : pending;
     return {
         completesReceipt: false,
         mutations: [{
             kind: 'set-pending-ack',
             originPeerId: read.msg.id.senderId,
-            snapshot: pending,
+            snapshot: opened,
             expireAtTimestamp: messageExpiresAtMs
         }],
         durableEffects: [{

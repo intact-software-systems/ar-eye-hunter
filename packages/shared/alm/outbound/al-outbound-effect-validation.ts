@@ -30,6 +30,7 @@ import {
     type ALOutboundPendingAdmission
 } from './al-outbound-pending-admission.ts';
 import {
+    decodeALOutboundSendAttemptIdentity,
     toALOutboundEffectId,
     toALOutboundSendEffectId,
     type ALOutboundSendEffectIdentity
@@ -216,19 +217,15 @@ function decodeALOutboundSendEffect<TPrepared>(
     ) {
         throw new TypeError('Prepared attempt requires its exact canonical message');
     }
-    requirePersistedALNonEmptyString(payload.attemptIdentity, 'prepared attempt identity');
+    const attempt = decodeALOutboundSendAttemptIdentity(payload, 'outbound send');
     requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
     if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
         throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
     }
-    if (payload.phase !== 'immediate' && payload.phase !== 'dequeue') {
-        throw new TypeError('Persisted AL outbound send phase is invalid');
-    }
     requireALOutboundSendEffectIdentity({
         effectId,
         msgId: msg.id.msgId,
-        phase: payload.phase,
-        attemptIdentity: payload.attemptIdentity as string,
+        ...attempt,
         preparedFingerprint: payload.preparedFingerprint
     });
     return {
@@ -236,8 +233,7 @@ function decodeALOutboundSendEffect<TPrepared>(
         message,
         prepared: preparedRead.decodePrepared(payload.prepared, msg, message.key),
         preparedFingerprint: payload.preparedFingerprint,
-        attemptIdentity: payload.attemptIdentity as string,
-        phase: payload.phase,
+        ...attempt,
         sentPositions
     };
 }

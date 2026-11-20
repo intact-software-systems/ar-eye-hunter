@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALReceiptMode } from '../../../al-contracts/al-policy.ts';
-import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '../../../resilience/try-with-policy.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -15,13 +14,11 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from '../al-outbound-message-runtime.ts';
-import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import { readALOutboundSendAttemptHeld } from '../attempt-deadline/read-al-outbound-send-attempt-held.ts';
 import { toALOutboundAdmissionVerdict } from '../compute-al-outbound-dispatch.ts';
 import { resolveALOutboundReplanRefusalSettlement } from '../control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptExhaustedFact } from '../control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundReadMessageEndBundle } from '../message-end/to-al-outbound-message-end-bundle.ts';
-import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
-import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import {
     computeALOutboundFirstHopTimeout,
     toALOutboundFirstHopTimeoutEffect,
@@ -75,7 +72,11 @@ export class ALOutboundFirstHopWait<TPrepared> {
         const decision = computeALOutboundFirstHopTimeout({
             wait,
             messageLive: live !== undefined,
-            attemptRows: wait !== undefined && live !== undefined ? await this.readAttemptRows(wait, live.plan) : [],
+            attemptHeld: wait !== undefined && live !== undefined &&
+                await readALOutboundSendAttemptHeld(admissionStore, {
+                    ...wait,
+                    preparedMessages: live.plan.preparedMessages
+                }),
             replanRefusal: live && resolveALOutboundReplanRefusalSettlement(
                 live.msg,
                 toALOutboundAdmissionVerdict(live.plan),
@@ -121,28 +122,6 @@ export class ALOutboundFirstHopWait<TPrepared> {
                 }
             }
         }
-    }
-
-    /** The send rows of the attempt the wait stands on: one per prepared copy the message is planned with. */
-    private async readAttemptRows(
-        wait: ALOutboundFirstHopWaitSnapshot,
-        plan: ALOutboundDispatchPlan<TPrepared>
-    ): Promise<readonly (ResourceEntry | undefined)[]> {
-        const { admissionStore } = this.dependencies;
-        return await Promise.all(
-            plan.preparedMessages.map((prepared, index) =>
-                admissionStore.readWork(toALOutboundWorkKey(
-                    admissionStore.namespace,
-                    toALOutboundSendEffectId({
-                        msgId: wait.msgId,
-                        phase: wait.phase,
-                        attemptIdentity: wait.attemptIdentity,
-                        index,
-                        preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
-                    })
-                ))
-            )
-        );
     }
 
     /** The message ends in the commit whose success states it, so the fact is stated once across replays and reloads. */

@@ -20,37 +20,34 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
     createDefaultOutboundTestRuntime,
-    createDefaultOutboundTestStores,
-    createIndexedDbOutboundTestStores,
     createOutboundMessage,
     createServerReceipt,
     drainOutboundWorkDueNow,
     enqueueOutboundOrThrow
 } from '../../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
+import {
+    advanceOutboundClockTo,
+    createReopenableOutboundTestStores,
+    OUTBOUND_TIMELINE_STEP_MS,
+    readPendingOutboundWorkKinds,
+    toOutboundTerminalFacts,
+    type OutboundTimelineStoreKind,
+    type ReopenableOutboundTestStores
+} from '../outbound-timeline-test-fixture.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
 
 const START_MS = Date.UTC(2026, 10, 19, 12);
-const STEP_MS = 25;
 const RECEIVERS = ['peer-1', 'peer-2'];
 const NAMESPACE = 'outbound-message-end';
 
-type StoreKind = 'memory' | 'indexeddb';
-const STORES: readonly StoreKind[] = ['memory', 'indexeddb'];
-
-/** A pair whose stores a second runtime can open again, as a reload does. */
-interface ReopenableStores {
-    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
-    reopen(): ALOutboundRuntimeStores<OutboundTestPayload>;
-}
+const STORES: readonly OutboundTimelineStoreKind[] = ['memory', 'indexeddb'];
 
 /** The transport double: it records every copy it takes, by sequence, with the cause its planner named. */
 interface FixtureTransport {
@@ -64,7 +61,7 @@ interface EndedMessageFixture {
     runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     stores: ALOutboundRuntimeStores<OutboundTestPayload>;
     settlements: ALDeliverySettlement[];
-    readonly reopenable: ReopenableStores;
+    readonly reopenable: ReopenableOutboundTestStores;
     readonly messages: readonly ALMessage[];
     readonly transport: FixtureTransport;
     readonly maxRepairs: number;
@@ -129,7 +126,7 @@ describe('a terminal settlement ends its message', () => {
             await requestSeqTwo(fixture, 'peer-1', number);
         }
         while (terminalFactsOf(fixture, 2).length === 0 && Date.now() - START_MS < 30_000) {
-            await advanceTo(fixture, Date.now() - START_MS + STEP_MS);
+            await advanceTo(fixture, Date.now() - START_MS + OUTBOUND_TIMELINE_STEP_MS);
         }
         expect(terminalFactsOf(fixture, 2)).toEqual([['receipt-exhausted', 'budget']]);
         await advanceTo(fixture, Date.now() - START_MS + 100);
@@ -320,10 +317,10 @@ async function exhaustSeqTwo(fixture: EndedMessageFixture): Promise<void> {
 }
 
 async function createEndedMessageFixture(
-    store: StoreKind,
+    store: OutboundTimelineStoreKind,
     options: EndedMessageFixtureOptions
 ): Promise<EndedMessageFixture> {
-    const reopenable = createReopenableStores(store);
+    const reopenable = createReopenableOutboundTestStores(store, NAMESPACE);
     const messages = [1, 2, 3, 4, 5].map((seq) => ({
         ...createOutboundMessage(`msg-seq-${seq}`, { ttlMs: 60_000 }),
         ordering: { orderingKey: 'conversation-1', epoch: 0, seq }
@@ -348,21 +345,6 @@ async function createEndedMessageFixture(
         }
     }
     return fixture;
-}
-
-function createReopenableStores(store: StoreKind): ReopenableStores {
-    if (store === 'memory') {
-        const stores = createDefaultOutboundTestStores();
-        return { stores, reopen: () => stores };
-    }
-    const dbName = `${NAMESPACE}-${crypto.randomUUID()}`;
-    const open = () =>
-        createIndexedDbOutboundTestStores({
-            observer: createPassThroughIndexedDbOperationObserver(),
-            namespace: NAMESPACE,
-            dbName
-        });
-    return { stores: open(), reopen: open };
 }
 
 function createFixtureRuntime(
@@ -439,11 +421,7 @@ async function planRepairMessage(
 
 /** Moves the clock to `ms` after the start in 25 ms steps, draining the work due at each. */
 async function advanceTo(fixture: EndedMessageFixture, ms: number): Promise<void> {
-    while (Date.now() < START_MS + ms) {
-        vi.setSystemTime(Math.min(Date.now() + STEP_MS, START_MS + ms));
-        await drainOutboundWorkDueNow(fixture.runtime, fixture.stores);
-    }
-    await drainOutboundWorkDueNow(fixture.runtime, fixture.stores);
+    await advanceOutboundClockTo(fixture, START_MS + ms);
 }
 
 /** A gap NACK for sequence 2 that names sequence 3's message, the one whose arrival revealed the gap. */
@@ -493,45 +471,12 @@ function framesOf(fixture: EndedMessageFixture, seq: number): readonly string[] 
 
 /** The facts of sequence `seq`'s message that end it, each as a pair of its kind and its reason. */
 function terminalFactsOf(fixture: EndedMessageFixture, seq: number): readonly (readonly [string, string])[] {
-    const msgId = fixture.messages[seq - 1]!.id.msgId;
-    return fixture.settlements.flatMap((settlement): (readonly [string, string])[] => {
-        if (settlement.msgId !== msgId) {
-            return [];
-        }
-        switch (settlement.kind) {
-            case 'admission':
-                return settlement.verdict.kind === 'skipped' || settlement.verdict.kind === 'refused'
-                    ? [['admission', settlement.verdict.reason]]
-                    : [];
-            case 'receipt-exhausted':
-                return [['receipt-exhausted', settlement.cause]];
-            case 'relay-rejected':
-                return [['relay-rejected', settlement.relayRejection.reason]];
-            case 'acknowledgement':
-                return settlement.complete ? [['acknowledgement', 'complete']] : [];
-            default:
-                return [];
-        }
-    });
+    return toOutboundTerminalFacts(fixture.settlements, fixture.messages[seq - 1]!.id.msgId);
 }
 
 /** The kinds of the pending work rows that name sequence `seq`'s message. */
 async function pendingWorkOf(fixture: EndedMessageFixture, seq: number): Promise<readonly string[]> {
-    const msgId = fixture.messages[seq - 1]!.id.msgId;
-    const { stores } = fixture;
-    const kinds: string[] = [];
-    for (const key of await stores.workQueue.getAllKeys()) {
-        const entry = await stores.workQueue.getItem(key);
-        if (entry === undefined || !isPendingALOutboundWork(entry)) {
-            continue;
-        }
-        const { payload } = await stores.admissionStore.readWorkSnapshot(entry, undefined);
-        const named = 'message' in payload ? payload.message.msgId : 'msgId' in payload ? payload.msgId : undefined;
-        if (named === msgId) {
-            kinds.push(payload.kind);
-        }
-    }
-    return kinds;
+    return await readPendingOutboundWorkKinds(fixture.stores, fixture.messages[seq - 1]!.id.msgId);
 }
 
 async function readRepairRead(

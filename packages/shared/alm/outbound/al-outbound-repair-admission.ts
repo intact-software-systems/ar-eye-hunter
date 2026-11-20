@@ -9,6 +9,7 @@ import type {
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
     ALOutboundPlanner,
+    ALOutboundRepairReadDto,
     ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type {
@@ -19,6 +20,8 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
+import { computeALOutboundAttemptDeadline } from './attempt-deadline/compute-al-outbound-attempt-deadline.ts';
+import { readALOutboundSendAttemptHeld } from './attempt-deadline/read-al-outbound-send-attempt-held.ts';
 import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAdmissionVerdict } from './compute-al-outbound-dispatch.ts';
 import type {
@@ -69,10 +72,10 @@ export namespace ALOutboundRepairAdmission {
         readonly messageExpiresAtMs: number;
     }
 
-    /** The fence of a receipt's next retry, and whether this peer can re-plan its message to retry it. */
-    export interface AckTimeoutRetry {
+    /** The fence of a receipt's next window, and whether the window's commit hints a repair of the message. */
+    export interface NextAckWindow {
         readonly expectedVersion: number | undefined;
-        readonly replannable: boolean;
+        readonly hintsRepair: boolean;
     }
 }
 
@@ -246,30 +249,39 @@ export class ALOutboundRepairAdmission<TPrepared> {
             await this.commitRefusedReceipt(msg, read, refusal);
             return;
         }
-        if (pending.attempts >= pending.maxAttempts) {
+        const held = await this.readFirstAttemptHeld(read, pending);
+        const deadline = computeALOutboundAttemptDeadline({ budget: pending, held, nowMs: this.readNowMs() });
+        if (deadline.kind === 'exhausted') {
             await this.commitReceiptExhausted(msg, read, pending);
             return;
         }
-        await this.commitAckTimeoutRetry({ msg, pending, messageExpiresAtMs }, {
+        await this.commitNextAckWindow({ msg, pending: { ...pending, ...deadline.next }, messageExpiresAtMs }, {
             expectedVersion: read.clientRecord?.version,
-            replannable: read.plan !== undefined && !read.plan.dropReason
+            hintsRepair: deadline.kind === 'retry' && read.plan !== undefined && !read.plan.dropReason
         });
     }
 
-    /** The receipt's next window, and its repair hint when this peer can re-plan the message. */
-    private async commitAckTimeoutRetry(
+    /** Whether the receipt has charged nothing and every copy of the dispatch that opened it is still queued. */
+    private async readFirstAttemptHeld(
+        read: ALOutboundRepairReadDto<TPrepared>,
+        pending: ALOutboundPendingAckSnapshot
+    ): Promise<boolean> {
+        if (pending.attempts !== 0 || pending.firstAttempt === undefined || read.plan === undefined) {
+            return false;
+        }
+        return await readALOutboundSendAttemptHeld(this.admissionStore, {
+            ...pending.firstAttempt,
+            msgId: pending.msgId,
+            preparedMessages: read.plan.preparedMessages
+        });
+    }
+
+    /** Commits the receipt's next window, `receipt.pending` as the window writes it. */
+    private async commitNextAckWindow(
         receipt: ALOutboundRepairAdmission.RetriedReceipt,
-        retry: ALOutboundRepairAdmission.AckTimeoutRetry
+        nextWindow: ALOutboundRepairAdmission.NextAckWindow
     ): Promise<void> {
-        const { pending } = receipt;
-        const nextPending: ALOutboundPendingAckSnapshot = {
-            ...pending,
-            attempts: pending.attempts + 1,
-            deadlineAtMs: this.readNowMs() + pending.timeoutMs
-        };
-        const status = await this.admissionStore.commitBundle(
-            this.toAckTimeoutRepairBundle({ ...receipt, pending: nextPending }, retry)
-        );
+        const status = await this.admissionStore.commitBundle(this.toNextAckWindowBundle(receipt, nextWindow));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
         }
@@ -325,13 +337,13 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * The next retry of a receipt, and its repair hint when this peer can re-plan the message. A copy this peer
-     * cannot re-plan, such as a relay's forwarded copy, has no retry of its own: its origin retries it, so the
-     * hint would only fail its read.
+     * The next window of a receipt, and the repair hint of a charged one when this peer can re-plan the message. A
+     * copy this peer cannot re-plan, such as a relay's forwarded copy, has no retry of its own: its origin retries
+     * it, so the hint would only fail its read.
      */
-    private toAckTimeoutRepairBundle(
+    private toNextAckWindowBundle(
         receipt: ALOutboundRepairAdmission.RetriedReceipt,
-        retry: ALOutboundRepairAdmission.AckTimeoutRetry
+        nextWindow: ALOutboundRepairAdmission.NextAckWindow
     ): ALOutboundCommitBundle<TPrepared> {
         const { msg, pending, messageExpiresAtMs } = receipt;
         const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
@@ -352,7 +364,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         };
         return {
             senderId: msg.id.senderId,
-            expectedVersion: retry.expectedVersion,
+            expectedVersion: nextWindow.expectedVersion,
             mutations: [{
                 kind: 'set-pending-ack',
                 originPeerId: msg.id.senderId,
@@ -361,7 +373,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
-                ...(retry.replannable ? [repairHint] : [])
+                ...(nextWindow.hintsRepair ? [repairHint] : [])
             ]
         };
     }

@@ -48,8 +48,7 @@ import {
     type ALOrderingIndexedSequence,
     type ALOrderingStoredPredecessors
 } from '../lane/compute-al-outbound-group-sent-positions.ts';
-import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
-import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
+import { toALOutboundAttemptSendEffectIds } from '../to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundControlHistoryKey,
@@ -69,8 +68,8 @@ import type {
     ALOutboundPlanner,
     ALOutboundReceiptAdmissionReadInput,
     ALOutboundReceiptTrackPositions,
-    ALOutboundRepairAttemptIdentity,
     ALOutboundRepairReadDto,
+    ALOutboundSendAttemptIdentity,
     ALOutboundSupersedenceReadState
 } from './al-outbound-admission-store.ts';
 import {
@@ -836,24 +835,17 @@ export class ALOutboundAdmissionReads<TPrepared> {
     /** Whether a send of the attempt is already a work row; the one commit that wrote one wrote them all. */
     private async readRepairAttemptCommitted(
         session: ALAdmissionReadSession,
-        attempt: ALOutboundRepairAttemptIdentity,
+        attempt: ALOutboundSendAttemptIdentity,
         plan: ALOutboundDispatchPlan<TPrepared>
     ): Promise<boolean> {
-        const rows = await Promise.all(plan.preparedMessages.map((prepared, index) =>
-            this.readQueueItem(
-                session,
-                toALOutboundWorkKey(
-                    this.namespace,
-                    toALOutboundSendEffectId({
-                        msgId: plan.msg.id.msgId,
-                        phase: attempt.phase,
-                        attemptIdentity: attempt.attemptIdentity,
-                        index,
-                        preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
-                    })
-                )
-            )
-        ));
+        const sendEffectIds = toALOutboundAttemptSendEffectIds({
+            ...attempt,
+            msgId: plan.msg.id.msgId,
+            preparedMessages: plan.preparedMessages
+        });
+        const rows = await Promise.all(
+            sendEffectIds.map((effectId) => this.readQueueItem(session, toALOutboundWorkKey(this.namespace, effectId)))
+        );
         return rows.some((row) => row !== undefined);
     }
 

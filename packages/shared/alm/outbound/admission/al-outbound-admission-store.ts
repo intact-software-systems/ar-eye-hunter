@@ -135,8 +135,8 @@ export type ALOutboundPlanner<TPrepared> = (
     authority: ALOutboundPlanningAuthority | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
-/** The sends a budgeted repair attempt commits, as their effect rows name them. */
-export interface ALOutboundRepairAttemptIdentity {
+/** The sends one dispatch commits, as their effect rows name them. */
+export interface ALOutboundSendAttemptIdentity {
     readonly attemptIdentity: string;
     readonly phase: ALOutboundDispatchPhase;
 }
@@ -148,7 +148,7 @@ export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
     /** Present only for a dispatch that charges a repair budget: the read reports whether its sends are already committed. */
-    readonly repairAttempt?: ALOutboundRepairAttemptIdentity;
+    readonly repairAttempt?: ALOutboundSendAttemptIdentity;
 }
 
 /** What one bundle's commit fences: the effect rows it may replace and the canonical pair it may write. */

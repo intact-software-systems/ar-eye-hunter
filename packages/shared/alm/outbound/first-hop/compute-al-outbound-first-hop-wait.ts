@@ -1,6 +1,6 @@
-import { EntityStatus, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALOutboundDurableEffectWrite } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase, ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
+import { computeALOutboundAttemptDeadline } from '../attempt-deadline/compute-al-outbound-attempt-deadline.ts';
 import type { ALOutboundDispatchWrites, ComputeALOutboundDispatchInput } from '../compute-al-outbound-dispatch.ts';
 import {
     toALOutboundAttemptIdentity,
@@ -28,8 +28,8 @@ export interface ComputeALOutboundFirstHopTimeoutInput {
     readonly wait: ALOutboundFirstHopWaitSnapshot | undefined;
     /** The message is still retained, re-planned and before its deadline. */
     readonly messageLive: boolean;
-    /** The send rows of the attempt the wait stands on, one per prepared copy. */
-    readonly attemptRows: readonly (ResourceEntry | undefined)[];
+    /** A copy of the attempt the wait stands on is still queued for its carrier. */
+    readonly attemptHeld: boolean;
     /** The settlement a re-plan the carrier refuses for good states; undefined when the re-plan may still send. */
     readonly replanRefusal: ALOutboundSettlementFact | undefined;
     readonly nowMs: number;
@@ -68,8 +68,8 @@ export function computeALOutboundFirstHopWaitWrites<TPrepared>(
 
 /**
  * What a first-hop deadline does. A re-plan refused for good ends the wait with that refusal, as it ends a receipt.
- * A frame its transport has not written yet charges nothing and waits a whole timeout more; a written one that drew
- * no answer is written again under a new attempt identity, so a new frame goes out.
+ * The rest is `computeALOutboundAttemptDeadline`'s: a frame still queued waits, and a frame that left and drew no answer
+ * is written again under a new attempt identity, so a new frame goes out.
  */
 export function computeALOutboundFirstHopTimeout(
     input: ComputeALOutboundFirstHopTimeoutInput
@@ -87,24 +87,26 @@ export function computeALOutboundFirstHopTimeout(
     if (input.replanRefusal !== undefined) {
         return { kind: 'refused', refusal: input.replanRefusal };
     }
-    const deadlineAtMs = nowMs + wait.timeoutMs;
-    if (input.attemptRows.some((row) => row !== undefined && isUnwrittenALOutboundSend(row))) {
-        return { kind: 'unwritten', next: { ...wait, deadlineAtMs } };
-    }
-    if (wait.attempts >= wait.maxAttempts) {
-        return { kind: 'exhausted' };
-    }
-    const attempts = wait.attempts + 1;
-    return {
-        kind: 'resend',
-        next: {
-            ...wait,
-            attempts,
-            deadlineAtMs,
-            attemptIdentity: toALOutboundEffectId(['first-hop', wait.msgId, attempts, deadlineAtMs]),
-            phase: 'immediate'
+    const deadline = computeALOutboundAttemptDeadline({ budget: wait, held: input.attemptHeld, nowMs });
+    switch (deadline.kind) {
+        case 'exhausted':
+            return { kind: 'exhausted' };
+        case 'wait':
+            return { kind: 'unwritten', next: { ...wait, ...deadline.next } };
+        case 'retry': {
+            const { attempts, deadlineAtMs } = deadline.next;
+            return {
+                kind: 'resend',
+                next: {
+                    ...wait,
+                    attempts,
+                    deadlineAtMs,
+                    attemptIdentity: toALOutboundEffectId(['first-hop', wait.msgId, attempts, deadlineAtMs]),
+                    phase: 'immediate'
+                }
+            };
         }
-    };
+    }
 }
 
 /** The timer of a wait, retained until the message deadline as a receipt's `ack-timeout` is. */
@@ -118,8 +120,4 @@ export function toALOutboundFirstHopTimeoutEffect<TPrepared>(
         expireAtTimestamp: messageExpiresAtMs,
         payload: { kind: 'first-hop-timeout', msgId: wait.msgId }
     };
-}
-
-function isUnwrittenALOutboundSend(row: ResourceEntry): boolean {
-    return row.status === EntityStatus.NEW || row.status === EntityStatus.RETRY || row.status === EntityStatus.RESERVED;
 }

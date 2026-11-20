@@ -34,6 +34,21 @@ describe('persisted outbound receipt row', () => {
         expect(() => decodeALOutboundPendingAck({ ...ROW, outsideAudiencePeerIds: ['r2', 'r2'] }, 'message'))
             .toThrow(TypeError);
     });
+
+    it('decodes a row that names the attempt its first deadline waits for, and one that names none', () => {
+        const named = { ...ROW, firstAttempt: { attemptIdentity: 'initial', phase: 'immediate' } } as const;
+
+        expect(decodeALOutboundPendingAck(structuredClone(named), 'message')).toEqual(named);
+        expect(decodeALOutboundPendingAck(structuredClone(ROW), 'message')).not.toHaveProperty('firstAttempt');
+    });
+
+    it.each([
+        { label: 'an empty attempt identity', firstAttempt: { attemptIdentity: '', phase: 'immediate' } },
+        { label: 'a phase no dispatch has', firstAttempt: { attemptIdentity: 'initial', phase: 'later' } },
+        { label: 'a null attempt', firstAttempt: null }
+    ])('refuses a first attempt with $label', ({ firstAttempt }) => {
+        expect(() => decodeALOutboundPendingAck({ ...ROW, firstAttempt }, 'message')).toThrow(TypeError);
+    });
 });
 
 describe('persisted outbound repair-attempt row', () => {

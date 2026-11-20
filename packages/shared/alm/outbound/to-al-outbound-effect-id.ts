@@ -1,9 +1,11 @@
+import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALOutboundRepairHint } from './admission/al-outbound-admission-store.ts';
+import type { ALOutboundRepairHint, ALOutboundSendAttemptIdentity } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase } from './al-outbound-message-runtime.ts';
 import type { ALOutboundCommitDispatchOptions } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 
 /** What names one prepared copy's send: the attempt it belongs to and the copy's place and content in it. */
 export interface ALOutboundSendEffectIdentity {
@@ -35,6 +37,42 @@ export function toALOutboundSendEffectId(identity: ALOutboundSendEffectIdentity)
         identity.index,
         identity.preparedFingerprint
     ]);
+}
+
+/** One attempt of a message, with the copies the message is planned with. */
+export interface ALOutboundPlannedSendAttempt<TPrepared> extends ALOutboundSendAttemptIdentity {
+    readonly msgId: string;
+    readonly preparedMessages: readonly TPrepared[];
+}
+
+/** The sends of one attempt: one per copy the message is planned with, named by the copy's place and content. */
+export function toALOutboundAttemptSendEffectIds<TPrepared>(
+    attempt: ALOutboundPlannedSendAttempt<TPrepared>
+): readonly string[] {
+    return attempt.preparedMessages.map((prepared, index) =>
+        toALOutboundSendEffectId({
+            msgId: attempt.msgId,
+            phase: attempt.phase,
+            attemptIdentity: attempt.attemptIdentity,
+            index,
+            preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
+        })
+    );
+}
+
+/** A persisted record's attempt: a non-empty identity and the phase of a dispatch; `label` names the row in the error. */
+export function decodeALOutboundSendAttemptIdentity(
+    fields: PersistedALRecord,
+    label: string
+): ALOutboundSendAttemptIdentity {
+    const { attemptIdentity, phase } = fields;
+    if (typeof attemptIdentity !== 'string' || attemptIdentity.length === 0) {
+        throw new TypeError(`Persisted AL ${label} attempt identity is invalid`);
+    }
+    if (phase !== 'immediate' && phase !== 'dequeue') {
+        throw new TypeError(`Persisted AL ${label} phase is invalid`);
+    }
+    return { attemptIdentity, phase };
 }
 
 /** The timeout check a receipt row schedules for its next attempt; the row's attempt and deadline name it. */

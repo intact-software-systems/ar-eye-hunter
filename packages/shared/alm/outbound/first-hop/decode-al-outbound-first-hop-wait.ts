@@ -3,6 +3,7 @@ import {
     requirePersistedALSafeInteger
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
+import { decodeALOutboundSendAttemptIdentity } from '../to-al-outbound-effect-id.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './compute-al-outbound-first-hop-wait.ts';
 
 export function decodeALOutboundFirstHopWait(value: unknown, expectedMsgId: string): ALOutboundFirstHopWaitSnapshot {
@@ -23,9 +24,6 @@ export function decodeALOutboundFirstHopWait(value: unknown, expectedMsgId: stri
     requirePersistedALSafeInteger(snapshot.maxAttempts, 1, 'first-hop wait maximum attempts');
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'first-hop wait attempts');
     requirePersistedALSafeInteger(snapshot.deadlineAtMs, 0, 'first-hop wait deadline');
-    requirePersistedALNonEmptyString(snapshot.attemptIdentity, 'first-hop wait attempt identity');
-    if (snapshot.phase !== 'immediate' && snapshot.phase !== 'dequeue') {
-        throw new TypeError('Persisted AL first-hop wait phase is invalid');
-    }
+    decodeALOutboundSendAttemptIdentity(snapshot, 'first-hop wait');
     return value as ALOutboundFirstHopWaitSnapshot;
 }
