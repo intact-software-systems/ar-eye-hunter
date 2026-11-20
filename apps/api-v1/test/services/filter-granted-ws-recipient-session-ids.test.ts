@@ -140,11 +140,19 @@ function grantedAuthority(overrides: Readonly<Record<string, Permissions>> = {})
 }
 
 function feedMessage(senderId: string, topicId = GRANTED_TOPIC): ALMessage {
-    return newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, 'feed'), 'room', 'feed.v1', { n: 1 }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 30_000
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, ROOM.groupId, 'feed'),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: { n: 1 },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 30_000
+        }
     });
 }
 

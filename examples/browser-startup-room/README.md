@@ -195,3 +195,96 @@ The owner reads all pages, deduplicates scoped references, and publishes complet
 reads pause when hidden or offline and resume immediately on return. Authentication and query
 changes fence late results; use `changeRequest` to replace the complete query. Discovery never joins
 or adopts a room. Scope, cadence, and per-request bounds are explicit application policy.
+
+## Display a live poll deadline
+
+Read the closing instant from the poll's current room record, including after
+rejoin. Each render can compare that same instant with the connected client's
+current server-time estimate.
+
+```ts
+import { rallar } from '@shared-web/browser/rallar.ts';
+
+function pollStatus(poll: { closesAtEpochMs: number }): string {
+    switch (rallar.compareDeadline(poll.closesAtEpochMs)) {
+        case 'before': return 'Voting open';
+        case 'overlaps': return 'Voting is closing';
+        case 'at-or-after': return 'Voting closed';
+        case 'unavailable': return 'Waiting for server time';
+    }
+}
+```
+
+At the exact cutoff, a window entirely at or beyond the closing instant is
+closed. A window that includes time on both sides of the cutoff, or just
+reaches it from below, displays “Voting is closing.” Compare again when the
+view refreshes. The poll authority checks the closing instant when it receives
+a vote and returns the result to the participant. A vote sent while the view
+showed “Voting open” can still arrive late.
+
+Run the [two-browser room poll](../shared-deadline-poll/README.md) to see an
+in-time vote count and a delayed vote arrive after closure.
+
+A room authority that grants a minimum grace period can call
+`rallar.deadlineAfter(10_000)` once when the absence begins and save the
+returned epoch in its checkpoint. An unavailable clock returns `undefined`.
+A successor compares the stored deadline with `rallar.compareDeadline`.
+Using the latest plausible server time at creation gives the participant the
+full grace period even when the creation window has nonzero width.
+
+## Check the clock difference between API nodes
+
+When one node provides the time sample and another enforces the deadline, run
+this probe from the repository root. Supply direct origins for the two known
+nodes and their configured server peer IDs. A cluster can share a peer ID.
+Distinct origins alone cannot establish that they route to different machines.
+
+```sh
+bun run examples/browser-startup-room/check-node-clock-offset.ts \
+  https://api-a.example.org cluster-peer https://api-b.example.org cluster-peer 25
+```
+
+The last argument is the deployment's allowed absolute difference in
+milliseconds. The example value of 25 is illustrative. The probe takes two
+uncached samples and projects both to the same local monotonic instant.
+Positive offsets mean the enforcement node is ahead. The reported minimum
+and maximum include network travel and measurement uncertainty. The probe
+assumes relative clock drift at most 1,000 ppm, local monotonic measurement
+error at most 2 ms, round trips within 500 ms and samples at most 2 seconds old.
+
+Exit 0 means the entire interval fits the budget. Exit 1 means the interval
+is outside the budget or straddles its boundary (inconclusive). Exit 2 means
+the input or measurement was unusable. Repeat measurements from representative
+paths and under load. A passing sample describes that instant only.
+
+If your deployment maintains an absolute offset bound between the sampled node
+and the deadline authority throughout the operation, supply it to both SDK
+calls. For example, with a maintained 25 ms bound:
+
+```ts
+const authority = { maxAuthorityOffsetMs: 25 };
+const closesAt = rallar.deadlineAfter(10_000, authority);
+if (closesAt !== undefined) {
+    const phase = rallar.compareDeadline(closesAt, authority);
+    // Reuse the stored closesAt when checking again or on another participant.
+}
+```
+
+With a sampled window of [90, 100] ms and an offset bound of 5 ms, the
+authority could be at [85, 105] ms. A cutoff of 105 overlaps that window,
+and creating a ten-millisecond grace period yields 115. Omitting the bound
+uses zero. If the deployment loses its offset guarantee, suspend cross-node
+deadline decisions until the guarantee is restored. The probe supplies
+measurement evidence at a point in time.
+
+
+To collect deployment evidence, append a sample count and an interval in
+milliseconds. For example, append `60 5000` to take 60 pairs with a five-second
+pause after each completed pair. Run during a representative workload on the
+two named nodes. Save stdout as JSON Lines. Each row records its UTC start
+time, elapsed time and verdict. Successful observations also include both
+round-trip times, sample ages and the signed offset interval and width.
+Unavailable observations remain in the series. The exit code is 2 if any
+observation was unavailable, otherwise 1 if any was outside or inconclusive,
+otherwise 0. This measures the probe's requests; browser startup and refresh
+traffic must be measured on the actual browser connection.

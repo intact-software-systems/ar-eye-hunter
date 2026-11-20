@@ -116,8 +116,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => undefined,
         grantedTopics: NO_RTC_GRANTED_TOPICS
     });
@@ -125,7 +124,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
         origin,
         wsAdmissions,
         send: async (message, canFallback) => {
-            const handle = deliveries.open(message, 'rtc');
+            const handle = deliveries.open({ message: message, carrier: 'rtc', readDeadlineEpochMs: Date.now });
             dispatch.send({
                 requestedConfiguration: undefined,
                 rtcCapture: { status: 'unavailable', reason: 'absent' },
@@ -189,16 +188,19 @@ function toGapSnapshot(gap: CarrierGap): GroupSnapshot | undefined {
 
 function createRoomCommand(resourceId: string, durability: Durability): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'room.command', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'room.command.v1',
-        { action: 'ready' },
         {
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 30_000,
-            qos: { durability: { algo: durability } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.command', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'room.command.v1',
+            resource: { action: 'ready' },
+            options: {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 30_000,
+                qos: { durability: { algo: durability } }
+            }
         }
     );
 }

@@ -60,11 +60,14 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -109,11 +112,14 @@ describe('Rallar server WS live cluster publication', () => {
                 }
             });
             const message = newALBroadcastMessage(
-                'server-a',
-                newALRoute('app.live', 'message', targetMode),
-                targetMode,
-                'app.live.v1',
-                {}
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-a',
+                    route: newALRoute('app.live', 'message', targetMode),
+                    scope: targetMode,
+                    typeId: 'app.live.v1',
+                    resource: {}
+                }
             );
 
             const result = await router.publish({
@@ -151,11 +157,14 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const base = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.durable', 'message', 'all'),
-            'all',
-            'app.durable.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.durable', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.durable.v1',
+                resource: { text: 'hello' }
+            }
         );
         const message = {
             ...base,
@@ -192,11 +201,14 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -234,11 +246,14 @@ describe('Rallar server WS live cluster publication', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         onTestFinished(() => error.mockRestore());
         const message = newALBroadcastMessage(
-            'sender',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         await expect(router.route(message)).resolves.toBeUndefined();
@@ -288,11 +303,14 @@ describe('Rallar server WS live cluster publication', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         onTestFinished(() => error.mockRestore());
         const source = newALBroadcastMessage(
-            'sender',
-            newALRoute('app.source', 'message', 'all'),
-            'all',
-            'app.source.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALRoute('app.source', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.source.v1',
+                resource: {}
+            }
         );
 
         await expect(router.route(source)).resolves.toBeUndefined();
@@ -328,11 +346,14 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -385,11 +406,14 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -423,11 +447,14 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const base = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         const result = await router.publish({
@@ -482,11 +509,14 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -549,11 +579,14 @@ describe('Rallar server WS live cluster publication', () => {
             suppressDefaultFanout: true
         });
         const source = newALBroadcastMessage(
-            'sender',
-            newALRoute('app.source', 'message', 'all'),
-            'all',
-            'app.source.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALRoute('app.source', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.source.v1',
+                resource: {}
+            }
         );
 
         await router.route(source);
@@ -589,7 +622,14 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const principalRef = { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'alice' };
-        const base = newALBroadcastMessage('server-a', newALRoute('app.alert', 'message', 'all'), 'all', 'app.alert.v1', {});
+        const base = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-a',
+            route: newALRoute('app.alert', 'message', 'all'),
+            scope: 'all',
+            typeId: 'app.alert.v1',
+            resource: {}
+        });
         const message = { ...base, targets: { mode: 'broadcast' as const, scope: 'principal' as const, principalRef } };
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -604,7 +644,14 @@ describe('Rallar server WS live cluster publication', () => {
     it('publishes a world notice with the scope it reaches and sends it here to the live connections of that scope alone', async () => {
         const notices: LiveWsNotice[] = [];
         const fixture = createScopedSocketsFixture(notices);
-        const message = newALBroadcastMessage('server-a', newALRoute('app.live', 'message', 'world'), 'world', 'app.live.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-a',
+            route: newALRoute('app.live', 'message', 'world'),
+            scope: 'world',
+            typeId: 'app.live.v1',
+            resource: {}
+        });
 
         const result = await fixture.router.publish({ message, fanout: 'live-only', scope: SCOPE });
 
@@ -617,7 +664,14 @@ describe('Rallar server WS live cluster publication', () => {
     it.each(['live-only', 'outbox', 'none'] as const)('fails a %s world publication that names no scope and publishes nothing', async (fanout) => {
         const notices: LiveWsNotice[] = [];
         const fixture = createScopedSocketsFixture(notices);
-        const message = newALBroadcastMessage('server-a', newALRoute('app.live', 'message', 'world'), 'world', 'app.live.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-a',
+            route: newALRoute('app.live', 'message', 'world'),
+            scope: 'world',
+            typeId: 'app.live.v1',
+            resource: {}
+        });
 
         const result = await fixture.router.publish({ message, fanout });
 
@@ -646,8 +700,16 @@ describe('Rallar server WS live cluster publication', () => {
                 nowEpochMs: () => 100
             })
         );
-        const roomMessage = newALBroadcastMessage('bob-session', newALRoute('room.match', groupRef.groupId, 'tick-1'), 'room', 'room.match.v1', {}, {
-            groupRef
+        const roomMessage = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'bob-session',
+            route: newALRoute('room.match', groupRef.groupId, 'tick-1'),
+            scope: 'room',
+            typeId: 'room.match.v1',
+            resource: {},
+            options: {
+                groupRef
+            }
         });
         const principalRef = { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-carol-1' };
         const message = { ...roomMessage, targets: { mode: 'broadcast' as const, scope: 'principal' as const, groupRef, principalRef } };
@@ -675,10 +737,18 @@ describe('Rallar server WS live cluster publication', () => {
                 nowEpochMs: () => 100
             })
         );
-        const message = newALBroadcastMessage('bob-session', newALRoute('room.match', groupRef.groupId, 'intent-1'), 'room', 'room.match.v1', {}, {
-            groupRef,
-            reliability: 'at-least-once',
-            ack: 'group-leader'
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'bob-session',
+            route: newALRoute('room.match', groupRef.groupId, 'intent-1'),
+            scope: 'room',
+            typeId: 'room.match.v1',
+            resource: {},
+            options: {
+                groupRef,
+                reliability: 'at-least-once',
+                ack: 'group-leader'
+            }
         });
 
         await fixture.router.route(message, { kind: 'ws-client', peerId: 'bob-session', authenticatedScope: SCOPE });
@@ -700,12 +770,15 @@ describe('Rallar server WS live cluster publication', () => {
         async ({ audience, recipients }) => {
             const fixture = await createRoomClusterFixture();
             const roomMessage = newALBroadcastMessage(
-                'bob-session',
-                newALRoute('room.match', fixture.groupRef.groupId, 'tick-1'),
-                'room',
-                'room.match.v1',
-                { resource: 'x'.repeat(9_000) },
-                { groupRef: fixture.groupRef }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'bob-session',
+                    route: newALRoute('room.match', fixture.groupRef.groupId, 'tick-1'),
+                    scope: 'room',
+                    typeId: 'room.match.v1',
+                    resource: { resource: 'x'.repeat(9_000) },
+                    options: { groupRef: fixture.groupRef }
+                }
             );
             const principalRef = { ...SCOPE, principalId: 'principal-carol-1' };
             const message = {
@@ -772,12 +845,15 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -836,12 +912,15 @@ describe('Rallar server WS live cluster publication', () => {
                 })
         });
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -896,12 +975,15 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -952,11 +1034,14 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -986,11 +1071,14 @@ describe('Rallar server WS live cluster publication', () => {
         });
         onTestFinished(() => service.dispose());
         const message = newALBroadcastMessage(
-            'server-a',
-            newALRoute('app.live', 'message', 'all'),
-            'all',
-            'app.live.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-a',
+                route: newALRoute('app.live', 'message', 'all'),
+                scope: 'all',
+                typeId: 'app.live.v1',
+                resource: {}
+            }
         );
 
         service.sendToTargetsWithResult({
@@ -1025,11 +1113,14 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const base = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', 'room-1'),
-            'room',
-            'room.match.v1',
-            { tick: 1 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', 'room-1'),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 }
+            }
         );
         const message = {
             ...base,
@@ -1065,12 +1156,15 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', 'room-1'),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef: { applicationId: 'app', workspaceId: 'space', groupId: 'room-1' } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', 'room-1'),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef: { applicationId: 'app', workspaceId: 'space', groupId: 'room-1' } }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -1118,12 +1212,15 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -1159,12 +1256,15 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const base = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
         const message = {
             ...base,
@@ -1209,12 +1309,15 @@ describe('Rallar server WS live cluster publication', () => {
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
         const base = newALBroadcastMessage(
-            'sender',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
         const message = {
             ...base,

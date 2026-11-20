@@ -68,12 +68,15 @@ function createOverloadedPeer(
 
 function createBestEffortMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+        }
     );
 }
 

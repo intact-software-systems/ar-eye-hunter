@@ -89,16 +89,19 @@ describe('the channel purpose table (D2, D52)', () => {
                 hasLogicalAudience: true
             });
             const message = newALMulticastMessage(
-                'self',
-                { topicId: 'chat', resourceId: `purpose-${purpose}`, contextId: 'room' },
-                ROOM,
-                'chat.message.v1',
-                { text: purpose },
                 {
-                    reliability: defaults.reliability,
-                    ack: defaults.ack,
-                    ttlMs: defaults.ttlMs,
-                    qos: { durability: { algo: defaults.durability } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { topicId: 'chat', resourceId: `purpose-${purpose}`, contextId: 'room' },
+                    groupRef: ROOM,
+                    typeId: 'chat.message.v1',
+                    resource: { text: purpose },
+                    options: {
+                        reliability: defaults.reliability,
+                        ack: defaults.ack,
+                        ttlMs: defaults.ttlMs,
+                        qos: { durability: { algo: defaults.durability } }
+                    }
                 }
             );
 

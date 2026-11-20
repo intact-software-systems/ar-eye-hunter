@@ -128,10 +128,13 @@ describe('WS server inbound identity', () => {
 
 function createIdentityMessage(senderId: string, messageId: string): ALMessage {
     const value = newALUntargetedMessage(
-        senderId,
-        newALRoute('test.identity', 'context-1', messageId),
-        'test.identity.v1',
-        { value: messageId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: newALRoute('test.identity', 'context-1', messageId),
+            typeId: 'test.identity.v1',
+            resource: { value: messageId }
+        }
     );
     return { ...value, id: { ...value.id, msgId: messageId } };
 }

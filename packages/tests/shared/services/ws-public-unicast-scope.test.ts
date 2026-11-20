@@ -83,7 +83,14 @@ describe('public WS unicast scope', () => {
 
     it('refuses a world send that names neither an inbound nor a recipient scope, as it refuses an unscoped unicast', () => {
         const { native, live } = createLiveDelivery(Number.MAX_SAFE_INTEGER);
-        const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALRoute('app.news', 'world', 'news-1'),
+            scope: 'world',
+            typeId: 'news.v1',
+            resource: {}
+        });
 
         expect(live.sendToTargetsWithResult({ message, sentPositions: null })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
         expect(native.sent).toEqual([]);
@@ -102,7 +109,14 @@ describe('public WS unicast scope', () => {
             targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
         });
         onTestFinished(() => service.dispose());
-        const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALRoute('app.news', 'world', 'news-1'),
+            scope: 'world',
+            typeId: 'news.v1',
+            resource: {}
+        });
 
         const result = await service.enqueueOutboxIfAbsent(message, {
             admittedAudience: undefined,
@@ -158,16 +172,19 @@ describe('public WS unicast scope', () => {
         });
         onTestFinished(() => service.dispose());
         const message = newALUnicastMessage(
-            'server',
             {
-                topicId: 'auth.session.logout',
-                contextId: 'peer',
-                resourceId: 'request'
-            },
-            'peer',
-            'auth.session.logout.v1',
-            { sessionId: 'peer', closeCode: 1000, reason: 'auth-logout' },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: {
+                    topicId: 'auth.session.logout',
+                    contextId: 'peer',
+                    resourceId: 'request'
+                },
+                toPeerId: 'peer',
+                typeId: 'auth.session.logout.v1',
+                resource: { sessionId: 'peer', closeCode: 1000, reason: 'auth-logout' },
+                options: { ttlMs: 30_000 }
+            }
         );
         expect((await service.enqueueOutboxIfAbsent(message)).verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
         expect(() =>
@@ -337,7 +354,15 @@ describe('public WS unicast scope', () => {
 });
 
 function createMessage(): ALMessage {
-    return newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, { ttlMs: 30_000 });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' },
+        toPeerId: 'peer',
+        typeId: 'message.v1',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    });
 }
 
 function createLiveDelivery(expiresAtEpochMs = 0): LiveDeliveryFixture {

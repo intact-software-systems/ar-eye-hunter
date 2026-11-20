@@ -4,6 +4,15 @@
 results, and state live in `rallar-room-contracts.ts`. Start at the concrete facade
 method, then follow its named workflow below.
 
+`rallar.rooms.selected()` reads a defensive copy of this authenticated session's
+explicit room selection. It can remain available while `rooms.current()` has no
+active presence snapshot, allowing an application to retain its paused view.
+It is intent, not proof of membership, room existence or permission. Explicit
+departure and observed membership revocation clear selection; session replacement
+cannot inherit it. Rallar's selected-room recovery owns presence restoration.
+Applications must keep a bounded unavailable outcome and local exit for a room
+that cannot be restored, including a missing or inactive room.
+
 | Capability                                                                 | Owner                                                                             |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Private link, pending sign-in destination, scoped reload, and cancellation | `entry/rallar-room-entry.ts` and `entry/room-entry-validation.ts`                 |

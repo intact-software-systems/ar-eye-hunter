@@ -35,12 +35,15 @@ const DOWNSTREAM_PEER_IDS = ['s2', 's3'];
 
 function createRelayedMessage(): ALMessage {
     return newALMulticastMessage(
-        ORIGINAL_SENDER_ID,
-        { topicId: 'chat', resourceId: 'relayed', contextId: 'room' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-        'chat.message.v1',
-        { text: 'relayed' },
-        { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: ORIGINAL_SENDER_ID,
+            route: { topicId: 'chat', resourceId: 'relayed', contextId: 'room' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            typeId: 'chat.message.v1',
+            resource: { text: 'relayed' },
+            options: { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+        }
     );
 }
 

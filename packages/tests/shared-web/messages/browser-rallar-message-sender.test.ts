@@ -696,11 +696,14 @@ describe('the send correlation and the reply path', () => {
         const fixture = createBrowserMessageSenderFixture();
         const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
         const request = newALUnicastMessage(
-            'requester-1',
-            newALRoute('app.ask', 'world', 'resource-1'),
-            'session-1',
-            'app.ask.v1',
-            { question: 'ping' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'requester-1',
+                route: newALRoute('app.ask', 'world', 'resource-1'),
+                toPeerId: 'session-1',
+                typeId: 'app.ask.v1',
+                resource: { question: 'ping' }
+            }
         );
 
         await fixture.sender.sendReply(request, { answer: 'pong' }, undefined);
@@ -721,12 +724,15 @@ describe('the send correlation and the reply path', () => {
 
     function toRoomRequest(input: Readonly<{ corrId?: string; contextId?: string; topicId?: string; }>): ALMessage {
         return newALMulticastMessage(
-            'requester-1',
-            newALRoute(input.topicId ?? 'room.ask', input.contextId ?? 'room', 'resource-1'),
-            ROOM_REF,
-            'app.ask.v1',
-            { question: 'ping' },
-            input.corrId === undefined ? {} : { actions: { corrId: input.corrId } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'requester-1',
+                route: newALRoute(input.topicId ?? 'room.ask', input.contextId ?? 'room', 'resource-1'),
+                groupRef: ROOM_REF,
+                typeId: 'app.ask.v1',
+                resource: { question: 'ping' },
+                options: input.corrId === undefined ? {} : { actions: { corrId: input.corrId } }
+            }
         );
     }
 });

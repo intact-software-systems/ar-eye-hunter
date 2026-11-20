@@ -1,11 +1,13 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
-import { isGroupActive } from '@shared/api/group-client-views.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import {
+    readBrowserServerExpiryEpochMs
+} from '../../connection/server-clock/browser-server-clock-session.ts';
+import { readGroupPresenceCreationEpochMs } from '../../session/group-presence-policy.ts';
+
 import { ApiHttpError } from '../../api/http-error.ts';
 import { isRetryableApiViewFailure } from '../../api/read-api-view.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
@@ -13,11 +15,23 @@ import type { ApiMiddleware } from '../../rallar-connection-facade.ts';
 import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
-import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
-import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
-import { createStateGroupPresenceCommand, type StateGroupWorkflowValue } from '../room-group-state-workflows.ts';
-import { readSummarisedRoomPresence } from '../room-presence.ts';
-import { captureRoomSession, type RoomSessionFence } from '../room-session-fence.ts';
+import {
+    toRoomPresenceLeaseExpiresAtEpochMs,
+    type GroupRef,
+    type GroupSnapshot
+} from '../room-group-state-translation.ts';
+import { createStateGroupPresenceCommand } from '../room-group-state-workflows.ts';
+import { captureRoomSession } from '../room-session-fence.ts';
+import {
+    isActiveMember,
+    isConfirmedPresence,
+    needsPresenceRestore,
+    readRestoreSnapshot,
+    RestoredPresenceExpiredError,
+    sendPresenceReconnect,
+    type PresenceReconnect,
+    type PresenceRestore
+} from './presence-reconnect.ts';
 
 export namespace SelectedRoomRecovery {
     export interface Input
@@ -27,31 +41,12 @@ export namespace SelectedRoomRecovery {
                 'requireSession' | 'connect' | 'readPublicationKey' | 'acceptSnapshots'
             > {
         readonly timers: Timers;
+        readonly newPresenceGenerationId: () => string;
         selected(): GroupRef | undefined;
     }
 }
 
-/** One restore attempt is owned by the selected room, its socket epoch and its session. */
-interface PresenceRestore {
-    readonly room: GroupRef;
-    readonly scope: StateScope;
-    readonly epoch: number;
-    readonly fence: RoomSessionFence;
-    readonly context: ApiMiddleware;
-}
-
-interface PresenceReconnect extends PresenceRestore {
-    readonly generationId: string;
-    readonly connectionGenerationId: string;
-    readonly command: Command<StateGroupWorkflowValue>;
-}
-
-interface RestoreSnapshot {
-    readonly connectionGenerationId: string;
-    readonly snapshot: GroupSnapshot;
-}
-
-/** A replacement socket may restore presence only in the same explicitly selected room. */
+/** Restores expired or disconnected presence only in the same explicitly selected room. */
 export class SelectedRoomRecovery {
     private readonly input: SelectedRoomRecovery.Input;
     private readonly retries = new FailureBackoff({ baseMs: 1_000, maxMs: 30_000 });
@@ -66,6 +61,22 @@ export class SelectedRoomRecovery {
 
     constructor(input: SelectedRoomRecovery.Input) {
         this.input = input;
+    }
+
+    observePresence(snapshot: GroupSnapshot | undefined, context: ApiMiddleware): void {
+        const room = this.input.selected();
+        const window = context.serverTime.readWindow().right;
+        if (!this.socketOpen || this.changing || !room || !window) {
+            return;
+        }
+        const session = this.input.requireSession();
+        const connectionGenerationId = context.middleware.ownWsConnectionGeneration.readKnown();
+        if (
+            needsPresenceRestore({ room, session, snapshot, nowEpochMs: window.latestEpochMs, connectionGenerationId })
+        ) {
+            this.interrupted = room;
+            this.resume();
+        }
     }
 
     onSocket(kind: RallarWsLifecycleKind): void {
@@ -96,6 +107,7 @@ export class SelectedRoomRecovery {
                     fence.assertCurrent();
                 }
             }
+            this.discardObsoletePresence();
             const unresolved = this.unconfirmed;
             if (unresolved && unresolved.room === this.input.selected()) {
                 await this.confirmPresence(unresolved);
@@ -117,7 +129,6 @@ export class SelectedRoomRecovery {
             return;
         }
         this.interrupted = undefined;
-        this.unconfirmed = undefined;
         const epoch = this.socketEpoch;
         const owner = toAuthSessionKey(this.input.requireSession());
         const settled: Promise<void> = this.restore(room, epoch).then(
@@ -154,15 +165,25 @@ export class SelectedRoomRecovery {
         const context = await this.input.connect();
         const restore: PresenceRestore = { room, scope: toStateScope(room), epoch, fence, context };
         this.assertCurrent(restore);
-        const { connectionGenerationId, snapshot } = await this.readRestoreSnapshot(restore);
+        this.discardObsoletePresence();
+        if (this.unconfirmed) {
+            await this.confirmPresence(this.unconfirmed);
+            return;
+        }
+        const { connectionGenerationId, snapshot } = await readRestoreSnapshot(
+            restore,
+            () => this.assertCurrent(restore)
+        );
         this.assertCurrent(restore);
         if (!isActiveMember(snapshot, fence.session)) {
             return;
         }
+        const latestEpochMs = readBrowserServerExpiryEpochMs(restore.context.serverTime);
         if (
             snapshot.activeSessions.some((row) =>
                 row.sessionId === fence.session.sessionId &&
-                row.principalId === fence.session.clientId && row.connectionGenerationId === connectionGenerationId
+                row.principalId === fence.session.clientId && row.connectionGenerationId === connectionGenerationId &&
+                row.expiresAtEpochMs > latestEpochMs
             )
         ) {
             await this.accept(restore, snapshot);
@@ -171,26 +192,19 @@ export class SelectedRoomRecovery {
         await this.reconnect(restore, connectionGenerationId);
     }
 
-    private async readRestoreSnapshot(restore: PresenceRestore): Promise<RestoreSnapshot> {
-        return await new Command(async (signal) => {
-            this.assertCurrent(restore);
-            const connectionGenerationId = await requireOwnWsConnectionGenerationId(restore.context, signal);
-            this.assertCurrent(restore);
-            const { snapshot } = await readStateGroupSnapshot(restore.room.groupId, restore.scope, {
-                authSession: restore.fence.session,
-                signal
-            });
-            return { connectionGenerationId, snapshot };
-        }, { maxAttempts: 3, timeoutMs: 15000, shouldRetry: (error) => isRetryableApiViewFailure(toError(error)) })
-            .run();
-    }
-
     private async reconnect(restore: PresenceRestore, connectionGenerationId: string): Promise<void> {
         const { room, fence } = restore;
-        const generationId = crypto.randomUUID();
+        const generationId = this.input.newPresenceGenerationId();
         const publicationKey = await this.input.readPublicationKey();
         this.assertCurrent(restore);
+        const expiresAtEpochMs = toRoomPresenceLeaseExpiresAtEpochMs(
+            readGroupPresenceCreationEpochMs(restore.context),
+            restore.context.middleware.heartbeat.groupPresence?.leaseMs
+        );
         const command = createStateGroupPresenceCommand({
+            nowMs: () => readGroupPresenceCreationEpochMs(restore.context),
+            groupPresence: restore.context.middleware.heartbeat.groupPresence,
+            expiresAtEpochMs,
             groupId: room.groupId,
             scope: restore.scope,
             principalId: fence.session.clientId,
@@ -202,18 +216,27 @@ export class SelectedRoomRecovery {
             assertCurrent: () => this.assertCurrent(restore),
             policies: {
                 command: {
-                    maxAttempts: 3,
-                    timeoutMs: 15000,
+                    maxAttempts: restore.context.middleware.heartbeat.groupPresence ? 1 : 3,
+                    timeoutMs: restore.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000,
                     shouldRetry: (error) => isRetryableApiViewFailure(toError(error))
                 }
             }
         });
-        const reconnect: PresenceReconnect = { ...restore, generationId, connectionGenerationId, command };
+        const reconnect: PresenceReconnect = {
+            ...restore,
+            generationId,
+            connectionGenerationId,
+            command,
+            expiresAtEpochMs
+        };
         try {
             await this.sendPresence(reconnect);
         }
         catch (error) {
             this.assertCurrent(restore);
+            if (error instanceof RestoredPresenceExpiredError) {
+                throw error;
+            }
             if (!isRetryableApiViewFailure(toError(error))) {
                 throw error;
             }
@@ -223,18 +246,10 @@ export class SelectedRoomRecovery {
     }
 
     private async sendPresence(reconnect: PresenceReconnect): Promise<void> {
-        const result = await reconnect.command.run();
-        this.assertCurrent(reconnect);
-        if (!result || !isSameGroupRef(reconnect.room, result.group)) {
-            throw new Error('Selected room did not confirm presence on the replacement socket.');
-        }
-        const confirmed = await readSummarisedRoomPresence({
-            snapshot: result,
-            fence: { session: reconnect.fence.session, assertCurrent: () => this.assertCurrent(reconnect) },
-            context: reconnect.context,
-            options: { timeoutMs: 15000 },
-            isSummarised: (snapshot) => isConfirmedPresence(reconnect, snapshot)
-        });
+        const confirmed = await sendPresenceReconnect(
+            reconnect,
+            () => this.assertCurrent(reconnect)
+        );
         await this.accept(reconnect, confirmed);
     }
 
@@ -246,10 +261,12 @@ export class SelectedRoomRecovery {
             const { snapshot } = await new Command(
                 (signal) =>
                     readStateGroupSnapshot(room.groupId, reconnect.scope, { authSession: fence.session, signal }),
-                { timeoutMs: 15000 }
+                { timeoutMs: reconnect.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000 }
             ).run();
             this.assertCurrent(reconnect);
-            if (isConfirmedPresence(reconnect, snapshot)) {
+            if (
+                isConfirmedPresence(reconnect, snapshot, readBrowserServerExpiryEpochMs(reconnect.context.serverTime))
+            ) {
                 await this.accept(reconnect, snapshot);
             }
             else if (isActiveMember(snapshot, fence.session)) {
@@ -257,6 +274,9 @@ export class SelectedRoomRecovery {
             }
         }
         catch (error) {
+            if (error instanceof RestoredPresenceExpiredError && this.unconfirmed === reconnect) {
+                this.unconfirmed = undefined;
+            }
             if (!(error instanceof ApiHttpError && (error.status === 403 || error.status === 404))) {
                 throw error;
             }
@@ -278,25 +298,22 @@ export class SelectedRoomRecovery {
         });
     }
 
+    private discardObsoletePresence(): void {
+        const unresolved = this.unconfirmed;
+        if (
+            unresolved && (
+                unresolved.room !== this.input.selected() || unresolved.epoch !== this.socketEpoch ||
+                toAuthSessionKey(unresolved.fence.session) !== toAuthSessionKey(this.input.requireSession())
+            )
+        ) {
+            this.unconfirmed = undefined;
+        }
+    }
+
     private assertCurrent(restore: PresenceRestore): void {
         restore.fence.assertCurrent(restore.context);
         if (this.input.selected() !== restore.room || restore.epoch !== this.socketEpoch) {
             throw new DOMException('Socket or room selection changed', 'AbortError');
         }
     }
-}
-
-function isActiveMember(snapshot: GroupSnapshot, session: AuthSession): boolean {
-    return isGroupActive(snapshot) &&
-        snapshot.members.some((member) => member.principalId === session.clientId && member.status === 'active');
-}
-
-function isConfirmedPresence(reconnect: PresenceReconnect, snapshot: GroupSnapshot): boolean {
-    const { session } = reconnect.fence;
-    return isSameGroupRef(reconnect.room, snapshot.group) &&
-        snapshot.activeSessions.some((row) =>
-            row.principalId === session.clientId && row.sessionId === session.sessionId &&
-            row.generationId === reconnect.generationId &&
-            row.connectionGenerationId === reconnect.connectionGenerationId
-        );
 }

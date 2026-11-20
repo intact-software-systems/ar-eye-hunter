@@ -25,6 +25,7 @@ import type { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 
@@ -100,6 +101,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })

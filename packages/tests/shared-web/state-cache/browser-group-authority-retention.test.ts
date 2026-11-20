@@ -546,6 +546,8 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
     const firstRenewalMs = BROWSER_STATE_CACHE_TTL_MS - SESSION_HEARTBEAT_RENEWAL_MARGIN_MS;
     vi.setSystemTime(heartbeatAtEpochMs - firstRenewalMs);
     const heartbeat = await initHeartbeat(clientData, {
+        creationEpochMs: Date.now,
+        expiryEpochMs: Date.now,
         publicationKey: null,
         authSession,
         scope: {
@@ -666,12 +668,15 @@ function withCausalRevision(
 
 function createRoomMessage() {
     return newALMulticastMessage(
-        'origin',
-        newALEventRoute('room.chat', roomRef.groupId, 'message-1'),
-        roomRef,
-        'chat.v1',
-        {},
-        { ttlMs: 240_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: newALEventRoute('room.chat', roomRef.groupId, 'message-1'),
+            groupRef: roomRef,
+            typeId: 'chat.v1',
+            resource: {},
+            options: { ttlMs: 240_000 }
+        }
     );
 }
 

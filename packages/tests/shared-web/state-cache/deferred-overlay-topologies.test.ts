@@ -405,23 +405,29 @@ function groupAt(causalRevision: GroupStateCausalRevision, sessionIds: readonly 
 
 function groupSnapshotMessage(snapshot: GroupSnapshot): ALMessage {
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.groupStateSnapshot, snapshot.group.groupId, 'snapshot'),
-        'room',
-        AppTopics.groupStateSnapshot,
-        snapshot,
-        { groupRef: snapshot.group }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.groupStateSnapshot, snapshot.group.groupId, 'snapshot'),
+            scope: 'room',
+            typeId: AppTopics.groupStateSnapshot,
+            resource: snapshot,
+            options: { groupRef: snapshot.group }
+        }
     );
 }
 
 function topologyMessage(topology: RallarOverlayTopologySnapshot, messageId: string): ALMessage {
     const message = newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.overlayTopology, topology.groupRef.groupId, messageId),
-        'room',
-        AppTopics.overlayTopology,
-        topology,
-        { groupRef: topology.groupRef }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.overlayTopology, topology.groupRef.groupId, messageId),
+            scope: 'room',
+            typeId: AppTopics.overlayTopology,
+            resource: topology,
+            options: { groupRef: topology.groupRef }
+        }
     );
     return { ...message, id: { ...message.id, msgId: messageId } };
 }
@@ -436,10 +442,13 @@ function deltaMessage(predecessor: GroupSnapshot, resulting: GroupSnapshot): ALM
             .filter((sessionId) => !resulting.activeSessions.some((session) => session.sessionId === sessionId))
     };
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.groupStateEvent, resulting.group.groupId, envelope.event.eventId),
-        'all',
-        AppTopics.groupStateEvent,
-        envelope
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.groupStateEvent, resulting.group.groupId, envelope.event.eventId),
+            scope: 'all',
+            typeId: AppTopics.groupStateEvent,
+            resource: envelope
+        }
     );
 }

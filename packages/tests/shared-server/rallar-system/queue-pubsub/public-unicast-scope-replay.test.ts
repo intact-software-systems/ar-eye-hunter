@@ -24,9 +24,17 @@ const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 describe('persisted public unicast scope replay', () => {
     it.each(['claimant', 'remote'] as const)('checks captured scope at %s delivery after same-ID reconnect', async (delivery) => {
         const fixture = await createReplayFixture();
-        const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' },
+            toPeerId: 'peer',
+            typeId: 'message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
         const scope = { ...SCOPE };
         const admission = fixture.service.enqueueOutboxIfAbsent(message, {

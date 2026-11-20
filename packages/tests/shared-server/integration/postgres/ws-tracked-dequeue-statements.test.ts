@@ -174,12 +174,15 @@ interface TrackedRow {
 function createTrackedRow(runId: string, seq: number): TrackedRow {
     const msgId = crypto.randomUUID();
     const broadcast = newALBroadcastMessage(
-        'server',
-        newALEventRoute('room.round.event', GROUP.groupId, msgId),
-        'room',
-        'round.event.v1',
-        {},
-        { groupRef: GROUP, ttlMs: 60_000, recipientPeerIds: ['peer'] }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: newALEventRoute('room.round.event', GROUP.groupId, msgId),
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: {},
+            options: { groupRef: GROUP, ttlMs: 60_000, recipientPeerIds: ['peer'] }
+        }
     );
     const message: ALMessage = {
         ...broadcast,

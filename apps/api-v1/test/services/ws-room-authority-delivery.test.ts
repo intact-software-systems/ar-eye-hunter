@@ -260,9 +260,17 @@ test('room broadcast exclusions preserve an empty authoritative audience without
         harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.sessionId === 'alice') };
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const staleFrames = addRecordingConnection(harness.server, 'bob');
-        const message = newALBroadcastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'excluded'), 'room', 'chat.message.v1', { text: 'hello' }, {
-            groupRef: ROOM,
-            exceptPeerIds: ['alice']
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: newALEventRoute('room.chat', ROOM.groupId, 'excluded'),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { text: 'hello' },
+            options: {
+                groupRef: ROOM,
+                exceptPeerIds: ['alice']
+            }
         });
 
         await harness.router.route(message);
@@ -410,11 +418,19 @@ test('a handler cannot reuse room authority after changing the target scope or e
                         : { exceptPeerIds: [] }
                 );
             });
-            const message = newALBroadcastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'changed-target'), 'room', 'chat.message.v1', {
-                text: 'hello'
-            }, {
-                groupRef: ROOM,
-                exceptPeerIds: ['bob']
+            const message = newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'alice',
+                route: newALEventRoute('room.chat', ROOM.groupId, 'changed-target'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    groupRef: ROOM,
+                    exceptPeerIds: ['bob']
+                }
             });
 
             await harness.router.route(message);
@@ -472,15 +488,23 @@ test('a WS-carried receiver room multicast queues durable delivery to the other 
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const bobFrames = addRecordingConnection(harness.server, 'bob');
         const carolFrames = addRecordingConnection(harness.server, 'carol');
-        const message = newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'fallback-durable'), ROOM, 'chat.message.v1', {
-            text: 'over the fallback carrier'
-        }, {
-            ttlMs: 30_000,
-            orderingKey: toALGroupTargetKey(ROOM),
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ownership: 'shared',
-            overlayId: toScopedOverlayId(ROOM)
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: newALEventRoute('room.chat', ROOM.groupId, 'fallback-durable'),
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: {
+                text: 'over the fallback carrier'
+            },
+            options: {
+                ttlMs: 30_000,
+                orderingKey: toALGroupTargetKey(ROOM),
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ownership: 'shared',
+                overlayId: toScopedOverlayId(ROOM)
+            }
         });
 
         const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
@@ -781,9 +805,17 @@ test('a world broadcast reaches each live connection of the authenticated scope 
             const frames = Object.fromEntries(
                 ['alice', 'bob', 'foreign'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
             );
-            const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'world', 'world-news'), 'world', 'news.v1', { text: 'hello' }, {
-                reliability: 'at-least-once',
-                ack: 'none'
+            const message = newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'alice',
+                route: newALEventRoute('app.news', 'world', 'world-news'),
+                scope: 'world',
+                typeId: 'news.v1',
+                resource: { text: 'hello' },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'none'
+                }
             });
 
             const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
@@ -816,7 +848,14 @@ test('an all broadcast from a client is refused unauthorized and reaches no one'
         harness.router.install();
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const bobFrames = addRecordingConnection(harness.server, 'bob');
-        const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'all', 'all-news'), 'all', 'news.v1', { text: 'hello' });
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: newALEventRoute('app.news', 'all', 'all-news'),
+            scope: 'all',
+            typeId: 'news.v1',
+            resource: { text: 'hello' }
+        });
 
         const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
         await waitForRoomFrames(() => false);
@@ -1014,14 +1053,22 @@ function readReceipts(frames: readonly string[]): readonly ALReceiptPayload[] {
 
 /** A notice the server publishes itself on epoch 1 of one track, naming no sequence. */
 function serverTrackNotice(serverPeerId: string, noticeId: string): ALMessage {
-    return newALBroadcastMessage(serverPeerId, newALEventRoute('room.notice', ROOM.groupId, noticeId), 'room', 'notice.v1', {
-        noticeId
-    }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 60_000,
-        ordering: { orderingKey: 'notice-track', epoch: 1 }
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: serverPeerId,
+        route: newALEventRoute('room.notice', ROOM.groupId, noticeId),
+        scope: 'room',
+        typeId: 'notice.v1',
+        resource: {
+            noticeId
+        },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 60_000,
+            ordering: { orderingKey: 'notice-track', epoch: 1 }
+        }
     });
 }
 
@@ -1034,11 +1081,19 @@ function readNoticeOrderings(frames: readonly string[]): readonly (ALMessage['or
 
 /** A receiver-acknowledged chat message in the room from `senderId`, addressed by `targets`. */
 function audienceMessage(senderId: string, targets: NonNullable<ALMessage['targets']>): ALMessage {
-    const message = newALBroadcastMessage(senderId, newALEventRoute('room.chat', ROOM.groupId, 'audience'), 'room', 'chat.message.v1', { text: 'hello' }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 30_000
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute('room.chat', ROOM.groupId, 'audience'),
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: { text: 'hello' },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 30_000
+        }
     });
     return { ...message, targets };
 }
@@ -1108,11 +1163,19 @@ async function waitForRoomFrames(isSettled: () => boolean): Promise<void> {
 }
 
 function roomMessage(floors: Readonly<{ minSnapshotVersion?: number; rosterVersion?: number; }> = {}): ALMessage {
-    return newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'), ROOM, 'chat.message.v1', { text: 'hello' }, {
-        ...floors,
-        reliability: 'best-effort',
-        ack: 'none',
-        traceId: 'trace-ws-room-authority-delivery'
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'alice',
+        route: newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'),
+        groupRef: ROOM,
+        typeId: 'chat.message.v1',
+        resource: { text: 'hello' },
+        options: {
+            ...floors,
+            reliability: 'best-effort',
+            ack: 'none',
+            traceId: 'trace-ws-room-authority-delivery'
+        }
     });
 }
 

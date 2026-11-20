@@ -66,12 +66,15 @@ function createRouterDouble() {
             return;
         }
         const raw = newALUnicastMessage(
-            context.senderId,
-            newALRoute(RELIC_TOPICS.aiPlanning, context.roomId ?? 'world', 'planning-request-1'),
-            SERVER_PEER_ID,
-            RELIC_TYPES.aiPlanningRequest,
-            requestJson,
-            { groupRef: context.roomRef, reliability: 'at-least-once', ack: 'receiver', traceId: 'trace-relic-planning-request' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: context.senderId,
+                route: newALRoute(RELIC_TOPICS.aiPlanning, context.roomId ?? 'world', 'planning-request-1'),
+                toPeerId: SERVER_PEER_ID,
+                typeId: RELIC_TYPES.aiPlanningRequest,
+                resource: requestJson,
+                options: { groupRef: context.roomRef, reliability: 'at-least-once', ack: 'receiver', traceId: 'trace-relic-planning-request' }
+            }
         );
         requests.push(raw);
         const message = { payload: decodeRallarServerAiJsonRequest(requestJson), raw };

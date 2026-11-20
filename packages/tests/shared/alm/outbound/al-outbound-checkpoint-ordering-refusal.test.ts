@@ -45,18 +45,21 @@ interface RoomSendInput {
 
 function roomSend(resourceId: string, input: RoomSendInput): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'room.state', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'room.state.v1',
-        { resourceId },
         {
-            ttlMs: 30_000,
-            seq: input.seq,
-            orderingKey: input.orderingKey,
-            qos: {
-                durability: { algo: input.durability },
-                ...(input.latestWins ? { supersedence: { algo: 'latest-wins' as const } } : {})
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.state', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'room.state.v1',
+            resource: { resourceId },
+            options: {
+                ttlMs: 30_000,
+                seq: input.seq,
+                orderingKey: input.orderingKey,
+                qos: {
+                    durability: { algo: input.durability },
+                    ...(input.latestWins ? { supersedence: { algo: 'latest-wins' as const } } : {})
+                }
             }
         }
     );
@@ -93,12 +96,15 @@ describe('the checkpointed tier refuses a client sequence and a request for one'
 
     it('passes a local-checkpoint key alone outside a room, which no outbound sequences', () => {
         const msg = newALBroadcastMessage(
-            'a',
-            { topicId: 'app.state', resourceId: 'world-keyed', contextId: 'world' },
-            'world',
-            'app.state.v1',
-            {},
-            { qos: { durability: { algo: 'local-checkpoint' } }, ordering: { orderingKey: 'track' } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'app.state', resourceId: 'world-keyed', contextId: 'world' },
+                scope: 'world',
+                typeId: 'app.state.v1',
+                resource: {},
+                options: { qos: { durability: { algo: 'local-checkpoint' } }, ordering: { orderingKey: 'track' } }
+            }
         );
 
         expect(computeALOutboundOrderingRefusal({ msg, policy: normalizeALQosPolicy(msg) }).right).toBe(msg);

@@ -15,12 +15,15 @@ describe('trusted server room publication audience', () => {
             groupId: snapshot.group.groupId
         };
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
 
         const audience = computeServerRoomPublicationAudience({
@@ -49,12 +52,15 @@ describe('trusted server room publication audience', () => {
             groupId: snapshot.group.groupId
         };
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', groupRef.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', groupRef.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef }
+            }
         );
         const archived = {
             ...snapshot,
@@ -77,12 +83,15 @@ describe('trusted server room publication audience', () => {
     it('refuses a server producer the granted topic does not list as topic-not-granted', () => {
         const snapshot = createGroupSnapshot(2, ['session-1']);
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', snapshot.group.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef: snapshot.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', snapshot.group.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef: snapshot.group }
+            }
         );
 
         const refused = computeServerRoomPublicationAudience({
@@ -110,12 +119,15 @@ describe('trusted server room publication audience', () => {
             }))
         };
         const message = newALBroadcastMessage(
-            'game-server',
-            newALRoute('room.match', 'message', snapshot.group.groupId),
-            'room',
-            'room.match.v1',
-            { tick: 1 },
-            { groupRef: snapshot.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'game-server',
+                route: newALRoute('room.match', 'message', snapshot.group.groupId),
+                scope: 'room',
+                typeId: 'room.match.v1',
+                resource: { tick: 1 },
+                options: { groupRef: snapshot.group }
+            }
         );
         const subscribed = snapshot.activeSessions[1]!;
 

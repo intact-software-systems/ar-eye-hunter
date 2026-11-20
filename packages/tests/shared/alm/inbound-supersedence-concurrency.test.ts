@@ -228,17 +228,20 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
 
 function createMessage(senderId: string, version: number, supersedenceKey = 'shared-topic'): ALMessage {
     const message = newALUnicastMessage(
-        senderId,
-        { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
-        'receiver',
-        'latest-value.v1',
-        { version },
         {
-            qos: {
-                delivery: { algo: 'best-effort' },
-                ack: { algo: 'none' },
-                durability: { algo: 'volatile' },
-                supersedence: { algo: 'latest-wins', opts: { supersedenceKey } }
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
+            toPeerId: 'receiver',
+            typeId: 'latest-value.v1',
+            resource: { version },
+            options: {
+                qos: {
+                    delivery: { algo: 'best-effort' },
+                    ack: { algo: 'none' },
+                    durability: { algo: 'volatile' },
+                    supersedence: { algo: 'latest-wins', opts: { supersedenceKey } }
+                }
             }
         }
     );

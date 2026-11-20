@@ -121,7 +121,8 @@ export function mergeRallarGroupDirectorMetadata(
 
 export function isRallarGroupDirectorSessionActive(
     snapshot: GroupSnapshot | undefined,
-    appointment: RallarGroupDirectorAppointment | undefined
+    appointment: RallarGroupDirectorAppointment | undefined,
+    nowEpochMs?: number
 ): boolean {
     if (!snapshot || !appointment) {
         return false;
@@ -136,7 +137,8 @@ export function isRallarGroupDirectorSessionActive(
     }
     return snapshot.activeSessions.some((session) =>
         session.sessionId === appointment.sessionId &&
-        session.principalId === appointment.principalId
+        session.principalId === appointment.principalId &&
+        (nowEpochMs === undefined || session.expiresAtEpochMs > nowEpochMs)
     );
 }
 

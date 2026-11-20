@@ -172,5 +172,13 @@ function createServerRuntime(): ServerRuntime {
 }
 
 function createMessage(): ALMessage {
-    return newALUnicastMessage('server', { topicId: 'chat', contextId: 'direct', resourceId: 'readiness' }, 'peer', 'chat.message.v1', {}, { ttlMs: 30_000 });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: { topicId: 'chat', contextId: 'direct', resourceId: 'readiness' },
+        toPeerId: 'peer',
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    });
 }

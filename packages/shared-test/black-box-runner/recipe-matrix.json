@@ -2324,6 +2324,26 @@
       "description": "No-browser API-v1 black-box operator token and agent-session ticket lifecycle coverage."
     },
     {
+      "id": "api-v1-server-time",
+      "recipe": "tests/api-v1/api-v1-server-time.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-server-time",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "An anonymous server-time observation identifies the configured server and refuses caching."
+    },
+    {
       "id": "api-v1-ice-config",
       "recipe": "tests/api-v1/api-v1-ice-config.json",
       "category": "api-v1-black-box",

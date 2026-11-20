@@ -85,11 +85,14 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
 
         await onInboxMessage?.(
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.groupStateEvent, 'room-a', envelope.event.eventId),
-                'all',
-                AppTopics.groupStateEvent,
-                envelope
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(AppTopics.groupStateEvent, 'room-a', envelope.event.eventId),
+                    scope: 'all',
+                    typeId: AppTopics.groupStateEvent,
+                    resource: envelope
+                }
             )
         );
 

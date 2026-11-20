@@ -167,12 +167,15 @@ describe('the sent-position mutations of one admission', () => {
             durability: 'durable'
         });
         const sent = newALMulticastMessage(
-            'session-a',
-            newALRoute('room.chat', 'room-1', 'room-position'),
-            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, orderingKey: 'chat' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALRoute('room.chat', 'room-1', 'room-position'),
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, orderingKey: 'chat' }
+            }
         );
         const msg = { ...sent, ordering: { ...sent.ordering, seq: 5 } };
         const trackKey = toALOrderingTrackKey(msg)!;

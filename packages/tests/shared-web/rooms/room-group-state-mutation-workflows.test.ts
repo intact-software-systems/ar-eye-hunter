@@ -1,9 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import { acceptStateGroupInvite, rotateStateGroupJoinCode } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
-import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -19,7 +27,7 @@ interface FetchCall {
     readonly url: string;
     readonly method: string;
     readonly rawBody?: string;
-    readonly body?: Record<string, unknown>;
+    readonly body?: ApiJsonObject;
 }
 
 describe('room group-state mutation workflows', () => {
@@ -61,19 +69,16 @@ describe('room group-state mutation workflows', () => {
             sessionId: 'session-1'
         });
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1',
                 method: 'GET',
-                rawBody: undefined,
                 body: undefined
             },
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
                     'requests/metadata-request-000001',
                 method: 'PUT',
-                rawBody: '{"metadata":{"keep":true,"rallarDirector":{"next":true}},' +
-                    '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     metadata: { keep: true, rallarDirector: { next: true } },
                     actorPrincipalId: 'principal-1',
@@ -123,16 +128,11 @@ describe('room group-state mutation workflows', () => {
             sessionId: 'owner-session'
         });
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
                     'requests/details-request-0000001',
                 method: 'PUT',
-                rawBody: '{"displayName":"Renamed","description":"Mission room","joinMode":"open",' +
-                    '"maxMembers":8,"maxSessionsPerMember":2,' +
-                    '"metadata":{"map":"fjord","enabled":false,"note":null},' +
-                    '"actorPrincipalId":"owner-1",' +
-                    '"actorSessionId":"owner-session"}',
                 body: {
                     displayName: 'Renamed',
                     description: 'Mission room',
@@ -148,10 +148,6 @@ describe('room group-state mutation workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
                     'requests/archive-request-0000001',
                 method: 'PUT',
-                rawBody: '{"displayName":"Archived Room","description":"","maxMembers":0,' +
-                    '"metadata":{"enabled":false,"note":null},"reason":"quiet",' +
-                    '"status":"archived",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     displayName: 'Archived Room',
                     description: '',
@@ -167,9 +163,6 @@ describe('room group-state mutation workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/' +
                     'requests/delete-request-00000001',
                 method: 'PUT',
-                rawBody: '{"slug":"deleted-room","purgeAfterEpochMs":3000,"reason":"cleanup",' +
-                    '"status":"deleted",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     slug: 'deleted-room',
                     purgeAfterEpochMs: 3_000,
@@ -184,18 +177,19 @@ describe('room group-state mutation workflows', () => {
 
     it('replays the same presence command after an invitation response is lost', async () => {
         stubUuids('accept-request-000001', 'presence-request-0001');
-        const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+        let nowMs = 1_000;
         let presenceAttempts = 0;
         const snapshot = roomSnapshot('group-1');
         stubFetch(fetchCalls, ({ method }) => {
             if (method === 'PUT' && ++presenceAttempts === 1) {
-                clock.mockReturnValue(2_000);
+                nowMs = 2_000;
                 throw new TypeError('Presence committed but its response was lost');
             }
             return jsonResponse(snapshot);
         });
 
         await expect(acceptStateGroupInvite({
+            nowMs: () => nowMs,
             publicationKey: null,
             groupId: 'group-1',
             actorPrincipalId: 'principal-1',
@@ -230,13 +224,11 @@ describe('room group-state mutation workflows', () => {
             })
         ).resolves.toEqual(response);
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
             {
                 url: '/api/state/apps/app-1/workspaces/workspace-1/groups/group-1/' +
                     'join-code/rotate/requests/join-code-request-0001',
                 method: 'POST',
-                rawBody: '{"joinCode":"code-1","expiresAtEpochMs":2000,' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     joinCode: 'code-1',
                     expiresAtEpochMs: 2_000,
@@ -258,11 +250,15 @@ function stubUuids(...values: string[]): void {
 function stubFetch(fetchCalls: FetchCall[], handler: (call: FetchCall) => Response): void {
     vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
         const rawBody = init?.body ? String(init.body) : undefined;
+        const body = rawBody === undefined ? undefined : decodeJsonWireText(rawBody);
+        if (body !== undefined && !isApiJsonObject(body)) {
+            throw new Error('Expected an object mutation body.');
+        }
         const call = {
             url: String(input),
             method: init?.method ?? 'GET',
             rawBody,
-            body: rawBody ? JSON.parse(rawBody) : undefined
+            body
         };
         fetchCalls.push(call);
         return Promise.resolve(handler(call));
@@ -279,7 +275,7 @@ function roomSnapshot(groupId: string, metadata: ApiJsonObject = {}): GroupSnaps
     return { ...snapshot, group: { ...snapshot.group, metadata } };
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

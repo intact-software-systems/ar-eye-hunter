@@ -17,6 +17,7 @@ import {
 export interface DefaultALInboundRuntimeResourceInput {
     readonly selfPeerId: string;
     readonly nowMs?: () => number;
+    readonly workNowMs?: () => number;
     readonly random?: () => number;
     readonly newControlId?: () => string;
     readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
@@ -46,8 +47,9 @@ export function createDefaultALInboundRuntimeResources(
     input: DefaultALInboundRuntimeResourceInput
 ): ALInboundMessageRuntime.Resources {
     const nowMs = input.nowMs ?? Date.now;
+    const workNowMs = input.workNowMs ?? nowMs;
     const newControlId = input.newControlId ?? crypto.randomUUID.bind(crypto);
-    const stores = input.stores ?? createLocalALInboundRuntimeStores(nowMs);
+    const stores = input.stores ?? createLocalALInboundRuntimeStores(nowMs, workNowMs);
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
@@ -61,6 +63,7 @@ export function createDefaultALInboundRuntimeResources(
             createInboxEntry: input.toInboxEntry
         },
         clock: { nowMs },
+        workClock: { nowMs: workNowMs },
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined,
@@ -68,8 +71,8 @@ export function createDefaultALInboundRuntimeResources(
     };
 }
 
-function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntimeStores {
-    const workQueue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()));
+function createLocalALInboundRuntimeStores(nowMs: () => number, workNowMs: () => number): ALInboundRuntimeStores {
+    const workQueue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(workNowMs()));
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs,

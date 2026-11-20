@@ -453,12 +453,15 @@ class TournamentBrowser {
     async push(snapshot: ArenaTournamentSnapshot, sender = ARENA_TOURNAMENT_SNAPSHOT_SENDER): Promise<void> {
         const encoded = await encodeArenaTournamentFrame(snapshot);
         this.browser.deliver(newALBroadcastMessage(
-            sender,
-            newALRoute(ARENA_TOURNAMENT_SNAPSHOT_TOPIC, snapshot.binding.roomRef.groupId, snapshot.binding.gameId),
-            'room',
-            ARENA_TOURNAMENT_SNAPSHOT_TOPIC,
-            encoded,
-            { groupRef: snapshot.binding.roomRef, ttlMs: 2500 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: sender,
+                route: newALRoute(ARENA_TOURNAMENT_SNAPSHOT_TOPIC, snapshot.binding.roomRef.groupId, snapshot.binding.gameId),
+                scope: 'room',
+                typeId: ARENA_TOURNAMENT_SNAPSHOT_TOPIC,
+                resource: encoded,
+                options: { groupRef: snapshot.binding.roomRef, ttlMs: 2500 }
+            }
         ));
     }
 

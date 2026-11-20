@@ -517,12 +517,15 @@ describe('the RTC origin retry of a receiver receipt', () => {
             nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] }
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'leader-path', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            {},
-            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'leader-path', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            }
         );
         await enqueueAndDrain(fixture.manager, message);
 

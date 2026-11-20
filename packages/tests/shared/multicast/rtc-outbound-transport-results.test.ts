@@ -649,12 +649,15 @@ async function enqueueRtcAndDrain(
 
 function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'chat', resourceId, contextId: 'direct' },
-        peerId,
-        'chat.message.v1',
-        { text: 'hello' },
-        { ttlMs, qos: { durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId, contextId: 'direct' },
+            toPeerId: peerId,
+            typeId: 'chat.message.v1',
+            resource: { text: 'hello' },
+            options: { ttlMs, qos: { durability: { algo: 'volatile' } } }
+        }
     );
 }
 

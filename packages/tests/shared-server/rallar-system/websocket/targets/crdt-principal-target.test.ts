@@ -140,16 +140,19 @@ function principalResolver(input: PrincipalResolverInput) {
 
 function principalMessage(workspaceId: string | undefined) {
     return newALUnicastMessage(
-        'server-1',
-        newALRoute('rallar.crdt', 'alice', 'message-1'),
-        'alice',
-        RALLAR_CRDT_UPDATE_TYPE_ID,
         {
-            document: {
-                applicationId: 'app-1',
-                ...(workspaceId === undefined ? {} : { workspaceId }),
-                scope: 'principal',
-                principalId: 'alice'
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALRoute('rallar.crdt', 'alice', 'message-1'),
+            toPeerId: 'alice',
+            typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+            resource: {
+                document: {
+                    applicationId: 'app-1',
+                    ...(workspaceId === undefined ? {} : { workspaceId }),
+                    scope: 'principal',
+                    principalId: 'alice'
+                }
             }
         }
     );

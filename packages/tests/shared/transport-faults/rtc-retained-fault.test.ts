@@ -32,15 +32,18 @@ it('suppresses every held RTC native write until the same fault is explicitly re
         const native = runtime.createdConnections[0]!.channels[0]!;
         await native.open();
         const frame = JSON.stringify(newALUnicastMessage(
-            'self',
             {
-                topicId: 'topic',
-                contextId: 'room',
-                resourceId: 'original'
-            },
-            'peer',
-            'held',
-            {}
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'topic',
+                    contextId: 'room',
+                    resourceId: 'original'
+                },
+                toPeerId: 'peer',
+                typeId: 'held',
+                resource: {}
+            }
         ));
         for (let attempt = 0; attempt < 150; attempt += 1) {
             expect(channel.sendRaw(frame)).toMatchObject({ status: 'dropped' });
@@ -81,11 +84,14 @@ it('writes the frame a rewrite fault returns in place of the one the sender subm
         const native = runtime.createdConnections[0]!.channels[0]!;
         await native.open();
         const unsigned = newALUnicastMessage(
-            'self',
-            { topicId: 'topic', contextId: 'room', resourceId: 'signed' },
-            'peer',
-            'signed',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'topic', contextId: 'room', resourceId: 'signed' },
+                toPeerId: 'peer',
+                typeId: 'signed',
+                resource: {}
+            }
         );
         const frame = JSON.stringify({ ...unsigned, proof: { alg: 'ES256', keyId: 'key', signature: 'signature' } });
 

@@ -68,8 +68,15 @@ function createRecordedStage(maxStagedValues = 2): RecordedStage {
 }
 
 function stagePose(recorded: RecordedStage, resourceId: string, ttlMs = 5_000): { msgId: string; traceId: string; } {
-    const message = newALUnicastMessage('self', { topicId: 'room.pose', resourceId, contextId: 'room-1' }, 'peer-1', 'room.pose.v1', {
-        secret: SENTINEL
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'self',
+        route: { topicId: 'room.pose', resourceId, contextId: 'room-1' },
+        toPeerId: 'peer-1',
+        typeId: 'room.pose.v1',
+        resource: {
+            secret: SENTINEL
+        }
     });
     const msg = { ...message, constraints: { expiresAtMs: recorded.clock.atMs + ttlMs } };
     recorded.stage.stage({ msg, carrier: 'rtc', policy: POLICY, bytes: 96, context: resourceId });
@@ -152,11 +159,14 @@ it('satisfies the authored newest-N wait using actual session-wide publication d
     }
     for (let seq = 0; seq <= 4; seq++) {
         const msg = newALUnicastMessage(
-            'self',
-            { topicId: 'room.alm-conformance', resourceId: 'pose', contextId: 'room-1' },
-            'peer-1',
-            'alm.conformance.rtc.paced-newest-n',
-            { seq }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'room.alm-conformance', resourceId: 'pose', contextId: 'room-1' },
+                toPeerId: 'peer-1',
+                typeId: 'alm.conformance.rtc.paced-newest-n',
+                resource: { seq }
+            }
         );
         recorded.stage.stage({
             msg: { ...msg, constraints: { expiresAtMs: START_MS + 6_000 } },

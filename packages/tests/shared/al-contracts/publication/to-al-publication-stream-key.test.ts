@@ -22,18 +22,29 @@ function route(resourceId = 'entity-1') {
 
 function roomMulticast(overrides: { groupRef?: typeof ROOM; resourceId?: string; senderId?: string; } = {}) {
     return newALMulticastMessage(
-        overrides.senderId ?? 'sender',
-        route(overrides.resourceId),
-        overrides.groupRef ?? ROOM,
-        'pose.v1',
-        { x: 1 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: overrides.senderId ?? 'sender',
+            route: route(overrides.resourceId),
+            groupRef: overrides.groupRef ?? ROOM,
+            typeId: 'pose.v1',
+            resource: { x: 1 }
+        }
     );
 }
 
 function fixedList(peerIds: readonly string[]): ALMessage {
-    return newALBroadcastMessage('sender', route(), 'room', 'pose.v1', { x: 1 }, {
-        groupRef: ROOM,
-        recipientPeerIds: peerIds
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: route(),
+        scope: 'room',
+        typeId: 'pose.v1',
+        resource: { x: 1 },
+        options: {
+            groupRef: ROOM,
+            recipientPeerIds: peerIds
+        }
     });
 }
 
@@ -41,7 +52,14 @@ describe('toALPublicationStreamKey (D467)', () => {
     it('is stable for the same message and independent of the payload and msgId', () => {
         expect(toALPublicationStreamKey(roomMulticast())).toBe(toALPublicationStreamKey(roomMulticast()));
         expect(toALPublicationStreamKey(roomMulticast()))
-            .toBe(toALPublicationStreamKey(newALMulticastMessage('sender', route(), ROOM, 'pose.v1', { x: 2 })));
+            .toBe(toALPublicationStreamKey(newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: route(),
+                groupRef: ROOM,
+                typeId: 'pose.v1',
+                resource: { x: 2 }
+            })));
     });
 
     it('is the JSON of the fourteen-field tuple with absent fields as null', () => {
@@ -93,7 +111,15 @@ describe('toALPublicationStreamKey (D467)', () => {
     it('differs for two room broadcasts differing only in exceptPeerIds and ignores their order', () => {
         const toKey = (exceptPeerIds: readonly string[] | undefined) =>
             toALPublicationStreamKey(
-                newALBroadcastMessage('sender', route(), 'room', 'pose.v1', { x: 1 }, { groupRef: ROOM, exceptPeerIds })
+                newALBroadcastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: route(),
+                    scope: 'room',
+                    typeId: 'pose.v1',
+                    resource: { x: 1 },
+                    options: { groupRef: ROOM, exceptPeerIds }
+                })
             );
 
         expect(toKey(['peer-a'])).not.toBe(toKey(['peer-b']));
@@ -104,10 +130,18 @@ describe('toALPublicationStreamKey (D467)', () => {
     it('ignores the fences minSnapshotVersion and rosterVersion', () => {
         const toKey = (minSnapshotVersion: number) =>
             toALPublicationStreamKey(
-                newALBroadcastMessage('sender', route(), 'room', 'pose.v1', { x: 1 }, {
-                    groupRef: ROOM,
-                    minSnapshotVersion,
-                    rosterVersion: minSnapshotVersion
+                newALBroadcastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: route(),
+                    scope: 'room',
+                    typeId: 'pose.v1',
+                    resource: { x: 1 },
+                    options: {
+                        groupRef: ROOM,
+                        minSnapshotVersion,
+                        rosterVersion: minSnapshotVersion
+                    }
                 })
             );
 
@@ -123,7 +157,15 @@ describe('toALPublicationStreamKey (D467)', () => {
     });
 
     it('differs for a room unicast and a room multicast of the same resource', () => {
-        const unicast = newALUnicastMessage('sender', route(), 'peer-a', 'pose.v1', { x: 1 }, { groupRef: ROOM });
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            toPeerId: 'peer-a',
+            typeId: 'pose.v1',
+            resource: { x: 1 },
+            options: { groupRef: ROOM }
+        });
 
         expect(toALPublicationStreamKey(unicast)).not.toBe(toALPublicationStreamKey(roomMulticast()));
     });
@@ -139,14 +181,25 @@ describe('toALPublicationStreamKey (D467)', () => {
 
     it('differs for a principal broadcast, a room broadcast and a room multicast of one room', () => {
         const principal = newALPrincipalBroadcastMessage(
-            'sender',
-            route(),
-            { groupRef: ROOM, principalRef: PRINCIPAL },
-            'pose.v1',
-            { x: 1 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: route(),
+                target: { groupRef: ROOM, principalRef: PRINCIPAL },
+                typeId: 'pose.v1',
+                resource: { x: 1 }
+            }
         );
-        const roomBroadcast = newALBroadcastMessage('sender', route(), 'room', 'pose.v1', { x: 1 }, {
-            groupRef: ROOM
+        const roomBroadcast = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            scope: 'room',
+            typeId: 'pose.v1',
+            resource: { x: 1 },
+            options: {
+                groupRef: ROOM
+            }
         });
         const keys = [principal, roomBroadcast, roomMulticast()].map(toALPublicationStreamKey);
 
@@ -156,36 +209,95 @@ describe('toALPublicationStreamKey (D467)', () => {
     it('differs for two principals', () => {
         const toKey = (principalId: string) =>
             toALPublicationStreamKey(newALPrincipalBroadcastMessage(
-                'sender',
-                route(),
-                { groupRef: ROOM, principalRef: { ...PRINCIPAL, principalId } },
-                'pose.v1',
-                { x: 1 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: route(),
+                    target: { groupRef: ROOM, principalRef: { ...PRINCIPAL, principalId } },
+                    typeId: 'pose.v1',
+                    resource: { x: 1 }
+                }
             ));
 
         expect(toKey('principal-2')).not.toBe(toKey('principal-1'));
     });
 
     it('differs for a world broadcast, an all broadcast and a unicast with equal resourceId', () => {
-        const world = newALBroadcastMessage('sender', route(), 'world', 'pose.v1', { x: 1 });
-        const everyone = newALBroadcastMessage('sender', route(), 'all', 'pose.v1', { x: 1 });
-        const unicast = newALUnicastMessage('sender', route(), 'peer-a', 'pose.v1', { x: 1 });
-        const otherUnicast = newALUnicastMessage('sender', route(), 'peer-b', 'pose.v1', { x: 1 });
+        const world = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            scope: 'world',
+            typeId: 'pose.v1',
+            resource: { x: 1 }
+        });
+        const everyone = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            scope: 'all',
+            typeId: 'pose.v1',
+            resource: { x: 1 }
+        });
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            toPeerId: 'peer-a',
+            typeId: 'pose.v1',
+            resource: { x: 1 }
+        });
+        const otherUnicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            toPeerId: 'peer-b',
+            typeId: 'pose.v1',
+            resource: { x: 1 }
+        });
         const keys = [world, everyone, unicast, otherUnicast].map(toALPublicationStreamKey);
 
         expect(new Set(keys).size).toBe(4);
     });
 
     it('never collides when a field carries a delimiter look-alike', () => {
-        const left = newALUnicastMessage('a', route('b/c'), 'peer', 'pose.v1', {});
-        const right = newALUnicastMessage('a', route('b'), 'peer', 'c/pose.v1', {});
+        const left = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: route('b/c'),
+            toPeerId: 'peer',
+            typeId: 'pose.v1',
+            resource: {}
+        });
+        const right = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: route('b'),
+            toPeerId: 'peer',
+            typeId: 'c/pose.v1',
+            resource: {}
+        });
 
         expect(toALPublicationStreamKey(left)).not.toBe(toALPublicationStreamKey(right));
     });
 
     it('keeps an absent field distinct from the string null', () => {
-        const absent = newALBroadcastMessage('sender', route(), 'world', 'pose.v1', {});
-        const literal = newALBroadcastMessage('sender', route('null'), 'world', 'pose.v1', {});
+        const absent = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route(),
+            scope: 'world',
+            typeId: 'pose.v1',
+            resource: {}
+        });
+        const literal = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: route('null'),
+            scope: 'world',
+            typeId: 'pose.v1',
+            resource: {}
+        });
 
         expect(toALPublicationStreamKey(absent)).not.toBe(toALPublicationStreamKey(literal));
     });

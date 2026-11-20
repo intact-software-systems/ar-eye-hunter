@@ -585,6 +585,8 @@ export namespace ALOutboundMessageRuntime {
         readonly checkpointStores: ALCheckpointOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
         readonly clock: Clock;
+        /** Queue scheduling, measurements and mandatory releases remain available during retirement. */
+        readonly workClock: Clock;
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
@@ -1046,7 +1048,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.dependencies.settlements?.({
                 ...fact,
                 carrier: this.dependencies.carrier,
-                atMs: this.dependencies.clock.nowMs(),
+                atMs: this.dependencies.workClock.nowMs(),
                 ...(lane === undefined ? {} : { lane })
             });
         }

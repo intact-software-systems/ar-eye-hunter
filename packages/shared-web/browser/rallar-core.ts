@@ -49,6 +49,7 @@ export type {
     RallarDefaults,
     RallarDiagnosticsPorts,
     RallarDiagnosticsPortsInput,
+    RallarGroupPresencePolicy,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListPeopleEventsOptions,

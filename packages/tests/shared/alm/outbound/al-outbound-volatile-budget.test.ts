@@ -220,12 +220,15 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
     it('never counts a durable send', async () => {
         const { budget, runtime } = await createFullRuntime();
         const durable = newALUnicastMessage(
-            'self',
-            { topicId: 'chat', resourceId: 'durable', contextId: 'conversation-1' },
-            'peer-1',
-            DURABLE_TYPE_ID,
-            { text: 'durable' },
-            { ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'chat', resourceId: 'durable', contextId: 'conversation-1' },
+                toPeerId: 'peer-1',
+                typeId: DURABLE_TYPE_ID,
+                resource: { text: 'durable' },
+                options: { ttlMs: 30_000 }
+            }
         );
 
         expect((await runtime.enqueueIfAbsent(durable)).verdict).toMatchObject({
@@ -238,11 +241,14 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
     it('never counts a volatile message without a deadline, as an RTC signal is sent', async () => {
         const { budget, runtime } = await createFullRuntime();
         const signal = newALUnicastMessage(
-            'self',
-            { topicId: 'rtc-signaling', resourceId: 'offer', contextId: 'peer-1' },
-            'peer-1',
-            'rtc-signaling',
-            { kind: 'offer' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'rtc-signaling', resourceId: 'offer', contextId: 'peer-1' },
+                toPeerId: 'peer-1',
+                typeId: 'rtc-signaling',
+                resource: { kind: 'offer' }
+            }
         );
 
         expect((await runtime.enqueueIfAbsent(signal)).verdict).toMatchObject({

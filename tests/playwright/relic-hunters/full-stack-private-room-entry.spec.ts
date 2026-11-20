@@ -4,7 +4,11 @@ import {
     type Page
 } from '@playwright/test';
 
-import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
+import {
+    expireRoomSnapshots,
+    installRoomCacheClock,
+    renewRoomAfterDelayedCallbacks
+} from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { roomRotationReturnJourney, roomSharingCacheRecoveryJourney } from '../room-sharing-recovery-journey.ts';
 import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
@@ -66,7 +70,7 @@ test(
     'recovers a private expedition after delayed browser callbacks and can still begin play',
     async ({ page }, testInfo) => {
         test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await page.clock.install();
+        await installRoomCacheClock(page);
         await page.goto('/');
         await registerPrivateHunter(page, 'delayed-heartbeat');
         await page.getByRole('button', { name: 'New invite-only room', exact: true }).click();
@@ -89,7 +93,7 @@ test(
     'finishes sharing a code room when cached presence expires during previous-room cleanup',
     async ({ page }, testInfo) => {
         test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await page.clock.install();
+        await installRoomCacheClock(page);
         await page.goto('/');
         await registerPrivateHunter(page, 'code-recovery');
         await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
@@ -121,7 +125,7 @@ test(
             await page.getByRole('button', { name: 'New code room', exact: true }).click();
             await leavePending.promise;
             // Expire the browser cache while the created room remains live on the server.
-            await page.clock.fastForward(65_000);
+            await expireRoomSnapshots(page);
             await recoveryPending.promise;
             releaseLeave.resolve();
             await leaveDelivered.promise;

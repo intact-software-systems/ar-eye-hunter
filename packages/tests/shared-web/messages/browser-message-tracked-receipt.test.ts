@@ -127,9 +127,17 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
         async ({ ack, qos, requested }) => {
             const harness = await createWsDispatchHarness(SERVER_PEER_ID);
             const handle = harness.send(
-                newALMulticastMessage(SESSION_ID, toRoute('room-hop'), ORIGIN_ROOM, 'chat.message.v1', {
-                    text: 'hop'
-                }, { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos })
+                newALMulticastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: SESSION_ID,
+                    route: toRoute('room-hop'),
+                    groupRef: ORIGIN_ROOM,
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'hop'
+                    },
+                    options: { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos }
+                })
             );
 
             await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
@@ -158,9 +166,17 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
         async ({ ack, qos, requested }) => {
             const harness = await createWsDispatchHarness(undefined);
             const handle = harness.send(
-                newALMulticastMessage(SESSION_ID, toRoute('room-hop-server-unknown'), ORIGIN_ROOM, 'chat.message.v1', {
-                    text: 'hop'
-                }, { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos })
+                newALMulticastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: SESSION_ID,
+                    route: toRoute('room-hop-server-unknown'),
+                    groupRef: ORIGIN_ROOM,
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'hop'
+                    },
+                    options: { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos }
+                })
             );
 
             await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
@@ -174,8 +190,16 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     it('keeps a unicast send asking qos.ack hop open past transport acceptance, with no downgrade', async () => {
         const harness = await createWsDispatchHarness(SERVER_PEER_ID);
         const handle = harness.send({
-            ...newALUnicastMessage(SESSION_ID, toRoute('unicast-hop'), 'peer-b', 'chat.message.v1', { text: 'hop' }, {
-                ttlMs: TTL_MS
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: SESSION_ID,
+                route: toRoute('unicast-hop'),
+                toPeerId: 'peer-b',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hop' },
+                options: {
+                    ttlMs: TTL_MS
+                }
             }),
             delivery: { reliability: 'at-least-once', ack: 'none' },
             qos: { ack: { algo: 'hop' } }
@@ -191,13 +215,21 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     it('keeps a default notification room send tracking receiver, with no downgrade', async () => {
         const harness = await createWsDispatchHarness(SERVER_PEER_ID);
         const defaults = resolveALChannelSendDefaults({ purpose: 'notification', durability: undefined, hasLogicalAudience: true });
-        const handle = harness.send(newALMulticastMessage(SESSION_ID, toRoute('room-default'), ORIGIN_ROOM, 'chat.message.v1', {
-            text: 'default'
-        }, {
-            reliability: defaults.reliability,
-            ack: defaults.ack,
-            ttlMs: defaults.ttlMs,
-            qos: { durability: { algo: defaults.durability } }
+        const handle = harness.send(newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: SESSION_ID,
+            route: toRoute('room-default'),
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: {
+                text: 'default'
+            },
+            options: {
+                reliability: defaults.reliability,
+                ack: defaults.ack,
+                ttlMs: defaults.ttlMs,
+                qos: { durability: { algo: defaults.durability } }
+            }
         }));
 
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
@@ -222,11 +254,19 @@ describe('the receipt an RTC send tracks reaches its handle (R-S3a-4)', () => {
             admits: { rtc: (message) => fixture.manager.enqueueIfAbsent(message) },
             publication: MEMBERS_PUBLICATION
         });
-        const handle = harness.send(newALMulticastMessage('a', toRoute('rtc-hop'), ORIGIN_ROOM, 'chat.message.v1', { text: 'hop' }, {
-            reliability: 'at-least-once',
-            ack: 'none',
-            ttlMs: TTL_MS,
-            qos: { ack: { algo: 'hop' } }
+        const handle = harness.send(newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: toRoute('rtc-hop'),
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: 'hop' },
+            options: {
+                reliability: 'at-least-once',
+                ack: 'none',
+                ttlMs: TTL_MS,
+                qos: { ack: { algo: 'hop' } }
+            }
         }));
 
         await vi.advanceTimersByTimeAsync(0);
@@ -263,13 +303,21 @@ describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', ()
             publication: MEMBERS_PUBLICATION
         });
         const handle = harness.send(
-            newALMulticastMessage('a', toRoute('fallback-hop'), ORIGIN_ROOM, 'chat.message.v1', {
-                text: 'hop'
-            }, {
-                reliability: 'at-least-once',
-                ack: 'none',
-                ttlMs: TTL_MS,
-                qos: { ack: { algo: 'hop' } }
+            newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: toRoute('fallback-hop'),
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hop'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'none',
+                    ttlMs: TTL_MS,
+                    qos: { ack: { algo: 'hop' } }
+                }
             })
         );
 
@@ -522,10 +570,18 @@ async function recordCompleteAcknowledgement(leg: LeaderRtcLeg): Promise<void> {
 }
 
 function createLeaderSend(senderId: string, resourceId: string): ALMessage {
-    return newALMulticastMessage(senderId, toRoute(resourceId), ORIGIN_ROOM, 'chat.message.v1', { text: 'lead' }, {
-        reliability: 'at-least-once',
-        ack: 'group-leader',
-        ttlMs: TTL_MS
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: toRoute(resourceId),
+        groupRef: ORIGIN_ROOM,
+        typeId: 'chat.message.v1',
+        resource: { text: 'lead' },
+        options: {
+            reliability: 'at-least-once',
+            ack: 'group-leader',
+            ttlMs: TTL_MS
+        }
     });
 }
 
@@ -545,22 +601,38 @@ async function createWsLeg(publication: DispatchHarnessPublication): Promise<WsL
 
 /** A room broadcast claiming the one resource every exclusive send here names. */
 function createExclusiveSend(ack: 'receiver' | 'none'): ALMessage {
-    return newALBroadcastMessage(SESSION_ID, toRoute('pickup-1'), 'room', 'chat.message.v1', { text: 'mine' }, {
-        groupRef: ORIGIN_ROOM,
-        reliability: 'at-least-once',
-        ack,
-        ownership: 'exclusive',
-        ttlMs: TTL_MS
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: toRoute('pickup-1'),
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: { text: 'mine' },
+        options: {
+            groupRef: ORIGIN_ROOM,
+            reliability: 'at-least-once',
+            ack,
+            ownership: 'exclusive',
+            ttlMs: TTL_MS
+        }
     });
 }
 
 /** A receipted room publication on a topic the server enforces publication grants on. */
 function createGrantedTopicSend(): ALMessage {
-    return newALBroadcastMessage(SESSION_ID, toRoute('feed-1'), 'room', 'chat.message.v1', { text: 'feed' }, {
-        groupRef: ORIGIN_ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: TTL_MS
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: toRoute('feed-1'),
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: { text: 'feed' },
+        options: {
+            groupRef: ORIGIN_ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: TTL_MS
+        }
     });
 }
 
@@ -636,7 +708,11 @@ async function createWsClient(
 }
 
 function createRegistry(): BrowserRallarDeliveryRegistry {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        ...BROWSER_DELIVERY_RETENTION,
+        cancel: () => {}
+    });
     onTestFinished(() => registry.releaseAll());
     return registry;
 }
@@ -660,8 +736,7 @@ function createDispatchHarness({ registry, carrier, admits, publication }: Dispa
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries: registry,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => publication.permissions,
         grantedTopics: NO_RTC_GRANTED_TOPICS
     });
@@ -669,7 +744,7 @@ function createDispatchHarness({ registry, carrier, admits, publication }: Dispa
     return {
         registry,
         send: (message) => {
-            const handle = registry.open(message, carrier);
+            const handle = registry.open({ message: message, carrier: carrier, readDeadlineEpochMs: Date.now });
             dispatch.send({
                 requestedConfiguration: undefined,
                 rtcCapture: { status: 'unavailable', reason: 'absent' },

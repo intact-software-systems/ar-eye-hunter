@@ -75,12 +75,15 @@ function createRelayedEndpoints(): RelayedRtcEndpoints {
 
 function createRoomMessage(): ALMessage {
     const message = newALMulticastMessage(
-        'sender',
-        { topicId: 'data', contextId: 'room', resourceId: 'record' },
-        room,
-        'data',
-        { value: 1 },
-        { qos: { durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'data', contextId: 'room', resourceId: 'record' },
+            groupRef: room,
+            typeId: 'data',
+            resource: { value: 1 },
+            options: { qos: { durability: { algo: 'volatile' } } }
+        }
     );
     return toALFrozenMulticastMessage(message, { recipientPeerIds: ['relay', 'receiver'], snapshotVersion: 1 });
 }

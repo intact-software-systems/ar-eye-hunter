@@ -98,16 +98,19 @@ export function runRtcMulticastSerialization(
     const service = new WebRtcOverlayMulticastService('group-1', connections.service);
     try {
         const multicastMessage = newALMulticastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: `msg-${input.peers}-${input.payloadBytes}-${run}`,
-                contextId: 'group-1'
-            },
-            { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
-            'chat.message.v1',
-            createPayload(input.payloadBytes),
-            { qos: { durability: { algo: 'volatile' } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: `msg-${input.peers}-${input.payloadBytes}-${run}`,
+                    contextId: 'group-1'
+                },
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
+                typeId: 'chat.message.v1',
+                resource: createPayload(input.payloadBytes),
+                options: { qos: { durability: { algo: 'volatile' } } }
+            }
         );
         const overlayContext = createOverlayContext(peerIds);
 

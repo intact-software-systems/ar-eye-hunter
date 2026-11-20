@@ -1,3 +1,12 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     acceptStateGroupInvite,
@@ -11,7 +20,7 @@ import {
     unbanStateGroupMember
 } from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
@@ -90,6 +99,7 @@ describe('room membership group-state HTTP workflows', () => {
 
         await expect(
             acceptStateGroupInvite({
+                nowMs: () => Date.now(),
                 publicationKey: null,
                 groupId: 'group-1',
                 actorPrincipalId: 'member-1',

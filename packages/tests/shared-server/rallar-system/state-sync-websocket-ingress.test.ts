@@ -113,11 +113,14 @@ function createConnectedClientSnapshot(stateRevision: number): ClientSnapshot {
 function createForgedClientSnapshotMessage(snapshot: ClientSnapshot): ALMessage {
     return {
         ...newALBroadcastMessage(
-            'attacker',
-            newALEventRoute(AppTopics.clientStateSnapshot, 'alice', 'forged-client-snapshot'),
-            'all',
-            AppTopics.clientStateSnapshot,
-            snapshot
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'attacker',
+                route: newALEventRoute(AppTopics.clientStateSnapshot, 'alice', 'forged-client-snapshot'),
+                scope: 'all',
+                typeId: AppTopics.clientStateSnapshot,
+                resource: snapshot
+            }
         ),
         targets: {
             mode: 'broadcast',
@@ -146,11 +149,14 @@ function createForgedClientEventMessage(): ALMessage {
     };
     return {
         ...newALBroadcastMessage(
-            'attacker',
-            newALEventRoute(AppTopics.clientStateEvent, 'alice', event.eventId),
-            'all',
-            AppTopics.clientStateEvent,
-            event
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'attacker',
+                route: newALEventRoute(AppTopics.clientStateEvent, 'alice', event.eventId),
+                scope: 'all',
+                typeId: AppTopics.clientStateEvent,
+                resource: event
+            }
         ),
         targets: {
             mode: 'broadcast',

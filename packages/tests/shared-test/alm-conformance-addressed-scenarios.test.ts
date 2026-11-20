@@ -250,12 +250,15 @@ describe('the addressed-send family (C11)', () => {
             throw new Error('capacity must send.');
         }
         const message = newALMulticastMessage(
-            'sender-session',
-            { topicId: 'room.alm-conformance', resourceId: 'capacity', contextId: 'room-alm' },
-            { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
-            send.typeId,
-            send.payload,
-            { reliability: 'at-least-once', ack: 'receiver', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-session',
+                route: { topicId: 'room.alm-conformance', resourceId: 'capacity', contextId: 'room-alm' },
+                groupRef: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                typeId: send.typeId,
+                resource: send.payload,
+                options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 30_000 }
+            }
         );
         const bytes = computeALMessageEnvelopeBytes(message, AL_MESSAGE_RESOURCE_LIMITS).right;
         if (bytes === undefined) {

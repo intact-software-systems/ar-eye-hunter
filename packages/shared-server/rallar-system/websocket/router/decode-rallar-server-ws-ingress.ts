@@ -3,9 +3,13 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { RALLAR_AL_CONTROL_TOPIC_ID } from '@shared/api/rallar-validation.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import type {
     RallarServerWsMessage,
     RallarServerWsPayload,
@@ -18,6 +22,15 @@ import type {
     RallarServerWsTopicMetadata
 } from './rallar-server-ws-router-contracts.ts';
 import { toRallarServerWsTopicAccess } from './rallar-server-ws-topic-registry.ts';
+
+const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
+
+export function isMiddlewareOwnedMessage(message: ALMessage): boolean {
+    return decodeStateSyncMessage(message).kind !== 'unsupported' ||
+        RESERVED_TOPIC_IDS.has(message.route.topicId) ||
+        message.route.topicId === RALLAR_AL_CONTROL_TOPIC_ID ||
+        isALControlTypeId(message.payload.typeId);
+}
 
 export type RallarServerWsIngressDecodeResult =
     | Readonly<{ kind: 'decoded'; value: JsonWireValue; }>
@@ -94,6 +107,14 @@ export function computeRallarServerWsRetainedAudience(
 export async function authorizeRallarServerWsIngress(
     input: AuthorizeRallarServerWsIngressInput
 ): Promise<RallarServerWsAuthorizationResult> {
+    if (input.message.proof !== undefined && readALTargetGroupRef(input.message) === undefined) {
+        return {
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: 'A sender publication proof requires a room GroupRef.',
+            serverSnapshotVersion: undefined
+        };
+    }
     if (input.definition?.scope !== 'room' && !isRoomScopedALMessage(input.message)) {
         return { authorized: true, audience: undefined };
     }
@@ -177,11 +198,16 @@ function normalizeRoomAuthorizationDecision(
     decision: RallarServerWsRoomAuthorizationDecision,
     message: ALMessage
 ): RallarServerWsAuthorizationResult {
-    if (decision === true) {
-        return { authorized: true, audience: undefined };
-    }
-    if (decision !== false && decision.authorized) {
-        return { authorized: true, audience: decision.audience };
+    if (decision === true || (decision !== false && decision.authorized)) {
+        if (message.proof !== undefined && (decision === true || decision.verifiedPublication !== message)) {
+            return {
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage: 'Room authorization did not verify the signed publication.',
+                serverSnapshotVersion: undefined
+            };
+        }
+        return { authorized: true, audience: decision === true ? undefined : decision.audience };
     }
     const denial = decision === false ? undefined : decision;
     return {

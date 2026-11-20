@@ -53,11 +53,14 @@ function toCombinedConfig(
 
 function toInboundMessage(transport: 'rtc' | 'ws', typeId: string, phase: string): RallarMessage<RallarMessagePayload> {
     const raw = newALUnicastMessage(
-        'sender',
-        { topicId: TOPIC_ID, contextId: 'room', resourceId: 'resource' },
-        'receiver',
-        typeId,
-        { specimen: transport, phase }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: TOPIC_ID, contextId: 'room', resourceId: 'resource' },
+            toPeerId: 'receiver',
+            typeId,
+            resource: { specimen: transport, phase }
+        }
     );
     return {
         transport,

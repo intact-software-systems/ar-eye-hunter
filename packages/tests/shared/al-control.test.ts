@@ -356,11 +356,14 @@ function controlMessage(typeId: string, payload: ALControlPayload): ALMessage {
 function controlMessageWithResource(typeId: string, resource: string): ALMessage {
     return {
         ...newALUnicastMessage(
-            'sender',
-            { topicId: 'al-control', resourceId: 'msg-1', contextId: 'sender:receiver' },
-            'receiver',
-            typeId,
-            null
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'al-control', resourceId: 'msg-1', contextId: 'sender:receiver' },
+                toPeerId: 'receiver',
+                typeId,
+                resource: null
+            }
         ),
         payload: { typeId, contentType: 'application/json', resource }
     };

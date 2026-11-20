@@ -57,12 +57,15 @@ const NOT_SUBSCRIBED_RELAY = toNotSubscribedPeer(DOWNSTREAM_PEER_IDS);
 /** A receipted room multicast whose frozen audience names this peer and the peers below it. */
 function createFrozenReceiptedMessage(msgId: string): ALMessage {
     const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
-        ROOM,
-        'room.feed.v1',
-        { text: msgId },
-        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'room.feed.v1',
+            resource: { text: msgId },
+            options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000 }
+        }
     );
     return {
         ...message,

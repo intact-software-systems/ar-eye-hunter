@@ -5,7 +5,9 @@ import {
     it,
     vi
 } from 'vitest';
+
 import { SimulatedMediaStream, SimulatedMediaTrack } from '../../shared/native-rtc-media-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -32,6 +34,7 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({
         middleware: (await mocks.initialiseApiMiddleware()).middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     }))
 }));

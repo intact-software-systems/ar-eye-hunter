@@ -196,12 +196,15 @@ describe('inbound admission preparation boundary', () => {
         vi.setSystemTime(1_800_000_000_000);
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const message = newALMulticastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'buffered-owner', contextId: 'room' },
-            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            'chat.message.v1',
-            { text: 'buffered owner' },
-            { seq: 1, ack: 'receiver', reliability: 'at-least-once', ttlMs: 10_000, qos: { durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'buffered-owner', contextId: 'room' },
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                typeId: 'chat.message.v1',
+                resource: { text: 'buffered owner' },
+                options: { seq: 1, ack: 'receiver', reliability: 'at-least-once', ttlMs: 10_000, qos: { durability: { algo: 'volatile' } } }
+            }
         );
         const prepared = await readAdmission({ store: stores.admissionStore, message });
 
@@ -608,6 +611,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
         effectPreparation: createPreparationDependencies(),
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },
+        workClock: { nowMs: () => Date.now() },
         random: () => 0.5,
         queueEngine: new InboxOutboxEngine(),
         ownsQueueEngine: true,
@@ -618,12 +622,15 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
 
 function createMessage(seq: number): ALMessage {
     return newALMulticastMessage(
-        'sender',
-        { topicId: 'chat', resourceId: `message-${seq}`, contextId: 'room' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-        'chat.message.v1',
-        { text: `message ${seq}` },
-        { seq, ack: 'receiver', reliability: 'at-least-once', qos: { durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: `message-${seq}`, contextId: 'room' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            typeId: 'chat.message.v1',
+            resource: { text: `message ${seq}` },
+            options: { seq, ack: 'receiver', reliability: 'at-least-once', qos: { durability: { algo: 'volatile' } } }
+        }
     );
 }
 

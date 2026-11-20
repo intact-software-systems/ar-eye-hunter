@@ -9,9 +9,17 @@ const ROUTE = newALRoute('room.app.event', 'room-1', 'game-1:2');
 
 describe('a room broadcast that names its ordering', () => {
     it('writes the key, the epoch and the sequence it names', () => {
-        const message = newALBroadcastMessage('server', ROUTE, 'room', 'app.event.v1', {}, {
-            groupRef: ROOM,
-            ordering: { orderingKey: 'game-1', epoch: 2, seq: 5 }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.event.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                ordering: { orderingKey: 'game-1', epoch: 2, seq: 5 }
+            }
         });
 
         expect(message.ordering).toEqual({ orderingKey: 'game-1', epoch: 2, seq: 5 });
@@ -21,9 +29,17 @@ describe('a room broadcast that names its ordering', () => {
     });
 
     it('leaves the sequence to its outbound when it names only the key and the epoch', () => {
-        const message = newALBroadcastMessage('server', ROUTE, 'room', 'app.event.v1', {}, {
-            groupRef: ROOM,
-            ordering: { orderingKey: 'game-1', epoch: 2 }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.event.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                ordering: { orderingKey: 'game-1', epoch: 2 }
+            }
         });
 
         expect(JSON.parse(JSON.stringify(message.ordering))).toEqual({ orderingKey: 'game-1', epoch: 2 });
@@ -33,9 +49,17 @@ describe('a room broadcast that names its ordering', () => {
     });
 
     it('names epoch 0 for a track whose message states no epoch', () => {
-        const message = newALBroadcastMessage('server', ROUTE, 'room', 'app.event.v1', {}, {
-            groupRef: ROOM,
-            ordering: { orderingKey: 'game-1' }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.event.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                ordering: { orderingKey: 'game-1' }
+            }
         });
 
         expect(toALSequenceMintTrackKey(message)).toBe('game-1:server:0');

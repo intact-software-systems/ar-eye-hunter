@@ -118,6 +118,7 @@ export type {
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions,
     RallarFacade,
+    RallarGroupPresencePolicy,
     RallarIncomingCallInvite,
     RallarJoinRoomInput,
     RallarJoinRoomOptions,

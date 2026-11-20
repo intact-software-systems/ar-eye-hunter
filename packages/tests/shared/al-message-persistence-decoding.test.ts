@@ -361,9 +361,17 @@ describe('the persisted publication proof section', () => {
 
     it('decodes a proof-carrying members frame on an ungranted topic and plans it like the same frame without a proof', () => {
         const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-        const membersFrame = newALMulticastMessage('session-a', { topicId: 'room.chat', contextId: 'room-1', resourceId: 'line-1' }, groupRef, 'chat.v1', {
-            text: 'hello'
-        }, { reliability: 'at-least-once', ack: 'receiver' });
+        const membersFrame = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-a',
+            route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'line-1' },
+            groupRef,
+            typeId: 'chat.v1',
+            resource: {
+                text: 'hello'
+            },
+            options: { reliability: 'at-least-once', ack: 'receiver' }
+        });
         const context = {
             nowMs: membersFrame.id.ts,
             selfPeerId: 'self',

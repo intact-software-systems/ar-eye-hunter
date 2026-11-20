@@ -14,7 +14,6 @@ import {
     constants
 } from 'node:zlib';
 import {
-    beforeAll,
     describe,
     expect,
     it
@@ -29,14 +28,11 @@ interface HeadlessBundleMeasurement {
 const HEADLESS_BUNDLE_TEST_TIMEOUT_MS = 60_000;
 
 describe('rallar-black-box-headless bundle boundary', () => {
-    let result: HeadlessBundleMeasurement;
-    beforeAll(() => {
-        result = bundleHeadlessEntry(
+    it('excludes operator UI dependencies and surfaces', () => {
+        const result = bundleHeadlessEntry(
             process.cwd(),
             path.join(tmpdir(), 'rallar-black-box-headless-boundary-test')
         );
-    });
-    it('excludes operator UI dependencies and surfaces', () => {
         const inputs = Object.keys(result.metafile.inputs);
 
         for (

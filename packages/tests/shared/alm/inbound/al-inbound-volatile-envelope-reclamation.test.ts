@@ -450,12 +450,15 @@ describe('volatile inbound canonical envelope reclamation', () => {
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
         const relayed = newALMulticastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'owed-original', contextId: 'room' },
-            { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' },
-            'chat.message.v1',
-            { text: 'owed-original' },
-            { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'owed-original', contextId: 'room' },
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' },
+                typeId: 'chat.message.v1',
+                resource: { text: 'owed-original' },
+                options: { reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 60_000 }
+            }
         );
         const original = toALFrozenMulticastMessage(relayed, {
             recipientPeerIds: ['sender', 'receiver', 'relay'],

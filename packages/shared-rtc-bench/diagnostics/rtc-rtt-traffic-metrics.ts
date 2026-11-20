@@ -157,10 +157,13 @@ for (const measurement of measurements) {
     await server.dispatchConnectionMessage(
         connections.get(measurement.sessionIdFrom)!,
         JSON.stringify(newALUntargetedMessage(
-            measurement.sessionIdFrom,
-            newALEventRoute(AppTopics.rtt, measurement.sessionIdFrom, `rtt-${measurement.version}`),
-            AppTopics.rtt,
-            measurement
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: measurement.sessionIdFrom,
+                route: newALEventRoute(AppTopics.rtt, measurement.sessionIdFrom, `rtt-${measurement.version}`),
+                typeId: AppTopics.rtt,
+                resource: measurement
+            }
         ))
     );
 }

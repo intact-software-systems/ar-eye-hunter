@@ -48,10 +48,13 @@ const repairFrame = JSON.stringify(newALRepairControlMessage(
     }
 ));
 const dataFrame = JSON.stringify(newALUntargetedMessage(
-    'a',
-    newALRoute('room.chat', 'room-1', 'resource-1'),
-    'chat',
-    { text: 'hello' }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.chat', 'room-1', 'resource-1'),
+        typeId: 'chat',
+        resource: { text: 'hello' }
+    }
 ));
 const signedFrame = JSON.stringify({
     ...JSON.parse(dataFrame),

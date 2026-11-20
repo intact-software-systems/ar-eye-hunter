@@ -71,20 +71,26 @@ describe('WS server outbound planning', () => {
         });
         onTestFinished(() => service.dispose());
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.chat', contextId: 'room', resourceId: 'receipt-mode' },
-            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.chat', contextId: 'room', resourceId: 'receipt-mode' },
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } } }
+            }
         );
         const unicast = newALUnicastMessage(
-            'server',
-            { topicId: 'chat', contextId: 'direct', resourceId: 'receipt-unicast' },
-            'peer',
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'chat', contextId: 'direct', resourceId: 'receipt-unicast' },
+                toPeerId: 'peer',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } } }
+            }
         );
 
         await service.enqueueOutboxIfAbsent(message);
@@ -108,12 +114,15 @@ describe('WS server outbound planning', () => {
     it('expects the frozen audience of an outbox-fanned multicast, never a session that joined after it froze', async () => {
         const fixture = createPlanningFixture(['b', 'c', 'late-joiner']);
         const frozen = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'frozen-audience' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'frozen-audience' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
         const message = { ...frozen, targets: { ...frozen.targets!, recipientPeerIds: ['b', 'c'], snapshotVersion: 3 } };
 
@@ -136,12 +145,15 @@ describe('WS server outbound planning', () => {
     )('expects $expectedPeerIds of a frozen multicast under $algo when only b of it is connected here', async ({ algo, expectedPeerIds }) => {
         const fixture = createPlanningFixture(['a', 'b', 'e']);
         const multicast = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: `frozen-${algo}` },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, qos: { ack: { algo }, durability: { algo: 'local-outbox' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: `frozen-${algo}` },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, qos: { ack: { algo }, durability: { algo: 'local-outbox' } } }
+            }
         );
         const message = { ...multicast, targets: { ...multicast.targets!, recipientPeerIds: ['b', 'c', 'd'], snapshotVersion: 3 } };
 
@@ -165,12 +177,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'leader-elsewhere' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'group-leader' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'leader-elsewhere' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'group-leader' }
+            }
         );
 
         const plan = planning.planOutboundMessage({
@@ -196,12 +211,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'captured-nobody-here' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'captured-nobody-here' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
         const planWith = (admittedAudience: readonly string[] | undefined) =>
             planning.planOutboundMessage({
@@ -225,12 +243,15 @@ describe('WS server outbound planning', () => {
         const fixture = createPlanningFixture(['b']);
         const keyedSend = (senderId: string, resourceId: string, orderingKey: string) =>
             newALMulticastMessage(
-                senderId,
-                { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId },
-                ROOM,
-                'app.event.v1',
-                {},
-                { ttlMs: 30_000, orderingKey }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId,
+                    route: { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId },
+                    groupRef: ROOM,
+                    typeId: 'app.event.v1',
+                    resource: {},
+                    options: { ttlMs: 30_000, orderingKey }
+                }
             );
         const relayed = keyedSend('a', 'relayed', toALGroupTargetKey(ROOM));
 
@@ -262,12 +283,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'dequeued-keyed' },
-            ROOM,
-            'app.event.v1',
-            {},
-            { ttlMs: 30_000, orderingKey: 'game-1' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'dequeued-keyed' },
+                groupRef: ROOM,
+                typeId: 'app.event.v1',
+                resource: {},
+                options: { ttlMs: 30_000, orderingKey: 'game-1' }
+            }
         );
         const planAt = (phase: 'immediate' | 'dequeue') =>
             planning.planOutboundMessage({
@@ -293,12 +317,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
-            ROOM,
-            'app.event.v1',
-            {},
-            { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
+                groupRef: ROOM,
+                typeId: 'app.event.v1',
+                resource: {},
+                options: { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+            }
         );
         const planFor = (referenceKey: { topicId: string; resourceId: string; contextId: string; }) =>
             planning.planOutboundMessage({
@@ -325,12 +352,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
-            ROOM,
-            'app.event.v1',
-            {},
-            { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
+                groupRef: ROOM,
+                typeId: 'app.event.v1',
+                resource: {},
+                options: { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+            }
         );
         const planOf = (phase: 'immediate' | 'dequeue', admittedAudience: readonly string[] | undefined) =>
             planning.planOutboundMessage({
@@ -346,7 +376,7 @@ describe('WS server outbound planning', () => {
         expect(planOf('dequeue', undefined).recordsSentPositions).toBeUndefined();
     });
 
-    it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
+    it('retains the signed expiry when planning a WS server recipient copy', () => {
         const planning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: 'server',
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
@@ -357,12 +387,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'proof-expiry' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'proof-expiry' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }
         );
         // Well formed and unverified: no WS planner reads a proof.
         const proof = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) } as const;
@@ -377,8 +410,8 @@ describe('WS server outbound planning', () => {
 
         const plan = planOf({ ...message, proof });
 
-        expect(plan.msg.qos?.expiry).toBeDefined();
-        expect(plan.msg).toEqual({ ...planOf(message).msg, proof });
+        expect(plan.msg.qos?.expiry).toEqual(message.qos?.expiry);
+        expect(plan.msg.constraints?.expiresAtMs).toBe(message.constraints?.expiresAtMs);
     });
 
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
@@ -393,12 +426,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'volatile-retrying' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', qos: { durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'volatile-retrying' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', qos: { durability: { algo: 'volatile' } } }
+            }
         );
 
         const plan = planning.planOutboundMessage({
@@ -429,12 +465,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-audience' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-audience' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
         const repairRequestedBy = (requestedByPeerId: string) =>
             planning.planRepairMessage(message, {
@@ -462,12 +501,15 @@ describe('WS server outbound planning', () => {
             deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
         });
         const message = newALMulticastMessage(
-            'server',
-            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-merge' },
-            ROOM,
-            'chat.message.v1',
-            {},
-            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-merge' },
+                groupRef: ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
 
         const repair = planning.planRepairMessage(message, {

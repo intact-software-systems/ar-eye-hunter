@@ -37,12 +37,15 @@ type OrderedResyncMessage = ALMessage & Readonly<{ ordering: Readonly<{ ordering
 
 function createResyncMessage(input: ResyncMessageInput): OrderedResyncMessage {
     const msg = newALUnicastMessage(
-        'sender',
-        { topicId: CHAT_ROUTE.topicId, resourceId: `message-${input.seq}`, contextId: 'room' },
-        'receiver',
-        input.typeId,
-        { text: 'late' },
-        { ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: CHAT_ROUTE.topicId, resourceId: `message-${input.seq}`, contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: input.typeId,
+            resource: { text: 'late' },
+            options: { ttlMs: 60_000 }
+        }
     );
     return {
         ...msg,
