@@ -342,6 +342,23 @@ export function removePlannedOverlayByIdIfIdentity(
         : false;
 }
 
+/**
+ * Drops the planned layout once the accepted identity has reached it: the same
+ * identity, or for a server layout one the accepted identity has passed. A
+ * bootstrap layout is named by the group's revision rather than a server
+ * layout version, so only the exact identity reaches it.
+ */
+export function removePlannedOverlayByIdIfReachedBy(
+    overlayId: string,
+    acceptedIdentity: GroupLayoutIdentity,
+    manager?: RepositoryManager
+): boolean {
+    const planned = readObservableLatestRepositoryValue(plannedOverlayRepositoryToken, overlayId, manager);
+    return planned !== undefined && isPlannedOverlayReachedBy(planned, acceptedIdentity)
+        ? removePlannedOverlayById(overlayId, manager)
+        : false;
+}
+
 export function reconcileAcceptedOverlayIdentity(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
@@ -355,17 +372,15 @@ export function reconcileAcceptedOverlayIdentity(
         input.overlayId,
         input.manager
     );
-    if (
-        planned?.provenance !== 'server' ||
-        !isOverlayIdentity(planned, input.acceptedIdentity)
-    ) {
+    if (planned?.provenance !== 'server') {
         return changed;
     }
 
-    const outcome = setCurrentAcceptedServerOverlayById(input.overlayId, planned, input.manager);
-    changed = didOverlayAdoptionChange(outcome) || changed;
-    changed = removePlannedOverlayById(input.overlayId, input.manager) || changed;
-    return changed;
+    if (isOverlayIdentity(planned, input.acceptedIdentity)) {
+        const outcome = setCurrentAcceptedServerOverlayById(input.overlayId, planned, input.manager);
+        changed = didOverlayAdoptionChange(outcome) || changed;
+    }
+    return removePlannedOverlayByIdIfReachedBy(input.overlayId, input.acceptedIdentity, input.manager) || changed;
 }
 
 export function didOverlayAdoptionChange(outcome: OverlayAdoptionOutcome): boolean {
@@ -379,6 +394,14 @@ function compareOverlayInfoIdentity(
     right: OverlayInfo
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
     return compareOverlayLayoutIdentity(toOverlayLayoutIdentity(left), toOverlayLayoutIdentity(right));
+}
+
+function isPlannedOverlayReachedBy(
+    planned: OverlayInfo,
+    acceptedIdentity: GroupLayoutIdentity
+): boolean {
+    const order = compareOverlayLayoutIdentity(toOverlayLayoutIdentity(planned), acceptedIdentity);
+    return order === 'equal' || (order === 'dominated' && planned.provenance === 'server');
 }
 
 function configureRoleOverlayRepository(
