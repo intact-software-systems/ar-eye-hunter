@@ -13,6 +13,7 @@ export function toALOutboundEndReceiptBundle<TPrepared>(
             { kind: 'delete-pending-ack', originPeerId: senderId, msgId },
             { kind: 'delete-repair-attempt', msgId }
         ],
-        durableEffects: []
+        durableEffects: [],
+        endedTimeoutEffectIds: []
     };
 }

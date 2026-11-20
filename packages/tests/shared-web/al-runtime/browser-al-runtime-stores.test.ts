@@ -378,7 +378,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
                     expireAtTimestamp
                 }
             ],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
 
         const ownerPrefix = `${

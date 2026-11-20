@@ -380,7 +380,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
                 ...(nextWindow.hintsRepair ? [repairHint] : [])
-            ]
+            ],
+            endedTimeoutEffectIds: []
         };
     }
 
@@ -394,7 +395,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             mutations: [],
             durableEffects: [
                 this.toAckTimeoutEffect(receipt.pending, receipt.messageExpiresAtMs)
-            ]
+            ],
+            endedTimeoutEffectIds: []
         });
         if (status === 'conflict') {
             throw new RetryableConflictError(

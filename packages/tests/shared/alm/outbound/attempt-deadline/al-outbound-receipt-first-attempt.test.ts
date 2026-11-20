@@ -355,7 +355,8 @@ async function commitReceiptRowWithoutFirstAttempt(fixture: HeldSendFixture): Pr
                 snapshot: unnamed,
                 expireAtTimestamp: read.storedMessage!.reference.expiresAtMs
             }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         })
     ).toBe('committed');
 }

@@ -130,7 +130,8 @@ export function computeALOutboundDispatch<TPrepared>(
             durableEffects: writes.durableEffects.map((effect) => ({
                 ...effect,
                 retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
-            }))
+            })),
+            endedTimeoutEffectIds: []
         }
     };
 }

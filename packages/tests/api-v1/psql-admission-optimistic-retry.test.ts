@@ -185,7 +185,8 @@ describe('PSql admission optimistic retry', () => {
                 msgId: 'outbound-conflict',
                 senderId: 'self'
             }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         })).resolves.toBe('conflict');
     });
 
@@ -246,7 +247,8 @@ describe('PSql admission optimistic retry', () => {
                 msgId: 'outbound-error',
                 senderId: 'self'
             }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         })).rejects.toThrow('outbound storage unavailable');
     });
 

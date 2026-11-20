@@ -184,6 +184,6 @@ function toReceiptCommitBundle<TPrepared>(
             ...messageEnd
         ],
         durableEffects: [],
-        ...(endedTimeoutEffectIds.length === 0 ? {} : { endedTimeoutEffectIds })
+        endedTimeoutEffectIds
     };
 }

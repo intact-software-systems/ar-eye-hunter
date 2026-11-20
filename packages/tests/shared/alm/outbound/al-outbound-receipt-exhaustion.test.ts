@@ -218,7 +218,8 @@ async function endMessage(fixture: ExhaustionFixture): Promise<void> {
             senderId: fixture.message.id.senderId,
             expectedVersion: read.clientRecord?.version,
             mutations: [{ kind: 'end-sent-message', stored: read.storedMessage! }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         })
     ).toBe('committed');
 }

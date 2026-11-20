@@ -182,7 +182,8 @@ describe('outbound admission observation order', () => {
                 senderId: message.id.senderId,
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             })
         ).toBe('committed');
         resume.resolve();
@@ -259,7 +260,8 @@ describe('outbound admission observation order', () => {
                 senderId: message.id.senderId,
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             })
         ).toBe('committed');
         resume.resolve();

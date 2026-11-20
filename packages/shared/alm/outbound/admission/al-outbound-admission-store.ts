@@ -370,8 +370,8 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly canonicalEntry?: ResourceEntry;
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
-    /** The timer rows this commit ends, each completed unless a batch already leased it; absent: the commit ends no timer. */
-    readonly endedTimeoutEffectIds?: readonly string[];
+    /** The timer rows this commit ends, each completed unless a batch already leased it; empty when it ends none. */
+    readonly endedTimeoutEffectIds: readonly string[];
 }
 
 export interface ALOutboundNotYetInSyncRetrySchedule {
@@ -939,7 +939,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
         const effects = candidates.flatMap((candidate) => candidate.effects);
         const mutations = candidates.flatMap((candidate) => candidate.mutations);
-        const endedTimeoutEffectIds = candidates.flatMap((candidate) => candidate.bundle.endedTimeoutEffectIds ?? []);
+        const endedTimeoutEffectIds = candidates.flatMap((candidate) => candidate.bundle.endedTimeoutEffectIds);
         try {
             return await this.backend.write(async (tx) => {
                 // A deadline the reads above already crossed answers before any fence: the message is
@@ -1048,7 +1048,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
 function hasALOutboundBundleWrites<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): boolean {
     return bundle.mutations.length > 0 || bundle.durableEffects.length > 0 ||
-        (bundle.endedTimeoutEffectIds?.length ?? 0) > 0;
+        bundle.endedTimeoutEffectIds.length > 0;
 }
 
 /** Every bundle of one group was decided against the same read of the version of one sender. */

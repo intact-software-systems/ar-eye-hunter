@@ -148,7 +148,8 @@ export class ALOutboundFirstHopWait<TPrepared> {
             senderId: read.clientRecord.senderId,
             expectedVersion: read.clientRecord.version,
             mutations: [{ kind: 'delete-first-hop-wait', msgId }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
     }
 
@@ -179,7 +180,8 @@ export class ALOutboundFirstHopWait<TPrepared> {
             senderId: live.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             mutations,
-            durableEffects
+            durableEffects,
+            endedTimeoutEffectIds: []
         });
     }
 

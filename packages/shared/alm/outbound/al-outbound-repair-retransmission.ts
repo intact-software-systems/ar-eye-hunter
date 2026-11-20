@@ -204,7 +204,8 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 effectId: toALOutboundRepairHintEffectId(msgId, request),
                 expireAtTimestamp: expiresAtMs,
                 payload: { kind: 'repair-hint', msgId, request }
-            }]
+            }],
+            endedTimeoutEffectIds: []
         });
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound repair follow-up hint commit conflict');

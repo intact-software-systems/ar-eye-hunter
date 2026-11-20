@@ -149,7 +149,8 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
                     },
                     { kind: 'delete-repair-attempt', msgId: MSG_ID }
                 ],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             },
             msg: MESSAGE,
             read: toRead(HOP_REPLACING, HOP_ROW),
@@ -167,7 +168,8 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
                 senderId: MESSAGE.id.senderId,
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-repair-attempt', msgId: MSG_ID }],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             },
             msg: MESSAGE,
             read: toRead(HOP_REPLACING, HOP_ROW),

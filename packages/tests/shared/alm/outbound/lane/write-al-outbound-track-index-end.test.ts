@@ -55,7 +55,7 @@ function committed(
         ended: false,
         snapshot: { msgId: msg.id.msgId, msg, outboxKey: msg.route, supersedenceKey: null }
     }];
-    return { msg, verdict, entries: [], trackedReceiptAlgo: 'none', bundle: { senderId: 'a', mutations, durableEffects: [] } };
+    return { msg, verdict, entries: [], trackedReceiptAlgo: 'none', bundle: { senderId: 'a', mutations, durableEffects: [], endedTimeoutEffectIds: [] } };
 }
 
 function storedRow(sentPositions: Readonly<Record<string, number>> | null, policy = POLICY): ALStoredOutboundMessage {

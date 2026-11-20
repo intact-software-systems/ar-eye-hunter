@@ -93,7 +93,7 @@ describe('the sent positions of one commit group', () => {
 
     it('writes each position row once, at the highest sequence the group moves it to', () => {
         const bundle = (mutations: readonly ALOutboundAdmissionMutation[]) =>
-            ({ senderId: 'a', mutations, durableEffects: [] }) satisfies ALOutboundCommitBundle<never>;
+            ({ senderId: 'a', mutations, durableEffects: [], endedTimeoutEffectIds: [] }) satisfies ALOutboundCommitBundle<never>;
 
         const bundles = toALOutboundGroupPositionWrites([
             bundle([positionWrite('b', 6)]),
