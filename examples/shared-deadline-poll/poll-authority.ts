@@ -9,6 +9,8 @@ export namespace PollAuthority {
     export interface Snapshot {
         readonly roomRef: GroupRef;
         readonly schedule: Schedule;
+        readonly revision: number | null;
+        readonly canExtend: boolean;
         readonly closed: boolean;
         readonly yes: number;
         readonly no: number;
@@ -23,10 +25,14 @@ export class PollAuthority {
     private yes = 0;
     private no = 0;
     private readonly roomRef: GroupRef;
-    private readonly schedule: PollAuthority.Schedule;
+    private revision = 0;
+    private schedule: PollAuthority.Schedule;
     private readonly nowEpochMs: () => number;
 
-    constructor(roomRef: GroupRef, schedule: PollAuthority.Schedule, nowEpochMs: () => number) {
+    private readonly hostId?: string;
+
+    constructor(roomRef: GroupRef, schedule: PollAuthority.Schedule, nowEpochMs: () => number, hostId?: string) {
+        this.hostId = hostId;
         const { opensAtEpochMs, closesAtEpochMs } = schedule;
         if (
             !Number.isSafeInteger(opensAtEpochMs) || opensAtEpochMs < 0 || !Number.isSafeInteger(closesAtEpochMs) ||
@@ -55,6 +61,23 @@ export class PollAuthority {
         return this.snapshot(principalId);
     }
 
+    extend(principalId: string, expectedRevision: number): PollAuthority.Snapshot {
+        if (principalId !== this.hostId) {
+            throw new Error('Only the designated poll host may extend voting.');
+        }
+        const now = this.nowEpochMs();
+        this.closed ||= now >= this.schedule.closesAtEpochMs;
+        const closesAtEpochMs = this.schedule.closesAtEpochMs + 60_000;
+        if (
+            expectedRevision === this.revision && this.revision === 0 && !this.closed &&
+            now >= this.schedule.opensAtEpochMs && Number.isSafeInteger(closesAtEpochMs)
+        ) {
+            this.schedule = Object.freeze({ ...this.schedule, closesAtEpochMs });
+            this.revision++;
+        }
+        return this.snapshot(principalId);
+    }
+
     read(principalId: string): PollAuthority.Snapshot {
         this.closed ||= this.nowEpochMs() >= this.schedule.closesAtEpochMs;
         return this.snapshot(principalId);
@@ -66,6 +89,8 @@ export class PollAuthority {
             roomRef: this.roomRef,
             schedule: this.schedule,
             closed: this.closed,
+            revision: this.hostId === undefined ? null : this.revision,
+            canExtend: this.hostId === principalId && this.revision === 0 && !this.closed,
             yes: this.yes,
             no: this.no,
             disposition: ballot === undefined ? 'pending' : ballot === 'late' ? 'late' : 'accepted'

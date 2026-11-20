@@ -6,12 +6,12 @@ import type { ShowPollInput } from './show-poll.ts';
 export async function requestPollSnapshot(
     input: ShowPollInput,
     signal: AbortSignal,
-    choice?: PollAuthority.Choice
+    action?: PollAuthority.Choice | { readonly expectedRevision: number; }
 ): Promise<PollAuthority.Snapshot> {
     const response = await fetch(input.endpoint, {
-        method: choice === undefined ? 'GET' : 'POST',
+        method: typeof action === 'object' ? 'PATCH' : action === undefined ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${input.participantGrant}` },
-        body: choice,
+        body: typeof action === 'object' ? String(action.expectedRevision) : action,
         cache: 'no-store',
         signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)])
     });

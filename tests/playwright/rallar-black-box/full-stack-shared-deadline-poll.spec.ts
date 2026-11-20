@@ -10,6 +10,7 @@ import { loginThroughUi, readFullStackConfig, uniqueSuffix } from './full-stack-
 
 declare global {
     interface Window {
+        disposeMountedPoll?: () => void;
         receivePollBallot(
             value: { msgId: string; expiresAtMs?: number; senderId: string; choice: PollAuthority.Choice; }
         ): Promise<void>;
@@ -64,7 +65,11 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
                 joinMode: 'open'
             });
         }, { rallarUrl, roomRef });
-        await Promise.all([mount(page, hostGrant), mount(guest, guestGrant), mount(spectator, guestGrant)]);
+        await Promise.all([
+            mountPoll(page, hostGrant, roomRef, poll.url),
+            mountPoll(guest, guestGrant, roomRef, poll.url),
+            mountPoll(spectator, guestGrant, roomRef, poll.url)
+        ]);
         expect(await page.evaluate(() => Date.now()) - await guest.evaluate(() => Date.now())).toBeGreaterThan(230_000);
         await expect(page.getByText('Question preview')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
@@ -121,7 +126,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         const lateEntry = await browser.newPage({ baseURL });
         try {
             await prepareMember(lateEntry, roomRef, true);
-            await mount(lateEntry, hostGrant);
+            await mountPoll(lateEntry, hostGrant, roomRef, poll.url);
             await expect(lateEntry.locator('time')).toHaveText(schedule);
             await expect(lateEntry.getByText('Voting closed · Results')).toBeVisible();
             await expect(lateEntry.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
@@ -131,7 +136,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
             await lateEntry.close();
         }
         await guest.reload();
-        await mount(guest, guestGrant);
+        await mountPoll(guest, guestGrant, roomRef, poll.url);
         await expect(guest.locator('time')).toHaveText(schedule);
         await expect(guest.getByText('Voting closed')).toBeVisible();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
@@ -143,31 +148,125 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await guest.close();
         await poll.close();
     }
+});
 
-    async function mount(member: Page, grant: string): Promise<void> {
-        await member.evaluate(async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl, authority }) => {
-            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
-            rallar.configure({ apiBaseUrl });
-            rallar.setDefaults(roomRef);
-            const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
-                viewUrl
-            );
-            await showPoll({
-                root: document.querySelector('main')!,
-                roomRef,
-                endpoint,
-                participantGrant: grant,
-                authority
-            });
-        }, {
-            viewUrl,
-            rallarUrl,
+async function mountPoll(member: Page, grant: string, roomRef: GroupRef, endpoint: string): Promise<void> {
+    await member.evaluate(async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl, authority }) => {
+        const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+        rallar.configure({ apiBaseUrl });
+        rallar.setDefaults(roomRef);
+        const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
+            viewUrl
+        );
+        window.disposeMountedPoll?.();
+        document.querySelector('main')!.replaceChildren();
+        window.disposeMountedPoll = await showPoll({
+            root: document.querySelector('main')!,
             roomRef,
-            endpoint: poll.url,
-            grant,
-            apiBaseUrl: config.apiBaseUrl,
-            authority: { maxAuthorityOffsetMs: Math.abs(enforcementOffsetMs) }
+            endpoint,
+            participantGrant: grant,
+            authority
         });
+    }, {
+        viewUrl,
+        rallarUrl,
+        roomRef,
+        endpoint,
+        grant,
+        apiBaseUrl: config.apiBaseUrl,
+        authority: { maxAuthorityOffsetMs: Math.abs(enforcementOffsetMs) }
+    });
+}
+
+test('a participant recovers a revised deadline after visiting another active room', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const roomRef = {
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        groupId: 'extend-' + uniqueSuffix()
+    };
+    const hostGrant = randomUUID();
+    const guestGrant = randomUUID();
+    const poll = await startPollEndpoint(
+        new URL(baseURL!).origin,
+        roomRef,
+        new Map([[hostGrant, 'host'], [guestGrant, 'guest']]),
+        'host'
+    );
+    const otherRef = { ...roomRef, groupId: 'other-' + uniqueSuffix() };
+    const otherPoll = await startPollEndpoint(new URL(baseURL!).origin, otherRef, new Map([[guestGrant, 'guest']]));
+    async function selectedRoom() {
+        return await guest.evaluate(async (url) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            return rallar.rooms.selected();
+        }, rallarUrl);
+    }
+    try {
+        await Promise.all([prepareMember(page, roomRef, true), prepareMember(guest, roomRef, false)]);
+        await page.evaluate(async ({ rallarUrl, roomRef, otherRef }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+            await rallar.rooms.create({ displayName: 'Second room', groupId: otherRef.groupId, joinMode: 'open' });
+            await rallar.rooms.create({
+                displayName: 'Extend voting',
+                groupId: roomRef.groupId,
+                joinMode: 'open'
+            });
+        }, { rallarUrl, roomRef, otherRef });
+        await Promise.all([
+            mountPoll(page, hostGrant, roomRef, poll.url),
+            mountPoll(guest, guestGrant, roomRef, poll.url)
+        ]);
+        const oldEnd = Date.parse((await page.locator('time').last().getAttribute('datetime'))!);
+        await page.getByRole('button', { name: 'Yes' }).click({ timeout: 20000 });
+        await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+        const stale = await (await guest.request.get(poll.url, { headers: { Authorization: 'Bearer ' + guestGrant } }))
+            .json();
+        await mountPoll(guest, guestGrant, otherRef, otherPoll.url);
+        expect(await selectedRoom()).toEqual(otherRef);
+        const otherEnd = await guest.locator('time').last().getAttribute('datetime');
+        await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
+        const revised = new Date(oldEnd + 60000).toISOString();
+        await expect(page.locator('time').last()).toHaveAttribute('datetime', revised);
+        await expect(guest.locator('time').last()).toHaveAttribute('datetime', otherEnd!);
+        await guest.getByRole('button', { name: 'No' }).click();
+        await expect(guest.getByText('Yes 0 · No 1 · Your vote: accepted')).toBeVisible();
+        await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30000 }).toBeGreaterThan(oldEnd);
+        expect(await selectedRoom()).toEqual(otherRef);
+        await mountPoll(guest, guestGrant, roomRef, poll.url);
+        expect(await selectedRoom()).toEqual(roomRef);
+        await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+        await expect(guest.getByText('Voting open')).toBeVisible();
+        await expect(guest.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
+        let retryStarted = false;
+        const releaseFreshRead = Promise.withResolvers<void>();
+        await guest.route(poll.url, async (route) => {
+            retryStarted = true;
+            await releaseFreshRead.promise;
+            await route.continue();
+        }, { times: 1 });
+        await guest.route(poll.url, (route) => route.fulfill({ json: stale }), { times: 1 });
+        await guest.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent('pagehide'));
+            window.dispatchEvent(new PageTransitionEvent('pageshow'));
+        });
+        try {
+            await expect.poll(() => retryStarted).toBe(true);
+            await expect(guest.getByText('Recovering room poll')).toBeVisible();
+            await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
+            await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+        }
+        finally {
+            releaseFreshRead.resolve();
+        }
+        await expect(guest.getByText('Voting open')).toBeVisible();
+        await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
+        await guest.getByRole('button', { name: 'Yes' }).click();
+        await expect(guest.getByText('Yes 2 · No 0 · Your vote: accepted')).toBeVisible();
+    }
+    finally {
+        await guest.close();
+        await Promise.all([poll.close(), otherPoll.close()]);
     }
 });
 
@@ -290,7 +389,7 @@ async function expectUncertainBoundary(page: Page, boundary: 'opening' | 'closin
             const [opening, closing] = document.querySelectorAll('main time');
             const cutoff = Date.parse((boundary === 'opening' ? opening : closing).getAttribute('datetime')!);
             const plain = rallar.compareDeadline(cutoff);
-            const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('main button'));
+            const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('main button:not([hidden])'));
             return {
                 plain,
                 uncertain: document.querySelector('main')?.textContent?.includes('Voting boundary uncertain'),
@@ -316,12 +415,17 @@ async function prepareMember(page: Page, roomRef: GroupRef, host: boolean): Prom
 }
 
 /** Loopback transport for a single poll. Only the two fixture participants receive poll-specific grants. */
-async function startPollEndpoint(origin: string, roomRef: GroupRef, grants: ReadonlyMap<string, string>) {
+async function startPollEndpoint(
+    origin: string,
+    roomRef: GroupRef,
+    grants: ReadonlyMap<string, string>,
+    hostId?: string
+) {
     const authorityNow = () => Date.now() + enforcementOffsetMs;
     let poll: PollAuthority | undefined;
     const server = createServer(async (request, response) => {
         response.setHeader('Access-Control-Allow-Origin', origin);
-        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
         response.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
         response.setHeader('Cache-Control', 'no-store');
         if (request.method === 'OPTIONS') {
@@ -339,12 +443,32 @@ async function startPollEndpoint(origin: string, roomRef: GroupRef, grants: Read
             poll = new PollAuthority(
                 roomRef,
                 { opensAtEpochMs: startsAt + 9_000, closesAtEpochMs: startsAt + 24_000 },
-                authorityNow
+                authorityNow,
+                hostId
             );
         }
         let record: PollAuthority.Snapshot;
         if (request.method === 'GET') {
             record = poll.read(principal);
+        }
+        else if (request.method === 'PATCH') {
+            if (principal !== hostId) {
+                response.writeHead(403).end();
+                return;
+            }
+            let revision = '';
+            for await (const chunk of request) {
+                revision += chunk;
+                if (revision.length > 1) {
+                    response.writeHead(400).end();
+                    return;
+                }
+            }
+            if (!/^[01]$/.test(revision)) {
+                response.writeHead(400).end();
+                return;
+            }
+            record = poll.extend(principal, Number(revision));
         }
         else if (request.method === 'POST') {
             let choice = '';
