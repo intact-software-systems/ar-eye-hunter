@@ -161,3 +161,38 @@ test('leaving an unavailable room cancels its retry prompt', async ({ page }) =>
     expect(await entry).toBe('AbortError');
     await expect(page.locator('body')).toHaveText('Other room');
 });
+
+for (const scenario of [
+    { name: 'lost receipt', stale: { disposition: 'pending' } },
+    { name: 'lower Yes count', stale: { yes: 1, no: 2 } },
+    { name: 'lower No count', stale: { yes: 3, no: 0 } },
+    { name: 'reopened poll', stale: { closed: false } }
+]) {
+    test(`a returning voter rejects a ${scenario.name} at the same deadline revision`, async ({ page }) => {
+        const accepted = {
+            roomRef, schedule, revision: 1, canExtend: false, yes: 2, no: 1, closed: scenario.name === 'reopened poll', disposition: 'accepted'
+        };
+        let recovery: 'fresh' | 'stale' | 'closed' = 'fresh';
+        await page.route('**/poll-snapshot', route => {
+            const snapshot = recovery === 'stale' ? { ...accepted, ...scenario.stale } :
+                { ...accepted, closed: accepted.closed || recovery === 'closed' };
+            return route.fulfill({ json: snapshot });
+        });
+        await page.getByRole('button', { name: 'Yes' }).click();
+        await expect(page.getByText('Yes 2 · No 1 · Your vote: accepted')).toBeVisible();
+        recovery = 'stale';
+        const staleRead = page.waitForResponse('**/poll-snapshot');
+        await page.evaluate(() => {
+            window.dispatchEvent(new Event('pagehide'));
+            window.dispatchEvent(new Event('pageshow'));
+        });
+        await staleRead;
+        // A second read proves the first response was processed while recovery was still pending.
+        await page.waitForRequest('**/poll-snapshot', { timeout: 5000 });
+        await expect(page.getByText('Recovering room poll')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        recovery = 'closed';
+        await expect(page.getByText('Voting closed · Results')).toBeVisible();
+        await expect(page.getByText('Yes 2 · No 1 · Your vote: accepted')).toBeVisible();
+    });
+}

@@ -8,8 +8,12 @@ export class PollServiceUnavailable extends Error {}
 export async function requestPollSnapshot(
     input: ShowPollInput,
     signal: AbortSignal,
-    action?: PollAuthority.Choice | { readonly expectedRevision: number; }
+    update?: {
+        readonly previous: PollAuthority.Snapshot;
+        readonly action?: PollAuthority.Choice | { readonly expectedRevision: number; };
+    }
 ): Promise<PollAuthority.Snapshot> {
+    const action = update?.action;
     const request: RequestInit = {
         method: typeof action === 'object' ? 'PATCH' : action === undefined ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${input.participantGrant}` },
@@ -38,5 +42,15 @@ export async function requestPollSnapshot(
     if (!isSameGroupRef(record.roomRef, input.roomRef)) {
         throw new Error('Unexpected poll room.');
     }
+    if (update && regressesConfirmedPollState(update.previous, record)) {
+        throw new Error('Poll snapshot predates confirmed room state.');
+    }
     return record;
+}
+
+function regressesConfirmedPollState(previous: PollAuthority.Snapshot, received: PollAuthority.Snapshot): boolean {
+    return (received.revision ?? 0) < (previous.revision ?? 0) ||
+        received.yes < previous.yes || received.no < previous.no ||
+        (previous.closed && !received.closed) ||
+        (previous.disposition !== 'pending' && received.disposition !== previous.disposition);
 }

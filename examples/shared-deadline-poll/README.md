@@ -78,3 +78,10 @@ Voting becomes available once the poll authority returns the participant’s
 snapshot and the clock permits voting. Switching rooms cancels the pending
 prompt through the selection’s abort signal. Authorization and wrong-room
 errors propagate to the application.
+
+The schedule revision changes only when the host extends the deadline. During a
+mount, each snapshot must also preserve confirmed poll facts. Vote counts can
+increase, a pending receipt can settle, and an open poll can close. A response
+that reverses any of those facts is discarded. A returning voter stays in
+recovery until a consistent snapshot arrives. A new room entry starts with
+that room's own snapshot.

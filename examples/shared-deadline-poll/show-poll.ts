@@ -52,12 +52,9 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
                 }
                 await rallar.rooms.enter(roomRef, options);
             }
-            const snapshot = await requestPollSnapshot(input, signal);
+            const snapshot = await requestPollSnapshot(input, signal, { previous: record });
             signal.throwIfAborted();
             if (current !== generation) {
-                return;
-            }
-            if ((snapshot.revision ?? 0) < (record.revision ?? 0)) {
                 return;
             }
             restored = current;
@@ -101,7 +98,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, signal, choice);
+            record = await requestPollSnapshot(input, signal, { previous: record, action: choice });
             unacknowledged = undefined;
         }
         catch {
@@ -150,7 +147,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, signal, { expectedRevision: 0 });
+            record = await requestPollSnapshot(input, signal, { previous: record, action: { expectedRevision: 0 } });
         }
         catch {
             nextRevisionRead = 0;
