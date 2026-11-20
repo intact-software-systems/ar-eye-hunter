@@ -4,9 +4,18 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { PollAuthority } from '../../../examples/shared-deadline-poll/poll-authority.ts';
-import { loginThroughUi, readFullStackConfig, uniqueSuffix } from './full-stack-helpers.ts';
+import { readRoomDeadline } from '@shared/api/room-deadline.ts';
+
+import { PollAuthority, pollDeadlineName } from '../../../examples/shared-deadline-poll/poll-authority.ts';
+import {
+    loginThroughUi,
+    readBrowserAuthSession,
+    readFullStackConfig,
+    uniqueSuffix
+} from './full-stack-helpers.ts';
 
 declare global {
     interface Window {
@@ -66,9 +75,9 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
             });
         }, { rallarUrl, roomRef });
         await Promise.all([
-            mountPoll(page, hostGrant, roomRef, poll.url),
-            mountPoll(guest, guestGrant, roomRef, poll.url),
-            mountPoll(spectator, guestGrant, roomRef, poll.url)
+            mountPoll(page, hostGrant, roomRef, poll.url, 'fixed'),
+            mountPoll(guest, guestGrant, roomRef, poll.url, 'fixed'),
+            mountPoll(spectator, guestGrant, roomRef, poll.url, 'fixed')
         ]);
         expect(await page.evaluate(() => Date.now()) - await guest.evaluate(() => Date.now())).toBeGreaterThan(230_000);
         await expect(page.getByText('Question preview')).toBeVisible();
@@ -126,7 +135,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         const lateEntry = await browser.newPage({ baseURL });
         try {
             await prepareMember(lateEntry, roomRef, true);
-            await mountPoll(lateEntry, hostGrant, roomRef, poll.url);
+            await mountPoll(lateEntry, hostGrant, roomRef, poll.url, 'fixed');
             await expect(lateEntry.locator('time')).toHaveText(schedule);
             await expect(lateEntry.getByText('Voting closed · Results')).toBeVisible();
             await expect(lateEntry.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
@@ -136,7 +145,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
             await lateEntry.close();
         }
         await guest.reload();
-        await mountPoll(guest, guestGrant, roomRef, poll.url);
+        await mountPoll(guest, guestGrant, roomRef, poll.url, 'fixed');
         await expect(guest.locator('time')).toHaveText(schedule);
         await expect(guest.getByText('Voting closed')).toBeVisible();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
@@ -150,35 +159,46 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
     }
 });
 
-async function mountPoll(member: Page, grant: string, roomRef: GroupRef, endpoint: string): Promise<void> {
-    await member.evaluate(async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl, authority }) => {
-        const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
-        rallar.configure({ apiBaseUrl });
-        rallar.setDefaults(roomRef);
-        const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
-            viewUrl
-        );
-        window.disposeMountedPoll?.();
-        document.querySelector('main')!.replaceChildren();
-        const selection = new AbortController();
-        window.disposeMountedPoll = () => selection.abort();
-        await showPoll({
-            signal: selection.signal,
-            root: document.querySelector('main')!,
+async function mountPoll(
+    member: Page,
+    grant: string,
+    roomRef: GroupRef,
+    endpoint: string,
+    deadlineSource: 'room' | 'fixed'
+): Promise<void> {
+    await member.evaluate(
+        async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl, authority, deadlineSource }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+            rallar.configure({ apiBaseUrl });
+            rallar.setDefaults(roomRef);
+            const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
+                viewUrl
+            );
+            window.disposeMountedPoll?.();
+            document.querySelector('main')!.replaceChildren();
+            const selection = new AbortController();
+            window.disposeMountedPoll = () => selection.abort();
+            await showPoll({
+                signal: selection.signal,
+                root: document.querySelector('main')!,
+                roomRef,
+                endpoint,
+                participantGrant: grant,
+                deadlineSource,
+                authority
+            });
+        },
+        {
+            viewUrl,
+            rallarUrl,
             roomRef,
             endpoint,
-            participantGrant: grant,
-            authority
-        });
-    }, {
-        viewUrl,
-        rallarUrl,
-        roomRef,
-        endpoint,
-        grant,
-        apiBaseUrl: config.apiBaseUrl,
-        authority: { maxAuthorityOffsetMs: Math.abs(enforcementOffsetMs) }
-    });
+            grant,
+            apiBaseUrl: config.apiBaseUrl,
+            deadlineSource,
+            authority: { maxAuthorityOffsetMs: Math.abs(enforcementOffsetMs) }
+        }
+    );
 }
 
 test('a participant recovers a revised deadline after visiting another active room', async ({ page, browser, baseURL }) => {
@@ -191,14 +211,8 @@ test('a participant recovers a revised deadline after visiting another active ro
     };
     const hostGrant = randomUUID();
     const guestGrant = randomUUID();
-    const poll = await startPollEndpoint(
-        new URL(baseURL!).origin,
-        roomRef,
-        new Map([[hostGrant, 'host'], [guestGrant, 'guest']]),
-        'host'
-    );
     const otherRef = { ...roomRef, groupId: 'other-' + uniqueSuffix() };
-    const otherPoll = await startPollEndpoint(new URL(baseURL!).origin, otherRef, new Map([[guestGrant, 'guest']]));
+    const endpoints: Awaited<ReturnType<typeof startPollEndpoint>>[] = [];
     async function selectedRoom() {
         return await guest.evaluate(async (url) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
@@ -207,25 +221,52 @@ test('a participant recovers a revised deadline after visiting another active ro
     }
     try {
         await Promise.all([prepareMember(page, roomRef, true), prepareMember(guest, roomRef, false)]);
-        await page.evaluate(async ({ rallarUrl, roomRef, otherRef }) => {
+        const startsAt = Date.now() + enforcementOffsetMs;
+        const oldEnd = startsAt + 24_000;
+        const otherEndEpochMs = startsAt + 90_000;
+        await page.evaluate(async ({ rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name }) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
-            await rallar.rooms.create({ displayName: 'Second room', groupId: otherRef.groupId, joinMode: 'open' });
-            await rallar.rooms.create({
-                displayName: 'Extend voting',
-                groupId: roomRef.groupId,
-                joinMode: 'open'
-            });
-        }, { rallarUrl, roomRef, otherRef });
+            for (const [room, cutoff] of [[otherRef, otherEndEpochMs], [roomRef, oldEnd]] as const) {
+                await rallar.rooms.create({ displayName: room.groupId, groupId: room.groupId, joinMode: 'open' });
+                await rallar.rooms.setDeadline(
+                    room,
+                    { name, expectedRevision: 0, atEpochMs: cutoff },
+                    crypto.randomUUID()
+                );
+            }
+        }, { rallarUrl, roomRef, otherRef, oldEnd, otherEndEpochMs, name: pollDeadlineName });
+
+        configureApiClient({ apiBaseUrl: config.apiBaseUrl });
+        const authSession = await readBrowserAuthSession(page);
+        const schedule: PollAuthority.RoomSchedule = {
+            hostId: 'host',
+            opensAtEpochMs: startsAt,
+            async readDeadline(room, name) {
+                const result = await readStateGroupSnapshot(room.groupId, room, {
+                    authSession,
+                    signal: AbortSignal.timeout(5_000)
+                });
+                if (result.source !== 'durable') {
+                    throw new Error('The ballot receiver requires a durable room deadline.');
+                }
+                return readRoomDeadline(result.snapshot.group.metadata, name);
+            }
+        };
+        const grants = new Map([[hostGrant, 'host'], [guestGrant, 'guest']]);
+        const poll = await startPollEndpoint(new URL(baseURL!).origin, roomRef, grants, schedule);
+        endpoints.push(poll);
+        const otherPoll = await startPollEndpoint(new URL(baseURL!).origin, otherRef, grants, schedule);
+        endpoints.push(otherPoll);
         await Promise.all([
-            mountPoll(page, hostGrant, roomRef, poll.url),
-            mountPoll(guest, guestGrant, roomRef, poll.url)
+            mountPoll(page, hostGrant, roomRef, poll.url, 'room'),
+            mountPoll(guest, guestGrant, roomRef, poll.url, 'room')
         ]);
-        const oldEnd = Date.parse((await page.locator('time').last().getAttribute('datetime'))!);
+        await expect(page.locator('time').last()).toHaveAttribute('datetime', new Date(oldEnd).toISOString());
         await page.getByRole('button', { name: 'Yes' }).click({ timeout: 20000 });
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
         const stale = await (await guest.request.get(poll.url, { headers: { Authorization: 'Bearer ' + guestGrant } }))
             .json();
-        await mountPoll(guest, guestGrant, otherRef, otherPoll.url);
+        await mountPoll(guest, guestGrant, otherRef, otherPoll.url, 'room');
         expect(await selectedRoom()).toEqual(otherRef);
         const otherEnd = await guest.locator('time').last().getAttribute('datetime');
         await page.getByRole('button', { name: 'Extend voting by one minute' }).click();
@@ -236,7 +277,7 @@ test('a participant recovers a revised deadline after visiting another active ro
         await expect(guest.getByText('Yes 0 · No 1 · Your vote: accepted')).toBeVisible();
         await expect.poll(() => Date.now() + enforcementOffsetMs, { timeout: 30000 }).toBeGreaterThan(oldEnd);
         expect(await selectedRoom()).toEqual(otherRef);
-        await mountPoll(guest, guestGrant, roomRef, poll.url);
+        await mountPoll(guest, guestGrant, roomRef, poll.url, 'room');
         expect(await selectedRoom()).toEqual(roomRef);
         await expect(guest.locator('time').last()).toHaveAttribute('datetime', revised);
         await expect(guest.getByText('Voting open')).toBeVisible();
@@ -269,7 +310,7 @@ test('a participant recovers a revised deadline after visiting another active ro
     }
     finally {
         await guest.close();
-        await Promise.all([poll.close(), otherPoll.close()]);
+        await Promise.all(endpoints.map((endpoint) => endpoint.close()));
     }
 });
 
@@ -301,15 +342,15 @@ for (const disposition of ['accepted', 'late'] as const) {
                 return rallar.session()!.sessionId;
             }, { rallarUrl, roomRef });
             const arrivals: { msgId: string; expiresAtMs: number; }[] = [];
-            await page.exposeFunction('receivePollBallot', (arrival: {
+            await page.exposeFunction('receivePollBallot', async (arrival: {
                 msgId: string;
                 expiresAtMs: number;
                 senderId: string;
                 choice: PollAuthority.Choice;
             }) => {
                 expect(arrival.senderId).toBe(voterSession);
+                await poll.vote(config.userB.username, arrival.choice);
                 arrivals.push(arrival);
-                poll.vote(config.userB.username, arrival.choice);
             });
             await page.evaluate(async ({ rallarUrl, roomRef }) => {
                 const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
@@ -372,7 +413,7 @@ for (const disposition of ['accepted', 'late'] as const) {
             await expect.poll(() => arrivals.map(({ msgId, expiresAtMs }) => ({ msgId, expiresAtMs }))).toEqual(
                 original
             );
-            expect(poll.read(config.userB.username)).toMatchObject({
+            expect(await poll.read(config.userB.username)).toMatchObject({
                 schedule,
                 disposition,
                 yes: disposition === 'accepted' ? 1 : 0,
@@ -422,13 +463,13 @@ async function startPollEndpoint(
     origin: string,
     roomRef: GroupRef,
     grants: ReadonlyMap<string, string>,
-    hostId?: string
+    schedule?: PollAuthority.RoomSchedule
 ) {
     const authorityNow = () => Date.now() + enforcementOffsetMs;
     let poll: PollAuthority | undefined;
     const server = createServer(async (request, response) => {
         response.setHeader('Access-Control-Allow-Origin', origin);
-        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         response.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
         response.setHeader('Cache-Control', 'no-store');
         if (request.method === 'OPTIONS') {
@@ -445,51 +486,37 @@ async function startPollEndpoint(
             const startsAt = authorityNow();
             poll = new PollAuthority(
                 roomRef,
-                { opensAtEpochMs: startsAt + 9_000, closesAtEpochMs: startsAt + 24_000 },
-                authorityNow,
-                hostId
+                schedule ?? { opensAtEpochMs: startsAt + 9_000, closesAtEpochMs: startsAt + 24_000 },
+                authorityNow
             );
         }
         let record: PollAuthority.Snapshot;
-        if (request.method === 'GET') {
-            record = poll.read(principal);
-        }
-        else if (request.method === 'PATCH') {
-            if (principal !== hostId) {
-                response.writeHead(403).end();
-                return;
+        try {
+            if (request.method === 'GET') {
+                record = await poll.read(principal);
             }
-            let revision = '';
-            for await (const chunk of request) {
-                revision += chunk;
-                if (revision.length > 1) {
+            else if (request.method === 'POST') {
+                let choice = '';
+                for await (const chunk of request) {
+                    choice += chunk;
+                    if (choice.length > 3) {
+                        response.writeHead(400).end();
+                        return;
+                    }
+                }
+                if (choice !== 'yes' && choice !== 'no') {
                     response.writeHead(400).end();
                     return;
                 }
+                record = await poll.vote(principal, choice);
             }
-            if (!/^[01]$/.test(revision)) {
-                response.writeHead(400).end();
+            else {
+                response.writeHead(405).end();
                 return;
             }
-            record = poll.extend(principal, Number(revision));
         }
-        else if (request.method === 'POST') {
-            let choice = '';
-            for await (const chunk of request) {
-                choice += chunk;
-                if (choice.length > 3) {
-                    response.writeHead(400).end();
-                    return;
-                }
-            }
-            if (choice !== 'yes' && choice !== 'no') {
-                response.writeHead(400).end();
-                return;
-            }
-            record = poll.vote(principal, choice);
-        }
-        else {
-            response.writeHead(405).end();
+        catch {
+            response.writeHead(503).end();
             return;
         }
         response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(record));

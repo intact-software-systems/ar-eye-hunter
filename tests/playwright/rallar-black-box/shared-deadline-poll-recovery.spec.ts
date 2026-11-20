@@ -19,7 +19,14 @@ test.beforeEach(async ({ page }) => {
                 if (document.body.dataset.offline) throw new Error('Network unavailable');
                 delete document.body.dataset.uncalibrated;
             },
-            rooms: { async enter(room) { document.body.dataset.selected = room.groupId; } },
+            rooms: {
+                async enter(room) { document.body.dataset.selected = room.groupId; },
+                async readDeadline(room, name) {
+                    if (document.body.dataset.deadlineOffline) throw new TypeError('Network unavailable');
+                    const revision = Number(document.body.dataset.deadlineRevision ?? 1);
+                    return { name, revision, atEpochMs: room.groupId === 'other' || revision > 1 ? 60000 : 200 };
+                }
+            },
             compareDeadline(deadline) {
                 if (document.body.dataset.uncalibrated) return 'unavailable';
                 if (document.body.dataset.uncertain) return 'overlaps';
@@ -29,7 +36,16 @@ test.beforeEach(async ({ page }) => {
         }));
     await page.route('**/poll-snapshot', (route) =>
         route.fulfill({
-            json: { roomRef, schedule, yes: 0, no: 0, closed: false, disposition: 'pending' }
+            json: {
+                roomRef,
+                schedule,
+                revision: 1,
+                canExtend: false,
+                yes: 0,
+                no: 0,
+                closed: false,
+                disposition: 'pending'
+            }
         }));
     await page.goto('/poll-test');
     await page.evaluate(async ({ viewUrl, roomRef }) => {
@@ -40,6 +56,7 @@ test.beforeEach(async ({ page }) => {
             root: document.body,
             roomRef,
             endpoint: '/poll-snapshot',
+            deadlineSource: 'room',
             participantGrant: 'test'
         });
         window.addEventListener('leave-poll', dispose, { once: true });
@@ -55,7 +72,16 @@ test('a foreground poll recovers the final snapshot when calibration becomes ava
     await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
     await page.route('**/poll-snapshot', (route) =>
         route.fulfill({
-            json: { roomRef, schedule, yes: 3, no: 1, closed: true, disposition: 'pending' }
+            json: {
+                roomRef,
+                schedule,
+                revision: 1,
+                canExtend: false,
+                yes: 3,
+                no: 1,
+                closed: true,
+                disposition: 'pending'
+            }
         }));
     await page.evaluate(() => delete document.body.dataset.offline);
     await expect(page.getByText('Voting closed · Results')).toBeVisible();
@@ -104,7 +130,11 @@ test('leaving during initial connection preserves the newly selected room and it
         const selection = new AbortController();
         document.body.dataset.holdReconnect = 'true';
         const previous = showPoll({
-            root: document.body, roomRef, endpoint: '/poll-snapshot', participantGrant: 'test',
+            root: document.body,
+            roomRef,
+            endpoint: '/poll-snapshot',
+            deadlineSource: 'room',
+            participantGrant: 'test',
             signal: selection.signal
         }).then(() => 'mounted', (error: DOMException) => error.name);
         selection.abort();
@@ -118,18 +148,31 @@ test('leaving during initial connection preserves the newly selected room and it
 
 test('a participant retries an unavailable room on entry and sees its revised deadline', async ({ page }) => {
     const destination = { ...roomRef, groupId: 'other' };
-    await page.route('**/destination', route => route.fulfill({
-        json: {
-            roomRef: destination, schedule: { ...schedule, closesAtEpochMs: 60000 }, revision: 1,
-            canExtend: false, closed: false, yes: 2, no: 1, disposition: 'accepted'
-        }
-    }));
-    await page.route('**/destination', route => route.fulfill({ status: 503 }), { times: 1 });
+    await page.route('**/destination', (route) =>
+        route.fulfill({
+            json: {
+                roomRef: destination,
+                schedule: { ...schedule, closesAtEpochMs: 60000 },
+                revision: 1,
+                canExtend: false,
+                closed: false,
+                yes: 2,
+                no: 1,
+                disposition: 'accepted'
+            }
+        }));
+    await page.route('**/destination', (route) => route.fulfill({ status: 503 }), { times: 1 });
     const entry = page.evaluate(async ({ viewUrl, destination }) => {
         window.dispatchEvent(new Event('leave-poll'));
         const { showPoll } = await import(viewUrl);
-        await showPoll({ root: document.body, roomRef: destination, endpoint: '/destination', participantGrant: 'test' });
-    }, { viewUrl, destination }).catch(error => String(error));
+        await showPoll({
+            root: document.body,
+            roomRef: destination,
+            endpoint: '/destination',
+            deadlineSource: 'room',
+            participantGrant: 'test'
+        });
+    }, { viewUrl, destination }).catch((error) => String(error));
     await expect(page.getByRole('button', { name: 'Yes' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Retry room snapshot' }).click();
     expect(await entry).toBeUndefined();
@@ -137,8 +180,43 @@ test('a participant retries an unavailable room on entry and sees its revised de
     await expect(page.getByText('Yes 2 · No 1 · Your vote: accepted')).toBeVisible();
 });
 
+test('a room deadline outage leaves entry disabled until a fresh read succeeds', async ({ page }) => {
+    const destination = { ...roomRef, groupId: 'other' };
+    await page.route('**/destination', (route) =>
+        route.fulfill({
+            json: {
+                roomRef: destination,
+                schedule: { ...schedule, closesAtEpochMs: 60000 },
+                revision: 1,
+                canExtend: false,
+                closed: false,
+                yes: 0,
+                no: 0,
+                disposition: 'pending'
+            }
+        }));
+    const entry = page.evaluate(async ({ viewUrl, destination }) => {
+        window.dispatchEvent(new Event('leave-poll'));
+        document.body.dataset.deadlineOffline = 'true';
+        const { showPoll } = await import(viewUrl);
+        await showPoll({
+            root: document.body,
+            roomRef: destination,
+            endpoint: '/destination',
+            deadlineSource: 'room',
+            participantGrant: 'test'
+        });
+    }, { viewUrl, destination }).catch((error) => String(error));
+    await expect(page.getByRole('button', { name: 'Retry room snapshot' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Yes' })).toHaveCount(0);
+    await page.evaluate(() => delete document.body.dataset.deadlineOffline);
+    await page.getByRole('button', { name: 'Retry room snapshot' }).click();
+    expect(await entry).toBeUndefined();
+    await expect(page.getByRole('button', { name: 'Yes' })).toBeEnabled();
+});
+
 test('leaving an unavailable room cancels its retry prompt', async ({ page }) => {
-    await page.route('**/unreachable', route => route.abort('connectionrefused'));
+    await page.route('**/unreachable', (route) => route.abort('connectionrefused'));
     const entry = page.evaluate(async ({ viewUrl, roomRef }) => {
         window.dispatchEvent(new Event('leave-poll'));
         const selection = new AbortController();
@@ -149,7 +227,12 @@ test('leaving an unavailable room cancels its retry prompt', async ({ page }) =>
         const { showPoll } = await import(viewUrl);
         try {
             await showPoll({
-                root: document.body, roomRef, endpoint: '/unreachable', participantGrant: 'test', signal: selection.signal
+                root: document.body,
+                roomRef,
+                endpoint: '/unreachable',
+                deadlineSource: 'room',
+                participantGrant: 'test',
+                signal: selection.signal
             });
         }
         catch (error) {
@@ -162,20 +245,30 @@ test('leaving an unavailable room cancels its retry prompt', async ({ page }) =>
     await expect(page.locator('body')).toHaveText('Other room');
 });
 
-for (const scenario of [
-    { name: 'lost receipt', stale: { disposition: 'pending' } },
-    { name: 'lower Yes count', stale: { yes: 1, no: 2 } },
-    { name: 'lower No count', stale: { yes: 3, no: 0 } },
-    { name: 'reopened poll', stale: { closed: false } }
-]) {
+for (
+    const scenario of [
+        { name: 'lost receipt', stale: { disposition: 'pending' } },
+        { name: 'lower Yes count', stale: { yes: 1, no: 2 } },
+        { name: 'lower No count', stale: { yes: 3, no: 0 } },
+        { name: 'reopened poll', stale: { closed: false } }
+    ]
+) {
     test(`a returning voter rejects a ${scenario.name} at the same deadline revision`, async ({ page }) => {
         const accepted = {
-            roomRef, schedule, revision: 1, canExtend: false, yes: 2, no: 1, closed: scenario.name === 'reopened poll', disposition: 'accepted'
+            roomRef,
+            schedule,
+            revision: 1,
+            canExtend: false,
+            yes: 2,
+            no: 1,
+            closed: scenario.name === 'reopened poll',
+            disposition: 'accepted'
         };
         let recovery: 'fresh' | 'stale' | 'closed' = 'fresh';
-        await page.route('**/poll-snapshot', route => {
-            const snapshot = recovery === 'stale' ? { ...accepted, ...scenario.stale } :
-                { ...accepted, closed: accepted.closed || recovery === 'closed' };
+        await page.route('**/poll-snapshot', (route) => {
+            const snapshot = recovery === 'stale'
+                ? { ...accepted, ...scenario.stale }
+                : { ...accepted, closed: accepted.closed || recovery === 'closed' };
             return route.fulfill({ json: snapshot });
         });
         await page.getByRole('button', { name: 'Yes' }).click();
@@ -194,5 +287,71 @@ for (const scenario of [
         recovery = 'closed';
         await expect(page.getByText('Voting closed · Results')).toBeVisible();
         await expect(page.getByText('Yes 2 · No 1 · Your vote: accepted')).toBeVisible();
+    });
+}
+
+test('a returning voter can see voting reopen on a later deadline revision', async ({ page }) => {
+    const accepted = {
+        roomRef,
+        schedule,
+        revision: 1,
+        canExtend: false,
+        yes: 1,
+        no: 0,
+        closed: true,
+        disposition: 'accepted'
+    };
+    await page.route('**/poll-snapshot', (route) => route.fulfill({ json: accepted }));
+    await page.getByRole('button', { name: 'Yes' }).click();
+    await expect(page.getByText('Voting closed · Results')).toBeVisible();
+    await page.route('**/poll-snapshot', (route) =>
+        route.fulfill({
+            json: { ...accepted, revision: 2, schedule: { ...schedule, closesAtEpochMs: 60000 }, closed: false }
+        }));
+    await page.evaluate(() => {
+        document.body.dataset.deadlineRevision = '2';
+        window.dispatchEvent(new Event('pagehide'));
+        window.dispatchEvent(new Event('pageshow'));
+    });
+    await expect(page.getByText('Voting open')).toBeVisible();
+    await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+});
+
+for (const invalid of [{ revision: null }, { yes: -1 }]) {
+    test('a room poll rejects an invalid initial snapshot ' + JSON.stringify(invalid), async ({ page }) => {
+        await page.route('**/invalid-snapshot', (route) =>
+            route.fulfill({
+                json: {
+                    roomRef,
+                    schedule,
+                    revision: 1,
+                    canExtend: false,
+                    yes: 0,
+                    no: 0,
+                    closed: false,
+                    disposition: 'pending',
+                    ...invalid
+                }
+            }));
+        const mounted = await page.evaluate(async ({ viewUrl, roomRef }) => {
+            window.dispatchEvent(new Event('leave-poll'));
+            const { showPoll } = await import(viewUrl);
+            try {
+                await showPoll({
+                    root: document.body,
+                    roomRef,
+                    endpoint: '/invalid-snapshot',
+                    deadlineSource: 'room',
+                    participantGrant: 'test'
+                });
+                return true;
+            }
+            catch {
+                return false;
+            }
+        }, { viewUrl, roomRef });
+        expect(mounted).toBe(false);
+        await expect(page.getByRole('button', { name: 'Yes' })).toHaveCount(0);
     });
 }

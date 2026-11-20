@@ -1,9 +1,9 @@
 import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connection-facade.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { PollAuthority } from './poll-authority.ts';
-import { pollPhase } from './poll-phase.ts';
 import { loadPollOnEntry } from './load-poll-on-entry.ts';
+import { pollDeadlineName, type PollAuthority } from './poll-authority.ts';
+import { pollPhase } from './poll-phase.ts';
 import { PollView } from './poll-view.ts';
 import { requestPollSnapshot } from './request-poll-snapshot.ts';
 
@@ -11,6 +11,7 @@ export interface ShowPollInput {
     readonly root: HTMLElement;
     readonly roomRef: GroupRef;
     readonly endpoint: string;
+    readonly deadlineSource: 'room' | 'fixed';
     readonly participantGrant: string;
     readonly signal?: AbortSignal;
     readonly authority?: RallarDeadlineAuthority;
@@ -82,7 +83,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             currentPhase = 'Recovering room poll';
         }
         const restoring = currentPhase === 'Recovering room poll';
-        const revisionDue = record.revision === 0 && !record.closed && performance.now() >= nextRevisionRead;
+        const revisionDue = record.revision !== null && performance.now() >= nextRevisionRead;
         const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed' || revisionDue;
         if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
@@ -139,15 +140,26 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     document.addEventListener('resume', resume, listeners);
     window.addEventListener('pagehide', suspend, listeners);
     window.addEventListener('pageshow', resume, listeners);
+    const extensionRequestId = crypto.randomUUID();
     extend.onclick = async () => {
         render();
-        if (extend.disabled) {
+        if (extend.disabled || record.revision === null) {
             return;
         }
         submitting = true;
         render();
         try {
-            record = await requestPollSnapshot(input, signal, { previous: record, action: { expectedRevision: 0 } });
+            await rallar.rooms.setDeadline(
+                roomRef,
+                {
+                    name: pollDeadlineName,
+                    expectedRevision: record.revision,
+                    atEpochMs: record.schedule.closesAtEpochMs + 60_000
+                },
+                extensionRequestId,
+                { signal }
+            );
+            record = await requestPollSnapshot(input, signal, { previous: record });
         }
         catch {
             nextRevisionRead = 0;
