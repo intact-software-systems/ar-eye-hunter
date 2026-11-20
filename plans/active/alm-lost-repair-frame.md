@@ -254,22 +254,33 @@ Part C did what it says ("a queued send for an ended message ends the same way")
 the queued send can be the first transmission. The maintainer ruled "Receipt waits for first send": while no copy
 of the message has been handed to the carrier, the receipt charges no attempt and queues no retry copy.
 
-**The rule.** At a receipt deadline, an attempt whose frame has not been handed to the carrier is not charged and no
-further copy is queued: the receipt waits one more timeout for the copy that is already queued. It is the rule part
-B built for the first-hop wait ("a frame that could not be written charges no attempt"), read the same way, from the
-attempt's own send rows, and now stated once for both timers.
+**The rule.** At a receipt deadline, while the receipt has charged nothing and no copy of its first transmission has
+been handed to the carrier, the deadline is not charged and no retry copy is queued: the receipt waits one more
+timeout for the copies that are already queued. It is the rule part B built for the first-hop wait ("a frame that
+could not be written charges no attempt"), decided by one shared function and read the same way, from the attempt's
+own send rows.
 
-- **What the wait ends on.** The copy is handed to the carrier (the budget then runs as it does today, from the next
-  deadline); the message's deadline passes (`expired`, as today); another terminal settlement ends the message.
+- **Only the first transmission.** A retry whose copy is held is charged as today. A frozen suite depends on it
+  (`acknowledgement-under-transport-hold-indexeddb.test.ts`: a `ws` submission that left, then every retry held,
+  must end `failed` after 3 of 3), and a retry is not one attempt the row could name: its copies are planned at each
+  deadline for whoever is still unconfirmed. This is the ruling's own wording.
+- **Held means every copy.** A first transmission with several copies waits only while none of them has been handed
+  over. If one next hop took its copy and another is held, the deadline is charged as today, and part C still drops
+  the held copies when the receipt runs out.
+- **Read against the plan at the deadline.** The rule looks at the copies the message is planned with when the
+  deadline fires. If the plan changed while the frame was held (a route lost, an overlay change), the receipt is
+  charged as today.
+- **What the wait ends on.** A copy is handed to the carrier (the next deadline is then the first charge, so the
+  budget ends up to one timeout later than "after it left"); the message's deadline passes (`expired`, as today:
+  every message has one, which bounds the wait); another terminal settlement ends the message.
 - **What it changes for a caller.** A send whose carrier submits nothing no longer fails after the receipt budget
-  (about 8 s at the defaults): its handle stays pending until the frame leaves or the message's deadline passes. A
-  message is not delivered more than once after a hold.
+  (about 8 s at the defaults): its handle stays pending until the frame leaves or the message's deadline passes. The
+  receipt no longer stacks copies of a held first transmission; gap repairs and held retries still can.
 - **What does not change.** The budget once a frame has left; what a server-owned receipt does; part C: a terminal
   settlement still ends every queued copy, the first one included, when it is stated for another reason.
-- **Scope.** The ruling's words cover the first transmission. This document applies the same rule to every attempt
-  (a retry whose copy is still held is not charged either), because that is the one rule the first-hop timer
-  already has; if an existing test or cell depends on a held retry being charged, the builder stops and reports
-  rather than narrowing or widening on its own.
+- **What it costs.** The receipt row names its first attempt (one optional field, present while the receipt waits on
+  it); one work-row read per receipt deadline while the receipt has charged nothing; one timer commit per timeout
+  while held, until the message's deadline.
 
 This is one piece of the held-send path (D640) pulled forward. The rest of that slice stays where it is: what a
 relay's refusal of a held send means, and the handle's states while held.
