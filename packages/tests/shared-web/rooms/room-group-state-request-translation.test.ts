@@ -353,6 +353,16 @@ describe('room request translation', () => {
         });
     });
 
+    it('keeps server-owned deadlines out of an ordinary metadata patch and rejects explicit changes', () => {
+        const currentMetadata = { rallarRoomDeadlines: [{ name: 'vote', atEpochMs: 5000, revision: 1 }], topic: 'old' };
+        expect(toRoomMetadataGroupStateRequest({ currentMetadata, patch: { topic: 'new' }, ...actor })).toEqual({
+            metadata: { topic: 'new' },
+            ...actor
+        });
+        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { rallarRoomDeadlines: null }, ...actor }))
+            .toThrow(/setDeadline/);
+    });
+
     it('translates every invite and member-governance request', () => {
         const requests = {
             remove: { reason: 'remove' },

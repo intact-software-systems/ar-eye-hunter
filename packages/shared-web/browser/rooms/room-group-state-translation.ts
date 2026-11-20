@@ -16,6 +16,7 @@ import type {
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/room-deadline.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
@@ -280,10 +281,14 @@ export function toRoomLifecycleGroupStateRequest(
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
-    const merged = Object.entries({ ...input.currentMetadata, ...input.patch });
+    if (Object.hasOwn(input.patch, ROOM_DEADLINES_METADATA_KEY)) {
+        throw new TypeError('Use rooms.setDeadline to change a room deadline.');
+    }
+    const merged = { ...input.currentMetadata, ...input.patch };
+    delete merged[ROOM_DEADLINES_METADATA_KEY];
     return {
         metadata: Object.fromEntries(
-            merged.filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))
+            Object.entries(merged).filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))
         ),
         ...toActorRequest(input)
     };

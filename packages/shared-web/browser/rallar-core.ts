@@ -179,5 +179,6 @@ export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/con
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+export type { RoomDeadline, RoomDeadlineChange } from '@shared/api/room-deadline.ts';
 
 export type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';

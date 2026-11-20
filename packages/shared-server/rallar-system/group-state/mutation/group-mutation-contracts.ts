@@ -35,6 +35,7 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import type { RoomDeadlineChange } from '@shared/api/room-deadline.ts';
 import type { StoredGroupSessionIntent } from '../schedule/group-session-intent-storage.ts';
 import type { StoredGroupSessionReservations } from '../schedule/group-session-reservation-storage.ts';
 import type { GroupSessionViewAudience } from '../schedule/read-group-session-view-audience.ts';
@@ -126,6 +127,7 @@ export type GroupMutationCommand =
                     maxMembers: number | null;
                     maxSpectators: number | null;
                     maxSessionsPerMember: number | null;
+                    roomDeadline?: RoomDeadlineChange;
                     metadata: Readonly<Group['metadata']> | null;
                     expiresAtEpochMs: number | null;
                     emptySinceEpochMs: number | null;

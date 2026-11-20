@@ -177,6 +177,7 @@ function toUpdateCommand(
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
+            ...(request.roomDeadline === undefined ? {} : { roomDeadline: structuredClone(request.roomDeadline) }),
             metadata: request.metadata ? structuredClone(request.metadata) : null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             emptySinceEpochMs: request.emptySinceEpochMs ?? null,

@@ -9,6 +9,7 @@ import {
     assertGroupSessionChange,
     GROUP_SESSION_SCHEDULE_METADATA_KEY
 } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/room-deadline.ts';
 import { formatRallarValidation, validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject, JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
@@ -120,7 +121,7 @@ export function validateGroupMutationOperationInput(
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
         ...(operation === 'createGroup' || operation === 'updateGroup'
-            ? validateGroupDirectoryListingMetadata(input.metadata)
+            ? validateGroupMetadataInput(input.metadata)
             : [])
     ];
     if (
@@ -135,9 +136,14 @@ export function validateGroupMutationOperationInput(
     ) {
         issues.push(new TypeError('Group session schedule metadata is server-owned; use the scheduling commands'));
     }
-    if (operation === 'changeGroupSession') {
+    if (operation === 'changeGroupSession' || (operation === 'updateGroup' && input.roomDeadline !== undefined)) {
         try {
-            assertGroupSessionChange(input);
+            if (operation === 'changeGroupSession') {
+                assertGroupSessionChange(input);
+            }
+            else {
+                assertRoomDeadlineChange(input.roomDeadline);
+            }
         }
         catch (error) {
             if (!(error instanceof TypeError)) {
@@ -279,7 +285,10 @@ function validateExpectedLayout(value: JsonWireValue | undefined): readonly Type
 }
 
 /** Metadata is an external extension map; a present platform listing setting has a closed vocabulary. */
-export function validateGroupDirectoryListingMetadata(metadata: JsonWireValue | undefined): readonly TypeError[] {
+export function validateGroupMetadataInput(metadata: JsonWireValue | undefined): readonly TypeError[] {
+    if (isGroupInputRecord(metadata) && Object.hasOwn(metadata, ROOM_DEADLINES_METADATA_KEY)) {
+        return [new TypeError('Room deadline metadata is server-owned; use roomDeadline')];
+    }
     return isGroupInputRecord(metadata)
         ? validateGroupInputFields(metadata, [{
             key: GROUP_DIRECTORY_LISTING_METADATA_KEY,
