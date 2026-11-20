@@ -61,7 +61,7 @@ export interface WsReceiptedSendLink {
     /** Admits at the client and writes its frame, to ingress or to the hold; runs no server work. */
     send(message: ALMessage): Promise<ALMessage>;
     holdFrames(): void;
-    /** Hands the held frames to ingress side by side, as two frames of one socket, and ends the hold; the acceptance of each, in send order. */
+    /** Hands every held frame to ingress at once, as frames of the origin's one socket, and ends the hold; the acceptance of each, in send order. */
     writeHeldFramesSideBySide(): Promise<readonly string[]>;
     /** Hands one more copy of a written frame to ingress; its acceptance kind, or `rejected`. */
     writeCopy(msg: ALMessage): Promise<string>;
@@ -97,7 +97,7 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
         holdFrames: client.holdFrames,
         writeHeldFramesSideBySide: client.writeHeldFramesSideBySide,
         writeCopy: client.writeCopy,
-        acknowledge: async (msg) => await server.service.acceptIncomingMessage(toWireValue(toPeerAck(msg)), LINK_PEER_ID),
+        acknowledge: async (msg) => await server.service.acceptIncomingMessage(toWireCopy(toPeerAck(msg)), LINK_PEER_ID),
         advance: async (ms) => {
             vi.setSystemTime(Date.now() + ms);
             await exchange.run();
@@ -126,7 +126,7 @@ function createLinkClient(server: ServerIngressFixture): LinkClient {
     const held: ALMessage[] = [];
     let holding = false;
     const writeToIngress = async (frame: ALMessage): Promise<string> =>
-        toAcceptanceKind(await server.service.acceptIncomingMessage(toWireValue(frame), LINK_ORIGIN_ID));
+        toAcceptanceKind(await server.service.acceptIncomingMessage(toWireCopy(frame), LINK_ORIGIN_ID));
     const stores = createWsClientCarrierStores(LINK_ORIGIN_ID, 'memory');
     const ws = createWsClientSender({
         stores,
@@ -267,23 +267,20 @@ function toFrames(socket: SimulatedWebSocket): readonly ALMessage[] {
 }
 
 /** The frame as the server's socket would decode it: a JSON copy, never the client's own object. */
-function toWireValue(message: ALMessage): unknown {
-    return JSON.parse(JSON.stringify(message));
+function toWireCopy(message: ALMessage): ALMessage {
+    return decodePersistedALMessage(JSON.stringify(message));
 }
 
 /** D694's room notice: a receiver-receipted, at-least-once room broadcast that lives 30 s. */
 export function toRoomNotice(): ALMessage {
-    return newALBroadcastMessage(
-        LINK_ORIGIN_ID,
-        newALRoute('room.notification', LINK_ROOM.groupId, 'only'),
-        'room',
-        'notice.v1',
-        { text: 'hello' },
-        { groupRef: LINK_ROOM, ttlMs: LINK_MESSAGE_TTL_MS, reliability: 'at-least-once', ack: 'receiver' }
-    );
+    return toLinkRoomNotice(undefined);
 }
 
 export function toOrderedRoomNotice(): ALMessage {
+    return toLinkRoomNotice({ orderingKey: 'track-1' });
+}
+
+function toLinkRoomNotice(ordering: { readonly orderingKey: string; } | undefined): ALMessage {
     return newALBroadcastMessage(
         LINK_ORIGIN_ID,
         newALRoute('room.notification', LINK_ROOM.groupId, 'only'),
@@ -295,7 +292,7 @@ export function toOrderedRoomNotice(): ALMessage {
             ttlMs: LINK_MESSAGE_TTL_MS,
             reliability: 'at-least-once',
             ack: 'receiver',
-            ordering: { orderingKey: 'track-1' }
+            ...(ordering === undefined ? {} : { ordering })
         }
     );
 }
