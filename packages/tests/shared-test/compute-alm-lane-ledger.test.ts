@@ -75,23 +75,24 @@ function toRunWithTwoAgentResult(runId: number, twoAgent: AlmLaneFamilyResult): 
     };
 }
 
-function computeLedger(runs: readonly AlmLaneObservedRun[], causes: readonly AlmLaneFlakeCause[] = []) {
+function toLedger(runs: readonly AlmLaneObservedRun[], causes: readonly AlmLaneFlakeCause[] = []) {
     return computeAlmLaneLedger({ runs, causes });
 }
 
-function readCarrier(runs: readonly AlmLaneObservedRun[], carrier: AlmConformanceCarrier = 'ws') {
-    return computeLedger(runs).carriers.find((streak) => streak.carrier === carrier);
+function toCarrierStreak(runs: readonly AlmLaneObservedRun[], carrier: AlmConformanceCarrier = 'ws') {
+    return toLedger(runs).carriers.find((streak) => streak.carrier === carrier);
 }
 
 describe('computeAlmLaneLedger', () => {
     it('counts the green push runs before the newest red one and names that red run', () => {
         const red = toRunWithTwoAgentResult(4, toResult('ws', 'two-agent', new Map([['a', 'failed'], ['b', 'passed']])));
-        const ledger = computeLedger([toGreenRun(1), toGreenRun(2), toGreenRun(3), red, toGreenRun(5)]);
+        const ledger = toLedger([toGreenRun(1), toGreenRun(2), toGreenRun(3), red, toGreenRun(5)]);
 
         expect(ledger.carriers.find((streak) => streak.carrier === 'ws')).toEqual({
             carrier: 'ws',
             streak: 3,
-            lastRed: { runId: 4, commitSha: 'sha-4', failed: ['ws/two-agent/a'], notRun: [] }
+            lastRed: { runId: 4, commitSha: 'sha-4', failed: ['ws/two-agent/a'], notRun: [] },
+            uncaused: ['ws/two-agent/a']
         });
         expect(ledger.scenarios).toEqual([
             { scenario: 'ws/two-agent/a', failedRunIds: [4], notRunRunIds: [], hasCause: false }
@@ -100,19 +101,19 @@ describe('computeAlmLaneLedger', () => {
     });
 
     it('reads every carrier, with no counted run as a streak of zero and no red run', () => {
-        const ledger = computeLedger([toGreenRun(1)]);
+        const ledger = toLedger([toGreenRun(1)]);
 
         expect(ledger.carriers).toEqual([
-            { carrier: 'ws', streak: 1, lastRed: null },
-            { carrier: 'rtc', streak: 0, lastRed: null },
-            { carrier: 'rtc-with-ws-fallback', streak: 0, lastRed: null }
+            { carrier: 'ws', streak: 1, lastRed: null, uncaused: [] },
+            { carrier: 'rtc', streak: 0, lastRed: null, uncaused: [] },
+            { carrier: 'rtc-with-ws-fallback', streak: 0, lastRed: null, uncaused: [] }
         ]);
     });
 
     it('keeps a streak per carrier', () => {
         const rtcRed: AlmLaneObservedRun = { ...toGreenRun(2, 'rtc'), jobConclusion: 'failure', plan: null };
 
-        const ledger = computeLedger([toGreenRun(1, 'ws'), rtcRed, toGreenRun(3, 'rtc'), toGreenRun(4, 'ws')]);
+        const ledger = toLedger([toGreenRun(1, 'ws'), rtcRed, toGreenRun(3, 'rtc'), toGreenRun(4, 'ws')]);
 
         expect(ledger.carriers.map(({ carrier, streak }) => ({ carrier, streak }))).toEqual([
             { carrier: 'ws', streak: 2 },
@@ -124,12 +125,13 @@ describe('computeAlmLaneLedger', () => {
     it('does not count a rerun as green even when every scenario passed', () => {
         const rerun: AlmLaneObservedRun = { ...toGreenRun(1), attempt: 2 };
 
-        const ledger = computeLedger([rerun, toGreenRun(2)]);
+        const ledger = toLedger([rerun, toGreenRun(2)]);
 
         expect(ledger.carriers[0]).toEqual({
             carrier: 'ws',
             streak: 0,
-            lastRed: { runId: 1, commitSha: 'sha-1', failed: [], notRun: [] }
+            lastRed: { runId: 1, commitSha: 'sha-1', failed: [], notRun: [] },
+            uncaused: []
         });
         expect(ledger.unattributedRedRunIds).toEqual([1]);
     });
@@ -140,7 +142,7 @@ describe('computeAlmLaneLedger', () => {
             familyResults: toGreenRun(1).familyResults.filter((result) => result.family !== 'three-agent')
         };
 
-        const ledger = computeLedger([run]);
+        const ledger = toLedger([run]);
 
         expect(ledger.carriers[0]?.lastRed).toEqual({
             runId: 1,
@@ -154,13 +156,13 @@ describe('computeAlmLaneLedger', () => {
     });
 
     it('needs no result for a planned family with no scenario keys', () => {
-        expect(readCarrier([toGreenRun(1)])?.streak).toBe(1);
+        expect(toCarrierStreak([toGreenRun(1)])?.streak).toBe(1);
     });
 
     it('reads a scenario that did not run as red', () => {
         const run = toRunWithTwoAgentResult(1, toResult('ws', 'two-agent', new Map([['a', 'passed']]), 'not-finished'));
 
-        expect(readCarrier([{ ...run, jobConclusion: 'success' }])?.lastRed?.notRun).toEqual(['ws/two-agent/b']);
+        expect(toCarrierStreak([{ ...run, jobConclusion: 'success' }])?.lastRed?.notRun).toEqual(['ws/two-agent/b']);
     });
 
     it.each(['not-finished', 'failed'] as const)(
@@ -169,7 +171,7 @@ describe('computeAlmLaneLedger', () => {
             const allPassed = new Map([['a', 'passed'], ['b', 'passed']] as const);
             const run = toRunWithTwoAgentResult(1, toResult('ws', 'two-agent', allPassed, familyOutcome));
 
-            const ledger = computeLedger([{ ...run, jobConclusion: 'success' }]);
+            const ledger = toLedger([{ ...run, jobConclusion: 'success' }]);
 
             expect(ledger.carriers[0]?.lastRed?.failed).toEqual(['ws/two-agent']);
             expect(ledger.scenarios.map((failures) => failures.scenario)).toEqual(['ws/two-agent']);
@@ -180,7 +182,7 @@ describe('computeAlmLaneLedger', () => {
         const green = toGreenRun(1);
         const reversed = green.familyResults.map((result) => ({ ...result, scenarios: [...result.scenarios].reverse() }));
 
-        expect(readCarrier([{ ...green, familyResults: reversed }])?.streak).toBe(1);
+        expect(toCarrierStreak([{ ...green, familyResults: reversed }])?.streak).toBe(1);
     });
 
     it('reads a result for a family the plan does not name as red, keyed by its carrier and family', () => {
@@ -193,7 +195,7 @@ describe('computeAlmLaneLedger', () => {
             familyOutcome: 'passed'
         });
 
-        const ledger = computeLedger([{ ...green, familyResults: [...green.familyResults, unplanned] }]);
+        const ledger = toLedger([{ ...green, familyResults: [...green.familyResults, unplanned] }]);
 
         expect(ledger.carriers[0]?.lastRed?.failed).toEqual(['ws/addressed']);
     });
@@ -202,21 +204,21 @@ describe('computeAlmLaneLedger', () => {
         const passed = toResult('ws', 'two-agent', new Map([['a', 'passed'], ['b', 'passed']]));
         const extra = { ...passed, scenarios: [...passed.scenarios, { scenarioKey: 'x', outcome: 'passed' as const }] };
 
-        const ledger = computeLedger([{ ...toRunWithTwoAgentResult(1, extra), jobConclusion: 'success' }]);
+        const ledger = toLedger([{ ...toRunWithTwoAgentResult(1, extra), jobConclusion: 'success' }]);
 
         expect(ledger.carriers[0]?.lastRed?.failed).toEqual(['ws/two-agent']);
     });
 
     it.each(['in-progress', 'skipped'] as const)('leaves out a %s job without breaking the streak', (jobConclusion) => {
-        const ledger = computeLedger([{ ...toGreenRun(1), jobConclusion, plan: null }, toGreenRun(2)]);
+        const ledger = toLedger([{ ...toGreenRun(1), jobConclusion, plan: null }, toGreenRun(2)]);
 
-        expect(ledger.carriers[0]).toEqual({ carrier: 'ws', streak: 1, lastRed: null });
+        expect(ledger.carriers[0]).toEqual({ carrier: 'ws', streak: 1, lastRed: null, uncaused: [] });
         expect(ledger.unattributedRedRunIds).toEqual([]);
         expect(ledger.sideRuns).toEqual([]);
     });
 
     it('reads a cancelled push job as red, and as unattributed when it has no plan', () => {
-        const ledger = computeLedger([{ ...toGreenRun(1), jobConclusion: 'cancelled', plan: null }, toGreenRun(2)]);
+        const ledger = toLedger([{ ...toGreenRun(1), jobConclusion: 'cancelled', plan: null }, toGreenRun(2)]);
 
         expect(ledger.carriers[0]?.streak).toBe(0);
         expect(ledger.unattributedRedRunIds).toEqual([1]);
@@ -225,11 +227,11 @@ describe('computeAlmLaneLedger', () => {
     it('attributes a cancelled push job that has a plan by its missing results', () => {
         const cancelled: AlmLaneObservedRun = { ...toGreenRun(1), jobConclusion: 'cancelled', familyResults: [] };
 
-        expect(readCarrier([cancelled])?.lastRed?.notRun).toEqual(['ws/two-agent/a', 'ws/two-agent/b', 'ws/three-agent/c']);
+        expect(toCarrierStreak([cancelled])?.lastRed?.notRun).toEqual(['ws/two-agent/a', 'ws/two-agent/b', 'ws/three-agent/c']);
     });
 
     it.each(['pull_request', 'workflow_dispatch'] as const)('leaves out a cancelled %s job', (event) => {
-        const ledger = computeLedger([{ ...toGreenRun(1), event, jobConclusion: 'cancelled', plan: null }]);
+        const ledger = toLedger([{ ...toGreenRun(1), event, jobConclusion: 'cancelled', plan: null }]);
 
         expect(ledger.sideRuns).toEqual([]);
         expect(ledger.unattributedRedRunIds).toEqual([]);
@@ -241,7 +243,7 @@ describe('computeAlmLaneLedger', () => {
             const ws: AlmLaneObservedRun = { ...toGreenRun(1, 'ws'), jobConclusion, plan: null, familyResults: [] };
             const rtc: AlmLaneObservedRun = { ...toGreenRun(1, 'rtc'), jobConclusion, plan: null, familyResults: [] };
 
-            const ledger = computeLedger([ws, rtc]);
+            const ledger = toLedger([ws, rtc]);
 
             expect(ledger.carriers[0]?.lastRed).toEqual({ runId: 1, commitSha: 'sha-1', failed: [], notRun: [] });
             expect(ledger.unattributedRedRunIds).toEqual([1]);
@@ -250,7 +252,7 @@ describe('computeAlmLaneLedger', () => {
     );
 
     it('reads a failed job as red even when every recorded scenario passed', () => {
-        const ledger = computeLedger([{ ...toGreenRun(1), jobConclusion: 'failure' }]);
+        const ledger = toLedger([{ ...toGreenRun(1), jobConclusion: 'failure' }]);
 
         expect(ledger.carriers[0]?.streak).toBe(0);
         expect(ledger.unattributedRedRunIds).toEqual([1]);
@@ -262,7 +264,7 @@ describe('computeAlmLaneLedger', () => {
         const dispatched: AlmLaneObservedRun = { ...toGreenRun(3, 'rtc'), event: 'workflow_dispatch' };
         const unplanned: AlmLaneObservedRun = { ...toGreenRun(4), event: 'pull_request', jobConclusion: 'failure', plan: null };
 
-        const ledger = computeLedger([pullRequest, dispatched, unplanned, toGreenRun(1)]);
+        const ledger = toLedger([pullRequest, dispatched, unplanned, toGreenRun(1)]);
 
         expect(ledger.sideRuns).toEqual([
             { runId: 2, event: 'pull_request', carrier: 'ws', green: false },
@@ -280,7 +282,7 @@ describe('computeAlmLaneLedger', () => {
             { scenario: 'ws/two-agent/a', cause: 'A settle window raced the relay.', fixedByPullRequest: null }
         ];
 
-        const ledger = computeLedger([toRunWithTwoAgentResult(1, failed)], causes);
+        const ledger = toLedger([toRunWithTwoAgentResult(1, failed)], causes);
 
         expect(ledger.scenarios.map(({ scenario, hasCause }) => ({ scenario, hasCause }))).toEqual([
             { scenario: 'ws/two-agent/a', hasCause: true },
@@ -291,7 +293,7 @@ describe('computeAlmLaneLedger', () => {
     it('collects one scenario across the push runs that failed it', () => {
         const failed = toResult('ws', 'two-agent', new Map([['a', 'failed'], ['b', 'passed']]));
 
-        const ledger = computeLedger([
+        const ledger = toLedger([
             toRunWithTwoAgentResult(3, failed),
             toGreenRun(2),
             toRunWithTwoAgentResult(1, failed)
@@ -300,5 +302,72 @@ describe('computeAlmLaneLedger', () => {
         expect(ledger.scenarios).toEqual([
             { scenario: 'ws/two-agent/a', failedRunIds: [3, 1], notRunRunIds: [], hasCause: false }
         ]);
+    });
+
+    it('keys a failed scenario and a following unrun one, with no family key, when the family failed', () => {
+        const run = toRunWithTwoAgentResult(1, toResult('ws', 'two-agent', new Map([['a', 'failed']]), 'failed'));
+
+        expect(toCarrierStreak([run])?.lastRed).toEqual({
+            runId: 1,
+            commitSha: 'sha-1',
+            failed: ['ws/two-agent/a'],
+            notRun: ['ws/two-agent/b']
+        });
+    });
+
+    it('lists per carrier the failed and unrun keys of counted runs that have no recorded cause', () => {
+        const failed = toResult('ws', 'two-agent', new Map([['a', 'failed']]), 'failed');
+        const causes: readonly AlmLaneFlakeCause[] = [
+            { scenario: 'ws/two-agent/a', cause: 'A settle window raced the relay.', fixedByPullRequest: null }
+        ];
+        const pullRequest: AlmLaneObservedRun = { ...toRunWithTwoAgentResult(2, failed), event: 'pull_request' };
+
+        const ledger = toLedger([toRunWithTwoAgentResult(1, failed), pullRequest], causes);
+
+        expect(ledger.carriers.map(({ carrier, uncaused }) => ({ carrier, uncaused }))).toEqual([
+            { carrier: 'ws', uncaused: ['ws/two-agent/b'] },
+            { carrier: 'rtc', uncaused: [] },
+            { carrier: 'rtc-with-ws-fallback', uncaused: [] }
+        ]);
+    });
+
+    it('lists a red run that names only unrun scenarios as failures without a cause', () => {
+        const run: AlmLaneObservedRun = { ...toGreenRun(1), jobConclusion: 'cancelled', familyResults: [] };
+
+        expect(toCarrierStreak([run])?.uncaused).toEqual(['ws/three-agent/c', 'ws/two-agent/a', 'ws/two-agent/b']);
+    });
+
+    it('changes nothing for a cause whose scenario never failed', () => {
+        const red = toRunWithTwoAgentResult(1, toResult('ws', 'two-agent', new Map([['a', 'failed'], ['b', 'passed']])));
+        const unrelated: AlmLaneFlakeCause = { scenario: 'rtc/two-agent/a', cause: 'Never seen.', fixedByPullRequest: 1 };
+
+        expect(toLedger([red, toGreenRun(2)], [unrelated])).toEqual(toLedger([red, toGreenRun(2)]));
+    });
+
+    it('reads a run whose plan names another carrier as red with nothing to attribute', () => {
+        const run: AlmLaneObservedRun = { ...toGreenRun(1), plan: toPlan('rtc') };
+
+        const ledger = toLedger([run]);
+
+        expect(ledger.carriers[0]?.lastRed).toEqual({ runId: 1, commitSha: 'sha-1', failed: [], notRun: [] });
+        expect(ledger.unattributedRedRunIds).toEqual([1]);
+    });
+
+    it('reads a result that names another carrier as red, keyed by the run carrier and the family', () => {
+        const green = toGreenRun(1);
+        const foreign = toResult('rtc', 'three-agent', new Map([['c', 'passed']]));
+
+        const ledger = toLedger([{ ...green, familyResults: [...green.familyResults, foreign] }]);
+
+        expect(ledger.carriers[0]?.lastRed?.failed).toEqual(['ws/three-agent']);
+    });
+
+    it('reads two results for one family as red, keyed by its carrier and family', () => {
+        const green = toGreenRun(1);
+        const twice = toResult('ws', 'three-agent', new Map([['c', 'passed']]));
+
+        const ledger = toLedger([{ ...green, familyResults: [...green.familyResults, twice] }]);
+
+        expect(ledger.carriers[0]?.lastRed?.failed).toEqual(['ws/three-agent']);
     });
 });

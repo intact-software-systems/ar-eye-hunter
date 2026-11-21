@@ -45,6 +45,8 @@ export interface AlmLaneCarrierStreak {
     readonly streak: number;
     /** Null when no counted push run of the carrier is red. */
     readonly lastRed: AlmLaneRedRun | null;
+    /** The keys a counted push run of the carrier failed or did not run, with no recorded cause; sorted. */
+    readonly uncaused: readonly string[];
 }
 
 export interface AlmLaneScenarioFailures {
@@ -92,7 +94,7 @@ export function computeAlmLaneLedger(input: ComputeAlmLaneLedgerInput): AlmLaneL
     const pushRuns = readRuns.filter((read) => read.run.event === 'push');
     const unattributed = pushRuns.filter((read) => !read.green && read.failed.length + read.notRun.length === 0);
     return {
-        carriers: ALM_CONFORMANCE_CARRIERS.map((carrier) => computeCarrierStreak(carrier, pushRuns)),
+        carriers: ALM_CONFORMANCE_CARRIERS.map((carrier) => computeCarrierStreak(carrier, pushRuns, input.causes)),
         scenarios: computeScenarioFailures(pushRuns, input.causes),
         unattributedRedRunIds: [...new Set(unattributed.map((read) => read.run.runId))],
         sideRuns: readRuns.flatMap((read) =>
@@ -114,32 +116,39 @@ function isReadRun(run: AlmLaneObservedRun): boolean {
     return run.jobConclusion !== 'cancelled' || run.event === 'push';
 }
 
+/** A plan for another carrier says nothing about this run, which is then red with nothing to attribute. */
 function toReadRun(run: AlmLaneObservedRun): AlmLaneReadRun {
-    const misses = run.plan === null
+    const plan = run.plan?.carrier === run.carrier ? run.plan : null;
+    const misses = plan === null
         ? { failed: [], notRun: [] }
-        : computePlanMisses(run.carrier, run.plan, run.familyResults);
-    const green = run.attempt === 1 && run.jobConclusion === 'success' && run.plan !== null &&
+        : computePlanMisses(run.carrier, plan, run.familyResults);
+    const green = run.attempt === 1 && run.jobConclusion === 'success' && plan !== null &&
         misses.failed.length + misses.notRun.length === 0;
     return { run, green, ...misses };
 }
 
-/** A result for a family the plan does not name disagrees with the plan, so it fails that family. */
+/**
+ * A result the plan cannot vouch for fails its family: one for a family the plan does not name, one for another
+ * carrier, and a second result for the same family.
+ */
 function computePlanMisses(
     carrier: AlmConformanceCarrier,
     plan: AlmLanePlanRecord,
     results: readonly AlmLaneFamilyResult[]
 ): AlmLaneRunMisses {
+    const toFirstResult = (family: AlmConformanceLaneFamily) =>
+        results.find((result) => result.carrier === carrier && result.family === family);
     const familyMisses = plan.families.map((planned) =>
-        computeFamilyMisses(carrier, planned, results.find((result) => result.family === planned.family))
+        computeFamilyMisses(carrier, planned, toFirstResult(planned.family))
     );
-    const unplanned = results.filter((result) => !plan.families.some((planned) => planned.family === result.family));
-    return {
-        failed: [
-            ...familyMisses.flatMap((misses) => misses.failed),
-            ...unplanned.map((result) => toFamilyKey(carrier, result.family))
-        ],
-        notRun: familyMisses.flatMap((misses) => misses.notRun)
-    };
+    const refused = results.filter((result) =>
+        toFirstResult(result.family) !== result || !plan.families.some((planned) => planned.family === result.family)
+    );
+    const failed = [
+        ...familyMisses.flatMap((misses) => misses.failed),
+        ...refused.map((result) => toFamilyKey(carrier, result.family))
+    ];
+    return { failed: [...new Set(failed)], notRun: familyMisses.flatMap((misses) => misses.notRun) };
 }
 
 /**
@@ -166,9 +175,11 @@ function computeFamilyMisses(
 
 function computeCarrierStreak(
     carrier: AlmConformanceCarrier,
-    pushRuns: readonly AlmLaneReadRun[]
+    pushRuns: readonly AlmLaneReadRun[],
+    causes: readonly AlmLaneFlakeCause[]
 ): AlmLaneCarrierStreak {
     const carrierRuns = pushRuns.filter((read) => read.run.carrier === carrier);
+    const missed = new Set(carrierRuns.flatMap((read) => [...read.failed, ...read.notRun]));
     const firstRedIndex = carrierRuns.findIndex((read) => !read.green);
     const firstRed = carrierRuns[firstRedIndex];
     return {
@@ -181,7 +192,8 @@ function computeCarrierStreak(
                 commitSha: firstRed.run.commitSha,
                 failed: firstRed.failed,
                 notRun: firstRed.notRun
-            }
+            },
+        uncaused: [...missed].filter((key) => !causes.some((cause) => cause.scenario === key)).sort()
     };
 }
 
