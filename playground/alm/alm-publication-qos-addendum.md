@@ -1478,10 +1478,10 @@ The second part, S9-ii, made the full-scope lane one to trust (D627–D641). It
 changes one product path: a conflicted inbound admission is always retained and
 replayed (D640), so a `resync-required` drop that loses a commit race still
 reaches its sender as a NACK. On the WS server such a drop of a receipted room
-send first answers `pending-admission` and starts its `admitted` receipt, which
-can precede or follow the replay's NACK at the origin; a late one settles an
-`acknowledgement` after `relay-rejected`, and the handle reads `rejected`. The
-rest corrects the lane. No window, timeout or budget was widened; three cells
+send first answers `pending-admission`, which starts no receipt: the replay that
+admits a kept send starts its receipt, and a replay that refuses it answers its
+NACK and starts none, so the handle reads `rejected` (D697, D698). The rest
+corrects the lane. No window, timeout or budget was widened; three cells
 assert what the product documents instead of what they asserted before (D630,
 D633, D641), and each row states its cost:
 
@@ -1570,14 +1570,23 @@ over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
 not recovered, renewal holds on direct links and not through an `rtc` relay,
 and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D680, D683, D693 and the backlog); a send the server retains
-behind its room view stays open to its deadline, since the server never reports
-one it later refuses or lets expire, nor one it loses in a restart (D694); and the lost stream
-start over `rtc` is its own slice (D669). The next outcome is the local
-baseline's alternating runs, their own small change (D672). After them, the
-held-send path, where a retained admission starts its `admitted` receipt only
-once its replay commits, and of which a receipt's first attempt is built
-(D689), and the relay statement rules.
+its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
+start over `rtc` is its own slice (D669). The held-send path is built (D696 to
+D700): a send the server keeps starts its receipt when the server admits it, at
+ingress or at its replay, so a send kept behind its room view and then admitted
+reads `admitted` and then `complete` or `timed-out` (D697); a kept send its room
+later refuses is answered with the refusal's NACK (D698); and a `timed-out`
+receipt always ends its receipt at the WS client (D699). Its stated limits: a
+kept send that expires is not reported, since the handle's own deadline says so
+(the maintainer's ruling); a kept send that names no deadline keeps the kept
+row's; without a relay publisher an ACK on another instance than the one that
+admitted the send is lost; a send the server loses in a restart reads `expired`
+at its deadline (D694); and a receipt does not survive its server's crash, which
+`api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
+commit race whose recipients all left by its replay expects the recipients
+captured at ingress, so its handle reads `expired` at its deadline (D701). The
+local baseline's alternating runs are pull request 851 (D672), which lands
+before the relay statement rules; they are the next outcome.
 With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world

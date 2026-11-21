@@ -93,7 +93,10 @@ import {
     type WsQueueBoxServerOutboundPhase,
     type WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
-import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
+import {
+    toWsQueueBoxServerReplayedAdmittedMessage,
+    WsQueueBoxServerReceiptAggregation
+} from './ws-queue-box-server-receipt-aggregation.ts';
 import {
     recordWsQueueBoxServerReceiptObservation,
     toWsQueueBoxServerReceiptAckFacts,
@@ -515,6 +518,12 @@ export class WsQueueBoxServerService {
             sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
+            },
+            onReplayAdmitted: async (replayed) => {
+                const admitted = toWsQueueBoxServerReplayedAdmittedMessage(replayed);
+                if (admitted !== undefined) {
+                    await this.receipts.writeAdmittedReceipt(admitted);
+                }
             },
             readRelayedAckRejection: (ack, controlIdentity) =>
                 this.readRuntimeProtocolAckRejection(ack, controlIdentity),

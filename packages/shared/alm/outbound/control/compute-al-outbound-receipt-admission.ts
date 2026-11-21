@@ -105,7 +105,7 @@ export function validateALOutboundReceiptAdmission(
     if (write.expireAtTimestamp <= read.nowMs) {
         issues.push(refuseReceipt('AL receipt arrived after its message deadline and the receipt grace'));
     }
-    if (read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
+    if (read.receipt.phase !== 'timed-out' && read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
         issues.push(refuseReceipt('AL receipt moves no receipt of its message'));
     }
     return issues;

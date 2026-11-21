@@ -7,7 +7,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -225,64 +225,73 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
-    it.each(PENDING_ADMISSION_DENIALS)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
-        let nowMs = Date.now();
-        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
-        const fixture = await createServerIngressFixture();
-        let pending = false;
-        fixture.service.authorizeInboundMessagesWith({
-            sendNacks: true,
-            authorize: async () =>
-                pending
-                    ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack: false }
-                    : { authorized: true, roomAudience: { recipientPeerIds: [], snapshotVersion: 1 } }
-        });
-        const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
-        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
-            expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] })).toBe(
-                'committed'
-            );
-            const status = await commit(bundle);
-            expect(status).toBe('conflict');
-            return status;
-        });
-        const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
-        let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
-        vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
-            const retained = await enqueue(entry);
-            observedMetadata = new Map(fixture.admission.data);
-            pending = true;
-            return retained;
-        });
-        const message = { ...createRoomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
-        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
-        await expect.poll(async () => {
-            const keys = await fixture.admission.workQueue.getAllKeys();
-            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
-        }).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
-        expect(fixture.admission.data).toEqual(observedMetadata);
-        expect(fixture.socket.sent).toEqual([]);
-        expect(fixture.delivered).toEqual([]);
-        const keys = await fixture.admission.workQueue.getAllKeys();
-        expect(keys).toHaveLength(1);
-        expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
-        if (reason === 'not-yet-in-sync') {
-            const waiting = await fixture.admission.workQueue.getItem(keys[0]);
-            expect(waiting?.dequeueAudit.attempts).toBe(0);
-            expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
-            nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
-            await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
-            const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
-            expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
-            expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
-            pending = false;
-            nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
+    it.each(PENDING_ADMISSION_DENIALS.flatMap((reason) => [false, true].map((sendNack) => [reason, sendNack] as const)))(
+        'rechecks %s room authority before pending admission can commit or acknowledge (sendNack=%s)',
+        async (reason, sendNack) => {
+            let nowMs = Date.now();
+            vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+            const fixture = await createServerIngressFixture();
+            let pending = false;
+            fixture.service.authorizeInboundMessagesWith({
+                sendNacks: true,
+                authorize: async () =>
+                    pending
+                        ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack }
+                        : { authorized: true, roomAudience: { recipientPeerIds: [], snapshotVersion: 1 } }
+            });
+            const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
+            vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+                expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] }))
+                    .toBe(
+                        'committed'
+                    );
+                const status = await commit(bundle);
+                expect(status).toBe('conflict');
+                return status;
+            });
+            const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
+            let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
+            vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+                const retained = await enqueue(entry);
+                observedMetadata = new Map(fixture.admission.data);
+                pending = true;
+                return retained;
+            });
+            const message = { ...createRoomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
+            expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
             await expect.poll(async () => {
-                return fixture.delivered.length;
-            }).toBe(1);
-            expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
+                const keys = await fixture.admission.workQueue.getAllKeys();
+                return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
+            }).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
+            expect(fixture.admission.data).toEqual(observedMetadata);
+            const nacksRefusal = sendNack && reason !== 'not-yet-in-sync';
+            expectPendingRefusalNack(fixture.socket.sent, nacksRefusal ? reason : undefined);
+            expect(fixture.delivered).toEqual([]);
+            const keys = await fixture.admission.workQueue.getAllKeys();
+            expect(keys).toHaveLength(1);
+            expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
+            if (nacksRefusal) {
+                await settleQueueEngine(fixture.engine);
+                expectPendingRefusalNack(fixture.socket.sent, reason);
+            }
+            if (reason === 'not-yet-in-sync') {
+                const waiting = await fixture.admission.workQueue.getItem(keys[0]);
+                expect(waiting?.dequeueAudit.attempts).toBe(0);
+                expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
+                nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
+                await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
+                const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
+                expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
+                expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
+                pending = false;
+                nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
+                await expect.poll(async () => {
+                    return fixture.delivered.length;
+                }).toBe(1);
+                expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
+            }
         }
-    });
+    );
 
     it.each([true, false])('returns configured denial NACKs without accepting room traffic (sendNack=%s)', async (sendNack) => {
         const fixture = await createServerIngressFixture();
@@ -727,6 +736,23 @@ function createOrderedRoomMessage(seq: number): ALMessage {
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         ordering: { orderingKey: 'stream', epoch: 1, seq }
     };
+}
+
+/** The socket holds nothing, or exactly the one NACK of `message-1` that states `reason`. */
+function expectPendingRefusalNack(sent: SimulatedWebSocket['sent'], reason: string | undefined): void {
+    if (reason === undefined) {
+        expect(sent).toEqual([]);
+        return;
+    }
+    expect(sent).toHaveLength(1);
+    const nack = decodePersistedALMessage(String(sent[0]));
+    expect(nack.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
+    expect(decodeALNackPayload(JSON.parse(nack.payload.resource))).toMatchObject({
+        fromPeerId: 'server',
+        toPeerId: 'session-1',
+        msgId: 'message-1',
+        reason
+    });
 }
 
 function readReceiptPhases(socket: SimulatedWebSocket, msgId: string): readonly string[] {

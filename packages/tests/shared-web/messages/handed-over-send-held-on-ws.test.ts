@@ -1,0 +1,142 @@
+import '../../setup-browser-indexeddb.ts';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import * as auth from '@shared/api/auth.ts';
+import {
+    configureGroupStateSnapshotRepository,
+    setGroupStateSnapshot
+} from '@shared/repository/group-state-snapshots-repository.ts';
+
+import { createAcceptedGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import {
+    ACK_UNDER_HOLD_MESSAGE_TTL_MS,
+    advanceAndRun,
+    openWsHoldSender,
+    type WsHoldSender
+} from './acknowledgement-under-hold-fixture.ts';
+
+const ROOM_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
+
+/** The two receivers the `repair-exhausted` cell's RTC admission froze into the send's audience. */
+const FROZEN_RECIPIENT_PEER_IDS = ['receiver-a', 'receiver-b'];
+
+/** Outlives the message deadline and the 30 s after it, so the sender's presence never gates a submission. */
+const SENDER_PRESENCE_MS = 600_000;
+
+describe('a handed-over send whose WS copy is held too', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    it.each(['volatile', 'local-outbox'] as const)(
+        'on the %s lane it sends nothing, keeps no receipt row and states no terminal fact; it reads submitted until its deadline and expired after it, and nothing leaves once the hold lifts',
+        async (durability) => {
+            const sender = await openPresentWsHoldSender();
+            sender.faults.inject(sender.hold);
+            const message = toHandedOverMessage(sender.selfPeerId, durability);
+            const msgId = message.id.msgId;
+            const handle = await sender.sendHandedOver(message);
+            await sender.drain();
+            const expiresAtMs = handle.lifecycle().expiresAtMs ?? Number.NaN;
+            expect(expiresAtMs).toBeGreaterThan(Date.now());
+
+            await advanceAndRun(sender, expiresAtMs - 1 - Date.now());
+            expect(sender.readSentFrames(msgId)).toEqual([]);
+            // Bites on `local-outbox` only: a volatile send writes no row to the durable store this reads.
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+            expect(sender.readFaultedTypeIds()).toContain('held.message');
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'submitted',
+                evidence: { attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }] }
+            });
+
+            await advanceAndRun(sender, 2);
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'expired',
+                evidence: {
+                    attempts: [{ carrier: 'ws', outcome: 'not-ready', submissionAttempted: false }],
+                    failure: { kind: 'expired' },
+                    reason: 'The deadline elapsed before a terminal settlement.'
+                },
+                lateSettlementCount: 0
+            });
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+
+            await advanceAndRun(sender, ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+            sender.faults.inject({ ...sender.hold, remaining: 0 });
+            await advanceAndRun(sender, 100);
+            expect(sender.readSentFrames(msgId)).toEqual([]);
+            expect(await sender.readPendingAck(msgId)).toBeUndefined();
+            expect(handle.lifecycle()).toMatchObject({ state: 'expired', lateSettlementCount: 0 });
+        }
+    );
+
+    it('lets its one frame out at the lift when the hold lifts before the deadline', async () => {
+        const sender = await openPresentWsHoldSender();
+        sender.faults.inject(sender.hold);
+        const message = toHandedOverMessage(sender.selfPeerId, 'volatile');
+        const handle = await sender.sendHandedOver(message);
+        await sender.drain();
+        await advanceAndRun(sender, 10_000);
+        expect(sender.readSentFrames(message.id.msgId)).toEqual([]);
+
+        sender.faults.inject({ ...sender.hold, remaining: 0 });
+        await advanceAndRun(sender, 100);
+        expect(sender.readSentFrames(message.id.msgId)).toEqual([
+            expect.objectContaining({ targets: message.targets, ordering: message.ordering })
+        ]);
+        expect(handle.lifecycle().state).toBe('transport-accepted');
+    });
+});
+
+/** The WS hold sender with its own live presence in the send's room, so only the scripted hold keeps a copy back. */
+async function openPresentWsHoldSender(): Promise<WsHoldSender> {
+    const sender = await openWsHoldSender();
+    const sessionId = sender.selfPeerId;
+    const presentUntilMs = Date.now() + SENDER_PRESENCE_MS;
+    vi.spyOn(auth, 'readSession').mockReturnValue({
+        clientId: sessionId,
+        sessionId,
+        username: 'sender',
+        accessToken: 'test-only',
+        expiresAtEpochMs: presentUntilMs
+    });
+    configureGroupStateSnapshotRepository({ ttlMs: SENDER_PRESENCE_MS });
+    const snapshot = createAcceptedGroupSnapshotFixture([sessionId, ...FROZEN_RECIPIENT_PEER_IDS]);
+    setGroupStateSnapshot({
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: presentUntilMs }))
+    });
+    return sender;
+}
+
+/**
+ * The copy the cell's RTC admission hands to WS: an ordered at-least-once `receiver` room send of the held typeId
+ * whose audience that admission froze and whose sequence it fixed, on the lane `durability` names. The cell's copy is
+ * `volatile`.
+ */
+function toHandedOverMessage(sessionId: string, durability: ALDurabilityAlgo): ALMessage {
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: sessionId,
+        route: { topicId: 'held', contextId: 'group-1', resourceId: 'handed-over' },
+        groupRef: ROOM_REF,
+        typeId: 'held.message',
+        resource: { seq: 2 },
+        options: {
+            ack: 'receiver',
+            reliability: 'at-least-once',
+            seq: 2,
+            orderingKey: 'held-track',
+            ttlMs: ACK_UNDER_HOLD_MESSAGE_TTL_MS,
+            qos: { durability: { algo: durability } }
+        }
+    });
+    const frozen = toALFrozenMulticastMessage(message, { recipientPeerIds: FROZEN_RECIPIENT_PEER_IDS, snapshotVersion: 1 });
+    return { ...frozen, ordering: { orderingKey: 'held-track', seq: 2, priorSeqByRecipient: {} } };
+}

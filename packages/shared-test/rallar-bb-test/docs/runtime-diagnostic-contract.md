@@ -558,8 +558,9 @@ every session the page opens. The event's `data` is the event itself:
   `control-admission` event: `msgId` is the receipt control's own id,
   `typeId` is `al.control.receipt.v1`, and `targetMsgId` is the sent message
   the receipt names. `outcome` is `committed` when the receipt moved the
-  origin's receipt row, or `rejected` with its reasons — a receipt that moves
-  nothing reads `AL receipt moves no receipt of its message`, and one about a
+  origin's receipt row, or `rejected` with its reasons — an `admitted` or
+  `complete` receipt that moves nothing reads `AL receipt moves no receipt of
+  its message` (a `timed-out` is committed), and one about a
   message the origin never sent reads `AL receipt names no retained outbound
   message of its origin`. It also carries the receipt's `phase` (`admitted`,
   `complete` or `timed-out`) straight after `reason`, followed only by the

@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     ACK_UNDER_HOLD_MESSAGE_TTL_MS,
+    advanceAndRun,
     openRtcHoldSender,
     openWsHoldSender,
-    runAckTimeoutClaimsToExhaustion,
-    type HoldSender
+    runAckTimeoutClaimsToExhaustion
 } from './acknowledgement-under-hold-fixture.ts';
 
 describe('a receipt waits for its first frame on the browser carriers, over IndexedDB stores', () => {
@@ -66,11 +66,3 @@ describe('a receipt waits for its first frame on the browser carriers, over Inde
         }
     );
 });
-
-/** Moves the sender's clock and runs the work then due, as a page's engine would. */
-async function advanceAndRun(sender: HoldSender, ms: number): Promise<void> {
-    await sender.advance(ms);
-    await sender.drain();
-    await sender.drain();
-    await sender.settle();
-}

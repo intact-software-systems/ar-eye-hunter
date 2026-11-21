@@ -582,9 +582,12 @@ Rules:
   on it, so a cut that found no session does not pass as a fault.
 
 Examples: `tests/api-v1/api-v1-cluster-instance-loss.json`,
-`tests/api-v1/api-v1-cluster-database-session-loss.json` and
+`tests/api-v1/api-v1-cluster-database-session-loss.json`,
 `tests/api-v1/api-v1-cluster-subscriber-instance-loss.json`, which crashes the
-server that holds a subscriber's socket and reads how the receipt ends.
+server that holds a subscriber's socket and reads how the receipt ends, and
+`tests/api-v1/api-v1-cluster-publisher-instance-loss.json`, which crashes the
+server that admitted a receipted broadcast and reads that the publisher,
+reconnected to a survivor, receives no terminal receipt for it.
 
 ## Safe Transforms
 
