@@ -67,7 +67,8 @@ export function replayALOrderingObservation(frames: readonly SentFrame[], recipi
             selfPeerId: recipientPeerId,
             bufferedPriorSeqs: {},
             evictedTrack: false,
-            latestWins: false
+            latestWins: false,
+            repairsGaps: true
         });
         statuses.push(acceptance.observation.status);
         missingRanges.push(...acceptance.observation.missingRanges);

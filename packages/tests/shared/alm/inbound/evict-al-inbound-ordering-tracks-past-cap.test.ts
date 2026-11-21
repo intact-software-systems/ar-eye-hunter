@@ -404,12 +404,16 @@ function createTrackMessage(track: number, seq: number): ALMessage {
     return { ...message, ordering: { orderingKey: `track-${track}`, seq } };
 }
 
-/** A copy whose authority recorded that this receiver, its frozen audience, was sent every sequence below it. */
+/**
+ * A gap-repaired copy whose authority recorded that this receiver, its frozen audience, was sent every sequence below
+ * it.
+ */
 function createRecordedTrackMessage(track: number, seq: number): ALMessage {
     const message = createTrackMessage(track, seq);
     return {
         ...message,
         targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 },
+        qos: { ...message.qos, repair: { algo: 'retransmit' } },
         ordering: { ...message.ordering, priorSeqByRecipient: {} }
     };
 }

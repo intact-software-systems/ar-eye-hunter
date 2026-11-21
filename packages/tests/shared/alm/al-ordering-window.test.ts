@@ -11,7 +11,7 @@ import {
 } from 'vitest';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false, latestWins: false } as const;
+const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false, latestWins: false, repairsGaps: true } as const;
 
 describe('AL ordering repair window', () => {
     it('requests resynchronization for a maximum-safe-integer initial sequence without expanding its gap', () => {
@@ -269,6 +269,13 @@ describe('a recorded track at its recipient: entry, omission and the record\'s p
         expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 6, bufferedSeqs: [], updatedAtMs: 1_001 });
     });
 
+    it('enters a fresh track at a copy whose plan repairs no gap: a start it could never ask for is not held', () => {
+        const result = observe({ msg: recordedMessage(2, {}), snapshot: undefined, repairsGaps: false });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 2, missingRanges: [], priorSeq: 1 });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
     it('enters a fresh track at a recorded unicast copy: no frozen audience names it', () => {
         const result = observe({ msg: recordedUnicastMessage(2), snapshot: undefined });
 
@@ -432,6 +439,8 @@ interface ObserveInput {
     readonly evictedTrack?: boolean;
     /** Absent, the copy's plan supersedes nothing. */
     readonly latestWins?: boolean;
+    /** Absent, the copy's plan repairs gaps. */
+    readonly repairsGaps?: boolean;
 }
 
 function observe(input: ObserveInput): ALOrderingAcceptance {
@@ -445,7 +454,8 @@ function observe(input: ObserveInput): ALOrderingAcceptance {
         selfPeerId: 'receiver',
         bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
         evictedTrack: input.evictedTrack ?? false,
-        latestWins: input.latestWins ?? false
+        latestWins: input.latestWins ?? false,
+        repairsGaps: input.repairsGaps ?? true
     });
 }
 

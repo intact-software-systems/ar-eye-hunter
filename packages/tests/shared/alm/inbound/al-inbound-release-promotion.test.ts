@@ -212,6 +212,22 @@ describe('a fresh receiver whose first copy of a recorded track is not the track
         expect(nacks.filter((nack) => nack.reason === 'before-entry')).toEqual([]);
         expect(fixture.diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
     }, TEST_TIMEOUT_MS);
+
+    it('enters at copy 2 when its plan repairs no gap, delivering 2 and 3 and asking for nothing', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        const fixture = await startInboundRuntime('unrepaired-start', {
+            gateDispatch: async (msg) => {
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(createRecordedMessage(seq, {}), INBOUND_TEST_SOURCE);
+        }
+
+        await vi.waitFor(() => expect(deliveredSeqs).toEqual([2, 3]), WAIT);
+        expect(readGapNacks(fixture)).toEqual([]);
+    }, TEST_TIMEOUT_MS);
 });
 
 async function admitRecorded(

@@ -330,7 +330,8 @@ function observeAtRecipient(message: ALMessage, selfPeerId: string, lastContiguo
         selfPeerId,
         bufferedPriorSeqs: {},
         evictedTrack: false,
-        latestWins: false
+        latestWins: false,
+        repairsGaps: true
     }).observation;
 }
 

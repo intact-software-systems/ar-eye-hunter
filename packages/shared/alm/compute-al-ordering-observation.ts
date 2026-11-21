@@ -27,6 +27,8 @@ export interface ComputeALOrderingObservationInput {
     readonly evictedTrack: boolean;
     /** Whether the copy's plan supersedes by latest-wins: a predecessor it replaced was never owed to anyone. */
     readonly latestWins: boolean;
+    /** Whether the copy's plan repairs gaps: one that repairs none plans no gap NACK, so it can never ask for a start. */
+    readonly repairsGaps: boolean;
 }
 
 export interface ALOrderingAcceptance {
@@ -98,13 +100,13 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
 /**
  * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. The record
  * speaks only for the copy's frozen audience, so a peer it does not name (the WS server, ordering hop of every track)
- * enters at the copy. A track the store evicted at its cap enters at the copy too, since its delivered past is
- * forgotten, not absent, and so does a latest-wins copy, whose predecessor may have been superseded before it was ever
- * sent.
+ * enters at the copy, and so does a copy whose plan repairs no gap, since it could never ask for the start. A track the
+ * store evicted at its cap enters at the copy too, since its delivered past is forgotten, not absent, and so does a
+ * latest-wins copy, whose predecessor may have been superseded before it was ever sent.
  */
 function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
     return isInformativePrior(track, 0) && track.priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow &&
-        isALFrozenMulticastRecipient(track.input.msg.targets, track.input.selfPeerId) &&
+        isALFrozenMulticastRecipient(track.input.msg.targets, track.input.selfPeerId) && track.input.repairsGaps &&
         !track.input.evictedTrack && !track.input.latestWins;
 }
 

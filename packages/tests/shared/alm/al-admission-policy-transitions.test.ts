@@ -15,6 +15,7 @@ describe('AL admission policy transitions', () => {
             bufferedPriorSeqs: {},
             evictedTrack: false,
             latestWins: false,
+            repairsGaps: true,
             snapshot: {
                 lastContiguousSeq: 0,
                 bufferedSeqs: [2],
