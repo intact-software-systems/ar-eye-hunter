@@ -1,4 +1,5 @@
-import { isALOwnWord, type ALNackPayload, type ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import type { ALNackPayload, ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import { isALOwnWord } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 
 /**
  * A gap NACK a relay re-sends for a recipient below it (S4ii-R3): the one NACK a hop sends naming another recipient

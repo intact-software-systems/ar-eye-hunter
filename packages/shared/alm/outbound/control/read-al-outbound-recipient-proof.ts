@@ -1,7 +1,8 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import { isALOwnWord, type ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import type { ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import {
+    isALOwnWord,
     toALReceiptProofRefusal,
     type ALReceiptProofRefusal,
     type ALReceiptProofVerifierPort

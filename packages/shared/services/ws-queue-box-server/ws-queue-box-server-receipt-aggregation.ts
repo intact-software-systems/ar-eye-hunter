@@ -2,7 +2,6 @@ import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     decodeALControlMessage,
-    isALOwnWord,
     newALReceiptControlMessage,
     type ALAckPayload,
     type ALReceiptPayload
@@ -19,6 +18,7 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALOwnWord } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../alm/delivery/is-al-recipient-confirmation-ack.ts';

@@ -94,6 +94,13 @@ export function toALReceiptProofSigningInput(control: ALReceiptControl): string 
         ]);
 }
 
+/** A control its recipient sent on its own channel: the one kind a relay heard from the recipient itself. */
+export function isALOwnWord(
+    control: Pick<ALAckPayload | ALNackPayload, 'fromPeerId' | 'logicalRecipientPeerId'>
+): boolean {
+    return control.fromPeerId === control.logicalRecipientPeerId;
+}
+
 /** The refusal of a control, naming the recipient it speaks for and the peer it arrived from. */
 export function toALReceiptProofRefusal(
     kind: ALReceiptProofRefusal['kind'],

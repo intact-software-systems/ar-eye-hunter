@@ -247,7 +247,7 @@ which each control's prepared subject encodes at most once
 ([`toALReceiptStatementSubject`](./control/is-al-same-receipt-statement.ts)) --
 or both carry `proof: null`, whatever their content, or are both that
 recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`,
-[`isALOwnWord`](../../al-contracts/al-control.ts))
+[`isALOwnWord`](../../al-contracts/receipt-proof/al-receipt-proof.ts))
 ([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)). So
 above the first relay, where every forward carries the relay's `fromPeerId`,
 the proof and what it signs still tell two statements apart, a copied proof

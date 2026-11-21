@@ -1,12 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
-    isALOwnWord,
     type ALAckStatus,
     type ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
-import type { ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
+import { isALOwnWord, type ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';

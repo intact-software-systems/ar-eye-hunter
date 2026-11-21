@@ -1,10 +1,6 @@
+import type { ALAckPayload, ALNackPayload, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
 import {
     isALOwnWord,
-    type ALAckPayload,
-    type ALNackPayload,
-    type ALPendingAckSnapshot
-} from '../../../al-contracts/al-control.ts';
-import {
     toALReceiptProofSigningInput,
     type ALReceiptControl
 } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';

@@ -27,6 +27,7 @@ import {
     AL_MESSAGE_RESOURCE_LIMITS
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
+import { isALOwnWord } from './receipt-proof/al-receipt-proof.ts';
 
 /**
  * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
@@ -146,13 +147,6 @@ export function isALHopCompletionAck(ack: ALAckPayload): boolean {
     return isALOwnWord(ack) &&
         (ack.status === 'delivered' || ack.status === 'subtree-complete' ||
             ack.status === 'subtree-complete-not-subscribed');
-}
-
-/** A control its recipient sent on its own channel: the one kind a relay heard from the recipient itself. */
-export function isALOwnWord(
-    control: Pick<ALAckPayload | ALNackPayload, 'fromPeerId' | 'logicalRecipientPeerId'>
-): boolean {
-    return control.fromPeerId === control.logicalRecipientPeerId;
 }
 
 export interface ALCompletedPendingAck {
