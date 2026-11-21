@@ -1,10 +1,12 @@
-import type { Group } from '@shared/api/group-types.ts';
 import {
     MAX_ROOM_DEADLINES,
     readRoomDeadlines,
     ROOM_DEADLINES_METADATA_KEY,
     type RoomDeadlineChange
 } from '@shared/api/group-deadlines/room-deadline.ts';
+import { isRallarGroupDirectorSessionActive, readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
+import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 
 interface ComputeGroupDeadlineChangeInput {
     readonly current: Group;
@@ -14,7 +16,7 @@ interface ComputeGroupDeadlineChangeInput {
 }
 
 interface DeadlineRefusal {
-    readonly rejectionCode: 'group-mutation-rejected' | 'room-deadline-revision-conflict';
+    readonly rejectionCode: 'group-mutation-rejected' | 'room-deadline-revision-conflict' | 'room-director-changed';
     readonly message: string;
 }
 
@@ -50,4 +52,39 @@ export function computeGroupDeadlineChange(
         revision: change.expectedRevision + 1
     };
     return { ...next, metadata: { ...next.metadata, [ROOM_DEADLINES_METADATA_KEY]: revised } };
+}
+
+interface DirectorDeadlineExtensionInput {
+    readonly update: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>['input'];
+    readonly snapshot: GroupSnapshot;
+    readonly expectedEpoch: number;
+    readonly nowEpochMs: number;
+}
+
+/** A director intent never inherits the session's other room privileges. */
+export function refuseDirectorDeadlineExtension({
+    update,
+    snapshot,
+    expectedEpoch,
+    nowEpochMs
+}: DirectorDeadlineExtensionInput): DeadlineRefusal | null {
+    const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+    if (
+        appointment?.epoch !== expectedEpoch || appointment.sessionId !== update.actorSessionId ||
+        appointment.principalId !== update.actorPrincipalId ||
+        !isRallarGroupDirectorSessionActive(snapshot, appointment, nowEpochMs)
+    ) {
+        return {
+            rejectionCode: 'room-director-changed',
+            message: 'The requesting session no longer holds this room director appointment.'
+        };
+    }
+    const allowed = ['actorPrincipalId', 'actorSessionId', 'reason', 'roomDeadline'];
+    if (Object.entries(update).some(([key, value]) => value != null && !allowed.includes(key))) {
+        return {
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Director deadline extensions cannot change other room settings.'
+        };
+    }
+    return null;
 }

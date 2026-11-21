@@ -1,5 +1,11 @@
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
-import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireExactOptionalKeys,
+    requirePositiveInteger,
+    requireRecord
+} from '../exact-object-decoding.ts';
 
 export interface RoomDeadline {
     readonly name: string;
@@ -10,6 +16,8 @@ export interface RoomDeadline {
 export interface RoomDeadlineChange {
     readonly name: string;
     readonly expectedRevision: number;
+    /** Supply the captured appointment epoch to extend as the room director. */
+    readonly expectedDirectorEpoch?: number;
     readonly atEpochMs: number;
 }
 
@@ -24,7 +32,16 @@ export function assertRoomDeadlineName(name: unknown): asserts name is string {
 
 export function assertRoomDeadlineChange(value: unknown): asserts value is RoomDeadlineChange {
     const change = requireRecord(value, 'Room deadline change');
-    requireExactKeys(change, ['name', 'expectedRevision', 'atEpochMs'], 'Room deadline change');
+    requireExactOptionalKeys({
+        value: change,
+        required: ['name', 'expectedRevision', 'atEpochMs'],
+        optional: ['expectedDirectorEpoch'],
+        label: 'Room deadline change'
+    });
+    if (Object.hasOwn(change, 'expectedDirectorEpoch')) {
+        requirePositiveInteger(change.expectedDirectorEpoch, 'Expected director epoch');
+        requirePositiveInteger(change.expectedRevision, 'A director can only extend an existing deadline');
+    }
     assertRoomDeadlineName(change.name);
     requireEpoch(change.expectedRevision, 'Room deadline expected revision');
     assertDeadlineInstant(change.atEpochMs);

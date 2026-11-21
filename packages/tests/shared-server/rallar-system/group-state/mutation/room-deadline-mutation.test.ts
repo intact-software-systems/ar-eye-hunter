@@ -86,3 +86,18 @@ it('bounds the per-room collection and still permits an extension at capacity', 
         name: 'phase-0', revision: 2, atEpochMs: 5_000
     });
 });
+
+it('refuses an owner acting under a missing appointment even with the correct deadline revision', async () => {
+    const runtime = new GroupBarrierRepository();
+    await seedOpenGroup(runtime, groupId);
+    const writer = service(runtime);
+    await writer.updateGroup(SCOPE, groupId, change('publish', 0, 3_000));
+    const delayed = change('delayed', 1, 4_000);
+    await expect(writer.updateGroup(SCOPE, groupId, {
+        ...delayed, actorSessionId: 'alice-session',
+        roomDeadline: { ...delayed.roomDeadline, expectedDirectorEpoch: 1 }
+    })).rejects.toMatchObject({ status: 409, code: 'room-director-changed' });
+    expect((await requireSnapshot(runtime, groupId)).group.metadata.rallarRoomDeadlines).toEqual([
+        { name: 'vote', revision: 1, atEpochMs: 3_000 }
+    ]);
+});

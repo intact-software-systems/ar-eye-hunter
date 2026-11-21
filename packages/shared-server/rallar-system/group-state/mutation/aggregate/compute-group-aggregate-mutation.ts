@@ -1,4 +1,5 @@
 import {
+    RALLAR_GROUP_DIRECTOR_METADATA_KEY,
     createRallarGroupDirectorAppointment,
     mergeRallarGroupDirectorMetadata,
     readRallarGroupDirectorFromSnapshot,
@@ -43,7 +44,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeGroupDeadlineChange } from './compute-group-deadline-change.ts';
+import { computeGroupDeadlineChange, refuseDirectorDeadlineExtension } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
@@ -63,9 +64,21 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    const authorityDenial = toUpdateAuthorityDenial(command, read);
-    if (authorityDenial) {
-        return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
+    const directorEpoch = command.input.roomDeadline?.expectedDirectorEpoch;
+    if (directorEpoch !== undefined) {
+        const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+        const refusal = refuseDirectorDeadlineExtension({
+            update: command.input, snapshot, expectedEpoch: directorEpoch, nowEpochMs: facts.attemptAtEpochMs
+        });
+        if (refusal) {
+            return rejected({ command, read, facts, ...refusal });
+        }
+    }
+    else {
+        const authorityDenial = toUpdateAuthorityDenial(command, read);
+        if (authorityDenial) {
+            return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
+        }
     }
     if (
         readGroupRetentionState(stored.value.metadata) !== null &&
@@ -411,6 +424,10 @@ function computeUpdatedGroupMetadata(
     const schedule = readGroupSessionSchedule(current);
     if (schedule !== null) {
         metadata[GROUP_SESSION_SCHEDULE_METADATA_KEY] = { ...schedule };
+    }
+    delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
+    if (Object.hasOwn(current, RALLAR_GROUP_DIRECTOR_METADATA_KEY)) {
+        metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     }
     if (Object.hasOwn(current, ROOM_DEADLINES_METADATA_KEY)) {
         metadata[ROOM_DEADLINES_METADATA_KEY] = current[ROOM_DEADLINES_METADATA_KEY];

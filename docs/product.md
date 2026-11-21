@@ -39,6 +39,25 @@ extensions from the same revision. One succeeds, and the other receives a
 revision conflict. Reusing the same request ID and payload recovers the original
 acknowledgement after a lost response.
 
+An appointed room director can extend a published deadline during its live
+window. Pass the appointment epoch captured when the director chose to extend.
+
+```ts
+await rallar.rooms.setDeadline(roomRef, {
+    name: deadline.name,
+    expectedRevision: deadline.revision,
+    expectedDirectorEpoch: appointment.epoch,
+    atEpochMs: deadline.atEpochMs + 60_000
+}, requestId);
+```
+
+The authenticated principal and session must still hold that appointment in
+the room. A leadership change returns HTTP 409 with mutation failure code
+`room-director-changed`. Discard the old director intent. A concurrent extension
+returns `room-deadline-revision-conflict`; read the winning deadline before
+deciding whether to propose a new change. Both codes are available on the
+SDK error’s `mutationFailure.code`.
+
 A member can call `rallar.rooms.readDeadline(roomRef, name)` without switching
 the selected room. It reads the durable deadline or returns `null` for a name
 that has never been published. PostgreSQL deployments retain the instant and
