@@ -94,7 +94,7 @@ export function computeGroupClockUpdate(group: Group, command: RoomClockMutation
     }
     const clocks = readRoomTimeRecords(group.metadata);
     const clock = computeGroupClockChange(clocks, command, now);
-    if ('rejectionCode' in clock) {
+    if (!('status' in clock)) {
         return clock;
     }
     return { ...group, metadata: {

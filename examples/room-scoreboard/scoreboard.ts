@@ -1,3 +1,4 @@
+import { renderCourtProgram } from './court-program.ts';
 import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -57,18 +58,7 @@ function render() {
         return;
     }
     const director = rallar.director.status(room);
-    program.hidden = !schedule.schedule;
-    if (schedule.schedule) {
-        const position = rallar.schedulePosition(schedule.schedule);
-        if (schedule.status === 'stale') program.textContent = 'Recovering schedule';
-        else if (position.status !== 'current') program.textContent = 'Waiting for server time';
-        else {
-            const current = position.current?.phase ?? 'Upcoming';
-            program.textContent = position.next
-                ? current + ' · Next: ' + position.next.phase + ' at ' + new Date(position.next.startsAtEpochMs).toISOString()
-                : current;
-        }
-    }
+    renderCourtProgram(program, schedule);
     const face = clockFace();
     const periodName = state.clock && 'phase' in state.clock ? state.clock.phase : undefined;
     period.textContent = periodName ?? '';

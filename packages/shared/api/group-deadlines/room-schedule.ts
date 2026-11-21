@@ -1,8 +1,12 @@
+import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
 export namespace RoomSchedule {
-    export type Phase = { readonly phase: string; readonly startsAtEpochMs: number; };
+    export interface Phase extends ApiJsonObject {
+        readonly phase: string;
+        readonly startsAtEpochMs: number;
+    }
     export interface Publication {
         readonly name: string;
         readonly expectedRevision: number;
@@ -17,12 +21,12 @@ export namespace RoomSchedule {
         | { readonly status: 'current'; readonly current: Phase | null; readonly next: Phase | null; };
 }
 
-export type RoomSchedule = {
+export interface RoomSchedule extends ApiJsonObject {
     readonly name: string;
     readonly revision: number;
     readonly status: 'scheduled';
     readonly phases: readonly RoomSchedule.Phase[];
-};
+}
 
 export function assertSchedulePhases(value: unknown): asserts value is readonly RoomSchedule.Phase[] {
     if (!Array.isArray(value) || !value.length || value.length > 32) {

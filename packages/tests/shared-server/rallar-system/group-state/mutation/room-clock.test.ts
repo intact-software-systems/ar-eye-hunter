@@ -7,12 +7,12 @@ it('freezes 8:14 at the server and resumes the same balance ten minutes later', 
     const base = { name: 'period', expectedDirectorEpoch: 1 };
     const start = computeGroupClockChange([], { ...base, operation: 'start', expectedRevision: 0, durationMs: 600_000 }, 1_000);
     expect(start).toEqual({ name: 'period', revision: 1, status: 'running', endsAtEpochMs: 601_000 });
-    if ('rejectionCode' in start) {
+    if (!('status' in start)) {
         throw new Error(start.message);
     }
     const paused = computeGroupClockChange([start], { ...base, operation: 'pause', expectedRevision: 1 }, 107_000);
     expect(paused).toEqual({ name: 'period', revision: 2, status: 'paused', remainingMs: 494_000 });
-    if ('rejectionCode' in paused) {
+    if (!('status' in paused)) {
         throw new Error(paused.message);
     }
     expect(computeGroupClockChange([paused], { ...base, operation: 'resume', expectedRevision: 1 }, 707_000))
