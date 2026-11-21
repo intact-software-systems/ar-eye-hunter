@@ -10,6 +10,7 @@ import {
     it
 } from 'vitest';
 
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false, latestWins: false } as const;
 
 describe('AL ordering repair window', () => {
@@ -261,6 +262,19 @@ describe('a recorded track at its recipient: entry, omission and the record\'s p
         expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 1_001 });
     });
 
+    it('enters a fresh track at a copy frozen to an audience that does not name it: the record speaks for that audience', () => {
+        const result = observe({ msg: recordedMessage(6, { a: 3 }, ['a']), snapshot: undefined });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 6, missingRanges: [], priorSeq: 5 });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 6, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
+    it('enters a fresh track at a recorded unicast copy: no frozen audience names it', () => {
+        const result = observe({ msg: recordedUnicastMessage(2), snapshot: undefined });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 2, missingRanges: [], priorSeq: 1 });
+    });
+
     it('asks 1..256 for a prior at the repair window\'s edge and enters at a prior past it', () => {
         const atWindow = observe({ msg: recordedMessage(257, {}), snapshot: undefined });
         const pastWindow = observe({ msg: recordedMessage(258, {}), snapshot: undefined });
@@ -435,10 +449,27 @@ function observe(input: ObserveInput): ALOrderingAcceptance {
     });
 }
 
-/** A copy whose authority recorded `priorSeqByRecipient`: only recipients whose prior is below `seq - 1`. */
-function recordedMessage(seq: number, priorSeqByRecipient: Readonly<Record<string, number>>): ALMessage {
+/**
+ * A copy whose authority recorded `priorSeqByRecipient`: only recipients whose prior is below `seq - 1`. Its audience is
+ * frozen to `recipientPeerIds`, the receiver by default, as an admission freezes a room copy.
+ */
+function recordedMessage(
+    seq: number,
+    priorSeqByRecipient: Readonly<Record<string, number>>,
+    recipientPeerIds: readonly string[] = ['receiver']
+): ALMessage {
     const message = orderedMessage(seq);
-    return { ...message, ordering: { ...message.ordering, priorSeqByRecipient } };
+    return {
+        ...message,
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds, snapshotVersion: 1 },
+        ordering: { ...message.ordering, priorSeqByRecipient }
+    };
+}
+
+/** A recorded copy sent to the receiver alone: a unicast names no frozen audience. */
+function recordedUnicastMessage(seq: number): ALMessage {
+    const message = orderedMessage(seq);
+    return { ...message, ordering: { ...message.ordering, priorSeqByRecipient: {} } };
 }
 
 function orderedMessage(seq: number): ALMessage {

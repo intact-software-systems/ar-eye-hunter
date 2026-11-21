@@ -19,6 +19,7 @@ import {
     createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestRuntime,
+    INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SOURCE,
     readInboundTestDecisionSurface,
     type InboundTestRuntime,
@@ -27,6 +28,7 @@ import {
 
 const START_MS = Date.UTC(2026, 9, 8, 12);
 const NAMESPACE = 'ordering-cap';
+const ROOM = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
 const ORDERING_PREFIX = `${NAMESPACE}:ordering:`;
 const DELIVERED_PREFIX = `${NAMESPACE}:delivered:`;
 const EVICTED_TRACKS_KEY = `${NAMESPACE}:ordering-evicted`;
@@ -402,10 +404,14 @@ function createTrackMessage(track: number, seq: number): ALMessage {
     return { ...message, ordering: { orderingKey: `track-${track}`, seq } };
 }
 
-/** A copy whose authority recorded that this receiver was sent every sequence below it. */
+/** A copy whose authority recorded that this receiver, its frozen audience, was sent every sequence below it. */
 function createRecordedTrackMessage(track: number, seq: number): ALMessage {
     const message = createTrackMessage(track, seq);
-    return { ...message, ordering: { ...message.ordering, priorSeqByRecipient: {} } };
+    return {
+        ...message,
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 },
+        ordering: { ...message.ordering, priorSeqByRecipient: {} }
+    };
 }
 
 function toTrackKey(track: number): string {

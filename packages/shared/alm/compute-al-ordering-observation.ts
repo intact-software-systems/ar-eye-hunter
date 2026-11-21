@@ -1,4 +1,5 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { isALFrozenMulticastRecipient } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type {
     ALOrderingObservation,
@@ -95,12 +96,15 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
 }
 
 /**
- * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. A track the
- * store evicted at its cap enters at the copy instead, since its delivered past is forgotten, not absent, and so does a
- * latest-wins copy, whose predecessor may have been superseded before it was ever sent.
+ * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. The record
+ * speaks only for the copy's frozen audience, so a peer it does not name (the WS server, ordering hop of every track)
+ * enters at the copy. A track the store evicted at its cap enters at the copy too, since its delivered past is
+ * forgotten, not absent, and so does a latest-wins copy, whose predecessor may have been superseded before it was ever
+ * sent.
  */
 function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
     return isInformativePrior(track, 0) && track.priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow &&
+        isALFrozenMulticastRecipient(track.input.msg.targets, track.input.selfPeerId) &&
         !track.input.evictedTrack && !track.input.latestWins;
 }
 

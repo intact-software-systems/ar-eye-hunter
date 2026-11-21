@@ -19,6 +19,11 @@ export function resolveALFrozenMulticastAudience(
     return { recipientPeerIds: targets.recipientPeerIds, snapshotVersion: targets.snapshotVersion };
 }
 
+/** Whether a copy's frozen audience names `peerId`: the scope in which a recorded copy speaks for that peer's entry. */
+export function isALFrozenMulticastRecipient(targets: ALTargets | undefined, peerId: string): boolean {
+    return resolveALFrozenMulticastAudience(targets)?.recipientPeerIds.includes(peerId) === true;
+}
+
 export function toALFrozenMulticastMessage(message: ALMessage, audience: ALFrozenMulticastAudience): ALMessage {
     if (message.targets?.mode !== 'multicast') {
         return message;

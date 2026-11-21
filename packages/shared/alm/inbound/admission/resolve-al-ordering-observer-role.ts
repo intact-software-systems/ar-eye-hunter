@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
+import { isALFrozenMulticastRecipient } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALOrderingObserverRole } from '../../../al-contracts/al-runtime.ts';
 
 /**
@@ -25,6 +25,5 @@ export function resolveALOrderingObserverRole(input: ResolveALOrderingObserverRo
     if (input.observer === 'every-track' || input.delivering) {
         return 'recipient';
     }
-    const frozen = resolveALFrozenMulticastAudience(input.msg.targets);
-    return frozen?.recipientPeerIds.includes(input.selfPeerId) === true ? 'witness' : 'none';
+    return isALFrozenMulticastRecipient(input.msg.targets, input.selfPeerId) ? 'witness' : 'none';
 }
