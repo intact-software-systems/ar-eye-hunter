@@ -30,6 +30,7 @@ export type TownMatchAction =
     | { readonly kind: 'poses'; readonly tick: number; readonly players: readonly TownMatchPose[]; }
     | { readonly kind: 'controls'; readonly x: number; readonly z: number; readonly dash: number; }
     | { readonly kind: 'ready'; readonly ready: boolean; readonly displayName: string; }
+    | { readonly kind: 'extend'; readonly expectedDurationTicks: number; }
     | { readonly kind: 'start'; }
     | { readonly kind: 'rematch'; readonly nextMatchId: string; }
     | { readonly kind: 'proposal'; readonly digest: string; readonly snapshot: string; }
@@ -168,6 +169,12 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
                 {
                     type: 'object',
                     additionalProperties: false,
+                    required: ['kind', 'expectedDurationTicks'],
+                    properties: { kind: { const: 'extend' }, expectedDurationTicks: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } }
+                },
+                {
+                    type: 'object',
+                    additionalProperties: false,
                     required: ['kind', 'nextMatchId'],
                     properties: { kind: { const: 'rematch' }, nextMatchId: identity }
                 },
@@ -235,7 +242,7 @@ export function validateTownMatchFrame(frame: TownMatchFrame, reception: TownMat
     if (!reception.members.some((member) => member.sessionId === senderId)) {
         issues.push('The authenticated sender is not a current player session.');
     }
-    const directorOnly = ['proposal', 'commit', 'start', 'rematch', 'poses'].includes(frame.action.kind);
+    const directorOnly = ['proposal', 'commit', 'start', 'extend', 'rematch', 'poses'].includes(frame.action.kind);
     if (directorOnly && senderId !== director.appointment?.sessionId) {
         issues.push('Only the appointed session may send this match action.');
     }

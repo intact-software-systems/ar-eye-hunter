@@ -1,3 +1,5 @@
+import { TOWN_MATCH_MAX_TICKS } from './town-match.ts';
+
 export const MATCH_SNAPSHOT_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -19,7 +21,7 @@ export const MATCH_SNAPSHOT_SCHEMA = {
         tick: {
             type: 'integer',
             minimum: 0,
-            maximum: 5400
+            maximum: TOWN_MATCH_MAX_TICKS
         },
         countdownTicks: {
             type: 'integer',
@@ -29,7 +31,7 @@ export const MATCH_SNAPSHOT_SCHEMA = {
         remainingTicks: {
             type: 'integer',
             minimum: 0,
-            maximum: 5400
+            maximum: TOWN_MATCH_MAX_TICKS
         },
         members: {
             type: 'array',

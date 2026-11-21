@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeTownMatchInput } from '../../../apps/cca-2d/src/match/match-input.ts';
 import {
+    computeTownMatchExtension,
     computeTownMatchReady,
     computeTownMatchRecovery,
     computeTownMatchRematch,
@@ -288,4 +289,14 @@ describe('Grumpy Town match rules', () => {
         }
         expect(createTownMatch('empty', []).left).toBeDefined();
     });
+});
+
+it('credits one minute once per accepted duration, including after a director recovers the checkpoint', () => {
+    const playing = playingMatch();
+    const extended = computeTownMatchExtension(playing, 5400);
+    expect(extended.remainingTicks).toBe(playing.remainingTicks + 1800);
+    const recovered = structuredClone(extended);
+    expect(computeTownMatchExtension(recovered, 5400)).toEqual(recovered);
+    expect(computeTownMatchExtension(recovered, 7200).remainingTicks).toBe(playing.remainingTicks + 3600);
+    expect(computeTownMatchExtension({ ...playing, phase: 'finished' }, 5400).remainingTicks).toBe(playing.remainingTicks);
 });

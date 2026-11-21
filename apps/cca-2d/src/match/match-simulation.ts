@@ -2,6 +2,7 @@ import { TownRoutes } from '../town/routes.ts';
 import { computeTownMatchInput, type TownMatchInput } from './match-input.ts';
 import type { TownMatchFrame } from './match-protocol.ts';
 import {
+    computeTownMatchExtension,
     computeTownMatchReady,
     computeTownMatchRematch,
     computeTownMatchStart,
@@ -62,6 +63,9 @@ export class TownMatchSimulation {
                     ready: frame.action.ready,
                     displayName: frame.action.displayName
                 });
+                break;
+            case 'extend':
+                this.state = computeTownMatchExtension(this.state, frame.action.expectedDurationTicks);
                 break;
             case 'start':
                 this.state = computeTownMatchStart(this.state);

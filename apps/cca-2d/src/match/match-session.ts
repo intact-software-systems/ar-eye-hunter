@@ -210,13 +210,16 @@ export class TownMatchSession {
         ) {
             return;
         }
+        if (action.kind === 'extend' && (!view.isDirector || view.recovering || state.phase !== 'playing')) {
+            return;
+        }
         const frame = this.createFrame(
             state.matchId,
             action.kind === 'ready'
                 ? { ...action, displayName: session.username ?? '' }
                 : action
         );
-        if (action.kind === 'ready' || action.kind === 'start' || action.kind === 'rematch') {
+        if (action.kind === 'ready' || action.kind === 'start' || action.kind === 'extend' || action.kind === 'rematch') {
             this.intent = { frame, sessionId: session.sessionId };
         }
         await this.write(frame);
@@ -776,6 +779,8 @@ export class TownMatchSession {
             if (
                 (action.kind === 'ready' && local?.ready === action.ready) ||
                 (action.kind === 'start' && state.phase !== 'lobby') ||
+                (action.kind === 'extend' && (state.phase !== 'playing' ||
+                    state.tick + state.remainingTicks > action.expectedDurationTicks)) ||
                 (action.kind === 'rematch' && state.matchId === action.nextMatchId)
             ) {
                 this.intent = undefined;

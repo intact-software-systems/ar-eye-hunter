@@ -63,6 +63,11 @@ test('two survivors replace a silently unreachable host and fence its return', a
     }
     try {
         await startTownMatch(pages);
+        await expect(bob.getByRole('button', { name: 'Extend by 1 minute' })).toBeHidden();
+        await alice.getByRole('button', { name: 'Extend by 1 minute' }).click();
+        for (const page of pages) {
+            await expect.poll(async () => parseInt(await page.locator('#round-clock').innerText())).toBeGreaterThan(220);
+        }
         const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
         const score = await bob.locator('#round-score').textContent();
         const originalEpoch = hostEpoch;
@@ -81,6 +86,16 @@ test('two survivors replace a silently unreachable host and fence its return', a
                 .toBeGreaterThan(confirmedTick);
         }
         recoveryElapsedMs = Date.now() - partitionedAt;
+        const director = await bob.locator('#online-game').getAttribute('data-director') === 'true' ? bob : carol;
+        for (const survivor of [bob, carol]) {
+            const remaining = parseInt(await survivor.locator('#round-clock').innerText());
+            expect(remaining).toBeGreaterThan(210);
+            expect(remaining).toBeLessThanOrEqual(240);
+        }
+        await director.getByRole('button', { name: 'Extend by 1 minute' }).click();
+        for (const survivor of [bob, carol]) {
+            await expect.poll(async () => parseInt(await survivor.locator('#round-clock').innerText())).toBeGreaterThan(270);
+        }
         expect(recoveryElapsedMs).toBeLessThan(11500);
         expect(closes).toBe(0);
         await expect(alice.locator('#round-results')).toBeVisible();

@@ -8,7 +8,7 @@ import { TOWN_OBJECTS, TOWN_SHOPS } from '../town/map.ts';
 import { TOWN_PERSONALITIES } from '../town/personalities/state.ts';
 import type { TownCheckpoint, TownCheckpointIdentity } from './match-checkpoints.ts';
 import { MATCH_SNAPSHOT_SCHEMA } from './match-snapshot-schema.ts';
-import { validateTownMatchMembers, type TownMatchState } from './town-match.ts';
+import { TOWN_MATCH_DURATION, TOWN_MATCH_EXTENSION_TICKS, TOWN_MATCH_MAX_TICKS, TOWN_MATCH_RATE, validateTownMatchMembers, type TownMatchState } from './town-match.ts';
 
 export interface TownMatchSnapshot {
     readonly snapshot: string;
@@ -116,8 +116,11 @@ function validateTownSnapshotRelations(state: TownMatchState): readonly string[]
     ) {
         issues.push('Snapshot players do not match the round roster.');
     }
+    const duration = state.tick + state.remainingTicks;
+    const added = duration - TOWN_MATCH_DURATION * TOWN_MATCH_RATE;
     if (
-        state.tick + state.remainingTicks !== 5400 ||
+        added < 0 || duration > TOWN_MATCH_MAX_TICKS || added % TOWN_MATCH_EXTENSION_TICKS !== 0 ||
+        ((state.phase === 'lobby' || state.phase === 'countdown') && added !== 0) ||
         (state.phase === 'finished' && (state.remainingTicks !== 0 || state.results.length !== playerIds.length))
     ) {
         issues.push('Snapshot clock or results are inconsistent.');

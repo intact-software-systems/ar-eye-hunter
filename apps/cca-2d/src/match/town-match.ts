@@ -9,6 +9,8 @@ import { computeTownMatchSeats, createTownMatchSeats, type TownMatchSeat, type T
 
 export const TOWN_MATCH_RATE = 30;
 export const TOWN_MATCH_DURATION = 180;
+export const TOWN_MATCH_EXTENSION_TICKS = 60 * TOWN_MATCH_RATE;
+export const TOWN_MATCH_MAX_TICKS = 3600 * TOWN_MATCH_RATE;
 export const TOWN_MATCH_TARGET = 100;
 
 export interface TownMatchParticipant {
@@ -106,6 +108,15 @@ export function computeTownMatchReady(state: TownMatchState, ready: TownMatchRea
             participant.id === ready.id ? { ...participant, displayName: ready.displayName } : participant
         )
     };
+}
+
+/** The total stays constant while playing or paused and travels in every checkpoint. */
+export function computeTownMatchExtension(state: TownMatchState, expectedDurationTicks: number): TownMatchState {
+    if (state.phase !== 'playing' || state.tick + state.remainingTicks !== expectedDurationTicks ||
+        expectedDurationTicks + TOWN_MATCH_EXTENSION_TICKS > TOWN_MATCH_MAX_TICKS) {
+        return state;
+    }
+    return { ...state, remainingTicks: state.remainingTicks + TOWN_MATCH_EXTENSION_TICKS };
 }
 
 export function computeTownMatchStart(state: TownMatchState): TownMatchState {

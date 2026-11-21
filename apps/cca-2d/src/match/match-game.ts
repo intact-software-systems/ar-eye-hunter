@@ -10,7 +10,7 @@ import { TownMatchControls } from './match-controls.ts';
 import { TownMatchPeerPresentation } from './match-peer-presentation.ts';
 import { TownMatchPresentation } from './match-presentation.ts';
 import type { TownMatchSession } from './match-session.ts';
-import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
+import { TOWN_MATCH_MAX_TICKS, TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
 
 const TOWN_PLAYER_APPEARANCES = [
     { color: '#347d79', label: 'TEAL HOODIE' },
@@ -69,7 +69,7 @@ export class TownMatchGame {
         this.session = session;
         root.innerHTML = `<main class="practice" aria-label="Online Grumpy Town">
           <canvas aria-label="Shared town playfield"></canvas>
-          <header class="hud"><div class="brand"><span>CCA / PLAYING WITH FRIENDS</span><h1>GRUMPY TOWN</h1></div><button id="leave-round">Leave town</button></header>
+          <header class="hud"><div class="brand"><span>CCA / PLAYING WITH FRIENDS</span><h1>GRUMPY TOWN</h1></div><button id="extend-round" hidden>Extend by 1 minute</button><button id="leave-round">Leave town</button></header>
           <div class="scoreboard"><span id="round-clock"></span><span id="round-score"></span></div>
           <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
           <div class="play-hint"><span class="you">YOU</span><p id="round-status" role="status"></p></div>
@@ -91,6 +91,12 @@ export class TownMatchGame {
         }, options);
         requirePracticeElement(root, '#leave-results').addEventListener('click', onLeave, options);
         requirePracticeElement(root, '#solo-results').addEventListener('click', onSolo, options);
+        requirePracticeElement(root, '#extend-round').addEventListener('click', () => {
+            const match = session.getView().match;
+            if (match) {
+                void session.act({ kind: 'extend', expectedDurationTicks: match.tick + match.remainingTicks });
+            }
+        });
         requirePracticeElement(root, '#rematch').addEventListener('click', () => {
             void session.act({ kind: 'rematch', nextMatchId: crypto.randomUUID() });
         }, options);
@@ -328,6 +334,10 @@ export class TownMatchGame {
         const match = view.match;
         const interrupted = Boolean(view.interruption) || match?.phase === 'interrupted';
         const finished = match?.phase === 'finished' || interrupted;
+        const extend = requirePracticeElement<HTMLButtonElement>(this.root, '#extend-round');
+        extend.hidden = !view.isDirector || match?.phase !== 'playing';
+        extend.disabled = !view.available || view.recovering || !match ||
+            match.tick + match.remainingTicks >= TOWN_MATCH_MAX_TICKS;
         requirePracticeElement(this.root, '#leave-round').hidden = finished;
         requirePracticeElement(this.root, '#round-results').hidden = !finished;
         requirePracticeElement(this.root, '#round-result-title').textContent = interrupted
