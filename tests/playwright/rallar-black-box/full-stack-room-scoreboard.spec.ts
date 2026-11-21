@@ -49,6 +49,8 @@ test('a returning participant recovers halftime and its paused clock together af
             const replay = await rallar.rooms.extendTimeline(room, extension, requestId);
             return { before, accepted, replay };
         }, { sdkUrl, court });
+        expect(balance.before.remainingMs).toBeGreaterThanOrEqual(120_000);
+        expect(balance.before.remainingMs).toBeLessThanOrEqual(180_000);
         const updated = { ...balance.before, revision: balance.before.revision + 1, remainingMs: balance.before.remainingMs + 30_000 };
         expect(balance.accepted).toEqual(updated);
         expect(balance.replay).toEqual(updated);
