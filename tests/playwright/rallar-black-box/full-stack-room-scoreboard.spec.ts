@@ -36,18 +36,39 @@ test('a returning participant recovers halftime and its paused clock together af
         await expect(page.getByLabel('Current period')).toHaveText('halftime');
         await page.getByRole('button', { name: 'Pause', exact: true }).click();
         await expect(page.locator('#phase')).toHaveText('Paused');
-        const frozen = await page.getByLabel('Period clock').textContent();
-        expect(frozen).toMatch(/^(2:[0-5][0-9]|3:00)$/);
+        const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+        const balance = await page.evaluate(async ({ sdkUrl, court }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+            const before = await rallar.rooms.readTimeline(room, 'match');
+            if (before?.status !== 'paused') throw new Error('Expected paused halftime');
+            const extension = { name: 'match', durationMs: 30_000, expectedRevision: before.revision,
+                expectedDirectorEpoch: rallar.director.status(room).appointment!.epoch };
+            const requestId = crypto.randomUUID();
+            const accepted = await rallar.rooms.extendTimeline(room, extension, requestId);
+            const replay = await rallar.rooms.extendTimeline(room, extension, requestId);
+            return { before, accepted, replay };
+        }, { sdkUrl, court });
+        expect(balance.before.remainingMs).toBeGreaterThanOrEqual(120_000);
+        expect(balance.before.remainingMs).toBeLessThanOrEqual(180_000);
+        const updated = { ...balance.before, revision: balance.before.revision + 1, remainingMs: balance.before.remainingMs + 30_000 };
+        expect(balance.accepted).toEqual(updated);
+        expect(balance.replay).toEqual(updated);
         await expect(guest.locator('#phase')).toHaveText('Ready');
         await guest.getByRole('button', { name: 'Switch court' }).click();
         await guest.getByLabel('Room', { exact: true }).fill(court);
         await guest.getByRole('button', { name: 'Enter room' }).click();
         await expect(guest.locator('#phase')).toHaveText('Paused');
         await expect(guest.getByLabel('Current period')).toHaveText('halftime');
-        await expect(guest.getByLabel('Period clock')).toHaveText(frozen!);
+        const recovered = await guest.evaluate(async ({ sdkUrl, court }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            return rallar.rooms.readTimeline({ applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court }, 'match');
+        }, { sdkUrl, court });
+        expect(recovered).toEqual(updated);
+        const seconds = Math.ceil(updated.remainingMs / 1000);
+        await expect(guest.getByLabel('Period clock')).toHaveText(Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0'));
         await expect(guest.getByRole('button', { name: 'Resume' })).toBeDisabled();
         // A scoreboard has no director relay. Its referee may resume after relay heartbeats would be stale.
-        const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
         await expect.poll(() => page.evaluate(async ({ sdkUrl, court }) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
             const director = rallar.director.status({ applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court });

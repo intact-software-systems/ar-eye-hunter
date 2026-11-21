@@ -9,6 +9,13 @@ export interface RoomTimelineAdvance {
     readonly expectedDirectorEpoch: number;
 }
 
+export interface RoomTimelineExtension {
+    readonly name: string;
+    readonly durationMs: number;
+    readonly expectedRevision: number;
+    readonly expectedDirectorEpoch: number;
+}
+
 /** The clock and phase come from the same durable group revision. */
 export type RoomTimeline = RoomClock & { readonly phase: string; readonly startedAtRevision: number; };
 

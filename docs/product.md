@@ -113,6 +113,11 @@ A missing timeline returns null. A fresh watch on returning to the room recovers
 the room WebSocket. Idle watches make no periodic reads. Use the existing clock pause/resume commands with the same name.
 The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
 
+Use `rooms.extendTimeline(roomRef, { name: 'match', durationMs, expectedRevision, expectedDirectorEpoch }, requestId)`
+to add a positive whole number of milliseconds to a running or paused phase. A running phase extends from its existing end.
+A paused phase stays paused with a larger balance. Both keep the phase label and starting revision. An expired running phase
+requires an explicit advance. Retry the original request unchanged with the same ID to recover its receipt.
+
 Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
 its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
 `room-director-changed`. Upgrade group writers and clock readers before enabling timelines.
