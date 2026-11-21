@@ -420,7 +420,7 @@ async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueu
         planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue',
-        stampsAppliedSupersedence: true
+        stampsAppliedSupersedence: false
     });
     const computed = computeALOutboundDispatch({
         read,

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -9,7 +10,10 @@ import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundMessage,
-    OUTBOUND_TEST_SEND_PLANNER
+    drainOutboundWorkDueNow,
+    OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission,
+    type OutboundTestStores
 } from '../../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
 
@@ -98,6 +102,49 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
     });
 });
 
+describe('a send that carries another\'s envelope under an explicit plan', () => {
+    it('leaves unstamped though its plan tracks latest-wins: a relay or server queue box stamps nothing', async () => {
+        const { runtime, stores, sent } = createSigningRuntime(OUTBOUND_TEST_SEND_PLANNER);
+        const message = createOutboundMessage('relayed');
+
+        const admitted = await runtime.enqueueIfAbsent(message, LATEST_WINS_BY_DEFAULT_PLANNER(message, undefined));
+        await drainOutboundWorkDueNow(runtime, stores);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.qos?.supersedence).toBeUndefined();
+        expect(sent.map((msg) => msg.qos?.supersedence)).toEqual([undefined]);
+    });
+});
+
+describe('a send whose first commit conflicted, retained and drained', () => {
+    it('drains an own send stamped, as its first admission decided', async () => {
+        const { runtime, stores, sent } = createSigningRuntime(LATEST_WINS_BY_DEFAULT_PLANNER);
+        const message = createOutboundMessage('own-retained');
+
+        const retained = await enqueueBehindCompetitor(stores, () => runtime.enqueueIfAbsent(message));
+        await drainOutboundWorkDueNow(runtime, stores);
+
+        expect(retained.verdict).toEqual({ kind: 'pending' });
+        expect(sent.map((msg) => msg.qos?.supersedence)).toEqual([
+            { algo: 'latest-wins', opts: { supersedenceKey: DEFAULT_KEY } }
+        ]);
+    });
+
+    it('drains an explicit plan\'s send unstamped, as its first admission decided', async () => {
+        const { runtime, stores, sent } = createSigningRuntime(OUTBOUND_TEST_SEND_PLANNER);
+        const message = createOutboundMessage('relayed-retained');
+
+        const retained = await enqueueBehindCompetitor(
+            stores,
+            () => runtime.enqueueIfAbsent(message, LATEST_WINS_BY_DEFAULT_PLANNER(message, undefined))
+        );
+        await drainOutboundWorkDueNow(runtime, stores);
+
+        expect(retained.verdict).toEqual({ kind: 'pending' });
+        expect(sent.map((msg) => msg.qos?.supersedence)).toEqual([undefined]);
+    });
+});
+
 describe('the supersedence stamp on one send', () => {
     it('never rewrites a send that already carries a proof: a signed message keeps its signed fields', () => {
         const message = { ...createOutboundMessage('signed'), proof: PROOF };
@@ -118,14 +165,41 @@ describe('the supersedence stamp on one send', () => {
 
 function createSigningRuntime(planOutgoingMessage: ALOutboundPlanner<OutboundTestPayload>) {
     const signed: ALMessage[] = [];
+    const sent: ALMessage[] = [];
+    const stores = createDefaultOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
-        stores: createDefaultOutboundTestStores(),
+        stores,
         planOutgoingMessage,
         signAdmittedMessage: async (msg) => {
             signed.push(msg);
             return Either.ofRight({ ...msg, proof: PROOF });
         },
-        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+            sent.push(lifecycle.canonicalMessage);
+            return { status: 'sent', submissionAttempted: true };
+        }
     });
-    return { runtime, signed };
+    return { runtime, stores, signed, sent };
+}
+
+/** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */
+async function enqueueBehindCompetitor<T>(stores: OutboundTestStores, enqueue: () => Promise<T>): Promise<T> {
+    const store = stores.admissionStore;
+    const competitor = await readOutboundTestAdmission({
+        store,
+        message: createOutboundMessage('competitor'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: Date.now }
+    });
+    const commitBundle = store.commitBundle.bind(store);
+    const spy = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle, observation) => {
+        expect(await commitBundle(competitor)).toBe('committed');
+        return await commitBundle(bundle, observation);
+    });
+    try {
+        return await enqueue();
+    }
+    finally {
+        spy.mockRestore();
+    }
 }

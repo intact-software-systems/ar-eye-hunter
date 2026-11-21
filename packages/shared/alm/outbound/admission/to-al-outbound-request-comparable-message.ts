@@ -8,11 +8,20 @@ import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-cont
  * epoch, a stated sequence, a stated record, a requested supersedence or a carried proof still differs.
  */
 export function toALOutboundRequestComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
+    const unadmitted = toALOutboundUnadmittedMessage(original, candidate);
+    return original.qos?.supersedence === undefined ? toALUnstampedMessage(original, unadmitted) : unadmitted;
+}
+
+/**
+ * The candidate without what an admission adds only once its commit lands -- a minted sequence, a recorded record, a
+ * proof -- but with the supersedence the admission applied: that stamp is decided by the first admission's origin and
+ * stays part of the request a conflicted admission retains, so its drain never decides it again.
+ */
+export function toALOutboundUnadmittedMessage(original: ALMessage, candidate: ALMessage): ALMessage {
     const unsigned = original.proof === undefined ? toALUnsignedMessage(candidate) : candidate;
-    const unstamped = original.qos?.supersedence === undefined ? toALUnstampedMessage(original, unsigned) : unsigned;
     const unrecorded = original.ordering?.priorSeqByRecipient === undefined
-        ? toALUnrecordedMessage(unstamped)
-        : unstamped;
+        ? toALUnrecordedMessage(unsigned)
+        : unsigned;
     return toALOutboundUnmintedMessage(original, unrecorded);
 }
 
