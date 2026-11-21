@@ -115,7 +115,7 @@ function createAppointmentRuntime(snapshot: GroupSnapshot): BrowserDirectorAppoi
         roomStateStore,
         status: new BrowserDirectorStatusRuntime({
             roomStateStore,
-            nowMs: () => 1_234,
+            readWindow: () => ({ earliestEpochMs: 1_234, latestEpochMs: 1_234 }),
             readSession: () => session,
             resolveDefaultRoom: () => undefined
         }),

@@ -429,7 +429,8 @@ describe('PostgreSQL outbound admission', () => {
                     senderId: 'self'
                 }
             ],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
 
         const admissionNamespace = `${namespace}:outbound:admission`;
@@ -466,7 +467,14 @@ function decodePreparedOutboundSend(value: unknown, msg: ALMessage): TestPrepare
 }
 
 async function readIncoming(store: ALInboundAdmissionStore): Promise<ALInboundAdmissionRead> {
-    const original = newALUnicastMessage('peer-1', { topicId: 'chat', resourceId: 'msg-1', contextId: 'self' }, 'self', 'chat', {});
+    const original = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: { topicId: 'chat', resourceId: 'msg-1', contextId: 'self' },
+        toPeerId: 'self',
+        typeId: 'chat',
+        resource: {}
+    });
     const msg = { ...original, id: { ...original.id, msgId: 'msg-1' } };
     const nowMs = Date.now();
     return await store.readIncomingMessage({

@@ -155,10 +155,18 @@ describe('RTC scoped snapshot-floor admission', () => {
         endpoints.push(sender, receiver);
         sender.connect(receiver);
         receiver.connect(sender);
-        const message = newALBroadcastMessage('sender', { topicId: 'data', contextId: 'room', resourceId: 'broadcast' }, 'room', 'data', { value: 1 }, {
-            groupRef: room,
-            minSnapshotVersion: 2,
-            qos: { durability: { algo: 'volatile' } }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'data', contextId: 'room', resourceId: 'broadcast' },
+            scope: 'room',
+            typeId: 'data',
+            resource: { value: 1 },
+            options: {
+                groupRef: room,
+                minSnapshotVersion: 2,
+                qos: { durability: { algo: 'volatile' } }
+            }
         });
         receiver.observe(1);
         await sender.sendAndWaitForDelivery(message);
@@ -348,10 +356,18 @@ function withSenderRemoved(snapshot: GroupSnapshot): GroupSnapshot {
 
 /** An origin's room multicast as its RTC copies carry it: with the audience it froze at admission. */
 function roomMessage(minSnapshotVersion: number | undefined, rosterVersion?: number): ALMessage {
-    const message = newALMulticastMessage('sender', { topicId: 'data', contextId: 'room', resourceId: 'record' }, room, 'data', { value: 1 }, {
-        minSnapshotVersion,
-        rosterVersion,
-        qos: { durability: { algo: 'volatile' } }
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'data', contextId: 'room', resourceId: 'record' },
+        groupRef: room,
+        typeId: 'data',
+        resource: { value: 1 },
+        options: {
+            minSnapshotVersion,
+            rosterVersion,
+            qos: { durability: { algo: 'volatile' } }
+        }
     });
     return toALFrozenMulticastMessage(message, { recipientPeerIds: ['relay', 'receiver'], snapshotVersion: 1 });
 }

@@ -1,3 +1,4 @@
+import { RALLAR_GROUP_DIRECTOR_METADATA_KEY } from '@shared/api/group-director.ts';
 import {
     DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
     normalizeRallarGroupDirectorHeartbeatTtlMs
@@ -142,6 +143,7 @@ function toCreateCommand(
 function toCreateGroupMetadata(request: CreateGroupRequest): Group['metadata'] {
     const retention = toInitialGroupRetentionState(request.retention);
     const metadata = { ...structuredClone(request.metadata ?? {}) };
+    delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     delete metadata.rallarSpectatorCapacity;
     return {
         ...metadata,
@@ -177,6 +179,8 @@ function toUpdateCommand(
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
             maxSessionsPerMember: request.maxSessionsPerMember ?? null,
+            ...(request.roomClock === undefined ? {} : { roomClock: structuredClone(request.roomClock) }),
+            ...(request.roomDeadline === undefined ? {} : { roomDeadline: structuredClone(request.roomDeadline) }),
             metadata: request.metadata ? structuredClone(request.metadata) : null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             emptySinceEpochMs: request.emptySinceEpochMs ?? null,

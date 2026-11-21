@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
@@ -65,6 +66,7 @@ import {
 } from '@shared/mod.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
@@ -74,9 +76,7 @@ import {
     createWsClientMintingPlanner,
     readOutboundTestAdmission
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-// @vitest-environment happy-dom
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -378,7 +378,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
                     expireAtTimestamp
                 }
             ],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
 
         const ownerPrefix = `${
@@ -705,7 +706,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         });
     });
 
-    it('initialises repeated browser AL runtime expiry eviction over every scope\'s database', async () => {
+    it('uses the current connection clock to sweep every scope and stops on retirement', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -724,14 +725,25 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         await persistSentMessage(admissionStore, 'initial-expired');
         await persistSentMessage(otherScopeAdmissionStore, 'other-scope-expired');
+        const original = new AbortController();
+        const replacement = new AbortController();
+        const earlier = Date.now();
         await vi.advanceTimersByTimeAsync(21);
+        await initBrowserALRuntimeExpiryEviction({
+            currentScope: SCOPE, storage: diagnosticsPorts.storage, intervalMs: 50,
+            signal: original.signal, nowMs: () => earlier
+        });
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:initial-expired`]);
 
         const stop = await initBrowserALRuntimeExpiryEviction({
             currentScope: SCOPE,
             storage: diagnosticsPorts.storage,
-            intervalMs: 50
+            intervalMs: 50,
+            signal: replacement.signal,
+            nowMs: () => Date.now()
         });
         try {
+            original.abort();
             expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
             expect(await readBrowserALRuntimeEntryKeys(sentPrefix, OTHER_SCOPE_DB_NAME)).toEqual([]);
 
@@ -743,6 +755,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
             await vi.advanceTimersByTimeAsync(29);
             await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
+            replacement.abort();
+            await persistSentMessage(admissionStore, 'after-close');
+            await vi.advanceTimersByTimeAsync(100);
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:after-close`]);
         }
         finally {
             stop();
@@ -800,8 +816,14 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
-        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
-        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
+        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget(), {
+            nowMs: Date.now,
+            workNowMs: Date.now
+        });
+        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget(), {
+            nowMs: Date.now,
+            workNowMs: Date.now
+        });
 
         expect(first.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(second.workQueue).not.toBe(first.workQueue);
@@ -812,16 +834,18 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const outbound = createBrowserALVolatileOutboundRuntimeStores(
             'browser-ws-client:session-budget',
-            budget
+            budget,
+            { nowMs: Date.now, workNowMs: Date.now }
         );
         const overlay = createBrowserALVolatileOutboundRuntimeStores(
             'browser-rtc-overlay:session-budget',
-            budget
+            budget,
+            { nowMs: Date.now, workNowMs: Date.now }
         );
         const inbound = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('session-budget'),
             budget,
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         );
 
         expect(outbound.budget).toBe(budget);
@@ -835,7 +859,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         );
         const message = createOutboundUnicastMessage('inbound-memory');
         await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()));
@@ -853,7 +877,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             storeId,
             createDefaultVolatileSessionBudget(),
-            (event) => stated.push(event)
+            { storage: (event) => stated.push(event), nowMs: Date.now, workNowMs: Date.now }
         );
         const inbound = createInboundTestRuntime({ carrier: 'ws', stores: volatile, effectWorkerId: 'al-inbound:tracks' });
         await inbound.runtime.ready();
@@ -923,12 +947,15 @@ async function commitMintedRoomSend(
     resourceId: string
 ): Promise<ALMessage> {
     const message = newALMulticastMessage(
-        sessionId,
-        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-        'chat.message.v1',
-        { resourceId },
-        { ttlMs: 60_000, orderingKey: 'chat' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+            typeId: 'chat.message.v1',
+            resource: { resourceId },
+            options: { ttlMs: 60_000, orderingKey: 'chat' }
+        }
     );
     const bundle = await readOutboundTestAdmission({
         store: admissionStore,
@@ -962,16 +989,19 @@ async function sendReceiptedRoomBroadcast(
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const message = newALBroadcastMessage(
-        sessionId,
-        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
-        'room',
-        'chat.message.v1',
-        { resourceId },
         {
-            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-            ttlMs: 60_000,
-            ack: 'all-logical-recipients',
-            ordering: { orderingKey: 'chat' }
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { resourceId },
+            options: {
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+                ttlMs: 60_000,
+                ack: 'all-logical-recipients',
+                ordering: { orderingKey: 'chat' }
+            }
         }
     );
     const sent = await ws.enqueueIfAbsent(message);
@@ -993,18 +1023,21 @@ function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
 
 function createOutboundUnicastMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'self',
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        { ttlMs: 20 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            },
+            options: { ttlMs: 20 }
+        }
     );
 }
 

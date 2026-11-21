@@ -39,9 +39,9 @@ export const lostStreamStart: AlmConformanceScenarioDefinition = {
 function toLostStreamStartSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const first = { ...sender, index: 1 };
     return [
-        ...toHeldSendCommands(first, toOrderedSendCommands(sender, 1, 'receiver')),
+        ...toHeldSendCommands(first, toOrderedSendCommands(sender, 1, { ack: 'receiver' })),
         ...[2, 3].flatMap((seq) => [
-            ...toOrderedSendCommands(sender, seq, 'receiver'),
+            ...toOrderedSendCommands(sender, seq, { ack: 'receiver' }),
             ...toReachedCommands({ ...sender, index: seq })
         ]),
         ...toHeldMessageFaultCommands(first, 'release-message-1', 0),

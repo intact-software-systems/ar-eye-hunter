@@ -162,7 +162,7 @@ function computeGapOrdering(track: ALOrderingTrackInput, missingThrough: number)
             seq: track.seq,
             expectedSeq: track.expectedSeq,
             lastContiguousSeq: track.snapshot?.lastContiguousSeq ?? 0,
-            missingRanges: computeMissingRanges(track.expectedSeq, missingThrough + 1, buffered),
+            missingRanges: computeALOrderingMissingRanges(track.expectedSeq, missingThrough + 1, buffered),
             releasableSeqs: [],
             ...toPriorSeq(track)
         },
@@ -198,7 +198,7 @@ function computeWitnessedOrdering(track: ALOrderingTrackInput): ALOrderingAccept
 }
 
 /** Each run of sequences in `[expectedSeq, endSeq)` that the buffer lacks becomes one inclusive range. */
-function computeMissingRanges(
+export function computeALOrderingMissingRanges(
     expectedSeq: number,
     endSeq: number,
     buffered: ReadonlySet<number>

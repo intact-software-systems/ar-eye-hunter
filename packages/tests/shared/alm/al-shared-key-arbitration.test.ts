@@ -328,6 +328,7 @@ function createIndexedDbArbitrationFixture(namespace: string): ArbitrationFixtur
         dbName: namespace,
         storeName: ADMISSION_STORE_NAME,
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
@@ -389,17 +390,20 @@ function createInboundStore(fixture: ArbitrationFixture): ALInboundAdmissionStor
 
 function createInboundMessage(senderId: string, version: number, supersedenceKey: string): ALMessage {
     const message = newALUnicastMessage(
-        senderId,
-        { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
-        'receiver',
-        'latest-value.v1',
-        { version },
         {
-            qos: {
-                delivery: { algo: 'best-effort' },
-                ack: { algo: 'none' },
-                durability: { algo: 'volatile' },
-                supersedence: { algo: 'latest-wins', opts: { supersedenceKey } }
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
+            toPeerId: 'receiver',
+            typeId: 'latest-value.v1',
+            resource: { version },
+            options: {
+                qos: {
+                    delivery: { algo: 'best-effort' },
+                    ack: { algo: 'none' },
+                    durability: { algo: 'volatile' },
+                    supersedence: { algo: 'latest-wins', opts: { supersedenceKey } }
+                }
             }
         }
     );
@@ -410,12 +414,15 @@ function createInboundMessage(senderId: string, version: number, supersedenceKey
 /** An exclusive room broadcast on the one resource every message this helper builds names. */
 function createClaimingInboundMessage(senderId: string): ALMessage {
     return newALBroadcastMessage(
-        senderId,
-        { topicId: 'arena.intent', resourceId: 'pickup-1', contextId: 'room' },
-        'room',
-        'pickup-intent.v1',
-        {},
-        { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ownership: 'exclusive', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'arena.intent', resourceId: 'pickup-1', contextId: 'room' },
+            scope: 'room',
+            typeId: 'pickup-intent.v1',
+            resource: {},
+            options: { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ownership: 'exclusive', ttlMs: 60_000 }
+        }
     );
 }
 

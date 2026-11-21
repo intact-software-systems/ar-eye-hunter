@@ -581,12 +581,12 @@ export function openFacadeDelivery(
     verdict: ALDeliveryAdmissionVerdict | undefined
 ): RallarMessageHandle {
     deliverySequence += 1;
-    const handle = deliveryRegistry.open({
+    const handle = deliveryRegistry.open({ message: {
         id: { v: 4, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1', traceId: 'trace-browser-runtime-facade-test-double' },
         route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
         payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
         delivery: { ack: 'receiver', reliability: 'at-least-once' }
-    }, carrier);
+    }, carrier: carrier, readDeadlineEpochMs: Date.now });
     if (verdict) {
         deliveryRegistry.record({
             kind: 'admission',

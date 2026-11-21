@@ -195,12 +195,15 @@ function createOrderedReceiverUnicast(msgId: string, seq: number): ALMessage {
 
 function createReceiverUnicast(msgId: string, algo: ALAckAlgo = 'receiver'): ALMessage {
     const message = newALUnicastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        INBOUND_TEST_SELF_PEER_ID,
-        'chat.private-text.v1',
-        { text: msgId },
-        { ttlMs: 60_000, qos: { ack: { algo } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            typeId: 'chat.private-text.v1',
+            resource: { text: msgId },
+            options: { ttlMs: 60_000, qos: { ack: { algo } } }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
@@ -208,12 +211,15 @@ function createReceiverUnicast(msgId: string, algo: ALAckAlgo = 'receiver'): ALM
 /** A receiver multicast frozen to `recipientPeerIds`, which this session relays to its child. */
 function createFrozenRoomMulticast(msgId: string, recipientPeerIds: readonly string[]): ALMessage {
     const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        ROOM,
-        'chat.message.v1',
-        { text: msgId },
-        { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: msgId },
+            options: { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000 }
+        }
     );
     return toALFrozenMulticastMessage({ ...message, id: { ...message.id, msgId } }, { recipientPeerIds, snapshotVersion: 4 });
 }

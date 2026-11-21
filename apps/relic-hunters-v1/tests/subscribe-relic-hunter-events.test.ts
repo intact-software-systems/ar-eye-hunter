@@ -142,26 +142,32 @@ function createFacadeDouble(): FacadeDouble {
 function toPrincipalMessage(event: RelicHunterEvent, roomId: string): RallarMessage<RelicHunterEvent> {
     const groupRef = { ...ROOM_REF, groupId: roomId };
     const raw = newALPrincipalBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.hunter, roomId, `${event.gameId}:${event.principalId}`),
         {
-            groupRef,
-            principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
-        },
-        RELIC_TYPES.hunter,
-        event
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.hunter, roomId, `${event.gameId}:${event.principalId}`),
+            target: {
+                groupRef,
+                principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
+            },
+            typeId: RELIC_TYPES.hunter,
+            resource: event
+        }
     );
     return toMessage(event, raw, roomId);
 }
 
 function toRoomMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEvent> {
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.hunter, 'room-1', `${event.gameId}:${event.principalId}`),
-        'room',
-        RELIC_TYPES.hunter,
-        event,
-        { groupRef: ROOM_REF }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.hunter, 'room-1', `${event.gameId}:${event.principalId}`),
+            scope: 'room',
+            typeId: RELIC_TYPES.hunter,
+            resource: event,
+            options: { groupRef: ROOM_REF }
+        }
     );
     return toMessage(event, raw, 'room-1');
 }

@@ -17,7 +17,11 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
-import { toALOutboundRepairGapAttemptIdentity, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
+import {
+    toALOutboundRepairGapAttemptIdentity,
+    toALOutboundRepairHintEffectId,
+    toALOutboundRepairRequesterKey
+} from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundCompletedHopPeerIds
@@ -30,7 +34,8 @@ interface ALOutboundRetransmitOptions {
 interface ALOutboundCommitRepairInput<TPrepared> {
     readonly msg: ALMessage;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
-    readonly priorAttempts: number;
+    /** The requester the attempt is charged to: `toALOutboundRepairRequesterKey` of its hint. */
+    readonly requesterKey: string;
     readonly maxAttempts: number;
     readonly attemptIdentity: string;
 }
@@ -60,12 +65,6 @@ export namespace ALOutboundRepairRetransmission {
  */
 export class ALOutboundRepairRetransmission<TPrepared> {
     private readonly dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>;
-    /**
-     * The messages whose exhaustion this runtime has stated, so a later hint for one states nothing more.
-     * Memory rather than a row: the budget row keeps meaning what it means, and a reload states an
-     * exhaustion once more at most. Capped at the repair window, oldest out first.
-     */
-    private readonly exhaustedMsgIds = new Set<string>();
 
     constructor(dependencies: ALOutboundRepairRetransmission.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
@@ -76,8 +75,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
      * hint, so a wide gap costs a bounded page of indexed reads and dispatch commits per execution. A hint
      * without ordering, or without ranges, repairs the message it names instead. A page whose sequences
      * have left the sent cache retransmits nothing: the message the hint names is not the gap. Each paged
-     * sequence is repaired under its own gap attempt identity; the fallback, an ack-timeout's included,
-     * keeps the hint's identity.
+     * sequence is repaired under its own gap attempt identity, which names the request's number; the
+     * fallback, an ack-timeout's included, keeps the hint's identity. Every repair is charged to the hint's
+     * requester.
      */
     async retransmitFromRepairHint(
         fallbackMsgId: string,
@@ -175,7 +175,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         await this.commitRepairPlan({
             msg,
             plan: repairedPlan,
-            priorAttempts: read.repairAttempt?.attempts ?? 0,
+            requesterKey: toALOutboundRepairRequesterKey(request),
             maxAttempts: repair.maxAttempts,
             attemptIdentity
         });
@@ -204,30 +204,19 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 effectId: toALOutboundRepairHintEffectId(msgId, request),
                 expireAtTimestamp: expiresAtMs,
                 payload: { kind: 'repair-hint', msgId, request }
-            }]
+            }],
+            endedTimeoutEffectIds: []
         });
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound repair follow-up hint commit conflict');
         }
     }
 
-    /** The terminal statement of a message whose repair budget dispatch found spent; a repeat states nothing. */
+    /** The terminal statement of a message whose repair budget a committed dispatch found spent for a requester. */
     private settleRepairExhausted(message: ALMessage, detail: string): void {
-        const msgId = message.id.msgId;
-        if (this.exhaustedMsgIds.has(msgId)) {
-            return;
-        }
-        this.exhaustedMsgIds.add(msgId);
-        if (this.exhaustedMsgIds.size > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
-            for (const oldest of this.exhaustedMsgIds) {
-                this.exhaustedMsgIds.delete(oldest);
-                break;
-            }
-        }
-
         this.dependencies.settlements({
             kind: 'admission',
-            msgId,
+            msgId: message.id.msgId,
             traceId: message.id.traceId,
             trackedReceiptAlgo: 'none',
             verdict: { kind: 'skipped', reason: 'repair-exhausted', detail }
@@ -319,11 +308,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     }
 
     /**
-     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when
-     * it finds the budget spent; only that answer, never a read of this owner's own, states the exhaustion.
+     * Dispatch admission charges the budget under the sender's fence and answers `repair-exhausted` when it finds the
+     * budget spent, in the commit that ends the message; only that commit's success, never a read of this owner's
+     * own, states the exhaustion, so it is stated once across replays and reloads.
      */
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
-        const { computed } = await this.dependencies.dispatchAdmission.commit({
+        const { computed, committed } = await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
             batchPredecessorSeqs: [],
             planner: () => repair.plan,
@@ -331,11 +321,11 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             phase: 'immediate',
             origin: 'repair',
             options: {
-                repairBudget: { priorAttempts: repair.priorAttempts, maxAttempts: repair.maxAttempts },
+                repairBudget: { requesterKey: repair.requesterKey, maxAttempts: repair.maxAttempts },
                 attemptIdentity: repair.attemptIdentity
             }
         });
-        if (computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
+        if (committed && computed.verdict.kind === 'skipped' && computed.verdict.reason === 'repair-exhausted') {
             this.settleRepairExhausted(repair.msg, computed.verdict.detail);
         }
     }

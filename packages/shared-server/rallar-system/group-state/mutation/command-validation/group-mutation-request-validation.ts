@@ -212,6 +212,8 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'maxSessionsPerMember',
         'metadata',
         'expiresAtEpochMs',
+        'roomDeadline',
+        'roomClock',
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],

@@ -14,7 +14,15 @@ const ROUTE = { topicId: 'room.granted-feed', resourceId: 'feed-1', contextId: O
 
 describe('toRtcGrantedListedLeg', () => {
     it('turns a room unicast into the one-entry listed room broadcast of its room', () => {
-        const unicast = newALUnicastMessage('a', ROUTE, 'b', 'room.granted-feed.v1', {}, { ack: 'receiver', groupRef: ORIGIN_ROOM });
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'room.granted-feed.v1',
+            resource: {},
+            options: { ack: 'receiver', groupRef: ORIGIN_ROOM }
+        });
 
         const listed = toRtcGrantedListedLeg(unicast);
 
@@ -27,9 +35,33 @@ describe('toRtcGrantedListedLeg', () => {
     });
 
     it('leaves a multicast, a room broadcast and a unicast naming no room as the same reference', () => {
-        const multicast = newALMulticastMessage('a', ROUTE, ORIGIN_ROOM, 'room.granted-feed.v1', {}, { ack: 'none' });
-        const roomBroadcast = newALBroadcastMessage('a', ROUTE, 'room', 'room.granted-feed.v1', {}, { ack: 'none', groupRef: ORIGIN_ROOM });
-        const roomlessUnicast = newALUnicastMessage('a', ROUTE, 'b', 'room.granted-feed.v1', {}, { ack: 'none' });
+        const multicast = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            groupRef: ORIGIN_ROOM,
+            typeId: 'room.granted-feed.v1',
+            resource: {},
+            options: { ack: 'none' }
+        });
+        const roomBroadcast = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'room.granted-feed.v1',
+            resource: {},
+            options: { ack: 'none', groupRef: ORIGIN_ROOM }
+        });
+        const roomlessUnicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'room.granted-feed.v1',
+            resource: {},
+            options: { ack: 'none' }
+        });
 
         expect(toRtcGrantedListedLeg(multicast)).toBe(multicast);
         expect(toRtcGrantedListedLeg(roomBroadcast)).toBe(roomBroadcast);

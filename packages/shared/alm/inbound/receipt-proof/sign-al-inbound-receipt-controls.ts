@@ -23,8 +23,11 @@ export type ALInboundReceiptProofs =
     | Readonly<{ kind: 'carrier-authenticated'; }>
     | Readonly<{ kind: 'signed'; signer: ALReceiptProofSignerPort; }>;
 
-export interface SignALInboundReceiptControlsInput {
+export interface SignALInboundReceiptControlsInput extends SignALInboundReceiptEffectsInput {
     readonly bundle: ALInboundCommitBundle;
+}
+
+export interface SignALInboundReceiptEffectsInput {
     readonly namespace: string;
     readonly receiptProofs: ALInboundReceiptProofs;
     readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
@@ -47,19 +50,28 @@ export async function signALInboundReceiptControls(
     if (receiptProofs.kind === 'carrier-authenticated') {
         return bundle;
     }
+    return { ...bundle, durableEffects: await signALInboundReceiptEffects(bundle.durableEffects, input) };
+}
+
+/** Each marked effect signed, and one whose signature failed left out; every other effect as it was. */
+export async function signALInboundReceiptEffects(
+    effects: readonly ALInboundDurableEffectWrite[],
+    input: SignALInboundReceiptEffectsInput
+): Promise<readonly ALInboundDurableEffectWrite[]> {
+    const { receiptProofs } = input;
+    if (receiptProofs.kind === 'carrier-authenticated') {
+        return effects;
+    }
     const signed = await Promise.all(
-        bundle.durableEffects.map(async (effect) =>
+        effects.map(async (effect) =>
             effect.signsForRecipient ? await signRecipientControl(input, receiptProofs.signer, effect) : effect
         )
     );
-    return {
-        ...bundle,
-        durableEffects: signed.filter((effect): effect is ALInboundDurableEffectWrite => effect !== undefined)
-    };
+    return signed.filter((effect): effect is ALInboundDurableEffectWrite => effect !== undefined);
 }
 
 async function signRecipientControl(
-    input: SignALInboundReceiptControlsInput,
+    input: SignALInboundReceiptEffectsInput,
     signer: ALReceiptProofSignerPort,
     effect: ALInboundDurableEffectWrite
 ): Promise<ALInboundDurableEffectWrite | undefined> {

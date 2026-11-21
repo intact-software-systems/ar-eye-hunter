@@ -168,10 +168,13 @@ describe('createRallarMiddleware', () => {
         const runtime = createRallarMiddleware(testRuntime.options);
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
-            'group-state.create.v1',
-            { requestId: 'request-1' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
+                typeId: 'group-state.create.v1',
+                resource: { requestId: 'request-1' }
+            }
         );
 
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
@@ -208,10 +211,13 @@ describe('createRallarMiddleware', () => {
         try {
             for (let request = 0; request < 11; request += 1) {
                 await runtime.inboxQueueReader.enqueueIfAbsent(newALUntargetedMessage(
-                    'api-v1',
-                    newALRoute('app-inbox.group-state', 'group-1', `request-${request}`),
-                    'group-state.create.v1',
-                    { requestId: `request-${request}` }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'api-v1',
+                        route: newALRoute('app-inbox.group-state', 'group-1', `request-${request}`),
+                        typeId: 'group-state.create.v1',
+                        resource: { requestId: `request-${request}` }
+                    }
                 ));
                 await runtime.inboxQueueReader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, runtime.appInboxResilience);
             }
@@ -247,10 +253,13 @@ describe('createRallarMiddleware', () => {
         });
         const enqueued = await runtime.inboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
-                'api-v1',
-                newALRoute('app-inbox.group-state', 'group-1', 'request-exhausted'),
-                'group-state.create.v1',
-                { requestId: 'request-exhausted' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'api-v1',
+                    route: newALRoute('app-inbox.group-state', 'group-1', 'request-exhausted'),
+                    typeId: 'group-state.create.v1',
+                    resource: { requestId: 'request-exhausted' }
+                }
             )
         );
         await inbox.enqueue({
@@ -280,10 +289,13 @@ describe('createRallarMiddleware', () => {
         const runtime = createRallarMiddleware(testRuntime.options);
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
-            'worker-test.message.v1',
-            { message: 'outbox work' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+                typeId: 'worker-test.message.v1',
+                resource: { message: 'outbox work' }
+            }
         );
 
         runtime.outboxQueueReader.onOutboxMessageDo(
@@ -332,10 +344,13 @@ describe('createRallarMiddleware', () => {
         );
         const outboxEntry = await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
-                'api-v1',
-                newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
-                'worker-test.message.v1',
-                { message: 'outbox work' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'api-v1',
+                    route: newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+                    typeId: 'worker-test.message.v1',
+                    resource: { message: 'outbox work' }
+                }
             )
         );
         try {
@@ -343,10 +358,13 @@ describe('createRallarMiddleware', () => {
             await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
             await runtime.inboxQueueReader.enqueueIfAbsent(
                 newALUntargetedMessage(
-                    'api-v1',
-                    newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
-                    'group-state.create.v1',
-                    { requestId: 'request-1' }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'api-v1',
+                        route: newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
+                        typeId: 'group-state.create.v1',
+                        resource: { requestId: 'request-1' }
+                    }
                 )
             );
             await runtime.qboxEngine.executeOnce();

@@ -274,6 +274,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiConfig'
+  /api/time:
+    get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      tags: [Config]
+      summary: Read a fresh server clock observation
+      description: |
+        Returns the server wall clock captured while producing this response.
+        The client must measure the request interval with a monotonic clock and
+        retain network uncertainty; this observation is not a zero-latency time synchronization.
+        Requests require no authentication and responses must not be cached.
+      responses:
+        '200':
+          description: Current server identity and millisecond epoch observation.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerTimeResponse'
   /api/auth/login/requests/{requestId}:
     post:
       parameters:
@@ -1194,7 +1219,7 @@ paths:
       summary: Update a group
       description: |
         Only active group `owner` or `admin` members may update group metadata
-        and status.
+        and status. Named deadlines use the same room authority and require the expected revision.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1225,6 +1250,10 @@ paths:
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
           $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions:
     get:
@@ -6310,6 +6339,20 @@ components:
         intervalMs: { type: integer, minimum: 0 }
         opensAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
+    HeldTopologyReshape:
+      type: object
+      additionalProperties: false
+      required: [wantedReasons, opensAtEpochMs]
+      properties:
+        wantedReasons:
+          description: The reasons the gate holds, once each, in the order of HeldTopologyReshapeReason's enum.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
+        opensAtEpochMs: { type: integer, format: int64, minimum: 0 }
+
     HeldTopologyReshapeReason:
       type: string
       enum: [kind-change, leader-rooting]
@@ -6989,6 +7032,20 @@ components:
           $ref: '#/components/schemas/QueueBoxKey'
         includeExpired:
           type: boolean
+
+    ServerTimeResponse:
+      type: object
+      additionalProperties: false
+      required: [serverPeerId, serverNowEpochMs]
+      properties:
+        serverPeerId:
+          type: string
+          minLength: 1
+        serverNowEpochMs:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Server epoch milliseconds captured for this response.
 
     ApiConfig:
       type: object
@@ -7708,6 +7765,23 @@ components:
         hasMore:
           type: boolean
 
+    RoomDeadline:
+      type: object
+      additionalProperties: false
+      required: [name, revision, atEpochMs]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        atEpochMs:
+          type: integer
+          minimum: 0
+          maximum: 8640000000000000
+
     Group:
       type: object
       required:
@@ -7805,6 +7879,13 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          properties:
+            rallarRoomDeadlines:
+              type: array
+              maxItems: 32
+              description: Server-owned named deadlines. Absent until a deadline is first published.
+              items:
+                $ref: '#/components/schemas/RoomDeadline'
         activeMemberCount:
           type: integer
           format: int64
@@ -7995,6 +8076,7 @@ components:
         - managerPrincipalIds
         - layoutStale
         - pending
+        - heldReshape
         - maxFormationAttempts
         - condition
         - remediation
@@ -8040,6 +8122,13 @@ components:
         pending:
           anyOf:
             - { $ref: '#/components/schemas/PendingTopologyReplan' }
+            - { type: 'null' }
+        heldReshape:
+          description: >-
+            The reshape the room's gate holds; null unless the room is active and its stored gate wants a reason.
+            The reshape follows at the next work that plans the room, so opensAtEpochMs can lie in the past.
+          anyOf:
+            - { $ref: '#/components/schemas/HeldTopologyReshape' }
             - { type: 'null' }
         groupRef:
           $ref: '#/components/schemas/GroupRef'
@@ -9048,7 +9137,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity. rallarSessionSchedule is server-owned; use scheduledStartAtEpochMs.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity. rallarSessionSchedule is server-owned; use scheduledStartAtEpochMs. rallarRoomDeadlines is reserved for named deadline updates.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -9069,6 +9158,71 @@ components:
     UpdateGroupRequest:
       type: object
       properties:
+        roomClock:
+          type: object
+          additionalProperties: false
+          description: The active appointed director starts, pauses or resumes one named countdown. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          required: [name, operation, expectedRevision, expectedDirectorEpoch]
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9._-]{1,64}$'
+            operation:
+              enum: [start, pause, resume]
+            expectedRevision:
+              type: integer
+              minimum: 0
+              maximum: 9007199254740991
+            expectedDirectorEpoch:
+              type: integer
+              minimum: 1
+              maximum: 9007199254740991
+            durationMs:
+              type: integer
+              minimum: 1
+              maximum: 9007199254740991
+          if:
+            properties:
+              operation:
+                const: start
+          then:
+            required: [durationMs]
+          else:
+            not:
+              required: [durationMs]
+        roomDeadline:
+          type: object
+          additionalProperties: false
+          required: [name, expectedRevision, atEpochMs]
+          description: Supply expectedDirectorEpoch for an extension by the active appointed session. Leadership loss returns 409 with code room-director-changed. An appointment permits only the deadline change in this request. Active room owners and admins can create up to 32 named deadlines. Revision zero creates a future deadline at revision one. Match the current revision to extend a live deadline or explicitly start the next occurrence after expiry. Only owners and admins may start occurrences. Later occurrences retain startedAtRevision across extensions. A stale revision returns 409 with code room-deadline-revision-conflict. Snapshots publish the records in metadata.rallarRoomDeadlines.
+          oneOf:
+            - not:
+                required: [operation]
+            - required: [operation]
+              not:
+                required: [expectedDirectorEpoch]
+              properties:
+                expectedRevision:
+                  minimum: 1
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9._-]{1,64}$'
+            expectedRevision:
+              type: integer
+              minimum: 0
+              maximum: 9007199254740991
+            operation:
+              type: string
+              enum: [start-next-occurrence]
+            expectedDirectorEpoch:
+              type: integer
+              minimum: 1
+              maximum: 9007199254740991
+            atEpochMs:
+              type: integer
+              minimum: 0
+              maximum: 8640000000000000
         slug:
           type: string
         displayName:
@@ -9100,7 +9254,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity. rallarSessionSchedule cannot be injected, removed or altered by metadata updates; use the session mutation route.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity. rallarSessionSchedule cannot be injected, removed or altered by metadata updates; use the session mutation route. Omit rallarRoomDeadlines from replacement metadata. The server preserves the stored collection.
           type: object
           additionalProperties: true
         expiresAtEpochMs:

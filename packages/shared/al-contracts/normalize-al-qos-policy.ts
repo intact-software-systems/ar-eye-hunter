@@ -159,7 +159,7 @@ function toALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
         repair: msg.delivery?.reliability === 'at-least-once'
             ? {
                 algo: msg.targets?.mode === 'unicast' ? 'none' : 'retransmit',
-                opts: { maxRepairs: 1 }
+                opts: { maxRepairs: 4 }
             }
             : undefined,
         ack: toAckRequest(msg.delivery),
@@ -294,7 +294,7 @@ function toDefaultDeliveryPolicy(
                 ? (targets?.mode === 'unicast' ? 'none' : 'retransmit')
                 : 'none',
             opts: {
-                maxRepairs: 1
+                maxRepairs: 4
             }
         },
         ack: {

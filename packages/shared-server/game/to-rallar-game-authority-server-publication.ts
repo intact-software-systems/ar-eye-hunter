@@ -51,22 +51,28 @@ export function toRallarGameAuthorityServerPublication<TPayload>(
     );
     const message = input.toPeerId
         ? newALUnicastMessage(
-            input.authority.id,
-            route,
-            input.toPeerId,
-            input.typeId,
-            envelope
+            {
+                createdAtEpochMs: input.sentAtEpochMs,
+                senderId: input.authority.id,
+                route,
+                toPeerId: input.toPeerId,
+                typeId: input.typeId,
+                resource: envelope
+            }
         )
         : newALBroadcastMessage(
-            input.authority.id,
-            route,
-            'room',
-            input.typeId,
-            envelope,
             {
-                groupRef: input.roomRef,
-                reliability: 'at-least-once',
-                ttlMs: input.ttlMs
+                createdAtEpochMs: input.sentAtEpochMs,
+                senderId: input.authority.id,
+                route,
+                scope: 'room',
+                typeId: input.typeId,
+                resource: envelope,
+                options: {
+                    groupRef: input.roomRef,
+                    reliability: 'at-least-once',
+                    ttlMs: input.ttlMs
+                }
             }
         );
 

@@ -1,9 +1,3 @@
-import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import type * as AuthModule from '@shared/api/auth.ts';
-import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
-import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     beforeEach,
     describe,
@@ -11,6 +5,15 @@ import {
     it,
     vi
 } from 'vitest';
+
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
+
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
@@ -40,6 +43,7 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
         middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     }))
 }));

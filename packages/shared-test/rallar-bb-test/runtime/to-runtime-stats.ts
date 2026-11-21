@@ -1,9 +1,11 @@
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type {
-    RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestLoopPacingSummary,
     RallarBlackBoxTestLoopResultValue,
-    RallarBlackBoxTestLoopSendSummary,
+    RallarBlackBoxTestLoopSendSummary
+} from '../loop/loop-result-contracts.ts';
+import type {
+    RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRtcStreamResultValue,
     RallarBlackBoxTestState,

@@ -174,18 +174,21 @@ describe('QueueBoxUtilities', () => {
         const expiresAtMs = Date.UTC(2026, 0, 1, 0, 0, 30);
         const msg = {
             ...newALUnicastMessage(
-                'sender-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-1',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'hello'
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-1',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'hello'
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             constraints: {
                 expiresAtMs
@@ -217,7 +220,14 @@ describe('QueueBoxUtilities', () => {
     it('clamps a creator wider than the stored 16-character column and keeps the full one in the message (R-S3c-i-30)', () => {
         const creator = 'default-qbox-server';
         const msg: ALMessage = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'wide-creator' }, 'peer', 'chat.v1', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', contextId: 'room', resourceId: 'wide-creator' },
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {}
+            }),
             audit: { createdBy: creator, createdTs: 123 }
         };
 
@@ -229,7 +239,14 @@ describe('QueueBoxUtilities', () => {
     });
 
     it('preserves an absent message deadline without turning queue retention into a delivery TTL', () => {
-        const msg = newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'peer', 'chat.v1', {});
+        const msg = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'message' },
+            toPeerId: 'peer',
+            typeId: 'chat.v1',
+            resource: {}
+        });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         expect(entry.audit.expiryTs.equals(NEVER_EXPIRE_TS)).toBe(true);
         expect(JSON.parse(entry.resource)).not.toHaveProperty('constraints');
@@ -240,7 +257,15 @@ describe('QueueBoxUtilities', () => {
         { callerTtlMs: 2_000, expectedTtlMs: 1_000 }
     ])('preserves the earliest caller/freshness bound when caller TTL is $callerTtlMs', ({ callerTtlMs, expectedTtlMs }) => {
         const msg: ALMessage = Object.freeze({
-            ...newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'peer', 'chat.v1', {}, { ttlMs: callerTtlMs }),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', contextId: 'room', resourceId: 'message' },
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {},
+                options: { ttlMs: callerTtlMs }
+            }),
             qos: Object.freeze({ expiry: Object.freeze({ algo: 'fresh-until', opts: Object.freeze({ maxStalenessMs: 1_000 }) }) })
         });
         const serialized = JSON.stringify(msg);

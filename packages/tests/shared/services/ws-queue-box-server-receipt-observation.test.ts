@@ -541,14 +541,18 @@ describe('private upstream receipt observation', () => {
         })]);
     });
 
-    it('records the real ordinary duplicate without repeating its admission receipt', async () => {
+    it('records the real ordinary duplicate and the admission receipt it is answered again', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const service = await createObservedServer((event) => events.push(event));
         const message = createRoomSubjectMessage();
         expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
         const receipts = events.filter((event) => event.kind === 'receipt-outbox');
+        expect(receipts).toMatchObject([{ receipt: { msgId: 'subject', phase: 'admitted' } }]);
         expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('duplicate');
-        expect(events.filter((event) => event.kind === 'receipt-outbox')).toEqual(receipts);
+        expect(events.filter((event) => event.kind === 'receipt-outbox')).toMatchObject([
+            ...receipts,
+            { receipt: { ...receipts[0].receipt, observedAtEpochMs: expect.any(Number) } }
+        ]);
         expect(events.filter((event) => event.kind === 'business-socket-decision')).toMatchObject([
             { msgId: 'subject', outcome: 'admitted', scopeDisposition: 'authorized' },
             { msgId: 'subject', outcome: 'duplicate', scopeDisposition: 'authorized' }

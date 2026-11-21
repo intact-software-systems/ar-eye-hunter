@@ -34,13 +34,17 @@ export type TestALNackFields =
     & Pick<ALNackPayload, 'msgId' | 'fromPeerId' | 'toPeerId' | 'reason'>
     & Partial<ALNackPayload>;
 
-/** Defaults: logicalRecipientPeerId = fromPeerId, originPeerId = toPeerId, observedAtEpochMs 1, proof null. */
+/**
+ * Defaults: logicalRecipientPeerId = fromPeerId, originPeerId = toPeerId, observedAtEpochMs 1, proof null, and on a
+ * `gap` NACK gapRequestNumber 1.
+ */
 export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
     return {
         logicalRecipientPeerId: fields.fromPeerId,
         originPeerId: fields.toPeerId,
         observedAtEpochMs: 1,
         proof: null,
+        ...(fields.reason === 'gap' ? { gapRequestNumber: 1 } : {}),
         ...fields
     };
 }

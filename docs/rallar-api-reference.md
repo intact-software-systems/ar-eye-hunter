@@ -312,15 +312,19 @@ as the differences between consecutive statuses: a bootstrap or tombstoned slot 
 layout that appears and disappears before the browser observes it raises no event, and
 `layoutAccepted` fires once the accepted slot and the snapshot name the same layout.
 `formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
-`layoutStale`, `pending`, the attempt budget, both status axes, the coverage basis and the group's
-`causalRevision` that `layoutStale` and `condition` were derived at) and decodes
+`layoutStale`, `pending`, `heldReshape`, the attempt budget, both status axes, the coverage basis and
+the group's `causalRevision` that `layoutStale` and `condition` were derived at) and decodes
 it against the bound room, rejecting a body that is malformed or names another group. `pending`
 reports any queued group-revision replan of the group: the coalesced head, a replan parked behind a
 settled head, an explicit reconfigure or a topology-config write. Its `dueAtEpochMs` is the earliest
 due coalesced row's (not a bound on when the room settles). `dueAtEpochMs` and `generation` are
 `null` for a per-command replan and a head that no longer decodes; `generation` is the reported
 row's own coalescing count, so it is not comparable across reads. RTT-refresh work is not reported,
-and neither is a row other than the head that does not decode. Readiness
+and neither is a row other than the head that does not decode. `heldReshape` is `null` unless the
+room is `active` and its reshape gate holds a reshape. It then carries the `wantedReasons`
+(`kind-change`, `leader-rooting`) and `opensAtEpochMs`, the instant the gate opens. The reshape
+follows at the next work that plans the room, so the instant can lie in the past: briefly where the
+policy plans automatically, and until the next command in a `commanded` room. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.
 
@@ -999,7 +1003,11 @@ send the policy keeps waits at submission: while its carrier is at the
 watermark each attempt settles `not-ready` and retries 50 ms later
 (`AL_SUBMISSION_NOT_READY_RETRY_MS`) on both carriers, until it is sent or its
 deadline ends it, and three consecutive `not-ready` RTC attempts hand an
-`rtc-with-ws-fallback` send to WS. At submission a backpressured WS socket
+`rtc-with-ws-fallback` send to WS. A receipted send whose first transmission
+its carrier has taken no copy of charges its receipt nothing: its handle stays
+pending until a copy leaves or the message's deadline passes, when it reads
+`expired`. Its receipt's retries are charged once the first transmission has
+left, and a retry whose own copy is held is charged as any retry. At submission a backpressured WS socket
 holds every message, controls included.
 
 Each decision, a drop, a deferral or a hand-over, is stated as a `congestion`
@@ -1144,8 +1152,10 @@ cached, the server decides. The server refuses a publication without effective
 `publish` at socket admission or at `route` with the NACK reason
 `no-publish-grant`, terminal whatever the receipt: the handle ends `rejected`
 with `failure: { kind: 'relay-rejected', rejection }`, `rejection.reason`
-`no-publish-grant`. A pending replay or an inbox dispatch that refuses it sends
-no NACK, and a receipted handle then reads its recipients unconfirmed. The
+`no-publish-grant`. An inbox dispatch that refuses it sends no NACK, and a
+receipted handle's receipt settles at its deadline; a pending replay that
+refuses it answers the NACK and starts no receipt, and the handle reads
+`rejected`. The
 cached check is advisory: a cache older than a grant refuses the send until the
 grant's delta lands.
 
@@ -1206,6 +1216,22 @@ server records a session it drops from its own publication the same way, in its
 own receipt. A send asking `ack: 'group-leader'` whose leader has not
 subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
 `unauthorized`.
+
+Over WS the server answers for a receipted send it admitted, and until it first
+does the sending page holds the send's first hop: a send with a logical receipt
+that is not addressed to the server and has at least one retry is written again
+after each receipt timeout (2 s by default) the server has not answered, up to
+its retries (3 by default), and then reads `failed` with `failure.kind:
+'receipt-exhausted'`. A frame the page's carrier has not taken yet charges no
+retry. Any receipt from the server ends that wait, and so does its
+`not-yet-in-sync` answer for a send it retains, which states nothing; the
+server answers that send again when it admits it, with its `admitted` receipt,
+or when it refuses it, with the refusal's NACK when the refusal sends one.
+The server answers a
+duplicate of a message it admitted with its `admitted` receipt again, to that
+sender alone, while it holds the receipt; where it no longer does (another
+server instance, a restart) a send whose `admitted` receipt was lost can read
+`failed` although it was delivered.
 
 Over RTC the sender sees grants but not subscriptions, so a receipted granted
 send (`ack: 'receiver'`, `'all-logical-recipients'` or `'group-leader'`) expects
@@ -1823,11 +1849,11 @@ outcomes, none of them a new handle state (D175):
   key is admitted too and moves the claim's expiry to its own.
 - **Held by another.** An exclusive send from another session on a key whose
   claim is live is dropped at the server's admission and NACKed
-  `held-by-other`; it reaches no one. A dropped claim starts no receipt; a
-  claim retained on a conflict may have started one, which the `held-by-other`
-  NACK then ends. The handle reads it as a trusted-server relay rejection
-  whatever receipt it already holds (unlike `no-leader`, which counts only
-  before a receipt): with a receipt-bearing `ack`
+  `held-by-other`; it reaches no one. A dropped claim starts no receipt, and
+  neither does a claim retained on a conflict and dropped at its replay: the
+  `held-by-other` NACK is its only answer. The handle reads it as a
+  trusted-server relay rejection whatever receipt it already holds (unlike
+  `no-leader`, which counts only before a receipt): with a receipt-bearing `ack`
   it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and
   `evidence.relayRejection` reading
   `{ relay: 'trusted-server', reason: 'held-by-other' }`; with `ack: 'none'` it
@@ -2066,12 +2092,31 @@ sender's ordering track -- the receiver over RTC, the WS server over WS -- NACKs
 the missing sequences as inclusive ranges (`ALSeqRange { from, to }`, at most
 `repairRanges` = 128 per payload), and the sender retransmits them along the
 hop that asked, `repairPageMessages` (32) sequences per round until the ranges
-are served. A message is retransmitted at most `maxRepairs` times (1 by
-default; `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }` sets
-it); a report of the same gap once that budget is spent settles the message
-`skipped` with reason `repair-exhausted`, once, so its handle reads `failed`
-with `failure: { kind: 'skipped', reason: 'repair-exhausted' }`. The
-receiver's later sequences stay buffered behind the missing one until the
+are served. A gap that stands is asked for again: the hop renews its request
+for the sequences still missing about 1 s, 3 s and 7 s after they went missing,
+each interval stretched by a random factor between 1 and 1.5 drawn per
+receiver, and numbers each request, so the sender answers a renewal with a new
+retransmission while the reports later arrivals make of the same gap draw
+nothing more. A frame that is only late, by well under a second, draws no
+renewal. Renewal holds on direct links (a WS client and its server, RTC peers
+that send to each other directly); over an RTC relay a renewal reaches the
+sender only while the relay still holds a receipted row that waits on that
+receiver, since a relay forwards a gap NACK only then and never forwards a
+repair request. Each receiver
+that misses a sequence may draw `maxRepairs` retransmits of it (4 by default:
+its first report and three renewals; `qos: { repair: { algo: 'retransmit',
+opts: { maxRepairs } } }` sets it); on a receipted WS send whose wait for its
+server ran out (about 8 s at the defaults), a later renewal finds the message
+ended and is served nothing; a request past one receiver's budget
+settles the message `skipped` with reason `repair-exhausted`, once, so its
+handle reads `failed` with `failure: { kind: 'skipped', reason:
+'repair-exhausted' }`, and ends the message for every receiver: nothing is
+sent for it afterwards, so its other receivers also lose its remaining receipt
+retries. At the defaults no request on one route is past a budget; a receiver
+reported both directly and through a relay spends two attempts of its one
+budget per request. The
+receiver's later
+sequences stay buffered behind the missing one until the
 track expires or the sender's next epoch opens a new track. Repair never serves
 below a recipient's entry: a responder serves only the audience the message was
 frozen or admitted to, and a requester asks only above its own position. A WS
@@ -2144,12 +2189,11 @@ the message was admitted to (a session its receipt expects, or one of the
 audience it captured at admission), so a session that joined after a message
 was published is never sent it. The server retransmits the missing sequences to that requester alone,
 `repairPageMessages` (32) per round, until the message's deadline. The repair
-budget is per message and shared by every requester: the first receiver to NACK
-a sequence spends `maxRepairs` (1 by default), and another receiver missing the
-same sequence gets it from the receipt's retries instead, when the publication
-keeps a receipt. A report of a gap once
-the budget is spent settles the publication `skipped` with reason
-`repair-exhausted`, once. Sequences follow commit order, so under contention a
+budget counts per requester: each receiver missing a sequence may draw
+`maxRepairs` retransmits of it (4 by default), and a receiver whose gap stands
+asks again. A request past one receiver's budget settles the publication
+`skipped` with reason `repair-exhausted`, once, and ends it for every
+receiver: nothing is sent for it afterwards. Sequences follow commit order, so under contention a
 publication fenced out by the server's sender version takes the next sequence
 when its replay commits and two publications of one track can commit out of
 publish order; and since a receiver's ordering-track TTL defaults to the
@@ -2207,10 +2251,15 @@ A receiver judges a room send against the room snapshot it holds:
   catches up on the existing bounded path: an RTC receiver NACKs its hop,
   refreshes the room once and re-admits the message once, and the sender
   retries; the WS server retains the send as a pending admission, answers an
-  advisory NACK the sender leaves unhandled, and re-authorizes it every 50 ms
-  until its room meets the floor or the message's deadline passes. The sender
-  retries nothing over WS. A send the server retains this way starts no receipt
-  aggregate, so a `receiver` receipt never completes for it.
+  advisory NACK, and re-authorizes it every 50 ms
+  until its room meets the floor or the message's deadline passes. Over WS
+  that NACK ends the sender's wait for its server to answer, so the sender
+  writes the send no more and states nothing. A send the server retains this
+  way starts its receipt when its room catches up and the server admits it, so
+  a `receiver` receipt completes for it as for any send; one its room then
+  refuses for another reason is answered with that refusal's NACK, when the
+  refusal sends one; one still retained at the message's deadline is answered
+  nothing, and its handle reads `expired`.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`

@@ -196,7 +196,7 @@ function observeConsumedDiagnosticsPorts(): RallarDiagnosticsPorts[] {
         const connected = await initialise(...args);
         const ports = args[2].diagnosticsPorts;
         expect(storage.mock.calls[0]?.[1].diagnosticsPorts.storage).toBe(ports.storage);
-        expect(volatileStorage.mock.calls[0]?.[2]).toBe(ports.storage);
+        expect(volatileStorage.mock.calls[0]?.[2].storage).toBe(ports.storage);
         // The middleware and both carriers report through the connect's one congestion-measuring tee over the port.
         const carrierOutbound = wsClient.mock.calls[0]?.[0].outboundDiagnostics;
         expect(carrierOutbound).toEqual(expect.any(Function));

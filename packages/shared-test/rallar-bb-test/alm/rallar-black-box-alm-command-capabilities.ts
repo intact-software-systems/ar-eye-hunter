@@ -16,7 +16,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'any other; a live send names resourceId, its stream, and returns once staged. ' +
             'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
-            'the product as given. durability (volatile, local-checkpoint, local-outbox, local-inbox) declares the ' +
+            'the product as given. maxRepairs (an integer of at least 1) states the retransmits each receiver\'s ' +
+            'gap requests may draw, sent as qos.repair retransmit beside any qos.ack; absent, the product\'s repair ' +
+            'budget. durability (volatile, local-checkpoint, local-outbox, local-inbox) declares the ' +
             'typed channel\'s ' +
             'durability; absent, the send is volatile. onStorageUnavailable (refuse, volatile) declares what the ' +
             'channel does when its durable storage is unavailable; absent, it refuses. ' +

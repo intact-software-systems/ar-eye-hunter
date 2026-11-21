@@ -941,14 +941,17 @@ function refusedHunterEvent(playerId: string): RelicHunterEvent {
 function toHunterMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEvent> {
     const groupRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: event.gameId };
     const raw = newALPrincipalBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.hunter, event.gameId, `${event.gameId}:${event.principalId}`),
         {
-            groupRef,
-            principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
-        },
-        RELIC_TYPES.hunter,
-        event
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.hunter, event.gameId, `${event.gameId}:${event.principalId}`),
+            target: {
+                groupRef,
+                principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
+            },
+            typeId: RELIC_TYPES.hunter,
+            resource: event
+        }
     );
     return {
         transport: 'ws',
@@ -968,16 +971,19 @@ function toHunterMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEven
 
 function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRoundTransitionEvent> {
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.event, event.gameId, `${event.gameId}:${event.round}`),
-        'room',
-        RELIC_TYPES.event,
-        event,
         {
-            groupRef: {
-                applicationId: DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-                groupId: event.gameId
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.event, event.gameId, `${event.gameId}:${event.round}`),
+            scope: 'room',
+            typeId: RELIC_TYPES.event,
+            resource: event,
+            options: {
+                groupRef: {
+                    applicationId: DEFAULT_STATE_APPLICATION_ID,
+                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                    groupId: event.gameId
+                }
             }
         }
     );
@@ -1000,13 +1006,16 @@ function toRoomMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRou
 function toSnapshotMessage(snapshot: RelicPublicSnapshot): RallarMessage<RelicServerEvent> {
     const payload: RelicServerEvent = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: snapshot.gameId, snapshot };
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
-        'room',
-        RELIC_TYPES.snapshot,
-        payload,
         {
-            groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
+            scope: 'room',
+            typeId: RELIC_TYPES.snapshot,
+            resource: payload,
+            options: {
+                groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+            }
         }
     );
     return {

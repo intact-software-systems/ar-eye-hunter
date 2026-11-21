@@ -138,20 +138,23 @@ function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
         ? input.target.groupRef.groupId
         : input.target.scope;
     return newALBroadcastMessage(
-        input.senderId,
-        newALRoute(
-            input.publication.topicId ?? DEFAULT_RALLAR_SERVER_AI_RESULT_TOPIC_ID,
-            contextId,
-            input.publication.resourceId ?? input.publication.result.generationId
-        ),
-        input.target.scope,
-        input.publication.typeId ?? DEFAULT_RALLAR_SERVER_AI_RESULT_TYPE_ID,
-        input.publication.result,
         {
-            groupRef: input.target.scope === 'room' ? input.target.groupRef : undefined,
-            reliability: 'at-least-once',
-            // A world or all broadcast names no logical recipients, so the receiver ack would be refused.
-            ack: input.target.scope === 'room' ? 'receiver' : 'none'
+            createdAtEpochMs: Date.now(),
+            senderId: input.senderId,
+            route: newALRoute(
+                input.publication.topicId ?? DEFAULT_RALLAR_SERVER_AI_RESULT_TOPIC_ID,
+                contextId,
+                input.publication.resourceId ?? input.publication.result.generationId
+            ),
+            scope: input.target.scope,
+            typeId: input.publication.typeId ?? DEFAULT_RALLAR_SERVER_AI_RESULT_TYPE_ID,
+            resource: input.publication.result,
+            options: {
+                groupRef: input.target.scope === 'room' ? input.target.groupRef : undefined,
+                reliability: 'at-least-once',
+                // A world or all broadcast names no logical recipients, so the receiver ack would be refused.
+                ack: input.target.scope === 'room' ? 'receiver' : 'none'
+            }
         }
     );
 }

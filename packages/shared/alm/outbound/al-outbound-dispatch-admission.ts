@@ -49,7 +49,6 @@ import {
 } from './al-outbound-pending-admission.ts';
 import {
     computeALOutboundDispatch,
-    toALOutboundAttemptIdentity,
     toALOutboundCommitSettlements,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
@@ -65,6 +64,7 @@ import {
     toALOutboundLeftBehindPredecessors
 } from './lane/compute-al-outbound-group-sent-positions.ts';
 import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
+import { toALOutboundAttemptIdentity } from './to-al-outbound-effect-id.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 /** What one dispatch decided before its write: a result already, or a bundle its commit writes. */

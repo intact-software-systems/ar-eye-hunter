@@ -28,6 +28,7 @@ import {
 } from '@shared/mod.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
@@ -38,8 +39,6 @@ import {
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
-
-import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 describe('ALOutboundMessageRuntime', () => {
     beforeEach(() =>
@@ -73,6 +72,7 @@ describe('ALOutboundMessageRuntime', () => {
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
+            workClock: { nowMs: () => nowMs },
             queueEngine,
             ownsQueueEngine: false,
             browserLocks: undefined,
@@ -1208,32 +1208,38 @@ describe('ALOutboundMessageRuntime', () => {
         });
 
         const first = newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-1',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: true
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-1',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    online: true
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
         const second = newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-2',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: false
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-2',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    online: false
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, first);
@@ -1268,18 +1274,21 @@ describe('ALOutboundMessageRuntime', () => {
 
         const first = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'presence',
-                    resourceId: 'presence-1',
-                    contextId: 'room-1'
-                },
-                'peer-1',
-                'presence.state.v1',
-                {
-                    online: true
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'presence-1',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        online: true
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -1289,18 +1298,21 @@ describe('ALOutboundMessageRuntime', () => {
         };
         const second = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'presence',
-                    resourceId: 'presence-2',
-                    contextId: 'room-1'
-                },
-                'peer-1',
-                'presence.state.v1',
-                {
-                    online: false
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'presence-2',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        online: false
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'presence',

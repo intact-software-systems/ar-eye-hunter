@@ -332,7 +332,10 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             [3, false, undefined]
         ]);
         expect([...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq)).toEqual([1, 2, 3]);
-        expect(messages[1].repairAttempts).toEqual(1);
+        // The fixture clock jumps to the sender's NACK wait's deadline, past every renewal interval, before the release;
+        // the send states no budget, so the model charges each request.
+        const requester = carrier === 'ws' ? 'server' : 'receiver';
+        expect(messages[1].gapRequests).toEqual([1, 2, 3, 4].map((requestNumber) => ({ requester, requestNumber, outcome: 'repaired' })));
     });
 }
 
@@ -340,7 +343,7 @@ for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
     // The sender opens the gap only once both recipients cued that they delivered the first frame, so the three pages
     // replay in the lane's order around that gate: the first send through its admission, both recipients' arrival and
     // cue, then the rest, which starts with the sender's waits for those cues.
-    test(`the ${carrier} repair-exhausted trio keeps the hold, spends the budget and reads the second send skipped`, async () => {
+    test(`the ${carrier} repair-exhausted trio keeps the hold, spends each receiver's budget of one and reads the second send skipped on a renewal`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -365,6 +368,29 @@ for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
             [3, 'transport-accepted', true, undefined],
             [4, 'transport-accepted', true, undefined]
         ]);
+        // Each receiver's first report spends its own budget of one; the receiver's first renewal, numbered 2, finds its
+        // one attempt spent. The fixture clock passes the renewal interval at the sender's NACK wait, before the fourth
+        // frame, so no report of that frame follows the settlement.
+        expect(findMarked(ports, 'repair-exhausted')[1].gapRequests).toEqual([
+            { requester: 'receiver', requestNumber: 1, outcome: 'repaired' },
+            { requester: 'recipient-b', requestNumber: 1, outcome: 'repaired' },
+            { requester: 'receiver', requestNumber: 2, outcome: 'exhausted' }
+        ]);
+        // The sender's repair commits of the second send, in its page's order with the observe that read it `failed`: the
+        // two served reports, then the exhausting request's commit, which ends the message; none follows the settlement.
+        const held = findMarked(ports, 'repair-exhausted')[1];
+        const observedFailed = `alm-${carrier}-repair-exhausted-sender-observe-failed-2`;
+        expect(
+            ports.sender.state().events.flatMap((event) => {
+                if (event.commandId === observedFailed) {
+                    return ['observed failed'];
+                }
+                const data = isJsonRecordValue(event.payload) ? event.payload.data : undefined;
+                return isJsonRecordValue(data) && data.kind === 'commit-phases' && data.origin === 'repair' && data.msgId === held.msgId
+                    ? [`repair ${String(data.commitOutcome)}`]
+                    : [];
+            })
+        ).toEqual(['repair committed', 'repair committed', 'repair committed', 'observed failed']);
     });
 }
 
@@ -418,18 +444,23 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         expect(receipt.value.state).toEqual('acknowledged');
     });
 
-    // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
+    // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed. Over ws the
+    // sender's read of the kept send's handle runs last, after the delivery it waits for.
     test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
         writeAlmCellStartEvents(ports.receiver, receiver.commands);
         writeAlmCellStartEvents(ports.recipientB, recipientB.commands);
+        const [senderSends, keptSendRead] = splitAtKeptSendRead(sender);
 
         const results = [
-            await ports.sender.execute(toRecipeRun(sender)),
+            await ports.sender.execute(toRecipeRun(senderSends)),
             await ports.recipientB.execute(toRecipeRun(recipientB)),
-            await ports.receiver.execute(toRecipeRun(receiver))
+            await ports.receiver.execute(toRecipeRun(receiver)),
+            ...(keptSendRead === undefined
+                ? []
+                : [await ports.sender.execute({ ...toRecipeRun(keptSendRead), commandId: `${keptSendRead.recipeId}-kept-send-read-run` })])
         ];
 
         for (const result of results) {
@@ -445,11 +476,20 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             handleId: message.command.handleId
         });
         assert(receipt.ok && isJsonRecordValue(receipt.value));
-        expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
-        expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
-        expect(receipt.value.unconfirmedRecipientPeerIds).toEqual(['recipient-b-stored-session']);
-        expect(receipt.value.submitted).toEqual(true);
-        expect(receipt.value.state).toEqual('transport-accepted');
+        if (carrier === 'ws') {
+            expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.unconfirmedRecipientPeerIds).toEqual([]);
+            expect(receipt.value.submitted).toEqual(true);
+            expect(receipt.value.state).toEqual('acknowledged');
+        }
+        else {
+            expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
+            expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+            expect(receipt.value.unconfirmedRecipientPeerIds).toEqual(['recipient-b-stored-session']);
+            expect(receipt.value.submitted).toEqual(true);
+            expect(receipt.value.state).toEqual('transport-accepted');
+        }
     });
 
     test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
@@ -463,9 +503,12 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
         };
 
-        await ports.sender.execute(toRecipeRun(sender));
+        const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
+        expect([sent.ok, readFailedCommandIds(sent)]).toEqual(
+            carrier === 'ws' ? [false, [`${sender.recipeId}-assert-acknowledged-1`]] : [true, []]
+        );
         expect(received.ok).toEqual(false);
         expect(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted)).toEqual([false, true]);
     });
@@ -483,10 +526,13 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
         };
 
-        await ports.sender.execute(toRecipeRun(sender));
+        const sent = await ports.sender.execute(toRecipeRun(sender));
         const mover = await ports.recipientB.execute(toRecipeRun(recipientB));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
+        expect([sent.ok, readFailedCommandIds(sent)]).toEqual(
+            carrier === 'ws' ? [false, [`${sender.recipeId}-assert-acknowledged-1`]] : [true, []]
+        );
         expect(mover.ok).toEqual(false);
         expect(received.ok).toEqual(false);
         expect([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]]).toEqual([7, 4, []]);
@@ -512,6 +558,20 @@ test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced
         reason: 'membership-fenced'
     }]]);
 });
+
+/** The sender's recipe before its read of the kept send's handle, and that read with what follows it, if it has one. */
+function splitAtKeptSendRead(sender: RallarBlackBoxTestRecipe): readonly [RallarBlackBoxTestRecipe, RallarBlackBoxTestRecipe | undefined] {
+    const read = sender.commands.findIndex((command) => command.commandId === `${sender.recipeId}-observe-acknowledged-1`);
+    return read < 0
+        ? [sender, undefined]
+        : [{ ...sender, commands: sender.commands.slice(0, read) }, { ...sender, commands: sender.commands.slice(read) }];
+}
+
+/** The commands a recipe run reports failed, in run order. */
+function readFailedCommandIds(run: RallarBlackBoxTestResult): readonly string[] {
+    assert(isJsonRecordValue(run.value) && Array.isArray(run.value.results));
+    return run.value.results.flatMap((entry) => isJsonRecordValue(entry) && entry.ok === false && typeof entry.commandId === 'string' ? [entry.commandId] : []);
+}
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
     return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };

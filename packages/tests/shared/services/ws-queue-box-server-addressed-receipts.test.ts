@@ -100,6 +100,28 @@ describe('WS server receipts for addressed sends', () => {
         }).toEqual([['admitted', []], ['complete', ['b']]]);
     });
 
+    it('answers a duplicate of an admitted room unicast with admitted again, naming its addressee alone', async () => {
+        const fixture = await createAddressedFixture();
+        const toB = roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' });
+        await fixture.service.acceptIncomingMessage(toB, 'a');
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readFrames(fixture.sockets.b).length;
+        }).toBe(1);
+
+        const again = await fixture.service.acceptIncomingMessage(toB, 'a');
+
+        expect(again.right?.kind).toBe('duplicate');
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readReceipts(fixture.sockets.a).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds]);
+        }).toEqual([['admitted', ['b']], ['admitted', ['b']]]);
+        expect(readReceipts(fixture.sockets.b)).toEqual([]);
+        expect(readReceipts(fixture.sockets.c)).toEqual([]);
+        expect(readFrames(fixture.sockets.b).map((message) => message.id.msgId)).toEqual(['to-b']);
+        expect(fixture.routed.map((message) => message.id.msgId)).toEqual(['to-b']);
+    });
+
     it('answers the admitted and the complete receipt under the trace of the message they answer', async () => {
         const fixture = await createAddressedFixture();
         await fixture.service.acceptIncomingMessage(roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }), 'a');

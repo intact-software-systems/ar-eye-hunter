@@ -87,9 +87,23 @@ export namespace ALInboundMessageRuntime {
     export type UnpersistedControl = Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable;
 
     export type PendingAuthority =
-        | { readonly kind: 'authorized'; readonly source: Source; }
+        | {
+            readonly kind: 'authorized';
+            readonly source: Source;
+            /** The room snapshot version the source's audience was read at; absent when the authority read no room audience. */
+            readonly snapshotVersion?: number;
+        }
         | { readonly kind: 'retry'; readonly retryAfterMs: number; }
         | { readonly kind: 'rejected'; };
+
+    /** A kept message its replay admitted, under the authority that replay ran its attempt with. */
+    export interface ReplayedAdmission {
+        readonly msg: ALMessage;
+        readonly source: Source;
+        /** The source the message was kept under, with the audience it captured at ingress. */
+        readonly pendingSource: Source;
+        readonly snapshotVersion: number | undefined;
+    }
 
     export interface Clock {
         nowMs(): number;
@@ -108,6 +122,8 @@ export namespace ALInboundMessageRuntime {
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
+        /** Queue scheduling, measurements and mandatory releases remain available during retirement. */
+        readonly workClock: Clock;
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
@@ -178,6 +194,11 @@ export namespace ALInboundMessageRuntime {
          * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
          */
         readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
+        /**
+         * Receives each kept message a replay of this runtime admitted, after its commit and before that replay's
+         * work batch returns. Absence means nothing follows a replay's admission.
+         */
+        readonly onReplayAdmitted?: (admitted: ReplayedAdmission) => Promise<void>;
         /** How this composition authenticates the ACKs and NACKs its counted recipient sends about itself. */
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;

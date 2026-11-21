@@ -1,8 +1,7 @@
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import {
+    decodeALAdmissionCountRecord,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord,
-    decodeALAdmissionString
+    decodeALAdmissionRecord
 } from '../../al-admission-value-validation.ts';
 
 /** A sequence one ordering track has reached: its head, or the last one sent to one of its recipients. */
@@ -23,19 +22,7 @@ export function decodeALOutboundTrackPositionRow(value: unknown): ALOutboundTrac
  * `null`, as a row written before positions were kept reads.
  */
 export function decodeALOutboundSentPositionRecord(value: unknown): Readonly<Record<string, number>> | null {
-    if (value === undefined || value === null) {
-        return null;
-    }
-    if (typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
-        throw new TypeError('Stored outbound sent positions must be a plain record');
-    }
-    const entries = Object.entries(value);
-    if (entries.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries) {
-        throw new TypeError('Stored outbound sent positions exceed the audience limit');
-    }
-    return Object.fromEntries(
-        entries.map((
-            [recipientPeerId, seq]
-        ) => [decodeALAdmissionString(recipientPeerId), decodeALAdmissionNumber(seq)])
-    );
+    return value === undefined || value === null
+        ? null
+        : decodeALAdmissionCountRecord(value, 'outbound sent positions');
 }

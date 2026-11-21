@@ -49,7 +49,8 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
                 snapshot,
                 expireAtTimestamp: stored.reference.expiresAtMs
             }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         }
     };
 }

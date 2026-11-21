@@ -822,8 +822,8 @@ applies the 256-sequence repair window and the 256-message, 1 MiB buffered-track
 ceilings and returns `resync-required` without enumerating an oversized gap.
 
 **CURRENT — R1, range repair and resync integration:** The ordering observation,
-the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v3`
-since Slice 8, `al.control.repair.v2`; older ids are refused `unsupported`), the
+the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v4` and
+`al.control.repair.v3`, which carry a gap request number; older ids are refused `unsupported`), the
 repair hint and the effect ids carry missing sequences as inclusive `ALSeqRange`
 ranges, at most 128 per payload
 ([`al-seq-range.ts`](../../packages/shared/al-contracts/al-seq-range.ts), D139).

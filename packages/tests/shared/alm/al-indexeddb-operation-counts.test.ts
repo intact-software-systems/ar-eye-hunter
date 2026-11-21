@@ -94,6 +94,7 @@ describe('AL-owned IndexedDB operation counts', () => {
             dbName: `al-counts-${crypto.randomUUID()}`,
             storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
             nowMs: () => 1_000,
+            workNowMs: () => 1_000,
             newWriteToken: () => crypto.randomUUID(),
             observer
         });
@@ -107,6 +108,7 @@ describe('AL-owned IndexedDB operation counts', () => {
             typeId: 'AL_OUTBOUND:test',
             status: 'NEW',
             maxToRead: 4,
+            order: 'key',
             cursor: null
         });
 

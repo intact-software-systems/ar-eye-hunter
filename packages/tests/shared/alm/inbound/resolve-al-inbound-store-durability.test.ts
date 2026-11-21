@@ -6,14 +6,17 @@ import { resolveALInboundStoreDurability } from '@shared/alm/inbound/lane/resolv
 
 function toMessage(durability: ALDurabilityAlgo | undefined) {
     return newALUnicastMessage(
-        'sender',
-        { topicId: 'chat', resourceId: `durability-${durability ?? 'none'}`, contextId: 'room' },
-        'receiver',
-        'chat.message.v1',
-        {},
         {
-            ttlMs: 30_000,
-            qos: durability === undefined ? undefined : { durability: { algo: durability } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: `durability-${durability ?? 'none'}`, contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                qos: durability === undefined ? undefined : { durability: { algo: durability } }
+            }
         }
     );
 }

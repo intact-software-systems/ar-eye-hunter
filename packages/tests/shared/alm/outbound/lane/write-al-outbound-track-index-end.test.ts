@@ -28,7 +28,15 @@ const POLICY: ALOutboundCapturedPolicy = {
 const { admittedAudience: _admittedAudience, ...AUDIENCE_FREE } = POLICY;
 
 function trackedMessage(seq: number): ALMessage {
-    const message = newALBroadcastMessage('a', newALRoute('room.round.event', ROOM.groupId, `event-${seq}`), 'room', 'round.event.v1', {}, { groupRef: ROOM });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.round.event', ROOM.groupId, `event-${seq}`),
+        scope: 'room',
+        typeId: 'round.event.v1',
+        resource: {},
+        options: { groupRef: ROOM }
+    });
     return { ...message, ordering: { orderingKey: 'game-1', epoch: 1, seq } };
 }
 
@@ -52,9 +60,10 @@ function committed(
         policy: sent.policy,
         sentPositions: sent.sentPositions,
         creationExpiry: 'creation-expiry',
+        ended: false,
         snapshot: { msgId: msg.id.msgId, msg, outboxKey: msg.route, supersedenceKey: null }
     }];
-    return { msg, verdict, entries: [], trackedReceiptAlgo: 'none', bundle: { senderId: 'a', mutations, durableEffects: [] } };
+    return { msg, verdict, entries: [], trackedReceiptAlgo: 'none', bundle: { senderId: 'a', mutations, durableEffects: [], endedTimeoutEffectIds: [] } };
 }
 
 function storedRow(sentPositions: Readonly<Record<string, number>> | null, policy = POLICY): ALStoredOutboundMessage {
@@ -76,7 +85,8 @@ function storedRow(sentPositions: Readonly<Record<string, number>> | null, polic
         orderingSeq: 2,
         sentPositions,
         policy,
-        creationExpiry: 'creation-expiry'
+        creationExpiry: 'creation-expiry',
+        ended: false
     };
 }
 

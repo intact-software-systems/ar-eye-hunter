@@ -10,7 +10,6 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
@@ -27,6 +26,7 @@ import { captureOutboundWorkRunnable } from '../alm/outbound-runtime-test-fixtur
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { readSentReceipts } from '../../ws-receipted-send-test-controls.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 export interface ReceiptClock {
@@ -152,6 +152,13 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
     return { service, engine, sockets };
 }
 
+/** Runs the engine past every receipt row it could still send, so a test may assert one never comes. */
+export async function settleQueueEngine(engine: InboxOutboxEngine): Promise<void> {
+    for (let pass = 0; pass < 4; pass += 1) {
+        await engine.executeOnce();
+    }
+}
+
 export function countCopies(socket: SimulatedWebSocket, msgId: string): number {
     return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === msgId).length;
 }
@@ -251,13 +258,6 @@ export function receiverAck(recipient: string, nowMs: number): ALMessage {
             observedAtEpochMs: nowMs
         })
     );
-}
-
-export function readSentReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
-    return socket.sent
-        .map((frame) => decodePersistedALMessage(frame))
-        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
 }
 
 /** Runs A's real dequeue task, then B's real send task; neither engine starts a timer loop. */

@@ -16,6 +16,7 @@ describe('AL runtime storage ownership', () => {
             dbName: `supplied-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: () => crypto.randomUUID(),
             observer: createPassThroughIndexedDbOperationObserver(),
             schemaId: AL_ADMISSION_SCHEMA_ID,
@@ -91,7 +92,7 @@ describe('AL runtime storage ownership', () => {
             NEVER_EXPIRE_TS
         );
         await stores.workQueue.enqueue(row);
-        const request = { typeId: row.typeId, status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const request = { typeId: row.typeId, status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
         const reading = stores.workQueue.readWorkPage(request);
         await entered.promise;
         let closed = false;

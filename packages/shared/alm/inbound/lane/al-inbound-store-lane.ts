@@ -27,7 +27,7 @@ import {
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
-import type { ALInboundPlanner } from '../al-inbound-admission-store.ts';
+import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
@@ -55,6 +55,8 @@ import {
     type ALInboundControlAdmissionResult,
     type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
+import { ALInboundGapRenewal } from '../gap-renewal/al-inbound-gap-renewal.ts';
+import { computeALGapRenewalStretch } from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
@@ -117,6 +119,7 @@ export class ALInboundStoreLane {
     private readonly admission: ALInboundMessageAdmission;
     private readonly controlAdmission: ALInboundControlAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
+    private readonly gapRenewal: ALInboundGapRenewal;
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
@@ -136,7 +139,9 @@ export class ALInboundStoreLane {
         this.input = input;
         this.dependencies = toALInboundLaneDependencies(input);
         const workPort = createALInboundLaneWorkPort(this.dependencies);
-        this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
+        const gapRenewalStretch = computeALGapRenewalStretch(input.runtime.random);
+        this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort, gapRenewalStretch });
+        this.gapRenewal = new ALInboundGapRenewal({ ...this.dependencies, workPort, stretch: gapRenewalStretch });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
         this.delivery = new ALInboundAdmittedDelivery({ ...this.dependencies, lane: input.lane });
         const workType = toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier);
@@ -147,7 +152,8 @@ export class ALInboundStoreLane {
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
-            nowMs: () => this.readNowMs(),
+            // Selection schedules work; delivery rechecks authority with the strict runtime clock.
+            nowMs: () => this.dependencies.workClock.nowMs(),
             lane: input.lane
         });
         this.work = this.createWorkHandler(workPort, workType);
@@ -216,7 +222,7 @@ export class ALInboundStoreLane {
             return Either.ofRight(this.announceRetention(await this.admission.retainPending(result.pending)));
         }
         if (result.wroteWork) {
-            this.input.stores.storageHealth?.recordRecoveryPoint(this.readNowMs());
+            this.input.stores.storageHealth?.recordRecoveryPoint(this.dependencies.workClock.nowMs());
             this.commitWork();
         }
         return Either.ofRight(result.acceptance);
@@ -392,7 +398,7 @@ export class ALInboundStoreLane {
      * round is exactly the relay cost the suppression removed.
      */
     private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
-        const nowMs = this.readNowMs();
+        const nowMs = this.dependencies.workClock.nowMs();
         this.emptyRoundCount += 1;
         this.emptyRoundsFromMs ??= nowMs - event.durationMs;
         this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
@@ -437,7 +443,7 @@ export class ALInboundStoreLane {
         const effect = decodeALInboundWorkEntry(claim.entry, this.input.stores.admissionStore.namespace);
         assertALInboundWorkCarrier(effect, this.dependencies.carrier);
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
-        const startedAtMs = this.readNowMs();
+        const startedAtMs = this.dependencies.workClock.nowMs();
         const diagnostics = this.dependencies.diagnostics;
         const evidence = diagnostics?.acknowledgementCapture?.evidence.tryCreateClaim({
             effect,
@@ -456,7 +462,7 @@ export class ALInboundStoreLane {
                 claim,
                 effect,
                 outcome,
-                durationMs: Math.max(0, this.readNowMs() - startedAtMs),
+                durationMs: Math.max(0, this.dependencies.workClock.nowMs() - startedAtMs),
                 batchStartedAtMs,
                 startedAtMs
             });
@@ -530,13 +536,16 @@ export class ALInboundStoreLane {
             if (replayed.wroteWork) {
                 this.commitWork();
             }
-            return toALInboundReplayOutcome(replayed.outcome, this.readNowMs());
+            return toALInboundReplayOutcome(replayed.outcome, this.dependencies.workClock.nowMs());
         }
         if (payload.kind === 'admit-control') {
             return await this.replayControl(payload, evidence);
         }
         if (payload.kind === 'send-control') {
             return await this.sendControlInRound(effect, payload.msg, evidence);
+        }
+        if (payload.kind === 'renew-gap') {
+            return await this.renewGap(effect, payload);
         }
         return {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
@@ -591,6 +600,18 @@ export class ALInboundStoreLane {
         return { status: 'completed' };
     }
 
+    /** A renewal writes its work inside the batch that claimed its timer, so it announces that work as a replay does. */
+    private async renewGap(
+        effect: ALPersistedInboundEffect,
+        payload: ALInboundGapRenewalEffect
+    ): Promise<ALWorkOutcome> {
+        const renewed = await this.gapRenewal.renew(effect, payload);
+        if (renewed.wroteWork) {
+            this.commitWork();
+        }
+        return renewed.outcome;
+    }
+
     /**
      * A storage failure retries this claim once; the inbound admission is already committed, so the retry completes
      * without a second hand-over, and the receipt timeout and the peer's re-ACK heal it.
@@ -618,7 +639,7 @@ export class ALInboundStoreLane {
             port: workPort,
             queueEngine: dependencies.queueEngine,
             ownsQueueEngine: dependencies.ownsQueueEngine,
-            clock: dependencies.clock,
+            clock: dependencies.workClock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
             readNextReadyAtMs: (port, nowMs) =>
@@ -656,7 +677,7 @@ function createALInboundLaneWorkPort(dependencies: ALInboundMessageRuntime.Depen
         queue: dependencies.workQueue,
         workTypes: new Set([toALInboundWorkType(dependencies.admissionStore.namespace, dependencies.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
-        nowMs: () => dependencies.clock.nowMs(),
+        nowMs: () => dependencies.workClock.nowMs(),
         random: dependencies.random,
         // The rotation's probe has no lease clamp: a limited sweep would run empty batches until it reopened.
         leaseRecovery: { kind: 'every-batch' }

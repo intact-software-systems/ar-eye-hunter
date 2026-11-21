@@ -74,7 +74,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             durableEffects: ['malformed', 'valid'].map((msgId) => ({
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
-            }))
+            })),
+            endedTimeoutEffectIds: []
         });
         const malformedKey = toALOutboundWorkKey(namespace, 'malformed');
         const original = await other.workQueue.getItem(malformedKey);
@@ -649,16 +650,19 @@ function createEntry(namespace: string): ResourceEntry {
 
 function createSupersedingMessage(senderId: string, sequence: number): ALMessage {
     const message = newALUnicastMessage(
-        senderId,
         {
-            topicId: 'chat',
-            resourceId: `message-${sequence}`,
-            contextId: 'shared-topic'
-        },
-        'recipient',
-        'chat.message.v1',
-        { sequence },
-        { ttlMs: 30_000 }
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: {
+                topicId: 'chat',
+                resourceId: `message-${sequence}`,
+                contextId: 'shared-topic'
+            },
+            toPeerId: 'recipient',
+            typeId: 'chat.message.v1',
+            resource: { sequence },
+            options: { ttlMs: 30_000 }
+        }
     );
     return { ...message, ordering: { seq: sequence, orderingKey: 'shared-topic' } };
 }

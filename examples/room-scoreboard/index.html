@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="./scoreboard.css"><title>Room scoreboard</title></head>
+<body><main>
+<h1>Room scoreboard</h1>
+<form id="entry">
+<label>Username <input name="username" autocomplete="username"></label>
+<label>Password <input name="password" type="password" autocomplete="current-password"></label>
+<label>Room <input name="room" required value="court-one"></label>
+<button value="enter">Enter room</button><button value="create">Create room</button>
+</form>
+<section hidden id="board"><h2></h2><output aria-label="Period clock"></output><p id="phase"></p>
+<button id="appoint">Take clock control</button>
+<button id="change" disabled>Start 10 minutes</button></section>
+<p role="alert"></p></main><script type="module" src="./scoreboard.ts"></script></body></html>

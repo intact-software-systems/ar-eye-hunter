@@ -112,16 +112,23 @@ describe('middleware pre-admission', () => {
 });
 
 function signalingMessage(): ALMessage {
-    return newALUnicastMessage('sender', newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'), 'receiver', AppTopics.rtcSignaling, {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: 'sender',
-        toId: 'receiver',
-        sessionId: 'sender',
-        token: 'fixture-ticket',
-        signalType: 'Offer',
-        offerId: 'offer-1',
-        payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
+        toPeerId: 'receiver',
+        typeId: AppTopics.rtcSignaling,
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'sender',
+            toId: 'receiver',
+            sessionId: 'sender',
+            token: 'fixture-ticket',
+            signalType: 'Offer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
+        }
     });
 }
 

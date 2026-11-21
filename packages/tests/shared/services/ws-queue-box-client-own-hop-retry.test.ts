@@ -115,7 +115,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
             .toEqual([command.id.msgId, command.id.msgId]);
     });
 
-    it('sends a receiver room send once and schedules no acknowledgement timeout: the server owns that retry', async () => {
+    it('writes a receiver room send the server never answers once more on its first-hop wait, its one retry, and schedules no acknowledgement timeout: the server owns the receipt once it answers', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
         const roomSend = receiverRoomSend();
@@ -124,13 +124,15 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS * 4);
         await runOutboundWorkTask(fixture.service);
 
-        expect(fixture.sentFrames).toHaveLength(1);
+        expect(fixture.sentFrames).toHaveLength(2);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: roomSend.id.msgId }))
             .toBeUndefined();
-        expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('ack-timeout');
+        const effectKinds = await readOutboundEffectKinds(fixture.outboundStores);
+        expect(effectKinds).not.toContain('ack-timeout');
+        expect(effectKinds).toContain('first-hop-timeout');
     });
 
-    it('leaves the server\'s not-yet-in-sync NACK on a room send unhandled: no retry is scheduled and no second frame follows', async () => {
+    it('admits the server\'s not-yet-in-sync NACK on a room send, which ends its first-hop wait: no retry is scheduled for it and no second frame follows', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
         const roomSend = receiverRoomSend();
@@ -141,7 +143,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         await runOutboundWorkTask(fixture.service);
 
         expect(admitted.right).toEqual({ kind: 'control', handled: false });
-        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'not-handled' }]);
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'committed' }]);
         expect(fixture.sentFrames).toHaveLength(1);
         expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('nack-retry');
     });
@@ -290,12 +292,15 @@ async function enqueueAndSettle(service: WsQueueBoxClientService, msg: ALMessage
 /** The shape the browser gives a command channel send addressed to the server (`sendWs` with a `peerId`). */
 function serverCommand(qos: ALQosPolicyRequest = ONE_RETRY): ALMessage {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'room.relic.command', resourceId: 'command-1', contextId: ROOM.groupId },
-        SERVER_PEER_ID,
-        'relic.command.v1',
-        { kind: 'start-expedition' },
-        { groupRef: ROOM, ownership: 'shared', reliability: 'at-least-once', ack: 'receiver', qos }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.relic.command', resourceId: 'command-1', contextId: ROOM.groupId },
+            toPeerId: SERVER_PEER_ID,
+            typeId: 'relic.command.v1',
+            resource: { kind: 'start-expedition' },
+            options: { groupRef: ROOM, ownership: 'shared', reliability: 'at-least-once', ack: 'receiver', qos }
+        }
     );
 }
 
@@ -305,12 +310,15 @@ function serverCommand(qos: ALQosPolicyRequest = ONE_RETRY): ALMessage {
  */
 function orderedRoomSend(seq: number, qos: ALQosPolicyRequest | undefined): ALMessage {
     return newALBroadcastMessage(
-        'self',
-        { topicId: 'room.chat', resourceId: `chat-${seq}`, contextId: ROOM.groupId },
-        'room',
-        'chat.message.v1',
-        { seq },
-        { groupRef: ROOM, reliability: 'at-least-once', ordering: { orderingKey: ORDERING_KEY, seq }, qos }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.chat', resourceId: `chat-${seq}`, contextId: ROOM.groupId },
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { seq },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ordering: { orderingKey: ORDERING_KEY, seq }, qos }
+        }
     );
 }
 
@@ -355,12 +363,15 @@ function serverNotYetInSyncNack(trigger: ALMessage): ALMessage {
 
 function receiverRoomSend(): ALMessage {
     return newALBroadcastMessage(
-        'self',
-        { topicId: 'room.notification', resourceId: 'notice-1', contextId: ROOM.groupId },
-        'room',
-        'notice.v1',
-        { text: 'hello' },
-        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', qos: ONE_RETRY }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.notification', resourceId: 'notice-1', contextId: ROOM.groupId },
+            scope: 'room',
+            typeId: 'notice.v1',
+            resource: { text: 'hello' },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', qos: ONE_RETRY }
+        }
     );
 }
 

@@ -7,7 +7,8 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -18,6 +19,7 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
+import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
@@ -223,64 +225,73 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
-    it.each(PENDING_ADMISSION_DENIALS)('rechecks %s room authority before pending admission can commit or acknowledge', async (reason) => {
-        let nowMs = Date.now();
-        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
-        const fixture = await createServerIngressFixture();
-        let pending = false;
-        fixture.service.authorizeInboundMessagesWith({
-            sendNacks: true,
-            authorize: async () =>
-                pending
-                    ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack: false }
-                    : { authorized: true, roomAudience: { recipientPeerIds: [], snapshotVersion: 1 } }
-        });
-        const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
-        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
-            expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] })).toBe(
-                'committed'
-            );
-            const status = await commit(bundle);
-            expect(status).toBe('conflict');
-            return status;
-        });
-        const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
-        let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
-        vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
-            const retained = await enqueue(entry);
-            observedMetadata = new Map(fixture.admission.data);
-            pending = true;
-            return retained;
-        });
-        const message = { ...createRoomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
-        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
-        await expect.poll(async () => {
-            const keys = await fixture.admission.workQueue.getAllKeys();
-            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
-        }).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
-        expect(fixture.admission.data).toEqual(observedMetadata);
-        expect(fixture.socket.sent).toEqual([]);
-        expect(fixture.delivered).toEqual([]);
-        const keys = await fixture.admission.workQueue.getAllKeys();
-        expect(keys).toHaveLength(1);
-        expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
-        if (reason === 'not-yet-in-sync') {
-            const waiting = await fixture.admission.workQueue.getItem(keys[0]);
-            expect(waiting?.dequeueAudit.attempts).toBe(0);
-            expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
-            nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
-            await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
-            const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
-            expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
-            expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
-            pending = false;
-            nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
+    it.each(PENDING_ADMISSION_DENIALS.flatMap((reason) => [false, true].map((sendNack) => [reason, sendNack] as const)))(
+        'rechecks %s room authority before pending admission can commit or acknowledge (sendNack=%s)',
+        async (reason, sendNack) => {
+            let nowMs = Date.now();
+            vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+            const fixture = await createServerIngressFixture();
+            let pending = false;
+            fixture.service.authorizeInboundMessagesWith({
+                sendNacks: true,
+                authorize: async () =>
+                    pending
+                        ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack }
+                        : { authorized: true, roomAudience: { recipientPeerIds: [], snapshotVersion: 1 } }
+            });
+            const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
+            vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+                expect(await commit({ ...bundle, mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'), durableEffects: [] }))
+                    .toBe(
+                        'committed'
+                    );
+                const status = await commit(bundle);
+                expect(status).toBe('conflict');
+                return status;
+            });
+            const enqueue = fixture.admission.workQueue.enqueueIfAbsent.bind(fixture.admission.workQueue);
+            let observedMetadata: ALAdmissionMemoryState['data'] | undefined;
+            vi.spyOn(fixture.admission.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
+                const retained = await enqueue(entry);
+                observedMetadata = new Map(fixture.admission.data);
+                pending = true;
+                return retained;
+            });
+            const message = { ...createRoomMessage(), constraints: { expiresAtMs: Date.now() + 60_000 }, qos: { ack: { algo: 'hop' as const } } };
+            expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('pending-admission');
             await expect.poll(async () => {
-                return fixture.delivered.length;
-            }).toBe(1);
-            expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
+                const keys = await fixture.admission.workQueue.getAllKeys();
+                return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
+            }).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
+            expect(fixture.admission.data).toEqual(observedMetadata);
+            const nacksRefusal = sendNack && reason !== 'not-yet-in-sync';
+            expectPendingRefusalNack(fixture.socket.sent, nacksRefusal ? reason : undefined);
+            expect(fixture.delivered).toEqual([]);
+            const keys = await fixture.admission.workQueue.getAllKeys();
+            expect(keys).toHaveLength(1);
+            expect((await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe(reason === 'not-yet-in-sync' ? 'RETRY' : 'COMPLETED');
+            if (nacksRefusal) {
+                await settleQueueEngine(fixture.engine);
+                expectPendingRefusalNack(fixture.socket.sent, reason);
+            }
+            if (reason === 'not-yet-in-sync') {
+                const waiting = await fixture.admission.workQueue.getItem(keys[0]);
+                expect(waiting?.dequeueAudit.attempts).toBe(0);
+                expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
+                nowMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
+                await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
+                const stillWaiting = await fixture.admission.workQueue.getItem(keys[0]);
+                expect(stillWaiting?.dequeueAudit.attempts).toBe(0);
+                expect(stillWaiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(nowMs + 50);
+                pending = false;
+                nowMs = stillWaiting!.dequeueAudit.nextTs!.epochMilliseconds;
+                await expect.poll(async () => {
+                    return fixture.delivered.length;
+                }).toBe(1);
+                expect(fixture.delivered[0].constraints?.expiresAtMs).toBe(message.constraints.expiresAtMs);
+            }
         }
-    });
+    );
 
     it.each([true, false])('returns configured denial NACKs without accepting room traffic (sendNack=%s)', async (sendNack) => {
         const fixture = await createServerIngressFixture();
@@ -304,7 +315,7 @@ describe('WS server bounded and authorized admission', () => {
                 id: { senderId: 'server' },
                 targets: { mode: 'unicast', toPeerId: 'session-1' },
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' }, ack: { algo: 'none' } },
-                payload: { typeId: 'al.control.nack.v3' }
+                payload: { typeId: 'al.control.nack.v4' }
             }]);
             expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
                 fromPeerId: 'server',
@@ -658,6 +669,45 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
+    it.each([
+        { state: 'buffered behind a gap', sends: [2], resent: 2, then: [1], delivered: ['message-1', 'message-2'] },
+        { state: 'delivered with the track head at it', sends: [1], resent: 1, then: [], delivered: ['message-1'] },
+        {
+            state: 'delivered with the track head two sequences past it',
+            sends: [1, 2, 3],
+            resent: 1,
+            then: [],
+            delivered: ['message-1', 'message-2', 'message-3']
+        }
+    ])('delivers a re-sent ordered copy $state once and answers its sender alone admitted again', async ({ sends, resent, then, delivered }) => {
+        const fixture = await createServerIngressFixture();
+        const peer = new SimulatedWebSocket('ws://peer');
+        await peer.open();
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
+        });
+        const resentMsgId = `message-${resent}`;
+        for (const seq of sends) {
+            expect((await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1')).left).toBeUndefined();
+        }
+        await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted']);
+
+        const again = await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(resent), 'session-1');
+        for (const seq of then) {
+            await fixture.service.acceptIncomingMessage(createOrderedRoomMessage(seq), 'session-1');
+        }
+
+        expect(again.right?.kind).toBe('duplicate');
+        await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted', 'admitted']);
+        await settleQueueEngine(fixture.engine);
+        expect(readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted', 'admitted']);
+        await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(delivered);
+        expect(readReceiptPhases(peer, resentMsgId)).toEqual([]);
+        expect(peer.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === resentMsgId)).toHaveLength(1);
+    });
+
     it('leaves a durable message in QueueBox when an application subscriber fails', async () => {
         const fixture = await createServerIngressFixture();
         const message: ALMessage = { ...createIncomingMessage(), qos: { durability: { algo: 'local-inbox' } } };
@@ -675,3 +725,41 @@ describe('WS server bounded and authorized admission', () => {
         }).toBe('RETRY');
     });
 });
+
+/** `session-1`'s receipted room message at `seq` of its one ordered track. */
+function createOrderedRoomMessage(seq: number): ALMessage {
+    const message = createRoomMessage();
+    return {
+        ...message,
+        id: { ...message.id, msgId: `message-${seq}` },
+        constraints: { expiresAtMs: Date.now() + 60_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        ordering: { orderingKey: 'stream', epoch: 1, seq }
+    };
+}
+
+/** The socket holds nothing, or exactly the one NACK of `message-1` that states `reason`. */
+function expectPendingRefusalNack(sent: SimulatedWebSocket['sent'], reason: string | undefined): void {
+    if (reason === undefined) {
+        expect(sent).toEqual([]);
+        return;
+    }
+    expect(sent).toHaveLength(1);
+    const nack = decodePersistedALMessage(String(sent[0]));
+    expect(nack.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
+    expect(decodeALNackPayload(JSON.parse(nack.payload.resource))).toMatchObject({
+        fromPeerId: 'server',
+        toPeerId: 'session-1',
+        msgId: 'message-1',
+        reason
+    });
+}
+
+function readReceiptPhases(socket: SimulatedWebSocket, msgId: string): readonly string[] {
+    return socket.sent
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))
+        .filter((receipt) => receipt.msgId === msgId)
+        .map((receipt) => receipt.phase);
+}

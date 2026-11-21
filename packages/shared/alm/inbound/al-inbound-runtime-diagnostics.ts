@@ -304,8 +304,8 @@ export interface ALInboundClaimIdentity {
  * A retained message answers with its own identity. A delivery effect holds only a reference, which
  * carries the id and not the type, and a buffered release names a track and a sequence rather than
  * any message at all. The subject is the message the effect acts on -- a control's is the message it
- * acknowledges, nacks or repairs, not its own envelope. Every kind is listed, so a seventh one has to
- * decide what it reports.
+ * acknowledges, nacks or repairs, not its own envelope, and a gap renewal's is the arrival its request
+ * names. Every kind is listed, so an eighth one has to decide what it reports.
  */
 export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInboundClaimIdentity {
     switch (payload.kind) {
@@ -327,10 +327,12 @@ export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInb
             return { msgId: payload.message.msgId, typeId: null, subjectMsgId: payload.message.msgId };
         case 'release-buffered':
             return { msgId: null, typeId: null, subjectMsgId: null };
+        case 'renew-gap':
+            return { msgId: null, typeId: null, subjectMsgId: payload.message.msgId };
     }
 }
 
-/** Only a retained message or control keeps its envelope; a reference and a buffered release keep no trace. */
+/** Only a retained message or control keeps its envelope; a reference, a buffered release and a gap renewal keep no trace. */
 export function toALInboundClaimTrace(payload: ALInboundDurableEffect): ALMessageTraceOrNull {
     switch (payload.kind) {
         case 'admit-message':
@@ -340,6 +342,7 @@ export function toALInboundClaimTrace(payload: ALInboundDurableEffect): ALMessag
         case 'dispatch-local':
         case 'forward-message':
         case 'release-buffered':
+        case 'renew-gap':
             return toALMessageTraceOrNull(undefined);
     }
 }

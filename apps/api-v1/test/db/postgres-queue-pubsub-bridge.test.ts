@@ -166,7 +166,14 @@ test('postgres live WS transport publishes the exact JSON-clean builder notice',
         },
         listen: async () => {}
     }, () => 1);
-    const built = newALBroadcastMessage('server', newALRoute('room.match', 'world', 'resource'), 'all', 'room.match', { text: 'hello' });
+    const built = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: newALRoute('room.match', 'world', 'resource'),
+        scope: 'all',
+        typeId: 'room.match',
+        resource: { text: 'hello' }
+    });
     const encoded = encodeLiveWsNotice({
         channel: 'ws-channel',
         publisherId: 'publisher-a',

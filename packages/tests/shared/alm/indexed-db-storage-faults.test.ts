@@ -110,6 +110,7 @@ describe('storage faults through the IndexedDB owners', () => {
                 typeId: WORK_TYPE,
                 status: EntityStatus.NEW,
                 maxToRead: 1,
+                order: 'key',
                 cursor: null
             }))
             .then(() => {
@@ -135,6 +136,7 @@ function createBackend(observer: IndexedDbOperationObserver): IndexedDbAdmission
         dbName: `storage-faults-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });
@@ -172,11 +174,14 @@ async function reserveOne(backend: IndexedDbAdmissionBackend) {
 function workEntry() {
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALUnicastMessage(
-            'sender',
-            newALEventRoute('test', crypto.randomUUID()),
-            'receiver',
-            'test',
-            { value: 1 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALEventRoute('test', crypto.randomUUID()),
+                toPeerId: 'receiver',
+                typeId: 'test',
+                resource: { value: 1 }
+            }
         ),
         WORK_TYPE,
         Temporal.Now.instant()

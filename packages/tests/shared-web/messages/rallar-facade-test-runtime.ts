@@ -1,3 +1,5 @@
+import { onTestFinished, vi } from 'vitest';
+
 import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -5,9 +7,10 @@ import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { onTestFinished, vi } from 'vitest';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 const rallarFacadeMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
@@ -30,6 +33,7 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
         return {
             middleware: rallarFacadeMocks.apiMiddleware.middleware,
             rtcCaptureReceipt: rallarFacadeMocks.rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         };
     })

@@ -1,7 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
-import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundCommitBundle
+} from '../admission/al-outbound-admission-store.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundMessageRuntime,
@@ -15,13 +18,17 @@ import type {
 } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
+    isALOutboundTerminalReceipt,
     toALOutboundReceiptMutation,
     toALOutboundReceiptSettlement,
     toALOutboundReceiptTrackMutations,
-    validateALOutboundReceiptAdmission
+    validateALOutboundReceiptAdmission,
+    type ALOutboundReceiptAdmissionRead,
+    type ALOutboundReceiptWrite
 } from './compute-al-outbound-receipt-admission.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
+import { toALOutboundEndedTimeoutEffectIds } from './write-al-outbound-timeout-completions.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -115,15 +122,9 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             }
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        const status = await admissionStore.commitBundle({
-            senderId: receipt.originPeerId,
-            expectedVersion: surface.clientRecord?.version,
-            mutations: [
-                toALOutboundReceiptMutation(candidate.write, receipt),
-                ...toALOutboundReceiptTrackMutations(surface.trackPositions, candidate.write)
-            ],
-            durableEffects: []
-        });
+        const status = await admissionStore.commitBundle(
+            toReceiptCommitBundle(candidate.read, candidate.write)
+        );
         const settlement = status === 'committed'
             ? toALOutboundReceiptSettlement(candidate.read, candidate.write, control.id.traceId)
             : undefined;
@@ -146,4 +147,43 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };
     }
+}
+
+/**
+ * The receipt's row and the shared-head rows it moves, and, when the sender still waits on the server to first answer
+ * for the message, the end of that wait and its timer: any receipt proves the server has the message. A terminal
+ * receipt also ends the message: its row stays as the final snapshot, its timer and repair count go, and its sent row
+ * is marked.
+ */
+function toReceiptCommitBundle<TPrepared>(
+    read: ALOutboundReceiptAdmissionRead,
+    write: ALOutboundReceiptWrite
+): ALOutboundCommitBundle<TPrepared> {
+    const { receipt, stored } = read;
+    const terminal = isALOutboundTerminalReceipt(read, write);
+    const messageEnd = stored !== undefined && terminal
+        ? [
+            { kind: 'end-sent-message', stored } as const,
+            { kind: 'delete-repair-attempt', msgId: receipt.msgId } as const
+        ]
+        : [];
+    const waitEnd = read.firstHopWait === undefined
+        ? []
+        : [{ kind: 'delete-first-hop-wait', msgId: receipt.msgId } as const];
+    const endedTimeoutEffectIds = toALOutboundEndedTimeoutEffectIds(
+        terminal ? read.pending : undefined,
+        read.firstHopWait
+    );
+    return {
+        senderId: receipt.originPeerId,
+        expectedVersion: read.clientRecord?.version,
+        mutations: [
+            toALOutboundReceiptMutation(write, receipt),
+            ...toALOutboundReceiptTrackMutations(read.trackPositions, write),
+            ...waitEnd,
+            ...messageEnd
+        ],
+        durableEffects: [],
+        endedTimeoutEffectIds
+    };
 }

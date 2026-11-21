@@ -1202,8 +1202,9 @@ in `packages/shared/signature/`, builds both signing inputs, and
 `ALPublicationProof` is `SignatureProof` with no alias; a granted frame's signed
 bytes are pinned unmoved. One test builder,
 `packages/tests/al-control-test-payloads.ts`, builds the ACK and NACK fixtures
-of 93 test files. The control ids are `al.control.ack.v3` and
-`al.control.nack.v3` on both carriers: each payload carries a required nullable
+of 93 test files. The control ids were then `al.control.ack.v3` and
+`al.control.nack.v3` on both carriers (the NACK is `al.control.nack.v4` since
+it carries the gap request number, D679): each payload carries a required nullable
 `proof`, whose `null` means the carrier's admission authenticates the sender,
 and a NACK a required `originPeerId`, checked against the owner row at a relay
 and at the origin; `v2` is refused `unsupported` by the existing id check, the
@@ -1215,7 +1216,8 @@ black-box recipes and the hosted manifests 18 and 22 carry the new ids. The
 receipt proof (`al-contracts/receipt-proof/al-receipt-proof.ts`) signs every
 field a recipient states and none of the hop fields (`fromPeerId`, `toPeerId`,
 an ACK's `carrier`), under the domain tags `rallar-alm-ack-proof-v1` and
-`rallar-alm-nack-proof-v1`, so an ACK's signature never verifies as a NACK's.
+`rallar-alm-nack-proof-v1` (now `rallar-alm-nack-proof-v2`, D679), so an ACK's
+signature never verifies as a NACK's.
 The RTC planner states `receiptProofKeys`, each counted recipient's
 `{ keyId, publicJwk }`, on the plan that freezes the audience: at admission when
 the room snapshot is cached, at the dequeue that first has it otherwise; the
@@ -1476,10 +1478,10 @@ The second part, S9-ii, made the full-scope lane one to trust (D627–D641). It
 changes one product path: a conflicted inbound admission is always retained and
 replayed (D640), so a `resync-required` drop that loses a commit race still
 reaches its sender as a NACK. On the WS server such a drop of a receipted room
-send first answers `pending-admission` and starts its `admitted` receipt, which
-can precede or follow the replay's NACK at the origin; a late one settles an
-`acknowledgement` after `relay-rejected`, and the handle reads `rejected`. The
-rest corrects the lane. No window, timeout or budget was widened; three cells
+send first answers `pending-admission`, which starts no receipt: the replay that
+admits a kept send starts its receipt, and a replay that refuses it answers its
+NACK and starts none, so the handle reads `rejected` (D697, D698). The rest
+corrects the lane. No window, timeout or budget was widened; three cells
 assert what the product documents instead of what they asserted before (D630,
 D633, D641), and each row states its cost:
 
@@ -1547,11 +1549,45 @@ new ordered track is lost for good when a later send arrives before it; an
 ordered receipted stream keeps its order under a seeded jitter over `ws`; and
 a receipt whose subscriber's server is lost ends `timed-out`, naming the
 subscriber it could not confirm. They also found that an ordered receipted
-stream does not reliably recover from a seeded loss on either carrier (D670),
-so no advertised mode may yet claim recovery under loss. The next outcome is
-that recovery; after it, the held-send path, where a retained admission starts
-its `admitted` receipt only once its replay commits, and the relay statement
-rules. With the figures in place, recovery proven and the contracts adopted,
+stream did not reliably recover from a seeded loss on either carrier (D670). That recovery is built for a stream
+over `ws` and over direct `rtc` links. The shared queue hands out work in the
+order it comes due, on every store, so timers that come due later no longer
+hide work that is due now (D671); on PostgreSQL an index of its own serves that
+order, and a send that names no `ack` keeps the receipt its channel's purpose
+gives (D674). A WS client holds a first-hop wait until the server answers for
+its receipted send, and the server answers a duplicate with `admitted` again; a
+receiver asks again while a gap stands, each request numbered, under a repair
+budget of four per requester (D675 to D683). A terminal settlement ends its
+message (D684 to D687), and a receipt waits for its first frame to leave (D688
+to D691). Two cells prove the recovery they run: `seeded-loss-stream`, twenty
+ordered receipted sends under a 25 % seeded loss, is green in three of three
+runs over `ws` (two of three before, D673) and stays three of three over `rtc`,
+where no renewal reached a sender (D683), every handle `acknowledged`, and
+`seeded-loss-unreceipted-stream`, the same loss under `ack: 'none'` over `ws`,
+is green in three of three; in both all twenty arrive in order and none twice.
+In the first nine runs a lost repair frame was renewed end to end in two, both
+over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
+recovery has stated limits: a lost only or last frame under `ack: 'none'` is
+not recovered, renewal holds on direct links and not through an `rtc` relay,
+and a send can end `failed` although delivered when the server no longer holds
+its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
+start over `rtc` is its own slice (D669). The held-send path is built (D696 to
+D700): a send the server keeps starts its receipt when the server admits it, at
+ingress or at its replay, so a send kept behind its room view and then admitted
+reads `admitted` and then `complete` or `timed-out` (D697); a kept send its room
+later refuses is answered with the refusal's NACK (D698); and a `timed-out`
+receipt always ends its receipt at the WS client (D699). Its stated limits: a
+kept send that expires is not reported, since the handle's own deadline says so
+(the maintainer's ruling); a kept send that names no deadline keeps the kept
+row's; without a relay publisher an ACK on another instance than the one that
+admitted the send is lost; a send the server loses in a restart reads `expired`
+at its deadline (D694); and a receipt does not survive its server's crash, which
+`api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
+commit race whose recipients all left by its replay expects the recipients
+captured at ingress, so its handle reads `expired` at its deadline (D701). The
+local baseline's alternating runs are pull request 851 (D672), which lands
+before the relay statement rules; they are the next outcome.
+With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world
 testing, outside this document: a publication workload family, probes at the
@@ -1833,9 +1869,15 @@ batch and 5 to 12 during the second, so the figure moves with what else the
 machine does more than a median of five or ten runs absorbs. The run duration
 read as noise in all five comparisons (37 780 to 39 637 ms over the twenty
 runs, a spread of 4.9 %). The band was not widened and no figure was dropped.
-The median command time is still not a local regression gate; what replaces it
-(a quiet machine, alternating runs as the protocol, another figure) is the
-maintainer's (backlog).
+The median command time is still not a local regression gate. The maintainer
+ruled (2026-11-18) that the baseline alternates its runs between the two sides,
+with no quiet-machine requirement and no other figure, and chose (2026-11-20)
+that the comparison enforces it (D695): it reads the instant each run was taken
+from `createdAtEpochMs` of the run's `observation/distributed-run.json` and
+refuses two sides whose runs, in that order, are not baseline, candidate,
+baseline, …, and two runs taken at one instant. No comparison of one commit
+with itself has been taken under the enforced order, so whether alternating
+brings the median inside the band is not measured (backlog).
 
 The workload varies publication rate above/below cadence, N, drain
 message/byte budgets, payload size, key/group/consumer count, subscription and

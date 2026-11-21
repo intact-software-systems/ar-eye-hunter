@@ -5,6 +5,8 @@ surfaces. They are documentation examples, not standalone apps.
 
 ## Browser Facade
 
+- [Room scoreboard](./room-scoreboard/README.md) shows one room clock to players and gives the appointed director start, pause, and resume controls.
+
 - [Browser Startup And Room](./browser-startup-room/README.md): configure the
   browser facade, restore/login, create a funny RallarAI room name, switch to
   it, and subscribe to room/people state.

@@ -6,7 +6,7 @@ import {
     isGroupDirectoryVisible
 } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { UpsertGroupMemberRequest } from '@shared/api/state-types.ts';
+import type { UpdateGroupRequest, UpsertGroupMemberRequest } from '@shared/api/state-types.ts';
 
 import type {
     GroupStateRouteAuthSession,
@@ -31,7 +31,7 @@ export interface GroupStateRouteAuthorization {
         session: GroupStateRouteAuthSession | undefined,
         snapshot: GroupSnapshot
     ): void;
-    assertCanUpdateGroup(principalId: string, ref: GroupRef): Promise<void>;
+    assertCanUpdateGroup(principalId: string, ref: GroupRef, request: UpdateGroupRequest): Promise<void>;
     assertSelfPrincipal(clientId: string, principalId: string): void;
     assertSelfSession(
         session: GroupStateRouteAuthSession,
@@ -78,7 +78,12 @@ export function createGroupStateRouteAuthorization(
                 assertCanReadGroupSnapshot(session.clientId, snapshot);
             }
         },
-        assertCanUpdateGroup: (principalId, ref) => assertCanUpdateGroup(principalId, ref, dependencies),
+        async assertCanUpdateGroup(principalId, ref, request) {
+            // The group AppInbox checks director authority against the same revision as the deadline write.
+            if (request.roomClock === undefined && request.roomDeadline?.expectedDirectorEpoch === undefined) {
+                await assertCanUpdateGroup(principalId, ref, dependencies);
+            }
+        },
         assertSelfPrincipal,
         assertSelfSession,
         assertSelfServiceMemberStatus

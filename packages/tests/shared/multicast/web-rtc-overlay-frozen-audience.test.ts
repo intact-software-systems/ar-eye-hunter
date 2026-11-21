@@ -126,16 +126,19 @@ describe('RTC frozen room audience', () => {
             hasLogicalAudience: true
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'default-relay-rejected', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            { text: 'default' },
             {
-                reliability: defaults.reliability,
-                ack: defaults.ack,
-                ttlMs: defaults.ttlMs,
-                qos: { durability: { algo: defaults.durability } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'default-relay-rejected', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: { text: 'default' },
+                options: {
+                    reliability: defaults.reliability,
+                    ack: defaults.ack,
+                    ttlMs: defaults.ttlMs,
+                    qos: { durability: { algo: defaults.durability } }
+                }
             }
         );
         await enqueueAndDrain(fixture.manager, message);
@@ -164,12 +167,15 @@ describe('RTC frozen room audience', () => {
     it('still leaves an explicit receipt-less send without a committed hop NACK (the carry stays for explicit ack none)', async () => {
         const fixture = createFixture();
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'receipt-less', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            { text: 'none' },
-            { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'receipt-less', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: { text: 'none' },
+                options: { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000 }
+            }
         );
         await enqueueAndDrain(fixture.manager, message);
 
@@ -575,21 +581,53 @@ function createAudienceBroadcast(
         ...AUDIENCE_FLOORS
     } as const;
     if (audience === 'room') {
-        return newALMulticastMessage('a', route, groupRef, 'chat.message.v1', {}, options);
+        return newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route,
+            groupRef,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options
+        });
     }
     return audience === 'principal'
-        ? newALPrincipalBroadcastMessage('a', route, { groupRef, principalRef: ORIGIN_PRINCIPAL_REF }, 'chat.message.v1', {}, options)
-        : newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, {
-            ...options,
-            groupRef,
-            recipientPeerIds: ['c', 'd', 'z'],
-            exceptPeerIds: ['d']
+        ? newALPrincipalBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route,
+            target: { groupRef, principalRef: ORIGIN_PRINCIPAL_REF },
+            typeId: 'chat.message.v1',
+            resource: {},
+            options
+        })
+        : newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route,
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                ...options,
+                groupRef,
+                recipientPeerIds: ['c', 'd', 'z'],
+                exceptPeerIds: ['d']
+            }
         });
 }
 
 function createRoomlessBroadcast(scope: 'world' | 'all' | 'principal'): ALMessage {
     const route = { topicId: 'chat', resourceId: `roomless-${scope}`, contextId: 'app' };
-    const message = newALBroadcastMessage('a', route, 'world', 'chat.message.v1', {}, { ttlMs: 30_000 });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route,
+        scope: 'world',
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    });
     return scope === 'principal'
         ? { ...message, targets: { mode: 'broadcast', scope, principalRef: ORIGIN_PRINCIPAL_REF } }
         : { ...message, targets: { mode: 'broadcast', scope } };

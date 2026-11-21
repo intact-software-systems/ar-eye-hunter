@@ -42,6 +42,7 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -175,7 +176,7 @@ describe('outbound control admission identity', () => {
                         reason: 'gap'
                     })
                 )
-                : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
+                : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq', gapRequestNumber: 1 });
             const before = [...state.data];
             const wrongRoute = { ...accepted, route: { ...accepted.route, resourceId: 'another-locator' } };
             expect((await control.admit(wrongRoute, 'peer')).kind).toBe('not-handled');
@@ -383,7 +384,7 @@ describe('outbound control admission identity', () => {
                     logicalRecipientPeerId: 'receiver',
                     toPeerId: 'sender',
                     msgId: 'message',
-                    reason: 'stale',
+                    reason: 'not-yet-in-sync',
                     observedAtEpochMs: serverSnapshotVersion,
                     serverSnapshotVersion
                 })
@@ -446,6 +447,7 @@ describe('outbound control admission identity', () => {
                 requestedByPeerId: 'receiver',
                 orderingTrackKey: 'stream:sender:7',
                 missingRanges: gap,
+                gapRequestNumber: 1,
                 failedPeerIds: []
             }
         }]);
@@ -705,6 +707,40 @@ describe('outbound control admission identity', () => {
             }]);
     });
 
+    it('schedules no not-yet-in-sync retry for a message whose end landed after the NACK\'s commit', async () => {
+        const { backend, admissionStore, workQueue } = createFixture();
+        await seedDirectObligation(admissionStore, { enabled: true, maxAttempts: 2, retryDelayMs: 5_000 });
+        const runtime = createNotYetInSyncRuntime(admissionStore, workQueue, []);
+        await runtime.ready();
+        endMessageAfterNextCommit(backend, admissionStore);
+
+        expect(await runtime.acceptControlMessage(notYetInSyncNack(), 'peer')).toEqual({ kind: 'committed' });
+
+        expect((await admissionStore.readStoredMessage('message'))?.ended).toBe(true);
+        expect((await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind)).not.toContain('nack-retry');
+    });
+
+    it('states no not-yet-in-sync exhaustion for a message whose end landed after the NACK\'s commit', async () => {
+        const { backend, admissionStore, workQueue } = createFixture();
+        await seedDirectObligation(admissionStore, { enabled: true, maxAttempts: 2, retryDelayMs: 5_000 });
+        await backend.write(async (transaction) => {
+            await transaction.set('outbound-control:not-yet-in-sync-retry:message', {
+                msgId: 'message',
+                attempts: 2,
+                pendingEffectId: toALOutboundEffectId(['nack-retry', 'message', 'not-yet-in-sync', 2])
+            }, Date.now() + 30_000);
+        });
+        const settlements: ALDeliverySettlement[] = [];
+        const runtime = createNotYetInSyncRuntime(admissionStore, workQueue, settlements);
+        await runtime.ready();
+        endMessageAfterNextCommit(backend, admissionStore);
+
+        expect(await runtime.acceptControlMessage(notYetInSyncNack(), 'peer')).toEqual({ kind: 'committed' });
+
+        expect((await admissionStore.readStoredMessage('message'))?.ended).toBe(true);
+        expect(settlements.filter((settlement) => settlement.kind === 'not-yet-in-sync-exhausted')).toEqual([]);
+    });
+
     it.each(TERMINAL_NACK_REASONS)(
         'ends a receipt a hop refused for good (%s): its acknowledgement, then receipt-exhausted',
         async (reason) => {
@@ -956,6 +992,49 @@ function createFixture(settlements?: ALOutboundSettlementFact[]): ControlAdmissi
     };
 }
 
+/** An owner whose admitted policy carries the retry budget; its planner only re-plans the stored message. */
+function createNotYetInSyncRuntime(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    workQueue: QueueBoxResourceEntryRepository,
+    settlements: ALDeliverySettlement[]
+) {
+    return createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
+        stores: { admissionStore, workQueue },
+        settlements: (settlement) => settlements.push(settlement),
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+    });
+}
+
+/** Right after the next backend commit lands, a terminal commit ends the message under the version that commit left. */
+function endMessageAfterNextCommit(
+    backend: InMemoryAdmissionBackend,
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): void {
+    const write = backend.write.bind(backend);
+    vi.spyOn(backend, 'write').mockImplementationOnce(async (body) => {
+        const written = await write(body);
+        const read = await admissionStore.readRepairMessage('message', (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: []
+        }));
+        expect(
+            await admissionStore.commitBundle(toALOutboundMessageEndBundle({
+                senderId: 'sender',
+                msgId: 'message',
+                stored: read.storedMessage,
+                expectedVersion: read.clientRecord?.version,
+                openReceipt: read.pendingAck,
+                firstHopWait: read.firstHopWait
+            }))
+        ).toBe('committed');
+        return written;
+    });
+}
+
 /** The work rows the owner retained for this scope, decoded the way its worker decodes them. */
 async function readRetainedWork(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
@@ -965,6 +1044,7 @@ async function readRetainedWork(
         typeId: toALOutboundWorkType(admissionStore.namespace),
         status: EntityStatus.NEW,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return await Promise.all(
@@ -1217,7 +1297,8 @@ function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeq
             observedAtEpochMs: 1,
             orderingKey,
             expectedSeq: 2,
-            missingRanges
+            missingRanges,
+            gapRequestNumber: 1
         }
     );
 }

@@ -3,6 +3,7 @@ import { computeNearestRank } from './compute-nearest-rank.ts';
 
 export namespace SameRegimeComparison {
     export interface Run {
+        readonly takenAtEpochMs: number;
         readonly regime: Readonly<Record<string, string | number | boolean>>;
         readonly figures: Readonly<Record<string, number>>;
     }
@@ -24,7 +25,13 @@ export namespace SameRegimeComparison {
     }
 
     export interface Refusal {
-        readonly kind: 'too-few-runs' | 'different-regime' | 'different-figures' | 'non-finite-figures';
+        readonly kind:
+            | 'too-few-runs'
+            | 'unordered-runs'
+            | 'sides-not-alternating'
+            | 'different-regime'
+            | 'different-figures'
+            | 'non-finite-figures';
         readonly keys: readonly string[];
     }
 }
@@ -40,13 +47,38 @@ interface SameRegimeComparisonInput {
     readonly minimumRunsPerSide: number;
 }
 
+const SIDES = ['baseline', 'candidate'] as const;
+
+interface TakenRun {
+    readonly side: (typeof SIDES)[number];
+    readonly takenAtEpochMs: number;
+}
+
 function computeShortSides(input: SameRegimeComparisonInput): readonly string[] {
-    const isShort = (runs: readonly SameRegimeComparison.Run[]) =>
-        runs.length === 0 || runs.length < input.minimumRunsPerSide;
-    return [
-        ...(isShort(input.baseline) ? ['baseline'] : []),
-        ...(isShort(input.candidate) ? ['candidate'] : [])
-    ];
+    return SIDES.filter((side) => input[side].length === 0 || input[side].length < input.minimumRunsPerSide);
+}
+
+function toTakenRuns(input: SameRegimeComparisonInput): readonly TakenRun[] {
+    return SIDES.flatMap((side) => input[side].map((run) => ({ side, takenAtEpochMs: run.takenAtEpochMs })));
+}
+
+function computeUnorderedSides(runs: readonly TakenRun[]): readonly string[] {
+    const isUnordered = (run: TakenRun) =>
+        !Number.isFinite(run.takenAtEpochMs) ||
+        runs.some((other) => other !== run && other.takenAtEpochMs === run.takenAtEpochMs);
+    return SIDES.filter((side) => runs.some((run) => run.side === side && isUnordered(run)));
+}
+
+function computeOrderRefusal(runs: readonly TakenRun[]): SameRegimeComparison.Refusal | undefined {
+    const unorderedSides = computeUnorderedSides(runs);
+    if (unorderedSides.length > 0) {
+        return { kind: 'unordered-runs', keys: unorderedSides };
+    }
+    const runsInOrderTaken = [...runs].sort((first, second) => first.takenAtEpochMs - second.takenAtEpochMs);
+    const sidesInOrderTaken = runsInOrderTaken.map((run) => run.side);
+    return sidesInOrderTaken.every((side, index) => side === SIDES[index % SIDES.length])
+        ? undefined
+        : { kind: 'sides-not-alternating', keys: sidesInOrderTaken };
 }
 
 function computeAllKeys(records: readonly object[]): readonly string[] {
@@ -104,6 +136,10 @@ export function computeSameRegimeComparison(
     const shortSides = computeShortSides(input);
     if (shortSides.length > 0) {
         return Either.ofLeft({ kind: 'too-few-runs', keys: shortSides });
+    }
+    const orderRefusal = computeOrderRefusal(toTakenRuns(input));
+    if (orderRefusal !== undefined) {
+        return Either.ofLeft(orderRefusal);
     }
     const runs = [...input.baseline, ...input.candidate];
     const regimeKeys = computeDifferingRegimeKeys(runs.map((run) => run.regime));

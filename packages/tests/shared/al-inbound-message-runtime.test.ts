@@ -51,47 +51,53 @@ describe('ALInboundMessageRuntime', () => {
         const { runtime, dispatchedTexts, controlMessages, forwardedIds } = createInboundHarness();
 
         const seq2 = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-2',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'two'
-            },
-            {
-                seq: 2,
-                reliability: 'at-least-once',
-                ack: 'none',
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-2',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'two'
+                },
+                options: {
+                    seq: 2,
+                    reliability: 'at-least-once',
+                    ack: 'none',
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
         );
         const seq1 = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'one'
-            },
-            {
-                seq: 1,
-                reliability: 'at-least-once',
-                ack: 'none',
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'one'
+                },
+                options: {
+                    seq: 1,
+                    reliability: 'at-least-once',
+                    ack: 'none',
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -104,8 +110,8 @@ describe('ALInboundMessageRuntime', () => {
         });
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
         expect(dispatchedTexts).toEqual([]);
 
@@ -484,23 +490,26 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
 
         const msg = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-ack',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            {
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-ack',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -610,24 +619,27 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness(expiryStores);
 
         const msg = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-expiring-pending-ack',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            {
-                ttlMs: 10,
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-expiring-pending-ack',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    ttlMs: 10,
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -695,14 +707,14 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         // The round carried both and failed; each claim then answered for its own message alone, so
         // the repair went out and only the claim of the NACK waits for its retry.
-        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v2']);
-        expect(attemptedControls[0]).toEqual(['al.control.nack.v3', 'al.control.repair.v2']);
+        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v3']);
+        expect(attemptedControls[0]).toEqual(['al.control.nack.v4', 'al.control.repair.v3']);
 
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
     });
 
@@ -712,21 +724,24 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const delivered: string[] = [];
         let attempts = 0;
         const msg = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-dispatch',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-dispatch',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -766,22 +781,25 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const delivered: string[] = [];
         let attempts = 0;
         const msg = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-expiring-dispatch',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'expires'
-            },
-            {
-                ttlMs: 10,
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-expiring-dispatch',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'expires'
+                },
+                options: {
+                    ttlMs: 10,
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -877,8 +895,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v3',
-            'al.control.repair.v2'
+            'al.control.nack.v4',
+            'al.control.repair.v3'
         ]);
     });
 
@@ -1058,24 +1076,27 @@ function createOrderedMessage(
     ack: 'none' | 'all-logical-recipients' = 'none'
 ) {
     return newALMulticastMessage(
-        'peer-1',
         {
-            topicId: 'chat',
-            resourceId: `msg-${seq}`,
-            contextId: 'group-1'
-        },
-        groupRef('group-1'),
-        'chat.message.v1',
-        {
-            text
-        },
-        {
-            seq,
-            reliability: 'at-least-once',
-            ack,
-            qos: {
-                durability: {
-                    algo: 'volatile'
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: {
+                topicId: 'chat',
+                resourceId: `msg-${seq}`,
+                contextId: 'group-1'
+            },
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: {
+                text
+            },
+            options: {
+                seq,
+                reliability: 'at-least-once',
+                ack,
+                qos: {
+                    durability: {
+                        algo: 'volatile'
+                    }
                 }
             }
         }
@@ -1084,20 +1105,23 @@ function createOrderedMessage(
 
 function createSenderScopedDedupMessage(senderId: string, text: string): ALMessage {
     return newALMulticastMessage(
-        senderId,
         {
-            topicId: 'chat',
-            resourceId: `msg-${senderId}`,
-            contextId: 'group-1'
-        },
-        groupRef('group-1'),
-        'chat.message.v1',
-        { text },
-        {
-            ack: 'none',
-            qos: {
-                dedup: { algo: 'msg-id+sender' },
-                durability: { algo: 'volatile' }
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: {
+                topicId: 'chat',
+                resourceId: `msg-${senderId}`,
+                contextId: 'group-1'
+            },
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: { text },
+            options: {
+                ack: 'none',
+                qos: {
+                    dedup: { algo: 'msg-id+sender' },
+                    durability: { algo: 'volatile' }
+                }
             }
         }
     );

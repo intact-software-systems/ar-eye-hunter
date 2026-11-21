@@ -4,7 +4,11 @@ import {
     type Page
 } from '@playwright/test';
 
-import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
+import {
+    expireRoomSnapshots,
+    installRoomCacheClock,
+    renewRoomAfterDelayedCallbacks
+} from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { roomRotationReturnJourney, roomSharingCacheRecoveryJourney } from '../room-sharing-recovery-journey.ts';
 import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
@@ -66,7 +70,7 @@ test(
     'recovers a private expedition after delayed browser callbacks and can still begin play',
     async ({ page }, testInfo) => {
         test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await page.clock.install();
+        await installRoomCacheClock(page);
         await page.goto('/');
         await registerPrivateHunter(page, 'delayed-heartbeat');
         await page.getByRole('button', { name: 'New invite-only room', exact: true }).click();
@@ -89,7 +93,7 @@ test(
     'finishes sharing a code room when cached presence expires during previous-room cleanup',
     async ({ page }, testInfo) => {
         test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-        await page.clock.install();
+        await installRoomCacheClock(page);
         await page.goto('/');
         await registerPrivateHunter(page, 'code-recovery');
         await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
@@ -121,7 +125,7 @@ test(
             await page.getByRole('button', { name: 'New code room', exact: true }).click();
             await leavePending.promise;
             // Expire the browser cache while the created room remains live on the server.
-            await page.clock.fastForward(65_000);
+            await expireRoomSnapshots(page);
             await recoveryPending.promise;
             releaseLeave.resolve();
             await leaveDelivered.promise;
@@ -191,10 +195,17 @@ test(
         const previousUsername = await registerPrivateHunter(page, 'previous');
         await expect(page.locator('.profile-row strong')).toHaveText(previousUsername);
         await expect(page.getByRole('button', { name: 'New unlisted room', exact: true })).toBeEnabled();
+        // The creating session initializes the new room's game after the room link appears. A logout the server
+        // commits before that request is answered turns it into a 401, which the browser logs as an error; this test
+        // switches accounts after the room exists, so it waits for the initialization.
+        const roomInitialized = page.waitForResponse((response) =>
+            response.request().method() === 'POST' && /\/api\/relic\/games\/[^/]+\/initialize\//.test(response.url())
+        );
         await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         const roomLink = page.getByLabel('Room link', { exact: true });
         await expect(roomLink).toHaveValue(/#rallar-room\?/);
         const previousRoomLink = await roomLink.inputValue();
+        expect((await roomInitialized).ok()).toBe(true);
 
         await page.getByRole('button', { name: 'Logout', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Enter', exact: true })).toBeVisible();

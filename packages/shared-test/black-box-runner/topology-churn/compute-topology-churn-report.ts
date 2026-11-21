@@ -20,9 +20,9 @@ import {
     computeTopologyChurnKindFigures,
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
-import { computeTopologyChurnReshapeGaps } from './compute-topology-churn-reshape-gaps.ts';
 import { computeValuesByKey } from './compute-values-by-key.ts';
 import type { TopologyChurnPhaseSpec } from './phases/compute-topology-churn-phase-schedule.ts';
+import { computeTopologyChurnReshapeGaps } from './reshape-gate/compute-topology-churn-reshape-gaps.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 

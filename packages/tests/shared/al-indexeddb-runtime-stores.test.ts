@@ -56,7 +56,7 @@ import {
 } from './alm/outbound-runtime-test-fixture.ts';
 import '../setup-browser-indexeddb.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
-import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
+import { waitForALInboundWorkDueNowSettled, waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
@@ -86,8 +86,16 @@ describe('IndexedDB AL runtime stores', () => {
         const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
         const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload });
 
-        const original = newALUnicastMessage('peer-default-schema', { topicId: 'chat', resourceId: 'schema', contextId: 'self' }, 'self', 'chat', {}, {
-            ttlMs: 30_000
+        const original = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-default-schema',
+            route: { topicId: 'chat', resourceId: 'schema', contextId: 'self' },
+            toPeerId: 'self',
+            typeId: 'chat',
+            resource: {},
+            options: {
+                ttlMs: 30_000
+            }
         });
         const message = { ...original, id: { ...original.id, msgId: 'message-default-schema' } };
         await expect(
@@ -120,22 +128,25 @@ describe('IndexedDB AL runtime stores', () => {
         const namespace = 'ws-client';
         const dispatchedMsgIds: string[] = [];
         const msg = newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'hello'
-            },
-            {
-                ttlMs: 30_000,
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    ttlMs: 30_000,
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -179,8 +190,8 @@ describe('IndexedDB AL runtime stores', () => {
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
 
-        // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
-        await waitForSettledALInboundWork(stores.workQueue);
+        // A gap retains no work due now, only its renewal's timer due later, so the queue is read once nothing is due.
+        await waitForALInboundWorkDueNowSettled(stores.workQueue);
         await expect.poll(() =>
             stores.admissionStore.readBufferedRelease({
                 trackKey: toALOrderingTrackKey(seq2)!,
@@ -238,18 +249,21 @@ describe('IndexedDB AL runtime stores', () => {
         });
         onTestFinished(() => runtime.dispose());
         const msg = newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-shared-db',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'persist me'
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-shared-db',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'persist me'
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
 
         await inbox.getAllKeys();
@@ -275,22 +289,25 @@ describe('IndexedDB AL runtime stores', () => {
             stores
         });
         const msg = newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-local-inbox',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'persist me later'
-            },
-            {
-                ttlMs: 30_000,
-                qos: {
-                    durability: {
-                        algo: 'local-inbox'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-local-inbox',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'persist me later'
+                },
+                options: {
+                    ttlMs: 30_000,
+                    qos: {
+                        durability: {
+                            algo: 'local-inbox'
+                        }
                     }
                 }
             }
@@ -345,18 +362,21 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const control = createInboundControlAdmission(stores);
         const msg = newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-inbound-retention',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'retained briefly'
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-inbound-retention',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'retained briefly'
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
         const planner = createInboundPlanner();
 
@@ -526,7 +546,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(
             await admissionStore.commitBundle({
                 ...bundle,
-                mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attempts: 1 } }]
+                mutations: [...bundle.mutations, { kind: 'set-repair-attempt', snapshot: { msgId: msg.id.msgId, attemptsByRequester: { 'peer-1': 1 } } }]
             })
         ).toBe('committed');
 
@@ -547,7 +567,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(beforeExpiry.sentSnapshot).toBeDefined();
-        expect(beforeExpiry.repairAttempt?.attempts).toBe(1);
+        expect(beforeExpiry.repairAttempt?.attemptsByRequester).toEqual({ 'peer-1': 1 });
         expect(beforeExpiry.nacks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);
@@ -565,18 +585,21 @@ describe('IndexedDB AL runtime stores', () => {
         const runtime1 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         const seq1 = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-seq-1',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'one'
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-seq-1',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'one'
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
@@ -586,18 +609,21 @@ describe('IndexedDB AL runtime stores', () => {
         };
         const seq2 = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-seq-2',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'two'
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-seq-2',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'two'
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
@@ -924,42 +950,48 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
 
 function createOutboundUnicastMessage(resourceId: string): Readonly<ALMessage> {
     return newALUnicastMessage(
-        'self',
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        { ttlMs: 30_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 
 function createOrderedMulticastMessage(seq: number, text: string): Readonly<ALMessage> {
     return newALMulticastMessage(
-        'peer-1',
         {
-            topicId: 'chat',
-            resourceId: `msg-${seq}`,
-            contextId: 'group-1'
-        },
-        groupRef('group-1'),
-        'chat.message.v1',
-        {
-            text
-        },
-        {
-            ttlMs: 30_000,
-            seq,
-            reliability: 'at-least-once',
-            ack: 'none',
-            qos: {
-                durability: {
-                    algo: 'volatile'
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: {
+                topicId: 'chat',
+                resourceId: `msg-${seq}`,
+                contextId: 'group-1'
+            },
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: {
+                text
+            },
+            options: {
+                ttlMs: 30_000,
+                seq,
+                reliability: 'at-least-once',
+                ack: 'none',
+                qos: {
+                    durability: {
+                        algo: 'volatile'
+                    }
                 }
             }
         }

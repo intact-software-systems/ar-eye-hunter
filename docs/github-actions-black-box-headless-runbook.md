@@ -64,10 +64,12 @@ Retained recorder directories of the same manifest compare as two sides of at le
 `node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts --baseline <recorder-dir>... --candidate <recorder-dir>...`:
 it reads each directory's `observation/` snapshots and the `environment` of `provenance.json`, refuses runs of
 different regimes and a side with fewer than five runs, and reports the median of each side's median command times
-and run durations against a declared band, with every run's value beside it (D652, D664). Alternate the two sides'
-runs in time. The median command time is not stable inside that band between two sides of one commit, so a verdict on
-it is not evidence of a regression; the run duration read as noise in every same-commit comparison. The evidence is
-in `playground/alm/alm-publication-qos-addendum.md`, §9, "As applied (publication figures)".
+and run durations against a declared band, with every run's value beside it (D652, D664). Take the runs alternately,
+baseline first: the comparison reads each run's `createdAtEpochMs` in `observation/distributed-run.json` and refuses
+sides whose runs did not alternate, and two runs taken at one instant (D695). The median command time is not stable
+inside that band between two sides of one commit, so a verdict on it is not evidence of a regression; the run duration
+read as noise in every same-commit comparison. The evidence is in `playground/alm/alm-publication-qos-addendum.md`, §9,
+"As applied (publication figures)".
 
 Retain the recorder directory after every attempt. GitHub always uploads
 `all-local-alm-<run_id>-<run_attempt>` with runner resources/runtime versions,

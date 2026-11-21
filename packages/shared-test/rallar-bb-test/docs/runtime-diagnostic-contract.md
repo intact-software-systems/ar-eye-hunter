@@ -130,8 +130,10 @@ bare room id resolves no ref and installs nothing.
   each planned, accepted or removed layout event
 - `rallar.browser.formation.room-status` carries the room transport block and
   the group revision it was read at, on every RTC status change
-- `rallar.browser.formation.ready` carries the readiness diagnostic captured in
-  the tick `formation.readiness` resolved
+- `rallar.browser.formation.ready` carries the readiness diagnostic: its
+  summary is captured in the tick `formation.readiness` resolved, before the
+  formation view read, and the diagnostic is emitted after that read, with its
+  `heldReshape`
 
 The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin
@@ -556,8 +558,9 @@ every session the page opens. The event's `data` is the event itself:
   `control-admission` event: `msgId` is the receipt control's own id,
   `typeId` is `al.control.receipt.v1`, and `targetMsgId` is the sent message
   the receipt names. `outcome` is `committed` when the receipt moved the
-  origin's receipt row, or `rejected` with its reasons — a receipt that moves
-  nothing reads `AL receipt moves no receipt of its message`, and one about a
+  origin's receipt row, or `rejected` with its reasons — an `admitted` or
+  `complete` receipt that moves nothing reads `AL receipt moves no receipt of
+  its message` (a `timed-out` is committed), and one about a
   message the origin never sent reads `AL receipt names no retained outbound
   message of its origin`. It also carries the receipt's `phase` (`admitted`,
   `complete` or `timed-out`) straight after `reason`, followed only by the
@@ -884,7 +887,8 @@ publication succeed. The event's `data` is the event itself:
   events are present, a delivery can be followed from its `admission-outcome` to
   the claim that ran it; a captured claim can distinguish one slow operation from
   a batch of many. `payloadKind` is which effect the row held — `admit-message`, `admit-control`,
-  `dispatch-local`, `forward-message`, `send-control` or `release-buffered`.
+  `dispatch-local`, `forward-message`, `send-control`, `release-buffered` or
+  `renew-gap`, a receiver's timer that asks again for a range still missing.
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
   this claim included
@@ -925,7 +929,8 @@ publication succeed. The event's `data` is the event itself:
   message, so both fields are its own; a delivery effect (`dispatch-local`,
   `forward-message`) keeps a reference, which carries the id and not the type, so
   `typeId` is `null`; a `release-buffered` effect names a track and a sequence
-  rather than a message, so both are `null`
+  rather than a message, so both are `null`; a `renew-gap` timer keeps no
+  envelope, so both are `null` and `subjectMsgId` is the arrival its request names
 - `claim-settled` reports nothing when the claim throws, or its work row could
   not be decoded at all: the generic work handler classifies those, and the
   batch still counts them in any captured `effect-drain`. Disabled or failed

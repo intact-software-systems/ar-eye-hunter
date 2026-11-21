@@ -225,12 +225,15 @@ function createCountingSigner(): SignAdmittedMessage {
 /** A frame of the `feed` track, frozen to `recipientPeerIds` of the room. */
 function createFeedFrame(msgId: string, seq: number, recipientPeerIds: readonly string[]): ALMessage {
     const message = newALMulticastMessage(
-        'a',
-        { topicId: 'room.feed', resourceId: msgId, contextId: ROOM.groupId },
-        ROOM,
-        'room.feed.v1',
-        { msgId },
-        { ttlMs: 60_000, traceId: `trace-${msgId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.feed', resourceId: msgId, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'room.feed.v1',
+            resource: { msgId },
+            options: { ttlMs: 60_000, traceId: `trace-${msgId}` }
+        }
     );
     return {
         ...message,

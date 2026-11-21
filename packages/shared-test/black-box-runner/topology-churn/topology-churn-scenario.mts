@@ -26,6 +26,7 @@ import {
     type TopologyChurnPhaseSchedule
 } from './phases/compute-topology-churn-phase-schedule.ts';
 import type { TopologyChurnRoomSpec } from './phases/topology-churn-room-specs.ts';
+import { waitForNoHeldReshape } from './reshape-gate/wait-for-no-held-reshape.ts';
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
@@ -240,7 +241,7 @@ export class TopologyChurnScenario {
         await this.#sleepUntil(formationEndedAtEpochMs, room.signal);
         const runs = await this.#runPhases(room, formationEndedAtEpochMs);
         room.progress.step = 'waiting until the room is owed no held reshape';
-        await this.#awaitNoWantedReshape(room, context.administrator);
+        await this.#waitForNoHeldReshape(room);
         room.progress.step = 'waiting for the newest plan to be accepted';
         const converged = await this.#awaitConvergence(room, context.administrator);
         room.progress.step = 'reading the accepted layout';
@@ -401,21 +402,21 @@ export class TopologyChurnScenario {
     }
 
     /** A reshape the gate held is released when the gate opens, possibly after the last phase ended. */
-    async #awaitNoWantedReshape(room: ChurnRoom, administrator: TopologyChurnSession): Promise<void> {
-        const deadlineEpochMs = this.#input.clock.nowEpochMs() + RESHAPE_GATE_SETTLE_BOUND_MS;
-        for (;;) {
-            const { reshapeGate } = await this.#input.api.readRoomTopologyPlans(administrator, room.roomRef);
-            if (reshapeGate === null || reshapeGate.wantedReasons.length === 0) {
-                return;
-            }
-            if (this.#input.clock.nowEpochMs() >= deadlineEpochMs) {
-                throw new Error(
-                    `the room ${room.roomRef.groupId} still wanted the reshapes ` +
-                        `${reshapeGate.wantedReasons.join(', ')} ${RESHAPE_GATE_SETTLE_BOUND_MS} ms after its last ` +
-                        `phase ended; its gate opens at epoch ms ${String(reshapeGate.opensAtEpochMs)}`
-                );
-            }
-            await this.#sleepUntil(this.#input.clock.nowEpochMs() + TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS, room.signal);
+    async #waitForNoHeldReshape(room: ChurnRoom): Promise<void> {
+        const heldReshape = await waitForNoHeldReshape({
+            readHeldReshape: async () =>
+                (await this.#input.api.readFormationView(room.creator, room.roomRef)).heldReshape,
+            nowEpochMs: () => this.#input.clock.nowEpochMs(),
+            sleepUntil: (epochMs) => this.#sleepUntil(epochMs, room.signal),
+            boundMs: RESHAPE_GATE_SETTLE_BOUND_MS,
+            sampleIntervalMs: TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS
+        });
+        if (heldReshape !== null) {
+            throw new Error(
+                `the room ${room.roomRef.groupId} still wanted the reshapes ` +
+                    `${heldReshape.wantedReasons.join(', ')} ${RESHAPE_GATE_SETTLE_BOUND_MS} ms after its last ` +
+                    `phase ended; its gate opens at epoch ms ${String(heldReshape.opensAtEpochMs)}`
+            );
         }
     }
 

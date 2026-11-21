@@ -40,6 +40,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
+                workNowMs: () => nowMs,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             });
@@ -60,6 +61,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId
                 });
             const admission = new ALInboundMessageAdmission({
+                gapRenewalStretch: 1,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 diagnostics: undefined,
@@ -82,12 +84,15 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 canForwardMessage: undefined
             });
             const message = newALUnicastMessage(
-                'sender',
-                { topicId: 'chat', resourceId: 'deadline', contextId: 'room' },
-                'receiver',
-                'chat',
-                {},
-                { ttlMs: 1_000, qos: { ack: { algo: 'hop' } } }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'chat', resourceId: 'deadline', contextId: 'room' },
+                    toPeerId: 'receiver',
+                    typeId: 'chat',
+                    resource: {},
+                    options: { ttlMs: 1_000, qos: { ack: { algo: 'hop' } } }
+                }
             );
             const deadline = message.constraints!.expiresAtMs!;
             const original = IDBObjectStore.prototype[method];

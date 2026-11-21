@@ -39,11 +39,14 @@ test('API room authorization reads the current scoped group snapshot', async () 
         }
     }, ABSENT_POLICY);
     const message = newALMulticastMessage(
-        'session-1',
-        newALEventRoute('room.chat', 'group-1', 'message-1'),
-        snapshot.group,
-        'chat.message.v1',
-        { text: 'hello' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.chat', 'group-1', 'message-1'),
+            groupRef: snapshot.group,
+            typeId: 'chat.message.v1',
+            resource: { text: 'hello' }
+        }
     );
 
     const decision = await authorizer({
@@ -99,11 +102,14 @@ test('API room authorization of a granted topic reads the current publication au
         readCurrentSnapshot: () => Promise.reject(new Error('A granted topic reads its publication authority.'))
     }, ABSENT_POLICY);
     const message = newALMulticastMessage(
-        'session-1',
-        newALEventRoute('room.feed', 'group-1', 'message-1'),
-        snapshot.group,
-        'feed.v1',
-        {}
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.feed', 'group-1', 'message-1'),
+            groupRef: snapshot.group,
+            typeId: 'feed.v1',
+            resource: {}
+        }
     );
 
     const decision = await authorizer({
@@ -148,11 +154,14 @@ test('API room authorization fails closed without a scoped group reference', asy
     }, ABSENT_POLICY);
     const message = {
         ...newALMulticastMessage(
-            'session-1',
-            newALEventRoute('room.chat', 'group-1', 'message-1'),
-            createSnapshot().group,
-            'chat.message.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALEventRoute('room.chat', 'group-1', 'message-1'),
+                groupRef: createSnapshot().group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         ),
         targets: undefined
     };
@@ -357,11 +366,14 @@ test('API room authorization exempts the CRDT topics from the data-policy gate',
         }
     });
     const message = newALMulticastMessage(
-        'session-1',
-        newALEventRoute('room.crdt', 'group-1', 'message-1'),
-        snapshot.group,
-        'crdt.update.v1',
-        { update: 'payload' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.crdt', 'group-1', 'message-1'),
+            groupRef: snapshot.group,
+            typeId: 'crdt.update.v1',
+            resource: { update: 'payload' }
+        }
     );
 
     const decision = await authorizer({
@@ -395,11 +407,14 @@ test('API room authorization allows CRDT while transport is halted without polic
         }
     });
     const message = newALMulticastMessage(
-        'session-1',
-        newALEventRoute('room.crdt', 'group-1', 'message-halted-crdt'),
-        snapshot.group,
-        'crdt.update.v1',
-        { update: 'payload' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.crdt', 'group-1', 'message-halted-crdt'),
+            groupRef: snapshot.group,
+            typeId: 'crdt.update.v1',
+            resource: { update: 'payload' }
+        }
     );
 
     assertAuthorized(
@@ -419,11 +434,14 @@ test('API room authorization allows CRDT while transport is halted without polic
 function roomChatInput(snapshot: GroupSnapshot): RallarServerWsRoomAuthorizationInput {
     return {
         message: newALMulticastMessage(
-            'session-1',
-            newALEventRoute('room.chat', 'group-1', 'message-1'),
-            snapshot.group,
-            'chat.message.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALEventRoute('room.chat', 'group-1', 'message-1'),
+                groupRef: snapshot.group,
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         ),
         topic: { participation: 'members' },
         roomId: 'group-1',

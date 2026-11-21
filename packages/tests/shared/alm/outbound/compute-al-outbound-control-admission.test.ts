@@ -8,10 +8,21 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, newALNackControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
+import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundSettlementFact
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    computeALOutboundControlAdmission,
+    toALOutboundControlSettlements,
+    type ALControlAdmissionRead
+} from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -354,5 +365,258 @@ describe('a gap NACK on a track the server relays to the audience it admitted (P
         const origin = await createRelayedTrack();
 
         expect(await origin.accept(toGapNack(origin.msg, 'c'))).toBe('AL repair sender has no retained outbound obligation');
+    });
+});
+
+describe('the repair hint a gap request raises', () => {
+    const gap = { orderingKey: 'track', expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] };
+
+    it('carries the gap request number of the NACK that raised it', () => {
+        const nack = toTestALNackPayload({ msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'gap', ...gap, gapRequestNumber: 3 });
+
+        expect(toALOutboundControlRepairHint({ type: 'nack', payload: nack })).toMatchObject({ gapRequestNumber: 3 });
+    });
+
+    it('is one hint for a gap NACK and the repair request sent with it', () => {
+        const nack = toTestALNackPayload({ msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'gap', ...gap });
+        const repair = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            reason: 'missing-seq' as const,
+            observedAtEpochMs: 1,
+            ...gap,
+            gapRequestNumber: 1
+        };
+
+        expect(toALOutboundControlRepairHint({ type: 'nack', payload: nack }))
+            .toEqual(toALOutboundControlRepairHint({ type: 'repair', payload: repair }));
+        expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).toMatchObject({ gapRequestNumber: 1 });
+    });
+
+    it('carries no number on the hint of a retransmit request', () => {
+        const repair = { msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'retransmit' as const, observedAtEpochMs: 1, missingRanges: [] };
+
+        expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).not.toHaveProperty('gapRequestNumber');
+    });
+});
+
+describe('the end of the message a control admission writes', () => {
+    const SENT: ALStoredOutboundMessage = {
+        msgId: 'ending',
+        reference: {
+            key: { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: 'ending' },
+            typeId: 'AL_OUTBOUND_MESSAGE',
+            scope: 'scope',
+            msgId: 'ending',
+            senderId: 'self',
+            identity: 'ending',
+            expiresAtMs: 60_000
+        },
+        supersedenceKey: undefined,
+        unicastPeerId: null,
+        orderingTrackKey: 'track',
+        orderingSeq: 3,
+        sentPositions: null,
+        policy: {
+            persist: true,
+            ackTracking: RECEIVER_TRACKING,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null
+        },
+        creationExpiry: 'creation-expiry',
+        ended: false
+    };
+    const OPEN: ALOutboundPendingAckSnapshot = {
+        msgId: 'ending',
+        mode: 'receiver',
+        expectedPeerIds: ['r1', 'r2'],
+        ackedPeerIds: ['r1'],
+        outsideAudiencePeerIds: [],
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        attempts: 0,
+        deadlineAtMs: 3_000
+    };
+
+    function nack(reason: 'gap' | 'not-subscribed' | 'expired' | 'resync-required') {
+        return toTestALNackPayload({
+            msgId: 'ending',
+            fromPeerId: 'r2',
+            toPeerId: 'self',
+            reason,
+            ...(reason === 'gap' ? { orderingKey: 'track', expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] } : {})
+        });
+    }
+
+    function toRead(overrides: Partial<ALControlAdmissionRead>): ALControlAdmissionRead {
+        return {
+            parsed: { type: 'nack', payload: nack('gap') },
+            source: 'peer',
+            carrier: 'rtc',
+            hopPeerIds: undefined,
+            targetMsgId: 'ending',
+            nowMs: 1_000,
+            owner: 'self',
+            ownerVersion: { senderId: 'self', version: 4 },
+            sent: SENT,
+            pending: OPEN,
+            history: { kind: 'nacks', values: [] },
+            acknowledgements: [],
+            recipientProof: 'carrier-authenticated',
+            ...overrides
+        };
+    }
+
+    const ack = toTestALAckPayload({ ackedMsgId: 'ending', fromPeerId: 'r2', toPeerId: 'self' });
+    const ENDS = [{ kind: 'end-sent-message', stored: SENT }];
+
+    // Each case states the facts the commit states and the end it writes, so the two statements of the terminal
+    // conditions cannot drift apart unseen.
+    it.each(
+        [
+            {
+                name: 'an ACK that completes the receipt (set, complete)',
+                read: { parsed: { type: 'ack', payload: ack }, history: { kind: 'acks', values: [] } },
+                facts: ['acknowledgement:complete'],
+                end: ENDS
+            },
+            {
+                name: 'a terminal NACK that removes an open receipt (remove, with a receipt)',
+                read: { parsed: { type: 'nack', payload: nack('expired') } },
+                facts: ['acknowledgement:open', 'receipt-exhausted'],
+                end: ENDS
+            },
+            {
+                name: 'a relay rejection',
+                read: { parsed: { type: 'nack', payload: nack('resync-required') }, pending: undefined },
+                facts: ['relay-rejected'],
+                end: ENDS
+            },
+            {
+                name: 'an ACK that leaves the receipt open (set, incomplete)',
+                read: {
+                    parsed: { type: 'ack', payload: ack },
+                    history: { kind: 'acks', values: [] },
+                    pending: { ...OPEN, ackedPeerIds: [], expectedPeerIds: ['r1', 'r2', 'r3'] }
+                },
+                facts: ['acknowledgement:open'],
+                end: []
+            },
+            {
+                name: 'an ACK with no receipt to move (remove, without a receipt)',
+                read: { parsed: { type: 'ack', payload: ack }, history: { kind: 'acks', values: [] }, pending: undefined },
+                facts: [],
+                end: []
+            },
+            { name: 'a gap NACK', read: {}, facts: [], end: [] },
+            {
+                name: 'an outside-audience NACK that leaves the receipt open',
+                read: { parsed: { type: 'nack', payload: nack('not-subscribed') }, pending: { ...OPEN, ackedPeerIds: [] } },
+                facts: ['acknowledgement:open'],
+                end: []
+            },
+            {
+                name: 'a terminal NACK on a send with no receipt',
+                read: { parsed: { type: 'nack', payload: nack('expired') }, pending: undefined },
+                facts: [],
+                end: []
+            },
+            {
+                name: 'a terminal NACK for a message that has already ended',
+                read: { parsed: { type: 'nack', payload: nack('expired') }, sent: { ...SENT, ended: true } },
+                facts: ['acknowledgement:open', 'receipt-exhausted'],
+                end: []
+            }
+        ] as const
+    )('$name: states $facts and ends the message with $end.length mutations', ({ read, facts, end }) => {
+        const candidate = computeALOutboundControlAdmission(
+            toRead(read as Partial<ALControlAdmissionRead>),
+            normalizeALRuntimeStoreRetention()
+        );
+
+        expect(
+            toALOutboundControlSettlements(candidate, 'trace').map((fact) =>
+                fact.kind === 'acknowledgement' ? `acknowledgement:${fact.complete ? 'complete' : 'open'}` : fact.kind
+            )
+        ).toEqual(facts);
+        expect(candidate.messageEnd).toEqual(end);
+        if (end.length > 0) {
+            expect(candidate.removeRepairAttempt).toBe(true);
+        }
+    });
+});
+
+describe('a not-yet-in-sync NACK while the sender waits on its first hop', () => {
+    const WAIT: ALOutboundFirstHopWaitSnapshot = {
+        msgId: 'held',
+        timeoutMs: 2_000,
+        maxAttempts: 3,
+        attempts: 0,
+        deadlineAtMs: 3_000,
+        attemptIdentity: 'initial',
+        phase: 'immediate'
+    };
+    const SENT: ALStoredOutboundMessage = {
+        msgId: 'held',
+        reference: {
+            key: { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: 'held' },
+            typeId: 'AL_OUTBOUND_MESSAGE',
+            scope: 'scope',
+            msgId: 'held',
+            senderId: 'self',
+            identity: 'held',
+            expiresAtMs: 60_000
+        },
+        supersedenceKey: undefined,
+        unicastPeerId: null,
+        orderingTrackKey: null,
+        orderingSeq: null,
+        sentPositions: null,
+        policy: { persist: true, ackTracking: null, retryTracking: null, repairTracking: null, supersedenceTracking: null },
+        creationExpiry: 'creation-expiry',
+        ended: false
+    };
+
+    function toRead(source: ALControlAdmissionRead['source']): ALControlAdmissionRead {
+        return {
+            parsed: {
+                type: 'nack',
+                payload: toTestALNackPayload({ msgId: 'held', fromPeerId: 'server', toPeerId: 'self', reason: 'not-yet-in-sync' })
+            },
+            source,
+            carrier: 'ws',
+            hopPeerIds: ['server'],
+            targetMsgId: 'held',
+            nowMs: 1_000,
+            owner: 'self',
+            ownerVersion: { senderId: 'self', version: 4 },
+            sent: SENT,
+            firstHopWait: WAIT,
+            history: { kind: 'nacks', values: [] },
+            acknowledgements: [],
+            recipientProof: 'carrier-authenticated'
+        };
+    }
+
+    it('from the trusted server, the own hop, ends the wait and its timer and states and ends nothing', () => {
+        const candidate = computeALOutboundControlAdmission(toRead('trusted-server'), normalizeALRuntimeStoreRetention());
+
+        expect(candidate).toMatchObject({
+            pending: { kind: 'unchanged' },
+            removeFirstHopWait: true,
+            endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(WAIT)],
+            messageEnd: [],
+            removeRepairAttempt: false
+        });
+        expect(toALOutboundControlSettlements(candidate, 'trace')).toEqual([]);
+    });
+
+    it('from a peer, leaves the wait and its timer as they are', () => {
+        const candidate = computeALOutboundControlAdmission(toRead('peer'), normalizeALRuntimeStoreRetention());
+
+        expect(candidate).toMatchObject({ removeFirstHopWait: false, endedTimeoutEffectIds: [], messageEnd: [] });
+        expect(toALOutboundControlSettlements(candidate, 'trace')).toEqual([]);
     });
 });

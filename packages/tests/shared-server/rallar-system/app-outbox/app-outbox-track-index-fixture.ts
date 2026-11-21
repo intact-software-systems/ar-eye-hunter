@@ -17,12 +17,15 @@ export interface TrackIndexTestEntryInput {
 /** A Relic-shaped round transition: an outbox row whose message names `ordering.seq` when `seq` is given. */
 export function createTrackIndexTestEntry(input: TrackIndexTestEntryInput): ResourceEntry {
     const message = newALMulticastMessage(
-        'server-1',
-        newALRoute('room.relic.round', 'game-1', input.resourceId),
-        { applicationId: 'relic', workspaceId: 'workspace', groupId: 'game-1' },
-        'relic.round.v1',
-        { round: 1 },
-        { orderingKey: 'round', seq: input.seq }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALRoute('room.relic.round', 'game-1', input.resourceId),
+            groupRef: { applicationId: 'relic', workspaceId: 'workspace', groupId: 'game-1' },
+            typeId: 'relic.round.v1',
+            resource: { round: 1 },
+            options: { orderingKey: 'round', seq: input.seq }
+        }
     );
     const createdTs = Temporal.Now.plainDateTimeISO('UTC');
     return {

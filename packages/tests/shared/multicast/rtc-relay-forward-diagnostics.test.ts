@@ -26,12 +26,15 @@ function createFrame(reliability: Reliability, resourceId: string): ALMessage {
     return reliability === 'at-least-once'
         ? createOriginReceiverMulticast(resourceId)
         : newALMulticastMessage(
-            'a',
-            { topicId: 'position', resourceId, contextId: 'room' },
-            ORIGIN_ROOM,
-            'position.frame.v1',
-            { resourceId },
-            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'position', resourceId, contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'position.frame.v1',
+                resource: { resourceId },
+                options: { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+            }
         );
 }
 

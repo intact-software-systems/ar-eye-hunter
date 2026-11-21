@@ -16,6 +16,7 @@ it('commits queue-only ownership despite an unrelated metadata commit', async ()
         dbName: `work-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
@@ -37,6 +38,7 @@ it.each(['read', 'list'] as const)('guards a metadata %s even when only queue ro
         dbName: `metadata-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
@@ -62,6 +64,7 @@ it('guards every queue observation and atomically aborts sibling ownership on re
         dbName: `queue-race-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
@@ -80,7 +83,14 @@ it('guards every queue observation and atomically aborts sibling ownership on re
 
 function workEntry() {
     return QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
+        newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('test', crypto.randomUUID()),
+            toPeerId: 'receiver',
+            typeId: 'test',
+            resource: { value: 1 }
+        }),
         'TEST_WORK',
         Temporal.Now.instant()
     );
@@ -94,6 +104,7 @@ it('permits post-deadline bookkeeping when no execution admission deadline appli
         dbName: `late-control-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: () => nowMs,
+        workNowMs: () => nowMs,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
@@ -106,4 +117,32 @@ it('permits post-deadline bookkeeping when no execution admission deadline appli
     }, null)).resolves.toBe('recorded');
     expect(await backend.read('late-control', String)).toBe('recorded');
     expect((await backend.workQueue.getItem(entry.key))?.resource).toBe(entry.resource);
+});
+
+it('runs its work queue on the work clock, so a work page reads while the expiry clock has ended', async () => {
+    const workNowMs = 1_800_000_000_000;
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `work-clock-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: () => {
+            throw new Error('Expiry clock ended.');
+        },
+        workNowMs: () => workNowMs,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    const entry = { ...workEntry(), nextTs: Temporal.Instant.fromEpochMilliseconds(workNowMs - 1) };
+    await backend.workQueue.enqueue(entry);
+
+    const page = await backend.workQueue.readWorkPage({
+        typeId: entry.typeId,
+        status: entry.status,
+        maxToRead: 16,
+        order: 'due',
+        cursor: null
+    });
+
+    expect(page.entries.map((observed) => observed.resource)).toEqual([entry.resource]);
 });

@@ -80,6 +80,12 @@ export function installCaptureApplicationTestEnvironment(): void {
                 removeItem: vi.fn()
             } satisfies Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
         );
+        vi.stubGlobal('fetch', async (url: string) => {
+            if (url !== `${CAPTURE_APPLICATION_API_CONFIG.apiBaseUrl}/api/time`) {
+                throw new Error(`Unexpected capture application request: ${url}`);
+            }
+            return Response.json({ serverPeerId: CAPTURE_APPLICATION_API_CONFIG.serverPeerId, serverNowEpochMs: Date.now() });
+        });
         vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue(CAPTURE_APPLICATION_API_CONFIG);
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 60_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();

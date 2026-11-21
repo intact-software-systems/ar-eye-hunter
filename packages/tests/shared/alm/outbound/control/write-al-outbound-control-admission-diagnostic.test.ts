@@ -12,7 +12,14 @@ import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
 
-const CONTROL_ID = newALUnicastMessage('b', newALRoute('control', 'room-1', 'nack'), 'a', 'chat.v1', {}).id;
+const CONTROL_ID = newALUnicastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'b',
+    route: newALRoute('control', 'room-1', 'nack'),
+    toPeerId: 'a',
+    typeId: 'chat.v1',
+    resource: {}
+}).id;
 
 /** The event the origin states for one control, as its diagnostics sink receives it; absent a verdict, committed. */
 function writeAdmitted(
@@ -61,7 +68,7 @@ describe('the control-admission event of a NACK', () => {
         );
 
         expect(JSON.stringify(writeAdmitted(nack))).toContain(
-            '"typeId":"al.control.nack.v3","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
+            '"typeId":"al.control.nack.v4","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
                 '"nackReason":"gap","nackOrderingKey":"chat:a:0","traceId":'
         );
     });

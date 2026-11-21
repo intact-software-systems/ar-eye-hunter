@@ -1,4 +1,3 @@
-import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
@@ -18,6 +17,7 @@ import {
     validateGroupInputKeys,
     type GroupInputFieldRule
 } from './group-input-validation-issues.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecycle-policy-input-shape.ts';
 
 interface GroupMutationOperationInput {
@@ -120,7 +120,7 @@ export function validateGroupMutationOperationInput(
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
         ...(operation === 'createGroup' || operation === 'updateGroup'
-            ? validateGroupDirectoryListingMetadata(input.metadata)
+            ? validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock)
             : [])
     ];
     if (
@@ -276,15 +276,4 @@ function validateExpectedLayout(value: JsonWireValue | undefined): readonly Type
             { key: 'state', kind: 'enum', required: true, allowed: GROUP_LAYOUT_IDENTITY_STATES }
         ], label)
     ];
-}
-
-/** Metadata is an external extension map; a present platform listing setting has a closed vocabulary. */
-export function validateGroupDirectoryListingMetadata(metadata: JsonWireValue | undefined): readonly TypeError[] {
-    return isGroupInputRecord(metadata)
-        ? validateGroupInputFields(metadata, [{
-            key: GROUP_DIRECTORY_LISTING_METADATA_KEY,
-            kind: 'enum',
-            allowed: ['listed', 'unlisted']
-        }], 'Group metadata')
-        : [];
 }

@@ -1,9 +1,12 @@
+import { vi } from 'vitest';
+
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { vi } from 'vitest';
+
 import { installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
@@ -21,7 +24,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() =>
-            Promise.resolve({ middleware: ctx.middleware, rtcCaptureReceipt, checkpoints: [] })
+            Promise.resolve({ middleware: ctx.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] })
         ),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
@@ -185,7 +188,12 @@ function resetSessionAndRoomMocks(): void {
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     installGroupSnapshotRepositoryMocks(mocks, []);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
+    mocks.initialiseMiddleware.mockImplementation(async () => ({
+        middleware: mocks.ctx.middleware,
+        rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
+        checkpoints: []
+    }));
     mocks.clearSession.mockImplementation(() => undefined);
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });

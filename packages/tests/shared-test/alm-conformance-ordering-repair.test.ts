@@ -72,6 +72,16 @@ function toMintedIdentities(scenario: AlmConformanceScenario): readonly string[]
     );
 }
 
+/** Every recipe of each cell of the carrier's catalog but `repair-exhausted`, serialised, by scenario id. */
+function toOtherCellRecipesJson(carrier: Carrier): readonly (readonly [string, string])[] {
+    const others = createAlmConformanceRecipes(toConformanceInput(carrier)).filter((scenario) => scenario.scenarioId !== 'repair-exhausted');
+    expect(others.length).toBeGreaterThan(0);
+    return others.map((scenario) => {
+        const recipes = [...toRecipes(scenario), scenario.sibling, scenario.publisherB].filter((recipe) => recipe !== undefined);
+        return [scenario.scenarioId, JSON.stringify(recipes)] as const;
+    });
+}
+
 /** The fault carriers a cell holds, in the order the hold commands name them. */
 function toHoldCarriers(carrier: Carrier): readonly string[] {
     return carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
@@ -208,7 +218,7 @@ describe('ordering-gap-repair', () => {
                 kind: 'diagnostic',
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v3",' +
+                contains: '"typeId":"al.control.nack.v4",' +
                     `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`,
                 sinceCommandIdPrefix: `alm-${carrier}-ordering-gap-repair-sender-`
             },
@@ -325,6 +335,7 @@ describe('repair-exhausted', () => {
             'observe-failed-2',
             'assert-skipped-2',
             'assert-repair-exhausted-2',
+            'no-repair-commit-after-failed-2',
             'stats'
         ]);
         // Both receivers run the same commands: the second one's report of the held gap is another attempt identity.
@@ -408,6 +419,50 @@ describe('repair-exhausted', () => {
             operator: 'equals',
             expected: 'repair-exhausted'
         });
+    });
+
+    it.each(ALM_CONFORMANCE_RTC_ALONE_CARRIERS)('reads no %s repair commit of the second send in the window after its handle read failed', (carrier) => {
+        const { sender } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
+        const names = toCommandNames(sender);
+        const commandId = `alm-${carrier}-repair-exhausted-sender-no-repair-commit-after-failed-2`;
+
+        expect(names.indexOf('no-repair-commit-after-failed-2')).toEqual(names.indexOf('assert-repair-exhausted-2') + 1);
+        // The wait starts its history at its own first event: none carries its id when it starts, so its window opens
+        // after the handle read `failed`, and the exhausting commit stated before that is not read.
+        expect(findCommand(sender, 'no-repair-commit-after-failed-2')).toEqual({
+            kind: 'wait',
+            commandId,
+            match: {
+                kind: 'diagnostic',
+                topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+                payloadPath: 'data',
+                contains: `"msgId":"{resultCache.alm-${carrier}-repair-exhausted-sender-send-2.value.msgId}"`,
+                payloadFields: { 'data.kind': 'commit-phases', 'data.origin': 'repair', 'data.commitOutcome': 'committed' },
+                sinceCommandIdPrefix: commandId
+            },
+            absent: true,
+            timeoutMs: 5_000
+        });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('reads no repair commit after a failed handle in any other %s cell', (carrier) => {
+        for (const [scenarioId, recipes] of toOtherCellRecipesJson(carrier)) {
+            expect(recipes, scenarioId).not.toContain('no-repair-commit-after-failed');
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_RTC_ALONE_CARRIERS)('states a repair budget of one on each of its four %s ordered sends', (carrier) => {
+        const { sender } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
+
+        for (const seq of [1, 2, 3, 4]) {
+            expect(findCommand(sender, `send-${seq}`)).toMatchObject({ kind: 'messages.send', seq, maxRepairs: 1 });
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('leaves the repair budget of every other %s cell\'s send to the product', (carrier) => {
+        for (const [scenarioId, recipes] of toOtherCellRecipesJson(carrier)) {
+            expect(recipes, scenarioId).not.toContain('"maxRepairs"');
+        }
     });
 
     it.each(ALM_CONFORMANCE_RTC_ALONE_CARRIERS)('proves both %s receivers delivered the first send only', (carrier) => {

@@ -1,5 +1,5 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
+    beforeEach,
     describe,
     expect,
     expectTypeOf,
@@ -12,6 +12,7 @@ import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browse
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import {
     createBrowserTransportInput,
@@ -20,7 +21,7 @@ import {
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
     type BrowserConnectOptions,
-    type BrowserTransportPublication
+    type BrowserTransportDependencies
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
@@ -78,7 +79,10 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
-const KEYLESS_PUBLICATION: BrowserTransportPublication = {
+const TRANSPORT_DEPENDENCIES: BrowserTransportDependencies = {
+    rttCreationNowEpochMs: Date.now,
+    nowEpochMs: Date.now,
+    workNowEpochMs: Date.now,
     publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
     publicationVerifier: KEYLESS_PUBLICATION_VERIFIER
 };
@@ -108,6 +112,96 @@ const OPTIONS: BrowserConnectOptions = {
         })
     })
 };
+
+beforeEach(() => {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+        if (String(url).endsWith('/api/time')) {
+            return Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() });
+        }
+        throw new Error(`Unexpected HTTP request: ${url}`);
+    });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('server clock startup gate', () => {
+    it('hands transports the latest calibrated server bound and refuses reads after sample expiry', async () => {
+        let monotonicNow = 0;
+        const observed: number[] = [];
+        const finished = new Error('Clock handoff observed');
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        vi.spyOn(Date, 'now').mockReturnValue(10_020_000);
+        vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
+        vi.stubGlobal('fetch', async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000_000 }));
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
+        });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
+            observed.push(input.nowEpochMs());
+            monotonicNow = 50;
+            observed.push(input.nowEpochMs());
+            monotonicNow = 31_000;
+            expect(() => input.nowEpochMs()).toThrow('Remote clock observation has expired.');
+            throw finished;
+        });
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(finished);
+        expect(observed).toEqual([10_000_006, 10_000_056]);
+    });
+
+    it('closes a heartbeat acquired after cancellation instead of returning usable middleware', async () => {
+        const controller = new AbortController();
+        const failure = new Error('Connect cancelled during heartbeat acquisition');
+        let heartbeatStopped = false;
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        configureFailedStartup('heartbeat', failure, () => {});
+        vi.mocked(heartbeat.initHeartbeat).mockImplementation(async () => {
+            controller.abort(failure);
+            return {
+                sessionId: SESSION.sessionId,
+                generationId: 'late-heartbeat',
+                stop: () => {
+                    heartbeatStopped = true;
+                }
+            };
+        });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(
+            createDefaultApiMiddlewareTestDouble().middleware.webSocketQueueBox
+        );
+
+        await expect(initialiseMiddleware(SESSION, 'rtc', { ...OPTIONS, signal: controller.signal })).rejects.toBe(failure);
+        expect(heartbeatStopped).toBe(true);
+    });
+
+    it('refuses an unavailable server clock before starting transports', async () => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
+        });
+        vi.stubGlobal('fetch', async () => new Response('', { status: 503 }));
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockRejectedValue(
+            new Error('Transport started before calibration')
+        );
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toThrow(
+            'Server clock request returned HTTP 503'
+        );
+    });
+});
 
 describe('native observation handoff cleanup', () => {
     it.each(['rtc-transport', 'middleware'] as const)('disposes the original diagnostic scope on %s handoff failure', async (boundary) => {
@@ -196,6 +290,10 @@ describe('the inbound stores a connect hands its two carriers', () => {
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         });
+        vi.spyOn(Date, 'now').mockReturnValue(10_020_000);
+        vi.spyOn(performance, 'now').mockReturnValue(0);
+        vi.stubGlobal('fetch', async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000_000 }));
+        const epochs: number[] = [];
         const carriers: Partial<Record<'ws' | 'rtc', readonly [ALInboundRuntimeStores, ALVolatileInboundRuntimeStores]>> = {};
         const sinks: Partial<Record<'ws' | 'rtc', ALInboundRuntimeDiagnosticsSink | undefined>> = {};
         const stop = new Error('the stores were handed over');
@@ -215,6 +313,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
         vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
         vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
         vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockImplementation((input) => {
+            epochs.push(input.rttCreationNowEpochMs(), input.nowEpochMs());
             carriers.rtc = [input.inboundStores, input.inboundVolatileStores];
             sinks.rtc = input.inboundDiagnostics;
             throw stop;
@@ -222,6 +321,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
 
         await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(stop);
 
+        expect(epochs).toEqual([9_999_999, 10_000_006]);
         expect(carriers.ws).toHaveLength(2);
         expect(carriers.rtc?.[0]).toBe(carriers.ws?.[0]);
         expect(carriers.rtc?.[1]).toBe(carriers.ws?.[1]);
@@ -285,6 +385,7 @@ describe('browser RTC layout adoption composition', () => {
         vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue(doubles.heartbeat);
 
         const connected = await initialiseMiddleware(SESSION, 'rtc', options);
+        onTestFinished(() => connected.serverClock.close());
         const { webSocketQueueBox, webRtcGroupManager } = connected.middleware;
         await webSocketQueueBox.acceptIncomingMessage(toHeldOfferEnvelope('startup-peer'));
         // The sixth refusal leaves the offer's next retry a second out.
@@ -311,7 +412,7 @@ describe('browser connection construction identity', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const source = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-0000-0000-000000000052');
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
         expect(constructed.connectionId).toEqual({ status: 'observed', value: '00000000-0000-0000-0000-000000000052' });
         expect(constructed.creation.newConnectionRequestId()).not.toBe('00000000-0000-0000-0000-000000000052');
     });
@@ -322,7 +423,7 @@ describe('browser connection construction identity', () => {
             throw new Error('identity unavailable');
         });
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
         expect(constructed.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
         expect(constructed.clientData).toEqual({ clientId: 'client-1', sessionId: 'session-1', isOnline: true });
         expect(constructed.options).toBe(OPTIONS);
@@ -334,7 +435,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -360,7 +461,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
 
     it('bounds the budget by the limits the session reads', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION).volatileBound;
+        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES).volatileBound;
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
@@ -380,7 +481,7 @@ describe('the ordering counters a connect keeps beside its inbound diagnostics p
         const input = createBrowserTransportInput(
             SESSION,
             { ...OPTIONS, diagnosticsPorts: toRallarDiagnosticsPorts({ inboundDiagnostics: (event) => forwarded.push(event) }) },
-            KEYLESS_PUBLICATION
+            TRANSPORT_DEPENDENCIES
         );
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -426,7 +527,7 @@ describe('the congestion episodes a connect measures across its diagnostics and 
                     rtc: (settlement) => forwardedSettlements.push(`rtc ${settlement.kind}`)
                 }
             },
-            KEYLESS_PUBLICATION
+            TRANSPORT_DEPENDENCIES
         );
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -477,7 +578,7 @@ describe('the durable work claim a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -500,7 +601,7 @@ describe('the transport faults a connect hands its RTC overlay', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -518,7 +619,7 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
         const publicationCrypto = await createAvailablePublicationCryptoFixture();
-        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...TRANSPORT_DEPENDENCIES, publicationCrypto });
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -534,7 +635,7 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -553,7 +654,7 @@ describe('the checkpoint stores a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
         onTestFinished(() => {
             input.checkpointStores.wsClient.checkpoint.dispose();
             input.checkpointStores.rtcOverlay.checkpoint.dispose();
@@ -582,16 +683,23 @@ describe('the checkpoint stores a connect hands its carriers', () => {
 });
 
 function toHeldOfferEnvelope(senderId: string): ALMessage {
-    const message = newALUnicastMessage(senderId, newALEventRoute('rtc', SESSION.sessionId), SESSION.sessionId, 'rtc', {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: senderId,
-        toId: SESSION.sessionId,
-        sessionId: senderId,
-        token: 'test-token',
-        signalType: 'Offer',
-        offerId: 'offer-1',
-        payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute('rtc', SESSION.sessionId),
+        toPeerId: SESSION.sessionId,
+        typeId: 'rtc',
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: senderId,
+            toId: SESSION.sessionId,
+            sessionId: senderId,
+            token: 'test-token',
+            signalType: 'Offer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+        }
     });
     return { ...message, id: { ...message.id, msgId: 'held-offer' } };
 }
@@ -626,7 +734,7 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
         const input = createBrowserTransportInput(
             SESSION,
             { ...OPTIONS, readPublicationStageLimits: () => limits },
-            KEYLESS_PUBLICATION
+            TRANSPORT_DEPENDENCIES
         );
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
@@ -638,7 +746,7 @@ describe('the page publication crypto stays off the public middleware', () => {
     it('keeps the awaited page crypto on the transport input and out of the middleware the advanced facade returns', async () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const publicationCrypto = await createAvailablePublicationCryptoFixture();
-        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...TRANSPORT_DEPENDENCIES, publicationCrypto });
 
         expect(input.publicationCrypto).toBe(publicationCrypto);
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware))

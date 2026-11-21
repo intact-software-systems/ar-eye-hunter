@@ -10,11 +10,14 @@ export interface ViewResyncInput {
 /** Re-read authority after LISTEN readiness: existing sockets remain open, and no private identifiers cross scopes. */
 export function writeViewResync(service: WsQueueBoxServerService, input: ViewResyncInput): void {
     const message = newALBroadcastMessage(
-        service.name,
-        newALRoute(AppTopics.viewResync, input.messageId, 'all'),
-        'all',
-        AppTopics.viewResync,
-        { version: 1 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: service.name,
+            route: newALRoute(AppTopics.viewResync, input.messageId, 'all'),
+            scope: 'all',
+            typeId: AppTopics.viewResync,
+            resource: { version: 1 }
+        }
     );
     service.sendToTargetsWithResult({
         message: { ...message, id: { ...message.id, msgId: input.messageId, ts: input.createdAtEpochMs } },

@@ -62,6 +62,7 @@ describe('Postgres inbound ordered work recovery', () => {
             typeId: toALInboundWorkType(firstStore.namespace, 'ws'),
             status: EntityStatus.COMPLETED,
             maxToRead: 16,
+            order: 'key',
             cursor: null
         });
         expect(completed.entries.length).toBeGreaterThan(0);
@@ -164,6 +165,7 @@ describe('Postgres inbound ordered work recovery', () => {
             typeId: toALInboundWorkType(first.namespace, 'ws'),
             status: EntityStatus.NEW,
             maxToRead: 16,
+            order: 'key',
             cursor: null
         });
         const predecessor = page.entries[0];
@@ -201,7 +203,7 @@ async function waitForSettledInboundWork(stores: ALInboundRuntimeStores): Promis
     const typeId = toALInboundWorkType(stores.admissionStore.namespace, 'ws');
     await expect.poll(async () => {
         for (const status of NOT_COMPLETED_RETRYABLE_STATUSES) {
-            const page = await stores.workQueue.readWorkPage({ typeId, status, maxToRead: 1, cursor: null });
+            const page = await stores.workQueue.readWorkPage({ typeId, status, maxToRead: 1, order: 'key', cursor: null });
             if (page.entries.length > 0) {
                 return false;
             }
@@ -285,9 +287,17 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
 }
 
 function createMessage(resourceId: string, sequence?: number): ALMessage {
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId, contextId: 'receiver' }, 'receiver', 'chat', {}, {
-        ttlMs: 30_000,
-        qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, durability: { algo: 'volatile' } }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'chat', resourceId, contextId: 'receiver' },
+        toPeerId: 'receiver',
+        typeId: 'chat',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, durability: { algo: 'volatile' } }
+        }
     });
     return { ...message, ordering: sequence === undefined ? undefined : { orderingKey: 'stream', epoch: 0, seq: sequence } };
 }

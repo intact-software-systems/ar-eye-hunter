@@ -17,10 +17,10 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
     validateCreationPublicationGrants,
-    validateGroupDirectoryListingMetadata,
     validateGroupMutationOperationInput
 } from './validate-group-mutation-operation-input.ts';
 
@@ -121,7 +121,7 @@ function assertAggregateOperationInput(
         if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
             throw new TypeError('Group maxSpectators must be at most 64');
         }
-        const metadataIssues = validateGroupDirectoryListingMetadata(input.metadata);
+        const metadataIssues = validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock);
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
         }
@@ -407,6 +407,8 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'maxSessionsPerMember',
         'metadata',
         'expiresAtEpochMs',
+        'roomDeadline',
+        'roomClock',
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],

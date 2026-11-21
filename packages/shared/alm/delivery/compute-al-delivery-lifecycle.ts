@@ -82,9 +82,12 @@ export function computeALDeliveryLifecycle(
  */
 export function computeALDeliveryDeadline(
     lifecycle: ALDeliveryLifecycle,
-    nowMs: number
+    nowMs: number | undefined
 ): ALDeliveryLifecycle {
-    if (isALDeliveryTerminal(lifecycle) || lifecycle.expiresAtMs === undefined || nowMs < lifecycle.expiresAtMs) {
+    if (
+        nowMs === undefined || isALDeliveryTerminal(lifecycle) || lifecycle.expiresAtMs === undefined ||
+        nowMs < lifecycle.expiresAtMs
+    ) {
         return lifecycle;
     }
     return toFailureLifecycle(

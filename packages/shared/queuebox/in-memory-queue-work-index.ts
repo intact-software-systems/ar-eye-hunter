@@ -1,5 +1,4 @@
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
-import { resolveResourceInboxWorkPageRequest } from './resource-entry-observations.ts';
 import type { ResourceEntry } from './ResourceEntry.ts';
 
 export namespace InMemoryQueueWorkIndex {
@@ -28,11 +27,8 @@ export class InMemoryQueueWorkIndex {
         return copy;
     }
 
+    /** Reads in key order; the caller validates the request. */
     read(request: ResourceInboxWorkPage.Request): InMemoryQueueWorkIndex.Page {
-        const validated = resolveResourceInboxWorkPageRequest(request);
-        if (validated.left) {
-            throw validated.left;
-        }
         const root = this.rootsByTypeAndStatus.get(JSON.stringify([request.typeId, request.status])) ?? null;
         const selected = readQueueWorkKeys(root, request.cursor?.position, request.maxToRead);
         return {

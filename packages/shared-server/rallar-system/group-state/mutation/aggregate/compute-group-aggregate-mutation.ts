@@ -1,6 +1,11 @@
+import { readRoomClocks, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
     createRallarGroupDirectorAppointment,
+    isRallarGroupDirectorForSession,
     mergeRallarGroupDirectorMetadata,
+    RALLAR_GROUP_DIRECTOR_METADATA_KEY,
+    readRallarGroupDirectorAppointment,
     readRallarGroupDirectorFromSnapshot,
     resolveRallarGroupDirectorAppointmentEligibility
 } from '@shared/api/group-director.ts';
@@ -42,6 +47,8 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
+import { computeGroupClockChange } from './compute-group-clock-change.ts';
+import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
@@ -61,9 +68,24 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    const authorityDenial = toUpdateAuthorityDenial(command, read);
-    if (authorityDenial) {
-        return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
+    const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
+    if (directorEpoch !== undefined) {
+        const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+        const refusal = refuseDirectorTimeChange({
+            update: command.input,
+            snapshot,
+            expectedEpoch: directorEpoch,
+            nowEpochMs: facts.attemptAtEpochMs
+        });
+        if (refusal) {
+            return rejected({ command, read, facts, ...refusal });
+        }
+    }
+    else {
+        const authorityDenial = toUpdateAuthorityDenial(command, read);
+        if (authorityDenial) {
+            return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
+        }
     }
     if (
         readGroupRetentionState(stored.value.metadata) !== null &&
@@ -87,7 +109,25 @@ export function computeUpdate(
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
-    const next = computeUpdatedGroup(command, current, audit);
+    let next = computeUpdatedGroup(command, current, audit);
+    const change = command.input.roomDeadline;
+    if (change !== undefined) {
+        const deadline = computeGroupDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
+        if ('rejectionCode' in deadline) {
+            return rejected({ command, read, facts, ...deadline });
+        }
+        next = deadline;
+    }
+    if (command.input.roomClock) {
+        if (current.kind !== 'room' || current.status !== 'active') {
+            return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' });
+        }
+        const clocks = readRoomClocks(current.metadata);
+        const updated = computeGroupClockChange(clocks, command.input.roomClock, facts.attemptAtEpochMs);
+        if ('rejectionCode' in updated) return rejected({ command, read, facts, ...updated });
+        const records = [...clocks.filter(clock => clock.name !== updated.name), updated];
+        next = { ...next, metadata: { ...next.metadata, [ROOM_CLOCKS_METADATA_KEY]: records } };
+    }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
@@ -299,7 +339,8 @@ function computeUpdatedGroup(
                 current: current.metadata,
                 replacement: command.input.metadata,
                 directoryListing: command.input.directoryListing,
-                maxSpectators: command.input.maxSpectators
+                maxSpectators: command.input.maxSpectators,
+                actor: { clientId: command.input.actorPrincipalId, sessionId: command.input.actorSessionId }
             }),
             snapshotVersion: current.snapshotVersion + 1,
             metadataVersion: current.metadataVersion + 1,
@@ -375,10 +416,16 @@ interface ComputeUpdatedGroupMetadataInput {
     readonly replacement: Group['metadata'] | null;
     readonly directoryListing: GroupDirectoryListing | undefined;
     readonly maxSpectators: number | null;
+    readonly actor: GroupMutationActorSession;
+}
+
+interface GroupMutationActorSession {
+    readonly clientId: string | null;
+    readonly sessionId: string | null;
 }
 
 function computeUpdatedGroupMetadata(
-    { current, replacement, directoryListing, maxSpectators }: ComputeUpdatedGroupMetadataInput
+    { current, replacement, directoryListing, maxSpectators, actor }: ComputeUpdatedGroupMetadataInput
 ): Group['metadata'] {
     const metadata = { ...structuredClone(replacement ?? current) };
     // Generic metadata replacement does not own discovery policy, even when it carries a stale copy.
@@ -402,7 +449,35 @@ function computeUpdatedGroupMetadata(
     if (schedule !== null) {
         metadata[GROUP_SESSION_SCHEDULE_METADATA_KEY] = { ...schedule };
     }
+    delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
+    if (
+        Object.hasOwn(current, RALLAR_GROUP_DIRECTOR_METADATA_KEY) &&
+        !isDirectorResignation({ current, replacement, actor })
+    ) {
+        metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
+    }
+    if (Object.hasOwn(current, ROOM_CLOCKS_METADATA_KEY)) {
+        metadata[ROOM_CLOCKS_METADATA_KEY] = current[ROOM_CLOCKS_METADATA_KEY];
+    }
+    if (Object.hasOwn(current, ROOM_DEADLINES_METADATA_KEY)) {
+        metadata[ROOM_DEADLINES_METADATA_KEY] = current[ROOM_DEADLINES_METADATA_KEY];
+    }
     return metadata;
+}
+
+function isDirectorResignation(
+    { current, replacement, actor }: Pick<ComputeUpdatedGroupMetadataInput, 'current' | 'replacement' | 'actor'>
+): boolean {
+    if (replacement === null || Object.hasOwn(replacement, RALLAR_GROUP_DIRECTOR_METADATA_KEY)) {
+        return false;
+    }
+    if (actor.clientId === null || actor.sessionId === null) {
+        return false;
+    }
+    return isRallarGroupDirectorForSession(
+        readRallarGroupDirectorAppointment(current),
+        { clientId: actor.clientId, sessionId: actor.sessionId }
+    );
 }
 
 function requireSessionReservations(read: GroupMutationRead) {

@@ -1,5 +1,6 @@
 import { decodeALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
@@ -22,6 +23,8 @@ import {
 } from 'vitest';
 import { createOutboundRuntimeWithWorkTask, runOutboundWorkTask } from './alm/outbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.ts';
+import { signPublication } from './multicast/rtc-publication-proof-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 beforeEach(() =>
     onTestFinished(() => {
@@ -47,16 +50,19 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         const msg = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'hello'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'hello'
+                }
             }
         );
 
@@ -83,16 +89,19 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         onTestFinished(() => service.close());
         const msg = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-duplicate',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'hello once'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-duplicate',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'hello once'
+                }
             }
         );
 
@@ -132,16 +141,19 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         const msg = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-defaulted',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'persist me'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-defaulted',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'persist me'
+                }
             }
         );
 
@@ -172,7 +184,15 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const world = await enqueueOutboxAndDrain(
             service,
-            shared.newALBroadcastMessage('self', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery)
+            shared.newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route,
+                scope: 'world',
+                typeId: 'chat.message.v1',
+                resource: { text: 'everyone' },
+                options: delivery
+            })
         );
 
         expect(world.verdict).toEqual({
@@ -186,12 +206,15 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const roomSend = await enqueueOutboxAndDrain(
             service,
             shared.newALBroadcastMessage(
-                'self',
-                { ...route, resourceId: 'msg-room', contextId: 'room-1' },
-                'room',
-                'chat.message.v1',
-                { text: 'room' },
-                { ...delivery, groupRef: groupRef('room-1') }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { ...route, resourceId: 'msg-room', contextId: 'room-1' },
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'room' },
+                    options: { ...delivery, groupRef: groupRef('room-1') }
+                }
             )
         );
 
@@ -216,32 +239,35 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         onTestFinished(() => service.close());
         const msg = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'chat',
-                resourceId: 'msg-timeout',
-                contextId: 'conversation-1'
-            },
-            'peer-1',
-            'chat.private-text.v1',
-            {
-                text: 'retry me'
-            },
-            {
-                qos: {
-                    delivery: {
-                        algo: 'at-least-once'
-                    },
-                    ack: {
-                        algo: 'hop',
-                        opts: {
-                            timeoutMs: 100
-                        }
-                    },
-                    retry: {
-                        algo: 'exp-backoff',
-                        opts: {
-                            maxAttempts: 1
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-timeout',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'retry me'
+                },
+                options: {
+                    qos: {
+                        delivery: {
+                            algo: 'at-least-once'
+                        },
+                        ack: {
+                            algo: 'hop',
+                            opts: {
+                                timeoutMs: 100
+                            }
+                        },
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: {
+                                maxAttempts: 1
+                            }
                         }
                     }
                 }
@@ -274,19 +300,22 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const seq1 = {
             ...shared.newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-seq-1',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'one'
-                },
-                {
-                    qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-seq-1',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'one'
+                    },
+                    options: {
+                        qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
+                    }
                 }
             ),
             ordering: {
@@ -297,19 +326,22 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         };
         const seq2 = {
             ...shared.newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-seq-2',
-                    contextId: 'conversation-1'
-                },
-                'peer-1',
-                'chat.private-text.v1',
-                {
-                    text: 'two'
-                },
-                {
-                    qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-seq-2',
+                        contextId: 'conversation-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'two'
+                    },
+                    options: {
+                        qos: { repair: { algo: 'retransmit', opts: { maxRepairs: 1 } } }
+                    }
                 }
             ),
             ordering: {
@@ -332,7 +364,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 observedAtEpochMs: 0,
                 orderingKey: shared.toALOrderingTrackKey(seq1),
                 expectedSeq: 1,
-                missingRanges: [{ from: 1, to: 1 }]
+                missingRanges: [{ from: 1, to: 1 }],
+                gapRequestNumber: 1
             }
         );
 
@@ -358,52 +391,58 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         const first = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-1',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                text: 'older'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'local-outbox'
-                    },
-                    supersedence: {
-                        algo: 'latest-wins',
-                        opts: {
-                            supersedenceKey: 'presence:peer-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-1',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'older'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'local-outbox'
+                        },
+                        supersedence: {
+                            algo: 'latest-wins',
+                            opts: {
+                                supersedenceKey: 'presence:peer-1'
+                            }
                         }
                     }
                 }
             }
         );
         const second = shared.newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-2',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                text: 'newer'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'local-outbox'
-                    },
-                    supersedence: {
-                        algo: 'latest-wins',
-                        opts: {
-                            supersedenceKey: 'presence:peer-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-2',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'newer'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'local-outbox'
+                        },
+                        supersedence: {
+                            algo: 'latest-wins',
+                            opts: {
+                                supersedenceKey: 'presence:peer-1'
+                            }
                         }
                     }
                 }
@@ -459,21 +498,24 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         const msg = shared.newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'tasks',
-                resourceId: 'job-1',
-                contextId: 'queue-1'
-            },
-            'self',
-            'tasks.job.v1',
-            {
-                text: 'claim me'
-            },
-            {
-                qos: {
-                    ownership: {
-                        algo: 'exclusive'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'tasks',
+                    resourceId: 'job-1',
+                    contextId: 'queue-1'
+                },
+                toPeerId: 'self',
+                typeId: 'tasks.job.v1',
+                resource: {
+                    text: 'claim me'
+                },
+                options: {
+                    qos: {
+                        ownership: {
+                            algo: 'exclusive'
+                        }
                     }
                 }
             }
@@ -510,23 +552,26 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         const newer = shared.newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'presence',
-                resourceId: 'state-2',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'newer'
-            },
-            {
-                qos: {
-                    supersedence: {
-                        algo: 'latest-wins',
-                        opts: {
-                            supersedenceKey: 'presence:peer-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state-2',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'newer'
+                },
+                options: {
+                    qos: {
+                        supersedence: {
+                            algo: 'latest-wins',
+                            opts: {
+                                supersedenceKey: 'presence:peer-1'
+                            }
                         }
                     }
                 }
@@ -534,23 +579,26 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         const older = {
             ...shared.newALUnicastMessage(
-                'peer-1',
                 {
-                    topicId: 'presence',
-                    resourceId: 'state-1',
-                    contextId: 'room-1'
-                },
-                'self',
-                'presence.state.v1',
-                {
-                    text: 'older'
-                },
-                {
-                    qos: {
-                        supersedence: {
-                            algo: 'latest-wins',
-                            opts: {
-                                supersedenceKey: 'presence:peer-1'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'state-1',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'self',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        text: 'older'
+                    },
+                    options: {
+                        qos: {
+                            supersedence: {
+                                algo: 'latest-wins',
+                                opts: {
+                                    supersedenceKey: 'presence:peer-1'
+                                }
                             }
                         }
                     }
@@ -614,23 +662,26 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         const msg = shared.newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'defer-1',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'defer me'
-            },
-            {
-                qos: {
-                    congestion: {
-                        algo: 'defer',
-                        opts: {
-                            priority: 2
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'defer-1',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'defer me'
+                },
+                options: {
+                    qos: {
+                        congestion: {
+                            algo: 'defer',
+                            opts: {
+                                priority: 2
+                            }
                         }
                     }
                 }
@@ -684,38 +735,44 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
 
         const seq2 = shared.newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-2',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'two'
-            },
-            {
-                seq: 2,
-                reliability: 'at-least-once'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-2',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'two'
+                },
+                options: {
+                    seq: 2,
+                    reliability: 'at-least-once'
+                }
             }
         );
 
         const seq1 = shared.newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'one'
-            },
-            {
-                seq: 1,
-                reliability: 'at-least-once'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'one'
+                },
+                options: {
+                    seq: 1,
+                    reliability: 'at-least-once'
+                }
             }
         );
 
@@ -822,12 +879,15 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         onTestFinished(() => service.close());
         const msg = shared.newALBroadcastMessage(
-            'self',
-            { topicId: 'chat', resourceId: 'msg-volatile-closed', contextId: 'all' },
-            'all',
-            'chat.message.v1',
-            { text: 'later' },
-            { reliability: 'at-least-once', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'chat', resourceId: 'msg-volatile-closed', contextId: 'all' },
+                scope: 'all',
+                typeId: 'chat.message.v1',
+                resource: { text: 'later' },
+                options: { reliability: 'at-least-once', ttlMs: 30_000 }
+            }
         );
 
         socket.native.readyState = 3;
@@ -856,11 +916,14 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         onTestFinished(() => service.close());
         const msg = shared.newALBroadcastMessage(
-            'self',
-            { topicId: 'chat', resourceId: 'msg-best-effort-closed', contextId: 'all' },
-            'all',
-            'chat.message.v1',
-            { text: 'when open' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: { topicId: 'chat', resourceId: 'msg-best-effort-closed', contextId: 'all' },
+                scope: 'all',
+                typeId: 'chat.message.v1',
+                resource: { text: 'when open' }
+            }
         );
 
         socket.native.readyState = 3;
@@ -918,24 +981,31 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         const later = await enqueueOutboxAndDrain(service, createKeyedRoomSend('keyed-2', { seq: 2 }));
-        const handedOver = await service.enqueueHandedOverIfAbsent(createKeyedRoomSend('keyed-1', { seq: 1 }));
+        const signed = await signPublication(ROOM_PUBLICATION_CRYPTO, createKeyedRoomSend('keyed-1', { seq: 1 }));
+        const handedOver = await service.enqueueHandedOverIfAbsent(signed);
         await runOutboundWorkTask(service);
 
         expect(later.verdict).toMatchObject({ kind: 'admitted' });
         expect(handedOver.verdict).toMatchObject({ kind: 'admitted' });
-        expect(socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent).ordering?.seq)).toEqual([2, 1]);
+        const delivered = socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent));
+        expect(delivered.map((frame) => frame.ordering?.seq)).toEqual([2, 1]);
+        expect(delivered[1]!.proof).toEqual(signed.proof);
+        expect(toALPublicationProofSigningInput(delivered[1]!)).toBe(toALPublicationProofSigningInput(signed));
     });
 });
 
 /** A room broadcast of `self` on the ordering key `chat`, with the sequence it states, if any. */
 function createKeyedRoomSend(resourceId: string, ordering: Readonly<{ seq?: number; }>): shared.ALMessage {
     return shared.newALBroadcastMessage(
-        'self',
-        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
-        'room',
-        'chat.message.v1',
-        { resourceId },
-        { groupRef: groupRef('room-1'), ttlMs: 30_000, ordering: { orderingKey: 'chat', ...ordering } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { resourceId },
+            options: { groupRef: groupRef('room-1'), ttlMs: 30_000, ordering: { orderingKey: 'chat', ...ordering } }
+        }
     );
 }
 
@@ -1019,17 +1089,20 @@ async function readQueueEntries(queue: shared.InMemoryQueueBox): Promise<shared.
 /** A round event the server published on its own track: key `game-1`, epoch 1, the server's sequence. */
 function serverRoundEvent(seq: number): shared.ALMessage {
     const message = shared.newALBroadcastMessage(
-        'server',
-        { topicId: 'room.round.event', resourceId: `round-event-${seq}`, contextId: 'group-1' },
-        'room',
-        'round.event.v1',
-        { seq },
         {
-            groupRef: groupRef('group-1'),
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 60_000,
-            ordering: { orderingKey: 'game-1', epoch: 1, seq }
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'room.round.event', resourceId: `round-event-${seq}`, contextId: 'group-1' },
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: { seq },
+            options: {
+                groupRef: groupRef('group-1'),
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 60_000,
+                ordering: { orderingKey: 'game-1', epoch: 1, seq }
+            }
         }
     );
     return { ...message, id: { ...message.id, msgId: `round-event-${seq}` } };

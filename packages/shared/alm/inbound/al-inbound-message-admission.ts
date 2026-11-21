@@ -19,6 +19,7 @@ import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { recordALInboundDiagnostic } from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
+import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
@@ -66,12 +67,15 @@ export namespace ALInboundMessageAdmission {
             | 'readRelayedAckRejection'
             | 'readRelayedRepairRequestRejection'
             | 'onResyncRequired'
+            | 'onReplayAdmitted'
             | 'orderingObserver'
             | 'receiptProofs'
             | 'diagnostics'
             | 'effectWorkerId'
         > {
         readonly workPort: ALWorkQueuePort;
+        /** The factor the lane stretches every gap renewal interval by. */
+        readonly gapRenewalStretch: number;
     }
 
     export type ReplayOutcome =
@@ -154,12 +158,16 @@ export class ALInboundMessageAdmission {
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
-        const signed = await signALInboundReceiptControls({
-            bundle: validated.right!,
-            namespace: read.namespace,
-            receiptProofs: this.dependencies.receiptProofs,
-            diagnostics: this.dependencies.diagnostics
-        });
+        const signed = toALInboundGapRenewalsDueAt(
+            await signALInboundReceiptControls({
+                bundle: validated.right!,
+                namespace: read.namespace,
+                receiptProofs: this.dependencies.receiptProofs,
+                diagnostics: this.dependencies.diagnostics
+            }),
+            nowMs,
+            this.dependencies.gapRenewalStretch
+        );
         const status = await admissionStore.commitBundle(signed);
         if (status === 'expired') {
             return Either.ofRight(ATTEMPT_EXPIRED);
@@ -280,14 +288,16 @@ export class ALInboundMessageAdmission {
         if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
             return REPLAY_STORED_SCOPE_REFUSED;
         }
-        return await this.replayAuthorized(pending.msg, authority.source);
+        return await this.replayAuthorized(pending.msg, authority, pending.source);
     }
 
-    /** One fresh attempt under the source its current authority answered with. */
+    /** One fresh attempt under the source its current authority answered with; an admission is handed to its owner. */
     private async replayAuthorized(
         msg: ALMessage,
-        source: ALInboundMessageRuntime.Source
+        authority: Extract<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>,
+        pendingSource: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageAdmission.ReplayResult> {
+        const { source } = authority;
         const authorization = await readALInboundMessageAuthorization(
             msg,
             source,
@@ -304,7 +314,16 @@ export class ALInboundMessageAdmission {
         if (result.left) {
             return toRejectedReplay(result.left);
         }
-        return toAttemptReplay(result.right!, this.shutdown.signal.aborted);
+        const attempt = result.right!;
+        if (attempt.kind === 'completed' && attempt.acceptance.kind === 'admitted' && !this.shutdown.signal.aborted) {
+            await this.dependencies.onReplayAdmitted?.({
+                msg,
+                source,
+                pendingSource,
+                snapshotVersion: authority.snapshotVersion
+            });
+        }
+        return toAttemptReplay(attempt, this.shutdown.signal.aborted);
     }
 }
 

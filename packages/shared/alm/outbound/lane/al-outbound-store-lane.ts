@@ -62,6 +62,7 @@ import type {
     ALOutboundControlAdmissionResult
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
+import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
@@ -112,6 +113,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly readiness: ALStorageReadiness;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    private readonly firstHopWait: ALOutboundFirstHopWait<TPrepared>;
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
@@ -128,12 +130,13 @@ export class ALOutboundStoreLane<TPrepared> {
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
         const { stores, runtime } = input;
-        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.clock.nowMs());
+        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.workClock.nowMs());
         const workPort = createALOutboundLaneWorkPort(input, this.leaseRecovery);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
         const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
         this.dispatchAdmission = admissions.dispatchAdmission;
         this.repairAdmission = admissions.repairAdmission;
+        this.firstHopWait = admissions.firstHopWait;
         this.receiptAdmission = admissions.receiptAdmission;
         this.repairRetransmission = admissions.repairRetransmission;
         const workType = toALOutboundWorkType(stores.admissionStore.namespace);
@@ -264,7 +267,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
         // A commit that resolves after dispose must not refill what dispose cleared.
         if (!this.disposed && result.committed && result.computed.bundle !== undefined) {
-            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.readNowMs());
+            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.input.runtime.workClock.nowMs());
         }
     }
 
@@ -276,7 +279,7 @@ export class ALOutboundStoreLane<TPrepared> {
             storageHealth?.recordFailure({ cause: verdict.cause, detail: verdict.detail });
         }
         else if (result.committed) {
-            storageHealth?.recordRecoveryPoint(this.readNowMs());
+            storageHealth?.recordRecoveryPoint(this.input.runtime.workClock.nowMs());
         }
     }
 
@@ -337,9 +340,9 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
-        const startedAtMs = this.readNowMs();
+        const startedAtMs = this.input.runtime.workClock.nowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
-        const claimDurationMs = Math.max(0, this.readNowMs() - startedAtMs);
+        const claimDurationMs = Math.max(0, this.input.runtime.workClock.nowMs() - startedAtMs);
         if (this.input.runtime.dequeueTiming !== undefined) {
             recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
                 kind: 'reservation-returns',
@@ -451,7 +454,7 @@ export class ALOutboundStoreLane<TPrepared> {
         return await settleALOutboundClaim({
             ...settlement,
             capture: this.input.runtime.receiptWorkCapture,
-            readNowMs: () => this.readNowMs()
+            readNowMs: () => this.input.runtime.workClock.nowMs()
         });
     }
 
@@ -481,7 +484,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ? toALOutboundDequeueWork(entry, this.input.runtime.readMessageFromEntry)
             : await this.input.stores.admissionStore.readWorkSnapshot(
                 entry,
-                this.input.canonicalHandoff?.takeCanonical(entry.key, this.readNowMs())
+                this.input.canonicalHandoff?.takeCanonical(entry.key, this.input.runtime.workClock.nowMs())
             );
     }
 
@@ -513,6 +516,9 @@ export class ALOutboundStoreLane<TPrepared> {
                 return await this.runPreparedSend(effect, effect.payload, deferObservation);
             case 'ack-timeout':
                 await this.repairAdmission.retryPendingAck(effect.payload.msgId);
+                return { status: 'completed' };
+            case 'first-hop-timeout':
+                await this.firstHopWait.retry(effect.payload.msgId);
                 return { status: 'completed' };
             case 'repair-hint':
                 await this.repairRetransmission.retransmitFromRepairHint(
@@ -655,7 +661,7 @@ export class ALOutboundStoreLane<TPrepared> {
             port: workPort,
             queueEngine: runtime.queueEngine,
             ownsQueueEngine: runtime.ownsQueueEngine,
-            clock: runtime.clock,
+            clock: runtime.workClock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readNextReadyAtMs: (port, nowMs) =>
                 this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port, nowMs), undefined),
@@ -683,6 +689,7 @@ export class ALOutboundStoreLane<TPrepared> {
 interface ALOutboundLaneAdmissions<TPrepared> {
     readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    readonly firstHopWait: ALOutboundFirstHopWait<TPrepared>;
     readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
 }
@@ -700,7 +707,7 @@ function createALOutboundLaneWorkPort<TPrepared>(
         queue: stores.workQueue,
         workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
-        nowMs: () => runtime.clock.nowMs(),
+        nowMs: () => runtime.workClock.nowMs(),
         random: runtime.random,
         leaseRecovery
     });
@@ -735,6 +742,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
     return {
         dispatchAdmission,
         repairAdmission: createALOutboundLaneRepairAdmission(input, controlAdmission, settlements),
+        firstHopWait: createALOutboundLaneFirstHopWait(input, dispatchAdmission, settlements),
         receiptAdmission: createALOutboundLaneReceiptAdmission(input, controlAdmission, settlements),
         repairRetransmission: new ALOutboundRepairRetransmission({
             admissionStore: stores.admissionStore,
@@ -766,6 +774,21 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
     });
 }
 
+/** A first-hop deadline resends through the lane's own dispatch admission, as a repair does. */
+function createALOutboundLaneFirstHopWait<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>,
+    settlements: ALOutboundSettlementEmitter
+): ALOutboundFirstHopWait<TPrepared> {
+    return new ALOutboundFirstHopWait({
+        admissionStore: input.stores.admissionStore,
+        dispatchAdmission,
+        clock: input.runtime.clock,
+        planOutgoingMessage: input.runtime.planOutgoingMessage,
+        settlements
+    });
+}
+
 /** Server receipts that keep conflicting wait as work beside the peer controls of the same control admission. */
 function createALOutboundLaneReceiptAdmission<TPrepared>(
     input: ALOutboundStoreLane.Input<TPrepared>,
@@ -783,9 +806,9 @@ function createALOutboundLaneReceiptAdmission<TPrepared>(
 
 /**
  * The effect kinds whose claim may commit work rows without the lane's own commit, which announces
- * what it writes: a timeout attempt writes the next timeout and a repair hint, a repair or retry
- * commits a fresh dispatch, a retained admission commits its message, and a replayed control its
- * repair and retry schedule.
+ * what it writes: a receipt timeout attempt writes the next timeout and a repair hint, a first-hop
+ * timeout its next timeout and the resend's fresh dispatch, a repair or retry commits a fresh dispatch,
+ * a retained admission commits its message, and a replayed control its repair and retry schedule.
  */
 function commitsALOutboundWorkOutsideLane<TPrepared>(kind: ALOutboundDurableEffect<TPrepared>['kind']): boolean {
     return kind !== 'send-prepared' && kind !== 'dequeue-message';
@@ -806,6 +829,7 @@ function resolveALOutboundEffectMsgId<TPrepared>(
         case 'send-prepared':
             return payload.message.msgId;
         case 'ack-timeout':
+        case 'first-hop-timeout':
         case 'repair-hint':
         case 'nack-retry':
             return payload.msgId;

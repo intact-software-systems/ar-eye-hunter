@@ -30,7 +30,15 @@ const roomMulticastTargets: ALTargets = { mode: 'multicast', groupRef: room };
 describe('validateALAckSupport', () => {
     it('maps each request name onto its ack algorithm: receiver and all-logical-recipients are one logical algorithm, group-leader is leader', () => {
         const requested = (ack: ALAckMode) =>
-            normalizeALQosPolicy(newALMulticastMessage('sender', route, room, 'chat.v1', {}, { reliability: 'at-least-once', ack }))
+            normalizeALQosPolicy(newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route,
+                groupRef: room,
+                typeId: 'chat.v1',
+                resource: {},
+                options: { reliability: 'at-least-once', ack }
+            }))
                 .requested.ack?.algo;
 
         expect(requested('receiver')).toBe('receiver');
@@ -142,7 +150,15 @@ describe('validateALAckSupport', () => {
     });
 
     it('keeps an unsupported leader request as requested instead of downgrading it', () => {
-        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, { reliability: 'at-least-once', ack: 'group-leader' });
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: room,
+            typeId: 'chat.v1',
+            resource: {},
+            options: { reliability: 'at-least-once', ack: 'group-leader' }
+        });
         const normalized = normalizeALQosPolicy(message, { capabilities: { supportedAck: ['none', 'hop'] } });
 
         expect(normalized.effective.ack.algo).toBe('leader');
@@ -162,7 +178,15 @@ describe('validateALAckSupport', () => {
     });
 
     it('keeps an unsupported receiver request as requested instead of downgrading it', () => {
-        const message = newALBroadcastMessage('sender', route, 'world', 'chat.v1', {}, { reliability: 'at-least-once', ack: 'receiver' });
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            scope: 'world',
+            typeId: 'chat.v1',
+            resource: {},
+            options: { reliability: 'at-least-once', ack: 'receiver' }
+        });
         const normalized = normalizeALQosPolicy(message);
 
         expect(normalized.effective.ack.algo).toBe('receiver');
@@ -176,7 +200,17 @@ describe('validateALAckSupport', () => {
     });
 
     it('keeps a provider-defaulted receiver instead of downgrading it', () => {
-        const message = { ...newALBroadcastMessage('sender', route, 'world', 'chat.v1', {}), delivery: undefined };
+        const message = {
+            ...newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route,
+                scope: 'world',
+                typeId: 'chat.v1',
+                resource: {}
+            }),
+            delivery: undefined
+        };
         const normalized = normalizeALQosPolicy(message, { defaults: { ack: { algo: 'receiver', opts: { timeoutMs: 250 } } } });
 
         expect(normalized.requested.ack).toBeUndefined();
@@ -185,7 +219,14 @@ describe('validateALAckSupport', () => {
 
     it('declares receiver for a carrier that tracks it, while a provider that names its own ack set keeps it', () => {
         const message = {
-            ...newALUnicastMessage('sender', route, 'peer', 'chat.v1', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route,
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {}
+            }),
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
         } as const;
         const context = { direction: 'outbound' } as const;
@@ -210,9 +251,17 @@ describe('validateALAckSupport', () => {
     });
 
     it('prefers receiver as the fallback only where the capabilities support it', () => {
-        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, {
-            reliability: 'at-least-once',
-            qos: { ack: { algo: 'subtree' } }
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: room,
+            typeId: 'chat.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                qos: { ack: { algo: 'subtree' } }
+            }
         });
         const withReceiver = normalizeALQosPolicy(message, {
             capabilities: { supportedAck: ['none', 'receiver'] }
@@ -226,9 +275,17 @@ describe('validateALAckSupport', () => {
     });
 
     it('never falls back to leader, which only a group-leader request asks for, and declares no leader by default', () => {
-        const message = newALMulticastMessage('sender', route, room, 'chat.v1', {}, {
-            reliability: 'at-least-once',
-            qos: { ack: { algo: 'subtree' } }
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: room,
+            typeId: 'chat.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                qos: { ack: { algo: 'subtree' } }
+            }
         });
         const withLeader = normalizeALQosPolicy(message, { capabilities: { supportedAck: ['none', 'leader'] } });
 

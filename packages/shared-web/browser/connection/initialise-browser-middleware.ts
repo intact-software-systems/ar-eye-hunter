@@ -10,6 +10,7 @@ import {
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
@@ -96,23 +97,31 @@ import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts'
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
 import { toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
-import {
-    closeBrowserTransportResources,
-    reportBrowserStartupCleanupFailure
-} from './close-browser-transport-resources.ts';
-import {
-    createBrowserRtcHeldOfferReleases,
-    createBrowserRtcPeerAdmission
-} from './create-browser-rtc-peer-admission.ts';
-import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
+import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
+import {
+    closeBrowserTransportResources,
+    reportBrowserConnectionCleanupFailure
+} from './close-browser-transport-resources.ts';
+import {
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from './create-browser-rtc-peer-admission.ts';
+import {
+    readBrowserServerCreationEpochMs,
+    readBrowserServerExpiryEpochMs,
+    type BrowserServerClockSession
+} from './server-clock/browser-server-clock-session.ts';
+import { startDefaultBrowserServerClockSession } from './server-clock/start-default-browser-server-clock-session.ts';
+import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 export interface MiddlewareInitOptions {
+    readonly groupPresence?: RallarGroupPresencePolicy;
     readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly qosProvider: ALQosInputProvider;
     readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
@@ -148,6 +157,7 @@ export interface BrowserConnectOptions extends MiddlewareInitOptions {
 
 /** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
 export interface BrowserConnectedMiddleware {
+    readonly serverClock: BrowserServerClockSession.Port;
     readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly middleware: RallarBrowserMiddleware;
     readonly checkpoints: readonly ALCheckpointPort[];
@@ -178,6 +188,9 @@ export interface BrowserRttEgressInput {
 }
 
 export interface InitialiseBrowserTransportInput {
+    readonly nowEpochMs: () => number;
+    readonly rttCreationNowEpochMs: () => number;
+    readonly workNowEpochMs: () => number;
     readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
     readonly creation: BrowserMiddlewareCreation;
     readonly session: AuthSession;
@@ -197,10 +210,10 @@ export interface InitialiseBrowserTransportInput {
     readonly options: BrowserConnectOptions;
 }
 
-/** The connect's publication capabilities: its session's key, awaited once, and the page's verifier. */
-export type BrowserTransportPublication = Pick<
+/** Dependencies acquired before transport construction: calibrated time, the session key and page verifier. */
+export type BrowserTransportDependencies = Pick<
     InitialiseBrowserTransportInput,
-    'publicationCrypto' | 'publicationVerifier'
+    'publicationCrypto' | 'publicationVerifier' | 'nowEpochMs' | 'workNowEpochMs' | 'rttCreationNowEpochMs'
 >;
 
 interface BrowserWebSocketTransport {
@@ -214,6 +227,11 @@ interface BrowserRtcTransport {
     readonly rtcRxStreamer: WebRtcRxStreamerService;
     readonly webRtcGroupManager: WebRtcGroupManager;
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+}
+
+interface BrowserSessionPresence {
+    readonly heartbeat: RallarBrowserMiddleware['heartbeat'];
+    readonly ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration;
 }
 
 interface BrowserTransports {
@@ -258,16 +276,19 @@ export function createBrowserRttHeartbeatMessage(
     createMessage: typeof newALUntargetedMessage
 ): ALMessage {
     return createMessage<RttMeasurementInfo>(
-        sessionId,
-        newALRoute(
-            AppTopics.rtt,
-            pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
-            `${rtt.version}`
-        ),
-        AppTopics.rtt,
-        rtt,
         {
-            ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS
+            createdAtEpochMs: rtt.createdAtEpochMs,
+            senderId: sessionId,
+            route: newALRoute(
+                AppTopics.rtt,
+                pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
+                `${rtt.version}`
+            ),
+            typeId: AppTopics.rtt,
+            resource: rtt,
+            options: {
+                ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS
+            }
         }
     );
 }
@@ -277,58 +298,60 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: BrowserConnectOptions
 ): Promise<BrowserConnectedMiddleware> {
-    const runtimeStorage = new ALRuntimeStorage();
+    const apiBaseUrl = readApiBaseUrl();
+    const publicationCrypto = await options.publicationCrypto;
+    const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }, apiBaseUrl), options);
     let transports: BrowserTransports | undefined;
+    const serverClock = await startDefaultBrowserServerClockSession({
+        baseUrl: apiBaseUrl,
+        serverPeerId: apiConfig.serverPeerId,
+        readSocket: () => transports?.webSocketTransport.webSocketQueueBox.socket.ws,
+        signal: options.signal
+    });
+    const runtimeStorage = new ALRuntimeStorage();
+    let presence: BrowserSessionPresence | undefined;
     try {
         const storageAvailability = initialiseBrowserRuntimeStores(
             session.sessionId,
             options.scope ?? defaultStateScope(),
-            { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
+            { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage, serverClock }
         );
-        const transportInput = createBrowserTransportInput(session, options, {
-            publicationCrypto: await options.publicationCrypto,
+        const transportInput = createBrowserTransportInput(session, { ...options, signal: serverClock.signal }, {
+            nowEpochMs: () => readBrowserServerExpiryEpochMs(serverClock),
+            rttCreationNowEpochMs: () => readBrowserServerCreationEpochMs(serverClock),
+            workNowEpochMs: () => serverClock.readWorkEpochMs(),
+            publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
-        const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }), options);
         transports = await initialiseBrowserTransports(transportInput, rtcSignalingTopicId, apiConfig);
-        const { webSocketTransport, rtcTransport } = transports;
-        const bootstrapDegree = resolveBootstrapDegree({
-            bootstrapDegree: options.bootstrapDegree,
-            maxPeerConnections: options.maxPeerConnections
-        });
-        await initialiseBrowserStateTransport({
-            ...transportInput,
-            webSocketQueueBox: webSocketTransport.webSocketQueueBox,
-            webRtcGroupManager: rtcTransport.webRtcGroupManager,
-            bootstrapDegree
-        });
-        const ownWsConnectionGeneration = createBrowserOwnWsConnectionGeneration(
-            session,
-            options.scope ?? defaultStateScope(),
-            webSocketTransport.webSocketQueueBox
-        );
-        const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
-        const { checkpointStores } = transportInput;
+        presence = await initialiseBrowserSessionPresence(transportInput, transports);
+        serverClock.signal.throwIfAborted();
         return {
-            rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
+            serverClock,
+            rtcCaptureReceipt: transports.rtcTransport.rtcCaptureReceipt,
             middleware: toBrowserMiddleware(transportInput, {
-                ...webSocketTransport,
-                ...rtcTransport,
-                heartbeat: heartbeatHandle,
-                ownWsConnectionGeneration,
+                ...transports.webSocketTransport,
+                ...transports.rtcTransport,
+                ...presence,
                 runtimeStorage,
                 storageAvailability
             }),
-            checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
+            checkpoints: [
+                transportInput.checkpointStores.wsClient.checkpoint,
+                transportInput.checkpointStores.rtcOverlay.checkpoint
+            ]
         };
     }
     catch (caught) {
         await closeBrowserTransportResources({
             ...transports?.webSocketTransport,
             ...transports?.rtcTransport,
-            runtimeStorage
+            heartbeat: presence?.heartbeat
         })
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
+        // Startup still owns this unpublished clock. Queue work can read it while the transports drain.
+        await closeBrowserTransportResources({ serverClock, runtimeStorage })
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -350,7 +373,7 @@ async function initialiseBrowserTransports(
     }
     catch (caught) {
         await closeBrowserTransportResources(webSocketTransport)
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -358,7 +381,7 @@ async function initialiseBrowserTransports(
 export function createBrowserTransportInput(
     session: AuthSession,
     options: BrowserConnectOptions,
-    publication: BrowserTransportPublication
+    dependencies: BrowserTransportDependencies
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -368,7 +391,7 @@ export function createBrowserTransportInput(
     const volatileBound = createBrowserSessionVolatileBound({
         readVolatileSessionLimits: options.readVolatileSessionLimits,
         qosProvider: options.qosProvider,
-        nowMs: Date.now
+        nowMs: dependencies.nowEpochMs
     });
     return {
         connectionId: readBrowserConnectionIdentity(),
@@ -378,7 +401,11 @@ export function createBrowserTransportInput(
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
             volatileBound.budget,
-            options.diagnosticsPorts.storage
+            {
+                storage: options.diagnosticsPorts.storage,
+                nowMs: dependencies.nowEpochMs,
+                workNowMs: dependencies.workNowEpochMs
+            }
         ),
         volatileBound,
         inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
@@ -388,7 +415,7 @@ export function createBrowserTransportInput(
         }),
         publicationStageLimits: options.readPublicationStageLimits(),
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
-        ...publication,
+        ...dependencies,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -424,11 +451,27 @@ function createBrowserOwnWsConnectionGeneration(
     });
 }
 
-function initialiseBrowserHeartbeat(
+async function initialiseBrowserSessionPresence(
     input: InitialiseBrowserTransportInput,
-    ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
-): ReturnType<typeof heartbeat.initHeartbeat> {
-    return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
+    transports: BrowserTransports
+): Promise<BrowserSessionPresence> {
+    const { webSocketTransport, rtcTransport } = transports;
+    await initialiseBrowserStateTransport({
+        ...input,
+        webSocketQueueBox: webSocketTransport.webSocketQueueBox,
+        webRtcGroupManager: rtcTransport.webRtcGroupManager,
+        bootstrapDegree: resolveBootstrapDegree(input.options)
+    });
+    const ownWsConnectionGeneration = createBrowserOwnWsConnectionGeneration(
+        input.session,
+        input.options.scope ?? defaultStateScope(),
+        webSocketTransport.webSocketQueueBox
+    );
+    const heartbeatHandle = await heartbeat.initHeartbeat(
+        input.clientData,
+        toBrowserHeartbeatOptions(input, ownWsConnectionGeneration)
+    );
+    return { heartbeat: heartbeatHandle, ownWsConnectionGeneration };
 }
 
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
@@ -461,6 +504,8 @@ export function toBrowserWebSocketQueueBoxInput(
 ): CreateBrowserWebSocketQueueBox.Input {
     return {
         ...carrier,
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
         checkpointStores: input.checkpointStores.wsClient,
@@ -486,6 +531,8 @@ export function toRtcOverlayMulticastManagerInput(
 ): rtcEngine.InitialiseRtcOverlayMulticastManagerInput {
     return {
         ...carrier,
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
         checkpointStores: input.checkpointStores.rtcOverlay,
@@ -521,6 +568,7 @@ function toCommandOptions<T>(
 }
 
 interface BrowserRuntimeStorageInput {
+    readonly serverClock: BrowserServerClockSession.Port;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly runtimeStorage: ALRuntimeStorage;
 }
@@ -530,12 +578,25 @@ function initialiseBrowserRuntimeStores(
     scope: StateScope,
     storage: BrowserRuntimeStorageInput
 ): BrowserALStorageAvailability {
-    const { diagnosticsPorts, runtimeStorage } = storage;
+    const { diagnosticsPorts, runtimeStorage, serverClock } = storage;
     initialiseBrowserCacheRepositories();
-    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts, runtimeStorage });
-    initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage: diagnosticsPorts.storage }).catch((error) =>
-        console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
-    );
+    const storageAvailability = configureBrowserALRuntimeStores(sessionId, {
+        scope,
+        diagnosticsPorts,
+        runtimeStorage,
+        nowMs: () => readBrowserServerExpiryEpochMs(serverClock),
+        workNowMs: () => serverClock.readWorkEpochMs()
+    });
+    initBrowserALRuntimeExpiryEviction({
+        currentScope: scope,
+        storage: diagnosticsPorts.storage,
+        signal: serverClock.signal,
+        nowMs: () => readBrowserServerCreationEpochMs(serverClock)
+    }).catch((error) => {
+        if (!serverClock.signal.aborted) {
+            reportBrowserConnectionCleanupFailure(toError(error));
+        }
+    });
     return storageAvailability;
 }
 
@@ -544,7 +605,7 @@ async function initialiseBrowserWebSocketTransport(
     apiConfig: ApiConfigResponse
 ): Promise<BrowserWebSocketTransport> {
     const socket = createBrowserWebSocketClient(input, apiConfig);
-    const qboxEngine = createBrowserQueueBoxEngine();
+    const qboxEngine = createBrowserQueueBoxEngine(input.workNowEpochMs);
     let webSocketQueueBox: WsQueueBoxClientService;
     try {
         webSocketQueueBox = await createBrowserWebSocketQueueBox(
@@ -559,7 +620,7 @@ async function initialiseBrowserWebSocketTransport(
         });
     }
     catch (caught) {
-        await qboxEngine.stop().catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        await qboxEngine.stop().catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
     return { qboxEngine, webSocketQueueBox };
@@ -570,12 +631,12 @@ function createBrowserWebSocketClient(
     apiConfig: ApiConfig
 ): JsonWebSocketClient {
     return new JsonWebSocketClient(
-        async (options) => await createBrowserWebSocketUrl(input, apiConfig, options),
+        async (options) => await readBrowserWebSocketUrl(input, apiConfig, options),
         input.options.diagnosticsPorts.transportFaultPort
     );
 }
 
-async function createBrowserWebSocketUrl(
+async function readBrowserWebSocketUrl(
     input: InitialiseBrowserTransportInput,
     apiConfig: ApiConfig,
     connectOptions: WebSocketConnectOptions
@@ -621,6 +682,9 @@ async function initialiseBrowserRtcTransport(
         const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
             {
                 webRtcOverlayMulticastManager,
+                nowEpochMs: input.nowEpochMs,
+                rttCreationNowEpochMs: input.rttCreationNowEpochMs,
+                workNowEpochMs: input.workNowEpochMs,
                 publicationCrypto: input.publicationCrypto,
                 qboxEngine: input.webSocketTransport.qboxEngine,
                 clientData: input.clientData,
@@ -635,7 +699,7 @@ async function initialiseBrowserRtcTransport(
         acquired.rtcRxStreamer = rtcRxStreamer;
         registerBrowserRttEgress(input, rtcRxStreamer);
         registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
-        const webRtcGroupManager = createBrowserRtcGroupManager(
+        const webRtcGroupManager = initBrowserRtcGroupManager(
             input,
             connection,
             rtcRxStreamer
@@ -651,7 +715,7 @@ async function initialiseBrowserRtcTransport(
     }
     catch (caught) {
         await closeBrowserTransportResources(acquired)
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -739,6 +803,7 @@ async function initialiseBrowserRtcConnection(
 ): Promise<BrowserRtcConnection> {
     const groupPeerLedger = createBrowserGroupPeerLedger(input);
     const initialization = await rtcEngine.initialiseRtcConnectionService({
+        creationEpochMs: input.rttCreationNowEpochMs,
         rtcCaptureConfiguration: input.options.rtcCaptureConfiguration,
         connectionId: input.connectionId,
         webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,
@@ -786,7 +851,7 @@ function registerBrowserRtcPeerStreaming(
     });
 }
 
-function createBrowserRtcGroupManager(
+function initBrowserRtcGroupManager(
     input: InitialiseBrowserRtcTransportInput,
     connection: BrowserRtcConnection,
     rtcRxStreamer: WebRtcRxStreamerService

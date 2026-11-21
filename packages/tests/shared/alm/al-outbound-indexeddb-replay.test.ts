@@ -57,7 +57,8 @@ describe('outbound IndexedDB durable queue replay', () => {
             durableEffects: ['malformed', 'valid'].map((msgId) => ({
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
-            }))
+            })),
+            endedTimeoutEffectIds: []
         });
         const malformedKey = toALOutboundWorkKey('outbound', 'malformed');
         const original = await backend.workQueue.getItem(malformedKey);
@@ -100,12 +101,15 @@ describe('outbound IndexedDB durable queue replay', () => {
         const { admissionStore, stores } = createAdmission(storage);
         const messages = ['complete', 'partial'].map((resourceId) =>
             newALMulticastMessage(
-                'self',
-                { topicId: 'chat', resourceId, contextId: 'room' },
-                { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-                'chat.message.v1',
-                { text: resourceId },
-                { ttlMs: 30_000, ack: 'receiver', reliability: 'at-least-once' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { topicId: 'chat', resourceId, contextId: 'room' },
+                    groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                    typeId: 'chat.message.v1',
+                    resource: { text: resourceId },
+                    options: { ttlMs: 30_000, ack: 'receiver', reliability: 'at-least-once' }
+                }
             )
         );
         const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
@@ -246,6 +250,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             dbName: dbName,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -316,7 +321,8 @@ describe('outbound IndexedDB durable queue replay', () => {
         await admissionStore.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
-            durableEffects: [{ effectId: 'lease-fence', retryAtMs: nowMs, payload: { kind: 'ack-timeout', msgId: msg.id.msgId } }]
+            durableEffects: [{ effectId: 'lease-fence', retryAtMs: nowMs, payload: { kind: 'ack-timeout', msgId: msg.id.msgId } }],
+            endedTimeoutEffectIds: []
         });
         const [oldClaim] = await claimOne(port);
         vi.setSystemTime(nowMs + 10_001);
@@ -411,7 +417,8 @@ describe('outbound IndexedDB durable queue replay', () => {
         await admissionStore.commitBundle({
             senderId: 'self',
             mutations: [],
-            durableEffects: [{ effectId: 'exhausted', payload: { kind: 'ack-timeout', msgId: 'exhausted' } }]
+            durableEffects: [{ effectId: 'exhausted', payload: { kind: 'ack-timeout', msgId: 'exhausted' } }],
+            endedTimeoutEffectIds: []
         });
 
         for (let attempt = 1; attempt <= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
@@ -440,7 +447,8 @@ describe('outbound IndexedDB durable queue replay', () => {
         await admissionStore.commitBundle({
             senderId: 'self',
             mutations: [],
-            durableEffects: [{ effectId: 'crashed-last-attempt', payload: { kind: 'ack-timeout', msgId: 'crashed-last-attempt' } }]
+            durableEffects: [{ effectId: 'crashed-last-attempt', payload: { kind: 'ack-timeout', msgId: 'crashed-last-attempt' } }],
+            endedTimeoutEffectIds: []
         });
         for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
             const [claimed] = await claimOne(port);
@@ -567,6 +575,7 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb'): ReplayA
             dbName: `outbound-replay-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

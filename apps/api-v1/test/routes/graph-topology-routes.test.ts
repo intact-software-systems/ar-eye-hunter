@@ -2,6 +2,8 @@ import { test } from 'bun:test';
 import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -19,6 +21,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
@@ -624,6 +627,7 @@ function createRouteApp(options: {
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
     readonly strictReadAuthorization?: boolean;
+    readonly reshapeGates?: graphTopologyRoutes.GraphTopologyRouteDependencies['reshapeGates'];
 }): Hono {
     const app = createTracedApiTestApp();
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
@@ -692,6 +696,7 @@ function createRouteApp(options: {
                     }))
         },
         readPlannedLayoutFingerprint: options.readPlannedLayoutFingerprint ?? (() => Promise.resolve(null)),
+        reshapeGates: options.reshapeGates ?? { readTopologyReshapeGate: () => Promise.resolve(null) },
         processTopologyAppInbox: options.processTopologyAppInbox ??
             ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
         now: () => 123_456
@@ -1356,6 +1361,7 @@ test('formation view carries exactly the fields the view declares', async () => 
         'formationAttemptCount',
         'formationEpoch',
         'groupRef',
+        'heldReshape',
         'lastFormationOutcome',
         'layoutStale',
         'lifecycleState',
@@ -1365,4 +1371,132 @@ test('formation view carries exactly the fields the view declares', async () => 
         'readiness',
         'remediation'
     ]);
+});
+
+const HELD_GATE: TopologyReshapeGateState = {
+    gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 1, heldAtEpochMs: 103_000 },
+    wantedReasons: ['kind-change']
+};
+
+function reshapeGatesStoring(state: TopologyReshapeGateState | null) {
+    return { readTopologyReshapeGate: () => Promise.resolve(state === null ? null : { state, revision: 3 }) };
+}
+
+test('formation view states the reshape the gate holds for an active room, from one read of the record', async () => {
+    const reads: GroupRef[] = [];
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+        reshapeGates: {
+            readTopologyReshapeGate: (ref) => {
+                reads.push(ref);
+                return Promise.resolve({ state: HELD_GATE, revision: 3 });
+            }
+        }
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.heldReshape, { wantedReasons: ['kind-change'], opensAtEpochMs: 130_000 });
+    assert.equal(reads.length, 1);
+});
+
+test('formation view reads the gate record before the topology view', async () => {
+    const reads: string[] = [];
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+        topologyQuery: {
+            readTopologyView: (groupRef) => {
+                reads.push('topology-view');
+                return topologyQueryWith(null, null).readTopologyView(groupRef);
+            }
+        },
+        reshapeGates: {
+            readTopologyReshapeGate: () => {
+                reads.push('reshape-gate');
+                return Promise.resolve({ state: HELD_GATE, revision: 3 });
+            }
+        }
+    });
+
+    await readFormationView(app);
+
+    assert.deepEqual(reads, ['reshape-gate', 'topology-view']);
+});
+
+test('formation view states no held reshape outside the stage the gate applies in', async () => {
+    for (const lifecycleState of ['dormant', 'forming', 'planned', 'connecting', 'reconfiguring', 'reconnecting'] as const) {
+        const app = createRouteApp({
+            group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), lifecycleState),
+            reshapeGates: reshapeGatesStoring(HELD_GATE)
+        });
+
+        assert.equal((await readFormationView(app)).heldReshape, null, lifecycleState);
+    }
+});
+
+test('formation view states no held reshape for a room that stores no gate or wants nothing', async () => {
+    for (const state of [null, { ...HELD_GATE, wantedReasons: [] }]) {
+        const app = createRouteApp({
+            group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+            reshapeGates: reshapeGatesStoring(state)
+        });
+
+        assert.equal((await readFormationView(app)).heldReshape, null);
+    }
+});
+
+test('formation view does not fail the held reshape closed under an unreadable policy', async () => {
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'corrupt' as const, reason: 'Stored policy does not decode' }),
+        reshapeGates: reshapeGatesStoring(HELD_GATE)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.maxFormationAttempts, null);
+    assert.deepEqual(view.heldReshape, { wantedReasons: ['kind-change'], opensAtEpochMs: 130_000 });
+});
+
+test('formation view opens the gate by the bounds the planning authority read', async () => {
+    const group = withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active');
+    const app = createRouteApp({
+        group,
+        topologyPlanning: {
+            readTopologyPlanningAuthority: () =>
+                Promise.resolve({
+                    group,
+                    config: createTopologyConfigView(),
+                    kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
+                    rttReportingDegreeLimit: 5,
+                    rttMeasurements: [],
+                    rttReplanMinimumLayoutAgeMs: 15_000,
+                    replanning: 'auto' as const,
+                    reshapeBounds: { minIntervalMs: 20_000, maxIntervalMs: 40_000 },
+                    nowEpochMs: 123_456
+                })
+        },
+        reshapeGates: reshapeGatesStoring({ ...HELD_GATE, gate: { ...HELD_GATE.gate, consecutiveHeldPasses: 0 } })
+    });
+
+    assert.deepEqual((await readFormationView(app)).heldReshape, { wantedReasons: ['kind-change'], opensAtEpochMs: 120_000 });
+});
+
+test('formation view fails rather than state no held reshape when the gate record is unreadable', async () => {
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'active'),
+        reshapeGates: {
+            readTopologyReshapeGate: () =>
+                Promise.reject(
+                    new RtcTopologyRepositoryInvariantCorruptionError(
+                        groupStateGroupStorageKey({ ...TEST_SCOPE, groupId: 'room-1' }),
+                        'Stored RTC topology reshape gate fields are invalid'
+                    )
+                )
+        }
+    });
+
+    const response = await app.request(FORMATION_PATH, { headers: { authorization: 'Bearer token' } });
+
+    assert.equal(response.status, 400);
 });

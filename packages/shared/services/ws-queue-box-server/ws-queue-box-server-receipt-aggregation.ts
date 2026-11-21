@@ -168,8 +168,6 @@ export namespace WsQueueBoxServerReceiptAggregation {
     }
 
     export interface RecordedAdmission {
-        /** False when the message's aggregate was already live: the admission that started it wrote its receipt. */
-        readonly started: boolean;
         readonly admitted: ALReceiptPayload;
         /** The `timed-out` receipt of the oldest aggregate, absent unless this admission found the cap reached. */
         readonly evicted: IssuedReceipt | undefined;
@@ -266,24 +264,22 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap.
-     * An empty audience is complete as it is admitted.
+     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap,
+     * for a message whose aggregate is not live. An empty audience is complete as it is admitted.
      */
     recordAdmission(
         admission: WsQueueBoxServerReceiptAggregation.Admission
     ): WsQueueBoxServerReceiptAggregation.RecordedAdmission {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
         const nowMs = this.#dependencies.clock.nowMs();
-        const live = this.#aggregates.readAt(key, nowMs);
-        const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
-        const started = live === undefined;
-        if (!started || aggregate.expectedRecipientPeerIds.length === 0) {
-            return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
+        const aggregate = { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
+        if (aggregate.expectedRecipientPeerIds.length === 0) {
+            return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
         }
         const evicted = this.takeOldestAggregateAtCap(nowMs);
         this.#aggregates.acceptAt({ key, value: aggregate, nowEpochMs: nowMs });
         this.#deadlines.add(key, aggregate.deadlineAtMs);
-        return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
+        return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
     }
 
     /** A counted ACK; its `complete` receipt when it answers for the last expected recipient, none before. */
@@ -372,12 +368,30 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * A message the server admitted, or retained for admission, starts its receipt here, once: a
-     * re-sent message the runtime answers `pending-admission` again finds its aggregate already live.
+     * A message the server admitted starts its receipt here, once; one it keeps for admission starts none until its
+     * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission finds
+     * the aggregate live and is answered `admitted` again with what the aggregate has counted, to that sender alone,
+     * so a lost `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
+     * nothing. Where no aggregate is live (it has ended, or another instance holds it) a copy is answered
+     * nothing either: the stated limit.
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const kind = admitted.acceptance?.kind;
-        if (admitted.roomAudience === undefined || (kind !== 'admitted' && kind !== 'pending-admission')) {
+        if (admitted.roomAudience === undefined) {
+            return;
+        }
+        const nowMs = this.#dependencies.clock.nowMs();
+        const live = this.#aggregates.readAt(
+            toReceiptAggregateKey(admitted.originPeerId, admitted.message.id.msgId),
+            nowMs
+        );
+        if (live !== undefined) {
+            if (kind === 'duplicate' || kind === 'pending-admission') {
+                await this.writeReceipt(toIssuedReceipt(live, 'admitted', nowMs));
+            }
+            return;
+        }
+        if (kind !== 'admitted') {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
@@ -385,9 +399,6 @@ export class WsQueueBoxServerReceiptAggregation {
             return;
         }
         const recorded = this.recordAdmission(admission);
-        if (!recorded.started) {
-            return;
-        }
         if (recorded.evicted !== undefined) {
             await this.writeReceipt(recorded.evicted);
         }
@@ -551,6 +562,44 @@ export class WsQueueBoxServerReceiptAggregation {
             }
         }
     }
+}
+
+/**
+ * A kept WS client send its replay admitted, as the admission that starts its receipt; none when its source is
+ * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version. The receipt expects
+ * the audience the replay's authority answered with, unless that authority left it nobody to expect while the
+ * audience captured at ingress had someone: then it expects the captured audience.
+ */
+export function toWsQueueBoxServerReplayedAdmittedMessage(
+    replayed: ALInboundMessageRuntime.ReplayedAdmission
+): WsQueueBoxServerReceiptAggregation.AdmittedMessage | undefined {
+    const { source, snapshotVersion } = replayed;
+    if (source.kind !== 'ws-client' || source.groupRecipientPeerIds === undefined || snapshotVersion === undefined) {
+        return undefined;
+    }
+    return {
+        message: replayed.msg,
+        originPeerId: source.peerId,
+        roomAudience: {
+            recipientPeerIds: resolveReplayedRecipientPeerIds(replayed, source.groupRecipientPeerIds),
+            snapshotVersion
+        },
+        acceptance: { kind: 'admitted' }
+    };
+}
+
+function resolveReplayedRecipientPeerIds(
+    { msg, pendingSource }: ALInboundMessageRuntime.ReplayedAdmission,
+    replayedRecipientPeerIds: readonly string[]
+): readonly string[] {
+    if (pendingSource.kind !== 'ws-client' || pendingSource.groupRecipientPeerIds === undefined) {
+        return replayedRecipientPeerIds;
+    }
+    const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
+    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
+            toFrozenAudience(msg, originPeerId, captured).length > 0
+        ? captured
+        : replayedRecipientPeerIds;
 }
 
 /**

@@ -52,16 +52,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
         const expiresAtMs = nowMs + 1_000;
         const msg = shared.newALUnicastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'expiring',
-                contextId: 'room-1'
-            },
-            'peer-2',
-            'chat.message.v1',
-            {},
-            { ttlMs: 1_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'expiring',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-2',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ttlMs: 1_000 }
+            }
         );
         if (boundary === 'encoding') {
             const encode = socket.encode.bind(socket);
@@ -102,16 +105,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALUnicastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-0',
-                contextId: 'room-1'
-            },
-            'peer-2',
-            'chat.private-text.v1',
-            {
-                text: 'direct'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-0',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-2',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'direct'
+                }
             }
         );
 
@@ -161,20 +167,23 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALBroadcastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-broadcast',
-                contextId: 'room-1'
-            },
-            'room',
-            'chat.message.v1',
-            {
-                text: 'broadcast'
-            },
-            {
-                groupRef: groupRef('room-1'),
-                exceptPeerIds: ['peer-2']
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-broadcast',
+                    contextId: 'room-1'
+                },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'broadcast'
+                },
+                options: {
+                    groupRef: groupRef('room-1'),
+                    exceptPeerIds: ['peer-2']
+                }
             }
         );
 
@@ -209,7 +218,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const delivery = { reliability: 'at-least-once', ack: 'receiver' } as const;
 
         const world = await service.enqueueOutboxIfAbsent(
-            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery),
+            shared.newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route,
+                scope: 'world',
+                typeId: 'chat.message.v1',
+                resource: { text: 'everyone' },
+                options: delivery
+            }),
             { admittedAudience: undefined, admittedConnectionGenerationIds: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
@@ -222,12 +239,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(await outbox.getAllKeys()).toEqual([]);
 
         const roomBroadcast = shared.newALBroadcastMessage(
-            'server-1',
-            { ...route, resourceId: 'msg-room-receiver', contextId: 'room-1' },
-            'room',
-            'chat.message.v1',
-            { text: 'room' },
-            { ...delivery, groupRef: groupRef('room-1') }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: { ...route, resourceId: 'msg-room-receiver', contextId: 'room-1' },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'room' },
+                options: { ...delivery, groupRef: groupRef('room-1') }
+            }
         );
         const room = await service.enqueueOutboxIfAbsent(roomBroadcast);
 
@@ -250,18 +270,21 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             });
             onTestFinished(() => service.dispose());
             const msg = shared.newALBroadcastMessage(
-                'server-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-partial-failure',
-                    contextId: 'room-1'
-                },
-                'room',
-                'chat.message.v1',
-                {
-                    text: 'partial'
-                },
-                { groupRef: groupRef('room-1') }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-partial-failure',
+                        contextId: 'room-1'
+                    },
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'partial'
+                    },
+                    options: { groupRef: groupRef('room-1') }
+                }
             );
 
             const result = service.sendToTargetsWithResult({ message: msg, sentPositions: null });
@@ -300,12 +323,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         });
         onTestFinished(() => service.dispose());
         const msg = shared.newALBroadcastMessage(
-            'server-1',
-            { topicId: 'chat', resourceId: 'msg-dropped-frame', contextId: 'room-1' },
-            'room',
-            'chat.message.v1',
-            { text: 'dropped' },
-            { groupRef: groupRef('room-1') }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: { topicId: 'chat', resourceId: 'msg-dropped-frame', contextId: 'room-1' },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'dropped' },
+                options: { groupRef: groupRef('room-1') }
+            }
         );
 
         const result = service.sendToTargetsWithResult({ message: msg, sentPositions: null });
@@ -334,18 +360,21 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALBroadcastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-empty-broadcast',
-                contextId: 'room-1'
-            },
-            'room',
-            'chat.message.v1',
-            {
-                text: 'nobody hears this'
-            },
-            { groupRef: groupRef('room-1') }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-empty-broadcast',
+                    contextId: 'room-1'
+                },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'nobody hears this'
+                },
+                options: { groupRef: groupRef('room-1') }
+            }
         );
 
         const result = await service.enqueueOutboxIfAbsent(msg);
@@ -373,21 +402,24 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-multi',
-                contextId: 'room-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'multicast'
-            },
-            {
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-multi',
+                    contextId: 'room-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'multicast'
+                },
+                options: {
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -416,16 +448,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const expiresAtMs = Date.UTC(2027, 0, 1, 0, 5, 0);
         const msg = {
             ...shared.newALUnicastMessage(
-                'server-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-persisted',
-                    contextId: 'room-1'
-                },
-                'peer-2',
-                'chat.private-text.v1',
-                {
-                    text: 'persisted'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-persisted',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'peer-2',
+                    typeId: 'chat.private-text.v1',
+                    resource: {
+                        text: 'persisted'
+                    }
                 }
             ),
             delivery: {
@@ -453,18 +488,21 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const keysBeforeInvalidMessage = await outbox.getAllKeys();
         const invalidRoomMessage = shared.newALBroadcastMessage(
-            'server-1',
             {
-                topicId: 'room.chat',
-                resourceId: 'msg-invalid-persisted-room',
-                contextId: 'room-1'
-            },
-            'room',
-            'chat.message.v1',
-            { text: 'must not persist' },
-            {
-                reliability: 'at-least-once',
-                ack: 'receiver'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'room.chat',
+                    resourceId: 'msg-invalid-persisted-room',
+                    contextId: 'room-1'
+                },
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'must not persist' },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             }
         );
 
@@ -489,15 +527,18 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALUntargetedMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-untargeted',
-                contextId: 'room-1'
-            },
-            'chat.message.v1',
-            {
-                text: 'no target'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-untargeted',
+                    contextId: 'room-1'
+                },
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'no target'
+                }
             }
         );
 
@@ -525,20 +566,23 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-unresolved',
-                contextId: 'room-1'
-            },
-            groupRef('missing-group'),
-            'chat.message.v1',
-            {
-                text: 'unknown group'
-            },
-            {
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-unresolved',
+                    contextId: 'room-1'
+                },
+                groupRef: groupRef('missing-group'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'unknown group'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients'
+                }
             }
         );
 
@@ -572,23 +616,26 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         onTestFinished(() => service.dispose());
 
         const msg = shared.newALMulticastMessage(
-            'server-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-repair',
-                contextId: 'room-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'multicast'
-            },
-            {
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                qos: {
-                    durability: {
-                        algo: 'volatile'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-repair',
+                    contextId: 'room-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'multicast'
+                },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    qos: {
+                        durability: {
+                            algo: 'volatile'
+                        }
                     }
                 }
             }
@@ -638,16 +685,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         );
 
         const msg = shared.newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'rtc',
-                resourceId: 'signal-1',
-                contextId: 'peer-2'
-            },
-            'peer-2',
-            'rtc',
-            {
-                signalType: 'Offer'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'rtc',
+                    resourceId: 'signal-1',
+                    contextId: 'peer-2'
+                },
+                toPeerId: 'peer-2',
+                typeId: 'rtc',
+                resource: {
+                    signalType: 'Offer'
+                }
             }
         );
 
@@ -675,16 +725,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             authorize: async () => ({ authorized: true })
         });
         const msg = shared.newALBroadcastMessage(
-            'peer-1',
             {
-                topicId: 'room.manual.message',
-                resourceId: 'room-broadcast-1',
-                contextId: 'group-1'
-            },
-            'room',
-            'room.manual.message',
-            { text: 'hello room' },
-            { groupRef: groupRef('group-1') }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'room.manual.message',
+                    resourceId: 'room-broadcast-1',
+                    contextId: 'group-1'
+                },
+                scope: 'room',
+                typeId: 'room.manual.message',
+                resource: { text: 'hello room' },
+                options: { groupRef: groupRef('group-1') }
+            }
         );
 
         await socket.receive(msg, 'conn-1');
@@ -714,16 +767,19 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         });
         onTestFinished(() => service.dispose());
         const msg = shared.newALBroadcastMessage(
-            'peer-1',
             {
-                topicId: 'room.manual.message',
-                resourceId: 'room-broadcast-2',
-                contextId: 'group-1'
-            },
-            'room',
-            'room.manual.message',
-            { text: 'hello room' },
-            { groupRef: groupRef('group-1') }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'room.manual.message',
+                    resourceId: 'room-broadcast-2',
+                    contextId: 'group-1'
+                },
+                scope: 'room',
+                typeId: 'room.manual.message',
+                resource: { text: 'hello room' },
+                options: { groupRef: groupRef('group-1') }
+            }
         );
 
         await socket.receive(msg, 'conn-1');
@@ -754,15 +810,18 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         );
 
         const msg = shared.newALUntargetedMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'room-1'
-            },
-            'chat.message.v1',
-            {
-                text: 'hello'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'room-1'
+                },
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                }
             }
         );
 
@@ -796,15 +855,18 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const seq2 = {
             ...shared.newALUntargetedMessage(
-                'peer-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-2',
-                    contextId: 'room-1'
-                },
-                'chat.message.v1',
-                {
-                    text: 'two'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-2',
+                        contextId: 'room-1'
+                    },
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'two'
+                    }
                 }
             ),
             ordering: {
@@ -820,15 +882,18 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const seq1 = {
             ...shared.newALUntargetedMessage(
-                'peer-1',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-3',
-                    contextId: 'room-1'
-                },
-                'chat.message.v1',
-                {
-                    text: 'one'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-3',
+                        contextId: 'room-1'
+                    },
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'one'
+                    }
                 }
             ),
             ordering: {

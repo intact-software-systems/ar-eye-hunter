@@ -118,7 +118,7 @@ export function toPublicationLeadCommands(
         ...(step.input.carrier === 'ws' ? [] : [createStableRtcLayoutWait({
             group: step.input.group,
             prefix: toCommandId(step, 'publication'),
-            timeoutMs: CONNECT_READINESS_TIMEOUT_MS
+            settleTimeoutMs: CONNECT_READINESS_TIMEOUT_MS
         })]),
         toLiveSendCommand({
             step,

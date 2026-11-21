@@ -30,6 +30,7 @@ import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-o
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -41,6 +42,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
@@ -48,13 +50,11 @@ import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publica
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
-import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
@@ -96,6 +96,14 @@ export interface HoldSender {
     readFaultedTypeIds(): readonly string[];
     /** The receipt the carrier's outbound admission store retains for a message this sender originated. */
     readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
+    /** The data frames of the message handed to the native data channel or WebSocket, in order. */
+    readSentFrames(msgId: string): readonly ALMessage[];
+}
+
+/** The WS hold sender, which can also take a copy another carrier already admitted (D56). */
+export interface WsHoldSender extends HoldSender {
+    /** Opens the registry handle and admits the message as a hand-over; the caller drains. */
+    sendHandedOver(message: ALMessage): Promise<RallarMessageHandle>;
 }
 
 /**
@@ -167,7 +175,12 @@ function createHoldSenderRuntime(): HoldSenderRuntime {
     const engine = new InboxOutboxEngine();
     return {
         faults: createScriptedTransportFaultPort(),
-        registry: new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} }),
+        registry: new BrowserRallarDeliveryRegistry({
+            nowMs: Date.now,
+            maxEntries: 10,
+            retainTerminalMs: 60_000,
+            cancel: () => {}
+        }),
         diagnostics: [],
         engine,
         drain: captureOutboundWorkRunnable(engine)
@@ -176,6 +189,24 @@ function createHoldSenderRuntime(): HoldSenderRuntime {
 
 function toSerializedTypeId(serialized: string): string {
     return String(JSON.parse(serialized)?.payload?.typeId);
+}
+
+function toSentFramesOf(
+    sent: readonly (string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>)[],
+    msgId: string
+): readonly ALMessage[] {
+    return sent.flatMap((frame) => {
+        const message = typeof frame === 'string' ? decodeALMessageValue(JSON.parse(frame)).right : undefined;
+        return message?.id.msgId === msgId ? [message] : [];
+    });
+}
+
+/** Moves the sender's clock and runs the work then due, as a page's engine would. */
+export async function advanceAndRun(sender: HoldSender, ms: number): Promise<void> {
+    await sender.advance(ms);
+    await sender.drain();
+    await sender.drain();
+    await sender.settle();
 }
 
 async function runQueuedTurns(turn: () => Promise<void>): Promise<void> {
@@ -225,6 +256,7 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
         cancel: (msgId, traceId) => void manager.cancel(msgId, traceId),
         advance: async (ms) => void vi.setSystemTime(Date.now() + ms),
         deliver: (frame) => void channel.receive(JSON.stringify(frame)),
+        readSentFrames: (msgId) => toSentFramesOf(channel.sent, msgId),
         readFaultedTypeIds: () => decideSend.mock.calls.map(([, serialized]) => toSerializedTypeId(serialized)),
         readPendingAck: (msgId) =>
             resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck({
@@ -244,15 +276,23 @@ function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resource
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
-        return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
-            specimen: resourceId
-        }, {
-            ack: 'receiver',
-            reliability: 'at-least-once',
-            seq,
-            orderingKey,
-            ttlMs,
-            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        return newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' },
+            groupRef,
+            typeId: 'alm.lifecycle',
+            resource: {
+                specimen: resourceId
+            },
+            options: {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                seq,
+                orderingKey,
+                ttlMs,
+                qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+            }
         });
     };
 }
@@ -286,6 +326,8 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         faultPort: runtime.faults,
         replacedLayoutOverlapMs: 15_000,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -302,6 +344,9 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         selfPrincipalId: service.input.sessionId
     });
     const streamer = initialiseRtcRxStreamer({
+        rttCreationNowEpochMs: Date.now,
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         webRtcOverlayMulticastManager: manager,
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
@@ -311,7 +356,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('self'),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
@@ -326,7 +371,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
     return manager;
 }
 
-export async function openWsHoldSender(): Promise<HoldSender> {
+export async function openWsHoldSender(): Promise<WsHoldSender> {
     // fake-indexeddb completes on `setImmediate`, so it stays real, as in `ws-durable-owner-recovery.test.ts`.
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
@@ -346,6 +391,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
             turn: () => vi.advanceTimersByTimeAsync(0).then(() => undefined),
             admit: (message) => service.enqueueOutboxIfAbsent(message)
         }),
+        sendHandedOver: toRegistrySend(runtime, 'ws', (message) => service.enqueueHandedOverIfAbsent(message)),
         selfPeerId: sessionId,
         outboundAdmissionNamespace: resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.namespace,
         hold: WS_HOLD,
@@ -353,6 +399,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         cancel: (msgId, traceId) => void service.cancelOutbox(msgId, traceId),
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
+        readSentFrames: (msgId) => toSentFramesOf(native.sent, msgId),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
         readPendingAck: (msgId) =>
             resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck({
@@ -366,8 +413,16 @@ export async function openWsHoldSender(): Promise<HoldSender> {
 function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string; ttlMs: number; }>): ALMessage {
     const { sessionId, resourceId, ttlMs } = input;
     return {
-        ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
-            ttlMs
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'held', contextId: 'room', resourceId },
+            toPeerId: 'receiver',
+            typeId: 'held.message',
+            resource: { resourceId },
+            options: {
+                ttlMs
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         // A roomless WS unicast refuses `receiver` (D42): the server's own ACK counts as the hop's (R-S3a-4). The
@@ -378,6 +433,8 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
 
 async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) {
     const connecting = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: runtime.faults,
@@ -392,7 +449,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -430,13 +487,21 @@ function toSharedHoldSenderMembers(
         carrier: input.carrier,
         faults: runtime.faults,
         diagnostics: runtime.diagnostics,
-        send: async (message) => {
-            const handle = runtime.registry.open(message, input.carrier);
-            await input.admit(message);
-            return handle;
-        },
+        send: toRegistrySend(runtime, input.carrier, input.admit),
         drain: runtime.drain,
         settle: () => runQueuedTurns(input.turn)
+    };
+}
+
+function toRegistrySend(
+    runtime: HoldSenderRuntime,
+    carrier: HoldSender['carrier'],
+    admit: HoldSenderCarrierInput['admit']
+): HoldSender['send'] {
+    return async (message) => {
+        const handle = runtime.registry.open({ message: message, carrier: carrier, readDeadlineEpochMs: Date.now });
+        await admit(message);
+        return handle;
     };
 }
 
@@ -711,13 +776,40 @@ async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offs
     await sender.advance(Math.max(0, endMs + offsetMs - Date.now()));
 }
 
-/** Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. */
-async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
+/**
+ * Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. Each round drains
+ * until a batch claims nothing, as a page's engine does: the readiness probe advertises a row that is due now behind
+ * any number of rows due later, so a repair hint a timer commits runs in a batch of its own, not beside the next timer
+ * a whole timeout later. One drain runs one batch, so one drain does not reach that hint: a round takes two to four,
+ * the last of them claiming nothing.
+ */
+export async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
     const before = await readPendingAckOrThrow(sender, msgId);
     for (let claim = 0; claim <= before.maxAttempts; claim += 1) {
         await sender.advance(before.timeoutMs + 1);
-        await sender.drain();
+        await drainUntilNoWorkIsClaimed(sender);
         await sender.settle();
+    }
+}
+
+/** Drains a round may run before it gives up on reaching a batch that claims nothing. */
+const ACK_UNDER_HOLD_DRAINS_PER_ROUND = 8;
+
+async function drainUntilNoWorkIsClaimed(sender: HoldSender): Promise<void> {
+    const reserve = vi.spyOn(IndexedDbQueueBox.prototype, 'reserveEntries');
+    try {
+        for (let drain = 0; drain < ACK_UNDER_HOLD_DRAINS_PER_ROUND; drain += 1) {
+            const claimsBefore = reserve.mock.results.length;
+            await sender.drain();
+            const claimed = await Promise.all(reserve.mock.results.slice(claimsBefore).map((result) => result.value));
+            if (claimed.every((reserved) => (reserved instanceof Map ? reserved : reserved.entries).size === 0)) {
+                return;
+            }
+        }
+        throw new Error(`Work was still claimed after ${ACK_UNDER_HOLD_DRAINS_PER_ROUND} drains in one round`);
+    }
+    finally {
+        reserve.mockRestore();
     }
 }
 

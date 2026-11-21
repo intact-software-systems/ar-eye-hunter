@@ -63,6 +63,7 @@ export interface CreateInMemoryALRuntimeStoresInput {
     /** Present when a middleware owns the databases its store factories create. */
     readonly runtimeStorage?: ALRuntimeStorage;
     readonly nowMs: () => number;
+    readonly workNowMs: () => number;
     readonly namespace: string;
     readonly canonicalScope?: string;
     /** The ordering-head namespace the session's carrier pairs share over one store; absent, the pair's own. */
@@ -109,6 +110,7 @@ export interface CreateDefaultALOutboundRuntimeStoresInput<TPrepared> extends Cr
 export interface CreateDefaultALRuntimeStoresInput {
     readonly runtimeStorage?: ALRuntimeStorage;
     readonly nowMs?: () => number;
+    readonly workNowMs?: () => number;
     readonly namespace?: string;
     readonly canonicalScope?: string;
     /** The ordering-head namespace the session's carrier pairs share over one store; absent, the pair's own. */
@@ -140,7 +142,7 @@ function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const backend = input.inboundBackend ??
-        createInMemoryALAdmissionBackend(input.nowMs);
+        createInMemoryALAdmissionBackend(input.nowMs, input.workNowMs);
     return {
         admissionStore: createALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
@@ -151,7 +153,7 @@ function createInMemoryALOutboundRuntimeStores<TPrepared>(
     input: CreateInMemoryALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     const backend = input.outboundBackend ??
-        createInMemoryALAdmissionBackend(input.nowMs);
+        createInMemoryALAdmissionBackend(input.nowMs, input.workNowMs);
     return {
         admissionStore: createALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
@@ -213,6 +215,7 @@ function createIndexedDbAdmissionBackend(
         dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: input.nowMs,
+        workNowMs: input.workNowMs,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: input.observer,
         schemaId: input.schemaId,
@@ -298,7 +301,7 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     budget: ALVolatileSessionBudget | undefined
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
     const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
-    const backend = createInMemoryALAdmissionBackend(input.nowMs);
+    const backend = createInMemoryALAdmissionBackend(input.nowMs, input.workNowMs);
     return {
         admissionStore: createVolatileALOutboundAdmissionStore(
             toInMemoryALOutboundAdmissionStoreInput(input, backend),
@@ -327,7 +330,7 @@ export function createCheckpointALOutboundRuntimeStores<TPrepared>(
 ): ALCheckpointOutboundRuntimeStores<TPrepared> {
     const defaults = toDefaultInMemoryInput(options);
     const input = { ...defaults, canonicalScope: defaults.namespace, decodePrepared: options.decodePrepared };
-    const memory = createInMemoryALAdmissionBackend(input.nowMs);
+    const memory = createInMemoryALAdmissionBackend(input.nowMs, input.workNowMs);
     const admissionStore = createVolatileALOutboundAdmissionStore(
         toInMemoryALOutboundAdmissionStoreInput(input, memory),
         'checkpoint'
@@ -335,7 +338,8 @@ export function createCheckpointALOutboundRuntimeStores<TPrepared>(
     const checkpoint = new ALCheckpoint({
         storage: toALCheckpointStorage(options, memory, admissionStore.namespace),
         ownership: options.ownership,
-        nowMs: input.nowMs
+        nowMs: input.nowMs,
+        workNowMs: input.workNowMs
     });
     options.runtimeStorage?.ownCheckpoint(checkpoint);
     return {
@@ -375,7 +379,7 @@ export function createVolatileALInboundRuntimeStores(
     budget: ALVolatileSessionBudget | undefined
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
-    const backend = createInMemoryALAdmissionBackend(input.nowMs);
+    const backend = createInMemoryALAdmissionBackend(input.nowMs, input.workNowMs);
     const admissionStore = createVolatileALInboundAdmissionStore(
         toInMemoryALInboundAdmissionStoreInput(input, backend)
     );
@@ -390,10 +394,10 @@ export function createVolatileALInboundRuntimeStores(
     };
 }
 
-function createInMemoryALAdmissionBackend(nowMs: () => number): InMemoryAdmissionBackend {
+function createInMemoryALAdmissionBackend(nowMs: () => number, workNowMs: () => number): InMemoryAdmissionBackend {
     return new InMemoryAdmissionBackend(
         createInMemoryALAdmissionState(
-            new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+            new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(workNowMs()))
         ),
         nowMs
     );
@@ -454,6 +458,7 @@ function toDefaultInMemoryInput(
     return {
         runtimeStorage: options.runtimeStorage,
         nowMs: options.nowMs ?? Date.now,
+        workNowMs: options.workNowMs ?? options.nowMs ?? Date.now,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
         canonicalScope: options.canonicalScope,
         orderingHeadNamespace: options.orderingHeadNamespace,

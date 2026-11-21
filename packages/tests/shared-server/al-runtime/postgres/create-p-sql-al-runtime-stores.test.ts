@@ -112,12 +112,15 @@ async function seedCapturedPolicyRead(
 ) {
     const namespace = `server-ws-qbox:${name}:outbound:admission`;
     const message = newALBroadcastMessage(
-        'server',
-        newALRoute('room.topic', 'room-1', 'event-1'),
-        'room',
-        'room.topic',
-        { value: 1 },
-        { ttlMs: 60_000, groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: newALRoute('room.topic', 'room-1', 'event-1'),
+            scope: 'room',
+            typeId: 'room.topic',
+            resource: { value: 1 },
+            options: { ttlMs: 60_000, groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
+        }
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const reference = toALOutboundMessageReference(namespace, entry, message);

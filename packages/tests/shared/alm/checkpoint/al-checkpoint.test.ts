@@ -124,13 +124,25 @@ describe('ALCheckpoint', () => {
     });
 
     // A disconnect disposes the checkpoint inside the interval; what the interval has not saved goes with it unless the dispose flushes.
-    it('flushes its unsaved rows when disposed before the interval', async () => {
+    it('flushes its unsaved rows after the connection clock closes before the interval', async () => {
         const dbName = newDbName();
         const clock = { nowMs: START_MS };
-        const saving = openCheckpoint({ dbName, clock, owned: true });
+        let connected = true;
+        const saving = openCheckpoint({
+            dbName,
+            clock,
+            owned: true,
+            admissionNowMs: () => {
+                if (!connected) {
+                    throw new Error('Connection closed');
+                }
+                return clock.nowMs;
+            }
+        });
         await saving.checkpoint.restore();
         await saving.writeRow('one');
 
+        connected = false;
         await saving.checkpoint.dispose();
 
         expect(await readSaved(dbName, clock)).toMatchObject({ row: 'one' });
@@ -351,6 +363,7 @@ interface OpenedCheckpoint {
 }
 
 interface OpenCheckpointInput {
+    readonly admissionNowMs?: () => number;
     readonly dbName: string;
     readonly clock: { nowMs: number; };
     readonly owned: boolean;
@@ -368,6 +381,7 @@ function openCheckpoint(input: OpenCheckpointInput): OpenedCheckpoint {
         dbName: input.dbName,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs,
+        workNowMs: nowMs,
         newWriteToken: () => crypto.randomUUID(),
         observer,
         schemaId: AL_ADMISSION_SCHEMA_ID,
@@ -392,7 +406,7 @@ function openCheckpoint(input: OpenCheckpointInput): OpenedCheckpoint {
         timers: GLOBAL_CHECKPOINT_TIMERS
     };
     const ownership = createTakeableDurableWorkOwnership(input.owned);
-    const checkpoint = new ALCheckpoint({ storage, ownership, nowMs });
+    const checkpoint = new ALCheckpoint({ storage, ownership, nowMs: input.admissionNowMs ?? nowMs, workNowMs: nowMs });
     onTestFinished(() => closeCheckpoint(checkpoint, saved, input.expectedDisposalFailure));
     return {
         memory,

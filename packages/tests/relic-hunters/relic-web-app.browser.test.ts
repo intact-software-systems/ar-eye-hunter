@@ -927,13 +927,16 @@ function session(): AuthSession {
 function snapshotMessage(snapshot: RelicPublicSnapshot): MockWsMessage {
     const payload = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: snapshot.gameId, snapshot };
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
-        'room',
-        RELIC_TYPES.snapshot,
-        payload,
         {
-            groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.snapshot, snapshot.gameId, snapshot.gameId),
+            scope: 'room',
+            typeId: RELIC_TYPES.snapshot,
+            resource: payload,
+            options: {
+                groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: snapshot.roomId }
+            }
         }
     );
     return { payload, raw, senderId: 'default-qbox-server', roomId: snapshot.roomId, receivedAtEpochMs: Date.now() };
@@ -1042,14 +1045,17 @@ const REFUSED: RelicHunterEvent = {
 function toHunterEventMessage(event: RelicHunterEvent): RallarMessage<RelicHunterEvent> {
     const groupRef = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' };
     const raw = newALPrincipalBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.hunter, 'room-1', `${event.gameId}:${event.principalId}`),
         {
-            groupRef,
-            principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
-        },
-        RELIC_TYPES.hunter,
-        event
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.hunter, 'room-1', `${event.gameId}:${event.principalId}`),
+            target: {
+                groupRef,
+                principalRef: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId, principalId: event.principalId }
+            },
+            typeId: RELIC_TYPES.hunter,
+            resource: event
+        }
     );
     return {
         transport: 'ws',
@@ -1069,16 +1075,19 @@ function toHunterEventMessage(event: RelicHunterEvent): RallarMessage<RelicHunte
 
 function toRoundTransitionMessage(event: RelicRoundTransitionEvent): RallarMessage<RelicRoundTransitionEvent> {
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.event, 'room-1', `${event.gameId}:${event.round}`),
-        'room',
-        RELIC_TYPES.event,
-        event,
         {
-            groupRef: {
-                applicationId: DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-                groupId: 'room-1'
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.event, 'room-1', `${event.gameId}:${event.round}`),
+            scope: 'room',
+            typeId: RELIC_TYPES.event,
+            resource: event,
+            options: {
+                groupRef: {
+                    applicationId: DEFAULT_STATE_APPLICATION_ID,
+                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                    groupId: 'room-1'
+                }
             }
         }
     );
@@ -1184,11 +1193,14 @@ async function waitFor(assertion: () => boolean): Promise<void> {
 function toOwnPrincipalProposal() {
     const scope = { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID };
     return newALPrincipalBroadcastMessage(
-        'alice-tablet-session',
-        newALRoute('room.relic.ai.planning', 'room-1', 'sibling-generation-1'),
-        { groupRef: { ...scope, groupId: 'room-1' }, principalRef: { ...scope, principalId: 'client-1' } },
-        'relic.ai.planning-proposal.v1',
-        {}
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice-tablet-session',
+            route: newALRoute('room.relic.ai.planning', 'room-1', 'sibling-generation-1'),
+            target: { groupRef: { ...scope, groupId: 'room-1' }, principalRef: { ...scope, principalId: 'client-1' } },
+            typeId: 'relic.ai.planning-proposal.v1',
+            resource: {}
+        }
     );
 }
 
@@ -1223,12 +1235,15 @@ function repliedWith(request: RallarAiJsonRequest, suggestion: object): RallarMe
         generationId: 'server-generation-1'
     });
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.aiPlanning, 'room-1', payload.generationId),
-        'room',
-        RELIC_TYPES.aiPlanningReply,
-        payload,
-        { groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.aiPlanning, 'room-1', payload.generationId),
+            scope: 'room',
+            typeId: RELIC_TYPES.aiPlanningReply,
+            resource: payload,
+            options: { groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' } }
+        }
     );
     const reply: RallarMessage<object> = {
         transport: 'ws',

@@ -248,10 +248,13 @@ describe('AppInbox command lifecycle', () => {
             data: { requestId: 'retry-telemetry-clock' }
         } as const;
         const message = newALUntargetedMessage(
-            'server-12345678',
-            newALRoute(enqueue.topicId, enqueue.contextId, enqueue.resourceId),
-            enqueue.type,
-            enqueue
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-12345678',
+                route: newALRoute(enqueue.topicId, enqueue.contextId, enqueue.resourceId),
+                typeId: enqueue.type,
+                resource: enqueue
+            }
         );
         const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, Temporal.Now.instant());
         const entry = {

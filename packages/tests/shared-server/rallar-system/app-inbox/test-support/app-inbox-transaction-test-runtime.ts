@@ -651,10 +651,13 @@ function createAtomicMessageContext(entry: ResourceEntry): AppInboxMessageContex
     const context: AppInboxMessageContext<JsonWireValue> = {
         enqueue,
         message: newALUntargetedMessage(
-            'server-1',
-            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
-            enqueue.type,
-            enqueue
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+                typeId: enqueue.type,
+                resource: enqueue
+            }
         ),
         entry,
         attemptTelemetry: computeResourceInboxAttempt({

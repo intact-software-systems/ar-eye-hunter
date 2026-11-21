@@ -14,6 +14,7 @@ import type {
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { computeALOutboundRoomSentFloorReceipt } from '../admission/sequencing/al-outbound-room-sent-floor.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact
@@ -23,6 +24,8 @@ import {
 export interface ALOutboundReceiptAdmissionSurface {
     readonly stored: ALStoredOutboundMessage | undefined;
     readonly pending: ALOutboundPendingAckSnapshot | undefined;
+    /** The sender's wait for the server to first answer for the message, which any receipt of it ends. */
+    readonly firstHopWait: ALOutboundFirstHopWaitSnapshot | undefined;
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
     /**
      * Read only for an `admitted` receipt, the one phase carrying the audience the server routed, of a sequenced
@@ -38,7 +41,7 @@ export interface ALOutboundReceiptAdmissionRead extends ALOutboundReceiptAdmissi
 
 /**
  * The receipt row a receipt leaves. Every phase keeps it until the message deadline plus the receipt
- * grace: a terminal receipt leaves its final snapshot, so a redelivered receipt finds nothing to move.
+ * grace: a terminal receipt leaves its final snapshot and ends the message, so a later receipt is refused.
  */
 export interface ALOutboundReceiptWrite {
     readonly value: ALOutboundPendingAckSnapshot;
@@ -86,6 +89,9 @@ export function validateALOutboundReceiptAdmission(
     candidate: ALOutboundReceiptAdmissionCandidate
 ): readonly ALMessageRejection[] {
     const { read, write } = candidate;
+    if (read.stored?.ended) {
+        return [refuseReceipt('AL receipt names a message that has ended')];
+    }
     if (write === undefined) {
         return [toMissingReceiptRejection(read)];
     }
@@ -99,7 +105,7 @@ export function validateALOutboundReceiptAdmission(
     if (write.expireAtTimestamp <= read.nowMs) {
         issues.push(refuseReceipt('AL receipt arrived after its message deadline and the receipt grace'));
     }
-    if (read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
+    if (read.receipt.phase !== 'timed-out' && read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
         issues.push(refuseReceipt('AL receipt moves no receipt of its message'));
     }
     return issues;
@@ -140,6 +146,14 @@ export function toALOutboundReceiptTrackMutations(
             ? []
             : [{ kind: 'set-room-sent-floor', trackKey, observed, value, expireAtTimestamp } as const])
     ];
+}
+
+/** A `timed-out` aggregate, or a receipt that confirms every recipient, is the message's terminal settlement. */
+export function isALOutboundTerminalReceipt(
+    read: ALOutboundReceiptAdmissionRead,
+    write: ALOutboundReceiptWrite
+): boolean {
+    return read.receipt.phase === 'timed-out' || isALOutboundReceiptComplete(write.value);
 }
 
 /**

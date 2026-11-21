@@ -270,11 +270,14 @@ function readCanonicalMutation(
 /** A message this peer neither delivers nor forwards: provenance and dedup only. */
 function newBystanderMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'sender',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        'relay',
-        'chat',
-        { text: resourceId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            toPeerId: 'relay',
+            typeId: 'chat',
+            resource: { text: resourceId }
+        }
     );
 }
 
@@ -353,11 +356,14 @@ function newInboundMessage(
 ): ALMessage {
     return {
         ...newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId, contextId: 'room' },
-            'receiver',
-            'chat',
-            { text }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId, contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: { text }
+            }
         ),
         forwarding: { nextHopPeerIds: ['relay'] },
         ...(ordering === undefined ? {} : { ordering })
@@ -373,6 +379,7 @@ async function readAllWorkRows(queue: InMemoryQueueBox): Promise<readonly Resour
                 typeId: toALInboundWorkType(NAMESPACE, 'ws'),
                 status,
                 maxToRead: 32,
+                order: 'key',
                 cursor
             });
             rows.push(...page.entries);

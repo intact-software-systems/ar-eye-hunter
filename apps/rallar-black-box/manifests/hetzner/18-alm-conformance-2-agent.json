@@ -2457,7 +2457,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.nack.v3\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\"",
+              "contains": "\"typeId\":\"al.control.nack.v4\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\"",
               "sinceCommandIdPrefix": "alm-ws-ordering-resync-sender-"
             },
             "timeoutMs": 27000
@@ -5804,9 +5804,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-latest-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -5832,6 +5832,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-latest-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-latest-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-latest-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -6153,9 +6160,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-newest-n-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -6181,6 +6188,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-newest-n-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-newest-n-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-newest-n-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -6471,9 +6485,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-expiry-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -6499,6 +6513,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-expiry-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-expiry-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-expiry-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -6700,9 +6721,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-fairness-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -6728,6 +6749,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-fairness-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-fairness-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-fairness-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -7001,9 +7029,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-cancel-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -7029,6 +7057,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-cancel-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-cancel-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-cancel-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -7247,9 +7282,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-isolation-resources-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -7275,6 +7310,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-isolation-resources-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-isolation-resources-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-isolation-resources-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -9958,9 +10000,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -9986,6 +10028,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-latest-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -10307,9 +10356,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -10335,6 +10384,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-newest-n-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -10625,9 +10681,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -10653,6 +10709,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-expiry-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -10854,9 +10917,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -10882,6 +10945,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-fairness-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -11155,9 +11225,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -11183,6 +11253,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-cancel-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -11401,9 +11478,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -11429,6 +11506,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-isolation-resources-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -13091,9 +13175,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-paced-capacity-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -13119,6 +13203,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-capacity-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-paced-capacity-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-paced-capacity-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -14045,9 +14136,9 @@
           {
             "kind": "loop",
             "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable",
-            "count": 60,
+            "count": 180,
             "intervalMs": 500,
-            "timeoutMs": 30000,
+            "timeoutMs": 90000,
             "until": "first-success",
             "commands": [
               {
@@ -14073,6 +14164,13 @@
                 "operator": "gte",
                 "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-readiness.value.acceptedHeldForMs",
                 "expected": 3500
+              },
+              {
+                "kind": "assert",
+                "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-publication-assert-no-held-reshape",
+                "operator": "equals",
+                "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-stable:i{loop.iteration}:c1:alm-rtc-with-ws-fallback-paced-capacity-sender-publication-layout-readiness.value.heldReshape.reading",
+                "expected": "none"
               }
             ]
           },
@@ -16439,8 +16537,8 @@
             "typeId": "alm.conformance.rtc.paced-latest",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -16487,8 +16585,8 @@
             "typeId": "alm.conformance.rtc.paced-latest",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -16542,8 +16640,8 @@
             "typeId": "alm.conformance.rtc.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 63000,
-            "timeoutMs": 64000
+            "windowMs": 123000,
+            "timeoutMs": 124000
           },
           {
             "kind": "wait",
@@ -16616,8 +16714,8 @@
             "typeId": "alm.conformance.rtc.paced-expiry",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -16671,8 +16769,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -16719,8 +16817,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -16767,8 +16865,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 3,
             "absent": false,
-            "windowMs": 63000,
-            "timeoutMs": 64000
+            "windowMs": 123000,
+            "timeoutMs": 124000
           },
           {
             "kind": "wait",
@@ -16815,8 +16913,8 @@
             "typeId": "alm.conformance.rtc.paced-fairness",
             "count": 4,
             "absent": false,
-            "windowMs": 65000,
-            "timeoutMs": 66000
+            "windowMs": 125000,
+            "timeoutMs": 126000
           },
           {
             "kind": "wait",
@@ -16870,8 +16968,8 @@
             "typeId": "alm.conformance.rtc.paced-cancel",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -16918,8 +17016,8 @@
             "typeId": "alm.conformance.rtc.paced-cancel",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -16973,8 +17071,8 @@
             "typeId": "alm.conformance.rtc.paced-isolation-resources",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -17021,8 +17119,8 @@
             "typeId": "alm.conformance.rtc.paced-isolation-resources",
             "count": 3,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -17959,8 +18057,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-latest",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -18007,8 +18105,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-latest",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -18062,8 +18160,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-newest-n",
             "count": 1,
             "absent": false,
-            "windowMs": 63000,
-            "timeoutMs": 64000
+            "windowMs": 123000,
+            "timeoutMs": 124000
           },
           {
             "kind": "wait",
@@ -18136,8 +18234,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-expiry",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -18191,8 +18289,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -18239,8 +18337,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -18287,8 +18385,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 3,
             "absent": false,
-            "windowMs": 63000,
-            "timeoutMs": 64000
+            "windowMs": 123000,
+            "timeoutMs": 124000
           },
           {
             "kind": "wait",
@@ -18335,8 +18433,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-fairness",
             "count": 4,
             "absent": false,
-            "windowMs": 65000,
-            "timeoutMs": 66000
+            "windowMs": 125000,
+            "timeoutMs": 126000
           },
           {
             "kind": "wait",
@@ -18390,8 +18488,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-cancel",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -18438,8 +18536,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-cancel",
             "count": 2,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -18493,8 +18591,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-isolation-resources",
             "count": 1,
             "absent": false,
-            "windowMs": 59000,
-            "timeoutMs": 60000
+            "windowMs": 119000,
+            "timeoutMs": 120000
           },
           {
             "kind": "wait",
@@ -18541,8 +18639,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-isolation-resources",
             "count": 3,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -18789,8 +18887,8 @@
             "typeId": "alm.conformance.rtc.paced-capacity",
             "count": 1,
             "absent": false,
-            "windowMs": 89000,
-            "timeoutMs": 90000
+            "windowMs": 149000,
+            "timeoutMs": 150000
           },
           {
             "kind": "wait",
@@ -18837,8 +18935,8 @@
             "typeId": "alm.conformance.rtc.paced-capacity",
             "count": 3,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",
@@ -18937,8 +19035,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-capacity",
             "count": 1,
             "absent": false,
-            "windowMs": 89000,
-            "timeoutMs": 90000
+            "windowMs": 149000,
+            "timeoutMs": 150000
           },
           {
             "kind": "wait",
@@ -18985,8 +19083,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.paced-capacity",
             "count": 3,
             "absent": false,
-            "windowMs": 61000,
-            "timeoutMs": 62000
+            "windowMs": 121000,
+            "timeoutMs": 122000
           },
           {
             "kind": "wait",

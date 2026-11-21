@@ -1,12 +1,14 @@
 import { Either } from '@shared/resilience/Either.ts';
 import type {
-    RallarBlackBoxTestLoopResultValue,
-    RallarBlackBoxTestLoopThresholdFailure,
     RallarBlackBoxTestLoopThresholds,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS } from '../schema/rallar-black-box-command-fields.ts';
+import type {
+    RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestLoopThresholdFailure
+} from './loop-result-contracts.ts';
 
 export interface LoopThresholdIssue {
     readonly message: string;

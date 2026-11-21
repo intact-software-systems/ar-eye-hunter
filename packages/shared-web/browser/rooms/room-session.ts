@@ -132,6 +132,7 @@ function toRoomSessionMessageDefinition(
         roomRef,
         purpose: input.purpose,
         access: input.access,
+        ...(input.publication === undefined ? {} : { publication: input.publication }),
         ...(input.durability === undefined ? {} : { durability: input.durability }),
         ...(input.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: input.onStorageUnavailable })
     };

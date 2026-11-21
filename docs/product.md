@@ -29,6 +29,77 @@ rules, rendering, and product policy.
 `docs/architecture.md` records why these boundaries exist. `examples/README.md`
 shows the smallest copyable use of each surface.
 
+## Recovering a room deadline
+
+An active room owner or admin can publish a named UTC deadline through
+`rallar.rooms.setDeadline(roomRef, change, requestId)`. Use expected revision
+zero to create it. To extend it, supply the last accepted revision and a later
+instant before the current deadline expires. Two editors can propose different
+extensions from the same revision. One succeeds, and the other receives a
+revision conflict. Reusing the same request ID and payload recovers the original
+acknowledgement after a lost response.
+
+An appointed room director can extend a published deadline during its live
+window. Pass the appointment epoch captured when the director chose to extend.
+
+```ts
+await rallar.rooms.setDeadline(roomRef, {
+    name: deadline.name,
+    expectedRevision: deadline.revision,
+    expectedDirectorEpoch: appointment.epoch,
+    atEpochMs: deadline.atEpochMs + 60_000
+}, requestId);
+```
+
+The authenticated principal and session must still hold that appointment in
+the room. A leadership change returns HTTP 409 with mutation failure code
+`room-director-changed`. Discard the old director intent. A concurrent extension
+returns `room-deadline-revision-conflict`; read the winning deadline before
+deciding whether to propose a new change. Both codes are available on the
+SDK error’s `mutationFailure.code`.
+
+A member can call `rallar.rooms.readDeadline(roomRef, name)` without switching
+the selected room. It reads the durable deadline or returns `null` for a name
+that has never been published. PostgreSQL deployments retain the instant and
+revision across API restarts. Each room supports up to 32 distinct names over
+its lifetime. At or after expiry, an owner or admin can reuse the same slot for a new round:
+pass `operation: 'start-next-occurrence'`, the last observed `expectedRevision` and a future
+`atEpochMs` to `setDeadline`. Competing starts have one winner. Use
+`deadline.startedAtRevision ?? 1` as the occurrence identity. It stays constant across extensions
+and changes on every new round, even when a participant misses several updates.
+Deploy occurrence-aware readers and writers before starting a second occurrence.
+
+Connected room participants can use `rooms.watchDeadline` to observe an extension
+while the room is open. The server’s room WebSocket event announces the revision.
+The SDK reads durable state on entry, revision changes, reconnect and resume.
+An idle deadline requires no polling. The calibrated clock drives the countdown
+on each device, and the receiving application decides whether an action arrived in time.
+
+Deploy the deadline-aware API on all writers before publishing the first
+deadline. Applications that replace room metadata must omit the reserved
+`rallarRoomDeadlines` field. Upgrade browser clients that use
+`rooms.updateMetadata` before enabling deadlines in those rooms.
+
+The [two-room poll](../examples/shared-deadline-poll/README.md) uses the closing
+instant to decide whether to accept a ballot. Rallar owns the deadline and its
+revision. The application owns voting rules and receipts. The deadline causes
+no automatic action when it passes.
+
+## Pausing a room clock
+
+An appointed room director can run a named countdown. For example, a referee starts a ten-minute period with
+`rooms.changeClock(roomRef, { name: 'period', operation: 'start', durationMs: 600000, expectedRevision: 0, expectedDirectorEpoch: appointment.epoch }, requestId)`.
+Send `pause` or `resume` with the current revision and appointment epoch and omit the duration. Retrying the same command
+uses the same request ID. A stale revision returns `room-clock-revision-conflict`; an obsolete director receives
+`room-director-changed`. An expired clock can start again at its current revision. Each room supports 32 clock names.
+
+`rooms.readClock` returns the durable record or `null`. `rooms.watchClock` delivers a current or stale observation, rereads
+on WebSocket invalidation and recovery, and makes no periodic clock reads. A running record stores its UTC end; clients use
+the calibrated clock to display time and derive expiry. A paused record stores the exact remaining milliseconds. Passing time,
+room changes, director replacement and server restarts leave a pause intact. Losing the director does not automatically pause a
+running clock. The [scoreboard](../examples/room-scoreboard/README.md) demonstrates these controls.
+Deploy clock-aware writers before creating clocks and before permitting raw room metadata replacement.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

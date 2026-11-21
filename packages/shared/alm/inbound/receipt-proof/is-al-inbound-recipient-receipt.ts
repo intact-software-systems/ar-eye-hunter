@@ -1,4 +1,7 @@
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
+import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
+import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 
 /** What the relay's mark rule reads of one upward control and the row it answers for. */
@@ -8,6 +11,14 @@ export interface ALInboundRelayReceiptMark {
     readonly carrier: ALDeliveryCarrier;
     readonly relayPeerId: string;
     readonly upwardAudiencePeerIds: readonly string[] | undefined;
+}
+
+/**
+ * Whether the message's own receipt counts this peer. Its plan decides: a plan that refuses the message plans no
+ * receipt of its own (`ack.algo: 'none'`).
+ */
+export function isALInboundCountedSelf(msg: ALMessage, plan: ALMessageHandlingPlan, selfPeerId: string): boolean {
+    return isALCountedRecipient(msg, plan.effective.ack.algo, selfPeerId);
 }
 
 /**

@@ -188,28 +188,38 @@ function toReference(message: ALMessage): { readonly senderId: string; readonly 
 
 function signalingMessage(offerId: string, sdp = 'sdp'): ALMessage {
     return newALUnicastMessage(
-        'sender',
-        newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
-        'receiver',
-        AppTopics.rtcSignaling,
         {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'sender',
-            toId: 'receiver',
-            sessionId: 'sender',
-            token: 'fixture-ticket',
-            signalType: 'Offer',
-            offerId,
-            payload: { description: { type: 'offer', sdp }, candidate: null }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
+            toPeerId: 'receiver',
+            typeId: AppTopics.rtcSignaling,
+            resource: {
+                channel: 'RtcSignal',
+                type: 'Signal',
+                fromId: 'sender',
+                toId: 'receiver',
+                sessionId: 'sender',
+                token: 'fixture-ticket',
+                signalType: 'Offer',
+                offerId,
+                payload: { description: { type: 'offer', sdp }, candidate: null }
+            }
         }
     );
 }
 
 function durableMessage(): ALMessage {
     return {
-        ...newALUnicastMessage('sender', newALEventRoute('app.notes', 'receiver', 'note'), 'receiver', 'notes.v1', {
-            text: 'kept'
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('app.notes', 'receiver', 'note'),
+            toPeerId: 'receiver',
+            typeId: 'notes.v1',
+            resource: {
+                text: 'kept'
+            }
         }),
         qos: { durability: { algo: 'local-inbox' } }
     };
@@ -217,8 +227,15 @@ function durableMessage(): ALMessage {
 
 function acknowledgedMessage(): ALMessage {
     return {
-        ...newALUnicastMessage('sender', newALEventRoute('app.notes', 'receiver', 'note'), 'receiver', 'notes.v1', {
-            text: 'acknowledged'
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('app.notes', 'receiver', 'note'),
+            toPeerId: 'receiver',
+            typeId: 'notes.v1',
+            resource: {
+                text: 'acknowledged'
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };

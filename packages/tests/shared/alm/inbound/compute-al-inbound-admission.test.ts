@@ -51,18 +51,34 @@ function toNotSubscribedPeer(connected: readonly string[]): ReceivingPeer {
     };
 }
 
+/** The policy's own plan of a subscribed leaf that is connected to the sender alone. */
+const SUBSCRIBED_LEAF: ReceivingPeer = {
+    planner: (msg, _source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID]
+        }),
+    canForward: false
+};
+
 const NOT_SUBSCRIBED_LEAF = toNotSubscribedPeer([]);
 const NOT_SUBSCRIBED_RELAY = toNotSubscribedPeer(DOWNSTREAM_PEER_IDS);
 
 /** A receipted room multicast whose frozen audience names this peer and the peers below it. */
-function createFrozenReceiptedMessage(msgId: string): ALMessage {
+function createFrozenReceiptedMessage(msgId: string, options: Readonly<{ seq?: number; }> = {}): ALMessage {
     const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
-        ROOM,
-        'room.feed.v1',
-        { text: msgId },
-        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
+            groupRef: ROOM,
+            typeId: 'room.feed.v1',
+            resource: { text: msgId },
+            options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000, seq: options.seq }
+        }
     );
     return {
         ...message,
@@ -168,5 +184,27 @@ describe('a frozen recipient that is not subscribed', () => {
 
         expect(toControls(retried!)).toEqual([SELF_NOT_SUBSCRIBED]);
         expect(retried!.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control', 'forward-message']);
+    });
+});
+
+describe('the gap request number an arrival states', () => {
+    it('numbers a gap admission\'s NACK and its repair request 1', async () => {
+        const [first] = await computeArrivals(createFrozenReceiptedMessage('gap', { seq: 3 }), SUBSCRIBED_LEAF);
+
+        expect(toControls(first!)).toEqual(expect.arrayContaining([
+            { type: 'nack', payload: expect.objectContaining({ reason: 'gap', gapRequestNumber: 1 }) },
+            { type: 'repair', payload: expect.objectContaining({ reason: 'missing-seq', gapRequestNumber: 1 }) }
+        ]));
+    });
+
+    it('states no number on an expired NACK', async () => {
+        const message = createFrozenReceiptedMessage('expired');
+        const expired: ALMessage = { ...message, constraints: { ...message.constraints, expiresAtMs: 1 } };
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const bundle = await computeArrival(admissionStore, expired, SUBSCRIBED_LEAF);
+        const nacks = toControls(bundle).filter((control) => control.type === 'nack');
+
+        expect(nacks).toEqual([{ type: 'nack', payload: expect.objectContaining({ reason: 'expired' }) }]);
+        expect(nacks[0]!.payload).not.toHaveProperty('gapRequestNumber');
     });
 });

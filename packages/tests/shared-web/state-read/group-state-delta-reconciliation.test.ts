@@ -507,15 +507,18 @@ class StateCacheRuntime {
     receiveDeltaMessage = async (envelope: GroupStateDeltaEnvelope): Promise<void> => {
         await this.receiveMessage(
             newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(
-                    AppTopics.groupStateEvent,
-                    envelope.event.groupId,
-                    envelope.event.eventId
-                ),
-                'all',
-                AppTopics.groupStateEvent,
-                envelope
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALEventRoute(
+                        AppTopics.groupStateEvent,
+                        envelope.event.groupId,
+                        envelope.event.eventId
+                    ),
+                    scope: 'all',
+                    typeId: AppTopics.groupStateEvent,
+                    resource: envelope
+                }
             )
         );
     };

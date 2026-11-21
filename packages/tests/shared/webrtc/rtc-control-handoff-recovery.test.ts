@@ -47,12 +47,15 @@ it('retries the inbound ACK owner when RTC control handoff conflicts', async () 
     vi.spyOn(receiver.outbound.admissionStore, 'retainPendingAdmission')
         .mockResolvedValue('conflict');
     const message = newALUnicastMessage(
-        'sender',
-        { topicId: 'tasks', resourceId: 'job', contextId: 'queue' },
-        'receiver',
-        'tasks.job.v1',
-        { text: 'deliver once' },
-        { qos: { ack: { algo: 'hop' }, durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'tasks', resourceId: 'job', contextId: 'queue' },
+            toPeerId: 'receiver',
+            typeId: 'tasks.job.v1',
+            resource: { text: 'deliver once' },
+            options: { qos: { ack: { algo: 'hop' }, durability: { algo: 'volatile' } } }
+        }
     );
 
     await sender.sendAndWaitForDelivery(message);
@@ -96,12 +99,15 @@ it.each(
             : await enqueueAllIfAbsent.call(this, messages);
     });
     const message = newALUnicastMessage(
-        'sender',
-        { topicId: 'tasks', resourceId: 'status', contextId: 'queue' },
-        'receiver',
-        'tasks.job.v1',
-        { text: 'classify control ownership' },
-        { qos: { ack: { algo: 'hop' }, durability: { algo: 'volatile' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'tasks', resourceId: 'status', contextId: 'queue' },
+            toPeerId: 'receiver',
+            typeId: 'tasks.job.v1',
+            resource: { text: 'classify control ownership' },
+            options: { qos: { ack: { algo: 'hop' }, durability: { algo: 'volatile' } } }
+        }
     );
 
     await sender.sendAndWaitForDelivery(message);
@@ -180,6 +186,7 @@ async function readControlWork(
         typeId: toALInboundWorkType(receiver.inbound.admissionStore.namespace, 'rtc'),
         status,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return page.entries.filter((entry) => {

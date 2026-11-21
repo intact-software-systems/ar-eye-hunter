@@ -42,7 +42,14 @@ describe('createWsServerTargetResolver state sync routing', () => {
         });
         const server = new JsonWebSocketServer();
         addOpenConnection(server, 'session-a');
-        const message = newALMulticastMessage('session-a', newALEventRoute('room.chat', 'room', 'message'), snapshot.group, 'chat.message.v1', {});
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-a',
+            route: newALEventRoute('room.chat', 'room', 'message'),
+            groupRef: snapshot.group,
+            typeId: 'chat.message.v1',
+            resource: {}
+        });
         const resolver = createWsServerTargetResolver(server, {
             grantedTopics: new WsGrantedTopicSet(),
             findGroupSnapshotByRef: () => ({ ...snapshot, group: { ...snapshot.group, [field]: 'another' } })
@@ -397,12 +404,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         const envelope = createGroupEventEnvelope(workspaceB, ['session-b']);
         const event = envelope.event;
         const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-            'room',
-            AppTopics.groupStateEvent,
-            envelope,
-            { groupRef: event }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+                scope: 'room',
+                typeId: AppTopics.groupStateEvent,
+                resource: envelope,
+                options: { groupRef: event }
+            }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
@@ -428,11 +438,14 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 1
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'workspace-b' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'workspace-b' }
+            }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
             grantedTopics: new WsGrantedTopicSet(),
@@ -461,13 +474,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 1
         });
         const message = newALBroadcastMessage(
-            'session-b',
-            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'workspace-b' },
             {
-                groupRef: workspaceB.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'workspace-b' },
+                options: {
+                    groupRef: workspaceB.group
+                }
             }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
@@ -487,12 +503,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         const server = new JsonWebSocketServer();
         addOpenConnection(server, 'session-a');
         const message = newALBroadcastMessage(
-            'rallar-server',
-            newALEventRoute('overlay.topology', 'wrong-room', 'topology'),
-            'room',
-            'overlay.topology',
-            { version: 1 },
-            { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-a', groupId: 'room-a' } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'rallar-server',
+                route: newALEventRoute('overlay.topology', 'wrong-room', 'topology'),
+                scope: 'room',
+                typeId: 'overlay.topology',
+                resource: { version: 1 },
+                options: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-a', groupId: 'room-a' } }
+            }
         );
         const resolver = createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet() });
         expect(
@@ -518,12 +537,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         });
         const message = {
             ...newALBroadcastMessage(
-                'api-node-17',
-                newALEventRoute('overlay.topology', 'shared-room', 'topology-3'),
-                'room',
-                'overlay.topology',
-                { version: 3 },
-                { groupRef: laggingSnapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'api-node-17',
+                    route: newALEventRoute('overlay.topology', 'shared-room', 'topology-3'),
+                    scope: 'room',
+                    typeId: 'overlay.topology',
+                    resource: { version: 3 },
+                    options: { groupRef: laggingSnapshot.group }
+                }
             ),
             targets: {
                 mode: 'broadcast' as const,
@@ -560,12 +582,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         });
         const message = {
             ...newALBroadcastMessage(
-                'session-a',
-                newALEventRoute('room.chat', 'shared-room', 'message-1'),
-                'room',
-                'chat.message.v1',
-                { text: 'hello' },
-                { groupRef: snapshot.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-a',
+                    route: newALEventRoute('room.chat', 'shared-room', 'message-1'),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'hello' },
+                    options: { groupRef: snapshot.group }
+                }
             ),
             targets: {
                 mode: 'broadcast' as const,
@@ -605,8 +630,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 3
         });
         const message: ALMessage = {
-            ...newALBroadcastMessage('session-b', newALEventRoute('room.chat', 'shared-room', 'message-1'), 'room', 'chat.message.v1', {}, {
-                groupRef: snapshot.group
+            ...newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-b',
+                route: newALEventRoute('room.chat', 'shared-room', 'message-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    groupRef: snapshot.group
+                }
             }),
             targets: {
                 mode: 'broadcast',
@@ -640,8 +673,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
             snapshotVersion: 3
         });
         const message: ALMessage = {
-            ...newALBroadcastMessage('session-a', newALEventRoute('room.chat', 'shared-room', 'message-1'), 'room', 'chat.message.v1', {}, {
-                groupRef: snapshot.group
+            ...newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALEventRoute('room.chat', 'shared-room', 'message-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    groupRef: snapshot.group
+                }
             }),
             targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, recipientPeerIds: ['session-c', 'session-x'] }
         };
@@ -670,11 +711,14 @@ describe('createWsServerTargetResolver state sync routing', () => {
         });
         const message = {
             ...newALMulticastMessage(
-                'session-c',
-                newALEventRoute('room.chat', 'shared-room', 'msg-1'),
-                workspaceB.group,
-                'chat.message.v1',
-                { text: 'workspace-b' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-c',
+                    route: newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                    groupRef: workspaceB.group,
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'workspace-b' }
+                }
             )
         };
         const resolver = createWsServerTargetResolver(webSocketServer, {
@@ -723,12 +767,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         const envelope = createGroupEventEnvelope(workspaceB, ['session-b']);
         const event = envelope.event;
         const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-            'room',
-            AppTopics.groupStateEvent,
-            envelope,
-            { groupRef: event }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+                scope: 'room',
+                typeId: AppTopics.groupStateEvent,
+                resource: envelope,
+                options: { groupRef: event }
+            }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
             grantedTopics: new WsGrantedTopicSet(),
@@ -751,11 +798,14 @@ describe('createWsServerTargetResolver state sync routing', () => {
         addOpenConnection(webSocketServer, 'session-b');
 
         const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.clientStateSnapshot, 'client-1', 'client-1'),
-            'all',
-            AppTopics.clientStateSnapshot,
-            'not-a-client-snapshot'
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.clientStateSnapshot, 'client-1', 'client-1'),
+                scope: 'all',
+                typeId: AppTopics.clientStateSnapshot,
+                resource: 'not-a-client-snapshot'
+            }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, { grantedTopics: new WsGrantedTopicSet() });
 
@@ -788,12 +838,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
         clientStateSnapshotsRepository.setClientStateSnapshots([client]);
         const stateSyncMessage = createSnapshotPage(group, AppTopics.groupStateSnapshot);
         const roomMessage = newALBroadcastMessage(
-            'session-a',
-            newALEventRoute('room.chat', 'room-a', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'expired session' },
-            { groupRef: group.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALEventRoute('room.chat', 'room-a', 'msg-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'expired session' },
+                options: { groupRef: group.group }
+            }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
             grantedTopics: new WsGrantedTopicSet(),
@@ -1102,7 +1155,14 @@ function createSnapshotPage(snapshot: GroupSnapshot | ClientSnapshot, topicId: s
         workspaceId: ref.workspaceId,
         resourceId: group ? group.groupId : principal!.principalId
     };
-    const original = newALBroadcastMessage('api-node-17', newALEventRoute(topicId, scope.resourceId, 'snapshot'), 'all', topicId, {});
+    const original = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'api-node-17',
+        route: newALEventRoute(topicId, scope.resourceId, 'snapshot'),
+        scope: 'all',
+        typeId: topicId,
+        resource: {}
+    });
     const envelope = {
         ...original,
         delivery: original.delivery,

@@ -183,12 +183,15 @@ function assertDurableAdmission(result: ALOutboundEnqueueResult): void {
 
 function toHarnessMessage(sessionId: string, resourceId: string): ALMessage {
     return newALUnicastMessage(
-        sessionId,
-        { topicId: 'alm-harness', resourceId, contextId: 'durable-send' },
-        'harness-peer',
-        'alm-harness.durable-send.v1',
-        { resourceId },
-        { ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'alm-harness', resourceId, contextId: 'durable-send' },
+            toPeerId: 'harness-peer',
+            typeId: 'alm-harness.durable-send.v1',
+            resource: { resourceId },
+            options: { ttlMs: 60_000 }
+        }
     );
 }
 
@@ -216,6 +219,7 @@ function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
     return {
         toMessage: (resourceId) =>
             createBrowserUnicastMessage({
+                createdAtEpochMs: Date.now(),
                 creation: { createUnicast: newALUnicastMessage, newResourceId: () => resourceId },
                 resolved: {
                     input: {

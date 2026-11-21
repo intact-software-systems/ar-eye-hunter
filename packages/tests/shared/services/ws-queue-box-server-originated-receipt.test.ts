@@ -261,16 +261,19 @@ async function joinCluster(local: ReceiptServerInstance, remote: ReceiptServerIn
 
 function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
-        RECEIPT_SERVER_PEER_ID,
-        newALRoute('room.snapshot', ROOM.groupId, msgId),
-        'room',
-        'snapshot.v1',
-        { msgId },
         {
-            groupRef: ROOM,
-            reliability: 'at-least-once',
-            qos: { ack: { algo: ack } },
-            ttlMs: NOTIFICATION_TTL_MS
+            createdAtEpochMs: Date.now(),
+            senderId: RECEIPT_SERVER_PEER_ID,
+            route: newALRoute('room.snapshot', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'snapshot.v1',
+            resource: { msgId },
+            options: {
+                groupRef: ROOM,
+                reliability: 'at-least-once',
+                qos: { ack: { algo: ack } },
+                ttlMs: NOTIFICATION_TTL_MS
+            }
         }
     );
     return { ...message, id: { ...message.id, msgId } };

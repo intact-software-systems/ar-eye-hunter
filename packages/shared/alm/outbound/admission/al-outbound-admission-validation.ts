@@ -11,7 +11,11 @@ import type { ALReceiptProofKeys } from '../../../al-contracts/receipt-proof/al-
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { decodeGroupPresencePublicationKey } from '../../../api/group-presence/decode-group-presence-publication-key.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
+import {
+    decodeALAdmissionCountRecord,
+    decodeALAdmissionRecord,
+    decodeALAdmissionString
+} from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -19,7 +23,7 @@ import type {
 } from '../../al-runtime-state-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
+import { decodeALOutboundSendAttemptIdentity, toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { decodeALAccountViewAuthority, type ALAccountViewAuthority } from './al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
@@ -41,14 +45,18 @@ export interface ALStoredOutboundMessage {
     readonly sentPositions: Readonly<Record<string, number>> | null;
     readonly policy: ALOutboundCapturedPolicy;
     readonly creationExpiry: string;
+    /** The sender stated a terminal settlement for the message: nothing more is sent, retried or repaired for it. */
+    readonly ended: boolean;
 }
 
 /**
  * The sent row as it is written: positions only once a recording kept them, so a row without them reads as one an
- * older build wrote, and an older build still reads every row that recorded nothing.
+ * older build wrote, and an older build still reads every row that recorded nothing. The row writes `ended` only when
+ * the message has ended; an absent key is the row's current shape for a message that has not.
  */
-export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions'> & {
+export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions' | 'ended'> & {
     readonly sentPositions?: Readonly<Record<string, number>>;
+    readonly ended?: true;
 };
 
 export interface ALOutboundCapturedPolicy {
@@ -168,7 +176,7 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
         'orderingSeq',
         'policy',
         'creationExpiry'
-    ], ['supersedenceKey', 'sentPositions']);
+    ], ['supersedenceKey', 'sentPositions', 'ended']);
     const reference = decodeALOutboundMessageReference(snapshot.reference);
     if (snapshot.msgId !== expectedMsgId || reference.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL outbound message identity does not match its slot');
@@ -181,10 +189,14 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
     }
     requirePersistedALNonEmptyString(snapshot.creationExpiry, 'outbound creation expiry observation');
     decodeALOutboundCapturedPolicy(snapshot.policy);
+    if (snapshot.ended !== undefined && snapshot.ended !== true) {
+        throw new TypeError('Persisted AL outbound message end marker is invalid');
+    }
     return {
         ...value as ALStoredOutboundMessage,
         reference,
-        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions)
+        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions),
+        ended: snapshot.ended === true
     };
 }
 
@@ -331,7 +343,7 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         'attempts',
         'deadlineAtMs'
     ];
-    const snapshot = decodeALAdmissionRecord(value, fields);
+    const snapshot = decodeALAdmissionRecord(value, fields, ['firstAttempt']);
     requirePersistedALNonEmptyString(snapshot.msgId, 'pending acknowledgement message id');
     if (snapshot.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL pending acknowledgement identity does not match its slot');
@@ -350,17 +362,25 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
     requirePersistedALSafeInteger(snapshot.maxAttempts, 0, 'acknowledgement maximum attempts');
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'acknowledgement attempts');
     requirePersistedALSafeInteger(snapshot.deadlineAtMs, 0, 'acknowledgement deadline');
+    if (snapshot.firstAttempt !== undefined) {
+        decodeALOutboundSendAttemptIdentity(
+            decodeALAdmissionRecord(snapshot.firstAttempt, ['attemptIdentity', 'phase']),
+            'receipt first attempt'
+        );
+    }
     return value as ALOutboundPendingAckSnapshot;
 }
 
 export function decodeALOutboundRepairAttempt(value: unknown, expectedMsgId: string): ALOutboundRepairAttemptSnapshot {
-    const snapshot = decodeALAdmissionRecord(value, ['msgId', 'attempts']);
+    const snapshot = decodeALAdmissionRecord(value, ['msgId', 'attemptsByRequester']);
     requirePersistedALNonEmptyString(snapshot.msgId, 'repair attempt message id');
     if (snapshot.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL repair attempt identity does not match its slot');
     }
-    requirePersistedALSafeInteger(snapshot.attempts, 0, 'repair attempts');
-    return value as ALOutboundRepairAttemptSnapshot;
+    return {
+        msgId: snapshot.msgId as string,
+        attemptsByRequester: decodeALAdmissionCountRecord(snapshot.attemptsByRequester, 'outbound repair attempts')
+    };
 }
 
 export function decodeALOutboundNotYetInSyncRetry(

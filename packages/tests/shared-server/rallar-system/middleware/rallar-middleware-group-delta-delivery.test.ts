@@ -73,16 +73,19 @@ function toDeltaMessage(index: number): ALMessage {
         group: { ...fixture.group, snapshotVersion: resulting.groupRevision, presenceVersion: resulting.presenceRevision }
     };
     return newALBroadcastMessage(
-        'rallar-server',
-        newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, `event-${index}`),
-        'room',
-        AppTopics.groupStateEvent,
-        envelope,
         {
-            groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF,
-            recipientPeerIds: AUDIENCE,
-            ttlMs: 60_000,
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'rallar-server',
+            route: newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, `event-${index}`),
+            scope: 'room',
+            typeId: AppTopics.groupStateEvent,
+            resource: envelope,
+            options: {
+                groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF,
+                recipientPeerIds: AUDIENCE,
+                ttlMs: 60_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 }

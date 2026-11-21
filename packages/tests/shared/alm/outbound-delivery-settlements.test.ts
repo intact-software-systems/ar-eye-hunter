@@ -67,6 +67,7 @@ function createStores(kind: 'memory' | 'indexeddb'): ALOutboundRuntimeStores<Out
             dbName: `outbound-settlements-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

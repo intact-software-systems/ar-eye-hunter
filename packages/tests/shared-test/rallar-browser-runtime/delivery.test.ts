@@ -400,6 +400,7 @@ it('observes a retained pending admission without storage reads and wakes on the
         dbName: `pending-observation-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });
@@ -684,6 +685,23 @@ it('passes a stated QoS request to the typed send as given, and none without one
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-hop', carrier: 'ws' } };
     await expect(runtime.sendMessage({ ...replay, qos: { ack: { algo: 'hop' } } }))
         .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
+it('merges a stated repair budget into the typed send\'s QoS beside a stated ack, and states no QoS without either', async () => {
+    const runtime = await loadDeliveryRuntime();
+    await runtime.connect(connection);
+    const rtcSend = { ...send, carrier: 'rtc', ack: 'receiver' };
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-both', maxRepairs: 1, qos: { ack: { algo: 'receiver' } } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-budget', maxRepairs: 1 });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-neither' });
+
+    const repair = { algo: 'retransmit', opts: { maxRepairs: 1 } };
+    expect(facade.records.typedSends.map(([, options]) => options?.qos)).toEqual([
+        { ack: { algo: 'receiver' }, repair },
+        { repair },
+        undefined
+    ]);
+    expect(facade.records.typedSends[2][1]).not.toHaveProperty('qos');
 });
 
 it('passes an exclusive claim on a named resource to the typed send as given, and neither without one', async () => {
@@ -986,6 +1004,31 @@ it('decodes a declared send durability and refuses an unknown one', () => {
         .toEqual({
             message: 'messages.send.durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
         });
+});
+
+it('decodes a stated repair budget, and none without one', () => {
+    const send = {
+        kind: 'messages.send',
+        timeoutMs: 1_000,
+        connection: 'sender',
+        carrier: 'rtc',
+        typeId: 'alm.conformance',
+        handleId: 'handle-1',
+        payload: { n: 1 }
+    };
+
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, maxRepairs: 1 }).right).toMatchObject({ maxRepairs: 1 });
+    expect(decodeBlackBoxRallarMessageSendInput(send).right).toHaveProperty('maxRepairs', undefined);
+    expect(
+        decodeBlackBoxRallarMessageSendInput({
+            connection: 'sender',
+            timeoutMs: 1_000,
+            maxRepairs: 1,
+            replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' }
+        }).left
+    ).toEqual({
+        message: 'messages.send names maxRepairs beside replayOnCarrier; a replay names only the handle and its carrier.'
+    });
 });
 
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
@@ -1707,12 +1750,16 @@ function toInboundRequest(
 /** The reply handle the product's `reply()` opens: a unicast back to the requester under its correlation. */
 function openReplyDelivery(requestMsgId: string): RallarMessageHandle {
     return facade.deliveries.open({
-        id: { v: 4, msgId: `reply-to-${requestMsgId}`, ts: Date.now(), senderId: 'client-1', traceId: 'trace-delivery' },
-        route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
-        payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
-        delivery: { ack: 'receiver', reliability: 'at-least-once' },
-        actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
-    }, 'ws');
+        message: {
+            id: { v: 4, msgId: `reply-to-${requestMsgId}`, ts: Date.now(), senderId: 'client-1', traceId: 'trace-delivery' },
+            route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
+            payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
+            delivery: { ack: 'receiver', reliability: 'at-least-once' },
+            actions: { corrId: requestMsgId, replyToMsgId: requestMsgId }
+        },
+        carrier: 'ws',
+        readDeadlineEpochMs: Date.now
+    });
 }
 
 interface ReceivingRuntime {

@@ -107,7 +107,8 @@ export function toALOutboundTrackedReceipt(
         timeoutMs: input.tracking.timeoutMs,
         maxAttempts: input.tracking.maxAttempts,
         attempts: input.current?.attempts ?? 0,
-        deadlineAtMs: input.nowMs + input.tracking.timeoutMs
+        deadlineAtMs: input.nowMs + input.tracking.timeoutMs,
+        ...(input.current?.firstAttempt === undefined ? {} : { firstAttempt: input.current.firstAttempt })
     };
 }
 

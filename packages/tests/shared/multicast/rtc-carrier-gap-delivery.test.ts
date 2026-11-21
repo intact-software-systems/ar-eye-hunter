@@ -99,17 +99,20 @@ describe('an RTC origin room send in a carrier gap', () => {
         const fixture = createGapFixture();
         fixture.groups.delete('room');
         const message = newALUnicastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'unicast-gap', contextId: 'room' },
-            'b',
-            'chat.message.v1',
-            { text: 'unicast-gap' },
             {
-                groupRef: ORIGIN_ROOM,
-                ack: 'all-logical-recipients',
-                reliability: 'at-least-once',
-                ttlMs: DEADLINE_MS,
-                qos: { durability: { algo: 'local-outbox' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'unicast-gap', contextId: 'room' },
+                toPeerId: 'b',
+                typeId: 'chat.message.v1',
+                resource: { text: 'unicast-gap' },
+                options: {
+                    groupRef: ORIGIN_ROOM,
+                    ack: 'all-logical-recipients',
+                    reliability: 'at-least-once',
+                    ttlMs: DEADLINE_MS,
+                    qos: { durability: { algo: 'local-outbox' } }
+                }
             }
         );
 
@@ -194,16 +197,19 @@ function createGapFixture(): RtcOriginOverlayFixture {
 
 function createDurableRoomMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
         {
-            ack: 'all-logical-recipients',
-            reliability: 'at-least-once',
-            ttlMs: DEADLINE_MS,
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: {
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: DEADLINE_MS,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 }

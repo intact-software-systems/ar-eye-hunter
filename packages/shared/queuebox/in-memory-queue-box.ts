@@ -46,9 +46,11 @@ import {
     hasSameResourceEntryValue,
     resolveResourceEntryObservation,
     resolveResourceEntryObservedWrites,
+    resolveResourceInboxWorkPageRequest,
     toResourceEntrySnapshot
 } from './resource-entry-observations.ts';
 import {
+    compareResourceEntriesByDue,
     resolveResourceInboxClaimOrder,
     toCreationOrderedEntries
 } from './resource-inbox/resource-inbox-claim-order.ts';
@@ -119,6 +121,16 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        const validated = resolveResourceInboxWorkPageRequest(request);
+        if (validated.left) {
+            throw validated.left;
+        }
+        if (request.order === 'due') {
+            const now = this.now();
+            const entries = this.getDueOrderedEntries(new Set([request.typeId]), new Set([request.status]))
+                .filter((entry) => !isExpiredResourceEntry(entry, now));
+            return { entries: entries.slice(0, request.maxToRead).map(toResourceEntrySnapshot), nextCursor: null };
+        }
         const page = this.workIndex.read(request);
         return {
             entries: page.keys.map((key) => toResourceEntrySnapshot(this.data.get(key)!)),
@@ -629,21 +641,33 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    /**
-     * The rows a claim looks at, in its claim order; creation ties keep insertion order, so a row stored early under an
-     * old key does not go ahead of older work. A due-order claim keeps insertion order.
-     */
+    /** The rows a claim looks at, in its claim order; ties in either order keep arrival order. */
     private getClaimCandidates(
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>
     ): Iterable<ResourceEntry> {
         if (resolveResourceInboxClaimOrder(statusIds) === 'due') {
-            return this.data.values();
+            return this.getDueOrderedEntries(typeIds, statusIds);
         }
         return toCreationOrderedEntries(
-            [...this.data.values()].filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status)),
+            this.getEntriesOf(typeIds, statusIds),
             (entry) => entry.audit.createdTs
         );
+    }
+
+    /**
+     * The key index holds no arrival order, and due ties fall to arrival, so due order is read from the entry map,
+     * whose iteration order is arrival order.
+     */
+    private getDueOrderedEntries(
+        typeIds: ReadonlySet<string>,
+        statusIds: ReadonlySet<EntityStatus>
+    ): ResourceEntry[] {
+        return this.getEntriesOf(typeIds, statusIds).sort(compareResourceEntriesByDue);
+    }
+
+    private getEntriesOf(typeIds: ReadonlySet<string>, statusIds: ReadonlySet<EntityStatus>): ResourceEntry[] {
+        return [...this.data.values()].filter((entry) => typeIds.has(entry.typeId) && statusIds.has(entry.status));
     }
 
     private *getIndexedEntries(
@@ -653,7 +677,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         for (const typeId of typeIds) {
             let cursor: ResourceInboxWorkPage.Cursor | null = null;
             do {
-                const page = this.workIndex.read({ typeId, status, maxToRead: INDEX_PAGE_SIZE, cursor });
+                const page = this.workIndex.read({ typeId, status, maxToRead: INDEX_PAGE_SIZE, order: 'key', cursor });
                 for (const key of page.keys) {
                     const entry = this.data.get(key);
                     if (entry !== undefined) {

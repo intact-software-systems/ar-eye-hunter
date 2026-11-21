@@ -261,12 +261,15 @@ async function computeDirectorRelease(
 
 function createLeaderSend(seq?: number): ALMessage {
     const message = newALMulticastMessage(
-        'origin',
-        { topicId: 'room.director', resourceId: `shot-${seq ?? 'unordered'}`, contextId: ROOM.groupId },
-        ROOM,
-        'room.director.intent.v1',
-        {},
-        { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: { topicId: 'room.director', resourceId: `shot-${seq ?? 'unordered'}`, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'room.director.intent.v1',
+            resource: {},
+            options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
+        }
     );
     return { ...message, targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['director'], snapshotVersion: 1 } };
 }

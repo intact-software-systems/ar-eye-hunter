@@ -111,6 +111,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
                 typeId: toALOutboundWorkType(resources.admissionStore.namespace),
                 status: EntityStatus.COMPLETED,
                 maxToRead: 10,
+                order: 'key',
                 cursor: null
             })).entries.length
         ).toBe(1);
@@ -118,6 +119,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
             typeId: toALOutboundWorkType(resources.admissionStore.namespace),
             status: EntityStatus.COMPLETED,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(completed.entries).toHaveLength(1);

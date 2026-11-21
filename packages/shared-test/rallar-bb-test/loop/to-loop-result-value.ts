@@ -1,10 +1,4 @@
 import {
-    type RallarBlackBoxTestLoopChildResult,
-    type RallarBlackBoxTestLoopPacingIteration,
-    type RallarBlackBoxTestLoopPacingSummary,
-    type RallarBlackBoxTestLoopResultValue,
-    type RallarBlackBoxTestLoopSendSummary,
-    type RallarBlackBoxTestLoopThresholdFailure,
     type RallarBlackBoxTestResult,
     type RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
@@ -15,6 +9,14 @@ import {
     decodeText,
     decodeTransport
 } from '../runtime/decode-runtime-result-values.ts';
+import type {
+    RallarBlackBoxTestLoopChildResult,
+    RallarBlackBoxTestLoopPacingIteration,
+    RallarBlackBoxTestLoopPacingSummary,
+    RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestLoopSendSummary,
+    RallarBlackBoxTestLoopThresholdFailure
+} from './loop-result-contracts.ts';
 
 export interface LoopResultMetrics {
     readonly intervalMs: number;

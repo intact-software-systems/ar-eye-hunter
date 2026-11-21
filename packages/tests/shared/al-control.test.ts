@@ -12,6 +12,7 @@ import {
     AL_CONTROL_REPAIR_TYPE_ID,
     isALControlTypeId
 } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALRepairPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALControlMessage,
     newALAckControlMessage,
@@ -59,7 +60,7 @@ const repair: ALRepairPayload = {
     observedAtEpochMs: 14,
     orderingKey: 'track',
     expectedSeq: 2,
-    missingRanges: [{ from: 2, to: 2 }]
+    missingRanges: []
 };
 const receipt: ALReceiptPayload = {
     msgId: 'msg-1',
@@ -79,16 +80,150 @@ const controlId: ALMessage['id'] = {
     traceId: 'trace-al-control'
 };
 
+const GAP_NACK_FIELDS = {
+    msgId: 'm',
+    fromPeerId: 'b',
+    toPeerId: 'a',
+    logicalRecipientPeerId: 'b',
+    originPeerId: 'a',
+    reason: 'gap',
+    observedAtEpochMs: 1,
+    orderingKey: 'k',
+    expectedSeq: 1,
+    missingRanges: [{ from: 1, to: 1 }],
+    gapRequestNumber: 1,
+    proof: null
+} as const;
+const MISSING_SEQ_FIELDS: ALRepairPayload = {
+    msgId: 'm',
+    fromPeerId: 'b',
+    toPeerId: 'a',
+    reason: 'missing-seq',
+    observedAtEpochMs: 1,
+    orderingKey: 'k',
+    expectedSeq: 1,
+    missingRanges: [{ from: 1, to: 1 }],
+    gapRequestNumber: 1
+};
+
 describe('AL control message codec', () => {
-    it('names the v3 acknowledgement and NACK, the v2 repair and the v1 receipt as the four supported control ids', () => {
+    it('names the v3 acknowledgement, the v4 NACK, the v3 repair and the v1 receipt as the four supported control ids', () => {
         expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v3');
-        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v3');
-        expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v2');
         expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
-        expect(['al.control.ack.v3', 'al.control.nack.v3', 'al.control.repair.v2', 'al.control.receipt.v1']
+        expect(['al.control.ack.v3', 'al.control.nack.v4', 'al.control.repair.v3', 'al.control.receipt.v1']
             .every(isALControlTypeId)).toBe(true);
         expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.ack.v2', 'al.control.nack.v2']
             .some(isALControlTypeId)).toBe(false);
+    });
+
+    it('refuses the control ids it replaced', () => {
+        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v4');
+        expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v3');
+        expect(isALControlTypeId('al.control.nack.v3')).toBe(false);
+        expect(isALControlTypeId('al.control.repair.v2')).toBe(false);
+    });
+
+    it('requires a gap request number on a gap NACK and refuses one on any other reason', () => {
+        const gap = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            logicalRecipientPeerId: 'b',
+            originPeerId: 'a',
+            reason: 'gap',
+            observedAtEpochMs: 1,
+            orderingKey: 'k',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }],
+            proof: null
+        };
+        expect(() => decodeALNackPayload(gap)).toThrow(
+            'NACK gap request number is required on a gap and refused on any other reason'
+        );
+        expect(() => decodeALNackPayload({ ...gap, reason: 'expired', gapRequestNumber: 1 })).toThrow(
+            'NACK gap request number is required on a gap and refused on any other reason'
+        );
+        expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 0 })).toThrow('NACK gap request number is invalid');
+        expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 1.5 })).toThrow('NACK gap request number is invalid');
+        expect(decodeALNackPayload({ ...gap, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
+        expect(decodeALNackPayload({ ...gap, reason: 'expired' })).not.toHaveProperty('gapRequestNumber');
+    });
+
+    it('requires a gap request number on a missing-seq repair request and refuses one on any other reason', () => {
+        const missing = {
+            msgId: 'm',
+            fromPeerId: 'b',
+            toPeerId: 'a',
+            reason: 'missing-seq',
+            observedAtEpochMs: 1,
+            orderingKey: 'k',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }]
+        };
+        expect(() => decodeALRepairPayload(missing)).toThrow(
+            'Repair gap request number is required on a missing-seq request and refused on any other reason'
+        );
+        expect(() => decodeALRepairPayload({ ...missing, reason: 'retransmit', missingRanges: [], gapRequestNumber: 1 })).toThrow(
+            'Repair gap request number is required on a missing-seq request and refused on any other reason'
+        );
+        expect(() => decodeALRepairPayload({ ...missing, gapRequestNumber: 0 })).toThrow('Repair gap request number is invalid');
+        expect(decodeALRepairPayload({ ...missing, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
+        expect(decodeALRepairPayload({ ...missing, reason: 'retransmit', missingRanges: [] }))
+            .not.toHaveProperty('gapRequestNumber');
+    });
+
+    it.each([-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null])('refuses a gap NACK numbered %s as invalid', (gapRequestNumber) => {
+        expect(() => decodeALNackPayload({ ...GAP_NACK_FIELDS, gapRequestNumber })).toThrow('NACK gap request number is invalid');
+    });
+
+    it.each([-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null])('refuses a missing-seq request numbered %s as invalid', (gapRequestNumber) => {
+        expect(() => decodeALRepairPayload({ ...MISSING_SEQ_FIELDS, gapRequestNumber })).toThrow('Repair gap request number is invalid');
+    });
+
+    it.each([['absent', {}], ['empty', { missingRanges: [] }]] as const)(
+        'refuses a missing-seq request whose missing ranges are %s',
+        (_label, ranges) => {
+            const { missingRanges: _ranges, ...missingSeq } = MISSING_SEQ_FIELDS;
+
+            expect(() => decodeALRepairPayload({ ...missingSeq, ...ranges })).toThrow(
+                'Repair missing ranges are required on a missing-seq request and refused on any other reason'
+            );
+        }
+    );
+
+    it('accepts a gap NACK that names no missing range, numbered as any gap NACK is', () => {
+        const { missingRanges: _ranges, ...rangeless } = GAP_NACK_FIELDS;
+
+        expect(decodeALNackPayload(rangeless)).toEqual(rangeless);
+    });
+
+    it.each(['retransmit', 'resync'] as const)('refuses a %s request that names a missing range', (reason) => {
+        const { gapRequestNumber: _number, ...request } = MISSING_SEQ_FIELDS;
+
+        expect(() => decodeALRepairPayload({ ...request, reason }))
+            .toThrow('Repair missing ranges are required on a missing-seq request and refused on any other reason');
+        expect(decodeALRepairPayload({ ...request, reason, missingRanges: [] }).missingRanges).toEqual([]);
+    });
+
+    it('keeps the missing ranges a NACK of another reason names, as the WS server states them for an expired copy on a gapped track', () => {
+        const { gapRequestNumber: _number, ...expired } = GAP_NACK_FIELDS;
+
+        expect(decodeALNackPayload({ ...expired, reason: 'expired' }).missingRanges).toEqual([{ from: 1, to: 1 }]);
+    });
+
+    it.each([
+        [
+            'al.control.nack.v3',
+            newALNackControlMessage(
+                controlId,
+                { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' }
+            )
+        ],
+        ['al.control.repair.v2', newALRepairControlMessage(controlId, { ...MISSING_SEQ_FIELDS, fromPeerId: 'sender' })]
+    ])('refuses a whole %s control unsupported', (typeId, current) => {
+        const retired = { ...current, payload: { ...current.payload, typeId } };
+
+        expect(decodeALControlMessage(retired).left).toMatchObject({ code: 'unsupported' });
     });
 
     it('refuses an al.control.ack.v2 and an al.control.nack.v2 control unsupported', () => {
@@ -356,11 +491,14 @@ function controlMessage(typeId: string, payload: ALControlPayload): ALMessage {
 function controlMessageWithResource(typeId: string, resource: string): ALMessage {
     return {
         ...newALUnicastMessage(
-            'sender',
-            { topicId: 'al-control', resourceId: 'msg-1', contextId: 'sender:receiver' },
-            'receiver',
-            typeId,
-            null
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'al-control', resourceId: 'msg-1', contextId: 'sender:receiver' },
+                toPeerId: 'receiver',
+                typeId,
+                resource: null
+            }
         ),
         payload: { typeId, contentType: 'application/json', resource }
     };

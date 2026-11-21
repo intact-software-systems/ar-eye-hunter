@@ -155,7 +155,9 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.a)).toEqual(toSeqs(1, 35));
     });
 
-    it('serves the second requester of a spent sequence from the receipt retry, not from ranged repair', async () => {
+    // The repair budget counts per requester (the maintainer's ruling): a second requester of a sequence
+    // another requester already had repaired is served its own attempt.
+    it('serves the second requester of a sequence from ranged repair under its own budget', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 3, ['a', 'b', 'c']);
         for (const msgId of ['event-1', 'event-2', 'event-3']) {
@@ -170,25 +172,20 @@ describe('the WS server repairs its own ordered publication', () => {
         await receiveAck(server, 'event-3', 'b');
         await receiveNack(server, { fromPeerId: 'c', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] });
 
-        await expect.poll(() => runEngine(server, () => readRepairExhaustedMsgIds(server))).toEqual(['event-2']);
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.c))).toEqual([1, 2, 3, 2]);
+        expect(readServedRepairSeqs(server, 'c')).toEqual([2]);
+        expect(readRepairExhaustedMsgIds(server)).toEqual([]);
+        await receiveAck(server, 'event-2', 'c');
         await receiveAck(server, 'event-3', 'c');
         await settle(server);
-        expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3]);
 
         server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
-        await expect.poll(() => runEngine(server, () => readMsgIds(server.sockets.c))).toEqual([
-            'event-1',
-            'event-2',
-            'event-3',
-            'event-2'
-        ]);
         await settle(server);
         expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3, 2]);
         expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3, 2]);
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
-        expect(readRepairExhaustedMsgIds(server)).toEqual(['event-2']);
+        expect(readRepairExhaustedMsgIds(server)).toEqual([]);
         expect(readServedRepairSeqs(server, 'b')).toEqual([2]);
-        expect(readServedRepairSeqs(server, 'c')).toEqual([]);
     });
 
     it('retransmits nothing for a gap NACK that arrives after the message deadline', async () => {
@@ -757,12 +754,15 @@ async function publishEvent(
 /** Client `a`'s keyed room event at the sequence `a` stated, as the server relays it. */
 function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
     const message = newALBroadcastMessage(
-        'a',
-        newALRoute('room.round.event', ROOM.groupId, msgId),
-        'room',
-        'round.event.v1',
-        { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: newALRoute('room.round.event', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: { msgId },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
@@ -776,12 +776,15 @@ function producerEvent(seq: number, msgId = `s-event-${seq}`): ALMessage {
 /** The server's own keyed round event; `ack: 'none'` asks no receipt of its recipients. */
 function roundEvent(msgId: string, ack: 'receiver' | 'none' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
-        SERVER_ID,
-        newALRoute('room.round.event', ROOM.groupId, msgId),
-        'room',
-        'round.event.v1',
-        { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: SERVER_ID,
+            route: newALRoute('room.round.event', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: { msgId },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }

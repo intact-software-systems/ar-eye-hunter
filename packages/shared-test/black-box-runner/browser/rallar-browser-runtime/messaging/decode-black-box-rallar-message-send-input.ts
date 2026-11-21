@@ -93,6 +93,7 @@ const REPLAY_REFUSED_FIELDS = [
     'handleId',
     'minSnapshotVersion',
     'qos',
+    'maxRepairs',
     'toPeer'
 ] as const;
 
@@ -169,7 +170,8 @@ function decodeMessageSendFields(
                         topicId: decodeBlackBoxCommandString(value.topicId),
                         ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
                         orderingKey: decodeBlackBoxCommandString(value.orderingKey),
-                        seq: decodeBlackBoxCommandNumber(value.seq)
+                        seq: decodeBlackBoxCommandNumber(value.seq),
+                        maxRepairs: decodeBlackBoxCommandNumber(value.maxRepairs)
                     }))
             )
     );

@@ -22,6 +22,8 @@ import type {
     GroupSnapshot,
     GroupStatus
 } from './group-types.ts';
+import type { RoomClockCommand } from './group-deadlines/room-clock.ts';
+import type { RoomDeadlineChange } from './group-deadlines/room-deadline.ts';
 import { assertValidRallarRouteId } from './rallar-validation.ts';
 
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
@@ -118,6 +120,8 @@ export interface CreateGroupRequest extends MutationActorInput {
 }
 
 export interface UpdateGroupRequest extends MutationActorInput {
+    readonly roomClock?: RoomClockCommand;
+    readonly roomDeadline?: RoomDeadlineChange;
     readonly slug?: string;
     readonly displayName?: string;
     readonly description?: string;

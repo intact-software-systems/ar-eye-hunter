@@ -72,6 +72,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.NON_RETRYABLE,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(rejectedPage.entries).toHaveLength(1);
@@ -167,6 +168,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.RETRY,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(retryPage.entries).toHaveLength(1);
@@ -745,10 +747,18 @@ interface UnicastFixtureInput {
 }
 
 function createUnicast(input: UnicastFixtureInput): shared.ALMessage {
-    return shared.newALUnicastMessage('peer-1', { topicId: 'tasks', resourceId: 'job', contextId: 'queue' }, 'self', 'tasks.job.v1', { text: 'hello' }, {
-        qos: {
-            ack: { algo: input.acknowledge ? 'hop' : 'none' },
-            ownership: { algo: input.exclusive ? 'exclusive' : 'shared' }
+    return shared.newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: { topicId: 'tasks', resourceId: 'job', contextId: 'queue' },
+        toPeerId: 'self',
+        typeId: 'tasks.job.v1',
+        resource: { text: 'hello' },
+        options: {
+            qos: {
+                ack: { algo: input.acknowledge ? 'hop' : 'none' },
+                ownership: { algo: input.exclusive ? 'exclusive' : 'shared' }
+            }
         }
     });
 }
@@ -761,20 +771,23 @@ interface MulticastFixtureInput {
 
 function createMulticast(input: MulticastFixtureInput): shared.ALMessage {
     const message = shared.newALMulticastMessage(
-        'peer-1',
         {
-            topicId: 'chat',
-            resourceId: `message-${input.seq}`,
-            contextId: 'group-1'
-        },
-        roomRef,
-        'chat.message.v1',
-        { text: `message ${input.seq}` },
-        {
-            seq: input.seq,
-            reliability: 'at-least-once',
-            ack: input.acknowledgeSubtree ? 'all-logical-recipients' : 'none',
-            minSnapshotVersion: input.minSnapshotVersion
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: {
+                topicId: 'chat',
+                resourceId: `message-${input.seq}`,
+                contextId: 'group-1'
+            },
+            groupRef: roomRef,
+            typeId: 'chat.message.v1',
+            resource: { text: `message ${input.seq}` },
+            options: {
+                seq: input.seq,
+                reliability: 'at-least-once',
+                ack: input.acknowledgeSubtree ? 'all-logical-recipients' : 'none',
+                minSnapshotVersion: input.minSnapshotVersion
+            }
         }
     );
     return toALFrozenMulticastMessage(message, { recipientPeerIds: ['self', 'peer-2', 'peer-3'], snapshotVersion: 1 });
@@ -827,17 +840,20 @@ describe('RTC receiver consumer dispatch', () => {
             }
         });
         const message = newALUnicastMessage(
-            'sender',
             {
-                topicId: 'chat',
-                resourceId: 'message',
-                contextId: 'conversation'
-            },
-            'receiver',
-            'chat.message.v1',
-            { text: 'hello' },
-            {
-                qos: { ack: { algo: 'hop', opts: { timeoutMs: 1000 } }, durability: { algo: 'volatile' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'message',
+                    contextId: 'conversation'
+                },
+                toPeerId: 'receiver',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' },
+                options: {
+                    qos: { ack: { algo: 'hop', opts: { timeoutMs: 1000 } }, durability: { algo: 'volatile' } }
+                }
             }
         );
 
@@ -876,17 +892,20 @@ function createConnectedEndpoints(): ConnectedEndpoints {
 
 function exclusiveMessage() {
     return newALUnicastMessage(
-        'sender',
         {
-            topicId: 'tasks',
-            resourceId: 'job',
-            contextId: 'queue'
-        },
-        'receiver',
-        'tasks.job.v1',
-        { text: 'claim me' },
-        {
-            qos: { ownership: { algo: 'exclusive' }, durability: { algo: 'volatile' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: {
+                topicId: 'tasks',
+                resourceId: 'job',
+                contextId: 'queue'
+            },
+            toPeerId: 'receiver',
+            typeId: 'tasks.job.v1',
+            resource: { text: 'claim me' },
+            options: {
+                qos: { ownership: { algo: 'exclusive' }, durability: { algo: 'volatile' } }
+            }
         }
     );
 }

@@ -281,6 +281,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-lag',
         'ordering-resync',
         'ordering-gap-repair',
+        'seeded-loss-stream',
+        'seeded-loss-unreceipted-stream',
         'seeded-jitter-stream',
         'ws-unicast-receipt',
         'server-command',
@@ -316,6 +318,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ordering-resync',
         'ordering-gap-repair',
         'repair-exhausted',
+        'seeded-loss-stream',
         'lost-stream-start',
         'not-yet-in-sync-expires',
         'ws-unicast-receipt',
@@ -900,6 +903,7 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
+            ['full'],
             // The paced cells, after the volatile bound cells.
             ['smoke', 'full'],
             ['smoke', 'full'],
@@ -1011,7 +1015,7 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v3","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                contains: '"typeId":"al.control.nack.v4","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
                     '"outcome":"committed"',
                 sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },
@@ -1772,6 +1776,7 @@ describe('alm-conformance recipe family', () => {
             'rtc ordering-resync sender alm-rtc-ordering-resync-sender-hold-rtc',
             'rtc ordering-gap-repair sender alm-rtc-ordering-gap-repair-sender-hold-rtc',
             'rtc repair-exhausted sender alm-rtc-repair-exhausted-sender-hold-rtc',
+            'rtc seeded-loss-stream sender alm-rtc-seeded-loss-stream-sender-loss-arm',
             'rtc buffered-track-drains sender alm-rtc-buffered-track-drains-sender-hold-rtc',
             'rtc granted-rtc-ordered-relay sender alm-rtc-granted-rtc-ordered-relay-sender-hold-rtc',
             'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-rtc',

@@ -10,6 +10,7 @@ import {
     type ComputedIndexedDbQueueMutation
 } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxFairnessSelection } from './queue-box-types.ts';
+import { toResourceEntryDueInstant } from './resource-inbox/resource-inbox-claim-order.ts';
 import type { Key } from './ResourceEntry.ts';
 
 type ComputeIndexedDbFairnessReservationInput = Readonly<{
@@ -52,7 +53,7 @@ export function computeIndexedDbFairnessReservation(
         }
         if (!isStoredQueueEntryExpired(stored, input.now) && stored.dequeueAudit.attempts < input.maxAttempts) {
             const decoded = decodeStoredResourceEntry(stored);
-            const selectedDueTs = decoded.dequeueAudit.nextTs!;
+            const selectedDueTs = toResourceEntryDueInstant(decoded);
             const entry = computeReservedQueueEntry(decoded, input.now);
             result.set(entry.key, { entry, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, entry));

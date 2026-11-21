@@ -228,6 +228,7 @@ describe('fenced-catch-up', () => {
                 'send-2',
                 'observe-admitted-2',
                 'assert-admitted-2',
+                ...(carrier === 'ws' ? ['observe-acknowledged-1', 'assert-acknowledged-1'] : []),
                 'stats'
             ]);
             expect(toCommandNames(requireRecipientB(scenario))).toEqual([...PROLOGUE, 'received-roster-move', 'leave-roster', 'stats']);
@@ -278,12 +279,34 @@ describe('fenced-catch-up', () => {
                 kind: 'diagnostic',
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v3",' +
+                contains: '"typeId":"al.control.nack.v4",' +
                     `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}"${outcome}`,
                 sinceCommandIdPrefix: `alm-${carrier}-fenced-catch-up-sender-`
             },
             timeoutMs: 27_000
         });
+    });
+
+    it('ends the ws sender reading the kept send\'s handle acknowledged; the rtc sender reads no such state', () => {
+        const { sender } = findScenario(toConformanceInput('ws'), 'fenced-catch-up');
+        const rtcNames = toCommandNames(findScenario(toConformanceInput('rtc'), 'fenced-catch-up').sender);
+
+        expect(sender.commands.slice(-3, -1)).toMatchObject([
+            {
+                kind: 'messages.observe',
+                commandId: 'alm-ws-fenced-catch-up-sender-observe-acknowledged-1',
+                handleId: 'alm-ws-fenced-catch-up-send-1',
+                state: ['acknowledged']
+            },
+            {
+                kind: 'assert',
+                commandId: 'alm-ws-fenced-catch-up-sender-assert-acknowledged-1',
+                source: 'resultCache.alm-ws-fenced-catch-up-sender-observe-acknowledged-1.value.state',
+                operator: 'matches',
+                expected: '^acknowledged$'
+            }
+        ]);
+        expect(rtcNames.filter((name) => name.endsWith('acknowledged-1'))).toEqual([]);
     });
 
     it.each(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS)('lets %s recipient-b leave the group only once the cue reached it', (carrier) => {
@@ -389,7 +412,7 @@ describe('fenced-rejection', () => {
             kind: 'wait',
             match: {
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-                contains: '"typeId":"al.control.nack.v3",' +
+                contains: '"typeId":"al.control.nack.v4",' +
                     '"targetMsgId":"{resultCache.alm-ws-fenced-rejection-sender-send-1.value.msgId}","outcome":"committed"'
             }
         });

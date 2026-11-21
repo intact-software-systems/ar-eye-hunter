@@ -269,7 +269,8 @@ describe('outbound admission persisted-record validation', () => {
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
-            durableEffects: [{ effectId: effect.effectId, payload: effect.payload }]
+            durableEffects: [{ effectId: effect.effectId, payload: effect.payload }],
+            endedTimeoutEffectIds: []
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         const persisted = await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId));
         expect(persisted?.status).toBe(EntityStatus.NON_RETRYABLE);
@@ -608,16 +609,19 @@ async function scheduleNotYetInSyncRetry(
 
 function createMessage() {
     return newALUnicastMessage(
-        'sender',
         {
-            topicId: 'chat',
-            resourceId: 'resource',
-            contextId: 'context'
-        },
-        'peer',
-        'chat.text.v1',
-        { text: 'hello' },
-        { ttlMs: 60_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: {
+                topicId: 'chat',
+                resourceId: 'resource',
+                contextId: 'context'
+            },
+            toPeerId: 'peer',
+            typeId: 'chat.text.v1',
+            resource: { text: 'hello' },
+            options: { ttlMs: 60_000 }
+        }
     );
 }
 
