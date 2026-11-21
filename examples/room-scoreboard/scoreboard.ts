@@ -1,4 +1,4 @@
-import { renderCourtProgram } from './court-program.ts';
+import { renderCourtProgram } from './render-court-program.ts';
 import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
