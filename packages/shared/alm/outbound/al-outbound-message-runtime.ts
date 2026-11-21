@@ -63,6 +63,7 @@ import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-o
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
+import { toALMessageWithAppliedSupersedence } from './to-al-message-with-applied-supersedence.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -543,6 +544,8 @@ type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDelivery
 
 /** The lane one admission goes to and the planner its admission reads the plan through. */
 interface ALOutboundPlannedAdmission<TPrepared> {
+    /** The send as admitted: the request, with any supersedence its plan applied written into its `qos`. */
+    readonly msg: ALMessage;
     readonly lane: ALOutboundStoreLane<TPrepared>;
     readonly planner: ALOutboundPlanner<TPrepared>;
 }
@@ -840,15 +843,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
         const admission = dispatchPlan === undefined
             ? this.planAdmission(msg)
-            : { lane: this.resolveLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
+            : { msg, lane: this.resolveLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
         await admission.lane.ready();
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
         const computed = await admission.lane.commit(
-            this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
+            this.toEnqueueDispatch(admission.msg, admission.planner, dispatchPlan !== undefined)
         );
-        return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
+        return ALOutboundMessageRuntime.toEnqueueResult(computed, admission.msg);
     }
 
     async retransmitAdmittedMessage(
@@ -880,8 +883,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
         }
         const planned = msgs.map((msg) => {
-            const { lane, planner } = this.planAdmission(msg);
-            return { lane, dispatch: this.toEnqueueDispatch(msg, planner, false) };
+            const admission = this.planAdmission(msg);
+            return { lane: admission.lane, dispatch: this.toEnqueueDispatch(admission.msg, admission.planner, false) };
         });
         const lanes = [...new Set(planned.map(({ lane }) => lane))];
         // A batch waits for the lanes its messages are admitted to; an empty one names none and waits for them all.
@@ -934,18 +937,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Plans the message once, for the lane its plan names, and states a congestion drop of that plan. A planner
-     * that throws is left to the durable lane's admission, which plans it again and states that failure where a
-     * single send always has.
+     * Plans the message once, for the lane its plan names, and states a congestion drop of that plan. A supersedence
+     * the plan applied from the provider's defaults is written into the send's own request before its admission signs
+     * it, and the stamped send is planned again as the one admitted. A planner that throws is left to the durable
+     * lane's admission, which plans it again and states that failure where a single send always has.
      */
-    private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
+    private planAdmission(requested: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
+        let msg = requested;
         let plan: ALOutboundDispatchPlan<TPrepared>;
         try {
             plan = planOutgoingMessage(msg, undefined);
+            msg = toALMessageWithAppliedSupersedence(msg, plan.supersedenceTracking);
+            plan = msg === requested ? plan : planOutgoingMessage(msg, undefined);
         }
         catch {
-            return { lane: this.durable, planner: planOutgoingMessage };
+            return { msg, lane: this.durable, planner: planOutgoingMessage };
         }
         if (plan.congestionDrop !== undefined) {
             writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
@@ -967,7 +974,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 nowMs: this.dependencies.clock.nowMs()
             })
             : plan;
-        return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
+        return { msg, lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
     /**
