@@ -180,7 +180,8 @@ describe('outbound admission persisted-record validation', () => {
                 msg: msg,
                 planner: () => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
                 observedCanonicalEntry: undefined,
-                intent: 'enqueue'
+                intent: 'enqueue',
+                stampsAppliedSupersedence: true
             })
         )
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);

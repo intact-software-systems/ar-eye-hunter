@@ -685,6 +685,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
             dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent,
+            stampsAppliedSupersedence: dispatch.intent === 'enqueue' && dispatch.options.explicitPlan !== true,
             repairAttempt: dispatch.options.repairBudget === undefined
                 ? undefined
                 : { attemptIdentity: toALOutboundAttemptIdentity(dispatch.options), phase: dispatch.phase }
@@ -862,14 +863,16 @@ function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<
 }
 
 /**
- * Whether a first admission added to its request: it minted a sequence, stamped a record or signed the frame. A
- * recording that stamps nothing, a dequeue's, adds nothing to the message: its copy stays the row as admitted.
+ * Whether a first admission added to its request: it minted a sequence, stamped a record or the supersedence its plan
+ * applied, or signed the frame. A recording that stamps nothing, a dequeue's, adds nothing to the message: its copy
+ * stays the row as admitted.
  */
 function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
     const { originalMsg, msg } = read;
     return read.storedMessage === undefined && (
         (originalMsg.ordering?.seq === undefined && msg.ordering?.seq !== undefined) ||
         (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
+        (originalMsg.qos?.supersedence === undefined && msg.qos?.supersedence !== undefined) ||
         (originalMsg.proof === undefined && msg.proof !== undefined)
     );
 }

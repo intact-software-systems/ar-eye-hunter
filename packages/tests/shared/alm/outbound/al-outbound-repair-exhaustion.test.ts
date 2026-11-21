@@ -152,7 +152,8 @@ async function readRepairAttempts(stores: OutboundTestStores, messages: readonly
                 msg: message,
                 planner: planOutgoingMessage,
                 observedCanonicalEntry: undefined,
-                intent: 'enqueue'
+                intent: 'enqueue',
+                stampsAppliedSupersedence: true
             }))
                 .repairAttempt?.attemptsByRequester['peer-1'] ?? 0
         )

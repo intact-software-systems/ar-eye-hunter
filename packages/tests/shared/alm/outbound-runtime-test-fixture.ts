@@ -612,7 +612,8 @@ export async function readOutboundTestAdmission<TPrepared>(
         planner: input.planner ??
             ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     });
     const computed = computeALOutboundDispatch({
         read,

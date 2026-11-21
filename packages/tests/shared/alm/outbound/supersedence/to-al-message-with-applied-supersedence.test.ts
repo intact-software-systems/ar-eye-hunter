@@ -42,6 +42,38 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
         expect(signed.map((msg) => msg.qos?.supersedence)).toEqual([applied]);
     });
 
+    it('leaves stamped when its first plan threw and the durable lane\'s re-plan admitted it', async () => {
+        let plans = 0;
+        const { runtime, signed } = createSigningRuntime((msg, authority) => {
+            plans += 1;
+            if (plans === 1) {
+                throw new Error('The first plan fails');
+            }
+            return LATEST_WINS_BY_DEFAULT_PLANNER(msg, authority);
+        });
+
+        const admitted = await runtime.enqueueIfAbsent(createOutboundMessage('replanned'));
+
+        const applied = { algo: 'latest-wins', opts: { supersedenceKey: DEFAULT_KEY } };
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.qos?.supersedence).toEqual(applied);
+        expect(signed.map((msg) => msg.qos?.supersedence)).toEqual([applied]);
+    });
+
+    it('compares the same request enqueued twice equal to its stamped admission, refusing nothing', async () => {
+        const { runtime, signed } = createSigningRuntime(LATEST_WINS_BY_DEFAULT_PLANNER);
+        const message = createOutboundMessage('twice');
+
+        const first = await runtime.enqueueIfAbsent(message);
+        const second = await runtime.enqueueIfAbsent(message);
+
+        expect(first.verdict.kind, first.reason).toBe('admitted');
+        expect(second.verdict.kind, second.reason).not.toBe('refused');
+        expect(second.verdict.kind, second.reason).not.toBe('failed');
+        expect(second.message).toEqual(first.message);
+        expect(signed).toHaveLength(1);
+    });
+
     it('keeps a supersedence the app requested as it asked for it', async () => {
         const { runtime } = createSigningRuntime((msg, authority) => ({
             ...LATEST_WINS_BY_DEFAULT_PLANNER(msg, authority),

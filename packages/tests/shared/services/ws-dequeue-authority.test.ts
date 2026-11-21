@@ -489,6 +489,7 @@ async function writeCompetingAdmission(
         msg: message,
         observedCanonicalEntry: entry,
         intent: 'dequeue',
+        stampsAppliedSupersedence: false,
         planner: () => ({
             msg: message,
             dropReasonCode: undefined,

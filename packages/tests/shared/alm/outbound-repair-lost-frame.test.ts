@@ -168,7 +168,8 @@ describe('a WS client\'s message whose store holds a repair-attempt row a previo
             msg: first!,
             planner: createWsClientMintingPlanner(SESSION_ID),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         expect(read.repairAttempt?.attemptsByRequester).toEqual({
             [toALOutboundRepairRequesterKey({ requestedByPeerId: SERVER_PEER_ID })]: 1

@@ -2,8 +2,9 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isKeysEqual, type Key } from '../../../queuebox/ResourceEntry.ts';
-import type { ALOutboundDequeueAuthority, ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { isKeysEqual } from '../../../queuebox/ResourceEntry.ts';
+import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { toALMessageWithAppliedSupersedence } from '../supersedence/to-al-message-with-applied-supersedence.ts';
 import {
     validateALOutboundAdmittedMessage,
     validateALOutboundPlannedMessage
@@ -41,7 +42,11 @@ export function computeALOutboundDispatchPlan<TPrepared>(
     const planned = canonical && !isALFreezeOfMessage(canonical, selected.msg)
         ? { ...selected, msg: canonical }
         : selected;
-    const plan = intent !== 'repair' && stored ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
+    const captured = intent !== 'repair' && stored ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
+    // Before the read mints, records and signs, so the proof covers the stamp; a signed or requested one stays.
+    const plan = outgoing.stampsAppliedSupersedence
+        ? { ...captured, msg: toALMessageWithAppliedSupersedence(captured.msg, captured.supersedenceTracking) }
+        : captured;
     requireALOutboundAdmittedMessage(msg, plan.msg);
     return plan;
 }

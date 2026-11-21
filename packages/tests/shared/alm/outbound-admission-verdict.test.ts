@@ -43,7 +43,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: [{ resourceId: 'first-attempt' }]
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -70,7 +71,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: [{ resourceId: 'first-attempt' }]
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -94,7 +96,8 @@ describe('outbound admission verdict', () => {
             msg: message,
             planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             observedCanonicalEntry: undefined,
-            intent: 'dequeue'
+            intent: 'dequeue',
+            stampsAppliedSupersedence: false
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -120,7 +123,8 @@ describe('outbound admission verdict', () => {
             msg: message,
             planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -148,7 +152,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -180,7 +185,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'repair'
+            intent: 'repair',
+            stampsAppliedSupersedence: false
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -213,7 +219,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -247,7 +254,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -281,7 +289,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -314,7 +323,8 @@ describe('outbound admission verdict', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const computed = computeALOutboundDispatch({
             read,
@@ -449,8 +459,8 @@ function toSupersedingCommit(
     return {
         msg,
         batchPredecessorSeqs: [],
-        planner: () => ({
-            msg,
+        planner: (planned) => ({
+            msg: planned,
             dropReasonCode: undefined,
             lane: 'durable',
             preparedMessages: [],

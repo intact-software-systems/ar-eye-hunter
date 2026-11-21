@@ -3,15 +3,16 @@ import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-cont
 
 /**
  * The candidate as its request would compare to it: what an admission adds to a request is removed -- a sequence
- * minted on the track its request named without one, and the prior-sequence record and the proof its request does
- * not carry -- so an admitted copy matches its request while a copy that changes the key, the epoch, a stated
- * sequence, a stated record or a carried proof still differs.
+ * minted on the track its request named without one, and the prior-sequence record, the applied supersedence and the
+ * proof its request does not carry -- so an admitted copy matches its request while a copy that changes the key, the
+ * epoch, a stated sequence, a stated record, a requested supersedence or a carried proof still differs.
  */
 export function toALOutboundRequestComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
     const unsigned = original.proof === undefined ? toALUnsignedMessage(candidate) : candidate;
+    const unstamped = original.qos?.supersedence === undefined ? toALUnstampedMessage(original, unsigned) : unsigned;
     const unrecorded = original.ordering?.priorSeqByRecipient === undefined
-        ? toALUnrecordedMessage(unsigned)
-        : unsigned;
+        ? toALUnrecordedMessage(unstamped)
+        : unstamped;
     return toALOutboundUnmintedMessage(original, unrecorded);
 }
 
@@ -32,6 +33,19 @@ function toALUnsignedMessage(message: ALMessage): ALMessage {
     }
     const { proof: _proof, ...unsigned } = message;
     return unsigned;
+}
+
+/** The candidate without a supersedence its request did not ask for, its `qos` as the request had it. */
+function toALUnstampedMessage(original: ALMessage, message: ALMessage): ALMessage {
+    if (message.qos?.supersedence === undefined) {
+        return message;
+    }
+    const { supersedence: _supersedence, ...qos } = message.qos;
+    if (original.qos === undefined && Object.keys(qos).length === 0) {
+        const { qos: _qos, ...unstamped } = message;
+        return unstamped;
+    }
+    return { ...message, qos };
 }
 
 function toALUnrecordedMessage(message: ALMessage): ALMessage {
