@@ -94,6 +94,10 @@ interface WriteRoomTime {
     readonly signal?: AbortSignal;
 }
 
+interface WriteRoomTimeline extends WriteRoomTime {
+    readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>; };
+}
+
 export function createRoomTimeOperations(
     { requireSession, roomEvents, ws, auth }: Pick<
         CreateBrowserRallarRoomsInput,
@@ -176,29 +180,31 @@ export function createRoomTimeOperations(
         }
         return snapshot.group.metadata;
     }
-    async function writeTimeline(
-        roomRef: GroupRef, roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>,
-        requestId: string, signal?: AbortSignal
-    ) {
+    async function writeTimeline(request: WriteRoomTimeline) {
+        const { roomClock } = request.change;
         assertRoomClockMutation(roomClock);
-        const metadata = await write({ roomRef, change: { roomClock }, requestId, signal });
+        const metadata = await write(request);
         const timeline = readRoomTimeline(metadata, roomClock.name);
         if (!timeline || timeline.revision !== roomClock.expectedRevision + 1) {
             throw new Error('Timeline acknowledgement has an unexpected revision.');
         }
-        if (roomClock.operation === 'advance-phase'
-            ? timeline.status !== 'running' || timeline.phase !== roomClock.phase || timeline.startedAtRevision !== timeline.revision
-            : timeline.startedAtRevision > roomClock.expectedRevision) {
+        const sameOccurrence = timeline.startedAtRevision <= roomClock.expectedRevision;
+        if (roomClock.operation === 'extend-phase' && !sameOccurrence) {
+            throw new Error('Extension acknowledgement started a new phase.');
+        }
+        if (roomClock.operation === 'advance-phase' && (sameOccurrence || timeline.status !== 'running' || timeline.phase !== roomClock.phase)) {
             throw new Error('Timeline acknowledgement does not match the requested phase.');
         }
         return timeline;
     }
     return {
         advanceTimeline(room, advance, requestId, { signal } = {}) {
-            return writeTimeline(room, { ...advance, operation: 'advance-phase' }, requestId, signal);
+            const roomClock = { ...advance, operation: 'advance-phase' as const };
+            return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
         },
         extendTimeline(room, extension, requestId, { signal } = {}) {
-            return writeTimeline(room, { ...extension, operation: 'extend-phase' }, requestId, signal);
+            const roomClock = { ...extension, operation: 'extend-phase' as const };
+            return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
         },
         async readTimeline(room, name, { signal } = {}) {
             return readRoomTimeline(await readMetadata(room, signal), name);
