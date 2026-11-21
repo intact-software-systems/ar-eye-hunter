@@ -118,7 +118,7 @@ Three were weighed with the maintainer, who picked the first.
   scope, so the two never collide inside one workflow run.
 - Both callers of `release-gate.yml` get it: the branch gate (in `broad` mode, like every lane) and
   the `main` push.
-- Recent smoke jobs took 4.7 to 6.2 minutes; the lane's time limit is 15 minutes. It is not the
+- Recent smoke jobs took 4.7 to 6.2 minutes; the lane's time limit is 20 minutes. It is not the
   longest lane.
 - Evidence for requiring it now: the last 13 completed `main` pushes were green on all three
   carriers. The promotion rule is the same for both scopes (section 6), and smoke meets it.
