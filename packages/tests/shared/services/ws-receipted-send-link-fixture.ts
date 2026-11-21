@@ -46,8 +46,11 @@ const LINK_ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'ro
  */
 const LINK_PASSES_PER_STEP = 12;
 
-/** in-sync: authorized, audience [origin, peer-b], snapshotVersion 2. behind: `not-yet-in-sync`, sendNack, serverSnapshotVersion 1. fenced: `membership-fenced`, sendNack. */
-export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced';
+/**
+ * in-sync: authorized, audience [origin, peer-b], snapshotVersion 2. behind: `not-yet-in-sync`, sendNack, serverSnapshotVersion 1.
+ * fenced: `membership-fenced`, sendNack. peer-b-left: authorized, audience [origin], snapshotVersion 3.
+ */
+export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced' | 'peer-b-left';
 
 /** One control the server sent the origin, `nack:<reason>` or `receipt:<phase>`, and what the origin's outbound owner decided. */
 export interface WsReceiptedSendServerControl extends ControlFrameLabel {
@@ -214,6 +217,9 @@ function toRoomViewAuthorization(view: WsReceiptedSendRoomView): WsServerInbound
     }
     if (view === 'fenced') {
         return { authorized: false, reason: 'membership-fenced', logMessage: 'Sender left the room', sendNack: true };
+    }
+    if (view === 'peer-b-left') {
+        return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID], snapshotVersion: 3 } };
     }
     return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID, LINK_PEER_ID], snapshotVersion: 2 } };
 }

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    createInitialALDeliveryLifecycle,
+    type ALDeliveryLifecycle,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 
 import {
@@ -84,18 +88,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const facts = link.settlements.filter((fact) => fact.msgId === sent.id.msgId);
         expect(facts.map(({ kind }) => kind)).toEqual(['attempt-started', 'attempt-settled', 'relay-rejected']);
         expect(facts.at(-1)).toMatchObject({ relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' } });
-        const lifecycle = facts.reduce(
-            computeALDeliveryLifecycle,
-            createInitialALDeliveryLifecycle({
-                msgId: sent.id.msgId,
-                typeId: 'notice.v1',
-                ackMode: 'receiver',
-                receiptAlgo: 'receiver',
-                expiresAtMs: undefined,
-                submittedAtMs: 0
-            })
-        );
-        expect(lifecycle.state).toBe('rejected');
+        expect(toLifecycleState(facts, sent)).toBe('rejected');
         expect((await link.readSenderRows(sent)).ended).toBe(true);
         expect(link.deliveredToPeer(sent)).toBe(0);
 
@@ -158,6 +151,33 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.settlements.filter((fact) => fact.msgId === second.id.msgId).at(-1)?.kind).toBe('relay-rejected');
         expect((await link.readSenderRows(second)).ended).toBe(true);
         expect(link.written.filter((id) => id === second.id.msgId)).toHaveLength(1);
+    });
+
+    it('characterization: a send kept after a lost race whose captured audience has left by its replay is admitted to nobody, reads acknowledged at once, and peer-b is sent nothing', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const [, second] = await sendTwoOrderedSideBySide(link);
+        link.setRoomView('peer-b-left');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+
+        expect(toControlsOf(link, second)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
+        expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
+            phase: 'admitted',
+            expectedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: [],
+            snapshotVersion: 3
+        })]);
+        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        const facts = link.settlements.filter((fact) => fact.msgId === second.id.msgId);
+        expect(facts.map(({ kind }) => kind)).toEqual(['attempt-started', 'attempt-settled', 'acknowledgement']);
+        expect(facts.at(-1)).toMatchObject({ complete: true, expectedRecipientPeerIds: [], confirmedRecipientPeerIds: [] });
+        expect(toLifecycleState(facts, second)).toBe('acknowledged');
+        expect((await link.readSenderRows(second)).ended).toBe(true);
+
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
+        expect(toControlsOf(link, second)).toHaveLength(1);
+        expect(link.deliveredToPeer(second)).toBe(0);
     });
 
     it('a copy written while the original is kept behind the view: one admitted, delivered once', async () => {
@@ -268,4 +288,19 @@ function toControlsOf(link: WsReceiptedSendLink, msg: ALMessage): readonly Omit<
     return link.serverControls
         .filter((answer) => answer.msgId === msg.id.msgId)
         .map(({ control, admission }) => ({ control, admission }));
+}
+
+/** The state a receipted notice's handle reads once it has seen `facts`, in order. */
+function toLifecycleState(facts: readonly ALDeliverySettlement[], msg: ALMessage): ALDeliveryLifecycle['state'] {
+    return facts.reduce(
+        computeALDeliveryLifecycle,
+        createInitialALDeliveryLifecycle({
+            msgId: msg.id.msgId,
+            typeId: 'notice.v1',
+            ackMode: 'receiver',
+            receiptAlgo: 'receiver',
+            expiresAtMs: undefined,
+            submittedAtMs: 0
+        })
+    ).state;
 }
