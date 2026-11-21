@@ -31,9 +31,22 @@ export interface ComputeALOrderingObservationInput {
     readonly repairsGaps: boolean;
 }
 
+/** A track's lowest buffered copy when its last gap renewal fell due unanswered, and what its plan says. */
+export type ComputeALOrderingHeldEntryInput = Pick<
+    ComputeALOrderingObservationInput,
+    'snapshot' | 'msg' | 'nowMs' | 'trackTtlMs' | 'selfPeerId' | 'bufferedPriorSeqs' | 'latestWins' | 'repairsGaps'
+>;
+
 export interface ALOrderingAcceptance {
     readonly observation: ALOrderingObservation;
     readonly nextSnapshot?: ALOrderingTrackSnapshot;
+}
+
+/** Where a bounded hold enters its track: the entry observed at the lowest copy, and the position it moves to. */
+export interface ALOrderingHeldEntry {
+    readonly trackKey: string;
+    readonly observation: ALOrderingObservation;
+    readonly nextSnapshot: ALOrderingTrackSnapshot;
 }
 
 interface ALOrderingTrackInput {
@@ -98,16 +111,61 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
 }
 
 /**
- * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. The record
- * speaks only for the copy's frozen audience, so a peer it does not name (the WS server, ordering hop of every track)
- * enters at the copy, and so does a copy whose plan repairs no gap, since it could never ask for the start. A track the
- * store evicted at its cap enters at the copy too, since its delivered past is forgotten, not absent, and so does a
- * latest-wins copy, whose predecessor may have been superseded before it was ever sent.
+ * The bounded hold. A track opened at its start that has delivered nothing (position `0`) enters at its lowest buffered
+ * copy once its last gap renewal fell due unanswered: the copy and its contiguous successors are released, and a copy
+ * below the new position that arrives later is stale, as it is at any entry. `undefined`, keeping today's behaviour,
+ * for a track that delivered something, a copy that is not its lowest buffered one, or one the entry rule holds no
+ * start for.
+ */
+export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInput): ALOrderingHeldEntry | undefined {
+    const trackKey = toALOrderingTrackKey(input.msg);
+    const seq = input.msg.ordering?.seq;
+    const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
+        ? input.snapshot
+        : undefined;
+    if (
+        trackKey === undefined || seq === undefined || snapshot?.lastContiguousSeq !== 0 ||
+        snapshot.bufferedSeqs[0] !== seq
+    ) {
+        return undefined;
+    }
+    const track: ALOrderingTrackInput = {
+        input: { ...input, apply: true, role: 'recipient', evictedTrack: false },
+        trackKey,
+        seq,
+        snapshot: { ...snapshot, bufferedSeqs: snapshot.bufferedSeqs.slice(1) },
+        expectedSeq: 1,
+        priorSeq: resolveALOrderingPriorSeq(input.msg, input.selfPeerId)
+    };
+    if (!holdsTrackStart(track)) {
+        return undefined;
+    }
+    const { observation, nextSnapshot } = computeContiguousOrdering(track, 'entered');
+    return nextSnapshot === undefined ? undefined : {
+        trackKey,
+        observation: { ...observation, releasableSeqs: [seq, ...observation.releasableSeqs] },
+        nextSnapshot
+    };
+}
+
+/**
+ * A fresh recipient opens its track at the start where the copy's record holds it there. A track the store evicted at
+ * its cap enters at the copy instead, since its delivered past is forgotten, not absent.
  */
 function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
+    return holdsTrackStart(track) && !track.input.evictedTrack;
+}
+
+/**
+ * Whether a copy's record holds the recipient's track at its start: the sends below its prior are owed and still
+ * repairable. The record speaks only for the copy's frozen audience, so a peer it does not name (the WS server, ordering
+ * hop of every track) holds nothing, and neither does a copy whose plan repairs no gap, since it could never ask for the
+ * start, nor a latest-wins copy, whose predecessor may have been superseded before it was ever sent.
+ */
+function holdsTrackStart(track: ALOrderingTrackInput): boolean {
     return isInformativePrior(track, 0) && track.priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow &&
         isALFrozenMulticastRecipient(track.input.msg.targets, track.input.selfPeerId) && track.input.repairsGaps &&
-        !track.input.evictedTrack && !track.input.latestWins;
+        !track.input.latestWins;
 }
 
 /** A prior that names sends between the position and the copy: one at the position or above it, below the copy. */

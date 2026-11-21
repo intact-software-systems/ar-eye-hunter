@@ -1,8 +1,17 @@
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
-import type { ALInboundAdmissionStore, ALInboundGapRenewalEffect } from '../al-inbound-admission-store.ts';
+import type { ALOrderingObserver } from '../admission/resolve-al-ordering-observer-role.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundGapRenewalEffect,
+    ALInboundPlanner
+} from '../al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
+import {
+    computeALInboundHeldEntryPlanningObservations,
+    computeALInboundHeldOrderingEntry
+} from '../al-inbound-planner-snapshot.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
 import {
     computeALInboundWorkEntry,
@@ -26,10 +35,18 @@ import {
     toALInboundGapRenewalEffectId,
     toALInboundWorkEntryDueAt
 } from './compute-al-inbound-gap-renewal.ts';
+import { computeALInboundHeldTrackEntry } from './compute-al-inbound-held-track-entry.ts';
 
 export namespace ALInboundGapRenewal {
     export interface Dependencies {
-        readonly admissionStore: Pick<ALInboundAdmissionStore, 'namespace' | 'readOrderingSnapshot'>;
+        readonly admissionStore: Pick<
+            ALInboundAdmissionStore,
+            'namespace' | 'readOrderingSnapshot' | 'readBufferedRelease' | 'readIncomingMessage' | 'commitBundle'
+        >;
+        /** Which tracks the runtime observes, as its admissions read them. */
+        readonly orderingObserver: ALOrderingObserver;
+        /** Plans a bounded hold's lowest copy as the copy it enters at, as the runtime plans every admission. */
+        readonly planIncomingMessage: ALInboundPlanner;
         readonly workPort: Pick<ALWorkQueuePort, 'retainIfAbsent'>;
         readonly clock: ALInboundMessageRuntime.Clock;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
@@ -46,6 +63,13 @@ export namespace ALInboundGapRenewal {
     }
 }
 
+/** A track a last renewal found still missing a range, at the instant that run read it. */
+interface ALInboundHeldTrack {
+    readonly trackKey: string;
+    readonly position: ALOrderingTrackSnapshot;
+    readonly facts: ALInboundEffectFacts;
+}
+
 /** What one run of a timer writes, before the counted recipient's NACK is signed. */
 interface ALInboundGapRenewalRun {
     readonly effect: ALPersistedInboundEffect;
@@ -56,11 +80,14 @@ interface ALInboundGapRenewalRun {
 }
 
 const NOTHING_RENEWED: ALInboundGapRenewal.Result = { outcome: { status: 'completed' }, wroteWork: false };
+const HELD_ENTRY_RETRIED: ALInboundGapRenewal.Result = { outcome: { status: 'retry' }, wroteWork: false };
 
 /**
  * Runs one `renew-gap` timer. While some of its range is still missing it asks again, under the timer's number, for
  * exactly that, and arms the next number's timer; once nothing is missing, or the track is gone, it ends and writes
- * nothing. Every row has a fixed id, so a run that a lease recovery repeats finds what the first run wrote.
+ * nothing. The last timer of the schedule ends a bounded hold instead of asking: a track the entry rule opened at its
+ * start that delivered nothing enters at its lowest buffered copy, since the request before it went unanswered for
+ * its whole interval. Every row has a fixed id, so a run that a lease recovery repeats finds what the first run wrote.
  */
 export class ALInboundGapRenewal {
     private readonly dependencies: ALInboundGapRenewal.Dependencies;
@@ -81,6 +108,12 @@ export class ALInboundGapRenewal {
             return NOTHING_RENEWED;
         }
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
+        if (computeALGapRenewalDelayMs(payload.requestNumber + 1, this.dependencies.stretch) === undefined) {
+            const entered = await this.enterHeldTrack({ trackKey: payload.trackKey, position, facts });
+            if (entered !== undefined) {
+                return entered;
+            }
+        }
         const rows = await signALInboundReceiptEffects(
             this.computeRenewalWrites({ effect, payload, position, missingRanges, facts }),
             { namespace: admissionStore.namespace, receiptProofs, diagnostics }
@@ -89,6 +122,45 @@ export class ALInboundGapRenewal {
             await workPort.retainIfAbsent(row.entry);
         }
         return { outcome: { status: 'completed' }, wroteWork: rows.length > 0 };
+    }
+
+    /**
+     * Reads the track's lowest buffered copy as its own admission would and commits the bounded hold's entry there;
+     * `undefined` when the track keeps today's behaviour, so the last request goes out as before.
+     */
+    private async enterHeldTrack(held: ALInboundHeldTrack): Promise<ALInboundGapRenewal.Result | undefined> {
+        const { admissionStore, effectPreparation, orderingObserver, planIncomingMessage } = this.dependencies;
+        const { trackKey, position, facts } = held;
+        const lowestSeq = position.bufferedSeqs[0];
+        const nowMs = facts.observedAtEpochMs;
+        const lowest = lowestSeq === undefined
+            ? undefined
+            : await admissionStore.readBufferedRelease({ trackKey, seq: lowestSeq, nowMs });
+        if (lowest === undefined) {
+            return undefined;
+        }
+        const read = await admissionStore.readIncomingMessage({
+            msg: lowest.snapshot.msg,
+            source: lowest.source,
+            nowMs,
+            prePlan: lowest.snapshot.plan,
+            selfPeerId: effectPreparation.selfPeerId,
+            orderingObserver
+        });
+        const entry = computeALInboundHeldOrderingEntry(read);
+        if (entry === undefined) {
+            return undefined;
+        }
+        const plan = planIncomingMessage(
+            read.msg,
+            read.source,
+            computeALInboundHeldEntryPlanningObservations(read, entry.observation)
+        );
+        const status = await admissionStore.commitBundle(computeALInboundHeldTrackEntry({ read, entry, plan, facts }));
+        if (status === 'conflict') {
+            return HELD_ENTRY_RETRIED;
+        }
+        return status === 'committed' ? { outcome: { status: 'completed' }, wroteWork: true } : NOTHING_RENEWED;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */

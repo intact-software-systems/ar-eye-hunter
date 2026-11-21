@@ -27,6 +27,7 @@ import {
     INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
+    planInboundTestMessage,
     readInboundTestWorkRows,
     runInboundWorkDueNow,
     setNextInboundCommitConflicted,
@@ -282,6 +283,8 @@ describe('a receiver whose ordered track has a gap', () => {
             admissionStore: fixture.stores.admissionStore,
             workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
             clock: { nowMs: Date.now },
+            orderingObserver: 'addressed',
+            planIncomingMessage: planInboundTestMessage,
             effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
             stretch: 1,
             receiptProofs: { kind: 'carrier-authenticated' },
@@ -327,6 +330,49 @@ describe('a receiver whose ordered track has a gap', () => {
     });
 });
 
+describe('a receiver holding a recorded track at its start (the bounded hold)', () => {
+    it.each(STORAGES)('on %s, enters at its lowest buffered copy when the last renewal falls due unanswered, at 7 s, delivering 2 then 3', async (storage) => {
+        const fixture = createRenewalFixture(storage);
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 6_999]);
+        expect(fixture.deliveredMessages).toEqual([]);
+        expect(gapControls(fixture).map((control) => control.gapRequestNumber)).toEqual([1, 1, 1, 1, 2, 2, 3, 3]);
+
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('refuses the late first copy as before its entry once the hold has ended', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(readNackReasons(fixture, '1')).toEqual(['before-entry']);
+    });
+
+    it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000, 29_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([1]);
+        expect(renewedRanges(fixture, 4)).toEqual([[{ from: 2, to: 2 }], [{ from: 2, to: 2 }]]);
+    });
+});
+
 function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixtureInput = {}): InboundTestRuntime {
     fixtureCount += 1;
     return createInboundTestRuntime({
@@ -362,6 +408,20 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
     return { ...frozen, ordering: { orderingKey: 'chat', seq } };
 }
 
+/** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
+function recordedMessage(seq: number): ALMessage {
+    const message = orderedMessage(seq);
+    return { ...message, ordering: { ...message.ordering!, priorSeqByRecipient: {} } };
+}
+
+/** The reasons of every NACK this receiver sent about the message `msgId`, in send order. */
+function readNackReasons(fixture: InboundTestRuntime, msgId: string): readonly string[] {
+    return readSentControls(fixture).flatMap((msg) => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' && control.payload.msgId === msgId ? [control.payload.reason] : [];
+    });
+}
+
 /**
  * Lets the engine's pass finish its IndexedDB requests before the fake clock moves on: the store schedules each step on
  * a real immediate, which the fake clock does not run. Counted in turns of the event loop, not in time.
@@ -375,6 +435,13 @@ async function yieldToStorage(): Promise<void> {
 async function advanceTo(fixture: InboundTestRuntime, ms: number): Promise<void> {
     vi.setSystemTime(START_MS + ms);
     await runInboundWorkDueNow(fixture);
+}
+
+/** Runs the work due at each instant in turn, as the renewal schedule's own timers fall due. */
+async function advanceThrough(fixture: InboundTestRuntime, instantsMs: readonly number[]): Promise<void> {
+    for (const ms of instantsMs) {
+        await advanceTo(fixture, ms);
+    }
 }
 
 function readSentControls(fixture: InboundTestRuntime): readonly ALMessage[] {

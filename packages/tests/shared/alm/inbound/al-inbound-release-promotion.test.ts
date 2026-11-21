@@ -221,11 +221,13 @@ describe('a fresh receiver whose first copy of a recorded track is not the track
             }
         });
 
-        for (const seq of [2, 3]) {
-            await fixture.runtime.admitIncomingMessage(createRecordedMessage(seq, {}), INBOUND_TEST_SOURCE);
-        }
+        // Copy 2's delivery completes before copy 3 is admitted, so no completion loses its commit and is dispatched again.
+        await admitRecorded(fixture, 2, {});
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 2)).toBe(2), WAIT);
+        await admitRecorded(fixture, 3, {});
 
-        await vi.waitFor(() => expect(deliveredSeqs).toEqual([2, 3]), WAIT);
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 3)).toBe(3), WAIT);
+        expect(deliveredSeqs).toEqual([2, 3]);
         expect(readGapNacks(fixture)).toEqual([]);
     }, TEST_TIMEOUT_MS);
 });

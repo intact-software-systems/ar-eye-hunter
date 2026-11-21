@@ -3,12 +3,19 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resour
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
 import {
     resolveALOrderingPriorSeq,
+    type ALOrderingObservation,
     type ALOrderingObservationStatus,
     type ALOrderingTrackSnapshot
 } from '../../al-contracts/al-runtime.ts';
 import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
-import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
+import {
+    computeALOrderingHeldEntry,
+    computeALOrderingObservation,
+    type ALOrderingAcceptance,
+    type ALOrderingHeldEntry,
+    type ComputeALOrderingHeldEntryInput
+} from '../compute-al-ordering-observation.ts';
 import {
     acceptALSupersedenceObservation,
     computeALSupersedenceObservation,
@@ -144,10 +151,7 @@ export function computeALInboundOrderingAcceptance(
     apply: boolean
 ): ALOrderingAcceptance {
     const ordering = computeALOrderingObservation({
-        snapshot: read.orderingSnapshot,
-        msg: read.msg,
-        nowMs: read.nowMs,
-        trackTtlMs: read.orderingTrackTtlMs,
+        ...toOrderingTrackInput(read),
         apply,
         role: resolveALOrderingObserverRole({
             msg: read.msg,
@@ -155,11 +159,7 @@ export function computeALInboundOrderingAcceptance(
             delivering: isALInboundDeliveringPlan(read.prePlan),
             observer: read.orderingObserver
         }),
-        selfPeerId: read.selfPeerId,
-        bufferedPriorSeqs: toBufferedPriorSeqs(read),
-        evictedTrack: read.orderingTrackEvicted,
-        latestWins: read.prePlan.supersedence.algo === 'latest-wins',
-        repairsGaps: read.prePlan.effective.repair.algo !== 'none'
+        evictedTrack: read.orderingTrackEvicted
     });
     if (
         !read.prePlan.localDelivery.enabled ||
@@ -170,6 +170,36 @@ export function computeALInboundOrderingAcceptance(
     }
     return {
         observation: { ...ordering.observation, status: 'resync-required', missingRanges: [], releasableSeqs: [] }
+    };
+}
+
+/**
+ * The bounded hold's entry on the track of `read`, read as its lowest buffered copy's own admission surface, whose
+ * `prePlan` is the plan that copy was admitted with; `undefined` when the track keeps today's behaviour.
+ */
+export function computeALInboundHeldOrderingEntry(read: ALInboundPlannerSnapshot): ALOrderingHeldEntry | undefined {
+    return computeALOrderingHeldEntry(toOrderingTrackInput(read));
+}
+
+/** What the hold's lowest copy is planned against at its entry: a copy already admitted, now entered at `observation`. */
+export function computeALInboundHeldEntryPlanningObservations(
+    read: ALInboundPlannerSnapshot,
+    observation: ALOrderingObservation
+): ALMessagePlanningObservations {
+    return { ...computeALInboundPlanningObservations({ ...read, admitted: true }), orderingObservation: observation };
+}
+
+/** The copy, its track as the store holds it, and what the copy's plan says about entering that track. */
+function toOrderingTrackInput(read: ALInboundPlannerSnapshot): ComputeALOrderingHeldEntryInput {
+    return {
+        snapshot: read.orderingSnapshot,
+        msg: read.msg,
+        nowMs: read.nowMs,
+        trackTtlMs: read.orderingTrackTtlMs,
+        selfPeerId: read.selfPeerId,
+        bufferedPriorSeqs: toBufferedPriorSeqs(read),
+        latestWins: read.prePlan.supersedence.algo === 'latest-wins',
+        repairsGaps: read.prePlan.effective.repair.algo !== 'none'
     };
 }
 
