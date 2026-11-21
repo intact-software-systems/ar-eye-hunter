@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALMessageWithAppliedSupersedence } from '@shared/alm/outbound/supersedence/to-al-message-with-applied-supersedence.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import {
@@ -62,6 +63,24 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
 
         expect(admitted.message.qos).toEqual(message.qos);
         expect(signed[0]?.qos).toEqual(message.qos);
+    });
+});
+
+describe('the supersedence stamp on one send', () => {
+    it('never rewrites a send that already carries a proof: a signed message keeps its signed fields', () => {
+        const message = { ...createOutboundMessage('signed'), proof: PROOF };
+
+        const stamped = toALMessageWithAppliedSupersedence(message, { enabled: true, algo: 'latest-wins', key: DEFAULT_KEY });
+
+        expect(stamped).toBe(message);
+    });
+
+    it('stamps only a latest-wins supersedence', () => {
+        const message = createOutboundMessage('not-latest-wins');
+
+        const stamped = toALMessageWithAppliedSupersedence(message, { enabled: true, algo: 'none', key: DEFAULT_KEY });
+
+        expect(stamped).toBe(message);
     });
 });
 

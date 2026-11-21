@@ -158,7 +158,7 @@ export function computeALInboundOrderingAcceptance(
         selfPeerId: read.selfPeerId,
         bufferedPriorSeqs: toBufferedPriorSeqs(read),
         evictedTrack: read.orderingTrackEvicted,
-        latestWins: read.prePlan.supersedence.enabled
+        latestWins: read.prePlan.supersedence.algo === 'latest-wins'
     });
     if (
         !read.prePlan.localDelivery.enabled ||

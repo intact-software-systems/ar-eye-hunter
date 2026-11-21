@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS,
     decodeALInboundEvictedOrderingTracks,
     isALInboundOrderingTrackEvicted,
     toALInboundEvictedOrderingTracks,
     type ALInboundEvictedOrderingTrack
 } from '@shared/alm/inbound/admission/al-inbound-evicted-ordering-tracks.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 
 const NOW_MS = 10_000;
 
@@ -23,15 +23,15 @@ describe('the tracks an inbound store evicted at its ordering cap', () => {
         ]);
     });
 
-    it(`keeps at most ${AL_INBOUND_MAX_ORDERING_TRACKS} evictions, the oldest leaving first`, () => {
-        const held = Array.from({ length: AL_INBOUND_MAX_ORDERING_TRACKS }, (_, index) => ({
+    it(`keeps at most ${AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS} evictions, the oldest leaving first`, () => {
+        const held = Array.from({ length: AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS }, (_, index) => ({
             trackKey: `track-${index}`,
             untilMs: 20_000
         }));
 
         const tracks = add(held, ['newest'], 30_000);
 
-        expect(tracks).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS);
+        expect(tracks).toHaveLength(AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS);
         expect(tracks[0]).toEqual({ trackKey: 'track-1', untilMs: 20_000 });
         expect(tracks.at(-1)).toEqual({ trackKey: 'newest', untilMs: 30_000 });
     });
@@ -70,7 +70,10 @@ describe('the tracks an inbound store evicted at its ordering cap', () => {
         ['a negative instant', [{ trackKey: 'a', untilMs: -1 }]],
         ['a fractional instant', [{ trackKey: 'a', untilMs: 1.5 }]],
         ['a track named twice', [{ trackKey: 'a', untilMs: 1 }, { trackKey: 'a', untilMs: 2 }]],
-        ['more entries than the cap', Array.from({ length: 257 }, (_, index) => ({ trackKey: `t-${index}`, untilMs: 1 }))]
+        [
+            'more entries than the cap',
+            Array.from({ length: AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS + 1 }, (_, index) => ({ trackKey: `t-${index}`, untilMs: 1 }))
+        ]
     ])('refuses %s', (_name, value) => {
         expect(() => decodeALInboundEvictedOrderingTracks(value)).toThrow(TypeError);
     });
@@ -85,7 +88,6 @@ function add(
         held,
         evictedTrackKeys,
         untilMs,
-        nowMs: NOW_MS,
-        maxTracks: AL_INBOUND_MAX_ORDERING_TRACKS
+        nowMs: NOW_MS
     });
 }

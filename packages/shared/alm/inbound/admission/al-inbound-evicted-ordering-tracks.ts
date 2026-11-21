@@ -6,6 +6,9 @@ import {
     decodeALAdmissionString
 } from '../../al-admission-value-validation.ts';
 
+/** The most evictions one store's row keeps; the oldest leave first, and a longer row is corrupt. */
+export const AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS = 256;
+
 /** A track whose snapshot the store evicted at its cap, and the instant that eviction stops counting. */
 export interface ALInboundEvictedOrderingTrack {
     readonly trackKey: string;
@@ -19,8 +22,6 @@ export interface ToALInboundEvictedOrderingTracksInput {
     readonly evictedTrackKeys: readonly string[];
     readonly untilMs: number;
     readonly nowMs: number;
-    /** The most evictions the row keeps; the oldest leave first. */
-    readonly maxTracks: number;
 }
 
 export function decodeALInboundEvictedOrderingTracks(value: unknown): readonly ALInboundEvictedOrderingTrack[] {
@@ -28,6 +29,9 @@ export function decodeALInboundEvictedOrderingTracks(value: unknown): readonly A
         const track = decodeALAdmissionRecord(entry, ['trackKey', 'untilMs']);
         return { trackKey: decodeALAdmissionString(track.trackKey), untilMs: decodeALAdmissionNumber(track.untilMs) };
     });
+    if (tracks.length > AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS) {
+        throw new TypeError('Stored evicted ordering tracks exceed their bound');
+    }
     if (new Set(tracks.map((track) => track.trackKey)).size !== tracks.length) {
         throw new TypeError('Stored evicted ordering tracks must name each track once');
     }
@@ -42,7 +46,7 @@ export function toALInboundEvictedOrderingTracks(
     const kept = input.held.filter((track) => track.untilMs > input.nowMs && !evicted.has(track.trackKey));
     const added = [...evicted].map((trackKey) => ({ trackKey, untilMs: input.untilMs }));
     const tracks = [...kept, ...added];
-    return tracks.slice(Math.max(0, tracks.length - input.maxTracks));
+    return tracks.slice(Math.max(0, tracks.length - AL_INBOUND_MAX_EVICTED_ORDERING_TRACKS));
 }
 
 export function isALInboundOrderingTrackEvicted(
