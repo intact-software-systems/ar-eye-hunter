@@ -1,7 +1,7 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { isALReceiptModeOwnWord } from '../../delivery/is-al-receipt-mode-own-word.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
+import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import { isALOutboundRecipientControlSender } from './is-al-outbound-expected-repair-peer.ts';
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
@@ -22,24 +22,12 @@ export function validateALOutboundRelayedNack(
     return [
         ...(fromExpectedPeer
             ? []
-            : [{
-                code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK comes from no hop or recipient of this message`,
-                class: 'refusal' as const
-            }]),
+            : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK comes from no hop or recipient of this message`)]),
         ...(owed
             ? []
-            : [{
-                code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK names no recipient the receipt still owes`,
-                class: 'refusal' as const
-            }]),
+            : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK names no recipient the receipt still owes`)]),
         ...(ownWord
             ? []
-            : [{
-                code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK speaks for another recipient under a hop receipt`,
-                class: 'refusal' as const
-            }])
+            : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK speaks for another recipient under a hop receipt`)])
     ];
 }

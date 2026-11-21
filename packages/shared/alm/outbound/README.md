@@ -522,8 +522,8 @@ with the attempt budget spent, repair admission ends the message (the stored row
 repair-attempt rows deleted) and states `receipt-exhausted` once. A late ACK cannot resurrect that terminal receipt. An ACK before
 that terminal commit can still complete a live receipt, but an ACK at or after the message deadline
 is refused even if a receipt can still be read. Every carrier discards `acceptControlMessage`'s answer, so repair
-admission records it as the `control-admission` outbound diagnostic (outcome, a rejection's
-reasons, and a NACK's own reason and the track it asks about) for every control it decides.
+admission records it as the `control-admission` outbound diagnostic (outcome, the reasons of a
+`rejected` or `duplicate` refusal, and a NACK's own reason and the track it asks about) for every control it decides.
 A committed `resync-required` NACK is a hop's refusal of a
 retained send (D50): it states a `relay-rejected` settlement, which ends a receipt-tracked handle
 `rejected`, and like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends

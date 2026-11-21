@@ -10,7 +10,7 @@ import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-su
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
+import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 
 /**
@@ -73,7 +73,7 @@ export function validateALOutboundRecipientProof(
     const refusal = toALOutboundProofRefusal(recipientProof);
     return refusal === undefined
         ? []
-        : [{ code: 'unauthorized', message: `AL control proof is refused: ${refusal.kind}`, class: 'refusal' }];
+        : [toALOutboundRefusalIssue(`AL control proof is refused: ${refusal.kind}`)];
 }
 
 export function toALOutboundRefusedControlAdmission(

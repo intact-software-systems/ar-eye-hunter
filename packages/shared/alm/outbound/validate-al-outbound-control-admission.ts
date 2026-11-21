@@ -29,17 +29,24 @@ export interface ALOutboundControlIssue extends ALMessageRejection {
     readonly class: 'duplicate' | 'refusal';
 }
 
+export function toALOutboundRefusalIssue(
+    message: string,
+    code: ALMessageRejection['code'] = 'unauthorized'
+): ALOutboundControlIssue {
+    return { code, message, class: 'refusal' };
+}
+
+export function toALOutboundDuplicateIssue(message: string): ALOutboundControlIssue {
+    return { code: 'unauthorized', message, class: 'duplicate' };
+}
+
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
     candidate: ALControlAdmissionCandidate
 ): readonly ALOutboundControlIssue[] {
     const { read } = candidate;
     if (!read.owner || !read.sent || read.sent.reference.senderId !== read.owner) {
-        return [{
-            code: 'unauthorized',
-            message: 'AL control has no retained outbound message obligation',
-            class: 'refusal'
-        }];
+        return [toALOutboundRefusalIssue('AL control has no retained outbound message obligation')];
     }
     const issues: ALOutboundControlIssue[] = [];
     if (
@@ -47,28 +54,18 @@ export function validateALOutboundControlAdmission(
         !Number.isSafeInteger(candidate.nextVersion.version) ||
         candidate.nextVersion.version !== (read.ownerVersion?.version ?? 0) + 1
     ) {
-        issues.push({
-            code: 'malformed',
-            message: 'AL control version differs from its captured owner observation',
-            class: 'refusal'
-        });
+        issues.push(
+            toALOutboundRefusalIssue('AL control version differs from its captured owner observation', 'malformed')
+        );
     }
     if (read.parsed.payload.toPeerId !== read.owner) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL control is addressed to another outbound message owner',
-            class: 'refusal'
-        });
+        issues.push(toALOutboundRefusalIssue('AL control is addressed to another outbound message owner'));
     }
     if (read.parsed.type === 'nack' && read.parsed.payload.originPeerId !== read.owner) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL NACK names another origin than this outbound message owner',
-            class: 'refusal'
-        });
+        issues.push(toALOutboundRefusalIssue('AL NACK names another origin than this outbound message owner'));
     }
     if (isDuplicateControl(read)) {
-        issues.push({ code: 'unauthorized', message: 'AL control was already admitted', class: 'duplicate' });
+        issues.push(toALOutboundDuplicateIssue('AL control was already admitted'));
     }
     issues.push(...validateALOutboundEndedMessageControl(read));
     issues.push(...validateALOutboundRecipientProof(read.recipientProof));
@@ -89,18 +86,12 @@ function validateAcknowledgement(
 ): readonly ALOutboundControlIssue[] {
     const issues: ALOutboundControlIssue[] = [];
     if (ack.originPeerId !== read.owner) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL acknowledgement names another origin than this outbound message owner',
-            class: 'refusal'
-        });
+        issues.push(
+            toALOutboundRefusalIssue('AL acknowledgement names another origin than this outbound message owner')
+        );
     }
     if (sent.reference.expiresAtMs <= read.nowMs) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL acknowledgement arrived after its message deadline',
-            class: 'refusal'
-        });
+        issues.push(toALOutboundRefusalIssue('AL acknowledgement arrived after its message deadline'));
     }
     return [...issues, ...validateAcknowledgedReceipt(read, ack)];
 }
@@ -120,18 +111,10 @@ function validateRepairRequest(
         issues.push(...validateALOutboundRelayedNack(read, control.payload));
     }
     else if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.payload.fromPeerId)) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL repair sender has no retained outbound obligation',
-            class: 'refusal'
-        });
+        issues.push(toALOutboundRefusalIssue('AL repair sender has no retained outbound obligation'));
     }
     if (!hasValidOrderingHints(sent, control.payload)) {
-        issues.push({
-            code: 'unauthorized',
-            message: 'AL repair ordering hints do not match the retained outbound message',
-            class: 'refusal'
-        });
+        issues.push(toALOutboundRefusalIssue('AL repair ordering hints do not match the retained outbound message'));
     }
     return issues;
 }
@@ -160,18 +143,10 @@ function validateAcknowledgedReceipt(
         !pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId) ||
         pending.outsideAudiencePeerIds.includes(countedPeerId)
     ) {
-        return [{
-            code: 'unauthorized',
-            message: 'AL acknowledgement confirms no peer of the pending outbound receipt',
-            class: 'refusal'
-        }];
+        return [toALOutboundRefusalIssue('AL acknowledgement confirms no peer of the pending outbound receipt')];
     }
     return pending.ackedPeerIds.includes(countedPeerId) && !isOpenNextHopCompletion(read, ack)
-        ? [{
-            code: 'unauthorized',
-            message: 'AL acknowledgement confirms a peer the receipt already counted',
-            class: 'duplicate'
-        }]
+        ? [toALOutboundDuplicateIssue('AL acknowledgement confirms a peer the receipt already counted')]
         : [];
 }
 
