@@ -230,8 +230,12 @@ Three were weighed with the maintainer, who picked the first.
     is green when it is a first attempt, its job concluded in success, every family in its plan file
     has a result file, and every scenario in them `passed` with `familyOutcome` passed;
   - how a run that is not plainly green or red is read, by its job's conclusion: a job still in
-    progress, cancelled or skipped is left out and does not break the streak; any other job without
-    a plan file (it died before planning) is a red run with nothing to attribute;
+    progress or skipped is left out and does not break the streak; a cancelled job of a `main` push
+    is red, because a push run has a concurrency group of its own and only a person or a dying
+    runner cancels it (the first ready run of slice 1 showed a full-scope job that GitHub reported
+    as cancelled after nine minutes, with no upload); a cancelled job of a pull-request run is left
+    out, because a newer push cancels it by design; any other job without a plan file (it died
+    before planning) is a red run with nothing to attribute;
   - per scenario (`carrier/family/scenarioKey`, and `carrier/family` for a failure outside any
     scenario), how many of the read runs failed it or did not run it, and in which runs;
   - the failed scenarios that have no recorded cause.
