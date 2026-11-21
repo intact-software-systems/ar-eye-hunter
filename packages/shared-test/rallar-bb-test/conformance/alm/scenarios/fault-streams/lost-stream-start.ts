@@ -49,10 +49,14 @@ function toLostStreamStartSenderCommands(sender: AlmConformanceStepInput): reado
     ];
 }
 
-/** One sender holds the cell's track, so the ordering key alone names it. */
+/**
+ * Send 1 can reach the receiver twice, by the gap repair and at the release, so a fourth arrival fails the cell. One
+ * sender holds the cell's track, so the ordering key alone names it.
+ */
 function toLostStreamStartReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         toReceivedCommand({ ...receiver, index: 3, count: 3, absent: false, ascendingBy: 'seq' }),
+        toReceivedCommand({ ...receiver, index: 4, count: 4, absent: true }),
         toOrderingPositionWait(receiver, {
             name: 'no-before-entry',
             status: 'before-entry',

@@ -345,13 +345,14 @@ describe('ALM fault stream cells', () => {
     );
 
     it.each(LOST_START_CARRIERS)(
-        'lost-stream-start over %s reads three arrivals in sequence order and no send refused as before the track\'s entry',
+        'lost-stream-start over %s reads three arrivals in sequence order, no fourth, and no send refused as before the track\'s entry',
         (carrier) => {
             const receiver = requireCell('lost-stream-start', carrier).receiver;
             const track = `"trackKey":"${toOrderingKey(toSenderStep(carrier, 'lost-stream-start'))}:`;
 
             expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
-                { count: 3, absent: false, ascendingBy: 'seq' }
+                { count: 3, absent: false, ascendingBy: 'seq' },
+                { count: 4, absent: true }
             ]);
             expect(receiver.commands.filter((command) => command.kind === 'wait')).toEqual([
                 findCommand(receiver, 'no-before-entry')
@@ -366,10 +367,8 @@ describe('ALM fault stream cells', () => {
                     payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
                 }
             });
-            expect(toPlaces(receiver, ['received-3', 'no-before-entry'])).toEqual([
-                toPlaces(receiver, ['received-3'])[0],
-                toPlaces(receiver, ['received-3'])[0] + 1
-            ]);
+            const [first] = toPlaces(receiver, ['received-3']);
+            expect(toPlaces(receiver, ['received-3', 'received-4', 'no-before-entry'])).toEqual([first, first + 1, first + 2]);
         }
     );
 });
