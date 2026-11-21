@@ -1141,15 +1141,17 @@
     {
       "name": "theResignationRemovedTheAppointmentInOneMetadataVersion",
       "type": "assert",
-      "actual": "{resignedGroup}",
+      "actual": {
+        "group": "{resignedGroup}"
+      },
       "expect": {
         "comparators": [
           {
-            "path": "metadata.rallarDirector",
+            "path": "group.metadata.rallarDirector",
             "exists": false
           },
           {
-            "path": "metadataVersion",
+            "path": "group.metadataVersion",
             "equals": "{resignationMetadataVersion}"
           }
         ]
