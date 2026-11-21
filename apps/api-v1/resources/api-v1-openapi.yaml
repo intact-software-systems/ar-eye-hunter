@@ -6335,6 +6335,20 @@ components:
         intervalMs: { type: integer, minimum: 0 }
         opensAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
+    HeldTopologyReshape:
+      type: object
+      additionalProperties: false
+      required: [wantedReasons, opensAtEpochMs]
+      properties:
+        wantedReasons:
+          description: The reasons the gate holds, once each, in the order of HeldTopologyReshapeReason's enum.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
+        opensAtEpochMs: { type: integer, format: int64, minimum: 0 }
+
     HeldTopologyReshapeReason:
       type: string
       enum: [kind-change, leader-rooting]
@@ -8034,6 +8048,7 @@ components:
         - managerPrincipalIds
         - layoutStale
         - pending
+        - heldReshape
         - maxFormationAttempts
         - condition
         - remediation
@@ -8079,6 +8094,13 @@ components:
         pending:
           anyOf:
             - { $ref: '#/components/schemas/PendingTopologyReplan' }
+            - { type: 'null' }
+        heldReshape:
+          description: >-
+            The reshape the room's gate holds; null unless the room is active and its stored gate wants a reason.
+            The reshape follows at the next work that plans the room, so opensAtEpochMs can lie in the past.
+          anyOf:
+            - { $ref: '#/components/schemas/HeldTopologyReshape' }
             - { type: 'null' }
         groupRef:
           $ref: '#/components/schemas/GroupRef'
