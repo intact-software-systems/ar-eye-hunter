@@ -89,3 +89,10 @@ jobs:
         with:
           carrier: ${{ matrix.carrier }}
           scope: full
+
+      - name: Upload the ALM conformance lane results over ${{ matrix.carrier }}
+        if: ${{ always() }}
+        uses: ./.github/actions/alm-conformance-lane-results
+        with:
+          carrier: ${{ matrix.carrier }}
+          scope: full

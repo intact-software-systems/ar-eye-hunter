@@ -1,5 +1,5 @@
 name: ALM conformance lane
-description: Run the ALM conformance lane over one carrier in one scope and upload its results.
+description: Run the ALM conformance lane over one carrier in one scope; the job uploads its results through alm-conformance-lane-results.
 inputs:
   carrier:
     description: 'Carrier the lane runs over: ws, rtc or rtc-with-ws-fallback.'
@@ -25,7 +25,8 @@ runs:
         esac
 
     # Two literal script lines, one per scope, so check:test-reachability can read the commands. Each global timeout
-    # sits below its job's time limit, so a hang ends as a failed step and the uploads still run.
+    # sits below its job's time limit, so a hang ends as a failed step and Playwright writes its report. The uploads
+    # are the job's next step, not steps here: a cancelled composite step skips its remaining steps whatever their `if`.
     - name: Run the ALM conformance smoke scope over ${{ inputs.carrier }}
       if: ${{ inputs.scope == 'smoke' }}
       shell: bash
@@ -41,20 +42,3 @@ runs:
         RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ inputs.carrier }}
         RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.scope }}
       run: npm run test:rallar:full-stack:postgres:alm -- --global-timeout=3300000
-
-    - name: Upload ALM conformance lane results
-      if: always()
-      uses: actions/upload-artifact@v7
-      with:
-        name: alm-conformance-lane-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
-        path: apps/rallar-black-box/test-results
-        if-no-files-found: ignore
-        retention-days: 7
-
-    - name: Upload ALM lane result records
-      if: always()
-      uses: actions/upload-artifact@v7
-      with:
-        name: alm-lane-result-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
-        path: apps/rallar-black-box/test-results/alm-lane-result
-        if-no-files-found: ignore

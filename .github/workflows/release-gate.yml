@@ -225,6 +225,13 @@ jobs:
           carrier: ${{ matrix.carrier }}
           scope: smoke
 
+      - name: Upload the ALM conformance lane results over ${{ matrix.carrier }}
+        if: ${{ always() }}
+        uses: ./.github/actions/alm-conformance-lane-results
+        with:
+          carrier: ${{ matrix.carrier }}
+          scope: smoke
+
   e2e-recipe-console:
     name: Browser tests (Recipe Console ${{ matrix.shard }})
     runs-on: ubuntu-latest

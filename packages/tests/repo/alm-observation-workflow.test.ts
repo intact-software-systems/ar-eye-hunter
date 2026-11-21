@@ -70,10 +70,13 @@ interface AdmissionEvent {
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const ALM_LANE_ACTION = './.github/actions/alm-conformance-lane';
+const ALM_LANE_RESULTS_ACTION = './.github/actions/alm-conformance-lane-results';
+const UPLOAD_ARTIFACT = 'actions/upload-artifact@v7';
 const ALM_WORKFLOW = './.github/workflows/alm-conformance-observation.yml';
 const NAVIGATION_WORKFLOW = './.github/workflows/navigation-report-observation.yml';
 const observation = readWorkflow('.github/workflows/alm-conformance-observation.yml');
 const laneSteps = readAction('.github/actions/alm-conformance-lane/action.yml').runs.steps;
+const resultSteps = readAction('.github/actions/alm-conformance-lane-results/action.yml').runs.steps;
 
 describe('ALM conformance lane workflows', () => {
     it('runs the smoke scope as a required Release Gate lane within 20 minutes', () => {
@@ -193,20 +196,42 @@ describe('ALM conformance lane action', () => {
         expect(3_300_000).toBeLessThan((fullLimit ?? 0) * 60_000);
     });
 
-    it('uploads both artifacts with the scope in their names, keeping the output root for seven days', () => {
-        const uploads = laneSteps.filter((step) => step.uses === 'actions/upload-artifact@v7');
+    it('uploads nothing itself, since a cancelled composite step skips its remaining steps', () => {
+        expect(laneSteps.filter((step) => step.uses === UPLOAD_ARTIFACT)).toEqual([]);
+    });
+});
+
+describe('ALM conformance lane results action', () => {
+    it('uploads both artifacts with the carrier and scope in their names, keeping the output root for seven days', () => {
+        const uploads = resultSteps.filter((step) => step.uses === UPLOAD_ARTIFACT);
         const [outputRoot, laneResult] = uploads;
 
         expect(uploads).toHaveLength(2);
+        expect(resultSteps).toEqual(uploads);
         for (const upload of uploads) {
-            expect(upload.if).toBe('always()');
-            expect(upload.with?.name).toContain('${{ inputs.scope }}');
+            // The calling job step carries `always()`; a nested condition would not survive a cancelled job anyway.
+            expect(upload.if).toBeUndefined();
+            expect(upload.with?.name).toContain('${{ inputs.carrier }}-${{ inputs.scope }}');
             expect(upload.with?.['if-no-files-found']).toBe('ignore');
         }
         expect(outputRoot.with?.path).toBe('apps/rallar-black-box/test-results');
         expect(outputRoot.with?.['retention-days']).toBe(7);
         expect(laneResult.with?.path).toBe('apps/rallar-black-box/test-results/alm-lane-result');
         expect(laneResult.with).not.toHaveProperty('retention-days');
+    });
+
+    it.each([
+        { workflowPath: '.github/workflows/release-gate.yml', jobId: 'alm-smoke' },
+        { workflowPath: '.github/workflows/alm-conformance-observation.yml', jobId: 'alm-conformance-observation' }
+    ])('runs as the job step directly after the lane, even for a cancelled job: $jobId', ({ workflowPath, jobId }) => {
+        const steps = readWorkflow(workflowPath).jobs[jobId].steps ?? [];
+        const laneStep = steps.findIndex((step) => step.uses === ALM_LANE_ACTION);
+        const results = steps[laneStep + 1];
+
+        expect(laneStep).toBeGreaterThan(-1);
+        expect(results.uses).toBe(ALM_LANE_RESULTS_ACTION);
+        expect(results.if).toBe('${{ always() }}');
+        expect(results.with).toEqual(steps[laneStep].with);
     });
 });
 

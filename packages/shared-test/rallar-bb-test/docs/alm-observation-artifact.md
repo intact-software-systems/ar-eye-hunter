@@ -15,9 +15,12 @@ through one action, `.github/actions/alm-conformance-lane/action.yml`:
   the merge commit.
 
 Both run one matrix leg per carrier, with Playwright's global timeout below the job's time limit
-(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step and the
-uploads still run. Each leg uploads two artifacts, pass or fail, each when it has files: the whole
-Playwright output root, `apps/rallar-black-box/test-results`, as
+(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step. The
+job uploads the results through a second action,
+`.github/actions/alm-conformance-lane-results/action.yml`, as its next step with `always()`: a
+cancelled composite step skips its own remaining steps, so the uploads are a step of the job and
+also run for a cancelled job. Each leg uploads two artifacts, pass, fail or cancelled, each when it
+has files: the whole Playwright output root, `apps/rallar-black-box/test-results`, as
 `alm-conformance-lane-<carrier>-<scope>-<sha>` (kept seven days), and its `alm-lane-result/`
 directory alone as `alm-lane-result-<carrier>-<scope>-<sha>` (see "The lane result files" below).
 `<sha>` is the workflow run's commit. On a Release Gate run of a pull request that is the merge
