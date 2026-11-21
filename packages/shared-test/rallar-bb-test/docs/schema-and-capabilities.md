@@ -865,7 +865,10 @@ Four fault stream cells run in the full scope of the two-agent family (D669), wi
 Every send of each names the cell's ordering key, and every send but `seeded-loss-unreceipted-stream`'s names
 `ack: 'receiver'`. `lost-stream-start` runs over `rtc` and `ws`: the sender holds send 1 by its message id, sends 2 and 3, and releases
 the hold once it admitted a gap NACK about its track, which a later send reaching the track's ordering hop before the
-first causes; the hop opens the track at its start, holds the later sends and asks for the first. The receiver reads
+first causes, and committed a repair of send 1 (the repair dispatch's `commit-phases` event, stated even while the hold
+keeps the frame), so the cell fails where the origin cannot serve the gap; the hop opens the track at its start, holds
+the later sends and asks for the first. Over `ws` the WS server's initial-window gap already recovered send 1 before
+the receiver's entry rule changed, so `ws` is a regression guard and `rtc` the evidence. The receiver reads
 three arrivals in sequence order (`ascendingBy: 'seq'`) and proves the absence of a fourth, since send 1 can arrive
 twice, by the repair and at the release; it proves no `before-entry` position was stated, and the sender reads all three
 handles `acknowledged`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no

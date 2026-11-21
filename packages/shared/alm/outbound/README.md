@@ -1010,15 +1010,19 @@ A send whose latest-wins supersedence only the sender's QoS provider defaults ap
 minted, the record stamped and the frame signed, so the proof covers it and every receiver plans the copy as latest-wins
 (the inbound entry rule does not hold such a copy for a lost first frame). A supersedence the app requested is kept, a
 message that already carries a proof is never rewritten, and an explicit plan (a relay forward, the WS server's queue
-box) never stamps. A retained admission's drain keeps the stamp its first admission decided and never stamps again. Request comparison strips the stamp. A server-originated
-send whose latest-wins comes only from the server's provider defaults is not stamped.
+box) never stamps. A retained admission's drain keeps the stamp its first admission decided and never stamps again.
+Request comparison strips the stamp. This is a delivery change for existing senders: a send whose latest-wins came only
+from provider defaults is now planned latest-wins by every hop and receiver, exactly as one the app requested is, where
+before only its sender planned it so. A server-originated send whose latest-wins comes only from the server's provider
+defaults is not stamped: its copies carry no supersedence of their own.
 On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
 canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
 stored (D519). The refusals `admitLeg` can know (shape, leader, a page that cannot sign) run before admission; a signer
 that still cannot sign in the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported`
-like them. That drop names the request, never the stamped frame: its sequence and record belong to positions the
-aborted admission never committed, and it carries no proof. Under `rtc-with-ws-fallback` WS takes that request over and
+like them. That drop names the request without what the aborted admission added (`toALOutboundUnadmittedMessage`):
+no sequence and no record, which belong to positions it never committed, and no proof; a latest-wins supersedence the
+admission stamped stays on it, as on every retained request. Under `rtc-with-ws-fallback` WS takes that request over and
 stamps its own copy (D498); under `rtc` alone the send settles `rejected`. A granted publication enters only as a leg:
 `enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A planner's message is checked
 against its source with only a minted sequence removed (`validateALOutboundPlannedMessage`), so a planner that adds a

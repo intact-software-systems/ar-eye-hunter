@@ -1998,14 +1998,26 @@ WS copy counts only the server's own copies, so the two may differ; a prior
 behind the recipient's position says nothing it does not know. A recipient
 reads its prior from the record, or `seq - 1` when the record lists it not:
 
-- **No position yet, on a recorded copy**: with a prior `p` above `0` and below
-  the sequence, `p` within the repair window (256 or fewer), on a track its
-  store has not evicted, and a copy that is not latest-wins, it opens the
-  track at `0`, buffers the copy and asks the gap `1` to `p` through the
-  ordinary gap NACK. Otherwise it enters the track at that copy (`entered`)
-  and asks for nothing below it: a late joiner (prior `0`), a track its store
-  evicted at the 256-track cap, a latest-wins copy and a prior past the window.
-  The application's own state read supplies the past of an entered track.
+- **No position yet, on a recorded copy**: where the record owes it the start
+  -- the copy's frozen audience names the recipient, the copy's plan repairs
+  gaps, it is not latest-wins, its store has not evicted the track, and the
+  prior `p` is above `0` and below the sequence, within the repair window (256
+  or fewer) -- it opens the track at `0`, buffers the copy and asks the gap `1`
+  to `p` through the ordinary gap NACK. Otherwise it enters the track at that
+  copy (`entered`) and asks for nothing below it: a late joiner (prior `0`), a
+  recipient the copy's frozen audience does not name (the WS server, ordering
+  hop of every track, at a copy handed over after an RTC admission; a WS or
+  unicast copy, which carries no frozen audience), a copy whose plan repairs
+  no gap, a track its store evicted at the 256-track cap, a latest-wins copy
+  and a prior past the window. The application's own state read supplies the
+  past of an entered track.
+- **Bounded hold**: a track opened at `0` that has delivered nothing waits for
+  its start only until its gap renewals end. When the last renewal timer comes
+  due with the start still missing, 7 to 10.5 s after the gap was revealed
+  (the renewal intervals of 1 s, 2 s and 4 s, stretched by 1 to 1.5), it asks
+  no fourth time and enters at its lowest buffered copy, releasing that copy
+  and its contiguous successors; the start, arriving later, answers
+  `before-entry`. A track that delivered anything keeps waiting as before.
 - **Prior equal to its position**: the sequences between were never meant for
   it, so the copy delivers in order (`omitted`), and a buffered copy whose own
   prior meets the position is released the same way.
@@ -2056,9 +2068,16 @@ records every captured session with a live connection generation anywhere, and a
 session whose socket closed before its close committed, or whose lease lapsed
 before the 60 s sweep, is judged at the receipt retry; a fresh receiver
 whose copy's prior exceeds 256 enters past the lost frames, and the lost frame,
-arriving later, answers `before-entry` on a recorded frozen copy; a track pushed
-off the evicted list by 256 later evictions, or a storage reset that keeps the
-peer id, asks again for frames it delivered; a live-only hand-over copy carries no record and is dropped silently
+arriving later, answers `before-entry` on a recorded frozen copy; a start the
+origin cannot serve (its retention ended, it left, or the path repairs nothing)
+holds the later copies until the bounded hold ends and is then lost; under
+`rtc-with-ws-fallback` the record raises the prior of a recipient never sent
+the track to the room's WS-leg floor, so a genuine late joiner can ask a range
+the RTC origin cannot serve and enters only when its bounded hold ends; a
+recipient that forgot a track it delivered (one pushed off the evicted list by
+256 later evictions, a storage reset or a new connect that keeps the peer id)
+asks for its start again, receives once more the frames the origin still
+retains (at least once) and ends the hold on older ones; a live-only hand-over copy carries no record and is dropped silently
 (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with
 no NACK and stays unconfirmed, repaired by nothing; under `rtc-with-ws-fallback`
 a server copy whose record meets the receiver's position can be read as an
