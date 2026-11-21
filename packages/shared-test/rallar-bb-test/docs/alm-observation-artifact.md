@@ -120,6 +120,89 @@ temporary file and a rename, so a worker killed mid-write leaves the previous co
 The commit, the event and the attempt are not in the files; the workflow run that uploaded the
 `alm-lane-result-<carrier>-<scope>-<sha>` artifact owns them.
 
+## The ledger
+
+`npm run alm:lane:ledger` reads the newest runs of `alm-conformance-observation.yml` through `gh`,
+downloads each run's `alm-lane-result-<carrier>-full-<sha>` artifacts, and prints the ledger. It
+only reads GitHub. Options: `--limit <n>` (the newest `n` workflow runs, 1 to 100, default 30) and
+`--repository <owner/name>` (default: the repository `gh repo view` resolves for the working
+directory), for example `npm run alm:lane:ledger -- --limit 50`. It exits 0 whenever it could read
+GitHub, red or green; it is a report, not a gate. It exits 1 only when it could not: no `gh`, no
+access, or a bad option.
+
+The logic is pure and lives in `packages/shared-test/rallar-bb-test/conformance/alm/ledger/`; the
+entry point, `alm-lane-ledger.mts`, only reads GitHub and files and prints.
+
+- Each lane job (`ALM conformance observation (<carrier>)`) is one run of its carrier; other jobs,
+  such as `Detect ALM lane changes`, are not read. The carrier comes from the job's name, and the job
+  reads only its carrier's artifact. GitHub's job conclusion maps onto five values: still running
+  is `in-progress`; `success`, `skipped` and `cancelled` keep their names; every other conclusion
+  (`failure`, `timed_out`, `startup_failure`, ...) is `failure`.
+- A run is **green** when it is a first attempt, its job succeeded, it has a plan, and every planned
+  family has a result whose scenarios all `passed` and whose `familyOutcome` is `passed`. A planned
+  family without a result file was never started, so its scenarios did not run.
+- **The streak counts `main` push runs only**, per carrier, newest first, up to the first that is
+  not green. Pull-request and dispatched runs are shown beside it: a red pull-request run may be
+  that pull request's own regression, caught as intended. A job still running or skipped is left
+  out; so is a cancelled pull-request or dispatched job, since a newer push cancels it by design. A
+  cancelled push job is red: only a person or a dying runner cancels one.
+
+The output, section by section:
+
+```text
+ALM lane ledger: 30 workflow runs read, newest commit 1a2b3c4, oldest commit 9f8e7d6.
+
+Streak of green main-push runs, per carrier:
+ws: streak 7/10
+  last red: run 44900000001 at 5d6e7f8
+    failed:
+      ws/two-agent/fenced-catch-up
+    not run: none
+  failures without a cause: 1
+...
+```
+
+- **Per carrier**: `streak <n>/10`, then the newest red push run with its failed and not-run keys
+  (ten of each at most, then `and <k> more`), then `failures without a cause`: how many keys that a
+  counted run of the carrier failed or did not run have no entry in the causes file. A carrier may
+  become required when its streak reaches ten with no rerun and that count is 0; making it required stays the
+  maintainer's decision.
+- **Scenarios failed or not run in main-push runs**: every key, sorted, with the push runs that
+  failed it, the push runs that did not run it, and whether it has a recorded cause. A key is
+  `carrier/family/scenarioKey`, or `carrier/family` for a failure outside every scenario (a family
+  that failed while all its scenarios passed, a result its plan does not name, a result for another
+  carrier, or a second result for one family).
+- **Red main-push runs with nothing to attribute**: red push runs that name no key, such as a job
+  that died before it wrote its plan, a rerun, or a failed job whose results all passed.
+- **Pull-request and dispatched runs**: run id, event, carrier, green or red.
+- **Jobs left out**: the jobs read but not counted, with why (`in-progress`, `skipped`, or a
+  `cancelled` pull-request or dispatched job).
+- **Issues met while reading**: files that are not JSON or do not decode, files whose carrier or
+  scope disagrees with their job, a second plan or a second result for one family, an artifact that
+  could not be downloaded. Such a file is read as absent, so a job whose plan is refused reads as a
+  job with no plan.
+
+Each section that is empty prints one line saying so.
+
+### Recording a cause
+
+When a failure's root cause is known, add an entry to
+`packages/shared-test/rallar-bb-test/conformance/alm/ledger/alm-lane-flake-causes.json`. The file is
+a JSON array; each entry names one key exactly as the ledger prints it (`carrier/family/scenarioKey`,
+or `carrier/family`), the cause in a sentence or two, and the pull request that fixed it, or `null`
+while it is open. A key appears at most once; the ledger prints the decoder's issues when the file
+is malformed. For example:
+
+```json
+[
+  {
+    "scenario": "rtc/two-agent/fenced-catch-up",
+    "cause": "The receiver's roster read raced the relay's reshape, so the first frame met a stale fence.",
+    "fixedByPullRequest": null
+  }
+]
+```
+
 ## The budgets stay
 
 Maintainer decision, 2026-09-11: the harness budgets are not the thing under test and are not

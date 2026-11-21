@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "alm:lane:ledger": "bun run rallar-bb-test/conformance/alm/ledger/alm-lane-ledger.mts",
     "bb:api-v1:recipes": "bun run black-box-runner/api-v1-black-box-run.mts --recipes-only --artifact-dir=../../.artifacts/api-v1-black-box/recipes",
     "bb:api-v1:postgres": "RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{\"documentType\":\"black-box-map\",\"rollout\":\"production\"}]' bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --artifact-dir=../../.artifacts/api-v1-black-box/postgres",
     "bb:api-v1:postgres:crdt": "RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{\"documentType\":\"black-box-map\",\"rollout\":\"production\"}]' bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --cluster-only --cluster-profile=api-v1-black-box-crdt --artifact-dir=../../tmp/api-v1-black-box/postgres-crdt",
