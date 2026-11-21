@@ -714,8 +714,11 @@ to it, `every-track` (the WS server, its clients' ordering hop) every track it a
 [`resolveALOrderingObserverRole`](./admission/resolve-al-ordering-observer-role.ts) reads the planner snapshot's
 `selfPeerId`: an `every-track` runtime or a delivering admission is a `recipient`, a frozen recipient that may not
 deliver a `witness`, and any other peer, a pure relay included, `none`, which observes nothing and forwards a
-recorded track it never saw. A recipient with no snapshot enters a recorded track at its copy (`entered`, no window
-check); one whose position `L` the copy's prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
+recorded track it never saw. A recipient with no snapshot and a copy whose prior `p` is above `0` and below `seq`, within the repair window (`p`
+at most 256), on a track its store has not evicted, for a copy that is not latest-wins in its plan, opens the track at
+`0` and treats the copy as tracked above `0`: it buffers the copy and asks the gap `1` to `p` through the gap NACK,
+renewal and release path below. Any other recipient with no snapshot enters a recorded track at its copy (`entered`);
+one whose position `L` the copy's prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
 prior ahead of `L` is a gap that ends at the prior; a prior behind `L`, `0` on a held track, or a copy without a
 record reads the rule above. `entered` and `omitted` deliver as `in-order` does, a buffered copy whose own prior
 equals `L` is released as its successor, and delivery progress jumps to a delivered sequence once its predecessor
@@ -735,8 +738,18 @@ metric labels. [`computeALInboundOrderingCounters`](./admission/al-inbound-order
 into `ALInboundOrderingCounters` (`entered`, `omitted`, `witnessed`, `beforeEntry`), returning its input unchanged for
 any other event; it counts events, not distinct copies, so a repeated `before-entry` refusal or a duplicate `witnessed`
 counts again. The browser keeps one fold per connect in a tee around the connect's inbound diagnostics sink, shared by
-both carriers, and reports it as `rallar.messages.readUsage().ordering`, keyed on `status` alone. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
-copy, arriving later, answers `before-entry` on a recorded frozen copy; a live-only hand-over copy carries no
+both carriers, and reports it as `rallar.messages.readUsage().ordering`, keyed on `status` alone. The store knows an evicted track from one row, `<namespace>:ordering-evicted`
+([`al-inbound-evicted-ordering-tracks.ts`](./admission/al-inbound-evicted-ordering-tracks.ts)): the tracks the browser's
+256-track cap evicted, each until its eviction plus the ordering TTL, newest last, at most 256. The eviction pass
+([`evict-al-inbound-ordering-tracks-past-cap.ts`](./admission/evict-al-inbound-ordering-tracks-past-cap.ts)) writes it in
+the transaction that removes the snapshots, for the snapshots it actually removed; an admission whose track has no live
+snapshot reads it, in a capped store only. A track on it enters at its next copy, as before, since its earlier frames
+were delivered. A snapshot that expired needs no row: the receiver's TTL outlasts the sender's head, so the sender
+restarts such a track at `seq` `1` with prior `0`, which enters. A late joiner's first copy carries prior `0` and enters
+too.
+**Limits:** a fresh recipient whose copy's prior is above 256 enters past the lost frames; a track pushed off the
+evicted list by 256 later evictions, or a storage reset that keeps the peer id, asks again for frames it delivered,
+which are delivered once more past the 60 s dedup window; a live-only hand-over copy carries no
 record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with no NACK
 and stays unconfirmed in the origin's receipt.
 
