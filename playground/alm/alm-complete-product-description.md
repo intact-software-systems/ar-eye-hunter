@@ -540,7 +540,8 @@ under `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/` over `ws`
 `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names. It
 runs its `smoke` scope as the required `alm-smoke` lane of the Release Gate, and its `full` scope on
 the PostgreSQL API in `.github/workflows/alm-conformance-observation.yml`, an observation nothing
-waits for.
+waits for, which starts itself on `main` pushes, on ready pull requests that can change the lane, and
+on dispatch.
 
 ## QoS negotiation
 

@@ -7,14 +7,21 @@ through one action, `.github/actions/alm-conformance-lane/action.yml`:
 - the `smoke` scope on the in-memory API, as the required `alm-smoke` lane of
   `.github/workflows/release-gate.yml`;
 - the `full` scope on the PostgreSQL API, as the `alm-conformance-observation` job of
-  `.github/workflows/alm-conformance-observation.yml`. It is an observation: nothing waits for it. It
-  starts itself on every `main` push, the pull-request gate calls it for a ready pull request whose
-  changed paths can change the lane, and it can be dispatched on any branch.
+  `.github/workflows/alm-conformance-observation.yml`. It is an observation: nothing waits for it,
+  and no other workflow calls it. It starts itself on every `main` push except one that changes only
+  `performance-observations/**`; on a pull request that is not a draft, when its own
+  `alm-changes` job finds a path changed since the merge base that can change the lane (or that job
+  fails); and on dispatch on any branch. It checks out the event's own commit: on a pull request,
+  the merge commit.
 
-Both run one matrix leg per carrier. Each leg uploads two artifacts, pass or fail: the whole
+Both run one matrix leg per carrier, with Playwright's global timeout below the job's time limit
+(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step and the
+uploads still run. Each leg uploads two artifacts, pass or fail, each when it has files: the whole
 Playwright output root, `apps/rallar-black-box/test-results`, as
-`alm-conformance-lane-<carrier>-<scope>-<sha>`, and its `alm-lane-result/` directory alone as
-`alm-lane-result-<carrier>-<scope>-<sha>` (see "The lane result files" below).
+`alm-conformance-lane-<carrier>-<scope>-<sha>` (kept seven days), and its `alm-lane-result/`
+directory alone as `alm-lane-result-<carrier>-<scope>-<sha>` (see "The lane result files" below).
+`<sha>` is the workflow run's commit. On a Release Gate run of a pull request that is the merge
+commit, while the `alm-smoke` lane checked out the pull request's head.
 
 Every cell — one carrier per cell, pass or fail — writes these files into that root:
 
@@ -78,24 +85,29 @@ observation files and for the same reason, with the pure builders of
 | `test-results/alm-lane-result/<carrier>-<scope>-plan.json`     | The first test of each carrier, `lane plan over <carrier> (<scope>)`. |
 | `test-results/alm-lane-result/<carrier>-<scope>-<family>.json` | Each family test that plans at least one scenario.                    |
 
-The **plan file** states the run's plan before any family test of its carrier starts: `carrier`, `scope`, `backend`
-(`memory` or `postgres`, the API the full-stack configuration starts), and `families`, every lane
-family with the `scenarioKeys` it plans, in plan order. A family that plans nothing is listed with no
-keys. It comes from the same planning function the family tests run, so a run is judged against its
-own plan, not against a later catalog.
+The **plan file** states the run's plan before any family test of its carrier starts: `carrier`,
+`scope`, `backend` (`memory` or `postgres`, the API the full-stack configuration starts), and
+`families`, every lane family with the `scenarioKeys` it plans. A family that plans nothing is
+listed with no keys; a carrier whose families plan nothing fails its plan test. It comes from the
+same planning function the family tests run, so a run is judged against its own plan, not against a
+later catalog. The keys are in the plan test's own order: a `shuffled` family that names no seed
+mints one per planning, so its run order may differ. Compare a plan with a result by key.
 
 A **family result file** carries the same `carrier`, `scope` and `backend`, its `family`,
 `familyOutcome`, and `scenarios`: one `{ scenarioKey, outcome }` per planned scenario, in plan order,
 and nothing the plan does not name. The family test writes it when its plan is resolved, with every
-scenario `not-run`, again after each scenario, and once more at its end.
+scenario `not-run`, again after each scenario, and once more at its end, each time through a
+temporary file and a rename, so a worker killed mid-write leaves the previous complete file.
 
 - A scenario's `outcome` is `failed` when its body threw or added a soft-assertion error to the
   family test, `passed` when it ended otherwise, and `not-run` when it never ended: the family test
   stopped before it, on an earlier error, a start barrier or the time limit.
-- `familyOutcome` is `not-finished` until the family test ends, then `passed` or `failed`. A family
-  can fail outside every scenario (its closing identity check, a start barrier), so a `failed` family
-  may hold only `passed` scenarios. A file that still reads `not-finished` comes from a family test
-  that was cut off.
+- `familyOutcome` is `not-finished` until the family test's whole body ends, from opening its pages
+  to closing them, then `failed` when that body threw or left an error on the test, and `passed`
+  otherwise. A family can fail outside every scenario (opening or closing its pages, a start
+  barrier, a root that never ends), so a `failed` family may hold only `passed` scenarios. Only a
+  family test cut off before its body ended, by its time limit or the run's global timeout, leaves
+  `not-finished`.
 - A family whose plan names scenarios but has no result file was never started; every scenario it
   plans is `not-run`.
 

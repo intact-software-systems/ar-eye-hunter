@@ -56,9 +56,9 @@ this plan must run manually, so no gate is left out.
 **Automatic on the PR (no manual step needed)** — `branch-release-gate.yml` runs on every PR and
 calls, in turn: `governance-gate.yml`, `release-gate.yml` (unit, tooling, Bun, browser, recipe
 console, and the API black-box recipes — standard 1/2, standard 2/2, cluster — plus the topology
-replay proof), `games-release-gate.yml`, and `alm-conformance-observation.yml` (an observation of
-the ALM lane's full scope, which nothing waits for). These already run on PR #794 and cover the
-ephemeral-runner surface.
+replay proof), and `games-release-gate.yml`. These already run on PR #794 and cover the
+ephemeral-runner surface. `alm-conformance-observation.yml`, an observation of the ALM lane's full
+scope that nothing waits for, starts itself on a ready pull request that can change the lane.
 
 **Manual in this plan** — the `workflow_dispatch`-only and Hetzner workflows:
 

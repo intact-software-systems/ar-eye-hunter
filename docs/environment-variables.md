@@ -601,15 +601,16 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `VITE_RALLAR_TOKEN`                         | No       | None                             | Access token for the generic restored-session real-provider smoke.                                    |
 
 The ALM conformance lane reads its parameters once, when the spec loads, and only while
-`RALLAR_BLACK_BOX_FULL_STACK` is set (`decodeAlmLaneParameters`). An empty or blank value takes the
-default: `test:rallar:full-stack:memory:alm` sets no scope and runs the `smoke` scope over every
-carrier, and `test:rallar:full-stack:postgres:alm` sets `full`. In CI the
+`RALLAR_BLACK_BOX_FULL_STACK` is set (`decodeAlmLaneParameters`); it reads the API backend
+(`RALLAR_BLACK_BOX_API_MODE`) the same way, so a skipped lane decodes nothing. An empty or blank
+value takes the default: `test:rallar:full-stack:memory:alm` sets no scope and runs the `smoke`
+scope over every carrier, and `test:rallar:full-stack:postgres:alm` sets `full`. In CI the
 `.github/actions/alm-conformance-lane` action sets the scope and one carrier per runner. A value
 outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and `RALLAR_BLACK_BOX_ALM_CARRIERS` included,
 a `RALLAR_BLACK_BOX_ALM_SEED` without `RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a
 `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key
-that no cell of the selected scope and carriers runs throws a `RangeError` that names the value and what is accepted, before any browser starts. A `shuffled` family
-shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same
+that no cell of the selected scope and carriers runs throws a `RangeError` that names the value and
+what is accepted, before any browser starts. A `shuffled` family shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same
 seed gives the same order of the same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell
 whose definition declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
 no page rejoins a room it left. The lane
