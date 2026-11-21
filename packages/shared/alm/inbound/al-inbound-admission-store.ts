@@ -774,7 +774,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             await evictALInboundOrderingTracksPastCap({
                 backend: this.backend,
                 orderingPrefix: this.toOrderingPrefix(),
+                evictedTracksKey: this.toEvictedOrderingTracksKey(),
                 maxTracks: this.maxOrderingTracks,
+                orderingTrackTtlMs: this.orderingTrackTtlMs,
+                nowMs: this.nowMs(),
                 report: this.reportOrderingTracks
             });
         }
