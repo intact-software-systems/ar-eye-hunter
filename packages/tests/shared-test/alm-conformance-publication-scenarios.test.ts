@@ -156,7 +156,7 @@ function expectLoopSends(scenario: AlmConformanceScenario, carrier: AlmConforman
 
 /** The receiver's count of `count` arrivals spans the boundary that carries the last of them plus one cadence. */
 function expectArrivalCount(receiver: RallarBlackBoxTestRecipe, count: number, opportunity: number): void {
-    const timeoutMs = SEND_WINDOW_MS + (receiver.metadata?.carrier === 'ws' ? 0 : 30_000) + (opportunity + 1) * CADENCE_MS;
+    const timeoutMs = SEND_WINDOW_MS + (receiver.metadata?.carrier === 'ws' ? 0 : 90_000) + (opportunity + 1) * CADENCE_MS;
     expect(findCommand(receiver, `received-${count}`)).toMatchObject({
         count,
         absent: false,
@@ -423,8 +423,8 @@ describe('paced-capacity', () => {
             expect(findCommand(receiver, 'received-1')).toMatchObject({
                 count: 1,
                 absent: false,
-                windowMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 30_000) + CADENCE_MS + 30_000 - 1_000,
-                timeoutMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 30_000) + CADENCE_MS + 30_000
+                windowMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 90_000) + CADENCE_MS + 30_000 - 1_000,
+                timeoutMs: SEND_WINDOW_MS + (carrier === 'ws' ? 0 : 90_000) + CADENCE_MS + 30_000
             });
             expectNotYet(receiver, 1, 0);
             expectArrivalCount(receiver, 3, 1);
