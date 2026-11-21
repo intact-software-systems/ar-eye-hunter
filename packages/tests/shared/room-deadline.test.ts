@@ -23,3 +23,13 @@ it('requires the published instant to be representable as an epoch date', () => 
     expect(() => assertRoomDeadlineChange({ name: 'vote', expectedRevision: 0, atEpochMs })).toThrow(TypeError);
     expect(() => readRoomDeadline({ rallarRoomDeadlines: [{ ...deadline, atEpochMs }] }, deadline.name)).toThrow(TypeError);
 });
+
+it('rejects invalid occurrence identity and director intent on next-occurrence writes', () => {
+    for (const startedAtRevision of [1, 3, 1.5, null]) {
+        expect(() => readRoomDeadline({ rallarRoomDeadlines: [{ ...deadline, startedAtRevision }] }, deadline.name))
+            .toThrow(TypeError);
+    }
+    const start = { name: deadline.name, expectedRevision: 2, atEpochMs: 9_000, operation: 'start-next-occurrence' };
+    expect(() => assertRoomDeadlineChange({ ...start, expectedDirectorEpoch: 1 })).toThrow(TypeError);
+    expect(() => assertRoomDeadlineChange({ ...start, expectedRevision: 0 })).toThrow(TypeError);
+});

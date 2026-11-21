@@ -73,7 +73,7 @@ it('requires room authority and rejects elapsed, non-extending and forged deadli
     ]);
 });
 
-it('bounds the per-room collection and still permits an extension at capacity', async () => {
+it('reuses a name through 100 occurrences with all 32 slots occupied', async () => {
     const runtime = new GroupBarrierRepository();
     await seedOpenGroup(runtime, groupId);
     const writer = service(runtime);
@@ -85,6 +85,18 @@ it('bounds the per-room collection and still permits an extension at capacity', 
     expect(extended.result?.snapshot.group.metadata.rallarRoomDeadlines).toContainEqual({
         name: 'phase-0', revision: 2, atEpochMs: 5_000
     });
+    for (let revision = 2; revision <= 100; revision++) {
+        const expiresAt = 5_000 + revision - 2;
+        await service(runtime, expiresAt).updateGroup(SCOPE, groupId, {
+            actorPrincipalId: 'alice', requestId: 'next-' + revision,
+            roomDeadline: {
+                name: 'phase-0', expectedRevision: revision, operation: 'start-next-occurrence', atEpochMs: expiresAt + 1
+            }
+        });
+    }
+    const stored = (await requireSnapshot(runtime, groupId)).group.metadata.rallarRoomDeadlines;
+    expect(stored).toHaveLength(32);
+    expect(stored).toContainEqual({ name: 'phase-0', revision: 101, startedAtRevision: 101, atEpochMs: 5_099 });
 });
 
 it('refuses an owner acting under a missing appointment even with the correct deadline revision', async () => {

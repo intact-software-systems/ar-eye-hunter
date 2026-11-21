@@ -39,7 +39,11 @@ export function computeGroupDeadlineChange(
     if (change.atEpochMs <= nowEpochMs) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Room deadline must be in the future.' };
     }
-    if (previous && (previous.atEpochMs <= nowEpochMs || change.atEpochMs <= previous.atEpochMs)) {
+    const startsOccurrence = change.operation === 'start-next-occurrence';
+    if (startsOccurrence && (!previous || previous.atEpochMs > nowEpochMs)) {
+        return { rejectionCode: 'group-mutation-rejected', message: 'The previous deadline must have elapsed.' };
+    }
+    if (!startsOccurrence && previous && (previous.atEpochMs <= nowEpochMs || change.atEpochMs <= previous.atEpochMs)) {
         return { rejectionCode: 'group-mutation-rejected', message: 'A live room deadline can only be extended.' };
     }
     if (change.expectedRevision === Number.MAX_SAFE_INTEGER) {
@@ -47,6 +51,8 @@ export function computeGroupDeadlineChange(
     }
     const revised = deadlines.map((deadline) => ({ ...deadline }));
     revised[index < 0 ? revised.length : index] = {
+        ...previous,
+        ...(startsOccurrence ? { startedAtRevision: change.expectedRevision + 1 } : {}),
         name: change.name,
         atEpochMs: change.atEpochMs,
         revision: change.expectedRevision + 1

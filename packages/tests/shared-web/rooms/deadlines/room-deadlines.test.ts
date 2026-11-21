@@ -123,7 +123,7 @@ it('marks a suspended watch stale, recovers the revision and ignores a late disp
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     const pending = Promise.withResolvers<Response>();
-    let stored = deadline;
+    let stored: typeof deadline & { startedAtRevision?: number; } = deadline;
     let holdResponse = false;
     const requestPaths: string[] = [];
     vi.stubGlobal('fetch', async (path: string) => {
@@ -144,9 +144,9 @@ it('marks a suspended watch stale, recovers the revision and ignores a late disp
     }
     page.dispatchEvent(new Event('pagehide'));
     expect(states.at(-1)).toEqual({ status: 'stale', deadline });
-    stored = { ...deadline, revision: 2, atEpochMs: 12000 };
+    stored = { ...deadline, revision: 3, startedAtRevision: 2, atEpochMs: 12000 };
     page.dispatchEvent(new Event('pageshow'));
-    await vi.waitFor(() => expect(states.at(-1)).toMatchObject({ status: 'current', deadline: { revision: 2 } }));
+    await vi.waitFor(() => expect(states.at(-1)).toMatchObject({ status: 'current', deadline: { revision: 3, startedAtRevision: 2 } }));
     holdResponse = true;
     requestPaths.length = 0;
     page.dispatchEvent(new Event('pageshow'));
@@ -156,4 +156,18 @@ it('marks a suspended watch stale, recovers the revision and ignores a late disp
     pending.resolve(groupResponse([{ ...deadline, revision: 3, atEpochMs: 14000 }]));
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(states).toEqual(before);
+});
+
+it('only acknowledges a next occurrence when it starts at the accepted revision', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const restart = { ...change, expectedRevision: 1, operation: 'start-next-occurrence' as const };
+    const response = { ...deadline, revision: 2, startedAtRevision: 2 };
+    vi.stubGlobal('fetch', (_path: string, init: RequestInit) => {
+        expect(JSON.parse(String(init.body)).roomDeadline).toEqual(restart);
+        return Promise.resolve(groupResponse([response]));
+    });
+    const rooms = createRallarFacade().rooms;
+    await expect(rooms.setDeadline(room, restart, 'start-round-two-request')).resolves.toEqual(response);
+    vi.stubGlobal('fetch', () => Promise.resolve(groupResponse([{ ...deadline, revision: 2 }])));
+    await expect(rooms.setDeadline(room, restart, 'start-round-two-request')).rejects.toThrow(/acknowledgement/);
 });

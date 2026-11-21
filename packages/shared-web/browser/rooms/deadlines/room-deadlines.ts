@@ -118,7 +118,8 @@ export function createRoomDeadlineOperations(
             const acknowledged = readRoomDeadline(snapshot.group.metadata, roomDeadline.name);
             if (
                 acknowledged?.revision !== roomDeadline.expectedRevision + 1 ||
-                acknowledged.atEpochMs !== roomDeadline.atEpochMs
+                acknowledged.atEpochMs !== roomDeadline.atEpochMs ||
+                (roomDeadline.operation === 'start-next-occurrence' && acknowledged.startedAtRevision !== acknowledged.revision)
             ) {
                 throw new Error('Room deadline acknowledgement does not match the requested change.');
             }
