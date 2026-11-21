@@ -108,7 +108,7 @@ describe('the receipt budget runs out (Q6)', () => {
         vi.restoreAllMocks();
     });
 
-    it('states receipt-exhausted once and deletes the row in the commit that states it', async () => {
+    it('states receipt-exhausted once and keeps the row as its final snapshot in the commit that states it', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const fixture = await createExhaustionFixture(SPENT_RECEIPT);
@@ -127,7 +127,8 @@ describe('the receipt budget runs out (Q6)', () => {
             detail: 'The receipt ran out of retries after 3 of 3.',
             traceId: fixture.message.id.traceId
         }]);
-        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(await readReceipt(fixture)).toEqual({ msgId: fixture.message.id.msgId, ...SPENT_RECEIPT });
+        expect((await fixture.stores.admissionStore.readStoredMessage(fixture.message.id.msgId))?.ended).toBe(true);
     });
 
     it('states nothing and keeps the row when the exhaustion commit conflicts, so the retried work settles it', async () => {

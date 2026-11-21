@@ -2041,7 +2041,13 @@ missed sequences while its socket was down reads its next copy as `omitted`,
 never as loss. A recipient behind an RTC relay reports a gap to the relay, which
 forwards the recipient's own NACK toward the origin; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
-which forwards it down the tree.
+which forwards it down the tree. A recipient confirms a message it holds
+buffered behind a gap only once it delivers it, on whichever carrier a copy
+arrives, so its renewed requests keep crossing the relay as a directly linked
+recipient's do, and an ended receipt keeps its row for them. Under persistent
+loss the handle of the message that revealed the gap therefore reads `failed`
+(`failure.kind: 'receipt-exhausted'`), never `acknowledged` for a delivery that
+did not happen.
 
 **Limits:** a live-only send records no positions; in a cluster the dequeue
 records every captured session with a live connection generation anywhere, and a

@@ -647,8 +647,9 @@ export async function expectAcknowledgedUnderHold(
 }
 
 /**
- * D63: an ACK that arrives after every retry ran, though inside the message deadline, finds no receipt
- * row -- the exhaustion commit deleted it -- so it completes nothing and the handle stays `failed`.
+ * D63: an ACK that arrives after every retry ran, though inside the message deadline, meets the row the exhaustion
+ * commit kept as its final snapshot and is refused as naming an ended message, so it completes nothing and the handle
+ * stays `failed`.
  */
 export async function expectAckIgnoredAfterReceiptExhausted(sender: HoldSender, armed: boolean): Promise<void> {
     const sent = await sendSubmissionUnderHold(sender, armed);
@@ -657,15 +658,17 @@ export async function expectAckIgnoredAfterReceiptExhausted(sender: HoldSender, 
     const receipt = await readPendingAckOrThrow(sender, msgId);
     const endMs = await readRetryScheduleEndMs(sender, msgId);
     await runAckTimeoutClaimsToExhaustion(sender, msgId);
+    const kept = await readPendingAckOrThrow(sender, msgId);
     await advanceToRetryScheduleEnd(sender, endMs, 2_000);
     const ack = await deliverReceiverAckInsideDeadline(sender, sent);
 
     expect(sender.faults.getObservations().length > 0).toBe(armed);
     expect(readControlAdmissionStop(witness, ack)).toEqual({
         stop: 'outbound-answered',
-        result: { kind: 'rejected', reason: expect.stringContaining('AL acknowledgement') }
+        result: { kind: 'rejected', reason: 'AL control names a message that has ended' }
     });
-    expect(await sender.readPendingAck(msgId)).toBeUndefined();
+    expect(kept).toMatchObject({ ackedPeerIds: [], expectedPeerIds: receipt.expectedPeerIds });
+    expect(await sender.readPendingAck(msgId)).toEqual(kept);
     expectReceiptExhausted(handle, receipt);
 }
 

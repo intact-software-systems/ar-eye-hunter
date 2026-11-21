@@ -381,7 +381,9 @@ retried copy of the message is answered from it
   parent is still present, the relay answers with its own terminal ACK at
   once, so the sibling's row completes whatever the visited exclusion missed
   (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
-- a peer with no relay row sends its own ACK again.
+- a peer with no relay row sends its own ACK again, unless its track still holds the copy's sequence buffered
+  behind a gap: it has delivered nothing yet, so it answers nothing, and its `delivered` goes out on the release, as
+  for the first copy. A relay row's answer needs its own readiness already.
 
 A copy on the other carrier than the message's first admission is answered as
 well, whatever next hops it names: a sender that hands a message from RTC to
@@ -390,7 +392,10 @@ on the carrier the sender left. A peer whose message-owner row records the
 other carrier sends its own ACK again over the carrier the copy came in on
 (R-S3b-1). A peer that holds a relay row does the same, since its own
 delivery is what the other carrier's receipt counts; the ACKs it relayed stay
-on the first carrier (R-S3b-21).
+on the first carrier (R-S3b-21). One rule holds on both carriers: a copy whose sequence its track still holds buffered
+draws no answer on either, so no `delivered` confirms a message before its release. Answering one would complete the
+recipient's statement at its relay and its origin, which then refuse every renewal of the gap that holds the
+message back.
 
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by

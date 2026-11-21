@@ -586,7 +586,13 @@ function createReceiptLoopOrigin(
         onStorageUnavailable: 'refuse',
         publication: undefined
     };
-    return { ...owners, dispatch, delivery, handle: owners.registry.open({ message: delivery.message, carrier: 'rtc', readDeadlineEpochMs: Date.now }), rtcAdmissions };
+    return {
+        ...owners,
+        dispatch,
+        delivery,
+        handle: owners.registry.open({ message: delivery.message, carrier: 'rtc', readDeadlineEpochMs: Date.now }),
+        rtcAdmissions
+    };
 }
 
 function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessage {
@@ -669,8 +675,10 @@ async function exhaustRtcReceipt(loop: ReceiptLoop): Promise<void> {
     const { admissionStore, queueEngine } = loop.origin.rtc.resources;
     const receiptRef = { originPeerId: 'a', msgId: loop.origin.handle.msgId };
     await queueEngine.stop();
+    // The exhaustion keeps the receipt row as its final snapshot: the stored message's marker says it ended.
+    const isEnded = async () => (await admissionStore.readStoredMessage(receiptRef.msgId))?.ended === true;
     let pending = await admissionStore.readPendingAck(receiptRef);
-    while (pending !== undefined) {
+    while (pending !== undefined && !(await isEnded())) {
         expect(pending.deadlineAtMs).toBeGreaterThan(Date.now());
         await loop.clock.advanceBy(pending.deadlineAtMs - Date.now());
         let created: boolean;

@@ -348,10 +348,11 @@ describe('a duplicate on the other carrier than its first admission (D56, R-S3b-
     });
 });
 
-// C1: a frozen recipient that buffers its first copy on a gap delivers it on release, so its row says it delivers and
-// a cross-carrier copy confirms it, before the release and after it.
+// C1, restated (one rule, both carriers): a frozen recipient that buffers its first copy on a gap has delivered
+// nothing yet, so no copy draws an answer while it waits, whatever carrier it comes in on; its `delivered` goes out on
+// the release, and a copy after the release confirms it again.
 describe('a frozen recipient whose first copy waits on a gap', () => {
-    it('answers a WS copy delivered while its RTC copy is buffered behind the missing seq', async () => {
+    it('answers nothing to a WS copy while its RTC copy is buffered', async () => {
         const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
         const msg = createFrozenReceiverMessage('buffered-then-ws', 2);
 
@@ -360,7 +361,59 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
         expect(await admissionStore.commitBundle(buffered)).toBe('committed');
 
         const copy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
-        expect(toRepeatedAcks(copy).map((ack) => ack.status)).toEqual(['delivered']);
+        expect(copy.durableEffects).toEqual([]);
+    });
+
+    it.each(['rtc', 'ws'] as const)(
+        'a leaf answers nothing to a same-carrier retried copy over %s of a message it holds buffered',
+        async (carrier) => {
+            const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+            const msg = createFrozenReceiverMessage(`buffered-retried-${carrier}`, 2);
+            const buffered = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier });
+            expect(buffered.mutations.map((mutation) => mutation.kind)).toContain('set-buffered');
+            expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+            const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier });
+
+            expect(retried.durableEffects).toEqual([]);
+        }
+    );
+
+    // Characterization of the ruled rule (one rule, both carriers): a relay row does not exempt the cross-carrier answer.
+    it('a relay holding a relay row answers nothing to a WS copy while its RTC copy is buffered', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg: ALMessage = {
+            ...createFrozenReceiverMessage('relay-buffered-then-ws', 2),
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS], snapshotVersion: 1 }
+        };
+        const buffered = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' });
+        expect(buffered.mutations.map((mutation) => mutation.kind)).toEqual(expect.arrayContaining(['set-buffered', 'set-control-pending']));
+        expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+        const copy = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'ws' });
+
+        expect(copy.durableEffects).toEqual([]);
+    });
+
+    it.each(['rtc', 'ws'] as const)('after the release, a retried copy over %s answers delivered', async (carrier) => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage(`released-retried-${carrier}`, 2);
+        for (const arrival of [msg, createFrozenReceiverMessage(`released-retried-predecessor-${carrier}`, 1)]) {
+            const bundle = await computeArrival(admissionStore, arrival, { peer: FROZEN_LEAF_PEER, carrier });
+            expect(await admissionStore.commitBundle(bundle)).toBe('committed');
+        }
+        expect(await admissionStore.commitBundle(await computeBufferedRelease(admissionStore, msg, FROZEN_LEAF_PEER)))
+            .toBe('committed');
+
+        const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier });
+
+        expect(toRepeatedAcks(retried)).toEqual([{
+            rowCarrier: carrier,
+            carrier,
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: `released-retried-${carrier}`,
+            status: 'delivered'
+        }]);
     });
 
     it('answers a WS copy delivered after its buffered RTC copy was released', async () => {

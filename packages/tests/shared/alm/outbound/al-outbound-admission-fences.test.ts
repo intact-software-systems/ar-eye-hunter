@@ -314,7 +314,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect((await decideRepair()).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
     });
 
-    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and no receipt row', async () => {
+    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and leaves the kept receipt row as it was', async () => {
         const fixture = await createFenceFixture(storage);
         const message = createOutboundMessage('ended-before-receipt-retry');
         const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
@@ -356,7 +356,9 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         for (const effect of decided.bundle!.durableEffects.filter((written) => written.payload.kind === 'send-prepared')) {
             expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
         }
-        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
+        expect(repairRead.pendingAck).toBeDefined();
+        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId }))
+            .toEqual(repairRead.pendingAck);
         const again = await decideRetry();
         expect(again.verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
         expect(again.bundle).toBeUndefined();

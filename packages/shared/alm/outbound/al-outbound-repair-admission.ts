@@ -422,7 +422,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     /**
      * The budget ran out: the message ends in the commit whose success states the terminal fact, so the fact
-     * is stated once across replays and reloads, and a late ACK finds no row to complete (Q6).
+     * is stated once across replays and reloads, and a late ACK is refused as naming an ended message (Q6).
      */
     private async commitReceiptExhausted(
         msg: ALMessage,

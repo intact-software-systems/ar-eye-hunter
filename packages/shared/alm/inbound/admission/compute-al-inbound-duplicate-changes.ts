@@ -49,6 +49,9 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * in on, whatever its next hops and whether or not it holds a relay row: the first ACK went out on the
  * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21). A peer
  * that answered `not-subscribed` ends its hop with an ACK that confirms nobody, and answers with that NACK again.
+ * No own ACK goes out again while the track holds the copy's sequence buffered behind a gap, on either carrier: the
+ * peer delivered nothing yet, its `delivered` goes out on the release, and an early one would complete its statement
+ * upstream, which then refuses every renewal of the gap.
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -60,12 +63,14 @@ export function computeALInboundDuplicateChanges(
         return NO_DUPLICATE_CHANGES;
     }
     if (!isAddressedToSelf(read.msg, input.selfPeerId)) {
-        return isCrossCarrierCopy(read)
+        return isCrossCarrierCopy(read) && !isHeldBuffered(read)
             ? { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] }
             : NO_DUPLICATE_CHANGES;
     }
     if (pendingAck === undefined) {
-        return { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
+        return isHeldBuffered(read)
+            ? NO_DUPLICATE_CHANGES
+            : { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
     }
     if (read.fromPeerId === pendingAck.toPeerId) {
         return { mutations: [], effects: toParentAnswer(read, pendingAck, input.selfPeerId) };
@@ -116,6 +121,12 @@ function isStoredReforward(effect: ALInboundEffectIntent): boolean {
  */
 function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
     return effect.payload.kind === 'forward-control' && isALOwnWord(effect.payload.control.payload);
+}
+
+/** The track still holds this sequence buffered behind a gap: this peer has delivered nothing of it yet. */
+function isHeldBuffered(read: ALInboundMessageReadDto): boolean {
+    const seq = read.msg.ordering?.seq;
+    return seq !== undefined && read.orderingSnapshot?.bufferedSeqs.includes(seq) === true;
 }
 
 /** A retried hop copy names this peer as its one next hop (D25). */

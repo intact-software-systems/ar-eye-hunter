@@ -53,7 +53,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
     });
 
     it.each(REFUSAL_CASES)(
-        'a retransmit refused %s ends the receipt and states that refusal once, so its ack-timeout restates nothing: %s',
+        'a retransmit refused %s ends the message and states that refusal once, so its ack-timeout restates nothing: %s',
         async (code, stated) => {
             vi.useFakeTimers({ toFake: ['Date'] });
             vi.setSystemTime(1_000);
@@ -66,10 +66,12 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
                 attemptIdentity: `nack-retry-${code}`
             });
             const receiptAfterRetransmit = await readReceipt(stores, message);
+            const endedAfterRetransmit = (await stores.admissionStore.readStoredMessage(message.id.msgId))?.ended;
             await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
 
             expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
-            expect(receiptAfterRetransmit === undefined).toBe(stated);
+            expect(endedAfterRetransmit).toBe(stated);
+            expect(receiptAfterRetransmit).toBeDefined();
         }
     );
 
@@ -91,7 +93,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         expect(warnings).toEqual(['Skipping outbound repair of a refused re-plan: Refused no-publish-grant on re-plan']);
     });
 
-    it.each(REFUSAL_CASES)('an ack-timeout retry refused %s ends the receipt and states that refusal: %s', async (code, stated) => {
+    it.each(REFUSAL_CASES)('an ack-timeout retry refused %s ends the message and states that refusal: %s', async (code, stated) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const stores = createDefaultOutboundTestStores();
@@ -102,7 +104,8 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
 
         expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
-        expect(await readReceipt(stores, message) === undefined).toBe(stated);
+        expect((await stores.admissionStore.readStoredMessage(message.id.msgId))?.ended).toBe(stated);
+        expect(await readReceipt(stores, message)).toBeDefined();
     });
 
     it('states no refusal over a receipt a same-sender commit completed after the retry read it: the conflict retries afresh', async () => {

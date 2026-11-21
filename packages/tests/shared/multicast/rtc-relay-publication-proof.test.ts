@@ -419,7 +419,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect([origin.channels.r!.sent.length, origin.channels.c!.sent.length]).toEqual([2, 1]);
     });
 
-    it('ends the receipt of a revoked origin\'s signed frame rejected no-publish-grant at its next retry, re-sending nothing', async () => {
+    it('ends a revoked origin\'s signed frame rejected no-publish-grant at its next retry, keeping its receipt row and re-sending nothing', async () => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         const admitted = await admitAt(origin, 'feed-1', 'receiver');
@@ -433,7 +433,8 @@ describe('a granted RTC publication at its relays and receivers', () => {
             expect.objectContaining({ kind: 'refused', reason: 'no-publish-grant' })
         ]);
         expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: admitted.message.id.msgId }))
-            .toBeUndefined();
+            .toMatchObject({ mode: 'receiver', ackedPeerIds: [] });
+        expect((await origin.resources.admissionStore.readStoredMessage(admitted.message.id.msgId))?.ended).toBe(true);
     });
 
     it('refuses an expired stored copy of a signed frame at the native send: no submission after the signed deadline', async () => {
