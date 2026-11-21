@@ -48,7 +48,6 @@ import {
     ALM_LANE_RESULT_DIRECTORY_NAME,
     toAlmLaneFamilyResultFileName,
     toAlmLanePlanFileName,
-    type AlmLaneFamilyResult,
     type AlmLanePlanRecord,
     type AlmLaneRunIdentity
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
@@ -102,7 +101,11 @@ import {
 } from './full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
 import { runObservedFamily } from './run-observed-family.ts';
-import { startLaneFamilyRecorder, type LaneFamilyRecorder } from './start-lane-family-recorder.ts';
+import {
+    startLaneFamilyRecorder,
+    writeLaneResultFile,
+    type LaneFamilyRecorder
+} from './start-lane-family-recorder.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
@@ -175,7 +178,7 @@ interface FamilyScenariosRun<Run, Family extends AlmConformanceLaneFamily> {
 
 interface StartFamilyRecorderInput {
     readonly testInfo: TestInfo;
-    readonly identity: AlmLaneRunIdentity;
+    readonly carrier: AlmConformanceCarrier;
     readonly family: AlmConformanceLaneFamily;
     readonly plan: AlmLanePlan;
 }
@@ -194,8 +197,11 @@ const CONFORMANCE_DEADLINE_MS = 18_000;
 const laneParameters = config.enabled ? readLaneParameters() : undefined;
 /** A disabled lane decodes nothing: every test skips, so its titles name the lane's default selection. */
 const { scope, carriers } = laneParameters ?? ALM_LANE_DEFAULT_SELECTION;
-/** The backend the full-stack configuration starts the API server on, read the way that configuration reads it. */
-const backend = readFullStackApiServerMode();
+/**
+ * The backend the full-stack configuration starts the API server on, read the way that configuration reads it, and
+ * only by an enabled lane, as its parameters are.
+ */
+const backend = config.enabled ? readFullStackApiServerMode() : undefined;
 // Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
 // scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
 // its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
@@ -205,7 +211,7 @@ const CARRIER_TEST_TIMEOUT_MS = 900_000;
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
  * output directory at the end, so a green cell's evidence only survives beside those directories,
- * not inside one. The observation job uploads the whole root, which carries this directory with it.
+ * not inside one. The lane uploads the whole root, which carries this directory with it.
  */
 const OBSERVATION_DIRECTORY_NAME = 'alm-observation';
 
@@ -213,9 +219,8 @@ test.describe('ALM conformance lane', () => {
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
     for (const carrier of carriers) {
-        const identity: AlmLaneRunIdentity = { carrier, scope, backend };
-
         test(`lane plan over ${carrier} (${scope})`, async ({}, testInfo) => {
+            const identity = requireRunIdentity(carrier);
             const plan: AlmLanePlanRecord = {
                 ...identity,
                 families: ALM_CONFORMANCE_LANE_FAMILIES.map((family) => ({
@@ -223,7 +228,11 @@ test.describe('ALM conformance lane', () => {
                     scenarioKeys: planFamily(carrier, family, '').plan.cellOrder.scenarioKeys
                 }))
             };
-            await writeLaneResultFile(testInfo, toAlmLanePlanFileName(identity), plan);
+            await writeLaneResultFile(toLaneResultDirectory(testInfo), toAlmLanePlanFileName(identity), plan);
+            expect(
+                plan.families.some(({ scenarioKeys }) => scenarioKeys.length > 0),
+                `no ${scope} ALM scenario runs over ${carrier}`
+            ).toBe(true);
         });
 
         for (const family of ['two-agent', 'addressed'] as const) {
@@ -237,40 +246,39 @@ test.describe('ALM conformance lane', () => {
                 test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
                 announcePlan(carrier, family, plan);
-                const recorder = await startFamilyRecorder({ testInfo, identity, family, plan });
+                const recorder = await startFamilyRecorder({ testInfo, carrier, family, plan });
 
-                const run = await createTwoAgentRun({
-                    browser,
-                    request,
-                    testInfo,
-                    runId: family === 'two-agent'
-                        ? `alm-${carrier}-${uniqueSuffix()}`
-                        : `alm-${carrier}-${family}-${uniqueSuffix()}`
-                });
-
-                await runObservedFamily({
-                    run,
-                    testInfo,
-                    body: async () => {
-                        await startCellGateRun({
-                            run,
-                            cellKey: undefined,
-                            agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
-                        });
-                        await runAlmConformanceScenarios({ run, carrier, family, plan, recorder });
-                    },
-                    observe: async (cellOutcome) => {
-                        await recorder.finish(cellOutcome);
-                        await recordObservation({
-                            run,
-                            family,
-                            participants: [run.sender, run.receiver],
-                            testInfo,
-                            carrier,
-                            cellOutcome,
-                            cellOrder: plan.cellOrder
-                        });
-                    }
+                await recorder.runFamily(async () => {
+                    const run = await createTwoAgentRun({
+                        browser,
+                        request,
+                        testInfo,
+                        runId: family === 'two-agent'
+                            ? `alm-${carrier}-${uniqueSuffix()}`
+                            : `alm-${carrier}-${family}-${uniqueSuffix()}`
+                    });
+                    await runObservedFamily({
+                        run,
+                        testInfo,
+                        body: async () => {
+                            await startCellGateRun({
+                                run,
+                                cellKey: undefined,
+                                agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
+                            });
+                            await runAlmConformanceScenarios({ run, carrier, family, plan, recorder });
+                        },
+                        observe: async (cellOutcome) =>
+                            await recordObservation({
+                                run,
+                                family,
+                                participants: [run.sender, run.receiver],
+                                testInfo,
+                                carrier,
+                                cellOutcome,
+                                cellOrder: plan.cellOrder
+                            })
+                    });
                 });
             });
         }
@@ -287,34 +295,34 @@ test.describe('ALM conformance lane', () => {
                 test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
                 announcePlan(carrier, family, plan);
-                const recorder = await startFamilyRecorder({ testInfo, identity, family, plan });
+                const recorder = await startFamilyRecorder({ testInfo, carrier, family, plan });
 
-                const run = await createAgentRun({
-                    browser,
-                    request,
-                    testInfo,
-                    runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
-                    roles: AGENT_FAMILY_ROLES[family]
-                });
-                await runObservedFamily({
-                    run,
-                    testInfo,
-                    body: async () => {
-                        await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
-                        await runAgentScenarios({ run, carrier, family, plan, recorder });
-                    },
-                    observe: async (cellOutcome) => {
-                        await recorder.finish(cellOutcome);
-                        await recordObservation({
-                            run,
-                            family,
-                            participants: [...run.agents.values()],
-                            testInfo,
-                            carrier,
-                            cellOutcome,
-                            cellOrder: plan.cellOrder
-                        });
-                    }
+                await recorder.runFamily(async () => {
+                    const run = await createAgentRun({
+                        browser,
+                        request,
+                        testInfo,
+                        runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
+                        roles: AGENT_FAMILY_ROLES[family]
+                    });
+                    await runObservedFamily({
+                        run,
+                        testInfo,
+                        body: async () => {
+                            await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
+                            await runAgentScenarios({ run, carrier, family, plan, recorder });
+                        },
+                        observe: async (cellOutcome) =>
+                            await recordObservation({
+                                run,
+                                family,
+                                participants: [...run.agents.values()],
+                                testInfo,
+                                carrier,
+                                cellOutcome,
+                                cellOrder: plan.cellOrder
+                            })
+                    });
                 });
             });
         }
@@ -328,32 +336,32 @@ test.describe('ALM conformance lane', () => {
             test.skip(plan.cells.length === 0, emptyReason);
             test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
             announcePlan(carrier, 'same-context', plan);
-            const recorder = await startFamilyRecorder({ testInfo, identity, family: 'same-context', plan });
+            const recorder = await startFamilyRecorder({ testInfo, carrier, family: 'same-context', plan });
 
-            const run = await createTwoAgentRun({
-                browser,
-                request,
-                testInfo,
-                runId: `alm-${carrier}-same-context-${uniqueSuffix()}`
-            });
-            const participants: TwoAgentRunParticipant[] = [run.sender, run.receiver];
-            await runObservedFamily({
-                run,
-                testInfo,
-                body: async () =>
-                    await runSameContextScenarios({ run, carrier, plan, testInfo, participants, recorder }),
-                observe: async (cellOutcome) => {
-                    await recorder.finish(cellOutcome);
-                    await recordObservation({
-                        run,
-                        family: 'same-context',
-                        participants,
-                        testInfo,
-                        carrier,
-                        cellOutcome,
-                        cellOrder: plan.cellOrder
-                    });
-                }
+            await recorder.runFamily(async () => {
+                const run = await createTwoAgentRun({
+                    browser,
+                    request,
+                    testInfo,
+                    runId: `alm-${carrier}-same-context-${uniqueSuffix()}`
+                });
+                const participants: TwoAgentRunParticipant[] = [run.sender, run.receiver];
+                await runObservedFamily({
+                    run,
+                    testInfo,
+                    body: async () =>
+                        await runSameContextScenarios({ run, carrier, plan, testInfo, participants, recorder }),
+                    observe: async (cellOutcome) =>
+                        await recordObservation({
+                            run,
+                            family: 'same-context',
+                            participants,
+                            testInfo,
+                            carrier,
+                            cellOutcome,
+                            cellOrder: plan.cellOrder
+                        })
+                });
             });
         });
     }
@@ -410,6 +418,14 @@ function requireLaneParameters(): AlmLaneParameters {
     return laneParameters;
 }
 
+/** Only an enabled lane reads its backend, so the identity is read inside a test, which a disabled lane skips. */
+function requireRunIdentity(carrier: AlmConformanceCarrier): AlmLaneRunIdentity {
+    if (backend === undefined) {
+        throw new Error('The ALM conformance lane has no backend while RALLAR_BLACK_BOX_FULL_STACK is not set.');
+    }
+    return { carrier, scope, backend };
+}
+
 interface FamilyPlan {
     readonly plan: AlmLanePlan;
     /** Why the family plans no cell over the carrier; read only when it plans none. */
@@ -448,26 +464,20 @@ function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLane
 
 /** Started before the run opens, so a family test that dies opening its pages still records every scenario not run. */
 async function startFamilyRecorder(input: StartFamilyRecorderInput): Promise<LaneFamilyRecorder> {
-    const { testInfo, identity, family, plan } = input;
+    const { testInfo, carrier, family, plan } = input;
     return await startLaneFamilyRecorder({
         testInfo,
-        identity,
+        identity: requireRunIdentity(carrier),
         family,
         scenarioKeys: plan.cellOrder.scenarioKeys,
         writeResult: async (result) =>
-            await writeLaneResultFile(testInfo, toAlmLaneFamilyResultFileName(result), result)
+            await writeLaneResultFile(toLaneResultDirectory(testInfo), toAlmLaneFamilyResultFileName(result), result)
     });
 }
 
 /** Beside the test output directories, like the observation, so a passing test's result survives Playwright's cleanup. */
-async function writeLaneResultFile(
-    testInfo: TestInfo,
-    fileName: string,
-    value: AlmLaneFamilyResult | AlmLanePlanRecord
-): Promise<void> {
-    const directory = path.join(testInfo.project.outputDir, ALM_LANE_RESULT_DIRECTORY_NAME);
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(directory, fileName), toJsonText(value), 'utf8');
+function toLaneResultDirectory(testInfo: TestInfo): string {
+    return path.join(testInfo.project.outputDir, ALM_LANE_RESULT_DIRECTORY_NAME);
 }
 
 /**
@@ -610,9 +620,7 @@ function toObservationFileName(
     return retry === 0 ? cell : `${cell}-retry${retry}`;
 }
 
-function toJsonText(
-    value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile | AlmLaneFamilyResult | AlmLanePlanRecord
-): string {
+function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {
     return JSON.stringify(value, null, 2);
 }
 

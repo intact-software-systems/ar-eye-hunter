@@ -7,6 +7,9 @@ export type AlmLaneBackend = 'memory' | 'postgres';
 
 export type AlmLaneScenarioOutcome = 'passed' | 'failed' | 'not-run';
 
+/** The outcome of a scenario that ran to an end. */
+export type AlmLaneSettledScenarioOutcome = Exclude<AlmLaneScenarioOutcome, 'not-run'>;
+
 export type AlmLaneFamilyOutcome = 'passed' | 'failed' | 'not-finished';
 
 export interface AlmLaneRunIdentity {
@@ -41,7 +44,7 @@ export interface ToAlmLaneFamilyResultInput {
     /** The family's planned scenarios, in the order they were planned to run. */
     readonly scenarioKeys: readonly string[];
     /** The outcome of each scenario that ran to an end; a planned scenario absent here did not run. */
-    readonly settled: ReadonlyMap<string, 'passed' | 'failed'>;
+    readonly settled: ReadonlyMap<string, AlmLaneSettledScenarioOutcome>;
     readonly familyOutcome: AlmLaneFamilyOutcome;
 }
 
@@ -67,7 +70,9 @@ export function toAlmLaneFamilyResult(input: ToAlmLaneFamilyResultInput): AlmLan
 }
 
 /** A scenario fails when it threw or when it added a soft error to the family test. */
-export function resolveAlmLaneScenarioOutcome(input: ResolveAlmLaneScenarioOutcomeInput): 'passed' | 'failed' {
+export function resolveAlmLaneScenarioOutcome(
+    input: ResolveAlmLaneScenarioOutcomeInput
+): AlmLaneSettledScenarioOutcome {
     if (input.threw || input.errorsAfter > input.errorsBefore) {
         return 'failed';
     }

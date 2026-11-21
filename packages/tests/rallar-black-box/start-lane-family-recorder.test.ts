@@ -1,9 +1,18 @@
 import type { TestInfoError } from '@playwright/test';
+import {
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { AlmLaneFamilyResult } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
 import {
     startLaneFamilyRecorder,
+    writeLaneResultFile,
     type LaneFamilyRecorder
 } from '../../../tests/playwright/rallar-black-box/start-lane-family-recorder.ts';
 
@@ -72,15 +81,53 @@ describe('the lane family recorder', () => {
         expect(toOutcomes(family.written.at(-1))).toEqual({ a: 'failed', b: 'not-run', c: 'not-run' });
     });
 
-    it('writes the family outcome when the family finishes and leaves the scenarios as they were', async () => {
+    it('records the family as passed when its body ends cleanly, leaving the scenarios as they were', async () => {
         const family = await startFamily();
-        await family.recorder.runScenario('a', async () => {});
 
-        await family.recorder.finish('passed');
+        await family.recorder.runFamily(async () => {
+            await family.recorder.runScenario('a', async () => {});
+        });
 
         const last = family.written.at(-1);
         expect(last?.familyOutcome).toBe('passed');
         expect(toOutcomes(last)).toEqual({ a: 'passed', b: 'not-run', c: 'not-run' });
+    });
+
+    it('records the family as failed when its body throws outside any scenario, and rethrows that error', async () => {
+        const family = await startFamily();
+        const failure = new Error('the pages did not open');
+
+        await expect(family.recorder.runFamily(async () => await Promise.reject(failure))).rejects.toBe(failure);
+
+        expect(family.written.at(-1)?.familyOutcome).toBe('failed');
+    });
+
+    it('records the family as failed when its body ends with a soft error recorded', async () => {
+        const family = await startFamily();
+
+        await family.recorder.runFamily(async () => {
+            family.errors.push({ message: 'the close failed softly' });
+        });
+
+        expect(family.written.at(-1)?.familyOutcome).toBe('failed');
+    });
+
+    it('reports a scenario\'s own error when writing its result fails', async () => {
+        const failure = new Error('a threw');
+        const recorder = await startLaneFamilyRecorder({
+            testInfo: { errors: [] },
+            identity: { carrier: 'ws', scope: 'smoke', backend: 'memory' },
+            family: 'two-agent',
+            scenarioKeys: ['a'],
+            writeResult: async (result) => {
+                if (result.scenarios.some(({ outcome }) => outcome !== 'not-run')) {
+                    throw new Error('the disk is full');
+                }
+            }
+        });
+
+        await expect(recorder.runScenario('a', async () => await Promise.reject(failure))).rejects.toBe(failure);
+        await expect(recorder.runFamily(async () => await Promise.reject(failure))).rejects.toBe(failure);
     });
 
     it('does not fail a scenario for an error the family test held before it started', async () => {
@@ -90,5 +137,27 @@ describe('the lane family recorder', () => {
         await family.recorder.runScenario('a', async () => {});
 
         expect(toOutcomes(family.written.at(-1))).toEqual({ a: 'passed', b: 'not-run', c: 'not-run' });
+    });
+});
+
+describe('the lane result file write', () => {
+    it('replaces the file whole, through a file of its own in the same directory, and leaves nothing else', async () => {
+        const root = mkdtempSync(path.join(tmpdir(), 'alm-lane-result-'));
+        try {
+            const directory = path.join(root, 'alm-lane-result');
+            const plan = { carrier: 'ws', scope: 'smoke', backend: 'memory', families: [] } as const;
+
+            await writeLaneResultFile(directory, 'ws-smoke-plan.json', plan);
+            await writeLaneResultFile(directory, 'ws-smoke-plan.json', { ...plan, backend: 'postgres' });
+
+            expect(readdirSync(directory)).toEqual(['ws-smoke-plan.json']);
+            expect(JSON.parse(readFileSync(path.join(directory, 'ws-smoke-plan.json'), 'utf8'))).toEqual({
+                ...plan,
+                backend: 'postgres'
+            });
+        }
+        finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

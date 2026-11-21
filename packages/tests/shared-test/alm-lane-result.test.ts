@@ -70,5 +70,8 @@ describe('ALM lane result file names', () => {
 
     it('names the plan record by carrier and scope', () => {
         expect(toAlmLanePlanFileName({ carrier: 'rtc', scope: 'full' })).toBe('rtc-full-plan.json');
+        expect(toAlmLanePlanFileName({ carrier: 'rtc-with-ws-fallback', scope: 'full' })).toBe(
+            'rtc-with-ws-fallback-full-plan.json'
+        );
     });
 });
