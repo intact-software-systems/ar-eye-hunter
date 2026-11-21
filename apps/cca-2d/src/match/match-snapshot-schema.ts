@@ -1,4 +1,4 @@
-import { TOWN_MATCH_MAX_TICKS } from './town-match.ts';
+import { TOWN_MATCH_MAX_TICKS } from './match-extension.ts';
 
 export const MATCH_SNAPSHOT_SCHEMA = {
     type: 'object',

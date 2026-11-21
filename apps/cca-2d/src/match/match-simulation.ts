@@ -1,8 +1,8 @@
+import { computeTownMatchExtension } from './match-extension.ts';
 import { TownRoutes } from '../town/routes.ts';
 import { computeTownMatchInput, type TownMatchInput } from './match-input.ts';
 import type { TownMatchFrame } from './match-protocol.ts';
 import {
-    computeTownMatchExtension,
     computeTownMatchReady,
     computeTownMatchRematch,
     computeTownMatchStart,

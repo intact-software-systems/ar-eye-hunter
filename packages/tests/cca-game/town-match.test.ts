@@ -1,8 +1,8 @@
+import { computeTownMatchExtension } from '../../../apps/cca-2d/src/match/match-extension.ts';
 import { describe, expect, it } from 'vitest';
 
 import { computeTownMatchInput } from '../../../apps/cca-2d/src/match/match-input.ts';
 import {
-    computeTownMatchExtension,
     computeTownMatchReady,
     computeTownMatchRecovery,
     computeTownMatchRematch,

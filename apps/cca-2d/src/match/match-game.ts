@@ -1,3 +1,4 @@
+import { TOWN_MATCH_MAX_TICKS } from './match-extension.ts';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 
 import { CutoutActor } from '../cutout-actor.ts';
@@ -10,7 +11,7 @@ import { TownMatchControls } from './match-controls.ts';
 import { TownMatchPeerPresentation } from './match-peer-presentation.ts';
 import { TownMatchPresentation } from './match-presentation.ts';
 import type { TownMatchSession } from './match-session.ts';
-import { TOWN_MATCH_MAX_TICKS, TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
+import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
 
 const TOWN_PLAYER_APPEARANCES = [
     { color: '#347d79', label: 'TEAL HOODIE' },

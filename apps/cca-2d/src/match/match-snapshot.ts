@@ -1,3 +1,4 @@
+import { TOWN_MATCH_EXTENSION_TICKS, TOWN_MATCH_MAX_TICKS } from './match-extension.ts';
 import Ajv from 'ajv';
 
 import { validateJsonMessageSize } from '@shared/api/json-message-validation.ts';
@@ -8,7 +9,7 @@ import { TOWN_OBJECTS, TOWN_SHOPS } from '../town/map.ts';
 import { TOWN_PERSONALITIES } from '../town/personalities/state.ts';
 import type { TownCheckpoint, TownCheckpointIdentity } from './match-checkpoints.ts';
 import { MATCH_SNAPSHOT_SCHEMA } from './match-snapshot-schema.ts';
-import { TOWN_MATCH_DURATION, TOWN_MATCH_EXTENSION_TICKS, TOWN_MATCH_MAX_TICKS, TOWN_MATCH_RATE, validateTownMatchMembers, type TownMatchState } from './town-match.ts';
+import { TOWN_MATCH_DURATION, TOWN_MATCH_RATE, validateTownMatchMembers, type TownMatchState } from './town-match.ts';
 
 export interface TownMatchSnapshot {
     readonly snapshot: string;
