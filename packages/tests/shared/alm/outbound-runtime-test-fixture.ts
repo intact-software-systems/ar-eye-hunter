@@ -690,6 +690,7 @@ function createIndexedDbTestAdmissionBackend(dbName: string, observer: IndexedDb
         dbName,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });

@@ -124,6 +124,7 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
             dbName: input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
             storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: input.observer
         });

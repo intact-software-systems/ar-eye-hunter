@@ -16,6 +16,7 @@ describe('AL runtime storage ownership', () => {
             dbName: `supplied-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: () => crypto.randomUUID(),
             observer: createPassThroughIndexedDbOperationObserver(),
             schemaId: AL_ADMISSION_SCHEMA_ID,

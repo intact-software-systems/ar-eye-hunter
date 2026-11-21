@@ -77,6 +77,7 @@ function createBackend(kind: 'memory' | 'IndexedDB') {
             dbName: `write-overlay-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: () => 10,
+            workNowMs: () => 10,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

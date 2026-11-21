@@ -381,6 +381,7 @@ function openCheckpoint(input: OpenCheckpointInput): OpenedCheckpoint {
         dbName: input.dbName,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs,
+        workNowMs: nowMs,
         newWriteToken: () => crypto.randomUUID(),
         observer,
         schemaId: AL_ADMISSION_SCHEMA_ID,
