@@ -1,9 +1,11 @@
 import type {
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestLoopChildResult,
-    RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestLoopChildResult,
+    RallarBlackBoxTestLoopResultValue
+} from './loop-result-contracts.ts';
 import { toLoopResultValue, type LoopResultMetrics } from './to-loop-result-value.ts';
 
 export interface LoopOutcomeEvidence {

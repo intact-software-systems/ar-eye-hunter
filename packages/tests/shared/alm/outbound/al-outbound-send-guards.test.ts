@@ -16,6 +16,7 @@ import type {
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { waitForIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 
@@ -189,6 +190,21 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
         expect(olderGuards).toEqual({ kind: 'superseded' });
         expect(newerGuards).toEqual({ kind: 'current', receiptState: undefined });
         expect(recorded.modes()).toEqual(['readonly', 'readonly']);
+    });
+
+    it('answers ended for a message whose terminal settlement was committed, without reading its receipt', async () => {
+        const dbName = `send-guards-ended-${crypto.randomUUID()}`;
+        const { admissionStore } = createGuardsTestStores(dbName);
+        const message = createOutboundMessage('ended');
+        await admitGuardedMessage(admissionStore, message, ACKED_PLANNER);
+        const read = await admissionStore.readRepairMessage(message.id.msgId, ACKED_PLANNER);
+        expect(await admissionStore.commitBundle(toALOutboundReadMessageEndBundle(message, read))).toBe('committed');
+        // A read of the message's receipt would throw, so only a skipped read answers.
+        await writeCorruptReceiptRow(dbName, message);
+
+        const recorded = recordIndexedDbTransactions();
+        expect(await admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
+        expect(recorded.modes()).toEqual(['readonly']);
     });
 
     it.each(['hit', 'miss'] as const)(

@@ -4,6 +4,7 @@ import {
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
+    requireOptionalPersistedALSafeInteger,
     requireOptionalPersistedALStringArray,
     requirePersistedALNonEmptyString
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
@@ -29,6 +30,7 @@ import {
     type ALOutboundPendingAdmission
 } from './al-outbound-pending-admission.ts';
 import {
+    decodeALOutboundSendAttemptIdentity,
     toALOutboundEffectId,
     toALOutboundSendEffectId,
     type ALOutboundSendEffectIdentity
@@ -125,6 +127,10 @@ export function decodeALOutboundEffectPayload<TPrepared>(
             decodeALAdmissionRecord(value, ['kind', 'msgId']);
             requirePersistedALNonEmptyString(payload.msgId, 'acknowledgement timeout message id');
             return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'ack-timeout'; }>;
+        case 'first-hop-timeout':
+            decodeALAdmissionRecord(value, ['kind', 'msgId']);
+            requirePersistedALNonEmptyString(payload.msgId, 'first-hop timeout message id');
+            return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'first-hop-timeout'; }>;
         case 'repair-hint':
             decodeALAdmissionRecord(value, ['kind', 'msgId', 'request']);
             requirePersistedALNonEmptyString(payload.msgId, 'repair hint message id');
@@ -211,19 +217,15 @@ function decodeALOutboundSendEffect<TPrepared>(
     ) {
         throw new TypeError('Prepared attempt requires its exact canonical message');
     }
-    requirePersistedALNonEmptyString(payload.attemptIdentity, 'prepared attempt identity');
+    const attempt = decodeALOutboundSendAttemptIdentity(payload, 'outbound send');
     requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
     if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
         throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
     }
-    if (payload.phase !== 'immediate' && payload.phase !== 'dequeue') {
-        throw new TypeError('Persisted AL outbound send phase is invalid');
-    }
     requireALOutboundSendEffectIdentity({
         effectId,
         msgId: msg.id.msgId,
-        phase: payload.phase,
-        attemptIdentity: payload.attemptIdentity as string,
+        ...attempt,
         preparedFingerprint: payload.preparedFingerprint
     });
     return {
@@ -231,8 +233,7 @@ function decodeALOutboundSendEffect<TPrepared>(
         message,
         prepared: preparedRead.decodePrepared(payload.prepared, msg, message.key),
         preparedFingerprint: payload.preparedFingerprint,
-        attemptIdentity: payload.attemptIdentity as string,
-        phase: payload.phase,
+        ...attempt,
         sentPositions
     };
 }
@@ -282,11 +283,19 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
     const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingRanges'], [
         'requestedByPeerId',
         'logicalRecipientPeerId',
-        'orderingTrackKey'
+        'orderingTrackKey',
+        'gapRequestNumber'
     ]);
     if (request.trigger !== 'ack-timeout' && request.trigger !== 'nack' && request.trigger !== 'repair') {
         throw new TypeError('Persisted AL repair trigger is invalid');
     }
+    const missingRanges = decodeALAdmissionSeqRanges(request.missingRanges);
+    if ((missingRanges.length > 0) !== (request.gapRequestNumber !== undefined)) {
+        throw new TypeError(
+            'Persisted AL repair gap request number is required on a hint that names a missing range and refused on any other'
+        );
+    }
+    requireOptionalPersistedALSafeInteger(request.gapRequestNumber, 1, 'repair gap request number');
     requireOptionalPersistedALNonEmptyString(request.requestedByPeerId, 'repair requester');
     requireOptionalPersistedALNonEmptyString(request.logicalRecipientPeerId, 'repair recipient');
     requireOptionalPersistedALNonEmptyString(request.orderingTrackKey, 'repair ordering track');
@@ -294,6 +303,5 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
         throw new TypeError('Persisted AL repair peer or sequence array is missing');
     }
     requireOptionalPersistedALStringArray(request.failedPeerIds, 'failed repair peers');
-    decodeALAdmissionSeqRanges(request.missingRanges);
     return value as ALOutboundRepairHint;
 }

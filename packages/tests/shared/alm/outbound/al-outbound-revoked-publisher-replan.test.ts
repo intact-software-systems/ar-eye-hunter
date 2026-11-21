@@ -179,7 +179,8 @@ function completeReceiptAfterNextRead(stores: OutboundTestStores, message: Retur
             senderId: message.id.senderId,
             expectedVersion: read.clientRecord?.version,
             mutations: [{ kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
         return read;
     });

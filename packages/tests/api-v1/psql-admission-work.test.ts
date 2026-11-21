@@ -429,7 +429,8 @@ describe('PostgreSQL outbound admission', () => {
                     senderId: 'self'
                 }
             ],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         });
 
         const admissionNamespace = `${namespace}:outbound:admission`;

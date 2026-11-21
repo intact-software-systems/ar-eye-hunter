@@ -32,6 +32,8 @@ import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/
 import { ownShareUnderInbound } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/own-share-under-inbound.ts';
 import { lostStreamStart } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/lost-stream-start.ts';
 import { seededJitterStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/seeded-jitter-stream.ts';
+import { seededLossStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/seeded-loss-stream.ts';
+import { seededLossUnreceiptedStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/seeded-loss-unreceipted-stream.ts';
 import { leaderConfirms } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
@@ -106,6 +108,8 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     { scenarioKey: 'repair-exhausted', carriers: repairExhausted.carriers },
     // The fault stream cells' lane evidence is local: they were written to change no hosted manifest (D669).
+    { scenarioKey: 'seeded-loss-stream', carriers: seededLossStream.carriers },
+    { scenarioKey: 'seeded-loss-unreceipted-stream', carriers: seededLossUnreceiptedStream.carriers },
     { scenarioKey: 'lost-stream-start', carriers: lostStreamStart.carriers },
     { scenarioKey: 'seeded-jitter-stream', carriers: seededJitterStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.

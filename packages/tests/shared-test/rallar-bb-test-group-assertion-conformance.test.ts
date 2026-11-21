@@ -20,10 +20,8 @@ import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-ass
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import type { DistributedGroupAssertionRecipeEvidence } from '@shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
 import type { RallarBlackBoxGroupAssertionValue } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
-import type {
-    RallarBlackBoxTestLoopChildResult,
-    RallarBlackBoxTestResult
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestLoopChildResult } from '@shared-test/rallar-bb-test/loop/loop-result-contracts.ts';
+import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isSameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 const PROBE_LOOP_COMMAND_ID = 'probe-loop';

@@ -238,7 +238,7 @@ it.each(['memory', 'indexeddb'] as const)(
 );
 
 it.each(['memory', 'indexeddb'] as const)(
-    'finds the repair its acknowledgement timeout wrote at once, though that timeout ran in the send\'s own clean batch, over %s',
+    'finds the repair its acknowledgement timeout wrote at once, after the timeout that ran in the send\'s own clean batch waited for the send it held reserved, over %s',
     async (kind) => {
         const clock = { atMs: CLOCK_START_MS };
         const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
@@ -263,19 +263,25 @@ it.each(['memory', 'indexeddb'] as const)(
         await runProbedRound(engine, diagnostics);
 
         // The commit outlasts the acknowledgement timeout, so its own batch claims and completes both
-        // rows it wrote: the send, and the timeout, whose attempt commits the next timeout and an
-        // immediately-due repair hint. No acknowledgement ever arrives, and the clock stops here.
-        const drained = drainsOf(diagnostics).length;
+        // rows it wrote: the send, and the timeout, which reads the send still reserved by that batch and
+        // so charges nothing and commits its next window. No acknowledgement ever arrives.
         const drain = await sendThroughOwnBatch(runtime, diagnostics, 'msg-unacknowledged');
         expect(drain).toMatchObject({ lane: 'durable', claimedCount: 2, completedCount: 2 });
-        // The repair hint, then the retransmission it commits, are claimed without the clock moving.
+        await runProbedRound(engine, diagnostics);
+        expect(probesOf(diagnostics).map((probe) => [probe.cause, probe.readyAtMs])).toEqual([
+            ['no-memory', 'none'],
+            ['own-commit', CLOCK_START_MS + 2 * ACK_TIMEOUT_MS + 1]
+        ]);
+        // At that window the send has left: the timeout is charged and commits an immediately-due repair
+        // hint, and the hint, then the retransmission it commits, are claimed without the clock moving.
+        clock.atMs += ACK_TIMEOUT_MS;
+        const drained = drainsOf(diagnostics).length;
         await expect.poll(async () => {
             await engine.executeOnce();
             return drainsOf(diagnostics).slice(drained).reduce((claimed, { claimedCount }) => claimed + claimedCount, 0);
-        }).toBeGreaterThanOrEqual(4);
+        }).toBeGreaterThanOrEqual(3);
 
-        expect(clock.atMs).toBe(CLOCK_START_MS + ACK_TIMEOUT_MS + 1);
-        expect(probesOf(diagnostics).map((probe) => probe.cause).slice(0, 2)).toEqual(['no-memory', 'own-commit']);
+        expect(clock.atMs).toBe(CLOCK_START_MS + 2 * ACK_TIMEOUT_MS + 1);
         await runtime.dispose();
     }
 );

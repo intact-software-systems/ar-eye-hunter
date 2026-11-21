@@ -159,16 +159,15 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(settlements.map((settlement) => settlement.kind)).toEqual([
             'attempt-started',
             'attempt-settled',
-            'relay-rejected',
-            'acknowledgement'
+            'relay-rejected'
         ]);
         const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toInitialLifecycle('ordered-gapped', 'receiver'));
         expect(lifecycle.state).toBe('rejected');
         expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
-        // The late admitted receipt re-creates the receipt row the NACK ended; it lives until its deadline.
+        // The late admitted receipt is refused: the NACK ended the message, so it rebuilds no row and states nothing.
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'ordered-gapped' })
-        ).toEqual(expect.objectContaining({ msgId: 'ordered-gapped', expectedPeerIds: ['b'], ackedPeerIds: [] }));
+        ).toBeUndefined();
     });
 
     it('never relays a session NACK to the peer it names', async () => {

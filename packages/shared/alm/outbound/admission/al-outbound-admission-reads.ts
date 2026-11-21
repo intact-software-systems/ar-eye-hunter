@@ -24,6 +24,7 @@ import {
 import type { ALAdmissionReadSession, ALAdmissionWorkBackend } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
+    ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
 import {
@@ -39,16 +40,19 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
+import { decodeALOutboundFirstHopWait } from '../first-hop/decode-al-outbound-first-hop-wait.ts';
 import {
     isALOutboundRowUnrecorded,
     type ALOrderingIndexedSequence,
     type ALOrderingStoredPredecessors
 } from '../lane/compute-al-outbound-group-sent-positions.ts';
-import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
-import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
+import { toALOutboundAttemptSendEffectIds } from '../to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundControlHistoryKey,
+    toALOutboundFirstHopWaitKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
@@ -64,8 +68,8 @@ import type {
     ALOutboundPlanner,
     ALOutboundReceiptAdmissionReadInput,
     ALOutboundReceiptTrackPositions,
-    ALOutboundRepairAttemptIdentity,
     ALOutboundRepairReadDto,
+    ALOutboundSendAttemptIdentity,
     ALOutboundSupersedenceReadState
 } from './al-outbound-admission-store.ts';
 import {
@@ -114,6 +118,14 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
+}
+
+/** The rows a control's admission asks of the message's owner; the admission decides whether it reads the wait. */
+export interface ALOutboundControlOwnerReadInput {
+    readonly owner: string | undefined;
+    readonly msgId: string;
+    /** The control may end the whole send, and the composition has an own hop a first-hop wait can wait on. */
+    readonly readsFirstHopWait: boolean;
 }
 
 export interface ReadALOutboundCapturedPolicyInput {
@@ -193,10 +205,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const { msg, observedCanonicalEntry } = input;
         const nowMs = this.nowMs();
-        const [clientRecord, stored, control, repairs] = await Promise.all([
+        const [clientRecord, stored, control, repairAttempt, repairs] = await Promise.all([
             this.readClientRecord(session, msg.id.senderId),
             this.readStoredMessage(session, msg.id.msgId),
             this.readControlTracking(session, msg.id.msgId, msg.id.senderId),
+            this.readRepairAttempt(session, msg.id.msgId),
             this.readRepairs(session, msg.id.msgId)
         ]);
         const { entry: canonicalEntry, message: canonical, creationExpiry } = await readALOutboundCanonicalMessage({
@@ -215,6 +228,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const recording = toALOutboundSentPositionRecording(input, stored);
         const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, recording);
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
+        // Only a plan that waits on its first hop reads the wait, so no other send pays the round trip.
+        const firstHopWait = plan.firstHopTracking === undefined
+            ? undefined
+            : await this.readFirstHopWait(session, msg.id.msgId);
 
         return {
             kind: 'outgoing',
@@ -231,6 +248,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             sentPositions,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
+            repairAttempt,
+            firstHopWait,
             repairs,
             ...fences
         };
@@ -267,6 +286,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (msg && plan) {
             requireALOutboundPlannedMessage(msg, plan.msg);
         }
+        const [control, firstHopWait] = await Promise.all([
+            this.readControlTracking(session, msgId, senderId),
+            this.readFirstHopWait(session, msgId)
+        ]);
         return {
             kind: 'repair',
             msgId,
@@ -274,13 +297,23 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             storedMessage: stored,
             sentSnapshot,
-            ...await this.readControlTracking(session, msgId, senderId),
+            ...control,
+            firstHopWait,
             plan
         };
     }
 
     async isMessageSuperseded(session: ALAdmissionReadSession, msg: ALMessage): Promise<boolean> {
-        const tracking = (await this.readStoredMessage(session, msg.id.msgId))?.policy.supersedenceTracking;
+        return await this.isStoredMessageSuperseded(session, msg, await this.readStoredMessage(session, msg.id.msgId));
+    }
+
+    /** The supersedence of a message whose stored row the caller already read. */
+    async isStoredMessageSuperseded(
+        session: ALAdmissionReadSession,
+        msg: ALMessage,
+        stored: ALStoredOutboundMessage | undefined
+    ): Promise<boolean> {
+        const tracking = stored?.policy.supersedenceTracking;
         if (!tracking?.enabled || !tracking.key) {
             return false;
         }
@@ -464,6 +497,33 @@ export class ALOutboundAdmissionReads<TPrepared> {
             toALOutboundPendingAckKey({ namespace: this.namespace, ...receipt }),
             (value) => decodeALOutboundPendingAck(value, receipt.msgId)
         );
+    }
+
+    async readFirstHopWait(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundFirstHopWaitSnapshot | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundFirstHopWaitKey(this.namespace, msgId),
+            (value) => decodeALOutboundFirstHopWait(value, msgId)
+        );
+    }
+
+    /** What only a control's known owner has: its version fence, its receipt of the message, the wait it asks for. */
+    async readControlOwnerSurface(
+        session: ALAdmissionReadSession,
+        input: ALOutboundControlOwnerReadInput
+    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending' | 'firstHopWait'>> {
+        const { owner, msgId } = input;
+        if (owner === undefined) {
+            return {};
+        }
+        return {
+            ownerVersion: await this.readClientRecord(session, owner),
+            pending: await this.readReceiptState(session, { originPeerId: owner, msgId }),
+            firstHopWait: input.readsFirstHopWait ? await this.readFirstHopWait(session, msgId) : undefined
+        };
     }
 
     async readAcks(session: ALAdmissionReadSession, msgId: string): Promise<readonly ALAckPayload[]> {
@@ -688,18 +748,25 @@ export class ALOutboundAdmissionReads<TPrepared> {
         session: ALAdmissionReadSession,
         msgId: string,
         originPeerId: string | undefined
-    ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'repairAttempt' | 'acks' | 'nacks'>> {
-        const [pendingAck, repairAttempt, acks, nacks] = await Promise.all([
+    ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'acks' | 'nacks'>> {
+        const [pendingAck, acks, nacks] = await Promise.all([
             originPeerId === undefined ? undefined : this.readPendingAck(session, { originPeerId, msgId }),
-            this.readValue(
-                session,
-                toALOutboundRepairAttemptKey(this.namespace, msgId),
-                (value) => decodeALOutboundRepairAttempt(value, msgId)
-            ),
             this.readAcks(session, msgId),
             this.readNacks(session, msgId)
         ]);
-        return { pendingAck, repairAttempt, acks, nacks };
+        return { pendingAck, acks, nacks };
+    }
+
+    /** The repair attempts each requester has spent on the message: only a dispatch charges them. */
+    private async readRepairAttempt(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundRepairAttemptSnapshot | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundRepairAttemptKey(this.namespace, msgId),
+            (value) => decodeALOutboundRepairAttempt(value, msgId)
+        );
     }
 
     /** The message one sequence's index row names. */
@@ -768,24 +835,17 @@ export class ALOutboundAdmissionReads<TPrepared> {
     /** Whether a send of the attempt is already a work row; the one commit that wrote one wrote them all. */
     private async readRepairAttemptCommitted(
         session: ALAdmissionReadSession,
-        attempt: ALOutboundRepairAttemptIdentity,
+        attempt: ALOutboundSendAttemptIdentity,
         plan: ALOutboundDispatchPlan<TPrepared>
     ): Promise<boolean> {
-        const rows = await Promise.all(plan.preparedMessages.map((prepared, index) =>
-            this.readQueueItem(
-                session,
-                toALOutboundWorkKey(
-                    this.namespace,
-                    toALOutboundSendEffectId({
-                        msgId: plan.msg.id.msgId,
-                        phase: attempt.phase,
-                        attemptIdentity: attempt.attemptIdentity,
-                        index,
-                        preparedFingerprint: toALOutboundPreparedFingerprint(prepared)
-                    })
-                )
-            )
-        ));
+        const sendEffectIds = toALOutboundAttemptSendEffectIds({
+            ...attempt,
+            msgId: plan.msg.id.msgId,
+            preparedMessages: plan.preparedMessages
+        });
+        const rows = await Promise.all(
+            sendEffectIds.map((effectId) => this.readQueueItem(session, toALOutboundWorkKey(this.namespace, effectId)))
+        );
         return rows.some((row) => row !== undefined);
     }
 

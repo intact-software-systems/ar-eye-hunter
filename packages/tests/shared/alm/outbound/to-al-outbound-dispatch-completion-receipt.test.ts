@@ -1,5 +1,7 @@
 import type { ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import type { ALOutboundAdmissionMutation } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
+import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundCommitSettlements } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import {
@@ -56,6 +58,27 @@ function toRead(
         pendingAck,
         acks,
         nowMs: 3_000
+    };
+}
+
+/** The sent row the completing dispatch writes again, marked ended because its tracking completed the receipt. */
+function toCompletingSentMessage(): ALOutboundAdmissionMutation {
+    return {
+        kind: 'set-sent-message',
+        reference: {
+            key: MESSAGE.route,
+            typeId: 'outbox',
+            scope: 'completion-at-dispatch',
+            msgId: MSG_ID,
+            senderId: MESSAGE.id.senderId,
+            identity: MSG_ID,
+            expiresAtMs: 60_000
+        },
+        policy: captureALOutboundPolicy(toRead(HOP_REPLACING, HOP_ROW).plan),
+        sentPositions: null,
+        creationExpiry: 'creation-expiry',
+        snapshot: { msgId: MSG_ID, msg: MESSAGE, outboxKey: MESSAGE.route, supersedenceKey: null },
+        ended: true
     };
 }
 
@@ -118,6 +141,7 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
                 senderId: MESSAGE.id.senderId,
                 expectedVersion: 1,
                 mutations: [
+                    toCompletingSentMessage(),
                     {
                         kind: 'delete-pending-ack',
                         originPeerId: MESSAGE.id.senderId,
@@ -125,7 +149,8 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
                     },
                     { kind: 'delete-repair-attempt', msgId: MSG_ID }
                 ],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             },
             msg: MESSAGE,
             read: toRead(HOP_REPLACING, HOP_ROW),
@@ -143,7 +168,8 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
                 senderId: MESSAGE.id.senderId,
                 expectedVersion: 1,
                 mutations: [{ kind: 'delete-repair-attempt', msgId: MSG_ID }],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             },
             msg: MESSAGE,
             read: toRead(HOP_REPLACING, HOP_ROW),

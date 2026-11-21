@@ -4,7 +4,6 @@ import type {
     ALNackPayload,
     ALParsedControlMessage,
     ALPeerControlMessage,
-    ALPeerRepairControlMessage,
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
@@ -15,6 +14,7 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
+import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -22,14 +22,18 @@ import type {
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
-import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
+    isALOutboundRelayRejectionReason,
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundEndedTimeoutEffectIds } from './control/write-al-outbound-timeout-completions.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
+import { toALOutboundControlMessageEnd } from './message-end/to-al-outbound-control-message-end.ts';
+import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundOutsideAudienceNack,
     acceptALOutboundPendingAckSnapshot,
@@ -62,6 +66,8 @@ export interface ALControlAdmissionRead {
     readonly ownerVersion?: ALOutboundVersionedClientRecord;
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
+    /** The sender's wait for its own hop to first answer for the message; absent when it waits on none. */
+    readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly history: ALControlHistory;
     /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
     readonly acknowledgements: readonly ALAckPayload[];
@@ -90,8 +96,12 @@ export interface ALControlAdmissionCandidate {
     readonly history: ALControlHistory;
     readonly pending: ALPendingAckWrite;
     readonly removeRepairAttempt: boolean;
-    /** The timeout check of a receipt this control ended, which the same commit completes; undefined otherwise. */
-    readonly endedAckTimeoutEffectId: string | undefined;
+    /** The first-hop wait a refusal of the whole send ended, which the same commit removes. */
+    readonly removeFirstHopWait: boolean;
+    /** The timers of the receipt and the first-hop wait this control ended, which the same commit completes. */
+    readonly endedTimeoutEffectIds: readonly string[];
+    /** The end of the message whose terminal settlement this control states; empty for every other control. */
+    readonly messageEnd: readonly ALOutboundAdmissionMutation[];
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
@@ -108,14 +118,18 @@ export function computeALOutboundControlAdmission(
     const terminal = read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload);
     const receiptEnded = terminal || pending.kind === 'remove' ||
         (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value));
+    const messageEnd = toALOutboundControlMessageEnd({ read, pending });
     return {
         read,
         history,
         pending,
-        removeRepairAttempt: receiptEnded,
-        endedAckTimeoutEffectId: receiptEnded && read.pending !== undefined
-            ? toALOutboundAckTimeoutEffectId(read.pending)
-            : undefined,
+        messageEnd,
+        removeRepairAttempt: receiptEnded || messageEnd.length > 0,
+        ...toEndedTimers(
+            read,
+            receiptEnded,
+            terminal || resolveALOutboundRelayRejection(read) !== undefined || isOwnHopNotYetInSync(read)
+        ),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs
             : Math.max(
@@ -126,6 +140,28 @@ export function computeALOutboundControlAdmission(
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
         versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
         nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
+    };
+}
+
+/**
+ * The own hop's `not-yet-in-sync`: that hop has the send, retained until its room view catches up, and answers for it
+ * no more, so the sender's wait on it ends. Nothing ends with it: the message stays open to its deadline.
+ */
+function isOwnHopNotYetInSync(read: ALControlAdmissionRead): boolean {
+    return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
+        read.parsed.payload.reason === 'not-yet-in-sync';
+}
+
+/** The receipt's timer when the control ended the receipt; the first-hop wait and its timer when it ended the send. */
+function toEndedTimers(
+    read: ALControlAdmissionRead,
+    receiptEnded: boolean,
+    sendEnded: boolean
+): Pick<ALControlAdmissionCandidate, 'removeFirstHopWait' | 'endedTimeoutEffectIds'> {
+    const endedWait = sendEnded ? read.firstHopWait : undefined;
+    return {
+        removeFirstHopWait: endedWait !== undefined,
+        endedTimeoutEffectIds: toALOutboundEndedTimeoutEffectIds(receiptEnded ? read.pending : undefined, endedWait)
     };
 }
 
@@ -281,28 +317,13 @@ function toRepairHintEffect(
 }
 
 /**
- * The hint a peer's gap NACK or repair request raises. The gap is the hint's identity, so its payload
- * follows the gap too, never the control: `nack` names missing ranges, `repair` asks for the message
- * itself. The two controls a receiver sends for one gap thus build one hint, written once and absorbed
- * the second time rather than refused as conflicting content. A relay's gap NACK also names the
- * recipient it asks the repair for, which the responder admits the copy on and which names the hint
- * apart (S4ii-R3): each recipient a relay reports one gap for raises its own hint.
+ * A NACK whose reason may end the whole send, or the sender's wait on its own hop (`not-yet-in-sync`): the one control
+ * whose admission reads the send's first-hop wait.
  */
-export function toALOutboundControlRepairHint(
-    control: ALPeerRepairControlMessage
-): ALOutboundRepairHint {
-    const { payload } = control;
-    const missingRanges = payload.missingRanges ?? [];
-    return {
-        trigger: missingRanges.length > 0 ? 'nack' : 'repair',
-        requestedByPeerId: payload.fromPeerId,
-        ...(isALOutboundRelayedGapNack(control)
-            ? { logicalRecipientPeerId: control.payload.logicalRecipientPeerId }
-            : {}),
-        orderingTrackKey: payload.orderingKey,
-        missingRanges,
-        failedPeerIds: []
-    };
+export function mayALOutboundControlEndSend(parsed: ALPeerControlMessage): boolean {
+    return parsed.type === 'nack' &&
+        (isTerminalNack(parsed.payload) || isALOutboundRelayRejectionReason(parsed.payload.reason) ||
+            parsed.payload.reason === 'not-yet-in-sync');
 }
 
 /**

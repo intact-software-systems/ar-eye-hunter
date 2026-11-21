@@ -51,7 +51,8 @@ describe('Postgres AL outbound effect claims', () => {
                     retryAtMs: nowMs,
                     expireAtTimestamp: nowMs + 60_000,
                     payload: { kind: 'ack-timeout', msgId: 'message' }
-                }]
+                }],
+                endedTimeoutEffectIds: []
             });
             const input = { maxCount: 1, observedEntries: undefined };
             const results = await Promise.allSettled([first.port.claim(input), second.port.claim(input)]);

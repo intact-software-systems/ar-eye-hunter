@@ -10,11 +10,8 @@ import {
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALRepairControlMessage,
-    type ALRepairReason
-} from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -35,7 +32,8 @@ import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle,
-    type ALOutboundNotYetInSyncRetrySchedule
+    type ALOutboundNotYetInSyncRetrySchedule,
+    type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -43,9 +41,10 @@ import {
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
-import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { computeALOutboundWorkEntry, toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
@@ -57,7 +56,8 @@ import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtim
 import {
     createOutboundCanonicalEntry,
     createOutboundMessage,
-    readOutboundTestAdmission
+    readOutboundTestAdmission,
+    trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -214,9 +214,10 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
     it('aborts a moved control effect without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const control = createFenceControlAdmission(fixture);
-        const message = await seedControlObligation(fixture.store);
-        // Both repairs name the same repair-hint effect, so the second observes what the first wrote.
-        expect(await control.admit(toRepairControl(message, 'retransmit', Date.now()), 'peer')).toEqual({ kind: 'committed' });
+        const message = await seedControlObligation(fixture.store, { orderingKey: 'stream', epoch: 1, seq: 3 });
+        // A relay's retransmit requests from two positions of the track name the same repair-hint effect, so the
+        // second observes what the first wrote.
+        expect(await control.admit(toRepairControl(message, 2, Date.now()), 'peer')).toEqual({ kind: 'committed' });
         const repairWork = await readOutboundWorkRow(fixture.backend, 'repair-hint');
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
@@ -227,7 +228,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toRepairControl(message, 'missing-seq', Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toRepairControl(message, 3, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -264,6 +265,101 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await control.scheduleNotYetInSyncRetry(schedule)).toEqual({ status: 'conflict' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('a repair dispatch decided before the message ended conflicts, and decided again it is refused', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = createOutboundMessage('ended-before-repair');
+        const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ text: planned.id.msgId }]
+        });
+        expect(
+            await fixture.store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: fixture.store,
+                    message,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner
+                })
+            )
+        ).toBe('committed');
+        const decideRepair = async () => {
+            const read = await fixture.store.readOutgoingMessage({
+                msg: message,
+                planner,
+                observedCanonicalEntry: undefined,
+                intent: 'repair'
+            });
+            return computeALOutboundDispatch({
+                read,
+                outboxEntry: createOutboundCanonicalEntry(fixture.store, read.msg, Temporal.Now.instant()),
+                dispatchAtMs: Date.now(),
+                intent: 'repair',
+                phase: 'immediate',
+                options: { attemptIdentity: 'decided-before-the-end' }
+            });
+        };
+        const decided = await decideRepair();
+        const repairRead = await fixture.store.readRepairMessage(message.id.msgId, planner);
+
+        expect(await fixture.store.commitBundle(toALOutboundReadMessageEndBundle(message, repairRead))).toBe('committed');
+        expect(await fixture.store.commitBundle(decided.bundle!)).toBe('conflict');
+        for (const effect of decided.bundle!.durableEffects) {
+            expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
+        }
+        expect((await decideRepair()).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
+    });
+
+    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and no receipt row', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = createOutboundMessage('ended-before-receipt-retry');
+        const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ text: planned.id.msgId }],
+            ackTracking: trackOutboundTestAcks(['receiver'])
+        });
+        expect(
+            await fixture.store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: fixture.store,
+                    message,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner
+                })
+            )
+        ).toBe('committed');
+        const decideRetry = async () => {
+            const read = await fixture.store.readOutgoingMessage({ msg: message, planner, observedCanonicalEntry: undefined, intent: 'repair' });
+            return computeALOutboundDispatch({
+                read,
+                outboxEntry: createOutboundCanonicalEntry(fixture.store, read.msg, Temporal.Now.instant()),
+                dispatchAtMs: Date.now(),
+                intent: 'repair',
+                phase: 'immediate',
+                options: { attemptIdentity: 'receipt-retry-decided-before-the-end' }
+            });
+        };
+        const decided = await decideRetry();
+        expect(decided.bundle!.mutations.map((mutation) => mutation.kind)).toContain('set-pending-ack');
+        const repairRead = await fixture.store.readRepairMessage(message.id.msgId, planner);
+
+        expect(await fixture.store.commitBundle(toALOutboundReadMessageEndBundle(message, repairRead))).toBe('committed');
+        expect(await fixture.store.commitBundle(decided.bundle!)).toBe('conflict');
+        // Its send rows are the frame it would write; its timer may share the admission's id, which the end completed.
+        for (const effect of decided.bundle!.durableEffects.filter((written) => written.payload.kind === 'send-prepared')) {
+            expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
+        }
+        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
+        const again = await decideRetry();
+        expect(again.verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
+        expect(again.bundle).toBeUndefined();
     });
 
     it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {
@@ -379,8 +475,12 @@ function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string
 }
 
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
-async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTestPayload>): Promise<ALMessage> {
-    const message = createOutboundMessage('control-fence');
+async function seedControlObligation(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    ordering?: ALMessage['ordering']
+): Promise<ALMessage> {
+    const created = createOutboundMessage('control-fence');
+    const message = ordering === undefined ? created : { ...created, ordering };
     const admission = await readOutboundTestAdmission({
         store: store,
         message: message,
@@ -476,15 +576,25 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
     });
 }
 
-function toRepairControl(message: ALMessage, reason: ALRepairReason, observedAtEpochMs: number): ALMessage {
+/** A relay's retransmit request for an owned child it could not reach, sent when its track expects `expectedSeq`. */
+function toRepairControl(message: ALMessage, expectedSeq: number, observedAtEpochMs: number): ALMessage {
     return newALRepairControlMessage(
-        { v: 4, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs, traceId: 'trace-al-outbound-admission-fences' },
+        {
+            v: 4,
+            msgId: `${message.id.msgId}-retransmit-${expectedSeq}`,
+            senderId: 'peer-1',
+            ts: observedAtEpochMs,
+            traceId: 'trace-al-outbound-admission-fences'
+        },
         {
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
             msgId: message.id.msgId,
-            reason,
-            observedAtEpochMs
+            reason: 'retransmit',
+            observedAtEpochMs,
+            orderingKey: toALOrderingTrackKey(message)!,
+            expectedSeq,
+            missingRanges: []
         }
     );
 }

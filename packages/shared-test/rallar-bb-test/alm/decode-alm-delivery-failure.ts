@@ -50,7 +50,8 @@ const ALM_SKIPPED_REASONS: Readonly<Record<ALDeliverySkippedReason, true>> = {
     disposed: true,
     'repair-exhausted': true,
     'pending-terminated': true,
-    'planner-drop': true
+    'planner-drop': true,
+    'message-ended': true
 };
 
 const ALM_UNROUTABLE_REASONS: Readonly<Record<ALDeliveryUnroutableReason, true>> = {

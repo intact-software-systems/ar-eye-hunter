@@ -4,10 +4,8 @@ import type { BlackBoxRallarFormationHeldReshape } from '@shared-test/black-box-
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createAlmScaleSetupCommands } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-setup-commands.ts';
 import { toStableRtcLayoutWaitTimeoutMs } from '@shared-test/rallar-bb-test/fixtures/create-stable-rtc-layout-wait.ts';
-import type {
-    RallarBlackBoxTestLoopResultValue,
-    RallarBlackBoxTestRuntime
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestLoopResultValue } from '@shared-test/rallar-bb-test/loop/loop-result-contracts.ts';
+import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 

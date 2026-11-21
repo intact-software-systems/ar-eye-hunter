@@ -162,7 +162,8 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
                         snapshot: toPendingSnapshot({ mode: 'receiver', expectedPeerIds }, Date.now()),
                         expireAtTimestamp: Date.now() + 30_000
                     }],
-                    durableEffects: []
+                    durableEffects: [],
+                    endedTimeoutEffectIds: []
                 })
             ).toBe('committed');
         }

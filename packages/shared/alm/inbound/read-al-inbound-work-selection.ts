@@ -430,9 +430,9 @@ async function readALInboundClaimedSelection(
 
 /**
  * The batch's run order: page deliveries, then admission replays and rows whose kind the page never decoded,
- * then forwards. Control sends run first on the volatile lane, since an ACK confirms admission and must not
- * wait behind a page of handlers there; on a durable lane they run last beside forwards, so their commits
- * never delay a delivery. Stable within each rank, so page order still decides among equals.
+ * then forwards and gap renewals. Control sends run first on the volatile lane, since an ACK confirms admission
+ * and must not wait behind a page of handlers there; on a durable lane they run last beside forwards, so their
+ * commits never delay a delivery. Stable within each rank, so page order still decides among equals.
  */
 export function computeALInboundClaimOrder(
     claims: readonly ALWorkClaim[],
@@ -461,6 +461,7 @@ function toALInboundClaimRank(
         case undefined:
             return 2;
         case 'forward-message':
+        case 'renew-gap':
             return 3;
     }
 }

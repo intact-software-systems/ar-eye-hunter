@@ -16,9 +16,7 @@ import {
     type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     createOutboundCanonicalEntry,
@@ -28,9 +26,9 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
 import {
     createRuntimeStatePostgresSql,
-    requirePostgresDatabaseUrl,
-    type PostgresSql
+    requirePostgresDatabaseUrl
 } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { deleteALOutboundNamespaceRows } from './delete-al-outbound-namespace-rows.ts';
 
 /** One durable copy per message, the sender asking its own outbound for the track's next sequence. */
 const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
@@ -109,7 +107,7 @@ async function createStores(): Promise<readonly [ALOutboundAdmissionStore<Outbou
     const first = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(async () => {
         try {
-            await deleteNamespaceRows(first, namespace, canonicalKey);
+            await deleteALOutboundNamespaceRows(first, namespace, canonicalKey);
         }
         finally {
             await first.end();
@@ -129,21 +127,6 @@ async function createStores(): Promise<readonly [ALOutboundAdmissionStore<Outbou
         createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend({ sql: first, namespace, nowMs: Date.now }) }),
         createALOutboundAdmissionStore({ ...configuration, backend: new PSqlAdmissionWorkBackend({ sql: second, namespace, nowMs: Date.now }) })
     ];
-}
-
-/**
- * Every row the two stores wrote: the admission rows under the namespace, the work rows of the
- * namespace (one topic and resource id, the effect id in the context) and the canonical and identity
- * rows of its scope (one resource id per scope, the message in the context).
- */
-async function deleteNamespaceRows(sql: PostgresSql, namespace: string, canonicalKey: Key): Promise<void> {
-    const work = toALOutboundWorkKey(namespace, 'any-effect-id');
-    await sql`
-        delete from resource_inbox
-        where (ri_topic_id = ${work.topicId} and ri_resource_id = ${work.resourceId})
-            or ri_resource_id = ${canonicalKey.resourceId}
-    `;
-    await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
 }
 
 function createSupersedingMessage(senderId: string, sequence: number): ALMessage {

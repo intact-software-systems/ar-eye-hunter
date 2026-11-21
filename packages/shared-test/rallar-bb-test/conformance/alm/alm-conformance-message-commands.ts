@@ -39,6 +39,8 @@ interface AlmConformanceSendDelivery {
     readonly onStorageUnavailable?: 'refuse' | 'volatile';
     readonly orderingKey?: string;
     readonly seq?: number;
+    /** Absent, the product's repair budget. */
+    readonly maxRepairs?: number;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];

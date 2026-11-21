@@ -336,9 +336,15 @@ and it has no status list.
   after the D56 hand-over the handed-over held send stayed non-terminal for the
   cell's observe window. Waits on a product reading of what a held send does
   when its carrier hands over.
-- A `ws` send the server leaves `not-admitted` (`storage-unavailable`) is never
-  resent (S9-ii, D640): the server sends no frame for it and the sender has no
-  receipt candidate before the server's `admitted` receipt.
+- A `ws` send the server leaves `not-admitted` (`storage-unavailable`) gets no
+  frame from the server (S9-ii, D640). A receipted send with retries is
+  written again by its first-hop wait (D677) and ends `failed`,
+  `receipt-exhausted`, when its retries are spent, unless a resent copy is
+  admitted; one with `ack: 'none'` or retry `none` is never resent. The client
+  side, a server that answers nothing, is pinned by
+  `al-outbound-first-hop-wait.test.ts`; the server's `not-admitted` half of the
+  path is not tested. What a relay's refusal of a
+  held send means stays with the held-send slice.
 - The WS server's `business-socket-decision` timing record omits the
   `not-admitted` reason (S9-ii; `recordSocketDecision` in
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`).
@@ -404,9 +410,10 @@ and it has no status list.
 - On the WS server a conflicted drop of a receipted room send is retained
   `pending-admission`, so the server starts its `admitted` receipt for a send
   its replay then refuses (S9-ii, D640): the receipt can reach the origin after
-  the replay's NACK, re-create the receipt row the NACK ended and settle an
-  `acknowledgement` after `relay-rejected` (the handle reads `rejected`), and
-  the server's aggregate runs to `timed-out`. Ruled (D642): a retained
+  the replay's NACK. The NACK ended the message, so the origin refuses that
+  receipt (D686): no row is re-created and no `acknowledgement` follows
+  `relay-rejected` (the handle reads `rejected`; the characterization is
+  restated so, D692), and the server's aggregate still runs to `timed-out`. Ruled (D642): a retained
   admission withholds its `admitted` receipt until its replay commits, in the
   receipt-truth slice (`writeAdmittedReceipt`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
@@ -493,8 +500,11 @@ and it has no status list.
 - A hint-dependent repair planner under the per-gap identity (S7-ii, D573): a
   planner whose prepared payload changes with the hint (the RTC overlay
   planner) finds the budget spent on a changed payload and states
-  `repair-exhausted` once, as before S7-ii; a regression only if `maxRepairs`
-  ever exceeds 1, and no cell exercises it.
+  `repair-exhausted` once, as before S7-ii. Its condition holds since D681:
+  `maxRepairs` is 4 per requester by default, so a requester's later attempts
+  meet a changed payload; whether that spends its budget early or states
+  `repair-exhausted` wrongly is not established, and no cell exercises it.
+  Next step: a unit case with the overlay planner at the default budget.
 - A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
   `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
 - A frozen session that never subscribes after a hand-over (S6-i) stays
@@ -717,37 +727,191 @@ and it has no status list.
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
   `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
   campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
-- An ordered receipted stream does not reliably recover from a seeded loss
-  over `ws` (D670, D673). Its first cause is fixed: the shared queue now hands
-  out work in the order it comes due (D671), and `seeded-loss-stream` was
-  green over `rtc` in 3 of 3 runs. Over `ws` it was green in 2 of 3: in the red
-  run the server never admitted send 1, the sender made 19 repair commits of
-  it, and after the last gap NACK it had no work left. Read from the code and
-  not proven by a test: a repair attempt is named by its gap
-  (`toALOutboundRepairGapAttemptIdentity`, `to-al-outbound-effect-id.ts`), so
-  a repair frame lost during the loss is never sent again. No lane cell runs
-  under a seeded loss, and a catalog test pins that. Next slice by the
-  maintainer's ruling (2026-11-18): a unit reproduction of the lost repair
-  frame, then a design for the repair rule; the cell returns with that fix.
-- Two more candidate causes from D670, read from the code and not proven by a
-  test: ending a receipt deletes the sender's repair-attempt row, so a
-  receiver still behind a gap is refused (`to-al-outbound-end-receipt-bundle.ts`);
-  a conflicted control is replayed on the generic backoff of up to 16 s while
-  a receipt's budget is three 2 s retries (`ResourceInboxRetryPolicy.ts`).
-  Neither showed in the six loss runs after the due order (D673): no gap NACK
-  was refused for a missing repair obligation, and no control was admitted
-  later than 445 ms. No step is ruled for either; the repair-rule design that
-  follows the lost repair frame's unit reproduction is to say whether either
-  still applies. D670's other unknown, why sends 10 to 20 did not reach the
-  `rtc` receiver for 28 s, was answered by the due order (`rtc` 3 of 3).
-- Three sender behaviours read from the loss runs before the due order
-  (D670): an ACK-timeout retry that wrote no frame (D670's timed-out handle
-  that shows one `sent` attempt), repair commits that mostly wrote no send,
-  and an ACK control admitted 7.9 s late. In the runs after the due order (D673):
-  whether an ACK-timeout retry writes a frame, and whether a given repair
-  commit writes one, is not observable from a control snapshot; the lane
-  needs a frame-written signal to say. A late `pending-control` was not seen
-  again (slowest 445 ms).
+- One candidate cause from D670 is still read from the code and not proven by
+  a test: a conflicted control is replayed on the generic backoff of up to
+  16 s while a receipt's budget is three 2 s retries
+  (`ResourceInboxRetryPolicy.ts`), so an ACK that arrived in time can be
+  admitted after its receipt ended. It showed in none of the loss runs after
+  the due order (slowest 445 ms; D673). No step is ruled. The other, a
+  receipt's end deleting the repair-attempt row so a receiver still behind a
+  gap is refused or served from zero, is answered by D686: a terminal receipt
+  end ends its message, and an ended sequence is served nothing; a hand-over
+  (D56) still deletes the count without ending the message. D670's other
+  unknown, why sends 10 to 20 did not reach the `rtc` receiver for 28 s, was
+  answered by the due order (`rtc` 3 of 3).
+- What a sender writes is not observable from a lane snapshot: whether an
+  ACK-timeout retry or a given repair commit wrote a frame, which repairs were
+  renewals or first-hop resends (a first-hop resend commits with origin
+  `repair`, no diagnostic names the wait, and the `control-admission`
+  diagnostic carries no `gapRequestNumber`; D683), and how many frames left a
+  page after a hold, since the receiver refuses a duplicate (D691). Part C's
+  cell statement reads commits for that reason (D687). The lane needs a
+  frame-written signal to say more.
+- A lost only or last frame of an `ack: 'none'` send is not recovered: there
+  is no receipt and no later frame to reveal the gap (a stated limit of the
+  design, pinned by `lost-repair-frame-stream.test.ts`). Open decision: whether
+  an `ack: 'none'` stream states its end, so a receiver can see a lost tail.
+- A WS send can end `failed` although delivered when the server that admitted
+  it no longer holds its receipt: another cluster instance, a restart, an
+  aggregate that completed and whose `complete` was also lost, or a runtime
+  being disposed (D678). The server's repeated `admitted` answers only from a
+  live aggregate. Open decision: a stored or cluster-wide receipt lookup on a
+  duplicate. A send the server retains behind its room view no longer ends so:
+  the server's `not-yet-in-sync` ends the first-hop wait and states nothing
+  (D694). What remains of that case: a retained send the server then loses (a
+  restart) is not recovered by the client, and its handle reads `expired` at
+  its deadline. No step ruled; for the maintainer.
+- The WS server never reports to its sender a retained send it later refuses
+  or lets expire, so the handle stays open and reads `expired` at the deadline
+  (predates the slice; D694). No step ruled; for the maintainer (the held-send
+  slice, D642, is where a replay's own receipt is ruled).
+- On a receipted WS send the first-hop wait gives up at about 8 s while a gap
+  renewal runs to 7 s and 10.5 s with its stretch, so the last renewal mostly
+  finds the message ended and is served nothing (a run showed request 4 at
+  8.5 s writing no frame). Open decision: whether the renewal schedule should
+  fit inside the first-hop budget, or a gap repair's frame count as activity
+  for the wait.
+- `to-al-outbound-effect-id.ts` now holds a decoder, the attempt identity and
+  the requester key, so its name no longer says what it holds; moving them to
+  their owners trips the directory density of `outbound/` (22 files). No step
+  ruled; for the maintainer.
+- The first-hop timer's `early` branch re-arms under the running timer's id
+  (`first-hop/al-outbound-first-hop-wait.ts`), which the effect store would not
+  write again; no path to it was found (final review, low confidence). No step
+  ruled; for the maintainer.
+- Gap renewal holds on direct links only (D680): a WS client and its server in
+  both directions, and `rtc` peers that send to each other directly. A relay
+  forwards a child's gap NACK only while it holds a pending row that waits on
+  that child, and never forwards a repair request. Next step: with the relay
+  statement rules.
+- A first-hop wait can charge an attempt with no frame: a crash between a
+  resend's two commits, or a resend whose re-plan drops silently (for example
+  `congested` while backpressured), since that dispatch commits nothing (D677).
+  And an `admitted` receipt that lands between a resend's two commits still
+  lets that one frame out (part C closes this only for a terminal receipt).
+  Next step: make the resend conditional on its wait in one commit, a separate
+  change.
+- A re-plan refused `unauthorized` is dropped silently at every site, so a
+  receipt timer and a first-hop wait both run on to `receipt-exhausted`
+  rather than ending with the refusal (`resolveALOutboundReplanRefusalSettlement`
+  settles `unauthorized` at no site; D677). Open decision: whether
+  `unauthorized` at a re-plan is a refusal for good.
+- One requester's `repair-exhausted` ends the message for every receiver
+  (D686), so the other receivers lose the receipt's remaining retries. A gap a
+  receiver reports both directly and through a relay is two attempts per
+  request number on one budget (the attempt identity keeps the hop), so it ends
+  the message sooner than a budget of 4 suggests (D681). And a peer admitted as
+  a relay for a recipient the receipt still owes can report a gap for that
+  recipient without the recipient asking, which spends the recipient's own
+  budget (D692). Open decisions: an attempt identity keyed by the receiver
+  alone, and whether a relay may spend a recipient's budget.
+- A cancel and a hand-over end later work from memory only
+  (`lane/al-outbound-send-controls.ts`), so a reload forgets them and a durable
+  message resumes; the completion an empty frozen audience states at admission
+  writes no `ended` marker. Both predate the slice (D685). Next step: the
+  durable cancel fact left as a seam (D13), which could write the marker.
+- Over `rtc` a gap request whose revealing message ended unacknowledged is
+  refused at admission: its receipt row is gone, and the requester is admitted
+  by reading it (`is-al-outbound-expected-repair-peer.ts`). It predates the
+  slice and now also follows `repair-exhausted` (D686). Next step: admit the
+  request against the stored row's frozen audience.
+- One frame can follow a message's end: `readSendGuards` is an unfenced read
+  before the carrier runs, so an end that lands between the guard and the
+  write does not stop it (the window supersession has; D686). Next step, as
+  the review named it: fence the guard read on the sender version; no step
+  ruled.
+- A superseded `ack-timeout` row is left pending when a dispatch moves its
+  receipt's deadline; it fires later, finds no receipt or a moved one, and
+  completes, one no-op work item per moved deadline. Predates the slice; the
+  end of a message completes only the current timer (D692). The option Task
+  11 named: a dispatch that moves an open receipt's deadline completes the
+  timer it replaces; no step ruled; for the maintainer.
+- The inbound lane can dispatch a message to its consumer twice: when the next
+  sequence's admission commits while the previous message's batch is between
+  its dispatch and its completion commit, the completion gets `conflict` and
+  returns `retry`, and the retried row dispatches again; nothing deduplicates.
+  Reproduced on memory and IndexedDB: with admissions awaited back to back and
+  no drain, 10 of 10 runs; with a started engine and admissions 5 ms apart,
+  IndexedDB 4 of 10 and memory 0; with work drained between admissions, 0.
+  First deliveries stay in order. It predates the slice (from #521; on `main`
+  `al-inbound-release-promotion.test.ts` says a completion that loses its
+  commit is dispatched again), and the inbound README does not state it. The
+  lane cells did not meet it. Open decision: a delivered marker written with
+  the dispatch.
+- Thirteen tests use a gap NACK that names no range as a whole-message resend,
+  a shape no producer emits, so the decoder still accepts it (D692):
+  `al-indexeddb-runtime-stores.test.ts`, `al-outbound-durable-effects.test.ts`
+  and `al-outbound-message-runtime.test.ts` (each a rangeless `retransmit`
+  request in production terms); two cases of `alm/al-outbound-repair-policy.test.ts`
+  and `alm/outbound-room-repair-authority.test.ts` (a ranged gap NACK of the
+  sequence); three cases of `receipt-proof/sign-al-inbound-receipt-controls.test.ts`
+  (an ordered arrival past a gap, so the planner plans it); and
+  `rtc-receipt-forgery.test.ts`, `rtc-relay-ownership.test.ts`,
+  `web-rtc-overlay-backpressure.test.ts` and
+  `web-rtc-overlay-frozen-audience.test.ts`, for which no production path to a
+  whole-message targeted repair other than a ranged gap NACK was established.
+  Next step: restate each to its production shape, then refuse a rangeless gap
+  NACK. Open decision: whether the rangeless gap NACK leaves the wire now, in
+  the id move to `al.control.nack.v4` (D679), rather than after the restatement.
+- The control-server model of `repair-exhausted` records no commit for a
+  repeated request number, so it states two repair commits before the
+  settlement where the product commits four (each requester's repeat finds its
+  attempt committed and charges nothing; D687). The model and the product agree
+  on the settlement order, not on the commit count. No step ruled; for the
+  maintainer.
+- A held retry is charged at every receipt deadline and queues one copy per
+  charge (D690): part C drops those copies when the receipt runs out, and a
+  release inside the budget hands them to the carrier together. A first
+  attempt of which only some copies are held is charged as before, and part C
+  then drops its held copies. Next step: a hold per recipient, with D640's
+  slice.
+- A first attempt whose plan changed or drops while it is held is charged as
+  before, since the rule reads the copies planned at the deadline (D690). Open
+  decision: whether a receipt should wait for a copy its re-plan no longer
+  names; storing the first attempt's effect ids instead would also stop a
+  retry that re-routes.
+- A gap repair and a not-yet-in-sync retry of a held message each queue a copy
+  of their own, so a release still hands the carrier more than one frame of
+  that message (D690). No step ruled; for the maintainer.
+- A deadline that runs in the batch that hands the copy over reads its row
+  reserved and waits one timeout more, on both timers; a copy reserved after
+  it went to the carrier can skip one charge, at most one timeout per message;
+  and a `failed` attempt with `submissionAttempted: true` becomes a RETRY row
+  and reads as held (D693). The first-hop wait's `unwritten` branch re-arms
+  from its deadline, so a frame released just before a deadline can be resent
+  under 2 s after it was written. No step ruled; for the maintainer.
+- A held send costs one timer commit per receipt timeout until its message's
+  deadline (up to 15 at a 30 s deadline). On the WS server part D changes
+  nothing for a send it dequeued: the receipt timer's re-plan (phase
+  `immediate`) plans no copy for a route it awaits, so a recipient whose
+  connection answers `not-ready` is charged as before and the receipt is
+  exhausted at about 9 s (D693). No step ruled; for the maintainer.
+- A send that the `ended` guard completes leaves no diagnostic and no
+  settlement (`al-outbound-message-effects.ts`), so the six red runs of D688
+  showed only a completed count, and the attempt the lane stated
+  `attempt-started` for keeps no outcome on its handle. Its neighbours settle
+  theirs `superseded` or `cancelled`, values of the attempt outcome, which has
+  none for an ended message, and `message-ended` is an admission reason, not an
+  outcome. Open decision: an attempt outcome for an ended message, or a
+  `message-ended` diagnostic at the guard.
+- No path states `expired` for a held send's lapsed row: the row is never
+  claimed past its expiry, so the lane states nothing, and a handle reads
+  `expired` only because the browser registry applies the deadline when it is
+  read (D693). No step ruled; for the maintainer.
+- The handle's deadline and the store's can differ: the registry takes it only
+  from `constraints.expiresAtMs`, the store the earlier of that and
+  `qos.expiry`, so a caller's earlier `qos.expiry` is honoured by the store and
+  not by the handle, which reads `submitted` until the TTL (D693). It predates
+  the slice; part D widens it to every held first frame, bounded by the TTL.
+  Next step: the registry takes its deadline from `resolveALMessageExpireAtMs`
+  (`al-policy.ts`).
+- A complete receipt row is called a final snapshot, but a leased `ack-timeout`
+  that runs after the ACK re-arms on it and `commitClearPendingAck` then
+  deletes it. And the stored sent row writes `sentPositions` only once a
+  recording kept them, "as an older build wrote it"
+  (`ALStoredOutboundMessageRow`), a shape kept for a previous build. Both
+  predate the slice. No step ruled; for the maintainer (the second meets the
+  no-legacy rule).
 - The IndexedDB `creation`-order claim (a claim of NEW rows without RETRY)
   reads the first sixteen rows of each type and status by key and only then
   asks which are due, so sixteen rows due later hide a due one, as the `due`

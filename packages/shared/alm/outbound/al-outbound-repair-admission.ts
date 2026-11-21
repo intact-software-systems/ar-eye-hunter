@@ -9,6 +9,7 @@ import type {
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
     ALOutboundPlanner,
+    ALOutboundRepairReadDto,
     ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type {
@@ -19,10 +20,9 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
-import {
-    toALOutboundControlRepairHint,
-    type ALOutboundControlSource
-} from './compute-al-outbound-control-admission.ts';
+import { computeALOutboundAttemptDeadline } from './attempt-deadline/compute-al-outbound-attempt-deadline.ts';
+import { readALOutboundSendAttemptHeld } from './attempt-deadline/read-al-outbound-send-attempt-held.ts';
+import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAdmissionVerdict } from './compute-al-outbound-dispatch.ts';
 import type {
     ALOutboundControlAdmission,
@@ -30,11 +30,16 @@ import type {
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
+import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
+import {
+    toALOutboundReadMessageEndBundle,
+    type ALOutboundMessageEndRead
+} from './message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
@@ -67,18 +72,18 @@ export namespace ALOutboundRepairAdmission {
         readonly messageExpiresAtMs: number;
     }
 
-    /** The fence of a receipt's next retry, and whether this peer can re-plan its message to retry it. */
-    export interface AckTimeoutRetry {
+    /** The fence of a receipt's next window, and whether the window's commit hints a repair of the message. */
+    export interface NextAckWindow {
         readonly expectedVersion: number | undefined;
-        readonly replannable: boolean;
+        readonly hintsRepair: boolean;
     }
 }
 
 /**
  * Turns persisted control/ACK/repair state into new durable admission commits; never sends directly.
- * Without a repair planner a room-scoped gap or repair control carries authority only when the sender's
- * own hop asked for it, the one repair that cannot widen a room audience; that hop's not-yet-in-sync
- * NACK on a room send stays not handled, as the hop owns that retry.
+ * Without a repair planner a room-scoped gap, repair or not-yet-in-sync control carries authority only when the
+ * sender's own hop sent it, the one repair that cannot widen a room audience. That hop retains a room send it answers
+ * not-yet-in-sync, so the answer ends a WS client's first-hop wait and schedules no retry here.
  */
 export class ALOutboundRepairAdmission<TPrepared> {
     private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
@@ -150,15 +155,14 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (!msg) {
             return false;
         }
+        if (this.isOwnHopRoomSend(msg)) {
+            return read.plan !== undefined &&
+                isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
+        }
         if (!isRoomScopedALMessage(msg)) {
             return true;
         }
-        if (this.dependencies.planRepairMessage === undefined) {
-            const asksForGapRepair = control.type === 'repair' || control.payload.reason === 'gap';
-            return asksForGapRepair && read.plan !== undefined &&
-                isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
-        }
-        const planned = await this.dependencies.planRepairMessage(msg, {
+        const planned = await this.dependencies.planRepairMessage?.(msg, {
             ...toALOutboundControlRepairHint(control),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
@@ -178,11 +182,19 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
+    /** A room send this composition plans no repair for: only its own hop speaks for it. */
+    private isOwnHopRoomSend(msg: ALMessage): boolean {
+        return isRoomScopedALMessage(msg) && this.dependencies.planRepairMessage === undefined;
+    }
+
+    /** Re-read after the NACK's commit: a message ended since is retried and stated no more. */
     private async scheduleNotYetInSyncRetry(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
-        if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
+        if (
+            !msg || read.storedMessage?.ended || !retry?.enabled || retry.maxAttempts <= 0 || this.isOwnHopRoomSend(msg)
+        ) {
             return;
         }
 
@@ -216,14 +228,19 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;
-        const messageExpiresAtMs = read.storedMessage?.reference.expiresAtMs;
+        const stored = read.storedMessage;
         if (!pending) {
             return;
         }
-        if (!msg || messageExpiresAtMs === undefined) {
+        if (!msg || stored === undefined) {
             await this.commitOrphanedReceiptCleanup(msgId, read.clientRecord);
             return;
         }
+        // A terminal commit that keeps its incomplete row ended the message: a timer still queued writes nothing for it.
+        if (stored.ended && !isALOutboundReceiptComplete(pending)) {
+            return;
+        }
+        const messageExpiresAtMs = stored.reference.expiresAtMs;
         if (pending.deadlineAtMs > this.readNowMs()) {
             await this.persistNextAckTimeout({ msg, pending, messageExpiresAtMs }, read.clientRecord?.version);
             return;
@@ -235,50 +252,57 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const refusal = read.plan &&
             resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan), 'ack-timeout');
         if (refusal) {
-            await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
+            await this.commitRefusedReceipt(msg, read, refusal);
             return;
         }
-        if (pending.attempts >= pending.maxAttempts) {
-            await this.commitReceiptExhausted(msg, pending, read.clientRecord?.version);
+        const held = await this.readFirstAttemptHeld(read, pending);
+        const deadline = computeALOutboundAttemptDeadline({ budget: pending, held, nowMs: this.readNowMs() });
+        if (deadline.kind === 'exhausted') {
+            await this.commitReceiptExhausted(msg, read, pending);
             return;
         }
-        await this.commitAckTimeoutRetry({ msg, pending, messageExpiresAtMs }, {
+        await this.commitNextAckWindow({ msg, pending: { ...pending, ...deadline.next }, messageExpiresAtMs }, {
             expectedVersion: read.clientRecord?.version,
-            replannable: read.plan !== undefined && !read.plan.dropReason
+            hintsRepair: deadline.kind === 'retry' && read.plan !== undefined && !read.plan.dropReason
         });
     }
 
-    /** The receipt's next window, and its repair hint when this peer can re-plan the message. */
-    private async commitAckTimeoutRetry(
+    /** Whether the receipt has charged nothing and every copy of the dispatch that opened it is still queued. */
+    private async readFirstAttemptHeld(
+        read: ALOutboundRepairReadDto<TPrepared>,
+        pending: ALOutboundPendingAckSnapshot
+    ): Promise<boolean> {
+        if (pending.attempts !== 0 || pending.firstAttempt === undefined || read.plan === undefined) {
+            return false;
+        }
+        return await readALOutboundSendAttemptHeld(this.admissionStore, {
+            ...pending.firstAttempt,
+            msgId: pending.msgId,
+            preparedMessages: read.plan.preparedMessages
+        });
+    }
+
+    /** Commits the receipt's next window, `receipt.pending` as the window writes it. */
+    private async commitNextAckWindow(
         receipt: ALOutboundRepairAdmission.RetriedReceipt,
-        retry: ALOutboundRepairAdmission.AckTimeoutRetry
+        nextWindow: ALOutboundRepairAdmission.NextAckWindow
     ): Promise<void> {
-        const { pending } = receipt;
-        const nextPending: ALOutboundPendingAckSnapshot = {
-            ...pending,
-            attempts: pending.attempts + 1,
-            deadlineAtMs: this.readNowMs() + pending.timeoutMs
-        };
-        const status = await this.admissionStore.commitBundle(
-            this.toAckTimeoutRepairBundle({ ...receipt, pending: nextPending }, retry)
-        );
+        const status = await this.admissionStore.commitBundle(this.toNextAckWindowBundle(receipt, nextWindow));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
         }
     }
 
     /**
-     * A re-plan refused for good ends the receipt under the version its decision read: a same-sender commit since, such
+     * A re-plan refused for good ends the message under the version its decision read: a same-sender commit since, such
      * as a completing ACK, conflicts and the retry decides again; the commit's success states the refusal once.
      */
     private async commitRefusedReceipt(
         msg: ALMessage,
-        refusal: ALOutboundSettlementFact,
-        expectedVersion: number | undefined
+        read: ALOutboundMessageEndRead,
+        refusal: ALOutboundSettlementFact
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(msg.id.senderId, msg.id.msgId, expectedVersion)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundReadMessageEndBundle(msg, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt refusal commit conflict');
         }
@@ -319,13 +343,13 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * The next retry of a receipt, and its repair hint when this peer can re-plan the message. A copy this peer
-     * cannot re-plan, such as a relay's forwarded copy, has no retry of its own: its origin retries it, so the
-     * hint would only fail its read.
+     * The next window of a receipt, and the repair hint of a charged one when this peer can re-plan the message. A
+     * copy this peer cannot re-plan, such as a relay's forwarded copy, has no retry of its own: its origin retries
+     * it, so the hint would only fail its read.
      */
-    private toAckTimeoutRepairBundle(
+    private toNextAckWindowBundle(
         receipt: ALOutboundRepairAdmission.RetriedReceipt,
-        retry: ALOutboundRepairAdmission.AckTimeoutRetry
+        nextWindow: ALOutboundRepairAdmission.NextAckWindow
     ): ALOutboundCommitBundle<TPrepared> {
         const { msg, pending, messageExpiresAtMs } = receipt;
         const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
@@ -346,7 +370,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         };
         return {
             senderId: msg.id.senderId,
-            expectedVersion: retry.expectedVersion,
+            expectedVersion: nextWindow.expectedVersion,
             mutations: [{
                 kind: 'set-pending-ack',
                 originPeerId: msg.id.senderId,
@@ -355,8 +379,9 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
-                ...(retry.replannable ? [repairHint] : [])
-            ]
+                ...(nextWindow.hintsRepair ? [repairHint] : [])
+            ],
+            endedTimeoutEffectIds: []
         };
     }
 
@@ -370,7 +395,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             mutations: [],
             durableEffects: [
                 this.toAckTimeoutEffect(receipt.pending, receipt.messageExpiresAtMs)
-            ]
+            ],
+            endedTimeoutEffectIds: []
         });
         if (status === 'conflict') {
             throw new RetryableConflictError(
@@ -395,17 +421,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * The budget ran out: the row goes in the commit whose success states the terminal fact, so the fact
+     * The budget ran out: the message ends in the commit whose success states the terminal fact, so the fact
      * is stated once across replays and reloads, and a late ACK finds no row to complete (Q6).
      */
     private async commitReceiptExhausted(
         msg: ALMessage,
-        pending: ALOutboundPendingAckSnapshot,
-        expectedVersion: number | undefined
+        read: ALOutboundMessageEndRead,
+        pending: ALOutboundPendingAckSnapshot
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle(
-            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
-        );
+        const status = await this.admissionStore.commitBundle(toALOutboundReadMessageEndBundle(msg, read));
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
         }

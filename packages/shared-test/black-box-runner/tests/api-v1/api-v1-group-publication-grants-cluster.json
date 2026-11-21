@@ -1289,7 +1289,7 @@
             "toPeerId": "{aliceSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v3"
+            "typeId": "al.control.nack.v4"
           }
         },
         "consume": true

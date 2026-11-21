@@ -152,6 +152,13 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
     return { service, engine, sockets };
 }
 
+/** Runs the engine past every receipt row it could still send, so a test may assert one never comes. */
+export async function settleQueueEngine(engine: InboxOutboxEngine): Promise<void> {
+    for (let pass = 0; pass < 4; pass += 1) {
+        await engine.executeOnce();
+    }
+}
+
 export function countCopies(socket: SimulatedWebSocket, msgId: string): number {
     return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === msgId).length;
 }

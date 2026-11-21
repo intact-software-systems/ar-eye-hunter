@@ -364,7 +364,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 observedAtEpochMs: 0,
                 orderingKey: shared.toALOrderingTrackKey(seq1),
                 expectedSeq: 1,
-                missingRanges: [{ from: 1, to: 1 }]
+                missingRanges: [{ from: 1, to: 1 }],
+                gapRequestNumber: 1
             }
         );
 

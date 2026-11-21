@@ -7,7 +7,9 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     RallarBlackBoxTestLoopPacingSummary,
     RallarBlackBoxTestLoopSendSummary,
-    RallarBlackBoxTestLoopThresholdFailure,
+    RallarBlackBoxTestLoopThresholdFailure
+} from '../loop/loop-result-contracts.ts';
+import type {
     RallarBlackBoxTestRtcStreamResultValue,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestTransport

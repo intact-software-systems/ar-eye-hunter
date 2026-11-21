@@ -18,7 +18,9 @@ import type {
 } from '../../compute-al-supersedence-observation.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
+    toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
@@ -34,6 +36,7 @@ import type {
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
+    type ALStoredOutboundMessage,
     type ALStoredOutboundMessageRow
 } from './al-outbound-admission-validation.ts';
 import {
@@ -93,7 +96,13 @@ export type ALOutboundAdmissionMutation =
         sentPositions: Readonly<Record<string, number>> | null;
         creationExpiry: string;
         snapshot: ALOutboundSentMessageSnapshot;
-        expireAtTimestamp?: number;
+        /** True exactly on the dispatch whose own tracking completes, and so deletes, its receipt. */
+        ended: boolean;
+    }>
+    | Readonly<{
+        /** The stored row as it was read, written again with its end marker. */
+        kind: 'end-sent-message';
+        stored: ALStoredOutboundMessage;
     }>
     | Readonly<{
         kind: 'delete-sent-message';
@@ -109,6 +118,16 @@ export type ALOutboundAdmissionMutation =
     | Readonly<{
         kind: 'delete-pending-ack';
         originPeerId: string;
+        msgId: string;
+    }>
+    | Readonly<{
+        kind: 'set-first-hop-wait';
+        snapshot: ALOutboundFirstHopWaitSnapshot;
+        /** The message deadline: the wait cannot outlive the send it resends. */
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{
+        kind: 'delete-first-hop-wait';
         msgId: string;
     }>
     | Readonly<{
@@ -146,6 +165,7 @@ export interface ALOutboundStateWrite {
         | string
         | ALStoredOutboundMessageRow
         | ALOutboundPendingAckSnapshot
+        | ALOutboundFirstHopWaitSnapshot
         | ALOutboundRepairAttemptSnapshot
         | ALOutboundTrackPositionRow
         | ALOutboundRoomSentFloorRow
@@ -354,12 +374,22 @@ export class ALOutboundAdmissionMutations {
                 return this.computeMessageOwnerWrite(mutation, nowMs);
             case 'set-sent-message':
                 return this.computeSentMessageWrite(mutation, nowMs);
+            case 'end-sent-message':
+                return this.computeSentMessageRowWrite({ ...mutation.stored, ended: true }, nowMs);
             case 'set-repair-attempt':
             case 'set-pending-ack':
                 return this.computeReceiptWrite(mutation, nowMs);
+            case 'set-first-hop-wait':
+                return {
+                    key: toALOutboundFirstHopWaitKey(this.namespace, mutation.snapshot.msgId),
+                    value: mutation.snapshot,
+                    expireAtTimestamp: mutation.expireAtTimestamp,
+                    guard: undefined
+                };
             case 'delete-ordering-message':
             case 'delete-sent-message':
             case 'delete-pending-ack':
+            case 'delete-first-hop-wait':
             case 'delete-repair-attempt':
                 return {
                     key: this.toDeletedMutationKey(mutation),
@@ -464,6 +494,7 @@ export class ALOutboundAdmissionMutations {
                 | 'delete-ordering-message'
                 | 'delete-sent-message'
                 | 'delete-pending-ack'
+                | 'delete-first-hop-wait'
                 | 'delete-repair-attempt';
         }>
     ): string {
@@ -478,6 +509,8 @@ export class ALOutboundAdmissionMutations {
                     originPeerId: mutation.originPeerId,
                     msgId: mutation.msgId
                 });
+            case 'delete-first-hop-wait':
+                return toALOutboundFirstHopWaitKey(this.namespace, mutation.msgId);
             case 'delete-repair-attempt':
                 return toALOutboundRepairAttemptKey(this.namespace, mutation.msgId);
         }
@@ -487,23 +520,35 @@ export class ALOutboundAdmissionMutations {
         mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-sent-message'; }>,
         nowMs: number
     ): ALOutboundStateWrite {
+        return this.computeSentMessageRowWrite({
+            msgId: mutation.snapshot.msgId,
+            reference: mutation.reference,
+            supersedenceKey: mutation.snapshot.supersedenceKey ?? undefined,
+            unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
+                ? mutation.snapshot.msg.targets.toPeerId
+                : null,
+            orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
+            orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
+            sentPositions: mutation.sentPositions,
+            policy: mutation.policy,
+            creationExpiry: mutation.creationExpiry,
+            ended: mutation.ended
+        }, nowMs);
+    }
+
+    /** The row keeps its deadline in its reference, which bounds its expiry; positions and the marker only once held. */
+    private computeSentMessageRowWrite(stored: ALStoredOutboundMessage, nowMs: number): ALOutboundStateWrite {
+        const { sentPositions, ended, ...row } = stored;
+        const value: ALStoredOutboundMessageRow = {
+            ...row,
+            ...(sentPositions === null ? {} : { sentPositions }),
+            ...(ended ? { ended } : {})
+        };
         return {
-            key: toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId),
-            value: {
-                msgId: mutation.snapshot.msgId,
-                reference: mutation.reference,
-                supersedenceKey: mutation.snapshot.supersedenceKey ?? undefined,
-                unicastPeerId: mutation.snapshot.msg.targets?.mode === 'unicast'
-                    ? mutation.snapshot.msg.targets.toPeerId
-                    : null,
-                orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
-                orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
-                ...(mutation.sentPositions === null ? {} : { sentPositions: mutation.sentPositions }),
-                policy: mutation.policy,
-                creationExpiry: mutation.creationExpiry
-            },
+            key: toALOutboundSentMessageKey(this.namespace, stored.msgId),
+            value,
             expireAtTimestamp: this.computeMessageRowExpiryMs(
-                mutation.expireAtTimestamp,
+                stored.reference.expiresAtMs,
                 nowMs,
                 this.retention.sentMessageTtlMs
             ),

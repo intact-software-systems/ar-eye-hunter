@@ -27,7 +27,7 @@ import {
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
-import type { ALInboundPlanner } from '../al-inbound-admission-store.ts';
+import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
@@ -55,6 +55,8 @@ import {
     type ALInboundControlAdmissionResult,
     type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
+import { ALInboundGapRenewal } from '../gap-renewal/al-inbound-gap-renewal.ts';
+import { computeALGapRenewalStretch } from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
@@ -117,6 +119,7 @@ export class ALInboundStoreLane {
     private readonly admission: ALInboundMessageAdmission;
     private readonly controlAdmission: ALInboundControlAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
+    private readonly gapRenewal: ALInboundGapRenewal;
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
@@ -136,7 +139,9 @@ export class ALInboundStoreLane {
         this.input = input;
         this.dependencies = toALInboundLaneDependencies(input);
         const workPort = createALInboundLaneWorkPort(this.dependencies);
-        this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
+        const gapRenewalStretch = computeALGapRenewalStretch(input.runtime.random);
+        this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort, gapRenewalStretch });
+        this.gapRenewal = new ALInboundGapRenewal({ ...this.dependencies, workPort, stretch: gapRenewalStretch });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
         this.delivery = new ALInboundAdmittedDelivery({ ...this.dependencies, lane: input.lane });
         const workType = toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier);
@@ -539,6 +544,9 @@ export class ALInboundStoreLane {
         if (payload.kind === 'send-control') {
             return await this.sendControlInRound(effect, payload.msg, evidence);
         }
+        if (payload.kind === 'renew-gap') {
+            return await this.renewGap(effect, payload);
+        }
         return {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
@@ -590,6 +598,18 @@ export class ALInboundStoreLane {
         await this.dependencies.sendControlMessages([msg]);
         evidence?.handoffState(returned);
         return { status: 'completed' };
+    }
+
+    /** A renewal writes its work inside the batch that claimed its timer, so it announces that work as a replay does. */
+    private async renewGap(
+        effect: ALPersistedInboundEffect,
+        payload: ALInboundGapRenewalEffect
+    ): Promise<ALWorkOutcome> {
+        const renewed = await this.gapRenewal.renew(effect, payload);
+        if (renewed.wroteWork) {
+            this.commitWork();
+        }
+        return renewed.outcome;
     }
 
     /**

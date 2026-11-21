@@ -9,7 +9,6 @@ import { ALM_OUTBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conf
 import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
 import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -17,11 +16,10 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
+import { STREAM_SENDS, toOrderedStreamReceiverCommands, toSequences } from './ordered-stream.ts';
 
 /** An RTC channel applies no delay, so a jitter has one carrier. */
 const JITTER_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
-
-const STREAM_SENDS = 20;
 const JITTER = { jitter: { minDelayMs: 0, maxDelayMs: 80, seed: 11 } } as const;
 
 /**
@@ -39,14 +37,14 @@ export const seededJitterStream: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toSeededJitterStreamSenderCommands,
-    toRecipientCommands: toSeededJitterStreamReceiverCommands
+    toRecipientCommands: toOrderedStreamReceiverCommands
 };
 
 function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const sequences = Array.from({ length: STREAM_SENDS }, (_, index) => index + 1);
+    const sequences = toSequences(1, STREAM_SENDS);
     return [
         toJitterCommand(sender, 'arm'),
-        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, 'receiver')),
+        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, { ack: 'receiver' })),
         ...sequences.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
         toDiagnosticWait({
             step: sender,
@@ -64,15 +62,6 @@ function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): re
             operator: 'gte',
             expected: STREAM_SENDS
         })
-    ];
-}
-
-function toSeededJitterStreamReceiverCommands(
-    receiver: AlmConformanceStepInput
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS, count: STREAM_SENDS, absent: false, ascendingBy: 'seq' }),
-        toReceivedCommand({ ...receiver, index: STREAM_SENDS + 1, count: STREAM_SENDS + 1, absent: true })
     ];
 }
 

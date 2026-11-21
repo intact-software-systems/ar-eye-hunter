@@ -13,8 +13,9 @@ import {
 } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { normalizeALRuntimeStoreRetention, type ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import type { ALOrderingObserver } from '@shared/alm/inbound/admission/resolve-al-ordering-observer-role.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionRead,
@@ -32,6 +33,7 @@ import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inb
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     readALInboundEffectFacts,
@@ -47,6 +49,8 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { readInboundTestWorkDueAtMs } from '../wait-for-al-inbound-work.ts';
+
 export const INBOUND_TEST_SELF_PEER_ID = 'receiver';
 export const INBOUND_TEST_SENDER_PEER_ID = 'sender';
 const INBOUND_TEST_ORDERING_KEY = 'chat';
@@ -57,13 +61,19 @@ export const INBOUND_TEST_SOURCE: ALInboundMessageRuntime.Source = {
     authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
 };
 
+/** The policy's own plan for `selfPeerId`, from the peer `readFromPeerId` names. */
+function createInboundTestPlanner(
+    selfPeerId: string,
+    readFromPeerId: (msg: ALMessage, source: ALInboundMessageRuntime.Source) => string
+): ALInboundPlanner {
+    return (msg, source, observations) => planALMessageHandling(msg, { ...observations, selfPeerId, fromPeerId: readFromPeerId(msg, source) });
+}
+
 /** The policy's own plan for the fixture's two peers: what every inbound owner here admits with. */
-export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observations) =>
-    planALMessageHandling(msg, {
-        ...observations,
-        selfPeerId: INBOUND_TEST_SELF_PEER_ID,
-        fromPeerId: INBOUND_TEST_SENDER_PEER_ID
-    });
+export const planInboundTestMessage: ALInboundPlanner = createInboundTestPlanner(
+    INBOUND_TEST_SELF_PEER_ID,
+    () => INBOUND_TEST_SENDER_PEER_ID
+);
 
 export const CARRIER_AUTHENTICATED_RECEIPT_PROOFS: ALInboundReceiptProofs = { kind: 'carrier-authenticated' };
 
@@ -96,6 +106,8 @@ export interface CreateInboundTestStoresInput {
     readonly maxDeliveredMarkers?: number;
     /** Hears each marker count the store states after a new marker; absent, the store states nothing. */
     readonly reportDeliveredMarkers?: (markers: number) => void;
+    /** Absent keeps the default retention. */
+    readonly retention?: ALRuntimeStoreRetentionConfig;
 }
 
 export interface InboundTestBackendStores {
@@ -125,7 +137,7 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
                 backend,
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
-                retention: normalizeALRuntimeStoreRetention(),
+                retention: normalizeALRuntimeStoreRetention(input.retention),
                 maxOrderingTracks: input.maxOrderingTracks,
                 reportOrderingTracks: input.reportOrderingTracks,
                 maxDeliveredMarkers: input.maxDeliveredMarkers,
@@ -149,6 +161,8 @@ export interface InboundTestRuntime {
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
     /** One entry per dispatched message, so an absent delivery reads as an empty list. */
     readonly delivered: readonly string[];
+    /** Each dispatched message, in dispatch order. */
+    readonly deliveredMessages: readonly ALMessage[];
     /** One entry per port call in run order, so a batch's dispatch-before-control order is visible. */
     readonly sequence: readonly InboundTestEffectCall[];
     /** The control messages of each control-send call, so the sends one call carried stay together. */
@@ -184,6 +198,12 @@ export interface CreateInboundTestRuntimeInput {
     readonly receiptProofs?: ALInboundReceiptProofs;
     /** Absent leaves the runtime unable to forward, so no admission here relays its message. */
     readonly forwardMessage?: ALInboundMessageRuntime.Dependencies['forwardMessage'];
+    /** Absent composes the fixture's receiver, planned against the fixture's sender. */
+    readonly selfPeerId?: string;
+    /** Absent observes only the copies addressed to this session, as a browser session does. */
+    readonly orderingObserver?: ALOrderingObserver;
+    /** Absent leaves the runtime's own default random source. */
+    readonly random?: () => number;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -191,29 +211,38 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const queueEngine = new InboxOutboxEngine();
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const delivered: string[] = [];
+    const deliveredMessages: ALMessage[] = [];
     const sequence: InboundTestEffectCall[] = [];
     const controlSends: (readonly ALMessage[])[] = [];
+    // Another receiving peer is planned from whichever peer the source names.
+    const planner = input.selfPeerId === undefined ? planInboundTestMessage : createInboundTestPlanner(
+        input.selfPeerId,
+        (msg, source) => source.kind === 'trusted-server' ? msg.id.senderId : source.peerId
+    );
     const runtime = new ALInboundMessageRuntime({
-        orderingObserver: 'addressed',
+        orderingObserver: input.orderingObserver ?? 'addressed',
         ...createDefaultALInboundRuntimeResources({
-            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            selfPeerId: input.selfPeerId ?? INBOUND_TEST_SELF_PEER_ID,
             stores: input.stores,
             volatileStores: input.volatileStores,
             queueEngine,
+            random: input.random,
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         carrier: input.carrier,
         planIncomingMessage: (msg, source, observations) => {
-            const plan = planInboundTestMessage(msg, source, observations);
+            const plan = planner(msg, source, observations);
             return input.plan?.(plan) ?? plan;
         },
         canDispatchMessage: input.canDispatchMessage,
         forwardMessage: input.forwardMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         dispatchInboxEntry: async (entry) => {
-            await input.gateDispatch?.(decodePersistedALMessage(entry.resource));
+            const msg = decodePersistedALMessage(entry.resource);
+            await input.gateDispatch?.(msg);
             delivered.push('dispatched');
+            deliveredMessages.push(msg);
             sequence.push('dispatched');
             return input.dispatchOutcome;
         },
@@ -234,7 +263,29 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, sequence, controlSends };
+    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, deliveredMessages, sequence, controlSends };
+}
+
+/**
+ * Runs the runtime's engine rounds until its work queue holds, two rounds in a row, no row that is claimed or due now:
+ * what the engine's own wakes would leave once the lane advertises nothing due.
+ */
+export async function runInboundWorkDueNow(fixture: Pick<InboundTestRuntime, 'queueEngine' | 'stores'>): Promise<void> {
+    let settledRounds = 0;
+    for (let round = 0; round < 100 && settledRounds < 2; round += 1) {
+        await fixture.queueEngine.executeOnce();
+        // A batch a commit scheduled for itself is not awaited by its caller: let it reach storage.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const dueAtMs = await readInboundTestWorkDueAtMs(fixture.stores.workQueue);
+        settledRounds = dueAtMs !== undefined && dueAtMs <= Date.now() ? 0 : settledRounds + 1;
+    }
+}
+
+/** Every work row the lane's store holds, decoded. */
+export async function readInboundTestWorkRows(stores: ALInboundRuntimeStores): Promise<readonly ALPersistedInboundEffect[]> {
+    const { workQueue, admissionStore } = stores;
+    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
+    return rows.flatMap((row) => row === undefined || row === null ? [] : [decodeALInboundWorkEntry(row, admissionStore.namespace)]);
 }
 
 export interface InboundTestMessageInput {
@@ -321,6 +372,7 @@ export async function readInboundTestAdmission(
 /** The admission the runtime composes, over the caller's own stores, so a pin can drive it directly. */
 export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALInboundMessageAdmission {
     const admission = new ALInboundMessageAdmission({
+        gapRenewalStretch: 1,
         orderingObserver: 'addressed',
         diagnostics: undefined,
         receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,

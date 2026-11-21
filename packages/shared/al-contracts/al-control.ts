@@ -84,6 +84,8 @@ export interface ALNackPayload {
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
     readonly missingRanges?: readonly ALSeqRange[];
+    /** Which request for the sequences it names this is, 1 for a report an arrival causes; present exactly on a `gap`. */
+    readonly gapRequestNumber?: number;
     readonly serverSnapshotVersion?: number;
     readonly proof: SignatureProof | null;
 }
@@ -97,6 +99,8 @@ export interface ALRepairPayload {
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
     readonly missingRanges?: readonly ALSeqRange[];
+    /** The number of the gap NACK it travels with; present exactly on a `missing-seq` request. */
+    readonly gapRequestNumber?: number;
 }
 
 /** The WS server's word to an origin: the frozen audience at admission, the aggregate at completion or timeout. */

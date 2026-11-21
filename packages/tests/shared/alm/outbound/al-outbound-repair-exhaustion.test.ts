@@ -45,7 +45,7 @@ interface SkippedRepair {
     readonly reason: string;
 }
 
-/** Every message of the track retransmits once at most (`maxRepairs: 1`). */
+/** Every message of the track retransmits once at most to each requester (`maxRepairs: 1`). */
 const planOutgoingMessage: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
@@ -95,14 +95,14 @@ function toGapReport(
 function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId' | 'originPeerId' | 'proof'>): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
-        { ...report, logicalRecipientPeerId: report.fromPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
+        { gapRequestNumber: 1, ...report, logicalRecipientPeerId: report.fromPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
     );
 }
 
 function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>): ALMessage {
     return newALRepairControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
-        { ...report, reason: 'missing-seq' }
+        { ...report, reason: 'missing-seq', gapRequestNumber: 1 }
     );
 }
 
@@ -147,7 +147,15 @@ function createRepairRetransmission(
 
 async function readRepairAttempts(stores: OutboundTestStores, messages: readonly ALMessage[]): Promise<readonly number[]> {
     return await Promise.all(
-        messages.map(async (message) => (await stores.admissionStore.readRepairMessage(message.id.msgId, planOutgoingMessage)).repairAttempt?.attempts ?? 0)
+        messages.map(async (message) =>
+            (await stores.admissionStore.readOutgoingMessage({
+                msg: message,
+                planner: planOutgoingMessage,
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue'
+            }))
+                .repairAttempt?.attemptsByRequester['peer-1'] ?? 0
+        )
     );
 }
 
@@ -156,7 +164,7 @@ describe('the repair budget runs out', () => {
         vi.restoreAllMocks();
     });
 
-    it('serves a NACK and a repair request for one gap as one hint, charges a later frame\'s report of it nothing, and settles another requester\'s report of the spent budget skipped once', async () => {
+    it('serves a NACK and a repair request for one gap as one hint, charges a later frame\'s report of it nothing, gives another requester its own budget, and settles a renewal past a requester\'s budget skipped once', async () => {
         const warnings: string[] = [];
         vi.spyOn(console, 'warn').mockImplementation((message: string) => {
             warnings.push(message);
@@ -212,18 +220,15 @@ describe('the repair budget runs out', () => {
         expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
         expect(toSkippedRepairs(settlements)).toEqual([]);
 
-        // Another requester's report of the same sequences is its own attempt: it finds both budgets spent
-        // and settles each message once.
+        // The budget counts per requester (the maintainer's ruling): another requester's report of the same
+        // sequences is its own attempt under its own budget, served once.
         await runtime.acceptControlMessage(
             toGapNack('control-gap-4-peer-2', toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }], requester: 'peer-2' })),
             'peer'
         );
         await waitForOutboundWorkDrained(stores);
-        expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
-        expect(toSkippedRepairs(settlements)).toEqual([
-            { msgId: first.id.msgId, reason: 'repair-exhausted' },
-            { msgId: second.id.msgId, reason: 'repair-exhausted' }
-        ]);
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId, first.id.msgId, second.id.msgId]);
+        expect(toSkippedRepairs(settlements)).toEqual([]);
 
         // That requester's repair request joins its NACK's hint; a narrower report states nothing more.
         await runtime.acceptControlMessage(
@@ -238,8 +243,27 @@ describe('the repair budget runs out', () => {
             'peer'
         );
         await waitForOutboundWorkDrained(stores);
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId, first.id.msgId, second.id.msgId]);
+        expect(toSkippedRepairs(settlements)).toEqual([]);
 
-        expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
+        // peer-1's renewal is a new attempt past its own budget of one: each message is settled skipped once.
+        await runtime.acceptControlMessage(
+            toGapNack('control-renewal-2', { ...toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }] }), gapRequestNumber: 2 }),
+            'peer'
+        );
+        await waitForOutboundWorkDrained(stores);
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId, first.id.msgId, second.id.msgId]);
+        expect(toSkippedRepairs(settlements)).toEqual([
+            { msgId: first.id.msgId, reason: 'repair-exhausted' },
+            { msgId: second.id.msgId, reason: 'repair-exhausted' }
+        ]);
+        await runtime.acceptControlMessage(
+            toGapNack('control-renewal-3', { ...toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }] }), gapRequestNumber: 3 }),
+            'peer'
+        );
+        await waitForOutboundWorkDrained(stores);
+
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId, first.id.msgId, second.id.msgId]);
         expect(toSkippedRepairs(settlements)).toEqual([
             { msgId: first.id.msgId, reason: 'repair-exhausted' },
             { msgId: second.id.msgId, reason: 'repair-exhausted' }
@@ -316,7 +340,7 @@ describe('the repair budget runs out', () => {
         expect([...stores.backend.workQueue.peekKeys()].sort()).toEqual(rows);
     });
 
-    it('a hint without ranges keeps the hint\'s identity', async () => {
+    it('a hint without ranges keeps the hint\'s identity, and the exhaustion it finds ends the message and its count', async () => {
         const repairs: string[] = [];
         const stores = createDefaultOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
@@ -344,15 +368,17 @@ describe('the repair budget runs out', () => {
             failedPeerIds: []
         };
 
-        // Two such hints are two identities, so the second finds the first's charge and the budget spent.
+        // Two such hints are two identities: the first charges one attempt, and the second finds the budget spent.
+        // That exhaustion ends the message, and its count with it.
         await retransmission.retransmitFromRepairHint(first.id.msgId, withoutRanges, 'repair-hint-a');
         await runOutboundWorkTask(runtime);
+        expect(await readRepairAttempts(stores, [first])).toEqual([1]);
         await retransmission.retransmitFromRepairHint(first.id.msgId, withoutRanges, 'repair-hint-b');
         await runOutboundWorkTask(runtime);
 
         expect(repairs).toEqual([first.id.msgId]);
-        expect(await readRepairAttempts(stores, [first])).toEqual([1]);
         expect(toSkippedRepairs(settlements)).toEqual([{ msgId: first.id.msgId, reason: 'repair-exhausted' }]);
+        expect(await readRepairAttempts(stores, [first])).toEqual([0]);
     });
 });
 

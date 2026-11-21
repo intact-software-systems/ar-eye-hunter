@@ -13,14 +13,19 @@ import {
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
-/**
- * One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. With
- * no `ack`, the channel's purpose decides the receipt.
- */
+/** What an ordered send states beside its sequence. */
+export interface AlmConformanceOrderedSendOptions {
+    /** Absent, the channel's purpose decides the receipt. */
+    readonly ack?: 'receiver' | 'none';
+    /** Absent, the product's repair budget. */
+    readonly maxRepairs?: number;
+}
+
+/** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
 export function toOrderedSendCommands(
     sender: AlmConformanceStepInput,
     seq: number,
-    ack?: 'receiver'
+    options?: AlmConformanceOrderedSendOptions
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toSendCommand({
@@ -31,7 +36,7 @@ export function toOrderedSendCommands(
                 reliability: 'at-least-once',
                 orderingKey: toOrderingKey(sender),
                 seq,
-                ...(ack === undefined ? {} : { ack })
+                ...options
             }
         }),
         ...toAdmissionCommands({ ...sender, index: seq })
@@ -94,10 +99,13 @@ export function toHeldSecondSendCommands(sender: AlmConformanceStepInput): reado
 }
 
 /** The second ordered send held, the third sent past it, and the range NACK the third reveals admitted. */
-export function toHeldGapCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+export function toHeldGapCommands(
+    sender: AlmConformanceStepInput,
+    options?: AlmConformanceOrderedSendOptions
+): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toHeldSendCommands({ ...sender, index: 2 }, toOrderedSendCommands(sender, 2)),
-        ...toOrderedSendCommands(sender, 3),
+        ...toHeldSendCommands({ ...sender, index: 2 }, toOrderedSendCommands(sender, 2, options)),
+        ...toOrderedSendCommands(sender, 3, options),
         toControlAdmissionWait({
             step: { ...sender, index: 3 },
             name: 'gap-nack',
