@@ -108,7 +108,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly grantedTopics: WsServerTargetResolutionOptions['grantedTopics'];
     /**
      * The per-attempt re-checks of captured outbox audiences (D498): the durable one judges the dequeue and the retry,
-     * the local one every send.
+     * the socket one a send its dequeue judged, the local one every other send.
      */
     readonly capturedRecipientEligibilityFilters?: WsCapturedRecipientEligibilityFilters;
     readonly inboundStores?: ALInboundRuntimeStores;
@@ -150,7 +150,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
     readonly queuePubSubBridge?: Omit<
         InstallQueueBoxPubSubBridgeOptions,
-        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'
+        'wsQBoxServerService' | 'capturedRecipientEligibilityFilters'
     >;
     readonly liveWsNoticeSubscriber?: Omit<
         InstallLiveWsNoticeSubscriberInput,

@@ -67,6 +67,7 @@ import {
     toWsQueueBoxServerCapturedSendInput,
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
+import { toWsQueueBoxServerJudgedDrops } from './scope/to-ws-queue-box-server-judged-drops.ts';
 import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
@@ -465,7 +466,10 @@ export class WsQueueBoxServerService {
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
             afterDequeueAdmission: async (message, entry, admission) => {
-                await this.clusterPublication.writeDequeuedRow(message, entry, admission.committedPolicy);
+                await this.clusterPublication.writeDequeuedRow(message, entry, {
+                    committedPolicy: admission.committedPolicy,
+                    judgedDrops: toWsQueueBoxServerJudgedDrops(admission.committedPolicy, admission.dequeueAuthority)
+                });
                 await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>

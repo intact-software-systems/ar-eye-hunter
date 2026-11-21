@@ -37,6 +37,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WsCapturedAudienceReadDeadlineError } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import type {
     CapturedWsRecipientEligibilityInputDto,
+    WsCapturedRecipientEligibilityFilter,
+    WsCapturedRecipientEligibilityFilters,
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -50,7 +52,11 @@ import { createManualTimers } from '../../../shared/resilience/manual-timers.ts'
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
 /** A publication whose commit handed no policy, so the publisher reads the stored one. */
-const STORED_POLICY_HANDOFF: Parameters<ClusterPublisher>[2] = { committedPolicy: undefined, deferObservation: undefined };
+const STORED_POLICY_HANDOFF: Parameters<ClusterPublisher>[2] = {
+    committedPolicy: undefined,
+    deferObservation: undefined,
+    judgedDrops: undefined
+};
 
 interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
     readonly published: PublishedQueueMessage[];
@@ -474,7 +480,7 @@ describe('QueueBoxPubSubBridge', () => {
             channel: 'queuebox-events',
             publisherId: 'local',
             timers,
-            filterEligibleCapturedSessionIds: async (input) => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => {
                 rechecks.push(input.message.id.msgId);
                 if (!socketOpened) {
                     return [];
@@ -482,7 +488,7 @@ describe('QueueBoxPubSubBridge', () => {
                 return input.message.id.msgId === stalledMsgId
                     ? await new Promise<readonly string[]>(() => undefined)
                     : input.candidateSessionIds;
-            }
+            })
         });
         for (const row of rows) {
             await outboxPublishers[0](decodePersistedALMessage(row.resource), row, STORED_POLICY_HANDOFF);
@@ -521,7 +527,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => input.candidateSessionIds)
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
@@ -552,10 +558,10 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => {
                 rechecked.push(input.candidateSessionIds);
                 return input.candidateSessionIds.filter((sessionId) => sessionId !== 'revoked');
-            }
+            })
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
@@ -581,9 +587,9 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async () => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async () => {
                 throw new Error('snapshot probe failed');
-            }
+            })
         });
 
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
@@ -607,9 +613,9 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async () => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async () => {
                 throw new Error('snapshot probe failed');
-            }
+            })
         });
 
         const publication = () => outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
@@ -641,13 +647,13 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => {
                 rechecks += 1;
                 if (rechecks === 3) {
                     await new Promise((resolve) => setTimeout(resolve, 30));
                 }
                 return rechecks > 2 ? input.candidateSessionIds : [];
-            }
+            })
         });
         const rows = [createCanonicalRoomOutboxEntry(Date.now()), createCanonicalRoomOutboxEntry(Date.now() + 1)];
         for (const row of rows) {
@@ -674,10 +680,10 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => {
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => {
                 rechecks.push(input);
                 return input.candidateSessionIds;
-            }
+            })
         });
         const row = createCanonicalRoomOutboxEntry(Date.now());
         const generations = { early: 'subscription-generation-early', late: 'subscription-generation-late' };
@@ -691,7 +697,7 @@ describe('QueueBoxPubSubBridge', () => {
             admittedConnectionGenerationIds: generations
         };
 
-        await outboxPublishers[0](decodePersistedALMessage(row.resource), row, { committedPolicy, deferObservation: undefined });
+        await outboxPublishers[0](decodePersistedALMessage(row.resource), row, { committedPolicy, deferObservation: undefined, judgedDrops: undefined });
         service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
 
         await expect.poll(() =>
@@ -703,6 +709,79 @@ describe('QueueBoxPubSubBridge', () => {
             { candidateSessionIds: ['early', 'late'], capturedConnectionGenerationIds: generations },
             { candidateSessionIds: ['late'], capturedConnectionGenerationIds: { late: 'subscription-generation-late' } }
         ]);
+    });
+
+    it('sends a held row after a fresh local re-check although its publication carried a judgement', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const filterLog: ('local' | 'socket')[] = [];
+        const held: string[] = [];
+        const service = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            requiresFrozenAudience: () => true,
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                if (recipientSessionIds?.includes('late')) {
+                    held.push(message.id.msgId);
+                }
+                return recipientSessionIds?.length ? sentLiveResult(message) : noRecipientLiveSendResult(message);
+            }
+        });
+        service.socket.expectedConnections.expect({ id: 'late', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => {
+                    filterLog.push('local');
+                    return input.candidateSessionIds;
+                },
+                socket: async () => {
+                    filterLog.push('socket');
+                    return [];
+                }
+            }
+        });
+        const row = createCanonicalRoomOutboxEntry(Date.now());
+        const message = decodePersistedALMessage(row.resource);
+        const committedPolicy: ALOutboundCapturedPolicy = {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            admittedAudience: ['late'],
+            admittedConnectionGenerationIds: { late: 'subscription-generation-late' }
+        };
+
+        await outboxPublishers[0](message, row, { committedPolicy, deferObservation: undefined, judgedDrops: [] });
+        service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
+
+        await expect.poll(() => held).toEqual([message.id.msgId]);
+        expect(filterLog).toEqual(['socket', 'local']);
+    });
+
+    it('sends nobody for a frozen row with no re-check wired, judgement or not', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const sends: WsServerLiveSendInputDto[] = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                sends,
+                readAudience: async () => ['subscriber'],
+                requiresFrozenAudience: () => true
+            }),
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+        const row = createCanonicalRoomOutboxEntry(Date.now());
+        const message = decodePersistedALMessage(row.resource);
+
+        await outboxPublishers[0](message, row, { ...STORED_POLICY_HANDOFF, judgedDrops: [] });
+        await outboxPublishers[0](message, row, STORED_POLICY_HANDOFF);
+
+        expect(sends.map((send) => send.recipientSessionIds)).toEqual([[], []]);
     });
 
     it('preserves an empty captured audience without falling back to current room members', async () => {
@@ -722,7 +801,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => input.candidateSessionIds)
         });
 
         await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF)).resolves.toBeUndefined();
@@ -1028,7 +1107,7 @@ describe('QueueBoxPubSubBridge', () => {
             channel: 'queuebox-events',
             publisherId: 'local',
             wakeQueueEngine,
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => input.candidateSessionIds)
         });
 
         await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))
@@ -1254,7 +1333,7 @@ describe('the send-time drops of a remote send', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async () => ['a']
+            capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async () => ['a'])
         });
 
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
@@ -1473,7 +1552,8 @@ describe('the captured audience of a cluster publication', () => {
 
         await outboxPublishers[0]!(decodePersistedALMessage(entry.resource), entry, {
             committedPolicy,
-            deferObservation: undefined
+            deferObservation: undefined,
+            judgedDrops: undefined
         });
         await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
 
@@ -1509,7 +1589,7 @@ describe('the captured audience of a cluster publication', () => {
         });
         const message = decodePersistedALMessage(entry.resource);
 
-        await outboxPublishers[0]!(message, entry, { committedPolicy, deferObservation: undefined });
+        await outboxPublishers[0]!(message, entry, { committedPolicy, deferObservation: undefined, judgedDrops: undefined });
         await outboxPublishers[0]!(message, entry, STORED_POLICY_HANDOFF);
 
         expect(events.filter((event) => event.operation === 'outbox-captured-policy-read')).toEqual([
@@ -1547,6 +1627,16 @@ describe('the captured audience of a cluster publication', () => {
         expect(sent).toEqual([]);
     });
 });
+
+/** The re-checks of a publisher whose sends no dequeue judged: each runs `local`, so `socket` refuses. */
+function toUnjudgedRecheckFilters(
+    local: WsCapturedRecipientEligibilityFilter
+): Pick<WsCapturedRecipientEligibilityFilters, 'local' | 'socket'> {
+    return {
+        local,
+        socket: () => Promise.reject(new Error('A send no dequeue judged never runs the socket filter'))
+    };
+}
 
 function createBridge(): TestQueueBoxPubSubBridge {
     let subscriber: Parameters<QueueBoxPubSubBridge['subscribe']>[1] | undefined;

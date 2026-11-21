@@ -150,7 +150,10 @@ describe('account view invalidation authority', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => input.candidateSessionIds,
+                socket: async (input) => input.candidateSessionIds
+            }
         });
         await stores.workQueue.enqueue(entry);
         await engine.executeOnce();

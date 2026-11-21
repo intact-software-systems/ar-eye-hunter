@@ -113,7 +113,10 @@ async function createReplayFixture(): Promise<ReplayFixture> {
         bridge,
         channel: 'events',
         publisherId: 'local',
-        filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+        capturedRecipientEligibilityFilters: {
+            local: async (input) => input.candidateSessionIds,
+            socket: async (input) => input.candidateSessionIds
+        }
     });
     return { service, socket, native, proof, engine, bridge };
 }

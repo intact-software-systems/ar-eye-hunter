@@ -451,7 +451,7 @@ function createFixture(
         readProducerProvenance,
         capturedRecipientEligibilityFilters: recheck === undefined
             ? undefined
-            : { durable: recheck, local: recheck }
+            : { durable: recheck, local: recheck, socket: recheck }
     };
     const service = createDefaultWsQueueBoxServerService(input);
     onTestFinished(async () => {

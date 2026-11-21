@@ -18,7 +18,10 @@ export interface CreateApiV1CapturedRecipientEligibilityFiltersInput {
     readonly nowEpochMs: () => number;
 }
 
-/** Durable presence judges a captured row at the dequeue and the retry; this instance's open sockets judge it at send. */
+/**
+ * Durable presence judges a captured row at the dequeue and the retry; this instance's open sockets judge it at send,
+ * re-reading a granted row's subscriptions only for a send its dequeue did not judge.
+ */
 export function createApiV1CapturedRecipientEligibilityFilters(
     input: CreateApiV1CapturedRecipientEligibilityFiltersInput
 ): WsCapturedRecipientEligibilityFilters {
@@ -47,6 +50,12 @@ export function createApiV1CapturedRecipientEligibilityFilters(
                 readPublicationAuthority,
                 nowEpochMs
             });
-        }
+        },
+        socket: (captured) =>
+            Promise.resolve(filterEligibleDurableWsSessionIds({
+                ...captured,
+                socketServer,
+                nowMs: input.nowEpochMs()
+            }))
     };
 }

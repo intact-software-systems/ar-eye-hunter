@@ -120,8 +120,13 @@ export interface WsCapturedRecipientEligibilityFilters {
      * captured generation.
      */
     readonly durable: WsCapturedRecipientEligibilityFilter;
-    /** The candidates whose socket on this instance is open and scope-eligible. */
+    /**
+     * The socket filter, then for a granted row a fresh read of its live subscriptions: a send that carries no judgement
+     * of its attempt (a held send, a notice without one).
+     */
     readonly local: WsCapturedRecipientEligibilityFilter;
+    /** The candidates whose socket on this instance is open and scope-eligible; reads nothing. */
+    readonly socket: WsCapturedRecipientEligibilityFilter;
 }
 
 export type WsOutboxDeliveryOutcome =

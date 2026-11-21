@@ -24,7 +24,7 @@ interface CreateApiRtcTopologyQueuePubSubBridgeInput {
 
 type ApiRtcTopologyQueuePubSubBridgeOptions = Omit<
     InstallQueueBoxPubSubBridgeOptions,
-    'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'
+    'wsQBoxServerService' | 'capturedRecipientEligibilityFilters'
 >;
 
 export function createApiRtcTopologyQueuePubSubBridge(

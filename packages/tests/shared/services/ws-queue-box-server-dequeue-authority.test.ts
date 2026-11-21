@@ -20,7 +20,7 @@ const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1'
 const ADMITTED = { admittedAudience: ['b', 'c', 'd'], admittedConnectionGenerationIds: undefined, recipientScope: undefined, sessionInvalidation: undefined };
 const keepsBAndD: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId !== 'c'));
 const keepsB: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId === 'b'));
-const KEEPS_B_AND_D: WsCapturedRecipientEligibilityFilters = { durable: keepsBAndD, local: keepsB };
+const KEEPS_B_AND_D: WsCapturedRecipientEligibilityFilters = { durable: keepsBAndD, local: keepsB, socket: keepsB };
 
 function createAuthority(
     frozen: boolean,
@@ -103,7 +103,7 @@ describe('the audience one dequeue attempt finds for a row', () => {
     it('rejects the attempt at the read deadline when the durable re-check never settles, so the row retries', async () => {
         const timers = createManualTimers(1_000);
         const never: WsCapturedRecipientEligibilityFilter = () => new Promise(() => undefined);
-        const authority = createAuthority(true, { durable: never, local: keepsB }, timers);
+        const authority = createAuthority(true, { durable: never, local: keepsB, socket: keepsB }, timers);
         const settlements: string[] = [];
 
         const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
@@ -127,7 +127,7 @@ describe('the audience one dequeue attempt finds for a row', () => {
                         ? () => resolve(captured.candidateSessionIds)
                         : () => reject(new Error('snapshot probe failed late'));
                 });
-            const authority = createAuthority(true, { durable: late, local: keepsB }, timers);
+            const authority = createAuthority(true, { durable: late, local: keepsB, socket: keepsB }, timers);
 
             const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
             await timers.advance(5_000);
