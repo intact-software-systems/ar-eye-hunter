@@ -1,4 +1,3 @@
-import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { CommandCancelledError } from '@shared/cache/Command.ts';
@@ -14,6 +13,8 @@ export function captureRoomSession(
     signal: AbortSignal | undefined
 ): RoomSessionFence {
     const session = requireSession();
+    const { clientId, sessionId } = session;
+    const isCurrent = (candidate: AuthSession) => candidate.clientId === clientId && candidate.sessionId === sessionId;
     return {
         session,
         assertCurrent: (context) => {
@@ -21,8 +22,8 @@ export function captureRoomSession(
                 throw new CommandCancelledError();
             }
             if (
-                toAuthSessionKey(requireSession()) !== toAuthSessionKey(session) ||
-                (context && toAuthSessionKey(context.session) !== toAuthSessionKey(session))
+                !isCurrent(requireSession()) ||
+                (context && !isCurrent(context.session))
             ) {
                 throw new DOMException('Room operation belongs to an obsolete session', 'AbortError');
             }

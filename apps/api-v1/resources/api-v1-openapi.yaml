@@ -1219,7 +1219,7 @@ paths:
       summary: Update a group
       description: |
         Only active group `owner` or `admin` members may update group metadata
-        and status.
+        and status. Named deadlines use the same room authority and require the expected revision.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1250,6 +1250,10 @@ paths:
         '403':
           $ref: '#/components/responses/ApiMutationFailure'
         '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
           $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions:
     get:
@@ -7761,6 +7765,23 @@ components:
         hasMore:
           type: boolean
 
+    RoomDeadline:
+      type: object
+      additionalProperties: false
+      required: [name, revision, atEpochMs]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        atEpochMs:
+          type: integer
+          minimum: 0
+          maximum: 8640000000000000
+
     Group:
       type: object
       required:
@@ -7858,6 +7879,13 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          properties:
+            rallarRoomDeadlines:
+              type: array
+              maxItems: 32
+              description: Server-owned named deadlines. Absent until a deadline is first published.
+              items:
+                $ref: '#/components/schemas/RoomDeadline'
         activeMemberCount:
           type: integer
           format: int64
@@ -9109,7 +9137,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity. rallarSessionSchedule is server-owned; use scheduledStartAtEpochMs.
+          description: Extensible group metadata. rallarDirectoryListing defaults to listed when absent and explicit directoryListing takes precedence. rallarRetention is server-owned and cannot be supplied in creation metadata; use retention intent instead. rallarSpectatorCapacity is server-owned; use maxSpectators to select spectator capacity. rallarSessionSchedule is server-owned; use scheduledStartAtEpochMs. rallarRoomDeadlines is reserved for named deadline updates.
           type: object
           additionalProperties: true
         expiresAtEpochMs:
@@ -9130,6 +9158,23 @@ components:
     UpdateGroupRequest:
       type: object
       properties:
+        roomDeadline:
+          type: object
+          additionalProperties: false
+          required: [name, expectedRevision, atEpochMs]
+          description: Active room owners and admins can create up to 32 named deadlines. Revision zero creates a future deadline at revision one. Each subsequent change must extend a live deadline and match its current revision. A stale revision returns 409 with code room-deadline-revision-conflict. Snapshots publish the records in metadata.rallarRoomDeadlines.
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9._-]{1,64}$'
+            expectedRevision:
+              type: integer
+              minimum: 0
+              maximum: 9007199254740991
+            atEpochMs:
+              type: integer
+              minimum: 0
+              maximum: 8640000000000000
         slug:
           type: string
         displayName:
@@ -9161,7 +9206,7 @@ components:
           type: integer
           format: int64
         metadata:
-          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity. rallarSessionSchedule cannot be injected, removed or altered by metadata updates; use the session mutation route.
+          description: Extensible group metadata. The stored rallarDirectoryListing and rallarRetention entries are preserved even when replacement metadata carries different values. Use directoryListing to change listing. Retention can be selected only at creation. Stored rallarSpectatorCapacity is preserved; use maxSpectators to change spectator capacity. rallarSessionSchedule cannot be injected, removed or altered by metadata updates; use the session mutation route. Omit rallarRoomDeadlines from replacement metadata. The server preserves the stored collection.
           type: object
           additionalProperties: true
         expiresAtEpochMs:

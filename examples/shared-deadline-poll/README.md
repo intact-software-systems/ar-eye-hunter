@@ -22,11 +22,12 @@ clicks No while open, but the journey holds that HTTP request until voting
 closes. A fresh browser first opens the poll after closing and reads the results directly. Reloading the delayed voter’s page shows the original cutoff, one Yes, zero No and
 the authority's late disposition.
 
-[PollAuthority](./poll-authority.ts) owns one room's closing instant, tally and
-first decision for each participant. Its synchronous receipt check counts a
+[PollAuthority](./poll-authority.ts) owns one room's tally and first decision
+for each participant. The fixed-cutoff journey supplies its closing instant
+when the ballot receiver starts. The revisioned journey reads a named Rallar
+room deadline. The receiver captures its own receipt time and counts a
 first ballot from the opening instant up to, and excluding, the cutoff. An attempt during preview leaves the participant free to vote later. A retry returns the retained decision and
-the latest tally. This example keeps the poll in one server process. Restarting
-that process ends the poll.
+the latest tally. The example keeps its tally and receipts in the ballot receiver's process. Restarting that process clears both.
 
 [showPoll](./show-poll.ts) connects the authenticated Rallar client, enters the
 scoped room, fetches its poll record and renders the deadline using
@@ -64,13 +65,35 @@ and records a late receipt while the transport envelope is still valid.
 
 ## Extend a live vote
 
-Supply the host principal when creating the poll authority to enable a single one-minute extension. The authenticated host uses the browser control while voting is open. PATCH carries the expected schedule revision and uses the same poll-specific grant as the snapshot read. A revision mismatch returns the current snapshot. An ordinary participant cannot publish a change. Foreground participants check for a revision every five seconds while the extension is available, and returning participants refresh before voting. Accepted ballots survive a revision. The example authority lives for the lifetime of its server process.
+The host publishes the `voting-close` deadline after creating the room. Keep the
+same request ID and values if a publication needs to be retried.
+
+```ts
+await rallar.rooms.setDeadline(roomRef, {
+    name: 'voting-close',
+    expectedRevision: 0,
+    atEpochMs: closesAtEpochMs
+}, publicationRequestId);
+```
+
+Creation returns revision 1. During voting the host control adds one minute to
+the displayed instant using that revision and a stable request ID. Rallar
+checks the room role, revision and expiry. A competing update causes the view
+to fetch the winner. The poll UI offers one extension. The underlying deadline
+API supports subsequent authorized revisions.
+
+The ballot receiver gets a scoped, authenticated deadline reader when the poll
+starts. Each read and ballot uses the durable room snapshot. Requests are
+settled in receipt order, and an unavailable deadline leaves the tally
+untouched. Foreground browsers check every five seconds. Mount this view with `deadlineSource: 'room'`. Use `deadlineSource: 'fixed'` for the fixed-cutoff demonstration. Entry and recovery
+also read the deadline through `rallar.rooms.readDeadline` and require the
+ballot snapshot to agree before enabling the controls.
 
 ### Recover after changing rooms
 
 The full-stack journey creates two open Rallar rooms in one scope. The host votes Yes in the first room and a guest explicitly enters the second. The host extends the first deadline while the guest casts an independent No in the second. After the original cutoff, the guest re-enters the first room, reads its revised cutoff, and can still vote Yes before the revised cutoff. A stale snapshot on a subsequent recovery leaves the revised cutoff intact and voting disabled until the current snapshot arrives.
 
-Dispose the current view before switching rooms. Pass the destination's full room reference, endpoint and member grant when mounting its view. The application authority owns the revision and enforces the cutoff. Rallar supplies room entry, selected-room identity and the bounded deadline comparison. A revision detected in one room never implies permission to select it.
+Dispose the current view before switching rooms. Pass the destination's full room reference, endpoint and member grant when mounting its view. Rallar persists the room deadline and revision. The application ballot receiver enforces the cutoff and records ballots. Rallar also supplies room entry, selected-room identity and bounded deadline comparison. A revision detected in one room never implies permission to select it.
 
 If the first snapshot request loses its connection or receives HTTP 502, 503 or
 504, the room shows **Retry room snapshot**. Selecting it repeats only the read.
@@ -81,7 +104,7 @@ errors propagate to the application.
 
 The schedule revision changes only when the host extends the deadline. During a
 mount, each snapshot must also preserve confirmed poll facts. Vote counts can
-increase, a pending receipt can settle, and an open poll can close. A response
-that reverses any of those facts is discarded. A returning voter stays in
+increase, a pending receipt can settle, and an open poll can close. Only a later revision with a later cutoff can reopen voting after closure. A response
+that reverses a confirmed tally or receipt is discarded. A returning voter stays in
 recovery until a consistent snapshot arrives. A new room entry starts with
 that room's own snapshot.

@@ -44,9 +44,8 @@ import {
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
-import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
-
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
+import { createRoomDeadlineOperations, type RoomDeadlineOperations } from './deadlines/room-deadlines.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
@@ -82,6 +81,7 @@ import type {
     RallarSetRoomMemberRoleInput,
     RallarUpdateRoomInput
 } from './rallar-room-contracts.ts';
+import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 import type { RallarRoomEventsPort } from './room-events.ts';
 import type {
     GroupEvent,
@@ -133,7 +133,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
 }
 
-export interface BrowserRallarRooms {
+export interface BrowserRallarRooms extends RoomDeadlineOperations {
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
@@ -279,6 +279,7 @@ export function createBrowserRallarRooms(
         });
 
     return {
+        ...createRoomDeadlineOperations(input.requireSession),
         ...createRoomReadOperations(input, refresh),
         ...createRoomEntryOperations({
             rooms: input,

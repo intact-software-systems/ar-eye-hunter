@@ -335,7 +335,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsSendInput',
                 'RallarWsStatus',
                 'RallarWsStatusListener',
-                'RallarWsWaitForOpenResult'
+                'RallarWsWaitForOpenResult',
+                'RoomDeadline',
+                'RoomDeadlineChange'
             ],
             starExports: [],
             namespaceExports: []
@@ -496,7 +498,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarTypedRtcSendOptions',
                 'RallarTypedWsSendOptions',
                 'RallarUnsubscribe',
-                'RallarWsSendInput'
+                'RallarWsSendInput',
+                'RoomDeadline',
+                'RoomDeadlineChange'
             ],
             starExports: [],
             namespaceExports: []

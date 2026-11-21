@@ -21,6 +21,7 @@ import {
     readGroupSpectatorCapacity
 } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { countGroupSessionOccupiedSeats } from '../../schedule/group-session-reservations.ts';
@@ -42,6 +43,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
+import { computeGroupDeadlineChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
@@ -87,7 +89,15 @@ export function computeUpdate(
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
-    const next = computeUpdatedGroup(command, current, audit);
+    let next = computeUpdatedGroup(command, current, audit);
+    const change = command.input.roomDeadline;
+    if (change !== undefined) {
+        const deadline = computeGroupDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
+        if ('rejectionCode' in deadline) {
+            return rejected({ command, read, facts, ...deadline });
+        }
+        next = deadline;
+    }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
@@ -401,6 +411,9 @@ function computeUpdatedGroupMetadata(
     const schedule = readGroupSessionSchedule(current);
     if (schedule !== null) {
         metadata[GROUP_SESSION_SCHEDULE_METADATA_KEY] = { ...schedule };
+    }
+    if (Object.hasOwn(current, ROOM_DEADLINES_METADATA_KEY)) {
+        metadata[ROOM_DEADLINES_METADATA_KEY] = current[ROOM_DEADLINES_METADATA_KEY];
     }
     return metadata;
 }
