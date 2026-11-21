@@ -14,6 +14,7 @@ describe('default browser clock acquisition', () => {
         const reason = new Error('User left the lobby');
         const pending = startDefaultBrowserServerClockSession({
             baseUrl: 'https://test',
+            readSocket: () => undefined,
             serverPeerId: 'server',
             signal: controller.signal
         });

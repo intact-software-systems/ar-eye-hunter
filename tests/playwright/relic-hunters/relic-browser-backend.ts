@@ -1,3 +1,4 @@
+import { replyToSocketClockRequest } from '@shared/websocket/socket-clock.ts';
 import {
     expect,
     type Page,
@@ -125,6 +126,11 @@ class RelicBrowserBackend {
     }
 
     private respondWsCommand(socket: WebSocketRoute, serialized: string): void {
+        const clockReply = replyToSocketClockRequest(serialized, 'default-qbox-server', Date.now);
+        if (clockReply !== undefined) {
+            socket.send(clockReply);
+            return;
+        }
         const message = decodeALMessage(serialized).right;
         if (!message) {
             return;

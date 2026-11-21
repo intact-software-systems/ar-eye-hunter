@@ -1,6 +1,11 @@
+import { readSocketClockSample } from '@shared-web/browser/connection/server-clock/read-socket-clock-sample.ts';
 import { describe, expect, it } from 'vitest';
 
-import { BrowserServerClockSession, readBrowserServerCreationEpochMs } from '@shared-web/browser/connection/server-clock/browser-server-clock-session.ts';
+import {
+    BrowserServerClockSession,
+    readBrowserServerCreationEpochMs,
+    readBrowserServerExpiryEpochMs
+} from '@shared-web/browser/connection/server-clock/browser-server-clock-session.ts';
 import { BrowserServerClock } from '@shared-web/browser/connection/server-clock/browser-server-clock.ts';
 
 import { createManualTimers } from '../../shared/resilience/manual-timers.ts';
@@ -41,6 +46,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers: createManualTimers(0),
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         const result = await session.start();
@@ -64,6 +70,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         expect(() => session.readWorkEpochMs()).toThrow('No server clock observation.');
@@ -81,6 +88,44 @@ describe('browser server clock connection lifetime', () => {
         expect(session.readWorkEpochMs()).toBe(10_001);
     });
 
+    it('bounds creation and expiry at both drift limits while renewal is unavailable', async () => {
+        const timers = createManualTimers(0);
+        const epoch = 100_000;
+        const clock = new BrowserServerClock({
+            ...clockConfig,
+            policy: { maxRoundTripMs: 500, maxAgeMs: 30_000, maxRelativeDriftPpm: 1_000, maxMonotonicErrorMs: 2 }
+        }, {
+            nowMonotonicMs: timers.nowMs,
+            fetch: async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: epoch })
+        });
+        const session = new BrowserServerClockSession({
+            clock,
+            timers,
+            page: { document: undefined, window: undefined },
+            refreshIntervalMs: 20_000,
+            renewClock: () =>
+                clock.refresh((signal, nowMonotonicMs) =>
+                    readSocketClockSample({
+                        readSocket: () => undefined,
+                        expectedServerPeerId: 'server',
+                        signal,
+                        nowMonotonicMs
+                    })
+                )
+        });
+        await session.start();
+        for (const age of [19_999, 20_001, 29_995]) {
+            await timers.advance(age - timers.nowMs());
+            expect(readBrowserServerCreationEpochMs(session)).toBeLessThanOrEqual(epoch + age * 0.999);
+            expect(readBrowserServerExpiryEpochMs(session)).toBeGreaterThanOrEqual(epoch + age * 1.001);
+        }
+        await timers.advance(5);
+        expect(session.readWindow().right).toBeUndefined();
+        expect(() => readBrowserServerCreationEpochMs(session)).toThrow();
+        expect(() => readBrowserServerExpiryEpochMs(session)).toThrow();
+        await session.close();
+    });
+
     it('acquires before returning and refreshes beyond the first sample lifetime', async () => {
         const timers = createManualTimers(0);
         const clock = new BrowserServerClock(clockConfig, {
@@ -91,6 +136,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         expect((await session.start()).right).toEqual({ earliestEpochMs: 9_999, latestEpochMs: 10_001 });
@@ -116,6 +162,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         await session.start();
@@ -139,7 +186,7 @@ describe('browser server clock connection lifetime', () => {
             nowMonotonicMs: timers.nowMs,
             fetch: async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000 })
         });
-        const session = new BrowserServerClockSession({ clock, timers, page: { document, window }, refreshIntervalMs: 50 });
+        const session = new BrowserServerClockSession({ clock, timers, page: { document, window }, renewClock: () => clock.refresh(), refreshIntervalMs: 50 });
         await session.start();
         document.dispatchEvent(new Event('visibilitychange'));
         expect(session.signal.aborted).toBe(false);
@@ -166,6 +213,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         const starting = session.start();
@@ -193,6 +241,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         expect((await session.start()).left?.code).toBe('closed');
@@ -215,6 +264,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         await Promise.all([session.start(), session.start()]);
@@ -238,6 +288,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         await session.start();
@@ -258,6 +309,7 @@ describe('browser server clock connection lifetime', () => {
             clock,
             timers,
             page: { document: undefined, window: undefined },
+            renewClock: () => clock.refresh(),
             refreshIntervalMs: 50
         });
         await session.start();

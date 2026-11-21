@@ -96,6 +96,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     const upgrades: number[] = [];
     const app = new Hono();
     registerWsRoutes(app, {
+        serverPeerId: 'test-server',
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) =>

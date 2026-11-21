@@ -16,6 +16,10 @@ import {
 } from './read-server-clock-sample.ts';
 
 export namespace BrowserServerClock {
+    export type Sample = (
+        signal: AbortSignal,
+        nowMonotonicMs: () => number
+    ) => Promise<Either<ServerClockReadFailure, RemoteClockObservation>>;
     export interface Config {
         readonly baseUrl: string;
         readonly expectedServerPeerId: string;
@@ -59,7 +63,7 @@ export class BrowserServerClock {
         return this.#readCurrentWindow(this.#readMonotonicMs(this.#generation));
     }
 
-    refresh(): Promise<Either<BrowserServerClock.Failure, RemoteClockWindow>> {
+    refresh(sample?: BrowserServerClock.Sample): Promise<Either<BrowserServerClock.Failure, RemoteClockWindow>> {
         if (this.#closed) {
             return Promise.resolve(Either.ofLeft({ code: 'closed', cause: new Error('Server clock is closed.') }));
         }
@@ -67,7 +71,7 @@ export class BrowserServerClock {
             return Promise.resolve(Either.ofLeft(this.#fault));
         }
         const generation = this.#generation;
-        return this.#flights.run(generation, () => this.#refreshObservation(generation));
+        return this.#flights.run(generation, () => this.#refreshObservation(generation, sample));
     }
 
     /** The connection owner must stop epoch-dependent work before reacquiring after suspension or discontinuity. */
@@ -87,18 +91,22 @@ export class BrowserServerClock {
         await Promise.all(this.#flights.completions());
     }
 
-    async #refreshObservation(generation: number): Promise<Either<BrowserServerClock.Failure, RemoteClockWindow>> {
+    async #refreshObservation(
+        generation: number,
+        sample: BrowserServerClock.Sample | undefined
+    ): Promise<Either<BrowserServerClock.Failure, RemoteClockWindow>> {
         const controller = new AbortController();
         this.#controller = controller;
+        const nowMonotonicMs = () => this.#readMonotonicMs(generation);
         const command = new Command(
             (signal) =>
-                readServerClockSample({
+                sample ? sample(signal ?? controller.signal, nowMonotonicMs) : readServerClockSample({
                     baseUrl: this.#config.baseUrl,
                     expectedServerPeerId: this.#config.expectedServerPeerId,
                     signal
                 }, {
                     fetch: this.#dependencies.fetch,
-                    nowMonotonicMs: () => this.#readMonotonicMs(generation)
+                    nowMonotonicMs
                 }),
             { signal: controller.signal, timeoutMs: this.#config.requestTimeoutMs, maxAttempts: 1 }
         );

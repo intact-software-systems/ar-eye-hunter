@@ -1,3 +1,4 @@
+import { replyToSocketClockRequest } from '@shared/websocket/socket-clock.ts';
 import {
     expect,
     test,
@@ -201,7 +202,14 @@ async function installDirectoryFixture(page: Page, directory: (route: Route) => 
         workspaceId: 'default',
         principalId: session.clientId
     });
-    await page.routeWebSocket(/\/api\/ws\//, () => {});
+    await page.routeWebSocket(/\/api\/ws\//, socket => {
+        socket.onMessage(frame => {
+            const reply = typeof frame === 'string' ? replyToSocketClockRequest(frame, 'directory-test-server', Date.now) : undefined;
+            if (reply !== undefined) {
+                socket.send(reply);
+            }
+        });
+    });
     await page.route(`${API_URL}/api/**`, async (route) => {
         const path = new URL(route.request().url()).pathname;
         if (path === DIRECTORY_PATH) {

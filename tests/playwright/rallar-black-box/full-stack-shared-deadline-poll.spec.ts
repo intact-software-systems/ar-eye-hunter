@@ -32,6 +32,46 @@ const config = readFullStackConfig();
 const rallarUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
 const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadline-poll/show-poll.ts', import.meta.url));
 
+test('an idle connection renews bounded server time over its existing socket', async ({ page }) => {
+    test.skip(!config.enabled, config.skipReason);
+    test.setTimeout(120_000);
+    let httpSamples = 0;
+    let socketSamples = 0;
+    page.on('request', request => {
+        if (new URL(request.url()).pathname === '/api/time') {
+            httpSamples++;
+        }
+    });
+    page.on('websocket', ws => ws.on('framesent', ({ payload }) => {
+        if (String(payload).startsWith('rallar.clock.request.v1 ')) {
+            socketSamples++;
+        }
+    }));
+    await prepareMember(page, {
+        applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: 'clock-measurement'
+    }, true);
+    httpSamples = 0;
+    socketSamples = 0;
+    const observations = await page.evaluate(async url => {
+        const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+        const observations = [];
+        for (let index = 0; index < 6; index++) {
+            await new Promise(resolve => setTimeout(resolve, 10_000));
+            observations.push(rallar.compareDeadline(Date.now() + 60_000));
+        }
+        return observations;
+    }, rallarUrl);
+    const idle = {
+        http: httpSamples,
+        websocket: socketSamples
+    };
+    console.log('60-second idle clock samples', idle);
+    expect(observations).toEqual(Array(6).fill('before'));
+    expect(idle.http).toBe(0);
+    expect(idle.websocket).toBeGreaterThanOrEqual(2);
+    expect(idle.websocket).toBeLessThanOrEqual(3);
+});
+
 test('a delayed ballot and a returning browser share one room cutoff', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });
