@@ -131,7 +131,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         ]);
     });
 
-    it('characterization (D640): a conflicted receipted drop reaches the origin as the NACK, then its admitted receipt; the handle ends rejected', async () => {
+    it('characterization (D640): a conflicted receipted drop reaches the origin as its NACK and no receipt; the handle ends rejected', async () => {
         const fixture = await createRelayFixture();
         const origin = await createOriginClient();
         const first = orderedRoomMessage('ordered-1', 1, 'receiver');
@@ -140,19 +140,24 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             expect((await origin.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
         }
 
-        // The conflicted gapped send is retained `pending-admission`, so the server starts its receipt; its replay NACKs it.
+        // The conflicted gapped send is kept `pending-admission`, which starts no receipt; its replay NACKs it.
         await Promise.all([
             fixture.server.acceptIncomingMessage(first, 'a'),
             fixture.server.acceptIncomingMessage(gapped, 'a')
         ]);
+        const expectedControls = [
+            { typeId: AL_CONTROL_NACK_TYPE_ID, msgId: 'ordered-gapped', verdict: 'resync-required' },
+            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-1', verdict: 'admitted' }
+        ];
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
             return toSentControlSummaries(fixture.sockets.a);
-        }).toEqual([
-            { typeId: AL_CONTROL_NACK_TYPE_ID, msgId: 'ordered-gapped', verdict: 'resync-required' },
-            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-1', verdict: 'admitted' },
-            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-gapped', verdict: 'admitted' }
-        ]);
+        }).toEqual(expectedControls);
+        for (let pass = 0; pass < 4; pass += 1) {
+            await new Promise((resolve) => setImmediate(resolve));
+            await fixture.engine.executeOnce();
+        }
+        expect(toSentControlSummaries(fixture.sockets.a)).toEqual(expectedControls);
         await relayFrames(fixture.sockets.a, origin);
 
         const settlements = origin.settlements.filter((settlement) => settlement.msgId === 'ordered-gapped');
@@ -164,7 +169,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toInitialLifecycle('ordered-gapped', 'receiver'));
         expect(lifecycle.state).toBe('rejected');
         expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
-        // The late admitted receipt is refused: the NACK ended the message, so it rebuilds no row and states nothing.
+        // No receipt follows the NACK, because the server writes none for the send it kept.
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'ordered-gapped' })
         ).toBeUndefined();
@@ -345,7 +350,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
-    it('ends a claim the server retained on a conflict and then dropped held-by-other: the admitted receipt came first, the handle reads rejected', async () => {
+    it('ends a claim on held-by-other though the client already holds an admitted receipt for it: the handle reads rejected, and a later timed-out states nothing', async () => {
         const fixture = await createRelayFixture();
         const origin = await createOriginClient();
         const contested = exclusiveRoomBroadcast('claim-retained', 'a');
@@ -358,6 +363,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             return readSentNacks(fixture.sockets.a).length;
         }).toBe(1);
 
+        // The receipts are fed by hand: the server writes none for a claim it kept.
         await origin.service.acceptIncomingMessage(serverReceipt('claim-retained', 'admitted'));
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'claim-retained' })
@@ -367,7 +373,6 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'claim-retained' })
         ).toBeUndefined();
-        // The server's aggregate for the retained claim still sweeps at the deadline; its late receipt ends nothing new.
         await origin.service.acceptIncomingMessage(serverReceipt('claim-retained', 'timed-out'));
         const lifecycle = origin.settlements
             .filter((settlement) => settlement.msgId === 'claim-retained')

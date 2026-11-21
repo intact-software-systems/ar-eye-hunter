@@ -5,7 +5,12 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toControlAdmissionWait, toVerdictTimeoutMs } from '../../alm-conformance-diagnostic-waits.ts';
-import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import {
+    toAdmissionCommands,
+    toObserveCommand,
+    toResultAssertion,
+    toSendCommand
+} from '../../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
@@ -22,6 +27,7 @@ type CatchUpSend = 'floored' | 'roster-move';
  * The sender's second send is the cue: `recipient-b` leaves once it arrives, so the move follows the refusal. Over
  * `ws` the server retains the send, answers an advisory NACK and delivers the send itself once the move meets its
  * floor; over `rtc` the receiver refuses and states its refusal, and the sender's retry after the move is admitted.
+ * Over `ws` the kept send's receipt starts when the server admits it, so its handle ends `acknowledged`.
  * Either way the receiver gets the floored send once.
  */
 export const fencedCatchUp: AlmConformanceScenarioDefinition = {
@@ -69,7 +75,22 @@ function toFencedCatchUpSenderCommands(sender: AlmConformanceStepInput): readonl
             payload: toCatchUpPayload(sender, 'roster-move'),
             delivery: { reliability: 'at-least-once', ttlMs: NON_EXPIRING_TTL_MS }
         }),
-        ...toAdmissionCommands({ ...sender, index: 2 })
+        ...toAdmissionCommands({ ...sender, index: 2 }),
+        ...(sender.input.carrier === 'ws' ? toKeptSendAcknowledgedCommands(sender) : [])
+    ];
+}
+
+function toKeptSendAcknowledgedCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-acknowledged-1',
+            resultName: 'observe-acknowledged-1',
+            field: 'state',
+            operator: 'matches',
+            expected: '^acknowledged$'
+        })
     ];
 }
 

@@ -368,10 +368,10 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * A message the server admitted, or retained for admission, starts its receipt here, once. A copy its
-     * sender sent again that ingress accepts as a duplicate or a pending admission finds the aggregate live
-     * and is answered `admitted` again with what the aggregate has counted, to that sender alone, so a lost
-     * `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
+     * A message the server admitted starts its receipt here, once; one it keeps for admission starts none until its
+     * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission finds
+     * the aggregate live and is answered `admitted` again with what the aggregate has counted, to that sender alone,
+     * so a lost `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
      * nothing. Where no aggregate is live (it has ended, or another instance holds it) a copy is answered
      * nothing either: the stated limit.
      */
@@ -391,7 +391,7 @@ export class WsQueueBoxServerReceiptAggregation {
             }
             return;
         }
-        if (kind !== 'admitted' && kind !== 'pending-admission') {
+        if (kind !== 'admitted') {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
@@ -562,6 +562,44 @@ export class WsQueueBoxServerReceiptAggregation {
             }
         }
     }
+}
+
+/**
+ * A kept WS client send its replay admitted, as the admission that starts its receipt; none when its source is
+ * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version. The receipt expects
+ * the audience the replay's authority answered with, unless that authority left it nobody to expect while the
+ * audience captured at ingress had someone: then it expects the captured audience.
+ */
+export function toWsQueueBoxServerReplayedAdmittedMessage(
+    replayed: ALInboundMessageRuntime.ReplayedAdmission
+): WsQueueBoxServerReceiptAggregation.AdmittedMessage | undefined {
+    const { source, snapshotVersion } = replayed;
+    if (source.kind !== 'ws-client' || source.groupRecipientPeerIds === undefined || snapshotVersion === undefined) {
+        return undefined;
+    }
+    return {
+        message: replayed.msg,
+        originPeerId: source.peerId,
+        roomAudience: {
+            recipientPeerIds: resolveReplayedRecipientPeerIds(replayed, source.groupRecipientPeerIds),
+            snapshotVersion
+        },
+        acceptance: { kind: 'admitted' }
+    };
+}
+
+function resolveReplayedRecipientPeerIds(
+    { msg, pendingSource }: ALInboundMessageRuntime.ReplayedAdmission,
+    replayedRecipientPeerIds: readonly string[]
+): readonly string[] {
+    if (pendingSource.kind !== 'ws-client' || pendingSource.groupRecipientPeerIds === undefined) {
+        return replayedRecipientPeerIds;
+    }
+    const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
+    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
+            toFrozenAudience(msg, originPeerId, captured).length > 0
+        ? captured
+        : replayedRecipientPeerIds;
 }
 
 /**

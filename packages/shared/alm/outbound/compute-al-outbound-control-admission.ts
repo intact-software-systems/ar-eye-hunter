@@ -145,7 +145,9 @@ export function computeALOutboundControlAdmission(
 
 /**
  * The own hop's `not-yet-in-sync`: that hop has the send, retained until its room view catches up, and answers for it
- * no more, so the sender's wait on it ends. Nothing ends with it: the message stays open to its deadline.
+ * again only when it admits the kept send (its `admitted` receipt) or refuses it (the refusal's NACK, when the refusal
+ * sends one), so the sender's wait on it ends. Nothing ends with it: a send still kept at its deadline is answered
+ * nothing.
  */
 function isOwnHopNotYetInSync(read: ALControlAdmissionRead): boolean {
     return read.source === 'trusted-server' && read.parsed.type === 'nack' &&

@@ -326,7 +326,8 @@ export interface ALDeliveryReceiptEvidence {
  * with (`membership-fenced`). A trusted server refuses a volatile best-effort latest-wins publication on a topic whose
  * fanout is `outbox` as `unsupported` (D482), and a publication on a granted topic whose sender holds no effective
  * `publish` grant as `no-publish-grant`, at socket admission or at `route` -- before or after the admitted receipt
- * (D487); a pending replay or inbox dispatch drops such a message without a NACK. A trusted server relay is not named.
+ * (D487); an inbox dispatch drops such a message without a NACK, and a pending replay answers the refusal's NACK and
+ * starts no receipt. A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
     | Readonly<{

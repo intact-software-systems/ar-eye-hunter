@@ -19,11 +19,11 @@ import {
     createBridgeBus,
     createClusterInstance,
     installClock,
-    readSentReceipts,
     receiverAck,
     roomMessage,
     runReceiptWorkerHandoff
 } from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
+import { readSentReceipts } from '../../../ws-receipted-send-test-controls.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresDatabaseUrl,

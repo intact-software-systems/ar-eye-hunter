@@ -89,7 +89,7 @@ export interface PortMessage {
     state: ALDeliveryState;
     submitted: boolean;
     activeCarrier: ALDeliveryCarrier;
-    readonly recipientRoles: readonly PortRole[];
+    recipientRoles: readonly PortRole[];
     deliveredRecipientRoles: readonly PortRole[];
     receiptEvidence: ALDeliveryReceiptEvidence;
     /** An ordered send the receiver holds back behind a gap: submitted, but handed to no channel yet. */
@@ -1267,8 +1267,23 @@ export class AlmReloadPorts {
         this.group.snapshotVersion += 1;
         this.group.rosterVersion += 1;
         for (const message of this.messages.filter((candidate) => this.isFloorLifted(candidate))) {
+            this.resolveKeptSendRecipients(message);
             this.deliver(message);
         }
+    }
+
+    /** The WS server admits the send it kept against the roster that lifted its floor, so it expects that roster. */
+    private resolveKeptSendRecipients(message: PortMessage): void {
+        if (message.activeCarrier !== 'ws') {
+            return;
+        }
+        const recipientRoles = resolvePortRecipientRoles(message.command, this.participants, this.group);
+        message.recipientRoles = recipientRoles;
+        message.receiptEvidence = createInitialPortReceiptEvidence(
+            message.command,
+            this.participants.filter((participant) => recipientRoles.includes(participant.role)),
+            this.group.owner
+        );
     }
 
     /** A send its floor held back, which the WS server it waits at, or the RTC sender's retry, now delivers. */
