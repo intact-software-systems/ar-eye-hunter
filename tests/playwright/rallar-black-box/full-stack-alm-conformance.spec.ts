@@ -101,6 +101,7 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
+import { readDisposedResponse } from './read-disposed-response.ts';
 import { runObservedFamily } from './run-observed-family.ts';
 import {
     startLaneFamilyRecorder,
@@ -531,7 +532,8 @@ async function toPlannedScenarios(
 /** The overlap the API server states in `/api/config`, decoded as the browser decodes it. */
 async function readStatedReplacedLayoutOverlapMs(request: APIRequestContext): Promise<number> {
     const response = await request.get(`${config.apiBaseUrl}/api/config`);
-    return decodeApiConfigResponse(await response.json(), new URL(config.apiBaseUrl)).fold(
+    const body = await readDisposedResponse(response, async (read) => await read.json());
+    return decodeApiConfigResponse(body, new URL(config.apiBaseUrl)).fold(
         (issue) => {
             throw new Error(`The ALM lane cannot read the server's replaced-layout overlap: ${issue}`);
         },
