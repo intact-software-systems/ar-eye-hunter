@@ -3,14 +3,20 @@ import type { AlmConformanceLaneFamily, AlmConformanceTag } from '../alm-conform
 
 export const ALM_LANE_RESULT_DIRECTORY_NAME = 'alm-lane-result';
 
-export type AlmLaneBackend = 'memory' | 'postgres';
+export const ALM_LANE_BACKENDS = ['memory', 'postgres'] as const;
 
-export type AlmLaneScenarioOutcome = 'passed' | 'failed' | 'not-run';
+export type AlmLaneBackend = typeof ALM_LANE_BACKENDS[number];
+
+export const ALM_LANE_SCENARIO_OUTCOMES = ['passed', 'failed', 'not-run'] as const;
+
+export type AlmLaneScenarioOutcome = typeof ALM_LANE_SCENARIO_OUTCOMES[number];
 
 /** The outcome of a scenario that ran to an end. */
 export type AlmLaneSettledScenarioOutcome = Exclude<AlmLaneScenarioOutcome, 'not-run'>;
 
-export type AlmLaneFamilyOutcome = 'passed' | 'failed' | 'not-finished';
+export const ALM_LANE_FAMILY_OUTCOMES = ['passed', 'failed', 'not-finished'] as const;
+
+export type AlmLaneFamilyOutcome = typeof ALM_LANE_FAMILY_OUTCOMES[number];
 
 export interface AlmLaneRunIdentity {
     readonly carrier: AlmConformanceCarrier;

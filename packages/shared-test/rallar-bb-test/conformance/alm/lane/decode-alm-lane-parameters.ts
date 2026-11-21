@@ -1,7 +1,7 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
+import { ALM_CONFORMANCE_TAGS, type AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
 import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
 
@@ -12,8 +12,6 @@ export type AlmLaneOrder = typeof ALM_LANE_ORDERS[number];
 const ALM_LANE_ROOMS = ['family', 'cell'] as const;
 
 export type AlmLaneRooms = typeof ALM_LANE_ROOMS[number];
-
-const ALM_LANE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
 
 /** The lane's environment as read; an absent or empty value takes the parameter's default. */
 export interface AlmLaneParameterValues {
@@ -100,7 +98,7 @@ function decodeSelection(values: AlmLaneParameterValues): Either<readonly string
     const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
     const issues = [
         ...(isAlmLaneScope(scope) ? [] : [
-            `RALLAR_BLACK_BOX_ALM_SCOPE=${scope} is not accepted; accepted values: ${ALM_LANE_SCOPES.join(', ')}.`
+            `RALLAR_BLACK_BOX_ALM_SCOPE=${scope} is not accepted; accepted values: ${ALM_CONFORMANCE_TAGS.join(', ')}.`
         ]),
         ...(unsupported.length === 0 ? [] : [
             `RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}; accepted values: ` +
@@ -203,7 +201,7 @@ function isSeed(value: string): boolean {
 }
 
 function isAlmLaneScope(value: string): value is AlmConformanceTag {
-    return ALM_LANE_SCOPES.some((scope) => scope === value);
+    return ALM_CONFORMANCE_TAGS.some((scope) => scope === value);
 }
 
 function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {

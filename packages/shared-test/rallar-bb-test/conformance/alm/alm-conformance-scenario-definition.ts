@@ -135,7 +135,9 @@ export type AlmConformanceScenarioId =
     | 'world-routing'
     | 'ws-unicast-receipt';
 
-export type AlmConformanceTag = 'smoke' | 'full';
+export const ALM_CONFORMANCE_TAGS = ['smoke', 'full'] as const;
+
+export type AlmConformanceTag = typeof ALM_CONFORMANCE_TAGS[number];
 
 /**
  * How the lane ends a same-context owner page before its successor owns the session: closed, or through a lifecycle
