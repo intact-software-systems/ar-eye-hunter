@@ -269,7 +269,8 @@ describe('outbound admission persisted-record validation', () => {
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
-            durableEffects: [{ effectId: effect.effectId, payload: effect.payload }]
+            durableEffects: [{ effectId: effect.effectId, payload: effect.payload }],
+            endedTimeoutEffectIds: []
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         const persisted = await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId));
         expect(persisted?.status).toBe(EntityStatus.NON_RETRYABLE);

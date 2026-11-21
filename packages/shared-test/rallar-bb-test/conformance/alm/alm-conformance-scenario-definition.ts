@@ -117,6 +117,8 @@ export type AlmConformanceScenarioId =
     | 'reply-timeout-late'
     | 'reply-undelivered'
     | 'seeded-jitter-stream'
+    | 'seeded-loss-stream'
+    | 'seeded-loss-unreceipted-stream'
     | 'server-command'
     | 'server-ordered-entry'
     | 'server-originated'

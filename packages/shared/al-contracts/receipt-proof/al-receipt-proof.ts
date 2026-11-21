@@ -16,7 +16,7 @@ export type ALReceiptControl = Exclude<ALPeerControlMessage, Readonly<{ type: 'r
 export type ALReceiptProofKeys = Readonly<Record<string, GroupPresencePublicationKey>>;
 
 export const AL_ACK_PROOF_DOMAIN_TAG = 'rallar-alm-ack-proof-v1';
-export const AL_NACK_PROOF_DOMAIN_TAG = 'rallar-alm-nack-proof-v1';
+export const AL_NACK_PROOF_DOMAIN_TAG = 'rallar-alm-nack-proof-v2';
 
 /** Every ACK and NACK key, classified; the signing input takes its field order from these records. */
 export const AL_RECEIPT_PROOF_FIELD_CLASSES = {
@@ -40,6 +40,7 @@ export const AL_RECEIPT_PROOF_FIELD_CLASSES = {
         orderingKey: 'signed',
         expectedSeq: 'signed',
         missingRanges: 'signed',
+        gapRequestNumber: 'signed',
         serverSnapshotVersion: 'signed',
         fromPeerId: 'excluded',
         toPeerId: 'excluded',

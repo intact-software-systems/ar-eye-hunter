@@ -74,7 +74,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             durableEffects: ['malformed', 'valid'].map((msgId) => ({
                 effectId: msgId,
                 payload: { kind: 'ack-timeout', msgId }
-            }))
+            })),
+            endedTimeoutEffectIds: []
         });
         const malformedKey = toALOutboundWorkKey(namespace, 'malformed');
         const original = await other.workQueue.getItem(malformedKey);

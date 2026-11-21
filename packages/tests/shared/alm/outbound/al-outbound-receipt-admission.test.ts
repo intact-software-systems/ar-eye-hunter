@@ -141,6 +141,59 @@ describe('the WS leg\'s receipt admission on a head both carriers share', () => 
     });
 });
 
+describe('a server receipt and the end of its message', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it.each(
+        [
+            { phase: 'complete', confirmed: ['a', 'b'] },
+            { phase: 'timed-out', confirmed: ['a'] }
+        ] as const
+    )('a $phase receipt ends the message: the row is marked and the repair count goes in its commit', async ({ phase, confirmed }) => {
+        const fixture = createReceiptAdmissionFixture();
+        const [send] = await sendRoomBroadcasts(fixture, ['first']);
+
+        expect(
+            await fixture.ws.acceptReceipt(createServerReceipt(send!, phase, ['a', 'b'], {
+                controlMsgId: `receipt-${phase}`,
+                confirmedRecipientPeerIds: confirmed
+            }))
+        ).toEqual({ kind: 'committed' });
+
+        expect(fixture.commits.at(-1)).toEqual({
+            kinds: ['set-pending-ack', 'end-sent-message', 'delete-repair-attempt'],
+            status: 'committed'
+        });
+        expect((await fixture.stores.ws.admissionStore.readStoredMessage(send!.id.msgId))?.ended).toBe(true);
+    });
+
+    it('an admitted receipt that leaves a recipient unconfirmed leaves the message open', async () => {
+        const fixture = createReceiptAdmissionFixture();
+        const [send] = await sendRoomBroadcasts(fixture, ['first']);
+
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(send!, 'admitted', ['a', 'b']))).toEqual({ kind: 'committed' });
+
+        expect((await fixture.stores.ws.admissionStore.readStoredMessage(send!.id.msgId))?.ended).toBe(false);
+    });
+
+    it.each(['admitted', 'complete', 'timed-out'] as const)('a %s receipt after a terminal one is refused: the message has ended', async (phase) => {
+        const fixture = createReceiptAdmissionFixture();
+        const [send] = await sendRoomBroadcasts(fixture, ['first']);
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(send!, 'timed-out', ['a', 'b']))).toEqual({ kind: 'committed' });
+        const committed = fixture.commits.length;
+
+        expect(
+            await fixture.ws.acceptReceipt(createServerReceipt(send!, phase, ['a', 'b'], {
+                controlMsgId: `receipt-after-end-${phase}`,
+                confirmedRecipientPeerIds: ['a', 'b']
+            }))
+        ).toEqual({ kind: 'rejected', reason: 'AL receipt names a message that has ended' });
+        expect(fixture.commits).toHaveLength(committed);
+    });
+});
+
 function createReceiptAdmissionFixture(): ReceiptAdmissionFixture {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())), Date.now);
     const stores = createSharedHeadCarrierStores(SESSION_ID, backend);

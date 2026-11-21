@@ -44,6 +44,7 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
+                workNowMs: () => nowMs,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             });

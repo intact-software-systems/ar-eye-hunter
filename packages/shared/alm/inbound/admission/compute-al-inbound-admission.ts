@@ -33,6 +33,10 @@ import {
 } from '../al-inbound-planner-snapshot.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
+    isALInboundGapNackIntent,
+    toALInboundGapRenewalEffects
+} from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
+import {
     prepareALInboundCommitBundle,
     type ALInboundEffectFacts
 } from '../prepare-al-inbound-commit-bundle.ts';
@@ -187,6 +191,9 @@ function computeALInboundAdmissionChanges(
 
     const shouldForward = input.canForward && read.plan.forwarding.enabled;
     const acknowledgements = computeIncomingAcknowledgements(read, shouldForward);
+    const delivery = read.plan.localDelivery.deferred || isALInboundNotSubscribedPlan(read.plan)
+        ? toALInboundNegativeControlEffects(controls)
+        : toALInboundLocalDeliveryEffects(controls);
     return {
         read,
         mutations: [
@@ -195,13 +202,16 @@ function computeALInboundAdmissionChanges(
             ...acknowledgements.mutations
         ],
         effects: [
-            ...(read.plan.localDelivery.deferred || isALInboundNotSubscribedPlan(read.plan)
-                ? toALInboundNegativeControlEffects(controls)
-                : toALInboundLocalDeliveryEffects(controls)),
+            ...delivery,
             ...acknowledgements.immediateEffects,
             ...toALInboundForwardingEffects(controls, shouldForward),
             ...acknowledgements.completedEffects,
-            ...toALInboundBufferedReleaseEffects(read)
+            ...toALInboundBufferedReleaseEffects(read),
+            ...toALInboundGapRenewalEffects({
+                read,
+                gapNack: delivery.find(isALInboundGapNackIntent),
+                selfPeerId: input.facts.selfPeerId
+            })
         ]
     };
 }

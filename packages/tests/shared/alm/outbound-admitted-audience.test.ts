@@ -58,8 +58,9 @@ import { TestWebSocket } from '../websocket/test-web-socket.ts';
 import '../../setup-browser-indexeddb.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
-// Corruption scenarios deliberately replace the stored reference after the row is written.
-interface CapturedAudienceStoredMessage extends Omit<ALStoredOutboundMessage, 'reference'> {
+// Corruption scenarios deliberately replace the stored reference after the row is written; the row of a message
+// that has not ended writes no end marker.
+interface CapturedAudienceStoredMessage extends Omit<ALStoredOutboundMessage, 'reference' | 'ended'> {
     reference: ALStoredOutboundMessage['reference'];
 }
 
@@ -191,6 +192,7 @@ describe('captured outbound audience read', () => {
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {},
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: {
                 observe: (operation) => {

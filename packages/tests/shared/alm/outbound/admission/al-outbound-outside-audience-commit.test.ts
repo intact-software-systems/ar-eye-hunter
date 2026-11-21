@@ -36,7 +36,8 @@ async function createOutsideFixture(): Promise<OutsideFixture> {
         await store.commitBundle({
             senderId: ORIGIN,
             mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending(MSG_ID), expireAtTimestamp: LIVE_UNTIL_MS }],
-            durableEffects: []
+            durableEffects: [],
+            endedTimeoutEffectIds: []
         })
     ).toBe('committed');
     return { backend, store };
@@ -127,7 +128,8 @@ describe('the server records its own skipped recipients outside its receipt', ()
                     senderId: ORIGIN,
                     expectedVersion: 1,
                     mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending('s-event-2'), expireAtTimestamp: LIVE_UNTIL_MS }],
-                    durableEffects: []
+                    durableEffects: [],
+                    endedTimeoutEffectIds: []
                 })
             ).toBe('committed');
             return surface;
@@ -162,7 +164,8 @@ describe('the server records its own skipped recipients outside its receipt', ()
                     snapshot: { ...toPending(MSG_ID), ackedPeerIds: ['b'], outsideAudiencePeerIds: ['c'] },
                     expireAtTimestamp: LIVE_UNTIL_MS
                 }],
-                durableEffects: []
+                durableEffects: [],
+                endedTimeoutEffectIds: []
             })
         ).toBe('committed');
         const before = await readRows(fixture);

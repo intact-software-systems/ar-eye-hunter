@@ -1,10 +1,12 @@
 import type {
     RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestLoopCommand
+} from '../rallar-black-box-test-contracts.ts';
+import type {
     RallarBlackBoxTestLoopChildResult,
-    RallarBlackBoxTestLoopCommand,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopThresholdFailure
-} from '../rallar-black-box-test-contracts.ts';
+} from './loop-result-contracts.ts';
 
 export const RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED = 'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED';
 

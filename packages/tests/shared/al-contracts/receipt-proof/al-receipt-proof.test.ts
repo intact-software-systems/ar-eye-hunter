@@ -52,7 +52,8 @@ const GAP_NACK: ALReceiptControl = {
         reason: 'gap',
         orderingKey: 'room-1',
         expectedSeq: 3,
-        missingRanges: [{ from: 3, to: 4 }]
+        missingRanges: [{ from: 3, to: 4 }],
+        gapRequestNumber: 1
     } as ALNackPayload
 };
 
@@ -114,12 +115,12 @@ describe('ALM receipt proof signing input', () => {
     });
 
     it('pins the NACK signing input, an absent hint null', () => {
-        expect(AL_NACK_PROOF_DOMAIN_TAG).toBe('rallar-alm-nack-proof-v1');
+        expect(AL_NACK_PROOF_DOMAIN_TAG).toBe('rallar-alm-nack-proof-v2');
         expect(toALReceiptProofSigningInput(NACK)).toBe(
-            '["rallar-alm-nack-proof-v1","m1","a","c","not-subscribed",1700000000000,null,null,null,null]'
+            '["rallar-alm-nack-proof-v2","m1","a","c","not-subscribed",1700000000000,null,null,null,null,null]'
         );
         expect(toALReceiptProofSigningInput(GAP_NACK)).toBe(
-            '["rallar-alm-nack-proof-v1","m1","a","c","gap",1700000000000,"room-1",3,[{"from":3,"to":4}],null]'
+            '["rallar-alm-nack-proof-v2","m1","a","c","gap",1700000000000,"room-1",3,[{"from":3,"to":4}],1,null]'
         );
     });
 
@@ -150,6 +151,10 @@ describe('isALSameReceiptProofContent', () => {
 
     it.each(NACK_ALTERATIONS)('is other content for a NACK whose %s was altered', (_field, change) => {
         expect(isALSameReceiptProofContent(NACK, withPayload(NACK, change))).toBe(false);
+    });
+
+    it('is other content for two gap NACKs that differ only in their gap request number', () => {
+        expect(isALSameReceiptProofContent(GAP_NACK, withPayload(GAP_NACK, { gapRequestNumber: 2 }))).toBe(false);
     });
 
     it('is other content for an ACK and a NACK about one recipient', () => {
@@ -238,6 +243,20 @@ describe('ALM receipt proof signing and verification', () => {
         const { publicKey, signed } = await createCryptoAndSigned(NACK);
 
         expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, { [field]: 'rewritten' }) })).right).toBe(true);
+    });
+
+    it('refuses a gap NACK whose gap request number was altered after signing', async () => {
+        const { publicKey, signed } = await createCryptoAndSigned(GAP_NACK);
+
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, { gapRequestNumber: 2 }) })).left?.kind)
+            .toBe('invalid-signature');
+    });
+
+    it('still verifies a gap NACK whose fromPeerId and toPeerId a relay rewrote', async () => {
+        const { publicKey, signed } = await createCryptoAndSigned(GAP_NACK);
+        const relayed = withPayload(signed, { fromPeerId: 'relay', toPeerId: 'upstream' });
+
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: relayed })).right).toBe(true);
     });
 
     it('reports a key WebCrypto refuses to sign with as sign-failed, copying the primitive message', async () => {

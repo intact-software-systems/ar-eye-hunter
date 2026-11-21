@@ -198,7 +198,8 @@ claim. [`toALInboundWorkType`](./al-inbound-work-entry.ts) types a work row
 WS — reserves only its own carrier's type and re-plans, delivers, sends
 control, and forwards only on its own carrier. One data-admission commit
 bundle carries one carrier — the arriving message's own — on every ordinary
-effect it writes (dispatch, forward, ack, nack, repair). The one exception is
+effect it writes (dispatch, forward, ack, nack, repair, and the `renew-gap` timer, which takes its gap NACK's
+carrier). The one exception is
 a buffered release: the buffered slot records the carrier the buffered
 message itself arrived on, and its `release-buffered` row is written under
 that slot's carrier, never the releasing message's, so the buffered
@@ -219,7 +220,7 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v3`
+An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v4`
 ([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
 sender and receiver each names the message's origin (`originPeerId`, the
 message's `senderId`) and the recipient it speaks for
@@ -497,7 +498,7 @@ cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
 the list is estimated at about 117 B in a three-session star and at most about
 2.5 KB, well inside every envelope limit; it has not been measured on the wire.
 
-**Repair requests.** A peer attaches an `al.control.repair.v2` retransmit
+**Repair requests.** A peer attaches an `al.control.repair.v3` retransmit
 request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
 peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
@@ -593,6 +594,23 @@ page still running the old build sends is refused `unsupported` (`al.control.nac
 `al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
 above.
 
+**The gap-request-number window.** A gap NACK and a `missing-seq` repair request carry `gapRequestNumber`:
+which request for the sequences they name this is, 1 for every report an arrival causes and one more at each
+renewal of a gap that stands (2 to 4; "Ordering gaps and resynchronization" below). The NACK moved to
+`al.control.nack.v4` and the repair request to `al.control.repair.v3`, refusing `al.control.nack.v3` and
+`al.control.repair.v2` `unsupported`, and the NACK proof tag to `rallar-alm-nack-proof-v2`, which signs the number.
+The decoders require the number on a `gap` NACK and a `missing-seq` request and refuse it on every other reason; a
+`missing-seq` request names at least one missing range, and a `retransmit` or `resync` request names none. A
+stored `nacks` or `repairs` history row of the previous build that holds a gap NACK or a `missing-seq` request fails
+strict decoding until it expires (`controlHistoryTtlMs`, 30 minutes by default, in a browser's IndexedDB pair and in
+the server's PostgreSQL store; the deadline plus the receipt grace in the volatile lane), and a retained
+`send-control` or `admit-control` row that holds a previous-build control is dropped once as corrupt. A retained
+`repair-hint` row of the previous build that names a missing range carries no number and is dropped once as corrupt
+when the lane claims it (a hint names its number exactly when it names a missing range). Nothing is migrated and
+`AL_ADMISSION_SCHEMA_ID` is not bumped. A page still running the previous build has its gap NACKs and repair
+requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
+symmetrically.
+
 **The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 (D147) made older browser schemas incompatible, which current opening refuses without resetting them.
 The trace bump (D447) moved the envelope from `v: 3` to `v: 4` with a required `id.traceId`. On the
@@ -614,6 +632,7 @@ Web and API deploy together.
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
 | Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
+| Gap renewal                     | A `renew-gap` row comes due: [`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts) reads the track's ordering snapshot and, while part of its range is still missing, retains the gap NACK and `missing-seq` request for that part under the row's number and the next number's timer.                                                                                                                                                          | The claim completes; the retained controls are sent as any `send-control` row is, and the next timer comes due later.                                                                                                                                      |
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
@@ -625,8 +644,27 @@ obligation short-circuits, because the remaining checks read that obligation.
 arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
 most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
 observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
-buffered set; the planner's NACK (`al.control.nack.v3`) and repair request
-(`al.control.repair.v2`) carry them, and the sender retransmits them by range. A sequence past the
+buffered set; the planner's NACK (`al.control.nack.v4`) and repair request
+(`al.control.repair.v3`) carry them, and the sender retransmits them by range. A receiver asks again while a gap
+stands. The admission that reveals a newly missing range writes one `renew-gap` timer row for it
+([`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts)), keyed by the track, the range, the next request
+number and the revealing message (`toALInboundGapRenewalEffectId`) and due when the range went missing plus an
+interval ([`toALInboundWorkEntryDueAt`](./gap-renewal/compute-al-inbound-gap-renewal.ts) moves the planned row's due
+time; every other inbound row is due at once). The intervals are
+`AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs`, 1 s, 2 s and 4 s, so requests 2, 3 and 4 go about 1 s, 3 s and
+7 s after the range went missing, each interval stretched by a factor between 1 and `gapRenewalMaxStretch` (1.5) that
+each inbound lane draws once from the runtime's `random`, so receivers behind one gap do not all ask at once. A run
+reads the track's ordering snapshot, asks again under its own number for exactly the part of its range still missing,
+with the gap NACK and `missing-seq` request an arrival would send (signed as that report is), and arms the next
+number; once nothing is missing, the track is gone or the row has expired it ends and writes nothing, and there is no
+request past 4. Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
+wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
+with the message, and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
+removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
+NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
+each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
+and never forwards a repair request, so a renewal over a relayed `rtc` path reaches the sender only while the relay
+still holds such a row. A sequence past the
 window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
 sender is NACKed. When the admission accepts a message `resync-required`, or
 [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered
@@ -758,7 +796,9 @@ live session or no active member at its admission and its dispatch-time re-autho
 receiving WS client trusts it. Behind either floor at its admission the WS server retains the
 message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
-the floor is met or the deadline passes; the sender retries nothing.
+the floor is met or the deadline passes. The NACK ends the sending WS client's first-hop wait and nothing else, so
+the client writes the send no more and its message stays open to its deadline (outbound README, "Server receipts on
+WS").
 
 **Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
 to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin
@@ -986,7 +1026,7 @@ reads the surface for itself.
 A batch runs the page's claims in rank order rather than page order:
 [`computeALInboundClaimOrder`](./read-al-inbound-work-selection.ts) puts `dispatch-local` and
 `release-buffered` first, then admission replays and rows whose kind the page never decoded,
-then `forward-message`. Where `send-control` runs depends on the lane: on the volatile lane it
+then `forward-message` and `renew-gap`. Where `send-control` runs depends on the lane: on the volatile lane it
 runs first, since an ACK confirms admission, never the handler, and must not wait behind a page
 of deliveries; on the durable lane it runs last beside `forward-message`, so its commits never
 delay a delivery (D19). The sort reads the kind from the map

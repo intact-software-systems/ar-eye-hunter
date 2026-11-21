@@ -9,6 +9,7 @@ import {
     toALOutboundAckedPeerId,
     toALOutboundAcknowledgementFact,
     toALOutboundCompletedHopPeerIds,
+    toALOutboundTrackedReceipt,
     trackALOutboundPendingAckSnapshot
 } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 
@@ -57,6 +58,34 @@ describe('outbound pending ACK transition under `receiver`', () => {
         });
 
         expect(pending).toMatchObject({ expectedPeerIds: ['r1', 'r2', 'r3'], ackedPeerIds: ['r1'], attempts: 1 });
+    });
+});
+
+describe('the attempt a tracked receipt names', () => {
+    const FIRST_ATTEMPT = { attemptIdentity: 'claim-1', phase: 'dequeue' } as const;
+
+    it.each([
+        { label: 'adds to', tracking: RECEIVER_TRACKING },
+        { label: 'replaces', tracking: { ...RECEIVER_TRACKING, expectedPeerIdsUpdate: 'replace' as const } }
+    ])('keeps the current row\'s first attempt when the re-plan $label the audience', ({ tracking }) => {
+        const tracked = toALOutboundTrackedReceipt({
+            msgId: 'message',
+            current: receiverRow({ firstAttempt: FIRST_ATTEMPT }),
+            acks: [],
+            tracking,
+            nowMs: 4_000
+        });
+
+        expect(tracked.firstAttempt).toEqual(FIRST_ATTEMPT);
+    });
+
+    it.each([
+        { label: 'a current row that names none', current: receiverRow({}) },
+        { label: 'no current row', current: undefined }
+    ])('names no first attempt over $label', ({ current }) => {
+        const tracked = toALOutboundTrackedReceipt({ msgId: 'message', current, acks: [], tracking: RECEIVER_TRACKING, nowMs: 4_000 });
+
+        expect(tracked).not.toHaveProperty('firstAttempt');
     });
 });
 

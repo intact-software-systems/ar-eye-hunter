@@ -204,7 +204,7 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
 `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
-`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
 the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
@@ -268,9 +268,9 @@ product stamps the sender's version. `aboveCurrentBy` fails the send when the
 sender has no cached snapshot for the room.
 
 `qos` is `{ ack: { algo } }`, where `algo` is `none`, `hop`, `subtree` or
-`receiver`, and nothing else is named. The page passes it unchanged to the
+`receiver`, and nothing else is named. The page passes it to the
 product's typed send option `qos`, the caller's QoS request, which the envelope
-carries and which overrides the ack algorithm `ack` implies. Absent, the product
+carries and which overrides the ack algorithm `ack` implies; a stated `maxRepairs` joins it there. Absent, the product
 normalizes the QoS the delivery options imply. The conformance recipes use it on
 every `rtc` or `rtc-with-ws-fallback` recipe send that asks for
 `ack: 'receiver'`, whichever carrier the send starts on: until the RTC overlay
@@ -278,12 +278,16 @@ tracks logical receipts it refuses `receiver`, so those sends ask for `hop` by
 name and keep reading hop receipts. `ws` recipe sends keep `receiver`, the
 logical algorithm.
 
+`maxRepairs` is an integer of at least 1: the retransmits each receiver's gap requests may draw for the message. The
+page sends it as `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }`, beside a stated `qos.ack` in the
+same request. Absent, the product's repair budget applies.
+
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `purpose`, `publication`, `roomRef`,
 `scope`, `principalId`, `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`,
-`durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and
-`toPeer` are each refused beside it, by the control validator and by
+`durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`,
+`maxRepairs` and `toPeer` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -467,7 +471,7 @@ only the owner removes one, so no cell removes.
   the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
   (`roster-stamp`, a `{resultCache...}` token in `contains`).
 - `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
-  for the `al.control.nack.v3` that refuses it `not-yet-in-sync`; only then does it send
+  for the `al.control.nack.v4` that refuses it `not-yet-in-sync`; only then does it send
   the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
   sender commits its NACK. Over `ws` the server retains the send as a pending admission
   and answers an advisory NACK, which the sender leaves not handled, so the wait matches
@@ -792,7 +796,7 @@ received, 298 past its position. The receiver waits for its own RTC `admission-o
 send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v3`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v4`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
 handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
@@ -813,7 +817,7 @@ sends seq 2, then holds that one message by the id its send returned (`hold-mess
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
 NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
-`control-admission` of that `al.control.nack.v3` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+`control-admission` of that `al.control.nack.v4` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
 the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
 typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
 resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.
@@ -834,20 +838,27 @@ receives as its own gap, so the hand-over of an ordered message is a carried lim
 The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
 released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
-ordering point, and it waits for no carrier acceptance of seq 1. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
-(`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
-The sender sends seq 4 too, whose arrival reports the gap again at both receivers; a later report names its
-requester's first attempt and charges nothing (D573), so it states nothing more. The sender then observes seq 2's
-handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
-receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
-arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
-absence window. The cell does not run over `ws`, a stated limit: there the server orders the track and is the one
-requester of its gaps, so a held frame's repeated reports are one attempt, the sender never states exhaustion, and
-the frame arrives on the hold's release. Both cells are withheld from the hosted
+ordering point, and it waits for no carrier acceptance of seq 1. Every send states `maxRepairs: 1`, a budget of one
+retransmit per receiver. Each receiver reports the gap once seq 3 arrives, and each first report spends that
+receiver's own one retransmit, still held. The sender sends seq 4 too, whose arrival reports the gap again at both
+receivers; that report repeats its requester's first request number and charges nothing (D573). The range stays
+missing, so each receiver renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
+its receiver's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
+10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`. The
+settlement ends the message: its last command, `no-repair-commit-after-failed-2`, an absent wait on
+`rallar.browser.alm.outbound_diagnostics`, reads no `commit-phases` event of seq 2 with `origin: 'repair'` and
+`commitOutcome: 'committed'` in the 5 s from the wait's own start, a few events after the handle read `failed`. The
+exhausting renewal's own commit, which ends the message, precedes the settlement, so the wait starts its history at
+its own first event (`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame:
+whether a frame left the page is not in the snapshot. Both receivers receive the first send once and prove the
+absence of a second, since seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
+absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
+untested there since the repair budget became per requester. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
-Two fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
-Every send of both names `ack: 'receiver'` and the cell's ordering key. `lost-stream-start` runs over `rtc` alone and
+Four fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
+Every send of each names the cell's ordering key, and every send but `seeded-loss-unreceipted-stream`'s names
+`ack: 'receiver'`. `lost-stream-start` runs over `rtc` alone and
 pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
 the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
 `entered` at seq 2 and `before-entry` for seq 1, and proves the absence of a third; the sender observes handle 1 `failed` with
@@ -856,8 +867,16 @@ delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twe
 acknowledged. Two facts prove the jitter disturbed the stream: its release must read at least twenty delayed frames
 (`acted.delay`, one per send), and the sender must have admitted a gap NACK about its track, which the server sends
 only when a later sequence reached it first. The receiver reads twenty arrivals in sequence order and proves the
-absence of a twenty-first. No cell runs under a seeded loss: an ordered
-receipted stream does not reliably recover from one (D670), and a catalog test pins that none claims it.
+absence of a twenty-first. `seeded-loss-stream` runs over `ws` and `rtc`, where one hop carries the track: a seeded
+loss of 25 % (seed 7) is held (`until-cleared`) on the cell's data frames while twenty sends are sent and admitted,
+then released; the release must read at least one dropped frame (`acted.drop`), and every handle is then read
+`acknowledged`. Over `rtc` send 1 is acknowledged before the loss is armed, so the receiver enters the track at its
+start. The receiver reads twenty arrivals in sequence order and proves the absence of a twenty-first.
+`seeded-loss-unreceipted-stream` runs over `ws` alone and holds the same loss over nineteen sends with `ack: 'none'`,
+each admitted; the release must read at least one dropped frame, and only then is send 20 sent. The loss ends before
+the last send because a later frame always reveals a gap, while a lost last frame under `ack: 'none'` is a stated limit,
+pinned by `lost-repair-frame-stream.test.ts`. The receiver reads twenty arrivals in sequence order and proves the
+absence of a twenty-first.
 
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
 `rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC

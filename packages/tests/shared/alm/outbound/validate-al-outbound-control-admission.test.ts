@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundControlSource } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -27,7 +28,7 @@ const TRACK_KEY = 'game-1:self:1';
 
 interface OriginFixture {
     readonly msg: ALMessage;
-    accept(control: ALMessage): Promise<string>;
+    accept(control: ALMessage, source?: ALOutboundControlSource): Promise<string>;
 }
 
 /** Sequence 3 of the origin's track, sent with the receipt above. */
@@ -46,8 +47,8 @@ async function createOrderedOrigin(id: string): Promise<OriginFixture> {
     await enqueueOutboundOrThrow(runtime, msg);
     return {
         msg,
-        accept: async (control) => {
-            const result = await runtime.acceptControlMessage(control, 'peer');
+        accept: async (control, source = 'peer') => {
+            const result = await runtime.acceptControlMessage(control, source);
             return result.kind === 'rejected' ? result.reason : result.kind;
         }
     };
@@ -58,6 +59,8 @@ interface GapNackInput {
     readonly logicalRecipientPeerId: string;
     readonly orderingKey?: string;
     readonly originPeerId?: string;
+    readonly controlMsgId?: string;
+    readonly gapRequestNumber?: number;
 }
 
 /** A gap NACK for sequence 2: a recipient's own, or one a relay forwards for the recipient it names. */
@@ -65,7 +68,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
     return newALNackControlMessage(
         {
             v: 4,
-            msgId: `gap-${input.fromPeerId}-${input.logicalRecipientPeerId}`,
+            msgId: input.controlMsgId ?? `gap-${input.fromPeerId}-${input.logicalRecipientPeerId}`,
             ts: Date.now(),
             senderId: input.fromPeerId,
             traceId: 'trace-relayed-gap'
@@ -80,8 +83,27 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             observedAtEpochMs: Date.now(),
             orderingKey: input.orderingKey ?? TRACK_KEY,
             expectedSeq: 2,
-            missingRanges: [{ from: 2, to: 2 }]
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: input.gapRequestNumber ?? 1
         })
+    );
+}
+
+/** A recipient's own `missing-seq` request for sequence 2, its request number `gapRequestNumber`. */
+function toMissingSeqRequest(msg: ALMessage, controlMsgId: string, gapRequestNumber: number): ALMessage {
+    return newALRepairControlMessage(
+        { v: 4, msgId: controlMsgId, ts: Date.now(), senderId: 'r2', traceId: 'trace-relayed-gap' },
+        {
+            msgId: msg.id.msgId,
+            fromPeerId: 'r2',
+            toPeerId: 'self',
+            reason: 'missing-seq',
+            observedAtEpochMs: Date.now(),
+            orderingKey: TRACK_KEY,
+            expectedSeq: 2,
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber
+        }
     );
 }
 
@@ -193,6 +215,29 @@ describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
     });
 });
 
+describe('a gap request asked again at the origin', () => {
+    it('refuses a gap NACK equal to one it admitted, and admits the same NACK with the next number', async () => {
+        const origin = await createOrderedOrigin('gap-asked-again');
+        const gap = { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' };
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1' })),
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1-again' })),
+            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-2', gapRequestNumber: 2 }))
+        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
+    });
+
+    it('refuses a repair request equal to one it admitted, and admits the same request with the next number', async () => {
+        const origin = await createOrderedOrigin('repair-asked-again');
+
+        expect([
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1', 1)),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1-again', 1)),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-2', 2))
+        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
+    });
+});
+
 describe('a forwarded hop-end at the origin', () => {
     it('admits a forwarded hop-end that confirms nobody for a recipient the receipt still owes', async () => {
         const origin = await createOrderedOrigin('forwarded-not-subscribed');
@@ -210,5 +255,46 @@ describe('a forwarded hop-end at the origin', () => {
             'AL acknowledgement confirms no peer of the pending outbound receipt'
         );
         expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe('committed');
+    });
+});
+
+describe('a control for a message that has ended', () => {
+    /** Both recipients confirmed the message: its receipt completed and ended it. */
+    async function createEndedOrigin(id: string): Promise<OriginFixture> {
+        const origin = await createOrderedOrigin(id);
+        expect([
+            await origin.accept(toForwardedAck(origin.msg, 'r1')),
+            await origin.accept(toForwardedAck(origin.msg, 'r2'))
+        ]).toEqual(['committed', 'committed']);
+        return origin;
+    }
+
+    function toNack(msg: ALMessage, reason: 'not-yet-in-sync' | 'expired' | 'no-publish-grant', fromPeerId: string): ALMessage {
+        return newALNackControlMessage(
+            { v: 4, msgId: `${reason}-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-ended' },
+            toTestALNackPayload({ msgId: msg.id.msgId, fromPeerId, toPeerId: 'self', reason, observedAtEpochMs: Date.now() })
+        );
+    }
+
+    it('admits a gap NACK numbered 4 and a missing-seq request: they name the message whose arrival revealed the gap', async () => {
+        const origin = await createEndedOrigin('ended-gap-requests');
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r2', logicalRecipientPeerId: 'r2', gapRequestNumber: 4 })),
+            await origin.accept(toMissingSeqRequest(origin.msg, 'ended-missing-seq', 1))
+        ]).toEqual(['committed', 'committed']);
+    });
+
+    it.each(
+        [
+            { reason: 'not-yet-in-sync', fromPeerId: 'r2', source: 'peer' },
+            { reason: 'expired', fromPeerId: 'r2', source: 'peer' },
+            { reason: 'no-publish-grant', fromPeerId: 'server', source: 'trusted-server' }
+        ] as const
+    )('refuses a $reason NACK from $source', async ({ reason, fromPeerId, source }) => {
+        const origin = await createEndedOrigin(`ended-${reason}`);
+
+        expect(await origin.accept(toNack(origin.msg, reason, fromPeerId), source))
+            .toBe('AL control names a message that has ended');
     });
 });

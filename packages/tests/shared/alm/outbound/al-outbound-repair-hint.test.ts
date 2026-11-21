@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { ALNackPayload, ALPeerRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairHint } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 import {
     toALOutboundEffectId,
     toALOutboundRepairGapAttemptIdentity,
-    toALOutboundRepairHintEffectId
+    toALOutboundRepairHintEffectId,
+    toALOutboundRepairRequesterKey
 } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
@@ -50,6 +51,7 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
             logicalRecipientPeerId: 'leaf',
             orderingTrackKey: 'feed:origin:1',
             missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1,
             failedPeerIds: []
         });
     });
@@ -68,19 +70,33 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
                 observedAtEpochMs: 1,
                 orderingKey: 'feed:origin:1',
                 expectedSeq: 2,
-                missingRanges: [{ from: 2, to: 2 }]
+                missingRanges: [{ from: 2, to: 2 }],
+                gapRequestNumber: 1
             }
         }));
     });
 
-    it('names each recipient\'s hint apart, and a recipient\'s own hint as before', () => {
+    it('names each recipient\'s hint apart, and a recipient\'s own hint by its gap and its request number', () => {
         const forLeaf = toALOutboundControlRepairHint({ type: 'nack', payload: GAP });
         const forOther = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, logicalRecipientPeerId: 'other' } });
         const own = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, fromPeerId: 'leaf' } });
 
         expect(toALOutboundRepairHintEffectId('subject', forLeaf)).not.toBe(toALOutboundRepairHintEffectId('subject', forOther));
         expect(toALOutboundRepairHintEffectId('subject', own))
-            .toBe(toALOutboundEffectId(['repair-hint', 'subject', 'leaf', 'feed:origin:1', '2-2']));
+            .toBe(toALOutboundEffectId(['repair-hint', 'subject', 'leaf', 'feed:origin:1', '2-2', 1]));
+    });
+
+    it('names a request with the next number as another hint, and a rangeless hint by its gap alone', () => {
+        const first = toALOutboundControlRepairHint({ type: 'nack', payload: GAP });
+        const renewal = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, gapRequestNumber: 2 } });
+        const rangeless = toALOutboundControlRepairHint({
+            type: 'nack',
+            payload: { ...GAP, fromPeerId: 'leaf', expectedSeq: undefined, missingRanges: undefined }
+        });
+
+        expect(toALOutboundRepairHintEffectId('subject', renewal)).not.toBe(toALOutboundRepairHintEffectId('subject', first));
+        expect(toALOutboundRepairHintEffectId('subject', rangeless))
+            .toBe(toALOutboundEffectId(['repair-hint', 'subject', 'leaf', 'feed:origin:1', '']));
     });
 
     it('does not read a relay\'s terminal NACK for another recipient as one it relays', () => {
@@ -96,10 +112,38 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
             logicalRecipientPeerId: 'leaf',
             orderingTrackKey: 'feed:origin:1',
             missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1,
             failedPeerIds: []
         };
 
         expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
+    });
+
+    it('round-trips a nack hint\'s gap request number and refuses one that is invalid', () => {
+        const request = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, gapRequestNumber: 2 } });
+
+        expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
+        expect(() => toPersistedHint({ ...request, gapRequestNumber: 0 })).toThrow('Persisted AL repair gap request number is invalid');
+    });
+
+    it('refuses a hint that names a missing range without a number, as the previous build wrote it, and a number on any other', () => {
+        const { gapRequestNumber: _number, ...numberless } = toALOutboundControlRepairHint({ type: 'nack', payload: GAP });
+        const repair: ALOutboundRepairHint = { trigger: 'repair', missingRanges: [], failedPeerIds: [], gapRequestNumber: 1 };
+        const timeout: ALOutboundRepairHint = { trigger: 'ack-timeout', missingRanges: [], failedPeerIds: ['b'], gapRequestNumber: 1 };
+        const refusal = 'Persisted AL repair gap request number is required on a hint that names a missing range and refused on any other';
+
+        expect(() => toPersistedHint(numberless)).toThrow(refusal);
+        expect(() => toPersistedHint(repair)).toThrow(refusal);
+        expect(() => toPersistedHint(timeout)).toThrow(refusal);
+    });
+
+    it('carries no number on the hint of a gap NACK that names no missing range, the contract a rangeless gap NACK has today', () => {
+        const { missingRanges: _ranges, ...rangeless } = GAP;
+        const hint = toALOutboundControlRepairHint({ type: 'nack', payload: rangeless });
+
+        expect(hint).toMatchObject({ trigger: 'repair', missingRanges: [] });
+        expect(hint).not.toHaveProperty('gapRequestNumber');
+        expect(toPersistedHint(hint)).toEqual({ kind: 'repair-hint', msgId: 'subject', request: hint });
     });
 
     it('decodes a persisted hint without a recipient as one whose requester is the recipient', () => {
@@ -131,5 +175,25 @@ describe('the gap attempt identity', () => {
 
         expect(relayed).toBe(toALOutboundEffectId(['repair-gap', 'leaf', 'feed:origin:1', 2, 'member']));
         expect(relayed).not.toBe(toALOutboundRepairGapAttemptIdentity(request, 'feed:origin:1', 2));
+    });
+
+    it('names the request number last, so a request with the same number finds its attempt and the next number is a new one', () => {
+        const numbered = { ...request, logicalRecipientPeerId: 'member', gapRequestNumber: 1 };
+
+        expect(toALOutboundRepairGapAttemptIdentity(numbered, 'feed:origin:1', 2))
+            .toBe(toALOutboundEffectId(['repair-gap', 'leaf', 'feed:origin:1', 2, 'member', 1]));
+        expect(toALOutboundRepairGapAttemptIdentity({ ...numbered, gapRequestNumber: 2 }, 'feed:origin:1', 2))
+            .toBe(toALOutboundEffectId(['repair-gap', 'leaf', 'feed:origin:1', 2, 'member', 2]));
+    });
+});
+
+describe('the requester a repair budget counts for', () => {
+    it('is the receiver that misses the sequence: a relay\'s recipient, else the peer that asks', () => {
+        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'leaf' })).toBe(toALOutboundEffectId(['leaf']));
+        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'leaf' }))
+            .toBe(toALOutboundRepairRequesterKey({ requestedByPeerId: 'leaf' }));
+        expect(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'other' }))
+            .not.toBe(toALOutboundRepairRequesterKey({ requestedByPeerId: 'relay', logicalRecipientPeerId: 'leaf' }));
+        expect(toALOutboundRepairRequesterKey({})).toBe(toALOutboundEffectId(['-']));
     });
 });

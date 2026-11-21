@@ -139,6 +139,7 @@ export * from './fixtures/rtc-realtime-recipes.ts';
 export * from './fleet-geography.ts';
 export * from './fleet-report-analysis.ts';
 export * from './fleet-report-validation.ts';
+export * from './loop/loop-result-contracts.ts';
 export * from './loop/loop-until.ts';
 export * from './provider-parity/compare-rallar-black-box-provider-parity-reports.ts';
 export * from './provider-parity/create-rallar-black-box-provider-parity-recipe.ts';

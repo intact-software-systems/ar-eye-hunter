@@ -20,6 +20,7 @@ export function createIndexedDbOriginStores(
         dbName: `${namespace}-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });

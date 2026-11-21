@@ -23,8 +23,24 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     /** The sequences one execution of a repair hint retransmits; the rest is re-committed as one follow-up hint. */
     repairPageMessages: 32,
     bufferedMessages: 256,
-    bufferedBytes: 1024 * 1024
+    bufferedBytes: 1024 * 1024,
+    /**
+     * How long a receiver waits before each renewal of a sequence still missing: the first after it went missing, each
+     * later one after the previous renewal. A request numbered `n` waits `gapRenewalIntervalsMs[n - 2]`.
+     */
+    gapRenewalIntervalsMs: [1_000, 2_000, 4_000],
+    /** The most each interval is stretched, by a factor each receiver draws once, so receivers behind one gap spread. */
+    gapRenewalMaxStretch: 1.5
 } as const;
+
+/** An arrival's own gap report carries 1, so a receiver's first renewal of it carries 2. */
+export const AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER = 2;
+
+/** A number a renewal may carry: an integer from the first renewal's to the one each interval's renewal reaches. */
+export function isALGapRenewalRequestNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER &&
+        value < AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER + AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs.length;
+}
 
 /** Byte policy is selected by a trusted protocol owner, never by envelope fields. */
 export interface ALMessageByteLimits {

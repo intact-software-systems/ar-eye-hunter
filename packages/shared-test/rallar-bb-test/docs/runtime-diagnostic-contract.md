@@ -886,7 +886,8 @@ publication succeed. The event's `data` is the event itself:
   events are present, a delivery can be followed from its `admission-outcome` to
   the claim that ran it; a captured claim can distinguish one slow operation from
   a batch of many. `payloadKind` is which effect the row held — `admit-message`, `admit-control`,
-  `dispatch-local`, `forward-message`, `send-control` or `release-buffered`.
+  `dispatch-local`, `forward-message`, `send-control`, `release-buffered` or
+  `renew-gap`, a receiver's timer that asks again for a range still missing.
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
   this claim included
@@ -927,7 +928,8 @@ publication succeed. The event's `data` is the event itself:
   message, so both fields are its own; a delivery effect (`dispatch-local`,
   `forward-message`) keeps a reference, which carries the id and not the type, so
   `typeId` is `null`; a `release-buffered` effect names a track and a sequence
-  rather than a message, so both are `null`
+  rather than a message, so both are `null`; a `renew-gap` timer keeps no
+  envelope, so both are `null` and `subjectMsgId` is the arrival its request names
 - `claim-settled` reports nothing when the claim throws, or its work row could
   not be decoded at all: the generic work handler classifies those, and the
   batch still counts them in any captured `effect-drain`. Disabled or failed

@@ -155,7 +155,9 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.a)).toEqual(toSeqs(1, 35));
     });
 
-    it('serves the second requester of a spent sequence from the receipt retry, not from ranged repair', async () => {
+    // The repair budget counts per requester (the maintainer's ruling): a second requester of a sequence
+    // another requester already had repaired is served its own attempt.
+    it('serves the second requester of a sequence from ranged repair under its own budget', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 3, ['a', 'b', 'c']);
         for (const msgId of ['event-1', 'event-2', 'event-3']) {
@@ -170,25 +172,20 @@ describe('the WS server repairs its own ordered publication', () => {
         await receiveAck(server, 'event-3', 'b');
         await receiveNack(server, { fromPeerId: 'c', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] });
 
-        await expect.poll(() => runEngine(server, () => readRepairExhaustedMsgIds(server))).toEqual(['event-2']);
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.c))).toEqual([1, 2, 3, 2]);
+        expect(readServedRepairSeqs(server, 'c')).toEqual([2]);
+        expect(readRepairExhaustedMsgIds(server)).toEqual([]);
+        await receiveAck(server, 'event-2', 'c');
         await receiveAck(server, 'event-3', 'c');
         await settle(server);
-        expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3]);
 
         server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
-        await expect.poll(() => runEngine(server, () => readMsgIds(server.sockets.c))).toEqual([
-            'event-1',
-            'event-2',
-            'event-3',
-            'event-2'
-        ]);
         await settle(server);
         expect(readSeqs(server.sockets.c)).toEqual([1, 2, 3, 2]);
         expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3, 2]);
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
-        expect(readRepairExhaustedMsgIds(server)).toEqual(['event-2']);
+        expect(readRepairExhaustedMsgIds(server)).toEqual([]);
         expect(readServedRepairSeqs(server, 'b')).toEqual([2]);
-        expect(readServedRepairSeqs(server, 'c')).toEqual([]);
     });
 
     it('retransmits nothing for a gap NACK that arrives after the message deadline', async () => {

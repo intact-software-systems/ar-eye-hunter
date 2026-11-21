@@ -1,5 +1,4 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { RallarMessageHandle, RallarTypedMessageSendOptions } from '@shared-web/browser/rallar.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     type ALDeliveryLifecycle,
@@ -32,7 +31,11 @@ import type {
 } from '../browser-rallar-runtime-composition.ts';
 import { resolveBlackBoxRallarChannelAccess } from '../connection/black-box-rallar-message-selector.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
-import type { BlackBoxRallarTypedChannels } from './black-box-rallar-typed-channels.ts';
+import {
+    toTypedSendOptions,
+    type BlackBoxRallarSendAudience,
+    type BlackBoxRallarTypedChannels
+} from './black-box-rallar-typed-channels.ts';
 import type { BlackBoxRallarMessagingResourceController } from './create-black-box-rallar-messaging-resource-controller.ts';
 import {
     readBlackBoxRallarReplyWait,
@@ -356,11 +359,6 @@ interface BlackBoxRallarRecipientListInput {
     readonly nowMs: number;
 }
 
-interface BlackBoxRallarSendAudience {
-    readonly peerId: string | undefined;
-    readonly recipientPeerIds: readonly string[] | undefined;
-}
-
 function toPeerUnresolvedError(
     field: 'toPeer' | 'recipientPrincipalIds',
     named: string | undefined,
@@ -370,26 +368,4 @@ function toPeerUnresolvedError(
         `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.${field} ` +
             `${named} names no peer: ${detail}.`
     );
-}
-
-function toTypedSendOptions(
-    send: BlackBoxRallarMessageSendInput,
-    audience: BlackBoxRallarSendAudience
-): RallarTypedMessageSendOptions<RallarMessagePayload> {
-    const { peerId, recipientPeerIds } = audience;
-    return {
-        strategy: send.carrier,
-        ...(peerId === undefined ? {} : { peerId }),
-        ...(recipientPeerIds === undefined ? {} : { recipientPeerIds }),
-        ...(send.principalId === undefined ? {} : { principalId: send.principalId }),
-        ...(send.ownership === undefined ? {} : { ownership: send.ownership }),
-        ...(send.resourceId === undefined ? {} : { resourceId: send.resourceId }),
-        ...(send.reliability === undefined ? {} : { reliability: send.reliability }),
-        ...(send.ack === undefined ? {} : { ack: send.ack }),
-        ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
-        ...(send.orderingKey === undefined ? {} : { orderingKey: send.orderingKey }),
-        ...(send.seq === undefined ? {} : { seq: send.seq }),
-        ...(send.scope === undefined ? {} : { scope: send.scope }),
-        ...(send.qos === undefined ? {} : { qos: send.qos })
-    };
 }

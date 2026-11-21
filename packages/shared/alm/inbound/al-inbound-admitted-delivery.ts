@@ -108,6 +108,7 @@ export class ALInboundAdmittedDelivery {
             case 'send-control':
             case 'admit-message':
             case 'admit-control':
+            case 'renew-gap':
                 return READY_WITHOUT_OBSERVATION;
             case 'release-buffered':
                 return await this.readBufferedReleaseReadiness(payload.trackKey, payload.seq, nowMs);
@@ -232,6 +233,8 @@ export class ALInboundAdmittedDelivery {
                 throw new NonRetryableException(
                     'A control send runs in the control round of its batch, not in delivery'
                 );
+            case 'renew-gap':
+                throw new NonRetryableException('A gap renewal runs in its lane, not in delivery');
             case 'forward-message':
                 return await this.forwardAdmittedMessage({
                     observed: observed ?? await this.readStoredDeliveryObservation(

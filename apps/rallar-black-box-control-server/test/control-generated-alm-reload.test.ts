@@ -332,7 +332,10 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             [3, false, undefined]
         ]);
         expect([...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq)).toEqual([1, 2, 3]);
-        expect(messages[1].repairAttempts).toEqual(1);
+        // The fixture clock jumps to the sender's NACK wait's deadline, past every renewal interval, before the release;
+        // the send states no budget, so the model charges each request.
+        const requester = carrier === 'ws' ? 'server' : 'receiver';
+        expect(messages[1].gapRequests).toEqual([1, 2, 3, 4].map((requestNumber) => ({ requester, requestNumber, outcome: 'repaired' })));
     });
 }
 
@@ -340,7 +343,7 @@ for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
     // The sender opens the gap only once both recipients cued that they delivered the first frame, so the three pages
     // replay in the lane's order around that gate: the first send through its admission, both recipients' arrival and
     // cue, then the rest, which starts with the sender's waits for those cues.
-    test(`the ${carrier} repair-exhausted trio keeps the hold, spends the budget and reads the second send skipped`, async () => {
+    test(`the ${carrier} repair-exhausted trio keeps the hold, spends each receiver's budget of one and reads the second send skipped on a renewal`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -365,6 +368,29 @@ for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
             [3, 'transport-accepted', true, undefined],
             [4, 'transport-accepted', true, undefined]
         ]);
+        // Each receiver's first report spends its own budget of one; the receiver's first renewal, numbered 2, finds its
+        // one attempt spent. The fixture clock passes the renewal interval at the sender's NACK wait, before the fourth
+        // frame, so no report of that frame follows the settlement.
+        expect(findMarked(ports, 'repair-exhausted')[1].gapRequests).toEqual([
+            { requester: 'receiver', requestNumber: 1, outcome: 'repaired' },
+            { requester: 'recipient-b', requestNumber: 1, outcome: 'repaired' },
+            { requester: 'receiver', requestNumber: 2, outcome: 'exhausted' }
+        ]);
+        // The sender's repair commits of the second send, in its page's order with the observe that read it `failed`: the
+        // two served reports, then the exhausting request's commit, which ends the message; none follows the settlement.
+        const held = findMarked(ports, 'repair-exhausted')[1];
+        const observedFailed = `alm-${carrier}-repair-exhausted-sender-observe-failed-2`;
+        expect(
+            ports.sender.state().events.flatMap((event) => {
+                if (event.commandId === observedFailed) {
+                    return ['observed failed'];
+                }
+                const data = isJsonRecordValue(event.payload) ? event.payload.data : undefined;
+                return isJsonRecordValue(data) && data.kind === 'commit-phases' && data.origin === 'repair' && data.msgId === held.msgId
+                    ? [`repair ${String(data.commitOutcome)}`]
+                    : [];
+            })
+        ).toEqual(['repair committed', 'repair committed', 'repair committed', 'observed failed']);
     });
 }
 

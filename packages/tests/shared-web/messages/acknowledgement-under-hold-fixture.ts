@@ -96,6 +96,8 @@ export interface HoldSender {
     readFaultedTypeIds(): readonly string[];
     /** The receipt the carrier's outbound admission store retains for a message this sender originated. */
     readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
+    /** The data frames of the message handed to the native data channel or WebSocket, in order. */
+    readSentFrames(msgId: string): readonly ALMessage[];
 }
 
 /**
@@ -183,6 +185,16 @@ function toSerializedTypeId(serialized: string): string {
     return String(JSON.parse(serialized)?.payload?.typeId);
 }
 
+function toSentFramesOf(
+    sent: readonly (string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>)[],
+    msgId: string
+): readonly ALMessage[] {
+    return sent.flatMap((frame) => {
+        const message = typeof frame === 'string' ? decodeALMessageValue(JSON.parse(frame)).right : undefined;
+        return message?.id.msgId === msgId ? [message] : [];
+    });
+}
+
 async function runQueuedTurns(turn: () => Promise<void>): Promise<void> {
     for (let index = 0; index < ACK_UNDER_HOLD_SETTLE_TURNS; index += 1) {
         await turn();
@@ -230,6 +242,7 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
         cancel: (msgId, traceId) => void manager.cancel(msgId, traceId),
         advance: async (ms) => void vi.setSystemTime(Date.now() + ms),
         deliver: (frame) => void channel.receive(JSON.stringify(frame)),
+        readSentFrames: (msgId) => toSentFramesOf(channel.sent, msgId),
         readFaultedTypeIds: () => decideSend.mock.calls.map(([, serialized]) => toSerializedTypeId(serialized)),
         readPendingAck: (msgId) =>
             resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck({
@@ -371,6 +384,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         cancel: (msgId, traceId) => void service.cancelOutbox(msgId, traceId),
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
+        readSentFrames: (msgId) => toSentFramesOf(native.sent, msgId),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
         readPendingAck: (msgId) =>
             resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck({
@@ -746,7 +760,7 @@ async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offs
  * a whole timeout later. One drain runs one batch, so one drain does not reach that hint: a round takes two to four,
  * the last of them claiming nothing.
  */
-async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
+export async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
     const before = await readPendingAckOrThrow(sender, msgId);
     for (let claim = 0; claim <= before.maxAttempts; claim += 1) {
         await sender.advance(before.timeoutMs + 1);

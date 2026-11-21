@@ -32,7 +32,11 @@ export function toALOutboundPendingAckKey(input: ToALOutboundPendingAckKeyInput)
 }
 
 export function toALOutboundRepairAttemptKey(namespace: string, msgId: string): string {
-    return `${namespace}:repair-attempt:${msgId}`;
+    return `${namespace}:repair-attempts:${msgId}`;
+}
+
+export function toALOutboundFirstHopWaitKey(namespace: string, msgId: string): string {
+    return `${namespace}:first-hop-wait:${msgId}`;
 }
 
 export function toALOutboundNotYetInSyncRetryKey(namespace: string, msgId: string): string {

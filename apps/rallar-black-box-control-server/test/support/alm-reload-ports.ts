@@ -20,6 +20,7 @@ import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-ev
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
@@ -41,6 +42,7 @@ import {
     computeALDeliveryLifecycle
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { computeALGapRenewalDelayMs } from '@shared/alm/inbound/gap-renewal/compute-al-inbound-gap-renewal.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -94,8 +96,10 @@ export interface PortMessage {
     buffered: boolean;
     /** The order the receiver's channel saw it in; undefined until it did. */
     deliveredIndex: number | undefined;
-    /** The retransmits a gap report has charged to this message; the budget is one. */
-    repairAttempts: number;
+    /** The gap requests the sender admitted for this message while it stayed missing, in admission order. */
+    gapRequests: PortGapRequest[];
+    /** When an arrival first revealed this message missing; undefined until one did. */
+    gapRevealedAtMs: number | undefined;
     /** The roster the sender's room snapshot held when it sent, which its room target carries. */
     readonly rosterVersion: number;
     /** The snapshot floor the send states; undefined for a send that states none. */
@@ -113,6 +117,16 @@ export interface PortMessage {
     carrierFallback: ALDeliveryCarrierFallback | undefined;
     /** A durable send a volatile channel admitted volatile while its storage was full. */
     readonly durabilityDowngrade: ALDeliveryDurabilityDowngrade | undefined;
+}
+
+/** A gap request the sender admitted for a held message. */
+interface PortGapRequest {
+    /** The receiver that misses the sequence; over WS the server orders the track and is its one requester. */
+    readonly requester: PortRole | 'server';
+    /** 1 for an arrival's own report, then each renewal's number. */
+    readonly requestNumber: number;
+    /** `repaired` charged one retransmit; `exhausted` found the requester's budget spent. */
+    readonly outcome: 'repaired' | 'exhausted';
 }
 
 /**
@@ -304,6 +318,7 @@ export class AlmReloadPorts {
                 if (!this.holdNextSleep) {
                     await this.publicationLane.advanceTo(this.now + duration, () => false);
                     this.settleCheckpoints();
+                    this.settleGapRenewals();
                     return;
                 }
                 this.holdNextSleep = false;
@@ -325,6 +340,7 @@ export class AlmReloadPorts {
         command: RallarBlackBoxTestCommand
     ): RallarBlackBoxTestCommandOutcome | Promise<RallarBlackBoxTestCommandOutcome | undefined> | undefined {
         this.settleCheckpoints();
+        this.settleGapRenewals();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const participant = this.participants.find((participant) => participant.role === role);
         assert(participant);
@@ -511,6 +527,7 @@ export class AlmReloadPorts {
                 reached
             );
             this.settleCheckpoints();
+            this.settleGapRenewals();
         }
         return { status: reached() ? 'ok' : 'failed', value: toPortDeliveryObservation(command.handleId, message) };
     }
@@ -908,7 +925,8 @@ export class AlmReloadPorts {
             ),
             buffered: false,
             deliveredIndex: undefined,
-            repairAttempts: 0,
+            gapRequests: [],
+            gapRevealedAtMs: undefined,
             rosterVersion: this.group.rosterVersion,
             floor: toPortFloor(command.minSnapshotVersion, this.group.snapshotVersion),
             attemptCarriers: [],
@@ -1000,25 +1018,67 @@ export class AlmReloadPorts {
 
     /**
      * The hop reads the gap and, once per arrival that reveals it, NACKs the range of the held sequence: one hint per
-     * revealing message, whatever controls that arrival raises. The sender admits each as `committed`; the first hint
-     * answers with one retransmission, and the second finds that budget of one spent and settles the held message
-     * `skipped` as `repair-exhausted`. The revealing frame waits at the receiver for the gap to close.
+     * revealing message, whatever controls that arrival raises, which the sender admits as `committed`. Each requester
+     * of the gap reports it as its request numbered 1. The revealing frame waits at the receiver for the gap to close.
      */
     private bufferBehindGap(message: PortMessage, held: PortMessage): void {
         message.submitted = true;
         message.buffered = true;
         message.state = 'transport-accepted';
         this.recordSenderNack(message, 'committed');
-        if (held.repairAttempts >= 1) {
-            held.state = 'failed';
-            held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
-            return;
+        held.gapRevealedAtMs ??= this.now;
+        for (const requester of toPortGapRequesters(held)) {
+            this.admitGapRequest(held, requester, 1);
         }
-        held.repairAttempts += 1;
-        this.recordRepairDispatch(held);
     }
 
-    /** The hint served: the held message's repair commit, stated as the sender's own commit while the hold stands. */
+    /**
+     * The requesters' gap timers, run on every fixture step and sleep: a sequence still missing is asked for again
+     * after each renewal interval, unstretched, as a receiver that draws no stretch renews it.
+     */
+    private settleGapRenewals(): void {
+        for (const held of this.messages) {
+            let dueAtMs = held.gapRevealedAtMs;
+            for (let requestNumber = AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER; dueAtMs !== undefined; requestNumber += 1) {
+                const delayMs = computeALGapRenewalDelayMs(requestNumber, 1);
+                dueAtMs = delayMs === undefined ? undefined : dueAtMs + delayMs;
+                if (dueAtMs === undefined || dueAtMs > this.now) {
+                    break;
+                }
+                for (const requester of toPortGapRequesters(held)) {
+                    this.admitGapRequest(held, requester, requestNumber);
+                }
+            }
+        }
+    }
+
+    /**
+     * The budget is per requester: the send's stated `maxRepairs`, or the product's, which no requester's requests
+     * outnumber. A number its requester already sent charges nothing (D573), as a later arrival's report of the same gap
+     * does; one past the budget commits the end of the message and settles it `skipped` as `repair-exhausted`, once; a
+     * message delivered or settled is missing no more, so no later request is served.
+     */
+    private admitGapRequest(held: PortMessage, requester: PortGapRequest['requester'], requestNumber: number): void {
+        const own = held.gapRequests.filter((request) => request.requester === requester);
+        if (
+            held.submitted || held.failure !== undefined ||
+            own.some((request) => request.requestNumber === requestNumber)
+        ) {
+            return;
+        }
+        const outcome = own.length >= (held.command.maxRepairs ?? Infinity) ? 'exhausted' : 'repaired';
+        held.gapRequests.push({ requester, requestNumber, outcome });
+        this.recordRepairDispatch(held);
+        if (outcome === 'exhausted') {
+            held.state = 'failed';
+            held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
+        }
+    }
+
+    /**
+     * The hint served, or the exhausting request's commit that ends the message, stated before its settlement: the held
+     * message's repair commit, stated as the sender's own commit while the hold stands.
+     */
     private recordRepairDispatch(held: PortMessage): void {
         recordOutboundDiagnostic(this.sender, {
             kind: 'commit-phases',
@@ -1536,6 +1596,11 @@ function toAlmReloadAdmissionPayload(
         marker: typeof payload.marker === 'string' ? payload.marker : undefined,
         seq: typeof payload.seq === 'number' ? payload.seq : undefined
     };
+}
+
+/** Over RTC each receiver orders the track and requests its own gaps; over WS the server does, for all of them. */
+function toPortGapRequesters(held: PortMessage): readonly PortGapRequest['requester'][] {
+    return held.activeCarrier === 'ws' ? ['server'] : held.recipientRoles;
 }
 
 function resolvePortRecipientRoles(

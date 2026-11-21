@@ -25,12 +25,14 @@ import type {
 } from '../admission/al-outbound-admission-effect-store.ts';
 import {
     toALOutboundControlHistoryKey,
+    toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
     toALOutboundNotYetInSyncRetryKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundVersionKey
 } from '../admission/al-outbound-admission-keys.ts';
+import type { ALOutboundAdmissionMutations } from '../admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundAdmissionReads } from '../admission/al-outbound-admission-reads.ts';
 import type {
     ALOutboundDurableEffectWrite,
@@ -51,6 +53,7 @@ import {
 import {
     computeALOutboundControlAdmission,
     controlTargetMsgId,
+    mayALOutboundControlEndSend,
     toALOutboundControlSettlements,
     type ALControlAdmissionCandidate,
     type ALControlAdmissionRead,
@@ -63,7 +66,7 @@ import {
     toALOutboundProofRefusal,
     type ALOutboundRecipientAuthentication
 } from './read-al-outbound-recipient-proof.ts';
-import { writeALOutboundAckTimeoutCompletion } from './write-al-outbound-ack-timeout-completion.ts';
+import { writeALOutboundTimeoutCompletions } from './write-al-outbound-timeout-completions.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -100,6 +103,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly backend: ALAdmissionWorkBackend;
     readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
     readonly reads: ALOutboundAdmissionReads<TPrepared>;
+    /** The store's mutation owner, which writes the end of a message a control settles for good. */
+    readonly mutations: ALOutboundAdmissionMutations;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
@@ -119,6 +124,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly backend: ALAdmissionWorkBackend;
     private readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
+    private readonly mutations: ALOutboundAdmissionMutations;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly durability: ALStoreDurability;
@@ -133,6 +139,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.backend = input.backend;
         this.effectStore = input.effectStore;
         this.reads = input.reads;
+        this.mutations = input.mutations;
         this.namespace = input.namespace;
         this.retention = input.retention;
         this.durability = input.durability;
@@ -345,26 +352,16 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                ...await this.readOwnedControlSurface(session, owner, targetMsgId),
+                // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
+                ...await this.reads.readControlOwnerSurface(session, {
+                    owner,
+                    msgId: targetMsgId,
+                    readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
+                }),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
-    }
-
-    /** What only a known owner has: its version fence and the receipt it originated for the message. */
-    private async readOwnedControlSurface(
-        session: ALAdmissionReadSession,
-        owner: string | undefined,
-        msgId: string
-    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending'>> {
-        if (owner === undefined) {
-            return {};
-        }
-        return {
-            ownerVersion: await this.reads.readClientRecord(session, owner),
-            pending: await this.reads.readReceiptState(session, { originPeerId: owner, msgId })
-        };
     }
 
     /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
@@ -424,12 +421,14 @@ export class ALOutboundControlAdmission<TPrepared> {
             )
         );
         await this.writePendingAckChange(tx, candidate);
+        await this.mutations.writeStateWrites(tx, this.mutations.computeStateWrites(candidate.messageEnd, read.nowMs));
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
         }
-        if (candidate.endedAckTimeoutEffectId !== undefined) {
-            await writeALOutboundAckTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
+        if (candidate.removeFirstHopWait) {
+            await tx.remove(toALOutboundFirstHopWaitKey(this.namespace, read.targetMsgId));
         }
+        await writeALOutboundTimeoutCompletions(tx, this.namespace, candidate.endedTimeoutEffectIds);
         await tx.setFence(
             toALOutboundVersionKey(this.namespace, read.owner!),
             candidate.nextVersion!,

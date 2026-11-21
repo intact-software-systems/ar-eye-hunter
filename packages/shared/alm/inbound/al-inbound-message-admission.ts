@@ -19,6 +19,7 @@ import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { recordALInboundDiagnostic } from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
+import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
@@ -72,6 +73,8 @@ export namespace ALInboundMessageAdmission {
             | 'effectWorkerId'
         > {
         readonly workPort: ALWorkQueuePort;
+        /** The factor the lane stretches every gap renewal interval by. */
+        readonly gapRenewalStretch: number;
     }
 
     export type ReplayOutcome =
@@ -154,12 +157,16 @@ export class ALInboundMessageAdmission {
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
-        const signed = await signALInboundReceiptControls({
-            bundle: validated.right!,
-            namespace: read.namespace,
-            receiptProofs: this.dependencies.receiptProofs,
-            diagnostics: this.dependencies.diagnostics
-        });
+        const signed = toALInboundGapRenewalsDueAt(
+            await signALInboundReceiptControls({
+                bundle: validated.right!,
+                namespace: read.namespace,
+                receiptProofs: this.dependencies.receiptProofs,
+                diagnostics: this.dependencies.diagnostics
+            }),
+            nowMs,
+            this.dependencies.gapRenewalStretch
+        );
         const status = await admissionStore.commitBundle(signed);
         if (status === 'expired') {
             return Either.ofRight(ATTEMPT_EXPIRED);

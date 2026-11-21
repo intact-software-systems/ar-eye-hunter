@@ -105,21 +105,28 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
         method: 'PUT', session: owner, body: { roomClock: { name: 'period', ...pause } }
     });
     assert.deepEqual(clock(replayedPause), paused);
+    const mixed = await putDeadline({ path: toApiMutationRequestPath(first, crypto.randomUUID()), session: owner,
+        body: { displayName: 'mixed', roomClock: { name: 'period', operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 1 } } });
+    assert.equal(mixed.status, 400);
     const replaced = await requestJson(writer.baseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
         method: 'PUT', session: owner, body: { metadata: { venue: 'court' } }
     });
     assert.deepEqual(clock(replaced), paused);
-    const mixed = await putDeadline({ path: toApiMutationRequestPath(first, crypto.randomUUID()), session: owner,
-        body: { displayName: 'mixed', roomClock: { name: 'period', operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 1 } } });
-    assert.equal(mixed.status, 400);
+    const resumeCommand = { operation: 'resume', expectedRevision: 2 };
+    // The owner is still present. Removing their own appointment revokes clock authority immediately.
+    assert.equal((await clockWrite(owner, { ...resumeCommand, expectedDirectorEpoch: 1 }, 409)).code, 'room-director-changed');
+    assert.deepEqual(clock(await requestJson(writer.baseUrl, first, { method: 'GET', session: owner })), paused);
     await requestJson(writer.baseUrl, toApiMutationRequestPath(first + '/sessions/' + owner.sessionId + '/disconnect', crypto.randomUUID()), {
         method: 'POST', session: owner, body: { generationId: room.proofId + '-generation-' + owner.label, principalId: owner.clientId }
     });
-    await appoint(deputy);
+    const appointed = await appoint(deputy);
+    const metadata = requireRecord(requireRecord(appointed.group, 'group').metadata, 'metadata');
+    const successorEpoch = requireRecord(metadata.rallarDirector, 'director').epoch;
+    assert.equal(typeof successorEpoch, 'number');
     await controls.stop(writer.port, 'crash');
     await controls.restart(writer.port, { ...writer, logPath: writer.logPath + '.restarted' });
     assert.deepEqual(clock(await requestJson(writer.baseUrl, first, { method: 'GET', session: deputy })), paused);
-    const resume = { operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 2 };
+    const resume = { ...resumeCommand, expectedDirectorEpoch: successorEpoch };
     assert.equal((await clockWrite(owner, { ...resume, expectedDirectorEpoch: 1 }, 409)).code, 'room-director-changed');
     assert.equal((await clockWrite(deputy, { ...resume, expectedRevision: 1 }, 409)).code, 'room-clock-revision-conflict');
     const resumed = clock(await clockWrite(deputy, resume));

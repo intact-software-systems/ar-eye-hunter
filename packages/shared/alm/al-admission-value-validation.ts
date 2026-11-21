@@ -38,6 +38,23 @@ export function decodeALAdmissionNumber(value: unknown): number {
     return value;
 }
 
+/**
+ * A stored plain record of one non-negative count per identifier, at most one audience of them: `label` names
+ * the record in its refusal.
+ */
+export function decodeALAdmissionCountRecord(value: unknown, label: string): Readonly<Record<string, number>> {
+    if (!value || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+        throw new TypeError(`Stored ${label} must be a plain record`);
+    }
+    const entries = Object.entries(value);
+    if (entries.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries) {
+        throw new TypeError(`Stored ${label} exceed the audience limit`);
+    }
+    return Object.fromEntries(
+        entries.map(([identifier, count]) => [decodeALAdmissionString(identifier), decodeALAdmissionNumber(count)])
+    );
+}
+
 export function decodeALAdmissionSeqRanges(value: unknown): readonly ALSeqRange[] {
     const validated = decodeALSeqRanges(value);
     if (validated.left) {

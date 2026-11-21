@@ -62,7 +62,8 @@ function toChildNack(arrival: NackArrival): ALNackPayload & Readonly<{ reason: A
         reason: arrival.reason,
         observedAtEpochMs: CHILD_OBSERVED_AT_MS,
         proof: arrival.proof ?? null,
-        ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {}))
+        ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {})),
+        ...(arrival.reason === 'gap' ? { gapRequestNumber: 1 } : {})
     };
 }
 

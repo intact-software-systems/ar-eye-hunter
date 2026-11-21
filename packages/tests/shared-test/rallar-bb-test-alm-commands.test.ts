@@ -690,6 +690,39 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a repair budget of at least one and refuses zero, a fraction and a string', () => {
+        const send = (maxRepairs: RallarBlackBoxTestJsonValue) => ({
+            kind: 'messages.send',
+            commandId: 'send-max-repairs',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            maxRepairs
+        });
+        const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-max-repairs', send(1)));
+        expect(schemaResult.ok, schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(send(1)).ok).toBe(true);
+        const path = 'messages.send.maxRepairs';
+        for (
+            const [maxRepairs, message] of [
+                [0, `${path} must be >= 1.`],
+                [1.5, `${path} must be an integer.`],
+                ['1', `${path} must be an integer.`]
+            ] as const
+        ) {
+            const refusedBySchema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-max-repairs', send(maxRepairs)));
+            expect(refusedBySchema.ok, JSON.stringify(maxRepairs)).toBe(false);
+            if (!refusedBySchema.ok) {
+                expect(formatJsonSchemaValidationErrors(refusedBySchema.errors)).toContain('maxRepairs');
+            }
+            const refused = validateRallarBlackBoxTestCommand(send(maxRepairs));
+            expect(refused.ok, JSON.stringify(maxRepairs)).toBe(false);
+            if (!refused.ok) {
+                expect(refused.messages).toContain(message);
+            }
+        }
+    });
+
     it('accepts a live channel\'s purpose and publication and refuses an unknown purpose or a policy the product refuses', () => {
         const publication = { cadenceMs: 500, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
         const send = (fields: RallarBlackBoxTestRecord) => ({

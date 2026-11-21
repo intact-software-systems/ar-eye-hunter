@@ -24,6 +24,7 @@ export async function setNextAcksReadEvictionRaced(namespace: string, msgId: str
         dbName: toBrowserALRuntimeDbName(defaultStateScope()),
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver(),
         schemaId: AL_ADMISSION_SCHEMA_ID,

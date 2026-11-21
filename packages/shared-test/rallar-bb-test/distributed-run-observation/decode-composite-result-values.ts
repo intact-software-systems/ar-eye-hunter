@@ -1,6 +1,6 @@
+import type { RallarBlackBoxTestLoopResultValue } from '../loop/loop-result-contracts.ts';
 import type {
     RallarBlackBoxTestAssertResultValue,
-    RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestParallelResultValue,
     RallarBlackBoxTestWaitResultValue
 } from '../rallar-black-box-test-contracts.ts';

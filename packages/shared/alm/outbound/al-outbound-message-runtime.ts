@@ -123,6 +123,12 @@ export interface ALOutboundAckTrackingPlan {
     readonly mode: ALReceiptMode;
 }
 
+/** The send's own receipt timeout and retries, spent on its own hop until the server first answers for it. */
+export interface ALOutboundFirstHopTrackingPlan {
+    readonly timeoutMs: number;
+    readonly maxAttempts: number;
+}
+
 export interface ALOutboundRepairTrackingPlan {
     readonly enabled: boolean;
     readonly algo: ALRepairAlgo;
@@ -198,6 +204,11 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      * Absent means the planner supplies only ackTracking; no extra topology observation is available.
      */
     readonly receiptNextHopPeerIds?: readonly string[];
+    /**
+     * The composition's own hop answers for the receipt before anyone else does: the send is written again on that hop
+     * until its first receipt arrives. Stated only by the WS client's planner; absent, the send waits on no first hop.
+     */
+    readonly firstHopTracking?: ALOutboundFirstHopTrackingPlan;
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;

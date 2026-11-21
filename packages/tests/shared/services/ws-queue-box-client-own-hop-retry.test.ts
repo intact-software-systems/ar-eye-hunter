@@ -115,7 +115,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
             .toEqual([command.id.msgId, command.id.msgId]);
     });
 
-    it('sends a receiver room send once and schedules no acknowledgement timeout: the server owns that retry', async () => {
+    it('writes a receiver room send the server never answers once more on its first-hop wait, its one retry, and schedules no acknowledgement timeout: the server owns the receipt once it answers', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
         const roomSend = receiverRoomSend();
@@ -124,13 +124,15 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS * 4);
         await runOutboundWorkTask(fixture.service);
 
-        expect(fixture.sentFrames).toHaveLength(1);
+        expect(fixture.sentFrames).toHaveLength(2);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: roomSend.id.msgId }))
             .toBeUndefined();
-        expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('ack-timeout');
+        const effectKinds = await readOutboundEffectKinds(fixture.outboundStores);
+        expect(effectKinds).not.toContain('ack-timeout');
+        expect(effectKinds).toContain('first-hop-timeout');
     });
 
-    it('leaves the server\'s not-yet-in-sync NACK on a room send unhandled: no retry is scheduled and no second frame follows', async () => {
+    it('admits the server\'s not-yet-in-sync NACK on a room send, which ends its first-hop wait: no retry is scheduled for it and no second frame follows', async () => {
         vi.useFakeTimers();
         const fixture = createOwnHopRetryFixture();
         const roomSend = receiverRoomSend();
@@ -141,7 +143,7 @@ describe('WS client retry of its own hop after an acknowledgement timeout', () =
         await runOutboundWorkTask(fixture.service);
 
         expect(admitted.right).toEqual({ kind: 'control', handled: false });
-        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'not-handled' }]);
+        expect(fixture.controlAdmissions).toEqual([{ targetMsgId: roomSend.id.msgId, outcome: 'committed' }]);
         expect(fixture.sentFrames).toHaveLength(1);
         expect(await readOutboundEffectKinds(fixture.outboundStores)).not.toContain('nack-retry');
     });

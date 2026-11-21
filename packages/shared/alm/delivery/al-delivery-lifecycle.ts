@@ -86,7 +86,8 @@ export const AL_DELIVERY_SKIPPED_REASONS = [
     'disposed',
     'repair-exhausted',
     'pending-terminated',
-    'planner-drop'
+    'planner-drop',
+    'message-ended'
 ] as const;
 
 export type ALDeliverySkippedReason = typeof AL_DELIVERY_SKIPPED_REASONS[number];
