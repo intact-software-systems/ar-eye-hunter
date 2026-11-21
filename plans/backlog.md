@@ -510,9 +510,12 @@ and it has no status list.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
-- A lost entry frame (S4-i, D527; a later outcome after S4-ii): a receiver
-  whose entry frame is lost and whose next frame arrives first enters past it;
-  the lost frame answers `before-entry` on a recorded frozen copy, a live-only
+- A lost entry frame (S4-i, D527; a later outcome after S4-ii): a fresh
+  receiver whose copy's prior exceeds the 256-sequence repair window enters past
+  the lost frames, and the lost frame answers `before-entry` on a recorded
+  frozen copy; a track pushed off the evicted list by 256 later evictions, or a
+  storage reset that keeps the peer id, asks again for frames it delivered; a
+  latest-wins copy enters by ruling; a live-only
   hand-over copy carries no record and is dropped silently (`ordering-rejected`, no NACK), and
   over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed.
   Under `rtc-with-ws-fallback` a server copy whose record meets the receiver's

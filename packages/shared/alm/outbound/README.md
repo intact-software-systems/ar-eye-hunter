@@ -1010,7 +1010,7 @@ A send whose latest-wins supersedence only the sender's QoS provider defaults ap
 minted, the record stamped and the frame signed, so the proof covers it and every receiver plans the copy as latest-wins
 (the inbound entry rule does not hold such a copy for a lost first frame). A supersedence the app requested is kept, a
 message that already carries a proof is never rewritten, and an explicit plan (a relay forward, the WS server's queue
-box) never stamps, a retained admission that drains included. Request comparison strips the stamp. A server-originated
+box) never stamps. A retained admission's drain keeps the stamp its first admission decided and never stamps again. Request comparison strips the stamp. A server-originated
 send whose latest-wins comes only from the server's provider defaults is not stamped.
 On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored

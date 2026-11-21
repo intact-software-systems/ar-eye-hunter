@@ -1998,10 +1998,14 @@ WS copy counts only the server's own copies, so the two may differ; a prior
 behind the recipient's position says nothing it does not know. A recipient
 reads its prior from the record, or `seq - 1` when the record lists it not:
 
-- **No position yet, on a recorded copy**: it enters the track at that copy
-  (`entered`), whatever the sequence, and asks for nothing below it. The
-  application's own state read supplies the past; a session is never sent a
-  sequence admitted before the authority first sent it one.
+- **No position yet, on a recorded copy**: with a prior `p` above `0` and below
+  the sequence, `p` within the repair window (256 or fewer), on a track its
+  store has not evicted, and a copy that is not latest-wins, it opens the
+  track at `0`, buffers the copy and asks the gap `1` to `p` through the
+  ordinary gap NACK. Otherwise it enters the track at that copy (`entered`)
+  and asks for nothing below it: a late joiner (prior `0`), a track its store
+  evicted at the 256-track cap, a latest-wins copy and a prior past the window.
+  The application's own state read supplies the past of an entered track.
 - **Prior equal to its position**: the sequences between were never meant for
   it, so the copy delivers in order (`omitted`), and a buffered copy whose own
   prior meets the position is released the same way.
@@ -2050,10 +2054,11 @@ which forwards it down the tree.
 **Limits:** a live-only send records no positions; in a cluster the dequeue
 records every captured session with a live connection generation anywhere, and a
 session whose socket closed before its close committed, or whose lease lapsed
-before the 60 s sweep, is judged at the receipt retry; a receiver whose entry
-frame is lost and whose next frame arrives first enters past it, and the lost
-frame, arriving later, answers `before-entry` on a recorded frozen copy, while a
-live-only hand-over copy carries no record and is dropped silently
+before the 60 s sweep, is judged at the receipt retry; a fresh receiver
+whose copy's prior exceeds 256 enters past the lost frames, and the lost frame,
+arriving later, answers `before-entry` on a recorded frozen copy; a track pushed
+off the evicted list by 256 later evictions, or a storage reset that keeps the
+peer id, asks again for frames it delivered; a live-only hand-over copy carries no record and is dropped silently
 (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with
 no NACK and stays unconfirmed, repaired by nothing; under `rtc-with-ws-fallback`
 a server copy whose record meets the receiver's position can be read as an
