@@ -422,7 +422,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             /** The outbound message this control answers. */
             targetMsgId: string;
             outcome: ALOutboundControlAdmissionResult['kind'];
-            /** The rejection's reasons, or `none` for every other outcome. */
+            /** The reasons of a `rejected` or `duplicate` outcome, or `none` for every other outcome. */
             reason: string;
             /**
              * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,

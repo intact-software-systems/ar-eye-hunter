@@ -110,6 +110,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     /** The carrier every settlement this runtime states is stamped with; `ws` unless a test says otherwise. */
     readonly carrier?: ALDeliveryCarrier;
+    /** How the owner knows who spoke a recipient's control; the carrier authenticates it unless a test says otherwise. */
+    readonly recipientAuthentication?: ALOutboundMessageRuntime.Dependencies<TPrepared>['recipientAuthentication'];
     readonly settlements?: ALDeliverySettlementSink;
     readonly nowMs?: () => number;
     readonly workNowMs?: () => number;
@@ -225,7 +227,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
             carrier: options.carrier ?? 'ws',
-            recipientAuthentication: { kind: 'carrier' },
+            recipientAuthentication: options.recipientAuthentication ?? { kind: 'carrier' },
             settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
             workNowMs: options.workNowMs,

@@ -1,7 +1,7 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { isALReceiptModeOwnWord } from '../../delivery/is-al-receipt-mode-own-word.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import { isALOutboundRecipientControlSender } from './is-al-outbound-expected-repair-peer.ts';
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
@@ -14,7 +14,7 @@ import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts'
 export function validateALOutboundRelayedNack(
     read: ALControlAdmissionRead,
     nack: ALNackPayload
-): readonly ALMessageRejection[] {
+): readonly ALOutboundControlIssue[] {
     const owed = read.pending !== undefined &&
         toALOutboundReceiptClasses(read.pending).unconfirmedPeerIds.includes(nack.logicalRecipientPeerId);
     const fromExpectedPeer = isALOutboundRecipientControlSender(read, nack.fromPeerId);
@@ -24,19 +24,22 @@ export function validateALOutboundRelayedNack(
             ? []
             : [{
                 code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK comes from no hop or recipient of this message`
+                message: `AL ${nack.reason} NACK comes from no hop or recipient of this message`,
+                class: 'refusal' as const
             }]),
         ...(owed
             ? []
             : [{
                 code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK names no recipient the receipt still owes`
+                message: `AL ${nack.reason} NACK names no recipient the receipt still owes`,
+                class: 'refusal' as const
             }]),
         ...(ownWord
             ? []
             : [{
                 code: 'unauthorized' as const,
-                message: `AL ${nack.reason} NACK speaks for another recipient under a hop receipt`
+                message: `AL ${nack.reason} NACK speaks for another recipient under a hop receipt`,
+                class: 'refusal' as const
             }])
     ];
 }

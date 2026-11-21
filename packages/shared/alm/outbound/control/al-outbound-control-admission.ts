@@ -4,7 +4,6 @@ import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import type { ALReceiptProofRefusal } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
@@ -60,7 +59,10 @@ import {
     type ALOutboundControlSource
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
-import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
+import {
+    validateALOutboundControlAdmission,
+    type ALOutboundControlIssue
+} from '../validate-al-outbound-control-admission.ts';
 import {
     readALOutboundRecipientProof,
     toALOutboundProofRefusal,
@@ -78,6 +80,8 @@ export type ALOutboundControlAdmissionResult =
         /** Present exactly when a proof was refused. */
         proofRefusal?: ALReceiptProofRefusal;
     }>
+    /** Every issue repeats what the receipt already holds: an honest repeat, refused without a write. */
+    | Readonly<{ kind: 'duplicate'; reason: string; }>
     /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
     | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
@@ -172,7 +176,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         const computed = computeALOutboundControlAdmission(read, this.retention);
         const issues = validateALOutboundControlAdmission(computed);
         if (issues.length > 0) {
-            return toRejectedControlAdmission(issues, read.recipientProof);
+            return toRefusedControlAdmission(issues, read.recipientProof);
         }
         const effects = this.effectStore.computeEffects(
             await this.backend.readWithin((session) =>
@@ -476,11 +480,14 @@ export class ALOutboundControlAdmission<TPrepared> {
     }
 }
 
-function toRejectedControlAdmission(
-    issues: readonly ALMessageRejection[],
+function toRefusedControlAdmission(
+    issues: readonly ALOutboundControlIssue[],
     recipientProof: ALControlAdmissionRead['recipientProof']
 ): ALOutboundControlAdmissionResult {
     const reason = issues.map((issue) => issue.message).join('; ');
+    if (issues.every((issue) => issue.class === 'duplicate')) {
+        return { kind: 'duplicate', reason };
+    }
     const proofRefusal = toALOutboundProofRefusal(recipientProof);
     return proofRefusal === undefined ? { kind: 'rejected', reason } : { kind: 'rejected', reason, proofRefusal };
 }

@@ -130,3 +130,14 @@ describe('the control-admission event of a refused proof', () => {
         }
     });
 });
+
+describe('the control-admission event of a duplicate', () => {
+    it('reads `duplicate` with every issue it repeats, where a committed control reads no reason', () => {
+        const repeat = 'AL control was already admitted; AL acknowledgement confirms a peer the receipt already counted';
+
+        expect(JSON.stringify(writeAdmitted(FORGED_NACK, { kind: 'duplicate', reason: repeat }))).toContain(
+            `"outcome":"duplicate","reason":"${repeat}","nackReason":"gap"`
+        );
+        expect(writeAdmitted(FORGED_NACK)).toMatchObject({ outcome: 'committed', reason: 'none' });
+    });
+});

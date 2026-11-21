@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALRepairControlMessage,
+    type ALAckPayload
+} from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlSource } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundRecipientAuthentication } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
+import { RtcReceiptProofVerifier } from '@shared/multicast/receipt-proof/rtc-receipt-proof-verifier.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -13,7 +21,8 @@ import {
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 
-import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../signature/publication-crypto-fixtures.ts';
 
 /** A `receiver` receipt on two frozen recipients, sent through one relay that is neither of them. */
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
@@ -37,20 +46,30 @@ interface OriginFixture {
     readonly msg: ALMessage;
     readonly stores: OutboundTestStores;
     accept(control: ALMessage, source?: ALOutboundControlSource): Promise<string>;
+    admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult>;
 }
 
-/** Sequence 3 of the origin's track, sent with the receipt `ackTracking`, the `receiver` receipt above by default. */
-async function createOrderedOrigin(id: string, ackTracking = RECEIVER_TRACKING): Promise<OriginFixture> {
+/**
+ * Sequence 3 of the origin's track, sent with the receipt `ackTracking`, the `receiver` receipt above by default. Under
+ * `signature` authentication the send freezes the room's key for its unicast addressee `peer-1`.
+ */
+async function createOrderedOrigin(
+    id: string,
+    ackTracking = RECEIVER_TRACKING,
+    recipientAuthentication: ALOutboundRecipientAuthentication = { kind: 'carrier' }
+): Promise<OriginFixture> {
     const stores = createDefaultOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
         stores,
+        recipientAuthentication,
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking
+            ackTracking,
+            ...(recipientAuthentication.kind === 'signature' ? { receiptProofKeys: { 'peer-1': ROOM_PUBLICATION_KEY } } : {})
         })
     });
     const msg: ALMessage = { ...createOutboundMessage(id), ordering: { orderingKey: 'game-1', epoch: 1, seq: 3 } };
@@ -61,7 +80,8 @@ async function createOrderedOrigin(id: string, ackTracking = RECEIVER_TRACKING):
         accept: async (control, source = 'peer') => {
             const result = await runtime.acceptControlMessage(control, source);
             return result.kind === 'rejected' ? result.reason : result.kind;
-        }
+        },
+        admit: async (control) => await runtime.acceptControlMessage(control, 'peer')
     };
 }
 
@@ -261,27 +281,90 @@ async function readRepairHintRows(stores: OutboundTestStores): Promise<readonly 
 }
 
 describe('a gap request asked again at the origin', () => {
-    it('refuses a gap NACK equal to one it admitted, and admits the same NACK with the next number', async () => {
+    it('answers a gap NACK equal to one it admitted `duplicate`, and admits the same NACK with the next number', async () => {
         const origin = await createOrderedOrigin('gap-asked-again');
         const gap = { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' };
 
         expect([
             await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1' })),
-            await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1-again' })),
+            await origin.admit(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-1-again' })),
             await origin.accept(toGapNack(origin.msg, { ...gap, controlMsgId: 'gap-2', gapRequestNumber: 2 }))
-        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
+        ]).toEqual(['committed', { kind: 'duplicate', reason: 'AL control was already admitted' }, 'committed']);
     });
 
-    it('refuses a repair request equal to one it admitted, and admits the same request with the next number', async () => {
+    it('answers a repair request equal to one it admitted `duplicate`, and admits the same request with the next number', async () => {
         const origin = await createOrderedOrigin('repair-asked-again');
 
         expect([
             await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1', 1)),
-            await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1-again', 1)),
+            await origin.admit(toMissingSeqRequest(origin.msg, 'repair-1-again', 1)),
             await origin.accept(toMissingSeqRequest(origin.msg, 'repair-2', 2))
-        ]).toEqual(['committed', 'AL control was already admitted', 'committed']);
+        ]).toEqual(['committed', { kind: 'duplicate', reason: 'AL control was already admitted' }, 'committed']);
     });
 });
+
+describe('a repeat at the origin', () => {
+    it('a repeated ACK is refused `duplicate`', async () => {
+        const origin = await createOrderedOrigin('ack-repeated');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r1'))).toBe('committed');
+
+        expect(await origin.admit(toForwardedAck(origin.msg, 'r1'))).toEqual({
+            kind: 'duplicate',
+            reason: 'AL control was already admitted; AL acknowledgement confirms a peer the receipt already counted'
+        });
+    });
+
+    it('a repeated control whose proof is refused stays `rejected`', async () => {
+        const origin = await createOrderedOrigin(
+            'ack-repeated-unsigned',
+            { ...RECEIVER_TRACKING, expectedPeerIds: ['peer-1', 'r2'] },
+            {
+                kind: 'signature',
+                verifier: new RtcReceiptProofVerifier({ crypto: ROOM_PUBLICATION_CRYPTO, nowEpochMs: Date.now })
+            }
+        );
+        const unsigned = toTestALAckPayload({
+            ackedMsgId: origin.msg.id.msgId,
+            fromPeerId: 'peer-1',
+            toPeerId: 'self',
+            observedAtEpochMs: Date.now()
+        });
+        const signed = await signTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, { type: 'ack', payload: unsigned });
+        expect(await origin.accept(toAckMessage('ack-signed', signed.payload))).toBe('committed');
+
+        expect(await origin.admit(toAckMessage('ack-unsigned', unsigned))).toEqual({
+            kind: 'rejected',
+            reason: expect.stringMatching(/^AL control was already admitted; AL control proof is refused: /),
+            proofRefusal: expect.anything()
+        });
+    });
+
+    it('a duplicate that is also addressed to another owner stays `rejected`', async () => {
+        const origin = await createOrderedOrigin('ack-repeated-other-owner');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r1'))).toBe('committed');
+        const repeat = toTestALAckPayload({
+            ackedMsgId: origin.msg.id.msgId,
+            fromPeerId: 'relay',
+            toPeerId: 'other-owner',
+            originPeerId: 'self',
+            logicalRecipientPeerId: 'r1',
+            observedAtEpochMs: Date.now()
+        });
+
+        expect(await origin.accept(toAckMessage('ack-other-owner', repeat))).toBe(
+            'AL control is addressed to another outbound message owner; AL control was already admitted; ' +
+                'AL acknowledgement confirms a peer the receipt already counted'
+        );
+    });
+});
+
+/** The ACK `payload` as the control `controlMsgId` its `fromPeerId` sends. */
+function toAckMessage(controlMsgId: string, payload: ALAckPayload): ALMessage {
+    return newALAckControlMessage(
+        { v: 4, msgId: controlMsgId, ts: Date.now(), senderId: payload.fromPeerId, traceId: 'trace-repeat' },
+        payload
+    );
+}
 
 describe('a forwarded hop-end at the origin', () => {
     it('admits a forwarded hop-end that confirms nobody for a recipient the receipt still owes', async () => {

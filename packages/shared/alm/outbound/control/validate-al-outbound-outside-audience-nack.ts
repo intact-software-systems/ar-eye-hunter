@@ -1,6 +1,6 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import { validateALOutboundRelayedNack } from './validate-al-outbound-relayed-nack.ts';
 
 /**
@@ -12,11 +12,15 @@ import { validateALOutboundRelayedNack } from './validate-al-outbound-relayed-na
 export function validateALOutboundOutsideAudienceNack(
     read: ALControlAdmissionRead,
     nack: ALNackPayload
-): readonly ALMessageRejection[] {
+): readonly ALOutboundControlIssue[] {
     return [
         ...validateALOutboundRelayedNack(read, nack),
         ...(read.sent !== undefined && read.sent.reference.expiresAtMs <= read.nowMs
-            ? [{ code: 'unauthorized' as const, message: `AL ${nack.reason} NACK arrived after its message deadline` }]
+            ? [{
+                code: 'unauthorized' as const,
+                message: `AL ${nack.reason} NACK arrived after its message deadline`,
+                class: 'refusal' as const
+            }]
             : [])
     ];
 }

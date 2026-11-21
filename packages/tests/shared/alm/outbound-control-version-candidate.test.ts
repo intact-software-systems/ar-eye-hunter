@@ -146,7 +146,7 @@ describe('outbound control version candidate', () => {
 
         expect(validateALOutboundControlAdmission(computeALOutboundControlAdmission(readAt(deadlineMs - 1), retention))).toEqual([]);
         expect(validateALOutboundControlAdmission(computeALOutboundControlAdmission(readAt(deadlineMs), retention))).toEqual([
-            { code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' }
+            { code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline', class: 'refusal' }
         ]);
     });
 
@@ -218,8 +218,8 @@ describe('the recipient proof verdict as a read fact (S8-R5)', () => {
         const candidate = computeALOutboundControlAdmission(refused, normalizeALRuntimeStoreRetention());
 
         expect(validateALOutboundControlAdmission({ ...candidate, nextVersion: { senderId: 'self', version: 9 } })).toEqual([
-            { code: 'malformed', message: 'AL control version differs from its captured owner observation' },
-            { code: 'unauthorized', message: 'AL control proof is refused: unknown-key' }
+            { code: 'malformed', message: 'AL control version differs from its captured owner observation', class: 'refusal' },
+            { code: 'unauthorized', message: 'AL control proof is refused: unknown-key', class: 'refusal' }
         ]);
     });
 

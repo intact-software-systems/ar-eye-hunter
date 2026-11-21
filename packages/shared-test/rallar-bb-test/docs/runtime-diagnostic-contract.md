@@ -526,16 +526,20 @@ every session the page opens. The event's `data` is the event itself:
   verdict. `msgId` is the control's own id, the join key when both events are
   present, and `targetMsgId` is the sent message it answers. `outcome` is
   `committed`, `pending-control` (a conflict retained as `admit-control` work,
-  which the outbound drain replays), `rejected`, or `not-handled` (the control's
+  which the outbound drain replays), `rejected`, `duplicate` (every issue of
+  the refusal is a repeat: `AL control was already admitted`,
+  `AL acknowledgement confirms a peer the receipt already counted`), or
+  `not-handled` (the control's
   repair authority failed, or a NACK the origin leaves to its hop: the WS
   server's advisory `not-yet-in-sync` NACK on a room send, which the server
   retains and delivers itself once its room meets the floor). `reason` is the
-  rejection's reasons, every issue in the validator's order, joined by a
-  semicolon and a space, or `none` for every other outcome — for an ACK whose
+  refusal's reasons for `rejected` and `duplicate`, every issue in the
+  validator's order, joined by a semicolon and a space, or `none` for every
+  other outcome — for an ACK whose
   receipt is gone it reads
   `AL acknowledgement sender has no pending outbound obligation`, and a
-  duplicate control whose proof is also refused reads its proof refusal
-  (`AL control proof is refused: <kind>`) after
+  duplicate control whose proof is also refused reads `rejected`, its proof
+  refusal (`AL control proof is refused: <kind>`) after
   `AL control was already admitted`, so a wait that matches a proof refusal
   reads `proofRefusal` rather than the reason's start. Its bounded
   dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
@@ -548,7 +552,7 @@ every session the page opens. The event's `data` is the event itself:
   `channelPeerId` (its `fromPeerId`, the peer it arrived from); every other
   event carries none of the three. A control the outbound drain replays reports
   the verdict its replay reaches under the same control id, so a control that
-  read `pending-control` reads again, `committed` or `rejected`, once per replay
+  read `pending-control` reads again, `committed`, `rejected` or `duplicate`, once per replay
   (a replay that conflicts again reads `pending-control` again); a replay past
   the control's deadline reports nothing. The event describes a received control
   decision and rides the page's batched diagnostics. Its presence does not

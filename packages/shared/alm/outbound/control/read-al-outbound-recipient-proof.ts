@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import {
     isALOwnWord,
     toALReceiptProofRefusal,
@@ -11,6 +10,7 @@ import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-su
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 
 /**
  * How an outbound owner knows who spoke a recipient's control: the carrier authenticates its peer (a WS client's
@@ -68,9 +68,9 @@ export function toALOutboundProofRefusal(
 /** A refused proof is one `unauthorized` issue; an authenticated speaker adds none. */
 export function validateALOutboundRecipientProof(
     recipientProof: ALControlAdmissionRead['recipientProof']
-): readonly ALMessageRejection[] {
+): readonly ALOutboundControlIssue[] {
     const refusal = toALOutboundProofRefusal(recipientProof);
     return refusal === undefined
         ? []
-        : [{ code: 'unauthorized', message: `AL control proof is refused: ${refusal.kind}` }];
+        : [{ code: 'unauthorized', message: `AL control proof is refused: ${refusal.kind}`, class: 'refusal' }];
 }

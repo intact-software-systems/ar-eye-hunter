@@ -20,6 +20,7 @@ import {
     toALOutboundControlSettlements,
     type ALControlAdmissionRead
 } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -46,6 +47,7 @@ interface OriginFixture {
     readonly msg: ALMessage;
     readonly facts: readonly ALOutboundSettlementFact[];
     accept(control: ALMessage): Promise<string>;
+    admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult>;
 }
 
 async function createOriginFixture(
@@ -74,7 +76,8 @@ async function createOriginFixture(
         accept: async (control) => {
             const result = await runtime.acceptControlMessage(control, 'peer');
             return result.kind === 'rejected' ? result.reason : result.kind;
-        }
+        },
+        admit: async (control) => await runtime.acceptControlMessage(control, 'peer')
     };
 }
 
@@ -183,6 +186,17 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
             'AL not-subscribed NACK names no recipient the receipt still owes',
             'AL acknowledgement confirms no peer of the pending outbound receipt'
         ]);
+    });
+
+    it('a `not-subscribed` NACK naming a recipient no longer owed stays `rejected`, though it repeats one admitted', async () => {
+        const origin = await createOriginFixture('outside-repeated-kind');
+        await origin.accept(toRelayedNack(origin.msg, 'r2'));
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+
+        expect(await origin.admit(toRelayedNack(origin.msg, 'r2'))).toEqual({
+            kind: 'rejected',
+            reason: 'AL control was already admitted; AL not-subscribed NACK names no recipient the receipt still owes'
+        });
     });
 
     it('refuses a NACK naming a recipient the receipt never expected', async () => {

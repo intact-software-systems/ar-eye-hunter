@@ -1,6 +1,6 @@
-import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 
 /**
  * A NACK for a message that has ended is refused, except a gap report and an outside-audience one: a gap NACK names
@@ -8,7 +8,7 @@ import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admi
  */
 export function validateALOutboundEndedMessageControl(
     read: Pick<ALControlAdmissionRead, 'parsed' | 'sent'>
-): readonly ALMessageRejection[] {
+): readonly ALOutboundControlIssue[] {
     const { parsed } = read;
     if (
         !read.sent?.ended || parsed.type !== 'nack' || parsed.payload.reason === 'gap' ||
@@ -16,5 +16,5 @@ export function validateALOutboundEndedMessageControl(
     ) {
         return [];
     }
-    return [{ code: 'unauthorized', message: 'AL control names a message that has ended' }];
+    return [{ code: 'unauthorized', message: 'AL control names a message that has ended', class: 'refusal' }];
 }

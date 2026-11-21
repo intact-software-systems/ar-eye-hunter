@@ -28,7 +28,7 @@ export function writeALOutboundControlAdmissionDiagnostic(
         typeId: control.payload.typeId,
         targetMsgId: controlTargetMsgId(parsed),
         outcome: admitted.kind,
-        reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
+        reason: admitted.kind === 'rejected' || admitted.kind === 'duplicate' ? admitted.reason : 'none',
         // Straight after the reason, so a match on `typeId`, `targetMsgId`, `outcome`, `reason` and then a receipt's
         // `phase` or a NACK's reason and track in their emitted order finds it; the trace appends after them all.
         ...(parsed.type === 'receipt' ? { phase: parsed.payload.phase } : {}),
