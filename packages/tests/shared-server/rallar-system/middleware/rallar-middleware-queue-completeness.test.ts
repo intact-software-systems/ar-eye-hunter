@@ -75,9 +75,17 @@ describe('Rallar middleware queue registration completeness', () => {
         createRallarMiddlewareQueueRegistration(engine).registerExactTasks(input);
         // The runtime's own work handler is the only registered owner now; it claims admit-message
         // rows and, once committed, the WS_OUTBOX rows those commits create, in separate batch passes.
-        const message = newALUnicastMessage('self', { topicId: 'chat', resourceId: 'pending', contextId: 'direct' }, 'remote-peer', 'chat.message', {}, {
-            ttlMs: 60_000,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId: 'pending', contextId: 'direct' },
+            toPeerId: 'remote-peer',
+            typeId: 'chat.message',
+            resource: {},
+            options: {
+                ttlMs: 60_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
         const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, {
             admittedAudience: undefined,
@@ -134,18 +142,21 @@ describe('Rallar middleware queue registration completeness', () => {
             throw new Error('Expected the registered WS work owner');
         }
         const message = newALUnicastMessage(
-            'server',
             {
-                topicId: 'chat',
-                resourceId: 'retained',
-                contextId: 'direct'
-            },
-            'remote-peer',
-            'chat.message.v1',
-            { text: 'retained through D' },
-            {
-                ttlMs: 60_000,
-                qos: { durability: { algo: 'local-outbox' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'retained',
+                    contextId: 'direct'
+                },
+                toPeerId: 'remote-peer',
+                typeId: 'chat.message.v1',
+                resource: { text: 'retained through D' },
+                options: {
+                    ttlMs: 60_000,
+                    qos: { durability: { algo: 'local-outbox' } }
+                }
             }
         );
         const admitted = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, {

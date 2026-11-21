@@ -1,4 +1,18 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type {
+    ConnectStateClientSessionBody,
+    ConnectStateGroupPresenceSessionBody,
+    CreateStateGroupBody
+} from '@shared-web/browser/api/state-mutation-http-contracts.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import { crdtCatchUpHttpApi } from '@shared-web/browser/crdt/crdt-catch-up-http-api.ts';
 import { appointStateGroupDirector } from '@shared-web/browser/director/appoint-room-director.ts';
@@ -15,14 +29,8 @@ import { readStateGroupStats } from '@shared-web/browser/stats/rallar-stats-http
 import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import type { RallarCrdtCatchUpRequestEnvelope } from '@shared/crdt/mod.ts';
+
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchObservation {
@@ -271,6 +279,7 @@ describe('browser HTTP feature ownership characterization', () => {
             { clientId: 'owner-1', sessionId: 'session-1', isOnline: true },
             [group],
             {
+                heartbeatAtEpochMs: Date.now(),
                 publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
@@ -439,7 +448,7 @@ function expectedMutationPaths(): string[] {
     ];
 }
 
-function createGroupBody() {
+function createGroupBody(): CreateStateGroupBody {
     return {
         kind: 'room' as const,
         groupId: 'room-1',
@@ -450,7 +459,7 @@ function createGroupBody() {
     };
 }
 
-function connectGroupPresenceBody() {
+function connectGroupPresenceBody(): ConnectStateGroupPresenceSessionBody {
     return {
         generationId: 'generation-1',
         connectionGenerationId: 'ws-generation-1',
@@ -464,7 +473,7 @@ function connectGroupPresenceBody() {
     };
 }
 
-function connectClientSessionBody() {
+function connectClientSessionBody(): ConnectStateClientSessionBody {
     return {
         generationId: 'generation-1',
         actorPrincipalId: 'owner-1',
@@ -478,7 +487,7 @@ function connectClientSessionBody() {
     };
 }
 
-function crdtCatchUpRequest() {
+function crdtCatchUpRequest(): RallarCrdtCatchUpRequestEnvelope {
     return {
         protocolVersion: 1 as const,
         requestId: 'catch-up-1',

@@ -334,23 +334,29 @@ function observeAtRecipient(message: ALMessage, selfPeerId: string, lastContiguo
 /** A WS room broadcast of the session on the ordering key `chat`, asking its outbound for the sequence. */
 function createRoomBroadcast(name: string, ack?: ALAckMode): ALMessage {
     return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
-        'room',
-        'chat.message.v1',
-        { name },
-        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, ack, ordering: { orderingKey: 'chat' } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: SESSION_ID,
+            route: newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { name },
+            options: { groupRef: ORIGIN_ROOM, ttlMs: 30_000, ack, ordering: { orderingKey: 'chat' } }
+        }
     );
 }
 
 /** The RTC room multicast of the session on the same track. */
 function createRoomMulticast(name: string): ALMessage {
     return newALMulticastMessage(
-        SESSION_ID,
-        newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { name },
-        { ttlMs: 30_000, orderingKey: 'chat' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: SESSION_ID,
+            route: newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { name },
+            options: { ttlMs: 30_000, orderingKey: 'chat' }
+        }
     );
 }

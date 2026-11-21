@@ -207,11 +207,14 @@ describe('the RTC signaling relay', () => {
             timing: undefined
         });
         const message = newALUnicastMessage(
-            'sender',
-            newALEventRoute('topic', 'receiver', 'ordinary'),
-            'receiver',
-            'message.v1',
-            { value: 'ordinary' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: newALEventRoute('topic', 'receiver', 'ordinary'),
+                toPeerId: 'receiver',
+                typeId: 'message.v1',
+                resource: { value: 'ordinary' }
+            }
         );
 
         expect((await fixture.service.acceptIncomingMessage(message, 'sender')).right?.kind).toBe('admitted');
@@ -283,21 +286,24 @@ function signalingMessage(
     { sdp = 'sdp', toId = 'receiver', traceId = `trace-${offerId}` } = {}
 ): ALMessage {
     return newALUnicastMessage(
-        'sender',
-        newALEventRoute(AppTopics.rtcSignaling, toId, 'offer'),
-        toId,
-        AppTopics.rtcSignaling,
         {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'sender',
-            toId,
-            sessionId: 'sender',
-            token: 'fixture-ticket',
-            signalType: 'Offer',
-            offerId,
-            payload: { description: { type: 'offer', sdp }, candidate: null }
-        },
-        { traceId }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute(AppTopics.rtcSignaling, toId, 'offer'),
+            toPeerId: toId,
+            typeId: AppTopics.rtcSignaling,
+            resource: {
+                channel: 'RtcSignal',
+                type: 'Signal',
+                fromId: 'sender',
+                toId,
+                sessionId: 'sender',
+                token: 'fixture-ticket',
+                signalType: 'Offer',
+                offerId,
+                payload: { description: { type: 'offer', sdp }, candidate: null }
+            },
+            options: { traceId }
+        }
     );
 }

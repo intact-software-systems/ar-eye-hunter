@@ -24,12 +24,15 @@ export interface ALOrderingFrameReplay {
 
 export function createKeyedRoomSend(senderId: string, roomRef: GroupRef, input: KeyedRoomSendInput): ALMessage {
     return newALMulticastMessage(
-        senderId,
-        { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: input.resourceId },
-        roomRef,
-        'reload.keyed',
-        { resourceId: input.resourceId },
-        { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none', orderingKey: input.orderingKey }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: input.resourceId },
+            groupRef: roomRef,
+            typeId: 'reload.keyed',
+            resource: { resourceId: input.resourceId },
+            options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none', orderingKey: input.orderingKey }
+        }
     );
 }
 

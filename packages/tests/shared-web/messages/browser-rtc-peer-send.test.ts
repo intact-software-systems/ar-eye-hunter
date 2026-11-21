@@ -485,8 +485,7 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
         dispatch: new BrowserRallarMessageDispatch({
             deliveries,
             sessionDeliveries,
-            publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-            nowMs: Date.now,
+            publicationStages: new BrowserPublicationStages(),
             readPublicationPermissions: () => undefined,
             grantedTopics: NO_RTC_GRANTED_TOPICS
         }),

@@ -925,12 +925,15 @@ function createUnleasedReservationEntry(namespace: string, observedAtMs: number)
 
 function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS, msgId = 'selection') {
     const original = newALUnicastMessage(
-        'peer-1',
-        { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
-        'self',
-        'chat.private-text.v1',
-        { text: 'claimable' },
-        { ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
+            toPeerId: 'self',
+            typeId: 'chat.private-text.v1',
+            resource: { text: 'claimable' },
+            options: { ttlMs: 60_000 }
+        }
     );
     const msg = {
         ...original,

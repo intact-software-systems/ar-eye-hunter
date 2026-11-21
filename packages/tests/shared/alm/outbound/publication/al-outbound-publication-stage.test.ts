@@ -75,11 +75,14 @@ function createStageFixture(options?: StageFixtureOptions): StageFixture {
 
 function createLiveMessage(topicId: string, resourceId: string, expiresAtMs: number): ALMessage {
     const message = newALUnicastMessage(
-        'self',
-        { topicId, resourceId, contextId: 'room-1' },
-        'peer-1',
-        `${topicId}.pose.v1`,
-        { resourceId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId, resourceId, contextId: 'room-1' },
+            toPeerId: 'peer-1',
+            typeId: `${topicId}.pose.v1`,
+            resource: { resourceId }
+        }
     );
     return { ...message, constraints: { expiresAtMs } };
 }

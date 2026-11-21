@@ -1,10 +1,11 @@
+import { Hono, type Context } from 'hono';
+
 import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import { Hono, type Context } from 'hono';
+import type { ApiConfigResponse, ServerTimeResponse } from '@shared/api/api-config.ts';
 
 import type {
     ApiV1AuthenticationConfiguration,
@@ -51,19 +52,26 @@ export function registerConfigRoutes(
     app: Hono,
     dependencies: ConfigRouteDependencies
 ): void {
-    const deps = dependencies;
-
     app.get(
         '/api/config',
         (c) => c.json(dependencies.publicConfiguration)
     );
 
-    registerAuthUserMutationRoutes(app, deps);
-    registerAuthCredentialMutationRoutes(app, deps);
+    app.get('/api/time', (context) => {
+        const observation: ServerTimeResponse = {
+            serverPeerId: dependencies.publicConfiguration.serverPeerId,
+            serverNowEpochMs: dependencies.now()
+        };
+        context.header('cache-control', 'no-store');
+        return context.json(observation);
+    });
+
+    registerAuthUserMutationRoutes(app, dependencies);
+    registerAuthCredentialMutationRoutes(app, dependencies);
 
     app.post(
         '/api/black-box/control-token',
-        (context) => issueBlackBoxControlTokenResponse(context, deps)
+        (context) => issueBlackBoxControlTokenResponse(context, dependencies)
     );
 }
 

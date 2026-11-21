@@ -72,7 +72,7 @@ it.each(
             cancel() {}
         });
         onTestFinished(() => registry.releaseAll());
-        const handle = registry.open(message, 'rtc');
+        const handle = registry.open({ message: message, carrier: 'rtc', readDeadlineEpochMs: clock });
         const runtime = createOutboundTestRuntimeFor({
             stores: { admissionStore, workQueue },
             queueEngine: new InboxOutboxEngine(),

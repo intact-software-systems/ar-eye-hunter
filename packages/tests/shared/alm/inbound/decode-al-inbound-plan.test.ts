@@ -5,7 +5,14 @@ import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-co
 import type { ALOrderingObservation } from '@shared/al-contracts/al-runtime.ts';
 import { decodeALInboundPlan } from '@shared/alm/inbound/decode-al-inbound-plan.ts';
 
-const message = newALUnicastMessage('origin', newALRoute('app.topic', 'context', 'resource'), 'self', 'app.v1', {});
+const message = newALUnicastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'origin',
+    route: newALRoute('app.topic', 'context', 'resource'),
+    toPeerId: 'self',
+    typeId: 'app.v1',
+    resource: {}
+});
 
 const planned = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', fromPeerId: 'origin' });
 

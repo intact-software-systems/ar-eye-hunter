@@ -25,6 +25,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from './connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 
 interface GroupSnapshotFixtureScope {
@@ -103,7 +104,7 @@ const mocks = await vi.hoisted(async () => {
         apiMiddleware,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
         initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() =>
-            Promise.resolve({ middleware: apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] })
+            Promise.resolve({ middleware: apiMiddleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] })
         ),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
@@ -172,7 +173,12 @@ describe('Rallar startup lifecycle behavior', () => {
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupSnapshots([]);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] });
+        mocks.initialiseMiddleware.mockImplementation(async () => ({
+            middleware: mocks.apiMiddleware.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }));
         const storage = new Map<string, string>();
         vi.stubGlobal('localStorage', {
             getItem: (key: string) => storage.get(key) ?? null,
@@ -295,6 +301,7 @@ describe('Rallar startup lifecycle behavior', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => ({
             middleware: mocks.apiMiddleware.middleware,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: [],
             rtcCaptureReceipt: createBrowserRtcCapture({
                 configuration: options.rtcCaptureConfiguration,
@@ -344,7 +351,7 @@ describe('Rallar startup lifecycle behavior', () => {
             expect.objectContaining({
                 rtcCaptureConfiguration: selection.expectedConfiguration,
                 scope: { applicationId: 'startup-app', workspaceId: 'startup-workspace' },
-                signal: controller.signal,
+                signal: expect.any(AbortSignal),
                 timeoutMs: 500,
                 maxAttempts: 1,
                 shouldRetry,
@@ -360,6 +367,39 @@ describe('Rallar startup lifecycle behavior', () => {
         await expect(facade.connect({ rtcCaptureMode: 'native' })).rejects.toMatchObject({ code: 'new-connection-required' });
         expect(facade.rtcCapture()?.configuration).toEqual(selection.expectedConfiguration);
         expect(facade.isConnected()).toBe(true);
+    });
+
+    it('cancels an outstanding startup refresh and keeps the accepted transport until disconnect', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const caller = new AbortController();
+        const reading = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        mocks.refreshStateSnapshots.mockImplementationOnce(async (_scope, policies) => {
+            reading.resolve();
+            await release.promise;
+            policies?.command?.signal?.throwIfAborted();
+            return { clients: [], groups: [] };
+        });
+        onTestFinished(() => {
+            release.resolve();
+            return facade.disconnect();
+        });
+
+        const startup = facade.start({ signal: caller.signal, refreshRooms: true });
+        await reading.promise;
+        const transportSignal = mocks.initialiseMiddleware.mock.calls[0]?.[2].signal;
+        const reason = new Error('Caller cancelled room refresh');
+        caller.abort(reason);
+        release.resolve();
+
+        await expect(startup).rejects.toBe(reason);
+        expect(facade.isConnected()).toBe(true);
+        expect(transportSignal?.aborted).toBe(false);
+
+        await facade.disconnect();
+        expect(facade.isConnected()).toBe(false);
+        expect(transportSignal?.aborted).toBe(true);
     });
 
     it('leaves the facade idle when middleware initialization fails', async () => {
@@ -379,7 +419,7 @@ describe('Rallar startup lifecycle behavior', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             options.signal?.throwIfAborted();
-            return { middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const facade = createRallarFacade();
         onTestFinished(() => facade.disconnect());

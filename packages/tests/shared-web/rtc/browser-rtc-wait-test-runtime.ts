@@ -10,6 +10,7 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '
 
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { createNativeRealtimeLaneFixture } from '../realtime/native-realtime-lane-fixture.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('./browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -112,6 +113,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })

@@ -105,17 +105,20 @@ function createRoomUnicastFixture(
 
 function createRoomUnicast(resourceId: string, toPeerId: string): ALMessage {
     return newALUnicastMessage(
-        'a',
-        { topicId: 'room.director.intent', resourceId, contextId: 'room' },
-        toPeerId,
-        'room.director.intent.v1',
-        { intent: resourceId },
         {
-            groupRef: ORIGIN_ROOM,
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ownership: 'shared',
-            ttlMs: 30_000
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.director.intent', resourceId, contextId: 'room' },
+            toPeerId,
+            typeId: 'room.director.intent.v1',
+            resource: { intent: resourceId },
+            options: {
+                groupRef: ORIGIN_ROOM,
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ownership: 'shared',
+                ttlMs: 30_000
+            }
         }
     );
 }

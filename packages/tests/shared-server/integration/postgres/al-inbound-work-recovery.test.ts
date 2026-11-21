@@ -287,9 +287,17 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
 }
 
 function createMessage(resourceId: string, sequence?: number): ALMessage {
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId, contextId: 'receiver' }, 'receiver', 'chat', {}, {
-        ttlMs: 30_000,
-        qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, durability: { algo: 'volatile' } }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'chat', resourceId, contextId: 'receiver' },
+        toPeerId: 'receiver',
+        typeId: 'chat',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, durability: { algo: 'volatile' } }
+        }
     });
     return { ...message, ordering: sequence === undefined ? undefined : { orderingKey: 'stream', epoch: 0, seq: sequence } };
 }

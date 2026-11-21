@@ -208,11 +208,14 @@ function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}):
 /** A command that outlives the lease, the stale-finalization window and a run of overdue passes: an expired row is never claimed. */
 function createLongLivedQueueMessage(resourceId: string): ALMessage {
     return newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.fair-service', 'test-scope', resourceId),
-        'test.fair-service',
-        { resourceId },
-        { ttlMs: 3_600_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.fair-service', 'test-scope', resourceId),
+            typeId: 'test.fair-service',
+            resource: { resourceId },
+            options: { ttlMs: 3_600_000 }
+        }
     );
 }
 

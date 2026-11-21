@@ -43,6 +43,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
@@ -81,6 +82,7 @@ interface CapturedMessagePayload {
 }
 
 interface CreateWsMessageInput<T> {
+    readonly createdAtEpochMs: number;
     readonly resolved: ResolvedWsMessageInput<T>;
     readonly room: string | GroupRef | undefined;
     readonly payloadValidation: CapturedMessagePayload;
@@ -102,6 +104,7 @@ interface ResolvedWsAudience<T> {
 }
 
 interface CreateRtcMessageInput<T> {
+    readonly createdAtEpochMs: number;
     readonly input: RallarRtcSendInput<T>;
     readonly payloadValidation: CapturedMessagePayload;
     readonly target: ResolvedRtcMessageTarget;
@@ -161,7 +164,14 @@ export class BrowserRallarMessageSender {
         const context = await this.input.connect(capture.options);
         const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         const message = toRoomFallbackMessage(
-            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession(), channel }),
+            this.createRtcMessage({
+                createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
+                input,
+                payloadValidation,
+                target,
+                session: this.input.requireSession(),
+                channel
+            }),
             input
         );
         return this.startDelivery({
@@ -222,6 +232,7 @@ export class BrowserRallarMessageSender {
         }));
         const session = this.input.requireSession();
         const message = this.createWsSendMessage({
+            createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
             resolved,
             room,
             payloadValidation,
@@ -327,6 +338,7 @@ export class BrowserRallarMessageSender {
             context,
             carrier: 'rtc',
             message: createBrowserUnicastMessage({
+                createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
                 creation: this.input.creation,
                 resolved,
                 peerId: peer.peerId,
@@ -361,7 +373,14 @@ export class BrowserRallarMessageSender {
         const context = await this.input.connect(capture.options);
         const rtcCapture = this.input.sessionDeliveries.readRtcCapture(context);
         const message = toRoomFallbackMessage(
-            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession(), channel }),
+            this.createRtcMessage({
+                createdAtEpochMs: readBrowserServerCreationEpochMs(context.serverTime),
+                input,
+                payloadValidation,
+                target,
+                session: this.input.requireSession(),
+                channel
+            }),
             input
         );
         return this.startDelivery({
@@ -394,7 +413,13 @@ export class BrowserRallarMessageSender {
             onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel),
             admittedCopy: false
         };
-        const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);
+        const { serverTime } = delivery.context;
+        const handle = this.input.deliveries.open({
+            message: delivery.message,
+            carrier: delivery.carrier,
+            rtcCapture: delivery.rtcCapture,
+            readDeadlineEpochMs: () => serverTime.readWindow().right?.latestEpochMs
+        });
         this.input.dispatch.send(delivery);
         return handle;
     }
@@ -439,6 +464,7 @@ export class BrowserRallarMessageSender {
             return this.createWsMessage(input);
         }
         return createBrowserUnicastMessage({
+            createdAtEpochMs: input.createdAtEpochMs,
             creation: this.input.creation,
             resolved: input.resolved,
             peerId,
@@ -451,7 +477,7 @@ export class BrowserRallarMessageSender {
     }
 
     private createWsMessage<T>(
-        { resolved, room, payloadValidation, session, channel, actions }: CreateWsMessageInput<T>
+        { createdAtEpochMs, resolved, room, payloadValidation, session, channel, actions }: CreateWsMessageInput<T>
     ): ALMessage {
         const { input, scope, roomId, roomRef } = resolved;
         const defaults = toBrowserMessageSendDefaults({
@@ -469,16 +495,27 @@ export class BrowserRallarMessageSender {
         const options = { ...this.toWsBroadcastOptions(input, room, defaults), actions };
         if (scope !== 'principal') {
             const listed = { ...options, groupRef: roomRef, recipientPeerIds: input.recipientPeerIds };
-            return this.input.creation.createBroadcast(session.sessionId, route, scope, input.typeId, payload, listed);
+            return this.input.creation.createBroadcast({
+                createdAtEpochMs,
+                senderId: session.sessionId,
+                route,
+                scope,
+                typeId: input.typeId,
+                resource: payload,
+                options: listed
+            });
         }
         const target = toPrincipalTarget(roomRef, input.principalId);
         return this.input.creation.createPrincipalBroadcast(
-            session.sessionId,
-            route,
-            target,
-            input.typeId,
-            payload,
-            options
+            {
+                createdAtEpochMs,
+                senderId: session.sessionId,
+                route,
+                target,
+                typeId: input.typeId,
+                resource: payload,
+                options
+            }
         );
     }
 
@@ -504,7 +541,7 @@ export class BrowserRallarMessageSender {
     }
 
     private createRtcMessage<T>(
-        { input, payloadValidation, target, session, channel }: CreateRtcMessageInput<T>
+        { createdAtEpochMs, input, payloadValidation, target, session, channel }: CreateRtcMessageInput<T>
     ): ALMessage {
         const defaults = toBrowserMessageSendDefaults({
             send: input,
@@ -513,31 +550,34 @@ export class BrowserRallarMessageSender {
             laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
         });
         return this.input.creation.createMulticast(
-            session.sessionId,
-            newALRoute(
-                input.topicId ?? input.typeId,
-                input.contextId ?? target.roomId,
-                input.resourceId ?? this.input.creation.newResourceId()
-            ),
-            target.roomRef,
-            input.typeId,
-            parseCapturedPayload(payloadValidation),
             {
-                ...this.input.resolveRoomSendFence(target.room, input.minSnapshotVersion),
-                ttlHops: input.ttlHops,
-                ttlMs: defaults.ttlMs,
-                seq: input.seq,
-                orderingKey: input.orderingKey ??
-                    (input.seq === undefined ? undefined : toALGroupTargetKey(target.roomRef)),
-                reliability: defaults.reliability,
-                ack: defaults.ack,
-                ownership: input.ownership ?? 'shared',
-                qos: defaults.qos,
-                nextHopPeerIds: input.nextHopPeerIds,
-                overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
-                fanoutLimit: input.fanoutLimit,
-                actions: toSendActions(input),
-                traceId: input.traceId
+                createdAtEpochMs,
+                senderId: session.sessionId,
+                route: newALRoute(
+                    input.topicId ?? input.typeId,
+                    input.contextId ?? target.roomId,
+                    input.resourceId ?? this.input.creation.newResourceId()
+                ),
+                groupRef: target.roomRef,
+                typeId: input.typeId,
+                resource: parseCapturedPayload(payloadValidation),
+                options: {
+                    ...this.input.resolveRoomSendFence(target.room, input.minSnapshotVersion),
+                    ttlHops: input.ttlHops,
+                    ttlMs: defaults.ttlMs,
+                    seq: input.seq,
+                    orderingKey: input.orderingKey ??
+                        (input.seq === undefined ? undefined : toALGroupTargetKey(target.roomRef)),
+                    reliability: defaults.reliability,
+                    ack: defaults.ack,
+                    ownership: input.ownership ?? 'shared',
+                    qos: defaults.qos,
+                    nextHopPeerIds: input.nextHopPeerIds,
+                    overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
+                    fanoutLimit: input.fanoutLimit,
+                    actions: toSendActions(input),
+                    traceId: input.traceId
+                }
             }
         );
     }

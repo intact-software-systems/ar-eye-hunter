@@ -224,16 +224,19 @@ function createRoomBroadcast(
     ack: ALAckMode = 'all-logical-recipients'
 ): ALMessage {
     return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
-        'room',
-        'chat.message.v1',
-        { name },
         {
-            groupRef: ORIGIN_ROOM,
-            ttlMs: 30_000,
-            ack,
-            ...(orderingKey === undefined ? {} : { ordering: { orderingKey } })
+            createdAtEpochMs: Date.now(),
+            senderId: SESSION_ID,
+            route: newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { name },
+            options: {
+                groupRef: ORIGIN_ROOM,
+                ttlMs: 30_000,
+                ack,
+                ...(orderingKey === undefined ? {} : { ordering: { orderingKey } })
+            }
         }
     );
 }

@@ -17,11 +17,14 @@ describe('RTC topology replay wake validation', () => {
         const fixture = createRtcTopologyReplayFixture();
         const otherOutbox = QueueBoxUtilities.toResourceEntryFromMsg(
             newALBroadcastMessage(
-                'rallar-server',
-                newALRoute('app.other', 'all', 'other-1'),
-                'all',
-                'app.other.v1',
-                { value: true }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'rallar-server',
+                    route: newALRoute('app.other', 'all', 'other-1'),
+                    scope: 'all',
+                    typeId: 'app.other.v1',
+                    resource: { value: true }
+                }
             ),
             WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
             Temporal.Now.instant()

@@ -74,8 +74,16 @@ describe('outbound first-admission expiry selection', () => {
 });
 
 function createMessage() {
-    const message = newALUnicastMessage('sender', { topicId: 'position', contextId: 'room', resourceId: 'player' }, 'receiver', 'position.v1', { x: 1 }, {
-        ttlMs: 5_000
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'position', contextId: 'room', resourceId: 'player' },
+        toPeerId: 'receiver',
+        typeId: 'position.v1',
+        resource: { x: 1 },
+        options: {
+            ttlMs: 5_000
+        }
     });
     return { ...message, constraints: { ...message.constraints, ttlHops: 3 } };
 }

@@ -17,13 +17,21 @@ const ROUTE = newALRoute('app.suggestion', 'room-1', 'resource-1');
 
 describe('a principal broadcast in a room', () => {
     it('names the room and the principal, keeps the room send options, and decodes', () => {
-        const message = newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ROOM, principalRef: PRINCIPAL }, 'app.suggestion.v1', {}, {
-            exceptPeerIds: ['b'],
-            minSnapshotVersion: 7,
-            rosterVersion: 4,
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 30_000
+        const message = newALPrincipalBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            target: { groupRef: ROOM, principalRef: PRINCIPAL },
+            typeId: 'app.suggestion.v1',
+            resource: {},
+            options: {
+                exceptPeerIds: ['b'],
+                minSnapshotVersion: 7,
+                rosterVersion: 4,
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 30_000
+            }
         });
 
         expect(message.targets).toEqual({
@@ -40,7 +48,14 @@ describe('a principal broadcast in a room', () => {
     });
 
     it('is room-scoped by its room, and a principal broadcast that names no room is not', () => {
-        const inRoom = newALPrincipalBroadcastMessage('a', ROUTE, { groupRef: ROOM, principalRef: PRINCIPAL }, 'app.suggestion.v1', {});
+        const inRoom = newALPrincipalBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            target: { groupRef: ROOM, principalRef: PRINCIPAL },
+            typeId: 'app.suggestion.v1',
+            resource: {}
+        });
         const roomless: ALMessage = { ...inRoom, targets: { mode: 'broadcast', scope: 'principal', principalRef: PRINCIPAL } };
 
         expect(isRoomScopedALMessage(inRoom)).toBe(true);
@@ -52,9 +67,17 @@ describe('a principal broadcast in a room', () => {
 
 describe('a room broadcast with a fixed audience', () => {
     it('carries the sender\'s list beside the room and decodes', () => {
-        const message = newALBroadcastMessage('a', ROUTE, 'room', 'app.suggestion.v1', {}, {
-            groupRef: ROOM,
-            recipientPeerIds: ['b', 'c']
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.suggestion.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                recipientPeerIds: ['b', 'c']
+            }
         });
 
         expect(message.targets).toMatchObject({ mode: 'broadcast', scope: 'room', groupRef: ROOM, recipientPeerIds: ['b', 'c'] });
@@ -62,7 +85,15 @@ describe('a room broadcast with a fixed audience', () => {
     });
 
     it('keeps a list given with another scope, which the canonical decoder refuses as malformed', () => {
-        const message = newALBroadcastMessage('a', ROUTE, 'world', 'app.suggestion.v1', {}, { recipientPeerIds: ['b'] });
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'world',
+            typeId: 'app.suggestion.v1',
+            resource: {},
+            options: { recipientPeerIds: ['b'] }
+        });
 
         expect(message.targets).toMatchObject({ mode: 'broadcast', scope: 'world', recipientPeerIds: ['b'] });
         expect(decodeALMessage(JSON.stringify(message)).left).toEqual({
@@ -74,9 +105,17 @@ describe('a room broadcast with a fixed audience', () => {
 
 describe('the receiver planner of a listed room broadcast', () => {
     it('delivers to a listed session and forwards only to listed children', () => {
-        const message = newALBroadcastMessage('a', ROUTE, 'room', 'app.suggestion.v1', {}, {
-            groupRef: ROOM,
-            recipientPeerIds: ['self', 'c']
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.suggestion.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                recipientPeerIds: ['self', 'c']
+            }
         });
 
         const plan = planALMessageHandling(message, {
@@ -93,9 +132,17 @@ describe('the receiver planner of a listed room broadcast', () => {
     });
 
     it('delivers nothing to a session the list leaves out', () => {
-        const message = newALBroadcastMessage('a', ROUTE, 'room', 'app.suggestion.v1', {}, {
-            groupRef: ROOM,
-            recipientPeerIds: ['c']
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'app.suggestion.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                recipientPeerIds: ['c']
+            }
         });
 
         const plan = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', fromPeerId: 'a' });

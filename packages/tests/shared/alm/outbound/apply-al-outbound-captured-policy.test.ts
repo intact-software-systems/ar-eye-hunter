@@ -13,14 +13,17 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 const MESSAGE = newALBroadcastMessage(
-    'origin',
-    newALRoute('room.chat', 'room-1', 'message-1'),
-    'room',
-    'chat.message.v1',
-    {},
     {
-        ttlMs: 30_000,
-        groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: newALRoute('room.chat', 'room-1', 'message-1'),
+        scope: 'room',
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }
+        }
     }
 );
 

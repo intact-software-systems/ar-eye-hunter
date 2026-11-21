@@ -1,3 +1,6 @@
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { signALPublicationProof, verifyALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type {
     RallarStorageUnavailablePolicy,
@@ -20,7 +23,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { createDefaultOutboundTestRuntime, createVolatileOutboundTestStores } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
@@ -51,6 +54,37 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('typed message fallback identity', () => {
+    it.each([-20_000, 20_000])('keeps the signed deadline through WS handover with device offset %i', async (offsetMs) => {
+        const createdAtEpochMs = 100_000;
+        let serverNowMs = createdAtEpochMs;
+        vi.setSystemTime(createdAtEpochMs + offsetMs);
+        const { subtle, keyPair } = ROOM_PUBLICATION_CRYPTO;
+        const fixture = createChannel({
+            serverNowMs: () => serverNowMs,
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReasonCode: undefined, recordsSentPositions: ['b'] }),
+            firstSigner: async (message) => (await signALPublicationProof({ subtle, keyPair, message }))
+                .mapBoth((failure) => failure.message, (signed) => signed)
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 1000, ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+        serverNowMs = 100_999;
+        fixture.settlements.rtc({
+            kind: 'receipt-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: serverNowMs,
+            mode: 'receiver', confirmedPeerIds: [], unconfirmedPeerIds: ['b'], outsideAudiencePeerIds: [],
+            cause: 'budget', detail: 'Receipt budget elapsed.', traceId: handle.traceId
+        });
+        await vi.waitFor(() => expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc', 'ws']));
+        const copy = fixture.attempts[1]!.message;
+        expect(copy.id.ts).toBe(createdAtEpochMs);
+        expect(copy.audit?.createdTs).toBe(createdAtEpochMs);
+        expect(copy.constraints?.expiresAtMs).toBe(101_000);
+        const publicKey = await subtle.importKey('jwk', keyPair.publicJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+        expect((await verifyALPublicationProof({ subtle, publicKey, message: copy })).right).toBe(copy);
+        serverNowMs = 101_000;
+        expect(handle.lifecycle().state).toBe('expired');
+    });
+
     it.each(['rtc-with-ws-fallback', 'ws-then-rtc'] as const)(
         'preserves the complete envelope across %s after the current room changes',
         async (strategy) => {
@@ -560,6 +594,7 @@ describe('typed message fallback identity', () => {
 });
 
 interface ChannelInput {
+    readonly serverNowMs?: () => number;
     readonly firstVerdict: ALDeliveryAdmissionVerdict;
     readonly durability?: ALDurabilityAlgo;
     readonly onStorageUnavailable?: RallarStorageUnavailablePolicy;
@@ -590,13 +625,19 @@ interface ChannelFixture {
 function createChannel(input: ChannelInput): ChannelFixture {
     const admission = new ChannelAdmission(input);
     const context = createDefaultApiMiddlewareTestDouble({
+        serverTime: createDefaultBrowserServerClockFixture(input.serverNowMs),
         middleware: {
             rtcRxStreamer: { enqueueOutboxIfAbsent: (message) => admission.admit('rtc', message) },
             webSocketQueueBox: { enqueueOutboxIfAbsent: (message) => admission.admit('ws', message) }
         }
     });
     const inputValidator = new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 });
-    const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
         deliverySettlements: feed,
@@ -618,8 +659,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
         dispatch: new BrowserRallarMessageDispatch({
             deliveries,
             sessionDeliveries,
-            publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-            nowMs: Date.now,
+            publicationStages: new BrowserPublicationStages(),
             readPublicationPermissions: () => undefined,
             grantedTopics: NO_RTC_GRANTED_TOPICS
         }),
@@ -686,6 +726,8 @@ class ChannelAdmission {
         this.input = input;
         this.firstRuntime = input.firstPlanner
             ? createDefaultOutboundTestRuntime({
+                nowMs: input.serverNowMs,
+                volatileStores: createVolatileOutboundTestStores(input.serverNowMs),
                 planOutgoingMessage: input.firstPlanner,
                 signAdmittedMessage: input.firstSigner,
                 sendPreparedMessage: async () => {

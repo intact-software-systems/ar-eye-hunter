@@ -14,6 +14,7 @@ import { isGroupActive } from '@shared/api/group-client-views.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
+import { readBrowserServerExpiryEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 
 import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import type { RallarRoomPresenceWaitOptions, RallarRoomPresenceWaitResult } from './rallar-room-contracts.ts';
@@ -79,6 +80,26 @@ export async function waitForRoomPresence(
         timeoutMs: normalizeWaitTimeoutMs(options.timeoutMs),
         toTimedOut: () => readResult('timeout'),
         toAborted: () => ({ ...readResult(), status: 'aborted' })
+    });
+}
+
+interface ConfirmedRoomArrivalInput extends Omit<SummarisedRoomPresenceInput, 'isSummarised'> {
+    readonly generationId: string;
+}
+
+/** Admission and socket presence can appear in different revisions of the room summary. */
+export async function readConfirmedRoomArrival(input: ConfirmedRoomArrivalInput): Promise<GroupSnapshot> {
+    const { context, fence, generationId } = input;
+    return await readSummarisedRoomPresence({
+        ...input,
+        isSummarised: (snapshot) => {
+            const socket = context.middleware.ownWsConnectionGeneration.readKnown();
+            const now = readBrowserServerExpiryEpochMs(context.serverTime);
+            return snapshot.activeSessions.some((row) =>
+                row.principalId === fence.session.clientId && row.sessionId === fence.session.sessionId &&
+                row.generationId === generationId && row.connectionGenerationId === socket && row.expiresAtEpochMs > now
+            );
+        }
     });
 }
 

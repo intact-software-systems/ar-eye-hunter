@@ -85,6 +85,7 @@ import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admi
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { createInitialiseMiddlewareDouble } from '../connection/create-initialise-middleware-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
@@ -189,21 +190,24 @@ describe('RTC room authority recovery', () => {
         await receiver.native.open();
         const ack = scenario === 'no-ack' ? 'none' : 'hop';
         const message = newALMulticastMessage(
-            'sender',
             {
-                topicId: 'room.messages',
-                contextId: 'room',
-                resourceId: 'recovery'
-            },
-            room,
-            'recovery.message',
-            { value: 1 },
-            {
-                ttlMs: 30_000,
-                reliability: 'at-least-once',
-                minSnapshotVersion: scenario === 'insufficient-floor' ? 2 : undefined,
-                ack: ack === 'hop' ? 'all-logical-recipients' : 'none',
-                qos: { durability: { algo: 'volatile' }, ack: { algo: ack, opts: { timeoutMs: 5_000 } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: {
+                    topicId: 'room.messages',
+                    contextId: 'room',
+                    resourceId: 'recovery'
+                },
+                groupRef: room,
+                typeId: 'recovery.message',
+                resource: { value: 1 },
+                options: {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    minSnapshotVersion: scenario === 'insufficient-floor' ? 2 : undefined,
+                    ack: ack === 'hop' ? 'all-logical-recipients' : 'none',
+                    qos: { durability: { algo: 'volatile' }, ack: { algo: ack, opts: { timeoutMs: 5_000 } } }
+                }
             }
         );
 
@@ -246,12 +250,15 @@ describe('RTC room authority recovery', () => {
         }
         if (scenario === 'coalesced-higher-floor') {
             higherFloorMessage = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'higher-floor' },
-                room,
-                'recovery.message',
-                { value: 2 },
-                { ttlMs: 30_000, minSnapshotVersion: 2 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'higher-floor' },
+                    groupRef: room,
+                    typeId: 'recovery.message',
+                    resource: { value: 2 },
+                    options: { ttlMs: 30_000, minSnapshotVersion: 2 }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(higherFloorMessage)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(0);
@@ -378,18 +385,21 @@ describe('the roster fence at an RTC receiver', () => {
         await sender.native.open();
         await receiver.native.open();
         const message = newALMulticastMessage(
-            'sender',
-            { topicId: 'room.messages', contextId: 'room', resourceId: 'fenced' },
-            room,
-            'fenced.message',
-            { value: 1 },
             {
-                ttlMs: 30_000,
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                minSnapshotVersion: stamped.group.snapshotVersion,
-                rosterVersion: stamped.group.rosterVersion,
-                qos: { durability: { algo: 'volatile' }, ack: { algo: 'hop', opts: { timeoutMs: 5_000 } } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'room.messages', contextId: 'room', resourceId: 'fenced' },
+                groupRef: room,
+                typeId: 'fenced.message',
+                resource: { value: 1 },
+                options: {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    minSnapshotVersion: stamped.group.snapshotVersion,
+                    rosterVersion: stamped.group.rosterVersion,
+                    qos: { durability: { algo: 'volatile' }, ack: { algo: 'hop', opts: { timeoutMs: 5_000 } } }
+                }
             }
         );
 
@@ -505,34 +515,40 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             await sender.native.open();
             await receiver.native.open();
             const old = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'old' },
-                room,
-                'lifecycle.message',
-                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
                 {
-                    ttlMs: 30_000,
-                    reliability: 'at-least-once',
-                    ack: 'receiver',
-                    seq: scenario === 'unsequenced-latest' ? undefined : 1,
-                    qos: { ack: { algo: 'hop' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'old' },
+                    groupRef: room,
+                    typeId: 'lifecycle.message',
+                    resource: { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
+                    options: {
+                        ttlMs: 30_000,
+                        reliability: 'at-least-once',
+                        ack: 'receiver',
+                        seq: scenario === 'unsequenced-latest' ? undefined : 1,
+                        qos: { ack: { algo: 'hop' } }
+                    }
                 }
             );
             expect(await sender.multicast.enqueueIfAbsent(old)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);
             expect(sender.messages()).toEqual([]);
             const replacement = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'replacement' },
-                room,
-                'lifecycle.message',
-                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
                 {
-                    ttlMs: 30_000,
-                    reliability: 'at-least-once',
-                    ack: 'receiver',
-                    seq: scenario === 'unsequenced-latest' ? undefined : 2,
-                    qos: { ack: { algo: 'hop' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'replacement' },
+                    groupRef: room,
+                    typeId: 'lifecycle.message',
+                    resource: { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
+                    options: {
+                        ttlMs: 30_000,
+                        reliability: 'at-least-once',
+                        ack: 'receiver',
+                        seq: scenario === 'unsequenced-latest' ? undefined : 2,
+                        qos: { ack: { algo: 'hop' } }
+                    }
                 }
             );
             expect(await sender.multicast.enqueueIfAbsent(replacement)).toMatchObject({ verdict: { kind: 'admitted' } });
@@ -778,7 +794,12 @@ function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): RallarFacad
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
     vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
-        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+        createInitialiseMiddlewareDouble(async () => ({
+            middleware: context.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }))
     );
     return createRallarFacade();
 }
@@ -905,12 +926,15 @@ describe('authoritative room observation freshness', () => {
             await sender.native.open();
             await receiver.native.open();
             const message = newALMulticastMessage(
-                'sender',
-                { topicId: 'room.messages', contextId: 'room', resourceId: 'freshness' },
-                room,
-                'freshness.message',
-                { value: 1 },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route: { topicId: 'room.messages', contextId: 'room', resourceId: 'freshness' },
+                    groupRef: room,
+                    typeId: 'freshness.message',
+                    resource: { value: 1 },
+                    options: { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
+                }
             );
             if (scenario === 'expired-original' || scenario === 'normal-authoritative-expired-original') {
                 vi.setSystemTime(92_000);
@@ -990,7 +1014,12 @@ async function refreshNormalRoom(): Promise<void> {
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
     vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
-        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+        createInitialiseMiddlewareDouble(async () => ({
+            middleware: context.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }))
     );
     const facade = createRallarFacade();
     await facade.rooms.session(room).refresh();
@@ -1020,19 +1049,6 @@ function snapshotResponse(snapshot: GroupSnapshot, scenario: string): Response {
     });
 }
 
-namespace NativeAuthorityEndpoint {
-    export interface Input {
-        readonly sessionId: string;
-        readonly peerId: string;
-        readonly nativeRuntime: NativeRtcRuntime;
-        readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
-        readonly refresh: RtcGroupSnapshotRefresh | undefined;
-        readonly faultPort: TransportFaultPort;
-        readonly qosProvider: ALQosInputProvider | undefined;
-        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
-    }
-}
-
 /** The receiver's request for seq 1 on the sender's track, as it asks on the copy that revealed the gap. */
 function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
     return newALRepairControlMessage(
@@ -1048,6 +1064,19 @@ function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
             missingRanges: [{ from: 1, to: 1 }]
         }
     );
+}
+
+namespace NativeAuthorityEndpoint {
+    export interface Input {
+        readonly sessionId: string;
+        readonly peerId: string;
+        readonly nativeRuntime: NativeRtcRuntime;
+        readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
+        readonly refresh: RtcGroupSnapshotRefresh | undefined;
+        readonly faultPort: TransportFaultPort;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
+    }
 }
 
 class NativeAuthorityEndpoint {

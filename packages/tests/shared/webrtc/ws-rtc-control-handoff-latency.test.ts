@@ -426,7 +426,7 @@ async function observeRtcControlTraffic(
         observations.controlStatuses.push(...result.map((entry) => entry.verdict.kind));
         return result;
     });
-    const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
+    const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now);
     await transport.connect({
         sessionId: 'self',
         token: 'test-token',
@@ -512,30 +512,36 @@ const planIncomingMessage: ALInboundMessageRuntime.Dependencies['planIncomingMes
 function createBackgroundMessages(): readonly ALMessage[] {
     return Array.from({ length: BACKGROUND_CONTROL_COUNT }, (_, index) =>
         newALUnicastMessage(
-            `background-peer-${index}`,
-            newALEventRoute('background', 'self'),
-            'self',
-            'background',
-            { index },
-            { ttlMs: 60_000, qos: { ack: { algo: 'hop' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: `background-peer-${index}`,
+                route: newALEventRoute('background', 'self'),
+                toPeerId: 'self',
+                typeId: 'background',
+                resource: { index },
+                options: { ttlMs: 60_000, qos: { ack: { algo: 'hop' } } }
+            }
         ));
 }
 
 function createRtcSignal(): ALMessage {
     return newALUnicastMessage(
-        'peer-c',
-        newALEventRoute('rtc', 'self'),
-        'self',
-        'rtc',
         {
-            channel: QRtcSignalingChannel.RtcSignal,
-            type: QRtcSignalingMsgType.Signal,
-            fromId: 'peer-c',
-            toId: 'self',
-            sessionId: 'self',
-            token: 'test-token',
-            signalType: QRtcSignalingType.IceCandidate,
-            payload: { description: null, candidate: { candidate: 'test-candidate' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-c',
+            route: newALEventRoute('rtc', 'self'),
+            toPeerId: 'self',
+            typeId: 'rtc',
+            resource: {
+                channel: QRtcSignalingChannel.RtcSignal,
+                type: QRtcSignalingMsgType.Signal,
+                fromId: 'peer-c',
+                toId: 'self',
+                sessionId: 'self',
+                token: 'test-token',
+                signalType: QRtcSignalingType.IceCandidate,
+                payload: { description: null, candidate: { candidate: 'test-candidate' } }
+            }
         }
     );
 }

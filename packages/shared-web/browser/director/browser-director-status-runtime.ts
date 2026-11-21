@@ -17,10 +17,12 @@ import {
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
+import type { RemoteClockWindow } from '@shared/resilience/remote-clock.ts';
+
 export namespace BrowserDirectorStatusRuntime {
     export interface Input {
         readonly roomStateStore: RallarRoomStateStorePort;
-        readonly nowMs: () => number;
+        readonly readWindow: () => RemoteClockWindow | undefined;
         readSession(): AuthSession | undefined;
         resolveDefaultRoom(): string | GroupRef | undefined;
     }
@@ -53,8 +55,10 @@ export class BrowserDirectorStatusRuntime {
         const roomRef = this.resolveRoomRef(target, snapshot);
         const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
         const heartbeat = this.readMatchingHeartbeat(roomRef, appointment);
-        const now = options.now ?? this.input.nowMs();
-        const active = isRallarGroupDirectorSessionActive(snapshot, appointment);
+        const window = this.input.readWindow();
+        // The legacy numeric observation time remains available for rendering a disconnected status.
+        const now = options.now ?? window?.latestEpochMs ?? Date.now();
+        const active = window !== undefined && isRallarGroupDirectorSessionActive(snapshot, appointment, now);
         const freshness = active
             ? readRallarGroupDirectorFreshness(appointment, heartbeat?.atEpochMs, now)
             : appointment
@@ -95,8 +99,11 @@ export class BrowserDirectorStatusRuntime {
     public recordHeartbeat(
         roomRef: GroupRef,
         appointment: RallarGroupDirectorAppointment,
-        atEpochMs = this.input.nowMs()
+        atEpochMs = this.input.readWindow()?.earliestEpochMs
     ): void {
+        if (atEpochMs === undefined) {
+            return;
+        }
         this.heartbeatByRoom.set(toRoomKey(roomRef), {
             sessionId: appointment.sessionId,
             epoch: appointment.epoch,

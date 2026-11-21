@@ -35,7 +35,7 @@ export function createBrowserDeliveryCancel(
 }
 
 const nowMs = Date.now;
-const publicationStages = new BrowserPublicationStages({ nowMs });
+const publicationStages = new BrowserPublicationStages();
 const deliveries = new BrowserRallarDeliveryRegistry({
     nowMs,
     ...BROWSER_DELIVERY_RETENTION,

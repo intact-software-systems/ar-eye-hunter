@@ -229,12 +229,15 @@ async function writeProvedWsRows(lane: WsDequeueLane, runId: string): Promise<Pr
     const rows: ProvedWsRow[] = [];
     for (let index = 0; index < GROUP_SIZE; index += 1) {
         const message = newALUnicastMessage(
-            lane.senderId,
-            { topicId: 'snapshot', resourceId: `page-${index}`, contextId: runId },
-            'peer',
-            'snapshot.v1',
-            {},
-            { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: lane.senderId,
+                route: { topicId: 'snapshot', resourceId: `page-${index}`, contextId: runId },
+                toPeerId: 'peer',
+                typeId: 'snapshot.v1',
+                resource: {},
+                options: { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+            }
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts: Omit<WsOutboxProvenance, 'digest'> = {

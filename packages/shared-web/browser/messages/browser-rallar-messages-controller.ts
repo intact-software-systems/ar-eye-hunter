@@ -162,7 +162,6 @@ function createMessageSender(
             deliveries: input.deliveries,
             sessionDeliveries: input.sessionDeliveries,
             publicationStages: input.publicationStages,
-            nowMs: input.nowMs,
             readPublicationPermissions: input.readPublicationPermissions,
             grantedTopics: input.grantedTopics
         }),

@@ -21,6 +21,7 @@ import type { GroupSessionPage } from '@shared/api/group-sessions/group-session-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { PartyView } from '@shared/api/parties/party-view.ts';
+import type { ConnectGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
 import type { TournamentCatalogPage } from '@shared/api/tournaments/tournament-catalog.ts';
 import {
     createRallarAiJsonResult,
@@ -229,6 +230,12 @@ class RelicBrowserBackend {
         ) {
             await this.respondTournamentCatalog(route);
         }
+        else if (path === '/api/time' && route.request().method() === 'GET') {
+            await route.fulfill({
+                headers: { 'cache-control': 'no-store' },
+                json: { serverPeerId: 'default-qbox-server', serverNowEpochMs: Date.now() }
+            });
+        }
         else if (path.startsWith('/api/state/')) {
             await this.respondPlatformState(route, path);
         }
@@ -297,7 +304,10 @@ class RelicBrowserBackend {
             await route.fulfill({ json: this.rooms });
         }
         else if (path.includes('/groups/')) {
-            const room = this.rooms[0] ?? createGroupSnapshot({ onlineMemberCount: 1 });
+            const previous = this.rooms[0] ?? createGroupSnapshot({ onlineMemberCount: 1 });
+            const room = route.request().method() === 'PUT' && path.includes(`/sessions/${session.sessionId}/requests/`)
+                ? connectRelicBrowserPresence(previous, route.request().postDataJSON())
+                : previous;
             this.rooms = [room];
             await route.fulfill({
                 headers: {
@@ -398,6 +408,27 @@ function createClientSnapshot(): ClientSnapshot {
     };
 }
 
+function connectRelicBrowserPresence(room: GroupSnapshot, request: ConnectGroupPresenceSessionRequest): GroupSnapshot {
+    const presenceRevision = room.causalRevision.presenceRevision + 1;
+    return {
+        ...room,
+        causalRevision: { ...room.causalRevision, presenceRevision },
+        group: { ...room.group, presenceVersion: presenceRevision },
+        activeSessions: room.activeSessions.map((row) =>
+            row.sessionId === session.sessionId
+                ? {
+                    ...row,
+                    principalId: request.principalId,
+                    generationId: request.generationId,
+                    connectionGenerationId: request.connectionGenerationId,
+                    publicationKey: request.publicationKey,
+                    expiresAtEpochMs: request.expiresAtEpochMs ?? row.expiresAtEpochMs
+                }
+                : row
+        )
+    };
+}
+
 export function createGroupSnapshot(
     options: Readonly<{ onlineMemberCount: number; }>
 ): GroupSnapshot {
@@ -474,20 +505,23 @@ function toServerAckFrame(command: ALMessage): string {
 function toSnapshotFrame(snapshot: RelicPublicSnapshot): string {
     const roomId = String(snapshot.roomId);
     return JSON.stringify(newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute('room.relic.snapshot', roomId, `${String(snapshot.gameId)}:${String(snapshot.round)}`),
-        'room',
-        'relic.snapshot.v1',
-        { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
         {
-            groupRef: {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: roomId
-            },
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 15_000
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute('room.relic.snapshot', roomId, `${String(snapshot.gameId)}:${String(snapshot.round)}`),
+            scope: 'room',
+            typeId: 'relic.snapshot.v1',
+            resource: { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
+            options: {
+                groupRef: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: roomId
+                },
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 15_000
+            }
         }
     ));
 }
@@ -523,14 +557,17 @@ function toHunterRefusalFrame(command: RelicCommand, text: string): string {
         text
     };
     return JSON.stringify(newALPrincipalBroadcastMessage(
-        'default-qbox-server',
-        newALRoute('room.relic.hunter', command.gameId, `refusal:${command.gameId}`),
         {
-            groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: command.gameId },
-            principalRef: { applicationId: 'rallar-server', workspaceId: 'default', principalId: session.clientId }
-        },
-        'relic.hunter.v1',
-        event,
-        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 15_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute('room.relic.hunter', command.gameId, `refusal:${command.gameId}`),
+            target: {
+                groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: command.gameId },
+                principalRef: { applicationId: 'rallar-server', workspaceId: 'default', principalId: session.clientId }
+            },
+            typeId: 'relic.hunter.v1',
+            resource: event,
+            options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 15_000 }
+        }
     ));
 }

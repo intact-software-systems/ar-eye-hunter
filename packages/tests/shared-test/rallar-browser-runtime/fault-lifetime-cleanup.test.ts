@@ -243,15 +243,18 @@ async function createHeldFaultRuntime(): Promise<HeldFaultRuntime> {
 
 function toTestFrame(typeId: string): string {
     return JSON.stringify(newALUnicastMessage(
-        'sender',
         {
-            topicId: 'topic',
-            contextId: 'room',
-            resourceId: 'resource'
-        },
-        'receiver',
-        typeId,
-        {}
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: {
+                topicId: 'topic',
+                contextId: 'room',
+                resourceId: 'resource'
+            },
+            toPeerId: 'receiver',
+            typeId,
+            resource: {}
+        }
     ));
 }
 

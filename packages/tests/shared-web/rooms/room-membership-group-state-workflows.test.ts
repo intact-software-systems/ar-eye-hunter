@@ -1,5 +1,14 @@
-import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as membershipWorkflows from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
@@ -17,7 +26,6 @@ interface FetchCall {
     readonly url: string;
     readonly requestId?: string;
     readonly method: string;
-    readonly rawBody?: string;
     readonly body?: ApiJsonObject;
 }
 
@@ -63,14 +71,11 @@ describe('room membership group-state workflows', () => {
             sessionId: 'owner-session'
         });
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, requestId, method, body }) => ({ url, requestId, method, body }))).toEqual([
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1',
                 requestId: 'invite-request-0000001',
                 method: 'POST',
-                rawBody: '{"invitationExpiresAtEpochMs":2000,"reason":"join us",' +
-                    '"actorPrincipalId":"owner-1",' +
-                    '"actorSessionId":"owner-session"}',
                 body: {
                     invitationExpiresAtEpochMs: 2_000,
                     reason: 'join us',
@@ -82,7 +87,6 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1/revoke',
                 requestId: 'revoke-request-0000001',
                 method: 'POST',
-                rawBody: '{"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     actorPrincipalId: 'owner-1',
                     actorSessionId: 'owner-session'
@@ -91,12 +95,21 @@ describe('room membership group-state workflows', () => {
         ]);
     });
 
-    it('accepts a room invitation before connecting member presence', async () => {
+    it.each([
+        { label: 'default', groupPresence: undefined, expiresAtEpochMs: 123_000 },
+        {
+            label: 'short',
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 500, retryMs: 500 },
+            expiresAtEpochMs: 11_000
+        }
+    ])('accepts a room invitation before connecting $label member presence', async ({ groupPresence, expiresAtEpochMs }) => {
         stubUuids('accept-request-0000001', 'presence-request-000001');
-        stubSuccessfulFetch(fetchCalls);
+        stubSuccessfulFetch(fetchCalls, 2_000);
 
         await membershipWorkflows.acceptStateGroupInvite({
+            nowMs: () => Date.now(),
             publicationKey: null,
+            groupPresence,
             groupId: 'group-1',
             actorPrincipalId: 'member-1',
             sessionId: 'member-session',
@@ -104,12 +117,11 @@ describe('room membership group-state workflows', () => {
             connectionGenerationId: 'ws-generation-1'
         });
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, requestId, method, body }) => ({ url, requestId, method, body }))).toEqual([
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/accept',
                 requestId: 'accept-request-0000001',
                 method: 'POST',
-                rawBody: '{"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
                 body: {
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session'
@@ -119,15 +131,12 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/member-session',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody:
-                    '{"principalId":"member-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
-                    '"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
                 body: {
                     principalId: 'member-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
                     publicationKey: null,
-                    expiresAtEpochMs: 121_000,
+                    expiresAtEpochMs,
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session'
                 }
@@ -147,13 +156,11 @@ describe('room membership group-state workflows', () => {
 
         await runMembershipGovernanceWorkflows();
 
-        expect(fetchCalls).toEqual([
+        expect(fetchCalls.map(({ url, requestId, method, body }) => ({ url, requestId, method, body }))).toEqual([
             {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/remove',
                 requestId: 'remove-request-0000001',
                 method: 'POST',
-                rawBody: '{"reason":"remove",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'remove',
                     actorPrincipalId: 'owner-1',
@@ -164,8 +171,6 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/ban',
                 requestId: 'ban-request-0000000001',
                 method: 'POST',
-                rawBody: '{"reason":"ban",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'ban',
                     actorPrincipalId: 'owner-1',
@@ -176,8 +181,6 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/unban',
                 requestId: 'unban-request-00000001',
                 method: 'POST',
-                rawBody: '{"reason":"unban",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     reason: 'unban',
                     actorPrincipalId: 'owner-1',
@@ -188,8 +191,6 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/role',
                 requestId: 'role-request-000000001',
                 method: 'PUT',
-                rawBody: '{"role":"admin","reason":"promote",' +
-                    '"actorPrincipalId":"owner-1","actorSessionId":"owner-session"}',
                 body: {
                     role: 'admin',
                     reason: 'promote',
@@ -201,9 +202,6 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/owner/transfer',
                 requestId: 'owner-request-00000001',
                 method: 'POST',
-                rawBody: '{"newOwnerPrincipalId":"member-1","reason":"handoff",' +
-                    '"actorPrincipalId":"owner-1",' +
-                    '"actorSessionId":"owner-session"}',
                 body: {
                     newOwnerPrincipalId: 'member-1',
                     reason: 'handoff',
@@ -256,18 +254,22 @@ function stubUuids(...values: string[]): void {
     }
 }
 
-function stubSuccessfulFetch(fetchCalls: FetchCall[]): void {
+function stubSuccessfulFetch(fetchCalls: FetchCall[], elapsedMs = 0): void {
     vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
         const physicalUrl = String(input);
         const rawBody = init?.body ? String(init.body) : undefined;
+        const body = rawBody ? decodeJsonWireText(rawBody) : undefined;
+        if (body !== undefined && !isApiJsonObject(body)) {
+            throw new Error('Room mutation must send a JSON object.');
+        }
         const call = {
             url: withoutMutationRequestPath(physicalUrl),
             requestId: readMutationRequestId(physicalUrl),
             method: init?.method ?? 'GET',
-            rawBody,
-            body: rawBody ? JSON.parse(rawBody) : undefined
+            body
         };
         fetchCalls.push(call);
+        vi.mocked(Date.now).mockReturnValue(Date.now() + elapsedMs);
         return Promise.resolve(jsonResponse(roomSnapshot('group-1')));
     });
 }

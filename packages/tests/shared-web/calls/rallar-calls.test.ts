@@ -16,6 +16,7 @@ import type { OnInboxMessageCallback } from '@shared/services/queue-message-call
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
@@ -50,6 +51,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })
@@ -282,23 +284,26 @@ describe('Rallar calls', () => {
         await facade.connect();
 
         const incoming = newALUnicastMessage(
-            'peer-caller',
-            newALRoute('app.rallar.calls', 'call-1', 'invite-1'),
-            'session-1',
-            'app.rallar.calls.invite.v1',
             {
-                kind: 'invite',
-                callId: 'call-1',
-                fromPeerId: 'peer-caller',
-                toPeerIds: ['session-1'],
-                data: {
-                    laneIds: ['reliable']
-                },
-                media: {
-                    audio: true
-                },
-                message: 'voice?',
-                occurredAtEpochMs: 1
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-caller',
+                route: newALRoute('app.rallar.calls', 'call-1', 'invite-1'),
+                toPeerId: 'session-1',
+                typeId: 'app.rallar.calls.invite.v1',
+                resource: {
+                    kind: 'invite',
+                    callId: 'call-1',
+                    fromPeerId: 'peer-caller',
+                    toPeerIds: ['session-1'],
+                    data: {
+                        laneIds: ['reliable']
+                    },
+                    media: {
+                        audio: true
+                    },
+                    message: 'voice?',
+                    occurredAtEpochMs: 1
+                }
             }
         );
 

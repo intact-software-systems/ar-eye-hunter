@@ -29,6 +29,16 @@ rules, rendering, and product policy.
 `docs/architecture.md` records why these boundaries exist. `examples/README.md`
 shows the smallest copyable use of each surface.
 
+## Recovering a room deadline
+
+An application can publish a revised deadline while a participant is active in
+another room. On explicit entry, the application reads the destination's
+authoritative snapshot and uses Rallar's calibrated clock to decide the phase.
+The authority checks who may edit and which revision the editor saw. The browser
+keeps its controls disabled during recovery and discards older revisions.
+The [two-room poll example](../examples/shared-deadline-poll/README.md) demonstrates
+this flow with independent room state and an application-owned schedule.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

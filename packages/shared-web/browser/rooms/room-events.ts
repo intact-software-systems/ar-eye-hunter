@@ -333,11 +333,14 @@ function toReplayGroupStateEventMessage(event: GroupEvent): RallarStateEventMess
     return toRallarStateEventMessage(
         'replay',
         newALBroadcastMessage(
-            'rallar:replay',
-            newALRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-            'all',
-            AppTopics.groupStateEvent,
-            event
+            {
+                createdAtEpochMs: event.occurredAtEpochMs,
+                senderId: 'rallar:replay',
+                route: newALRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+                scope: 'all',
+                typeId: AppTopics.groupStateEvent,
+                resource: event
+            }
         )
     );
 }

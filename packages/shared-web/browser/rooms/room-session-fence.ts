@@ -17,7 +17,7 @@ export function captureRoomSession(
     return {
         session,
         assertCurrent: (context) => {
-            if (signal?.aborted) {
+            if (signal?.aborted || context?.serverTime.readWindow().left !== undefined) {
                 throw new CommandCancelledError();
             }
             if (

@@ -188,12 +188,15 @@ async function publishFromOrigin(keys: PublicationKeys, snapshotVersion: number)
     });
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            'room.granted-feed.v1',
-            { text: 'feed' },
-            { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-feed-1' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'room.granted-feed.v1',
+                resource: { text: 'feed' },
+                options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-feed-1' }
+            }
         ),
         'hold'
     );

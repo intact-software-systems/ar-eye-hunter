@@ -262,14 +262,25 @@ const PROPOSAL_ROUTE = newALRoute('relic.ai.planning', 'room-1', 'proposal-1');
 
 function proposalTo(principalId: string): ALMessage {
     return newALPrincipalBroadcastMessage(
-        'alice-session',
-        PROPOSAL_ROUTE,
-        { groupRef: PROPOSAL_ROOM, principalRef: { applicationId: 'relic-hunters', workspaceId: 'workspace-1', principalId } },
-        'relic.ai.planning.proposal.v1',
-        {}
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice-session',
+            route: PROPOSAL_ROUTE,
+            target: { groupRef: PROPOSAL_ROOM, principalRef: { applicationId: 'relic-hunters', workspaceId: 'workspace-1', principalId } },
+            typeId: 'relic.ai.planning.proposal.v1',
+            resource: {}
+        }
     );
 }
 
 function roomProposal(): ALMessage {
-    return newALBroadcastMessage('alice-session', PROPOSAL_ROUTE, 'room', 'relic.ai.planning.proposal.v1', {}, { groupRef: PROPOSAL_ROOM });
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'alice-session',
+        route: PROPOSAL_ROUTE,
+        scope: 'room',
+        typeId: 'relic.ai.planning.proposal.v1',
+        resource: {},
+        options: { groupRef: PROPOSAL_ROOM }
+    });
 }

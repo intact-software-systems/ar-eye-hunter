@@ -7,6 +7,7 @@ import {
 
 import {
     readApiV1Matrix,
+    readApiV1MatrixEntry,
     readApiV1Recipe,
     toFlatApiV1RecipeSteps
 } from './api-v1-recipe-test-fixture.ts';
@@ -399,5 +400,39 @@ describe('API-v1 three-server recipe semantics', () => {
         expect(steps.find((step) => step.name === 'readCommittedCrdtThroughTertiary')).toMatchObject({
             connection: 'apiTertiary'
         });
+    });
+
+    it('reads the held reshape in the formation view while the gate holds it and after its release, under a member session', () => {
+        const recipe = readApiV1Recipe(readApiV1MatrixEntry('api-v1-cluster-reshape-gate').recipe);
+        const steps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
+        const names = steps.map((step) => step.name);
+        const formationRead = {
+            method: 'GET',
+            path: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation',
+            headers: { Authorization: '{ownerAuthHeader}', 'x-client-id': '{ownerClientId}' }
+        };
+
+        expect(steps.find((step) => step.name === 'theFormationViewStatesTheHeldKindChange')).toMatchObject({
+            type: 'http',
+            connection: 'tertiary',
+            request: formationRead,
+            expect: {
+                status: 200,
+                body: {
+                    lifecycleState: 'active',
+                    heldReshape: { wantedReasons: ['kind-change'], opensAtEpochMs: '{gateOpensAt}' }
+                }
+            }
+        });
+        expect(steps.find((step) => step.name === 'theFormationViewOwesNothingAfterTheRelease')).toMatchObject({
+            type: 'http',
+            connection: 'primary',
+            request: formationRead,
+            expect: { status: 200, body: { lifecycleState: 'active', heldReshape: null } }
+        });
+        expect(names.indexOf('theFormationViewStatesTheHeldKindChange'))
+            .toBe(names.indexOf('theKindChangeBackToAStarIsHeld') + 1);
+        expect(names.indexOf('theFormationViewOwesNothingAfterTheRelease'))
+            .toBeGreaterThan(names.indexOf('theOpenedGateReleasesTheHeldKindChange'));
     });
 });

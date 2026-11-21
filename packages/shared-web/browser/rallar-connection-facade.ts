@@ -11,6 +11,7 @@ import type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
@@ -31,6 +32,9 @@ import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { BrowserServerClockSession } from './connection/server-clock/browser-server-clock-session.ts';
+
+export type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 
 export type {
     RallarDiagnosticsPorts,
@@ -41,6 +45,8 @@ export type {
 export interface RallarSessionHeartbeat {
     readonly sessionId: string;
     readonly generationId: string;
+    /** Captured opt-in room policy; absence selects the general-purpose timing. */
+    readonly groupPresence?: RallarGroupPresencePolicy;
     stop(): void;
 }
 
@@ -79,6 +85,7 @@ export interface RallarBrowserMiddleware {
 
 /** Authenticated browser connection returned by setup and connect operations. */
 export interface ApiMiddleware {
+    readonly serverTime: Pick<BrowserServerClockSession.Port, 'readWindow' | 'readWorkEpochMs'>;
     readonly session: AuthSession;
     readonly middleware: RallarBrowserMiddleware;
 }
@@ -94,6 +101,7 @@ export interface RallarDefaults {
     readonly messages?: RallarMessageDefaults;
     readonly operations?: RallarOperationDefaults;
     readonly diagnosticsPorts?: RallarDiagnosticsPortsInput;
+    readonly groupPresence?: RallarGroupPresencePolicy;
 }
 
 export interface RallarScopedOperationOptions extends RallarOperationOptions {
@@ -120,12 +128,26 @@ export interface RallarSetupInput extends RallarApiClientConfig, RallarDefaults 
     readonly start?: RallarStartOptions;
 }
 
+/** Maintained deployment bound between the sampled node and the deadline authority, in either direction. */
+export interface RallarDeadlineAuthority {
+    readonly maxAuthorityOffsetMs: number;
+}
+
 export interface RallarConnectionOperations {
     configure(config: RallarApiClientConfig): void;
     setDefaults(defaults?: RallarDefaults): void;
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    /** Earliest closing instant that guarantees the full duration under the live clock bounds.
+     * Returns undefined without calibration. Invalid durations, offset bounds and unsafe epochs throw RangeError.
+     */
+    deadlineAfter(durationMs: number, authority?: RallarDeadlineAuthority): number | undefined;
+    /** Compare an inclusive closing instant with the active server-time window. Invalid epochs and offset bounds throw RangeError. */
+    compareDeadline(
+        deadlineEpochMs: number,
+        authority?: RallarDeadlineAuthority
+    ): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;

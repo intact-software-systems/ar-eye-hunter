@@ -99,6 +99,8 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
     const admitted: string[] = [];
     const budget = createDefaultVolatileSessionBudget();
     const initialized = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
@@ -112,7 +114,7 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
             budget,
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: budget,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -146,12 +148,15 @@ async function receiveAdmitted(receiver: BufferedTrackReceiver, message: ALMessa
 /** One message of the server's track to this session, at the browser's default lifetime. */
 function createTrackMessage(seq: number): ALMessage {
     const message = newALUnicastMessage(
-        'server',
-        { topicId: 'chat', resourceId: `track-${seq}`, contextId: 'conversation' },
-        clientData.sessionId,
-        TYPE_ID,
-        { seq },
-        { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'chat', resourceId: `track-${seq}`, contextId: 'conversation' },
+            toPeerId: clientData.sessionId,
+            typeId: TYPE_ID,
+            resource: { seq },
+            options: { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
+        }
     );
     return { ...message, id: { ...message.id, msgId: `track-${seq}` }, ordering: { orderingKey: 'chat', seq } };
 }

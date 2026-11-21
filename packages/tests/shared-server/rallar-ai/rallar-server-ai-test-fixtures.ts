@@ -102,12 +102,15 @@ export function createRallarServerAiTestMessage(
     return {
         payload: createRallarServerAiTestRequest(requestId),
         raw: newALUnicastMessage(
-            'peer-1',
-            newALRoute(RALLAR_SERVER_AI_TEST_REQUEST_TOPIC_ID, RALLAR_SERVER_AI_TEST_ROOM_REF.groupId, requestId),
-            RALLAR_SERVER_AI_TEST_SERVER_SENDER_ID,
-            RALLAR_SERVER_AI_TEST_REQUEST_TYPE_ID,
-            createRallarServerAiTestRequestJson(requestId),
-            { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF, reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(RALLAR_SERVER_AI_TEST_REQUEST_TOPIC_ID, RALLAR_SERVER_AI_TEST_ROOM_REF.groupId, requestId),
+                toPeerId: RALLAR_SERVER_AI_TEST_SERVER_SENDER_ID,
+                typeId: RALLAR_SERVER_AI_TEST_REQUEST_TYPE_ID,
+                resource: createRallarServerAiTestRequestJson(requestId),
+                options: { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF, reliability: 'at-least-once', ack: 'receiver' }
+            }
         )
     };
 }

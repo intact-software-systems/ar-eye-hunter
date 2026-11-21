@@ -13,12 +13,14 @@ import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import type { RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from './browser-server-clock-fixture.ts';
 
 const mocks = readAuthSessionContractMocks();
 installFakeBroadcastChannelPerTest();
@@ -40,7 +42,12 @@ describe('immutable RTC capture on browser connections', () => {
                 record: options.diagnosticsPorts.signalingDiagnostics,
                 nowEpochMs: () => 10
             });
-            constructed = { middleware: mocks.ctx.middleware, checkpoints: [], rtcCaptureReceipt: capture.receipt };
+            constructed = {
+                middleware: mocks.ctx.middleware,
+                serverClock: createDefaultBrowserServerClockFixture(),
+                checkpoints: [],
+                rtcCaptureReceipt: capture.receipt
+            };
             entered.resolve();
             return pending.promise;
         });
@@ -83,6 +90,7 @@ describe('immutable RTC capture on browser connections', () => {
             configurations.push(options.rtcCaptureConfiguration);
             return {
                 middleware: mocks.ctx.middleware,
+                serverClock: createDefaultBrowserServerClockFixture(),
                 checkpoints: [],
                 rtcCaptureReceipt: createBrowserRtcCapture({
                     configuration: options.rtcCaptureConfiguration,
@@ -111,6 +119,7 @@ describe('immutable RTC capture on browser connections', () => {
             configurations.push(options.rtcCaptureConfiguration);
             return {
                 middleware: mocks.ctx.middleware,
+                serverClock: createDefaultBrowserServerClockFixture(),
                 checkpoints: [],
                 rtcCaptureReceipt: createBrowserRtcCapture({
                     configuration: options.rtcCaptureConfiguration,
@@ -184,6 +193,7 @@ describe('immutable RTC capture on browser connections', () => {
         const cancelled = expect(first).rejects.toThrow('cancelled');
         firstUp.resolve({
             middleware: mocks.ctx.middleware,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: [],
             rtcCaptureReceipt: createBrowserRtcCapture({
                 configuration: { mode: 'off', origin: 'step' },
@@ -197,6 +207,7 @@ describe('immutable RTC capture on browser connections', () => {
         expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'native', origin: 'host' });
         secondUp.resolve({
             middleware: mocks.ctx.middleware,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: [],
             rtcCaptureReceipt: createBrowserRtcCapture({
                 configuration: { mode: 'native', origin: 'host' },
@@ -291,6 +302,7 @@ describe('immutable RTC capture on browser connections', () => {
             configurations.push(options.rtcCaptureConfiguration);
             return {
                 middleware: mocks.ctx.middleware,
+                serverClock: createDefaultBrowserServerClockFixture(),
                 checkpoints: [],
                 rtcCaptureReceipt: createBrowserRtcCapture({
                     configuration: options.rtcCaptureConfiguration,
@@ -348,6 +360,7 @@ describe('immutable RTC capture on browser connections', () => {
             configurations.push(options.rtcCaptureConfiguration);
             return {
                 middleware: mocks.ctx.middleware,
+                serverClock: createDefaultBrowserServerClockFixture(),
                 checkpoints: [],
                 rtcCaptureReceipt: createBrowserRtcCapture({
                     configuration: options.rtcCaptureConfiguration,

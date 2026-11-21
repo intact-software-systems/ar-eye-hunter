@@ -55,7 +55,14 @@ describe('computeALInboundDedupExpiryMs', () => {
     });
 
     it('keeps the window for the deadline a message with no hops left resolves to', () => {
-        const message = newALUnicastMessage('sender', newALEventRoute('test', 'test'), 'receiver', 'test', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('test', 'test'),
+            toPeerId: 'receiver',
+            typeId: 'test',
+            resource: {}
+        });
         const messageDeadlineAtMs = resolveALMessageExpireAtMs({ ...message, constraints: { ttlHops: 0 } });
 
         expect(computeExpiryMs('msg-id', messageDeadlineAtMs)).toBe(NOW_MS + WINDOW_MS);

@@ -373,15 +373,23 @@ export class OrderingClusterScenario {
 
     #newFeedMessage(origin: Party, recipients: readonly Party[], seq: number): ALMessage {
         const route = newALEventRoute(GRANTED_FEED, this.#scope.groupId, `ord-${seq}-${this.#runId}`);
-        return newALBroadcastMessage(origin.session.sessionId, route, 'room', 'feed.v1', {}, {
-            groupRef: this.#scope,
-            recipientPeerIds: recipients.map((party) => party.session.sessionId),
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 30_000,
-            qos: { ack: { algo: 'receiver', opts: { timeoutMs: RECEIVER_ACK_TIMEOUT_MS } } },
-            traceId: `ordering-proof-trace-${seq}-${this.#runId}`,
-            ordering: { orderingKey: 'ordering-proof', epoch: 1, seq }
+        return newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: origin.session.sessionId,
+            route,
+            scope: 'room',
+            typeId: 'feed.v1',
+            resource: {},
+            options: {
+                groupRef: this.#scope,
+                recipientPeerIds: recipients.map((party) => party.session.sessionId),
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 30_000,
+                qos: { ack: { algo: 'receiver', opts: { timeoutMs: RECEIVER_ACK_TIMEOUT_MS } } },
+                traceId: `ordering-proof-trace-${seq}-${this.#runId}`,
+                ordering: { orderingKey: 'ordering-proof', epoch: 1, seq }
+            }
         });
     }
 

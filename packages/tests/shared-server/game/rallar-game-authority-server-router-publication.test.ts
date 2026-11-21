@@ -171,12 +171,15 @@ describe('Rallar Game authority server through the real WS router', () => {
             payload: { action: 'move' }
         });
         const message = newALBroadcastMessage(
-            'player-a',
-            newALRoute(TOPIC_ID, fixture.roomRef.groupId, 'command-1'),
-            'room',
-            'room.game.command.v1',
-            command,
-            { groupRef: fixture.roomRef, exceptPeerIds: ['player-a'] }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'player-a',
+                route: newALRoute(TOPIC_ID, fixture.roomRef.groupId, 'command-1'),
+                scope: 'room',
+                typeId: 'room.game.command.v1',
+                resource: command,
+                options: { groupRef: fixture.roomRef, exceptPeerIds: ['player-a'] }
+            }
         );
 
         await fixture.router.route(message, {

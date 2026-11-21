@@ -114,7 +114,14 @@ describe('a granted WS topic (D486, D487)', () => {
     it('a granted app topic sent as a world broadcast is refused unsupported at ingress', async () => {
         const fixture = createGrantedFixture('live-only');
         fixture.router.defineTopic({ topicId: 'app.scores', scope: 'room', participation: 'granted', serverProducerIds: [] });
-        const base = newALBroadcastMessage('alice', newALEventRoute('app.scores', 'world', 'world-scores'), 'world', 'scores.v1', {});
+        const base = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: newALEventRoute('app.scores', 'world', 'world-scores'),
+            scope: 'world',
+            typeId: 'scores.v1',
+            resource: {}
+        });
 
         const refused = await fixture.service.acceptIncomingMessage({ ...base, id: { ...base.id, msgId: 'world-scores' } }, 'alice');
 
@@ -578,16 +585,31 @@ function createSnapshot(
 }
 
 function roomBroadcast(senderId: string, topicId: string, msgId: string): ALMessage {
-    const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, msgId), 'room', 'feed.v1', { msgId }, {
-        groupRef: ROOM,
-        ttlMs: 30_000
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: { msgId },
+        options: {
+            groupRef: ROOM,
+            ttlMs: 30_000
+        }
     });
     return { ...base, id: { ...base.id, msgId } };
 }
 
 /** A send that names no room: a world or all broadcast, or a unicast without a GroupRef. */
 function ungroupedSend(topicId: string, targets: ALTargets, senderId = 'alice'): ALMessage {
-    const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, 'world', 'ungrouped'), 'world', 'feed.v1', {});
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, 'world', 'ungrouped'),
+        scope: 'world',
+        typeId: 'feed.v1',
+        resource: {}
+    });
     return { ...base, id: { ...base.id, msgId: 'ungrouped' }, targets };
 }
 

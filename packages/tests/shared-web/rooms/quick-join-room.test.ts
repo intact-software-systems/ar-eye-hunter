@@ -259,7 +259,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests).toHaveLength(2);
     });
 
-    it.each(['initial-connect', 'connect', 'disconnect', 'member'] as const)('fences auth replacement during %s', async (stage) => {
+    it.each(['initial-connect', 'publication-key', 'connect', 'disconnect', 'member'] as const)('fences auth replacement during %s', async (stage) => {
         const { quickJoinRoom } = await import('@shared-web/browser/rooms/join-room.ts');
         const { RoomStateStore } = await import('@shared-web/browser/rooms/room-state-store.ts');
         const { createRallarStateCacheReadPort } = await import('@shared-web/browser/state-cache/rallar-state-store.ts');
@@ -319,11 +319,18 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         });
 
         const rejected = quickJoinRoom({
+            newPresenceGenerationId: () => crypto.randomUUID(),
             options: { scope },
             stateStore,
             connect,
             requireSession,
-            readPublicationKey: async () => null,
+            readPublicationKey: async () => {
+                await Promise.resolve();
+                if (stage === 'publication-key') {
+                    replaceSession();
+                }
+                return null;
+            },
             resolveOperationOptions: (options) => options,
             resolveOperationScope: (requested) => requested ?? scope,
             resolveDefaultRoomRef: () => current?.group,
@@ -335,16 +342,22 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         });
         await expect(rejected).rejects.toBeInstanceOf(Error);
         await expect(rejected).rejects.toMatchObject(
-            stage === 'initial-connect' ? { name: 'AbortError' } : {
-                name: 'RallarRoomSwitchPartialFailureError',
-                operation: 'quick-join',
-                joinedRoom: connected
-            }
+            stage === 'initial-connect' ? { name: 'AbortError' } : stage === 'publication-key'
+                ? {
+                    name: 'RallarQuickJoinPartialFailureError',
+                    joinedRoom: { group: connected.group }
+                }
+                : {
+                    name: 'RallarRoomSwitchPartialFailureError',
+                    operation: 'quick-join',
+                    joinedRoom: connected
+                }
         );
 
-        expect(requests).toHaveLength(stage === 'initial-connect' ? 0 : stage === 'connect' ? 2 : stage === 'disconnect' ? 3 : 4);
+        const expectedRequests = { 'initial-connect': 0, 'publication-key': 1, connect: 2, disconnect: 3, member: 4 };
+        expect(requests).toHaveLength(expectedRequests[stage]);
         expect(requests.every((call) => call.clientId === runtime.session.clientId)).toBe(true);
-        expect(adopted).toEqual(stage === 'initial-connect' ? [] : ['selected']);
+        expect(adopted).toEqual(stage === 'initial-connect' || stage === 'publication-key' ? [] : ['selected']);
     });
 
     it('respects leaveCurrent false', async () => {

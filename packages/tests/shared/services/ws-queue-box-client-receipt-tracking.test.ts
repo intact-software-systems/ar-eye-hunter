@@ -389,7 +389,7 @@ describe('WS client receipt admission edges', () => {
                 cancel: () => undefined
             });
             const message = roomMessage();
-            const handle = registry.open(message, 'ws');
+            const handle = registry.open({ message: message, carrier: 'ws', readDeadlineEpochMs: Date.now });
             const observedStates: string[] = [];
             const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
             const fixture = await createReceiptTrackingFixture({

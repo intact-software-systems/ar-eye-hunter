@@ -18,7 +18,15 @@ const TRACK_KEY = 'game-1:a:1';
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 function message(seq: number, priorSeqByRecipient?: Readonly<Record<string, number>>): ALMessage {
-    const base = newALBroadcastMessage('a', newALRoute('room.round.event', ROOM.groupId, `event-${seq}`), 'room', 'round.event.v1', {}, { groupRef: ROOM });
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.round.event', ROOM.groupId, `event-${seq}`),
+        scope: 'room',
+        typeId: 'round.event.v1',
+        resource: {},
+        options: { groupRef: ROOM }
+    });
     return { ...base, ordering: { orderingKey: 'game-1', epoch: 1, seq, ...(priorSeqByRecipient === undefined ? {} : { priorSeqByRecipient }) } };
 }
 
@@ -241,6 +249,14 @@ function storedRow(
 
 function trackedMessage(orderingKey: string, seq: number): ALMessage {
     const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
-    const message = newALBroadcastMessage('a', newALRoute('room.round.event', room.groupId, `event-${seq}`), 'room', 'round.event.v1', {}, { groupRef: room });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.round.event', room.groupId, `event-${seq}`),
+        scope: 'room',
+        typeId: 'round.event.v1',
+        resource: {},
+        options: { groupRef: room }
+    });
     return { ...message, ordering: { orderingKey, epoch: 1, seq } };
 }

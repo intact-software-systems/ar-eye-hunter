@@ -182,7 +182,14 @@ function createCommand(msgId: string): ALMessage {
 }
 
 function createWorldSend(msgId: string): ALMessage {
-    const base = newALBroadcastMessage('origin', newALRoute(TOPIC_ID, 'world', msgId), 'world', 'pose.v1', {});
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: newALRoute(TOPIC_ID, 'world', msgId),
+        scope: 'world',
+        typeId: 'pose.v1',
+        resource: {}
+    });
     return { ...base, id: { ...base.id, msgId } };
 }
 

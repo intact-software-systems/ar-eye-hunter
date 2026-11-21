@@ -57,10 +57,18 @@ describe('verified direct room row delivery', () => {
     });
     it('replaces the observed direct key and audience when canonical admission wins', async () => {
         const fixture = new RoomFixture();
-        const message = newALBroadcastMessage('server', { topicId: 'snapshot', resourceId: 'room', contextId: 'event' }, 'room', 'snapshot.v1', {}, {
-            ttlMs: 30_000,
-            groupRef: ROOM,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
+            scope: 'room',
+            typeId: 'snapshot.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                groupRef: ROOM,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const winner = await fixture.service.enqueueOutboxIfAbsent(message, {
@@ -146,10 +154,18 @@ describe('verified direct room row delivery', () => {
             publisherId: 'local',
             filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
         });
-        const message = newALBroadcastMessage('server', { topicId: 'snapshot', resourceId: 'room', contextId: 'event' }, 'room', 'snapshot.v1', {}, {
-            ttlMs: 30_000,
-            groupRef: ROOM,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
+            scope: 'room',
+            typeId: 'snapshot.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                groupRef: ROOM,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
         await fixture.service.enqueueOutboxIfAbsent(message, {
             admittedAudience: ['session'],
@@ -374,16 +390,19 @@ class RoomFixture {
 
     async publish(audience: readonly string[], corruption = ''): Promise<RoomFixture.Publication> {
         const broadcast = newALBroadcastMessage(
-            'server',
-            { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
-            corruption === 'broad' ? 'all' : 'room',
-            'snapshot.v1',
-            {},
             {
-                ttlMs: 30_000,
-                groupRef: ROOM,
-                ...(corruption === 'excluded' ? { exceptPeerIds: ['session'] } : {}),
-                qos: { durability: { algo: 'local-outbox' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
+                scope: corruption === 'broad' ? 'all' : 'room',
+                typeId: 'snapshot.v1',
+                resource: {},
+                options: {
+                    ttlMs: 30_000,
+                    groupRef: ROOM,
+                    ...(corruption === 'excluded' ? { exceptPeerIds: ['session'] } : {}),
+                    qos: { durability: { algo: 'local-outbox' } }
+                }
             }
         );
         const message: ALMessage = corruption === 'principal'

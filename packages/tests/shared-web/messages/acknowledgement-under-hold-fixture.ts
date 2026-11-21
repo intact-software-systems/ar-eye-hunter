@@ -42,6 +42,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
@@ -49,13 +50,11 @@ import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publica
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
-import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
@@ -168,7 +167,12 @@ function createHoldSenderRuntime(): HoldSenderRuntime {
     const engine = new InboxOutboxEngine();
     return {
         faults: createScriptedTransportFaultPort(),
-        registry: new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} }),
+        registry: new BrowserRallarDeliveryRegistry({
+            nowMs: Date.now,
+            maxEntries: 10,
+            retainTerminalMs: 60_000,
+            cancel: () => {}
+        }),
         diagnostics: [],
         engine,
         drain: captureOutboundWorkRunnable(engine)
@@ -245,15 +249,23 @@ function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resource
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
-        return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
-            specimen: resourceId
-        }, {
-            ack: 'receiver',
-            reliability: 'at-least-once',
-            seq,
-            orderingKey,
-            ttlMs,
-            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        return newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' },
+            groupRef,
+            typeId: 'alm.lifecycle',
+            resource: {
+                specimen: resourceId
+            },
+            options: {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                seq,
+                orderingKey,
+                ttlMs,
+                qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+            }
         });
     };
 }
@@ -287,6 +299,8 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         faultPort: runtime.faults,
         replacedLayoutOverlapMs: 15_000,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -303,6 +317,9 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         selfPrincipalId: service.input.sessionId
     });
     const streamer = initialiseRtcRxStreamer({
+        rttCreationNowEpochMs: Date.now,
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         webRtcOverlayMulticastManager: manager,
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
@@ -312,7 +329,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('self'),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
@@ -367,8 +384,16 @@ export async function openWsHoldSender(): Promise<HoldSender> {
 function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string; ttlMs: number; }>): ALMessage {
     const { sessionId, resourceId, ttlMs } = input;
     return {
-        ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
-            ttlMs
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'held', contextId: 'room', resourceId },
+            toPeerId: 'receiver',
+            typeId: 'held.message',
+            resource: { resourceId },
+            options: {
+                ttlMs
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         // A roomless WS unicast refuses `receiver` (D42): the server's own ACK counts as the hop's (R-S3a-4). The
@@ -379,6 +404,8 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
 
 async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) {
     const connecting = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: runtime.faults,
@@ -393,7 +420,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -432,7 +459,7 @@ function toSharedHoldSenderMembers(
         faults: runtime.faults,
         diagnostics: runtime.diagnostics,
         send: async (message) => {
-            const handle = runtime.registry.open(message, input.carrier);
+            const handle = runtime.registry.open({ message: message, carrier: input.carrier, readDeadlineEpochMs: Date.now });
             await input.admit(message);
             return handle;
         },

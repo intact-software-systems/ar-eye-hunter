@@ -8,12 +8,15 @@ const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
 /** The wire signature a live publication carries: best-effort, no receipt, volatile, latest-wins. */
 function livePublication(): ALMessage {
     const base = newALBroadcastMessage(
-        'sender',
-        { topicId: 'room.pose', resourceId: 'entity-1', contextId: ROOM.groupId },
-        'room',
-        'pose.v1',
-        { x: 1 },
-        { groupRef: ROOM }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'room.pose', resourceId: 'entity-1', contextId: ROOM.groupId },
+            scope: 'room',
+            typeId: 'pose.v1',
+            resource: { x: 1 },
+            options: { groupRef: ROOM }
+        }
     );
     return {
         ...base,

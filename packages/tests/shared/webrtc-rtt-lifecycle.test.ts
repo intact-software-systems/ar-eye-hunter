@@ -81,6 +81,25 @@ describe('RTC single-reporter heartbeat lifecycle', () => {
         expect(responder.peer.channel.isOpen()).toBe(true);
     });
 
+    it.each([-20_000, 20_000])('dates RTT creation conservatively despite device offset %i without changing elapsed RTT', async (offset) => {
+        vi.setSystemTime(1_000_000 + offset);
+        const serverNow = (): number => 1_000_000 + Math.floor(performance.now());
+        const reporter = createStreamingEndpoint('session-a', 'session-b', {
+            rttCreationNowEpochMs: () => serverNow() - 2,
+            nowEpochMs: () => serverNow() + 22
+        });
+        const responder = createStreamingEndpoint('session-b', 'session-a');
+        openStreamingPair(reporter, responder);
+
+        await vi.advanceTimersByTimeAsync(5_020);
+
+        expect(reporter.measurements).toEqual([expect.objectContaining({
+            rttMs: 20,
+            createdAtEpochMs: 1_005_018
+        })]);
+        expect(reporter.measurements[0]!.createdAtEpochMs).toBeLessThanOrEqual(serverNow());
+    });
+
     it('continues answering remote pings after local reporting is disabled', async () => {
         const reporter = createStreamingEndpoint('session-a', 'session-b');
         const responder = createStreamingEndpoint('session-b', 'session-a');
@@ -232,7 +251,11 @@ function createStreamingPeer(sessionId: string, peerSessionId: string): Streamin
     return { peer, wire };
 }
 
-function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
+function createStreamingEndpoint(
+    sessionId: string,
+    peerSessionId: string,
+    clocks: Pick<WebRtcRxStreamerService.Input, 'rttCreationNowEpochMs' | 'nowEpochMs'> = {}
+): StreamingEndpoint {
     const { peer, wire } = createStreamingPeer(sessionId, peerSessionId);
     const connectionService = new WebRtcConnectionService(SIGNALER, {
         sessionId,
@@ -276,6 +299,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
     });
     onTestFinished(() => multicast.dispose());
     const streamer = createDefaultWebRtcRxStreamerService({
+        ...clocks,
         multicast,
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
         sessionId

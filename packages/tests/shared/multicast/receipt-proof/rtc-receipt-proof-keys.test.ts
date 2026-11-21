@@ -50,9 +50,17 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
 
     it('refuses a receiver leg that counts a keyless session as unsupported, naming the message with its sender\'s targets', async () => {
         const keys = await createPageKeys(['b']);
-        const original = newALBroadcastMessage('a', ROUTE, 'room', 'chat.message.v1', {}, {
-            groupRef: ORIGIN_ROOM,
-            recipientPeerIds: ['b', 'c']
+        const original = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: ORIGIN_ROOM,
+                recipientPeerIds: ['b', 'c']
+            }
         });
         const frozen: ALMessage = { ...original, targets: toOriginFrozenTargets(['b', 'c'], 4) };
 
@@ -107,8 +115,23 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
     });
 
     it('refuses a receiver unicast whose addressee the room does not key, and one that names no room', async () => {
-        const roomUnicast = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {}, { groupRef: ORIGIN_ROOM });
-        const roomlessUnicast = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {});
+        const roomUnicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { groupRef: ORIGIN_ROOM }
+        });
+        const roomlessUnicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'chat.message.v1',
+            resource: {}
+        });
         const detail = 'RTC receipt cannot be verified: 1 of 1 counted recipients registered no publication key';
 
         const keyless = computeRtcReceiptKeyRefusal({
@@ -137,7 +160,15 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
     });
 
     it('leaves a send whose named room has no cached snapshot to its own admission', () => {
-        const roomUnicast = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {}, { groupRef: ORIGIN_ROOM });
+        const roomUnicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { groupRef: ORIGIN_ROOM }
+        });
         const frozen = createFrozenMulticast(['b', 'c']);
 
         const unicast = computeRtcReceiptKeyRefusal({
@@ -465,12 +496,20 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
             publicationCrypto: await createAvailablePublicationCryptoFixture()
         });
         fixture.groups.delete('room');
-        const message = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {}, {
-            groupRef: ORIGIN_ROOM,
-            ack: 'all-logical-recipients',
-            reliability: 'at-least-once',
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } }
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: ORIGIN_ROOM,
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         });
 
         const held = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
@@ -604,7 +643,14 @@ async function holdWithoutRoomSnapshot(resourceId: string, frozenPeerIds?: reado
 }
 
 function createFrozenMulticast(recipientPeerIds: readonly string[]): ALMessage {
-    const message = newALMulticastMessage('a', ROUTE, ORIGIN_ROOM, 'chat.message.v1', {});
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        groupRef: ORIGIN_ROOM,
+        typeId: 'chat.message.v1',
+        resource: {}
+    });
     return { ...message, targets: toOriginFrozenTargets(recipientPeerIds, 4) };
 }
 

@@ -3,7 +3,12 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
+import {
+    isGroupActive,
+    isSessionInGroup,
+    readGroupDisplayName,
+    readGroupId
+} from '@shared/api/group-client-views.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
@@ -13,6 +18,7 @@ import type {
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
+
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
@@ -387,8 +393,11 @@ export function toTransferRoomOwnershipGroupStateRequest(
  * A joined row takes the heartbeat's lease rather than the server's 24 h default: the group heartbeats renew it while
  * the browser lives, and a row no socket close cleans lapses within one lease.
  */
-export function toRoomPresenceLeaseExpiresAtEpochMs(nowEpochMs: number): number {
-    return nowEpochMs + DEFAULT_STATE_HEARTBEAT_TTL_MSECS;
+export function toRoomPresenceLeaseExpiresAtEpochMs(
+    nowEpochMs: number,
+    leaseMs = DEFAULT_STATE_HEARTBEAT_TTL_MSECS
+): number {
+    return nowEpochMs + leaseMs;
 }
 
 export function toConnectRoomPresenceGroupStateRequest(

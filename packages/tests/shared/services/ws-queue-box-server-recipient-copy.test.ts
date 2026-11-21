@@ -9,11 +9,14 @@ const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
 /** Seq 5 on `a`'s track as `a` signed it, with the record of its own sends. */
 function signedFrame(): ALMessage {
     const message = newALMulticastMessage(
-        'a',
-        newALRoute('room.round.event', ROOM.groupId, 'event-5'),
-        ROOM,
-        'round.event.v1',
-        { msgId: 'event-5' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: newALRoute('room.round.event', ROOM.groupId, 'event-5'),
+            groupRef: ROOM,
+            typeId: 'round.event.v1',
+            resource: { msgId: 'event-5' }
+        }
     );
     return {
         ...message,

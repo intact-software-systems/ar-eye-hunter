@@ -556,18 +556,24 @@ test(
                     version: 1
                 };
                 const rttMessage = newALUntargetedMessage(
-                    authority.sessionId,
-                    newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
-                    AppTopics.rtt,
-                    rtt,
-                    { traceId: 'trace-pglite-rtt-ingress' }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: authority.sessionId,
+                        route: newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                        typeId: AppTopics.rtt,
+                        resource: rtt,
+                        options: { traceId: 'trace-pglite-rtt-ingress' }
+                    }
                 );
                 const dispatchRtt = () =>
                     wsSocket.dispatchMessage(newALUntargetedMessage(
-                        authority.sessionId,
-                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay-second'),
-                        AppTopics.rtt,
-                        rtt
+                        {
+                            createdAtEpochMs: Date.now(),
+                            senderId: authority.sessionId,
+                            route: newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay-second'),
+                            typeId: AppTopics.rtt,
+                            resource: rtt
+                        }
                     ));
                 const rttAdmission = await wsService.acceptIncomingMessage(rttMessage, authority.sessionId);
                 assert.deepEqual(rttAdmission.right, { kind: 'admitted' });
@@ -611,10 +617,13 @@ test(
                 assert.equal(wsIngressCapturedAt.length, 2);
                 const replacedAdmission = await wsService.acceptIncomingMessage(
                     newALUntargetedMessage(
-                        authority.sessionId,
-                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replaced'),
-                        AppTopics.rtt,
-                        rtt
+                        {
+                            createdAtEpochMs: Date.now(),
+                            senderId: authority.sessionId,
+                            route: newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replaced'),
+                            typeId: AppTopics.rtt,
+                            resource: rtt
+                        }
                     ),
                     authority.sessionId
                 );

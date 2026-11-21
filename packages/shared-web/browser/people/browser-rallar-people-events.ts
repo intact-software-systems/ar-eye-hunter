@@ -400,11 +400,14 @@ function toReplayClientStateEventMessage(
     return toRallarStateEventMessage(
         'replay',
         newALBroadcastMessage(
-            'rallar:replay',
-            newALRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
-            'all',
-            AppTopics.clientStateEvent,
-            event
+            {
+                createdAtEpochMs: event.occurredAtEpochMs,
+                senderId: 'rallar:replay',
+                route: newALRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
+                scope: 'all',
+                typeId: AppTopics.clientStateEvent,
+                resource: event
+            }
         )
     );
 }

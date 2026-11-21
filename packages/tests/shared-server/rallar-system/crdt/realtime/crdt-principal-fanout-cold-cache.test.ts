@@ -143,11 +143,14 @@ function principalMessage() {
         }
     };
     return newALUnicastMessage(
-        'server-1',
-        newALRoute('rallar.crdt.app', 'app-1', update.updateId),
-        'alice',
-        RALLAR_CRDT_UPDATE_TYPE_ID,
-        update
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALRoute('rallar.crdt.app', 'app-1', update.updateId),
+            toPeerId: 'alice',
+            typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+            resource: update
+        }
     );
 }
 

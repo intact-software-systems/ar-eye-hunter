@@ -302,10 +302,18 @@ describe('WS first dequeue authority', () => {
 
     it('refuses a raw group-addressed unicast even with producer provenance', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
-        const message = newALUnicastMessage('server', { topicId: 'app.message', resourceId: 'resource', contextId: 'context' }, 'peer', 'message.v1', {}, {
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } },
-            groupRef: { ...SCOPE, groupId: 'room' }
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'app.message', resourceId: 'resource', contextId: 'context' },
+            toPeerId: 'peer',
+            typeId: 'message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } },
+                groupRef: { ...SCOPE, groupId: 'room' }
+            }
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
@@ -343,15 +351,31 @@ describe('WS first dequeue authority', () => {
 
 function createIndexedMessage(index: number): ALMessage {
     const route = { topicId: 'app.message', resourceId: `resource-${index}`, contextId: 'context' };
-    return newALUnicastMessage('server', route, 'peer', 'message.v1', {}, { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route,
+        toPeerId: 'peer',
+        typeId: 'message.v1',
+        resource: {},
+        options: { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+    });
 }
 
 function createIndexedBroadcast(index: number): ALMessage {
     const route = { topicId: 'app.message', resourceId: `resource-${index}`, contextId: 'context' };
-    return newALBroadcastMessage('server', route, 'room', 'message.v1', {}, {
-        ttlMs: 30_000,
-        qos: { durability: { algo: 'local-outbox' } },
-        groupRef: { ...SCOPE, groupId: 'room' }
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route,
+        scope: 'room',
+        typeId: 'message.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } },
+            groupRef: { ...SCOPE, groupId: 'room' }
+        }
     });
 }
 
@@ -359,10 +383,26 @@ function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
     const route = { topicId: 'app.message', resourceId: 'resource', contextId: 'context' };
     const options = { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' as const } } };
     return mode === 'unicast'
-        ? newALUnicastMessage('server', route, 'peer', 'message.v1', {}, options)
-        : newALBroadcastMessage('server', route, 'room', 'message.v1', {}, {
-            ...options,
-            groupRef: { ...SCOPE, groupId: 'room' }
+        ? newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route,
+            toPeerId: 'peer',
+            typeId: 'message.v1',
+            resource: {},
+            options
+        })
+        : newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route,
+            scope: 'room',
+            typeId: 'message.v1',
+            resource: {},
+            options: {
+                ...options,
+                groupRef: { ...SCOPE, groupId: 'room' }
+            }
         });
 }
 

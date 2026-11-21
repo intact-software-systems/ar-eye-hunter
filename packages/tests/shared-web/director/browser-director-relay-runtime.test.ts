@@ -9,23 +9,23 @@ import {
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as AppointRoomDirectorModule from '@shared-web/browser/director/appoint-room-director.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
-import type * as AuthModule from '@shared/api/auth.ts';
-import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
-import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
@@ -57,6 +57,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })
@@ -237,6 +238,7 @@ describe('Rallar director relay', () => {
                 activeSessions: rejoined.activeSessions.map((presence) => ({
                     ...presence,
                     generationId: input.generationId,
+                    connectionGenerationId: input.connectionGenerationId,
                     expiresAtEpochMs: Date.now() + 120_000
                 }))
             };
@@ -358,7 +360,7 @@ describe('Rallar director relay', () => {
             expect(result).toMatchObject({
                 status: 'failed',
                 receipt: expect.objectContaining({ typeId }),
-                reason: 'The director did not confirm the command before its deadline.'
+                reason: expect.stringMatching(/deadline/i)
             });
             expect(result.rtc).toBeUndefined();
             expect(result.ws).toBeUndefined();
@@ -1036,20 +1038,23 @@ function toDirectorCommand(typeId: string, payload: object): ALMessage {
 
 function toDirectorCommandAtEpoch(typeId: string, payload: object, epoch: number): ALMessage {
     return newALUnicastMessage(
-        'session-2',
-        newALRoute('app.game.director', 'room-1', `${typeId}-1`),
-        'session-1',
-        typeId,
         {
-            protocol: 'rallar.director.relay.v1',
-            topicId: 'app.game.director',
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-2',
+            route: newALRoute('app.game.director', 'room-1', `${typeId}-1`),
+            toPeerId: 'session-1',
             typeId,
-            roomId: 'room-1',
-            epoch,
-            sentAtEpochMs: Date.now(),
-            payload
-        },
-        { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
+            resource: {
+                protocol: 'rallar.director.relay.v1',
+                topicId: 'app.game.director',
+                typeId,
+                roomId: 'room-1',
+                epoch,
+                sentAtEpochMs: Date.now(),
+                payload
+            },
+            options: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
+        }
     );
 }
 

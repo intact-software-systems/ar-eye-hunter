@@ -466,7 +466,14 @@ function createObservedService(
         if (!registered) {
             throw new Error('Expected registered signaling port');
         }
-        const envelope = newALUnicastMessage(senderId, newALEventRoute('rtc', recipientId), recipientId, 'rtc', null);
+        const envelope = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: newALEventRoute('rtc', recipientId),
+            toPeerId: recipientId,
+            typeId: 'rtc',
+            resource: null
+        });
         return await registered.callbacks.onMessage(sessionId, 'private-token', { ...envelope, payload: { ...envelope.payload, resource } });
     };
     return { service, runtime, sent, receive };

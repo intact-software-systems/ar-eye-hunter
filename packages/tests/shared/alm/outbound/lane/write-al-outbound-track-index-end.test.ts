@@ -28,7 +28,15 @@ const POLICY: ALOutboundCapturedPolicy = {
 const { admittedAudience: _admittedAudience, ...AUDIENCE_FREE } = POLICY;
 
 function trackedMessage(seq: number): ALMessage {
-    const message = newALBroadcastMessage('a', newALRoute('room.round.event', ROOM.groupId, `event-${seq}`), 'room', 'round.event.v1', {}, { groupRef: ROOM });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.round.event', ROOM.groupId, `event-${seq}`),
+        scope: 'room',
+        typeId: 'round.event.v1',
+        resource: {},
+        options: { groupRef: ROOM }
+    });
     return { ...message, ordering: { orderingKey: 'game-1', epoch: 1, seq } };
 }
 
