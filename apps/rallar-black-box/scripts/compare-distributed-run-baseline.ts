@@ -26,7 +26,9 @@ import { Either, Try } from '@shared/resilience/Either.ts';
 const USAGE = 'Usage: node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts ' +
     '--baseline <recorder-dir>... --candidate <recorder-dir>...\n' +
     `Each side is at least ${DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE} all-local observation recorder ` +
-    'directories of one build: the directories that contain observation/.';
+    'directories of one build: the directories that contain observation/.\n' +
+    'The two sides\' runs are taken alternately, baseline first; the order is read from each run\'s ' +
+    'createdAtEpochMs in observation/distributed-run.json.';
 
 const RUN_FILES = {
     provenance: 'provenance.json',
@@ -107,6 +109,7 @@ export function decodeLocalBaselineRun(
         distributedRun: distributedRun.right
     });
     return Either.ofRight({
+        takenAtEpochMs: distributedRun.right.createdAtEpochMs,
         regime: toDistributedRunRegimeKey(environment.right),
         figures: toDistributedRunBaselineFigures(performance)
     });
@@ -114,6 +117,8 @@ export function decodeLocalBaselineRun(
 
 const REFUSAL_REASONS: Readonly<Record<SameRegimeComparison.Refusal['kind'], string>> = {
     'too-few-runs': `fewer than ${DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE} runs on`,
+    'unordered-runs': 'a run was taken at the same instant as another, or at no finite instant, on',
+    'sides-not-alternating': 'the runs were not taken alternately, baseline first, but as',
     'different-regime': 'the regimes differ in',
     'different-figures': 'not every run reports',
     'non-finite-figures': 'a run reports a figure that is not a finite number:'
