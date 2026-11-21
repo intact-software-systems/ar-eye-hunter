@@ -72,6 +72,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.NON_RETRYABLE,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(rejectedPage.entries).toHaveLength(1);
@@ -167,6 +168,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.RETRY,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(retryPage.entries).toHaveLength(1);

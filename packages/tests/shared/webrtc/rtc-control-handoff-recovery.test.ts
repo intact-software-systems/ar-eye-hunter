@@ -186,6 +186,7 @@ async function readControlWork(
         typeId: toALInboundWorkType(receiver.inbound.admissionStore.namespace, 'rtc'),
         status,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return page.entries.filter((entry) => {

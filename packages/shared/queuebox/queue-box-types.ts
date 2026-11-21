@@ -26,17 +26,31 @@ export namespace ResourceInboxWorkPage {
         readonly position: string;
     }
 
+    /**
+     * `key` pages a type and status in the store's own order, resumed by cursor. `due` reads the type and status's
+     * earliest live rows in due order, due yet or not, and answers `nextCursor: null`; a `due` request that carries a
+     * cursor is a programmer error and is refused. Where a row without a next time falls among dated rows is the
+     * store's own (`resource-inbox-claim-order.ts`): IndexedDB places a pending one at its creation instant
+     * (`compareResourceEntriesByDue`). A status whose rows carry no next time, such as RESERVED, reads in the store's
+     * own order.
+     */
+    export type Order = 'key' | 'due';
+
     export interface Request {
         readonly typeId: string;
         readonly status: Resource.EntityStatus;
         readonly maxToRead: number;
-        /** Restart with null to discover work inserted or moved behind the previous cursor. */
+        readonly order: Order;
+        /** Restart with null to discover work inserted or moved behind the previous cursor; must be null for `due`. */
         readonly cursor: Cursor | null;
     }
 }
 
 export interface ResourceInboxWorkPage {
-    /** Observations in backend order, including expired entries; reading never claims, releases or removes work. */
+    /**
+     * Observations in the requested order, expired entries included on a `key` page and read past on a `due` page;
+     * reading never claims, releases or removes work.
+     */
     readonly entries: readonly ResourceEntry[];
     /** A full page may require one final empty read to discover the end. */
     readonly nextCursor: ResourceInboxWorkPage.Cursor | null;

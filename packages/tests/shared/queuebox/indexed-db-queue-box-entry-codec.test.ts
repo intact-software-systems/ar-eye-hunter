@@ -101,6 +101,24 @@ describe('IndexedDB queue entry codec', () => {
         expect(() => decodeStoredResourceEntryValue(stored)).toThrow(new TypeError(message));
     });
 
+    it('indexes an undated pending row at its creation instant and keeps its next time undated', () => {
+        const stored = encodeStoredResourceEntry(createUndatedEntry(EntityStatus.NEW), 0);
+
+        expect([stored.fairnessDueEpochMs, stored.dequeueAudit.nextTs]).toEqual([Date.parse('2026-09-30T12:00:00.123Z'), undefined]);
+        expect(decodeStoredResourceEntry(decodeStoredResourceEntryValue(structuredClone(stored))).dequeueAudit.nextTs).toBeUndefined();
+    });
+
+    it.each([EntityStatus.RESERVED, EntityStatus.COMPLETED])('leaves an undated %s row out of the due index', (status) => {
+        expect(encodeStoredResourceEntry(createUndatedEntry(status), 0).fairnessDueEpochMs).toBeUndefined();
+    });
+
+    it('rejects an undated pending row stored without its due index time', () => {
+        const { fairnessDueEpochMs: _derived, ...unindexed } = encodeStoredResourceEntry(createUndatedEntry(EntityStatus.RETRY), 0);
+
+        expect(() => decodeStoredResourceEntryValue(unindexed))
+            .toThrow(new TypeError('IndexedDB queue fairness timestamp differs from its next timestamp'));
+    });
+
     it('rejects a row whose timestamp string does not parse', () => {
         const stored = encodeStoredResourceEntry(createRetryEntry(), 0);
 
@@ -275,6 +293,11 @@ function createRetryEntry(): ResourceEntry {
             attempts: 1
         }
     };
+}
+
+function createUndatedEntry(status: EntityStatus): ResourceEntry {
+    const entry = createRetryEntry();
+    return { ...entry, status, dequeueAudit: { attempts: 0 } };
 }
 
 function toTimestampStrings(entry: ResourceEntry): readonly (string | undefined)[] {

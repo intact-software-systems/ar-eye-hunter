@@ -2,6 +2,7 @@ datasource db {
   provider = "postgresql"
 }
 
+// resource_inbox_due_ix (next_ts NULLS FIRST) is defined in migration 20261118120000_resource_inbox_due_index: Prisma cannot state it.
 model resource_inbox {
   ri_row_id      BigInt    @id(map: "ri_pk") @default(autoincrement())
   ri_resource_id String    @db.VarChar(128)

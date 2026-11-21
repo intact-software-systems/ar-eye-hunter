@@ -51,9 +51,9 @@ it('finishes joint rows, queue index and terminal proof before any observer and 
     expect(seen).toEqual(['queue', 'first', 'second']);
     expect(views).toEqual([[true, true, true], [true, true, true], [true, true, true]]);
     expect(
-        (await backend.workQueue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, cursor: null })).entries.map((row) =>
-            row.key.resourceId
-        )
+        (await backend.workQueue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, order: 'key', cursor: null })).entries.map((
+            row
+        ) => row.key.resourceId)
     ).toEqual(['joint']);
     expect(dirty.getSnapshot().marks.map(({ space, key }) => [space, key])).toEqual([
         ['admission', 'first'],

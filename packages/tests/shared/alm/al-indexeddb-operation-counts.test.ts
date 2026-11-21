@@ -107,6 +107,7 @@ describe('AL-owned IndexedDB operation counts', () => {
             typeId: 'AL_OUTBOUND:test',
             status: 'NEW',
             maxToRead: 4,
+            order: 'key',
             cursor: null
         });
 

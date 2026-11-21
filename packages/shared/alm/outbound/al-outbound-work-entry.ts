@@ -23,7 +23,15 @@ import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;
 export const AL_OUTBOUND_WORK_PAGE_SIZE = 16;
 
-const AL_OUTBOUND_SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
+/**
+ * Pending rows are read in due order, so the page holds the earliest of them. A reserved row is due at its lease end,
+ * which no store orders by: its page stays in key order.
+ */
+const AL_OUTBOUND_SCANS = [
+    { status: EntityStatus.NEW, order: 'due' },
+    { status: EntityStatus.RETRY, order: 'due' },
+    { status: EntityStatus.RESERVED, order: 'key' }
+] as const;
 
 export interface ALOutboundWorkEntryInput<TPrepared> {
     readonly namespace: string;
@@ -144,10 +152,12 @@ export interface ALOutboundWorkDeferral {
  * breaker allows, and an expired row is never advertised. A reserved row is advertised at its lease end
  * only while the sweep that recovers it may run: a closed sweep would leave every batch it started empty.
  * A page that held more rows than it returned and holds a due row answers `nowMs`: one status never
- * hides the next. A truncated page whose visible rows are all expired or gated answers from those rows
- * alone, so a full page of expired rows advertises nothing and leaves the remainder to the queue's own
- * expiry cleanup. Every status is read in one scan, so the probe the engine runs on each round costs one
- * round trip to storage.
+ * hides the next. A pending status's page holds each work type's earliest live rows: the queue reads a `due` page
+ * past expired rows, so expired rows awaiting the queue's expiry cleanup never hide a due row, and the port keeps
+ * every type's page whole, so a gated type's rows, rated later than their own next time, never take the place of
+ * another type's due row. The reserved page stays in key order and still returns expired rows: a truncated page
+ * whose visible rows are all expired or gated answers from those rows alone. Every status is read in one scan, so
+ * the probe the engine runs on each round costs one round trip to storage.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
@@ -155,7 +165,7 @@ export async function readALOutboundWorkReadyAt(
     deferral: ALOutboundWorkDeferral
 ): Promise<number | undefined> {
     const scans = await port.readPages(
-        AL_OUTBOUND_SCAN_STATUSES.map((status) => ({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
+        AL_OUTBOUND_SCANS.map((scan) => ({ ...scan, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
     );
     let readyAtMs: number | undefined;
     for (const scan of scans) {

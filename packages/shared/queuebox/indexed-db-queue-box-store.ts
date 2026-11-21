@@ -1,3 +1,5 @@
+import type { Temporal } from '@js-temporal/polyfill';
+
 import {
     readIndexedDbRequest,
     readIndexedDbTransaction
@@ -7,9 +9,11 @@ import {
     decodeStoredResourceEntryValue,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
+import { isStoredQueueEntryExpired } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
+import { readCountedIndexedDbEntries, readNextIndexedDbDueEntries } from './read-indexed-db-due-entries.ts';
 import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
-import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
+import { EntityStatus, NEW_AND_RETRY_STATUSES, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
 interface ReadStoredQueueEntriesByTypesAndStatusesInput {
     readonly allowedTopicIds?: ReadonlySet<string>;
@@ -18,6 +22,14 @@ interface ReadStoredQueueEntriesByTypesAndStatusesInput {
     readonly typeIds: Iterable<string>;
     readonly statusIds: Iterable<EntityStatus>;
     readonly maxToReadPerCombination: number;
+}
+
+interface ReadStoredQueueWorkPagesInput {
+    readonly db: IDBDatabase;
+    readonly storeName: string;
+    readonly requests: readonly ResourceInboxWorkPage.Request[];
+    /** The store's clock: a `due` page reads past the rows expired at this instant. */
+    readonly now: Temporal.Instant;
 }
 
 interface ReadExpiredStoredQueueEntriesInput {
@@ -105,26 +117,81 @@ export function toIndexedDbQueueStoreDefinition(name: string): IndexedDbStoreDef
 
 /**
  * Every request is answered exactly as a single-page read would, from one readonly transaction, so a
- * readiness scan across statuses and work types costs one round trip over one store snapshot.
+ * readiness scan across statuses and work types costs one round trip over one store snapshot. A `due` page reads
+ * past the rows expired at `now`, as a due claim does.
  */
 export async function readStoredQueueWorkPages(
-    db: IDBDatabase,
-    storeName: string,
-    requests: readonly ResourceInboxWorkPage.Request[]
+    { db, storeName, requests, now }: ReadStoredQueueWorkPagesInput
 ): Promise<readonly (readonly StoredResourceEntry[])[]> {
     if (requests.length === 0) {
         return [];
     }
     const transaction = db.transaction(storeName, 'readonly');
-    const pages = await readIndexedDbTransaction(transaction, async () => {
-        const index = transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
-        return await Promise.all(
-            requests.map((request) =>
-                readIndexedDbRequest(index.getAll(toStoredQueueWorkPageRange(request), request.maxToRead))
-            )
-        );
+    return await readIndexedDbTransaction(transaction, async () => {
+        const store = transaction.objectStore(storeName);
+        const indexes = {
+            key: store.index(INDEXED_DB_QUEUE_WORK_INDEX_NAME),
+            due: store.index(INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME)
+        };
+        return await Promise.all(requests.map((request) =>
+            request.order === 'key'
+                ? readStoredQueueKeyPage(indexes.key, request)
+                : readStoredQueueDuePage(indexes, request, now)
+        ));
     });
-    return pages.map((values) => values.map(decodeStoredResourceEntryValue));
+}
+
+interface StoredQueueWorkIndexes {
+    readonly key: IDBIndex;
+    readonly due: IDBIndex;
+}
+
+/**
+ * A `due` page's live rows: every pending row is in the due index; a row of any other status has no next time, so it
+ * ties and keeps key order.
+ */
+async function readStoredQueueDuePage(
+    indexes: StoredQueueWorkIndexes,
+    request: ResourceInboxWorkPage.Request,
+    now: Temporal.Instant
+): Promise<StoredResourceEntry[]> {
+    const isLive = (stored: StoredResourceEntry) => !isStoredQueueEntryExpired(stored, now);
+    const read = await readCountedIndexedDbEntries({
+        readNext: (after, maxToRead) =>
+            NEW_AND_RETRY_STATUSES.has(request.status)
+                ? readNextIndexedDbDueEntries({
+                    index: indexes.due,
+                    typeId: request.typeId,
+                    status: request.status,
+                    dueAtOrBeforeEpochMs: Infinity,
+                    maxToRead,
+                    after
+                })
+                : readStoredQueueKeyPage(indexes.key, {
+                    ...request,
+                    maxToRead,
+                    cursor: toKeyPageCursor(request, after)
+                }),
+        maxToCount: request.maxToRead,
+        allowedTopicIds: undefined,
+        isCounted: isLive
+    });
+    return read.filter(isLive);
+}
+
+async function readStoredQueueKeyPage(
+    keyIndex: IDBIndex,
+    request: ResourceInboxWorkPage.Request
+): Promise<StoredResourceEntry[]> {
+    const values = await readIndexedDbRequest(keyIndex.getAll(toStoredQueueWorkPageRange(request), request.maxToRead));
+    return values.map(decodeStoredResourceEntryValue);
+}
+
+function toKeyPageCursor(
+    request: ResourceInboxWorkPage.Request,
+    after: StoredResourceEntry | undefined
+): ResourceInboxWorkPage.Cursor | null {
+    return after === undefined ? null : { typeId: request.typeId, status: request.status, position: after.keyString };
 }
 
 function toStoredQueueWorkPageRange(request: ResourceInboxWorkPage.Request): IDBKeyRange {

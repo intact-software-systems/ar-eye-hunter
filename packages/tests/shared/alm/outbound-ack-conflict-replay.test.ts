@@ -133,6 +133,7 @@ it.each(
             typeId: toALOutboundWorkType(admissionStore.namespace),
             status: EntityStatus.NEW,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         const pending = [];

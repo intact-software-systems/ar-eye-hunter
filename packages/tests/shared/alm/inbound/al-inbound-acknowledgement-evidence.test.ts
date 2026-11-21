@@ -222,6 +222,7 @@ class AcknowledgementFixture {
                 typeId: toALInboundWorkType(this.store.namespace, 'rtc'),
                 status,
                 maxToRead: 10,
+                order: 'key',
                 cursor: null
             });
             for (const entry of page.entries) {
@@ -393,6 +394,7 @@ class AcknowledgementClaimClockScenario {
             typeId: toALInboundWorkType(this.fixture.store.namespace, 'rtc'),
             status: EntityStatus.RETRY,
             maxToRead: 10,
+            order: 'key',
             cursor: null
         });
         expect(page.entries).toHaveLength(1);
@@ -602,6 +604,7 @@ it('publishes a failed handoff only after the real retry release and retains the
         typeId: toALInboundWorkType(fixture.store.namespace, 'rtc'),
         status: EntityStatus.RETRY,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     expect(page.entries).toHaveLength(1);
