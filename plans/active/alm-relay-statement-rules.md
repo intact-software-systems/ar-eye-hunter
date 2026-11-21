@@ -1,7 +1,7 @@
 # Receipt truth, part C: the relay statement rules
 
 Design for one pull request on `claude/alm-relay-statement-rules`, from `main` at `d70f2f165`. Decision rows
-D702–D709, then D725–D734. The maintainer ruled every choice below on 2026-11-21, each asked alone; the evidence is
+D703–D709, then D725–D734. The maintainer ruled every choice below on 2026-11-21, each asked alone; the evidence is
 in the two research reports of the git-ignored workspace `.superpowers/sdd/relay-statement-rules/`.
 
 ## Intent
