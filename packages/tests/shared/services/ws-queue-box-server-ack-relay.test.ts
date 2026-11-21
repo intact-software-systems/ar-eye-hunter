@@ -359,7 +359,8 @@ describe('the server own ACK for a session it sent nothing', () => {
                 traceId: 'trace-room-message-1',
                 expectedRecipientPeerIds: ['b', 'c'],
                 snapshotVersion: 1,
-                deadlineAtMs: 30_000
+                deadlineAtMs: 30_000,
+                neverSentRecipientPeerIds: []
             });
         }
         const relay = new WsQueueBoxServerAckRelay({

@@ -766,8 +766,10 @@ with retry `none` waits for the server alone.
 by its replay or by a copy's own admission, whichever comes first, and the server starts one aggregate and its
 `admitted` follows; a copy that is itself retained behind the room view is answered that view's NACK again and nothing
 else. A send kept after a lost commit race whose other recipients have all left the room by its replay still expects
-the recipients it captured at ingress: its `admitted` names them, none of them is sent the message, and its `timed-out`
-at the deadline names them unconfirmed, so the handle reads `expired` at its deadline (`ws-kept-send-receipt.test.ts`).
+the recipients it captured at ingress: its `admitted` names them, none of them is sent the message, so the server
+refuses an ACK from any of them as one from a recipient it never sent the message (guard `never-sent`), and its
+`timed-out` at the deadline names them unconfirmed, so the handle reads `expired` at its deadline
+(`ws-kept-send-receipt.test.ts`).
 A send kept behind the room view captured no audience, so it expects the current one and, with nobody left, is
 admitted to nobody and reads `acknowledged`. While the aggregate keyed by that
 sender and message id is live, the server answers the copy with the `admitted` receipt again, to that sender alone

@@ -756,7 +756,8 @@ function createObservedAggregation(
         traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient', 'other'],
         snapshotVersion: 7,
-        deadlineAtMs: 30000
+        deadlineAtMs: 30000,
+        neverSentRecipientPeerIds: []
     });
     onTestFinished(() => aggregation.dispose());
     return { aggregation, clock };
@@ -1004,7 +1005,8 @@ describe('owned receipt count observation', () => {
             traceId: 'trace-ws-queue-box-server-receipt-observation',
             expectedRecipientPeerIds: ['recipient'],
             snapshotVersion: 7,
-            deadlineAtMs: 30000
+            deadlineAtMs: 30000,
+            neverSentRecipientPeerIds: []
         });
         fail = true;
         const before = events.length;
@@ -1327,7 +1329,8 @@ it('publishes count evidence after the existing control receipt effects so sink 
         traceId: 'trace-ws-queue-box-server-receipt-observation',
         expectedRecipientPeerIds: ['recipient'],
         snapshotVersion: 7,
-        deadlineAtMs: 30000
+        deadlineAtMs: 30000,
+        neverSentRecipientPeerIds: []
     });
     await fixture.aggregation.acceptControlMessage(createReceiverAcknowledgement());
     expect(effects).toEqual([

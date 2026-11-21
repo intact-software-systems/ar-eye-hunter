@@ -37,6 +37,10 @@ import {
     WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
     WsQueueBoxServerReceiptAggregation
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -535,6 +539,58 @@ describe('WS server receipt aggregate', () => {
         ).toBe('AL acknowledgement speaks for another recipient than its sender');
     });
 
+    it('refuses the ACK of a recipient this server never sent the message, at ingress and at the count, as a typed rejection', async () => {
+        const observed: WsQueueBoxServerReceiptObservation[] = [];
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
+        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: ['b'] });
+        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
+        const control = aggregateAckControl(ack);
+
+        expect(aggregation.readRelayedAckRejection(ack, { stage: 'ingress-protocol', controlIdentity: control.id })).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
+        await aggregation.acceptControlMessage(control);
+
+        expect(observed).toMatchObject([
+            { kind: 'ack-rejection', owner: 'receipt-aggregation', failedGuards: ['never-sent'] },
+            { kind: 'ack-count', outcome: 'rejected', rejectionCode: 'unauthorized' }
+        ]);
+        expect(enqueued).toEqual([]);
+    });
+
+    it('counts the ACK of a recipient this server sent the message', async () => {
+        const observed: WsQueueBoxServerReceiptObservation[] = [];
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued, () => 1_000, (observation) => observed.push(observation));
+        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['b'], neverSentRecipientPeerIds: [] });
+        const ack = aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' });
+
+        expect(aggregation.readRelayedAckRejection(ack)).toBeUndefined();
+        await aggregation.acceptControlMessage(aggregateAckControl(ack));
+
+        expect(observed.filter(({ kind }) => kind === 'ack-count'))
+            .toMatchObject([{ kind: 'ack-count', outcome: 'complete', rejectionCode: undefined }]);
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
+            .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b'] }]);
+    });
+
+    it('records the server own not-subscribed ACK for a recipient it never sent the message outside the audience', async () => {
+        const aggregation = createAggregation();
+        aggregation.recordAdmission({ ...admission(), neverSentRecipientPeerIds: ['b'] });
+
+        await aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'b', status: 'subtree-complete-not-subscribed' }))
+        );
+
+        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
+            phase: 'timed-out',
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['b']
+        }]);
+    });
+
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
         const enqueued: ALMessage[] = [];
         const aggregation = createAggregation(enqueued);
@@ -721,10 +777,12 @@ function admitAggregates(
 
 function createAggregation(
     enqueued: ALMessage[] = [],
-    nowMs: () => number = () => 1_000
+    nowMs: () => number = () => 1_000,
+    receiptObserver?: WsQueueBoxServerReceiptObserver
 ): WsQueueBoxServerReceiptAggregation {
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
+        receiptObserver,
         clock: { nowMs },
         newControlId: () => 'receipt',
         qosProvider: undefined,
@@ -748,7 +806,8 @@ function admittedRoomMessage(
         message: roomMessage(1_000),
         originPeerId: 'a',
         roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION },
-        acceptance
+        acceptance,
+        neverSentRecipientPeerIds: []
     };
 }
 
@@ -759,7 +818,8 @@ function admission(): WsQueueBoxServerReceiptAggregation.Admission {
         traceId: 'trace-room-message-1',
         expectedRecipientPeerIds: ['b', 'c'],
         snapshotVersion: SNAPSHOT_VERSION,
-        deadlineAtMs: 30_000
+        deadlineAtMs: 30_000,
+        neverSentRecipientPeerIds: []
     };
 }
 

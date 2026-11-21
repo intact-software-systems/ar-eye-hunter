@@ -806,7 +806,8 @@ export class WsQueueBoxServerService {
             message,
             originPeerId: fromPeerId,
             roomAudience: authorization.roomAudience,
-            acceptance: admitted.right
+            acceptance: admitted.right,
+            neverSentRecipientPeerIds: []
         });
         return admitted;
     }
