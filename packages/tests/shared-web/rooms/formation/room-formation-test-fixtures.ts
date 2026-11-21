@@ -73,6 +73,7 @@ export function createFormationView(groupRef: GroupRef, overrides: Partial<Group
         managerPrincipalIds: ['principal-1'],
         layoutStale: false,
         pending: null,
+        heldReshape: null,
         maxFormationAttempts: 2,
         condition: 'inactive',
         remediation: 'none',

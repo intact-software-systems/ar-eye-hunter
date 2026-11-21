@@ -3,6 +3,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
+import { toStableRtcLayoutWaitTimeoutMs } from '../../../../fixtures/create-stable-rtc-layout-wait.ts';
 import {
     CONNECT_READINESS_TIMEOUT_MS,
     NON_EXPIRING_SEND_TIMEOUT_MS,
@@ -33,10 +34,10 @@ export function toArrivalCountCommand(
     count: number,
     opportunity: number
 ): RallarBlackBoxTestMessagesReceivedCommand {
-    // Receiver observation starts before sender setup; include its bounded RTC settling time.
-    // Publication admission, TTL and negative-arrival windows keep their own unchanged budgets.
+    // Receiver observation starts before sender setup; include the sender's whole stable-layout wait, which can
+    // wait out a held reshape. Publication admission, TTL and negative-arrival windows keep their own budgets.
     const timeoutMs = receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS +
-        (receiver.input.carrier === 'ws' ? 0 : CONNECT_READINESS_TIMEOUT_MS) +
+        (receiver.input.carrier === 'ws' ? 0 : toStableRtcLayoutWaitTimeoutMs(CONNECT_READINESS_TIMEOUT_MS)) +
         (opportunity + 1) * PUBLICATION_CADENCE_MS;
     return {
         ...toReceivedCommand({ ...receiver, index: count, count, absent: false }),

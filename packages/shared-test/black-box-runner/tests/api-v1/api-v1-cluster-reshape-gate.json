@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 reshape gate across a three-node cluster, read through the operator's topology-plans route. An optimistic (auto) room fills to four members on the primary and is a star with no reshape gate stored. A fifth member joins on the secondary: the kind change to a tree is a reshape that passes the open gate, and the gate stored on the tertiary's read starts a 15 000 ms period with no held passes. The fifth leaves on the primary at once: the kind change back to a star falls inside that period and is held, so the leave is planned as a repair of the tree that names kind-change as held, the gate records the hold and wants kind-change, and the room stays a tree. When the gate opens, a reshape-due row released by any node publishes the star: a second kind-change reshape, planned no earlier than 15 000 ms after the first, after which the gate's interval is 30 000 ms with one held pass and nothing wanted. Each reshape's plannedAtEpochMs is the gate's lastPassAtEpochMs of the same pass, which is how the recipe captures both instants. The recipe depends on the leave landing within 15 s of the first reshape: it leaves directly after observing that reshape, and a run whose leave lands after the gate opened sees an ordinary reshape instead of a hold. It needs a fresh runId: its reads poll for states the room passes through once.",
+  "description": "No-browser API-v1 reshape gate across a three-node cluster, read through the operator's topology-plans route. An optimistic (auto) room fills to four members on the primary and is a star with no reshape gate stored. A fifth member joins on the secondary: the kind change to a tree is a reshape that passes the open gate, and the gate stored on the tertiary's read starts a 15 000 ms period with no held passes. The fifth leaves on the primary at once: the kind change back to a star falls inside that period and is held, so the leave is planned as a repair of the tree that names kind-change as held, the gate records the hold and wants kind-change, and the room stays a tree. When the gate opens, a reshape-due row released by any node publishes the star: a second kind-change reshape, planned no earlier than 15 000 ms after the first, after which the gate's interval is 30 000 ms with one held pass and nothing wanted. Each reshape's plannedAtEpochMs is the gate's lastPassAtEpochMs of the same pass, which is how the recipe captures both instants. The recipe depends on the leave landing within 15 s of the first reshape: it leaves directly after observing that reshape, and a run whose leave lands after the gate opened sees an ordinary reshape instead of a hold. It needs a fresh runId: its reads poll for states the room passes through once. While the gate holds the kind change, a member reads the hold in the formation view on the tertiary, wanting kind-change and opening at the same instant the operator read states, and after the release reads heldReshape as null.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -936,6 +936,37 @@
       }
     },
     {
+      "name": "theFormationViewStatesTheHeldKindChange",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 5000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "heldReshape": {
+            "wantedReasons": [
+              "kind-change"
+            ],
+            "opensAtEpochMs": "{gateOpensAt}"
+          }
+        }
+      }
+    },
+    {
       "name": "theRoomKeepsItsTreeWhileHeld",
       "type": "http",
       "connection": "tertiary",
@@ -1126,6 +1157,32 @@
             "length": 0
           }
         ]
+      }
+    },
+    {
+      "name": "theFormationViewOwesNothingAfterTheRelease",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 5000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "heldReshape": null
+        }
       }
     }
   ]
