@@ -328,6 +328,7 @@ function createIndexedDbArbitrationFixture(namespace: string): ArbitrationFixtur
         dbName: namespace,
         storeName: ADMISSION_STORE_NAME,
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });

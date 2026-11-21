@@ -328,6 +328,7 @@ function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBack
             dbName: `backend-work-${crypto.randomUUID()}`,
             storeName: admissionStore,
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

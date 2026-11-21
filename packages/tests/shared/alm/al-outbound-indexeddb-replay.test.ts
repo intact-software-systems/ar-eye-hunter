@@ -249,6 +249,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             dbName: dbName,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -570,6 +571,7 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb'): ReplayA
             dbName: `outbound-replay-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

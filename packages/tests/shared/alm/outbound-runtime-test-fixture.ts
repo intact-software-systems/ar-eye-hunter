@@ -590,6 +590,7 @@ export function createIndexedDbOutboundTestStores(
         dbName: input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: input.observer
     });

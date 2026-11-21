@@ -96,6 +96,7 @@ async function createRttEgressFixture(): Promise<RttEgressFixture> {
         dbName: `rtt-egress-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });
