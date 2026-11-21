@@ -80,7 +80,7 @@ export function createGroupStateRouteAuthorization(
         },
         async assertCanUpdateGroup(principalId, ref, request) {
             // The group AppInbox checks director authority against the same revision as the deadline write.
-            if (request.roomDeadline?.expectedDirectorEpoch === undefined) {
+            if (request.roomClock === undefined && request.roomDeadline?.expectedDirectorEpoch === undefined) {
                 await assertCanUpdateGroup(principalId, ref, dependencies);
             }
         },

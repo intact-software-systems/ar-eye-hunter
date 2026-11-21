@@ -46,7 +46,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
-import { createRoomDeadlineOperations, type RoomDeadlineOperations } from './deadlines/room-deadlines.ts';
+import { createRoomTimeOperations, type RoomTimeOperations } from './time/room-time-operations.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
@@ -136,7 +136,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
 }
 
-export interface BrowserRallarRooms extends RoomDeadlineOperations {
+export interface BrowserRallarRooms extends RoomTimeOperations {
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
@@ -282,7 +282,7 @@ export function createBrowserRallarRooms(
         });
 
     return {
-        ...createRoomDeadlineOperations(input),
+        ...createRoomTimeOperations(input),
         ...createRoomReadOperations(input, refresh),
         ...createRoomEntryOperations({
             rooms: input,

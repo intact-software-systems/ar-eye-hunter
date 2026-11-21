@@ -1,24 +1,18 @@
-import type { RoomDeadline } from '@shared/api/group-deadlines/room-deadline.ts';
-
 import { notifyListener } from '../../messages/rallar-listener-delivery.ts';
 import type { RallarWsFacade } from '../../rallar-realtime-facade.ts';
 
-export interface RoomDeadlineObservation {
-    readonly status: 'current' | 'stale';
-    readonly deadline: RoomDeadline | null;
-}
-
-interface WatchRoomDeadlineInput {
+interface WatchRoomTimeInput<T> {
     readonly signal?: AbortSignal;
     readonly ws: Pick<RallarWsFacade, 'onLifecycle' | 'status'>;
     onSessionEnd(stop: () => void): () => void;
     subscribe(changed: (revision: number) => void): () => void;
-    read(signal: AbortSignal): Promise<RoomDeadline | null>;
-    listener(observation: RoomDeadlineObservation): void;
+    read(signal: AbortSignal): Promise<T | null>;
+    listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
+    regresses(previous: T, next: T): boolean;
 }
 
 /** Socket events invalidate the durable read. A connected idle room generates no reads. */
-export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
+export function watchRoomTime<T extends { readonly revision: number; }>(input: WatchRoomTimeInput<T>): () => void {
     input.signal?.throwIfAborted();
     const lifetime = new AbortController();
     const { signal } = lifetime;
@@ -29,16 +23,16 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
     let pageSuspended = false;
     let socketLost = !input.ws.status().isOpen;
     let queued = false;
-    let observation: RoomDeadlineObservation = { status: 'stale', deadline: null };
+    let status: 'current' | 'stale' = 'stale';
+    let observed: T | null = null;
 
-    function publish(status: RoomDeadlineObservation['status'], deadline = observation.deadline): void {
-        if (
-            signal.aborted || (observation.status === status && observation.deadline?.revision === deadline?.revision)
-        ) {
+    function publish(nextStatus: 'current' | 'stale', value = observed): void {
+        if (signal.aborted || (status === nextStatus && observed?.revision === value?.revision)) {
             return;
         }
-        observation = { status, deadline };
-        notifyListener(input.listener, observation);
+        status = nextStatus;
+        observed = value;
+        notifyListener(input.listener, { status: nextStatus, value });
     }
     function suspend(): void {
         clearTimeout(retry);
@@ -61,20 +55,18 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
         }
         const attempt = new AbortController();
         request = attempt;
-        let deadline: RoomDeadline | null;
+        let next: T | null;
         try {
-            deadline = await input.read(AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]));
-            const previous = observation.deadline;
-            if ((deadline?.revision ?? 0) < announcedRevision) {
-                throw new Error('Room deadline read predates the server notification.');
+            next = await input.read(AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]));
+            const previous = observed;
+            if ((next?.revision ?? 0) < announcedRevision) {
+                throw new Error('Room time read predates the server notification.');
             }
             if (
-                previous && (!deadline || deadline.revision < previous.revision ||
-                    (deadline.startedAtRevision ?? 1) < (previous.startedAtRevision ?? 1) ||
-                    (deadline.revision === previous.revision && (deadline.atEpochMs !== previous.atEpochMs ||
-                        deadline.startedAtRevision !== previous.startedAtRevision)))
+                previous && (!next || next.revision < previous.revision ||
+                    input.regresses(previous, next))
             ) {
-                throw new Error('Room deadline read regressed.');
+                throw new Error('Room time read regressed.');
             }
         }
         catch {
@@ -97,7 +89,7 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
             void refresh();
             return;
         }
-        publish('current', deadline);
+        publish('current', next);
     }
     function wake(): void {
         retries = 0;
@@ -120,7 +112,7 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = input.subscribe((revision) => {
-        if (revision > Math.max(announcedRevision, observation.deadline?.revision ?? 0)) {
+        if (revision > Math.max(announcedRevision, observed?.revision ?? 0)) {
             announcedRevision = revision;
             publish('stale');
             wake();
@@ -147,7 +139,7 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
         input.signal?.removeEventListener('abort', dispose);
     }
     input.signal?.addEventListener('abort', dispose, { once: true });
-    notifyListener(input.listener, observation);
+    notifyListener(input.listener, { status: 'stale', value: null });
     wake();
     return dispose;
 }

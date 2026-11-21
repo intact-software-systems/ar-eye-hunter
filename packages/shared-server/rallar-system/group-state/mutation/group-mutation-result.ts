@@ -46,6 +46,7 @@ import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts
 import {
     GroupConnectDeniedError,
     GroupRetiredError,
+    GroupClockRevisionConflictError,
     GroupDeadlineRevisionConflictError,
     GroupDirectorChangedError,
     type GroupMutationRejectionCode
@@ -282,6 +283,7 @@ export function toGroupMutationRejectionError(
     computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
 ):
     | GroupDirectorChangedError
+    | GroupClockRevisionConflictError
     | GroupDeadlineRevisionConflictError
     | GroupRetiredError
     | GroupAlreadyExistsError
@@ -294,6 +296,8 @@ export function toGroupMutationRejectionError(
             return new GroupPolicyDeniedError(computed.policyDenial);
         case 'room-director-changed':
             return new GroupDirectorChangedError(message);
+        case 'room-clock-revision-conflict':
+            return new GroupClockRevisionConflictError(message);
         case 'room-deadline-revision-conflict':
             return new GroupDeadlineRevisionConflictError(message);
         case 'group-retired':

@@ -86,6 +86,21 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "room-clock-idle-watch-sends-no-reads",
+      "domain": "Room clock observation",
+      "owner": "Rallar browser SDK maintainers",
+      "summary": "A connected watcher holding current paused room time generates no periodic HTTP reads.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/deadlines/room-deadlines.test.ts#does not read an idle paused clock periodically and clears its balance on session end",
+      "coverageRelation": "After observing a durable paused clock the test advances local time for a minute and measures requests at the browser network boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser fetch for the scoped room snapshot",
+        "observableEffect": "Repeated room snapshot reads consume server capacity while the room clock has not changed.",
+        "requiredConstraint": "No HTTP requests during the idle interval after initial hydration and before a wakeup or invalidation.",
+        "failureRationale": "Identical returned balances cannot distinguish an idle WebSocket watcher from constant HTTP polling."
+      }
+    },
+    {
       "id": "bun-server-start-scripts-list-api-v1-env-files",
       "domain": "Bun server env-file loading",
       "owner": "Rallar platform maintainers",
@@ -6129,6 +6144,17 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-df150c022611e3dd",
+      "path": "packages/tests/shared-web/rooms/deadlines/room-deadlines.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-clock-idle-watch-sends-no-reads",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser SDK maintainers",
+      "rationale": "The zero-request assertion measures the external network effect of keeping a paused scoreboard open.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/deadlines/room-deadlines.test.ts#does not read an idle paused clock periodically and clears its balance on session end"
+    },
     {
       "id": "test-structure-coupling-0d77ec7cc60473eb",
       "path": "packages/tests/repo/bun-server-environment-files.test.ts",
