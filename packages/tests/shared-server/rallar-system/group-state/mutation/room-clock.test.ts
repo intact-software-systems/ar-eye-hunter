@@ -27,3 +27,16 @@ it('rejects expired pauses and live restarts, and reuses an expired clock name',
     expect(computeGroupClockChange([clock], start, 9_999)).toHaveProperty('rejectionCode');
     expect(computeGroupClockChange([clock], start, 10_000)).toEqual({ ...clock, revision: 3, endsAtEpochMs: 11_000 });
 });
+
+it('starts the next phase clock while the previous period still has time', () => {
+    const period = { name: 'match', revision: 1, status: 'running' as const, endsAtEpochMs: 600_000 };
+    const advance = {
+        name: 'match', operation: 'advance-phase' as const, phase: 'halftime', durationMs: 180_000,
+        expectedDirectorEpoch: 1, expectedRevision: 1
+    };
+    expect(computeGroupClockChange([period], advance, 10_000)).toEqual({
+        name: 'match', revision: 2, status: 'running', endsAtEpochMs: 190_000
+    });
+    expect(computeGroupClockChange([period], { ...advance, expectedRevision: 0 }, 10_000))
+        .toMatchObject({ rejectionCode: 'room-clock-revision-conflict' });
+});
