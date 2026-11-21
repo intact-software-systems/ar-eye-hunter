@@ -3,16 +3,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { readGithubWorkflowRuns, readWorkflowRunsEnvelope } from './github-actions/read-github-workflow-runs.mjs';
 import { validateBranchReleaseConclusion } from './validation-evidence/branch-release-result.mjs';
-import {
-    readGithubValidationEvidenceArtifact,
-    readGithubWorkflowRuns
-} from './validation-evidence/github-validation-evidence.mjs';
+import { readGithubValidationEvidenceArtifact } from './validation-evidence/github-validation-evidence.mjs';
 import { createValidationEvidence } from './validation-evidence/validation-evidence-record.mjs';
-import {
-    readWorkflowRunsEnvelope,
-    selectValidationEvidence
-} from './validation-evidence/validation-evidence-selection.mjs';
+import { selectValidationEvidence } from './validation-evidence/validation-evidence-selection.mjs';
 
 await runValidationEvidenceCommand(process.argv.slice(2));
 
@@ -103,7 +98,7 @@ function readSelectionSources(options, githubIdentity) {
         };
     }
     return {
-        runs: readGithubWorkflowRuns(githubIdentity),
+        runs: readGithubWorkflowRuns({ ...githubIdentity, event: 'pull_request', status: 'success' }),
         readArtifact: (run) =>
             readGithubValidationEvidenceArtifact({
                 repository: githubIdentity.repository,

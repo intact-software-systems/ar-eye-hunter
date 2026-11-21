@@ -41,24 +41,6 @@ export function selectValidationEvidence(input) {
     return { ...selected, mode: selected.reuse ? 'reuse' : 'broad' };
 }
 
-export function readWorkflowRunsEnvelope(source) {
-    let envelope;
-    try {
-        envelope = JSON.parse(source);
-    }
-    catch {
-        throw new Error('workflow runs response must contain JSON');
-    }
-    const pages = Array.isArray(envelope) ? envelope : [envelope];
-    if (
-        pages.length === 0 ||
-        pages.some((page) => !isRecord(page) || !Array.isArray(page.workflow_runs))
-    ) {
-        throw new Error('workflow runs response must contain workflow_runs pages');
-    }
-    return pages.flatMap((page) => page.workflow_runs);
-}
-
 export function selectReusableValidationEvidence({ repoRoot, candidate, runs, readArtifact, now }) {
     validateCandidate(candidate);
     const nowTime = readIsoTime(now, 'selection time');
