@@ -36,14 +36,17 @@ export function validateList(field: AlmLaneFileField, validateEntry: AlmLaneFiel
     return field.value.flatMap((entry, index) => validateEntry({ path: `${field.path}[${index}]`, value: entry }));
 }
 
-/** Names each text a list holds more than once: the entry itself, or the named key of each entry. */
-export function validateUnique(field: AlmLaneFileField, key: string | undefined): readonly string[] {
+/** Names each text a list of texts holds more than once. */
+export function validateUniqueEntries(field: AlmLaneFileField): readonly string[] {
     const entries = Array.isArray(field.value) ? field.value : [];
-    const texts = entries.map((entry) => key === undefined ? entry : isApiJsonObject(entry) ? entry[key] : undefined)
-        .filter((text) => typeof text === 'string');
-    const repeated = [...new Set(texts.filter((text, index) => texts.indexOf(text) !== index))];
-    const named = key === undefined ? '' : `${key} `;
-    return repeated.map((text) => `${field.path} names ${named}${JSON.stringify(text)} more than once.`);
+    return toRepeatedTexts(entries).map((text) => `${field.path} names ${JSON.stringify(text)} more than once.`);
+}
+
+/** Names each text that the given key of a list's entries holds more than once. */
+export function validateUniqueKey(field: AlmLaneFileField, key: string): readonly string[] {
+    const entries = Array.isArray(field.value) ? field.value : [];
+    const texts = entries.map((entry) => isApiJsonObject(entry) ? entry[key] : undefined);
+    return toRepeatedTexts(texts).map((text) => `${field.path} names ${key} ${JSON.stringify(text)} more than once.`);
 }
 
 export function toIssue(field: AlmLaneFileField, expected: string): string {
@@ -57,4 +60,9 @@ function toReceivedText(value: ApiJsonValue): string {
         return 'an array';
     }
     return value !== null && typeof value === 'object' ? 'an object' : JSON.stringify(value);
+}
+
+function toRepeatedTexts(values: readonly (ApiJsonValue | undefined)[]): readonly string[] {
+    const texts = values.filter((value) => typeof value === 'string');
+    return [...new Set(texts.filter((text, index) => texts.indexOf(text) !== index))];
 }

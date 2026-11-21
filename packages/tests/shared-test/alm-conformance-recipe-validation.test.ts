@@ -6,7 +6,7 @@ import {
 
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceTag } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { ALM_CONFORMANCE_TAGS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -214,8 +214,6 @@ function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly Ralla
     );
 }
 
-const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
-
 /** Each role's recipe as its page runs it: the role's continuation, if any, follows on the same page. */
 function toPageRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBoxTestRecipe[] {
     const continuation = scenario.continuation;
@@ -415,7 +413,7 @@ describe('ALM conformance recipe validation', () => {
 
     it('holds every fault until a later command of its own recipe releases it, on every carrier and scope', () => {
         const unreleased = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            ALM_CONFORMANCE_SCOPES.flatMap((scope) =>
+            ALM_CONFORMANCE_TAGS.flatMap((scope) =>
                 createAlmConformanceRecipes(toConformanceInput(carrier))
                     .filter((scenario) => scenario.tags.includes(scope))
                     .flatMap(toPageRecipes)

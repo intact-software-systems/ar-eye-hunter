@@ -14,7 +14,8 @@ import {
     validateMember,
     validateObject,
     validateText,
-    validateUnique,
+    validateUniqueEntries,
+    validateUniqueKey,
     type AlmLaneFileField
 } from './alm-lane-file-field.ts';
 import {
@@ -39,7 +40,10 @@ export function decodeAlmLaneFamilyResult(value: unknown): Either<readonly strin
     return decodeRecordRoot(value, 'A family result').flatMap((issues) => Either.ofLeft(issues), decodeFamilyResult);
 }
 
-/** As a family result; a family planned twice, or a scenario key planned twice in one family, is an issue. */
+/**
+ * A plan file read back from an artifact. Its issues read as a family result's do; a family planned twice, or a
+ * scenario key planned twice in one family, is an issue.
+ */
 export function decodeAlmLanePlanRecord(value: unknown): Either<readonly string[], AlmLanePlanRecord> {
     return decodeRecordRoot(value, 'A plan record').flatMap((issues) => Either.ofLeft(issues), decodePlanRecord);
 }
@@ -58,7 +62,7 @@ function decodeFamilyResult(value: ApiJsonObject): Either<readonly string[], Alm
         ...validateMember(toField(value, 'family'), ALM_CONFORMANCE_LANE_FAMILIES),
         ...validateMember(toField(value, 'familyOutcome'), ALM_LANE_FAMILY_OUTCOMES),
         ...validateList(toField(value, 'scenarios'), validateScenario),
-        ...validateUnique(toField(value, 'scenarios'), 'scenarioKey')
+        ...validateUniqueKey(toField(value, 'scenarios'), 'scenarioKey')
     ];
     if (issues.length > 0) {
         return Either.ofLeft(issues);
@@ -78,7 +82,7 @@ function decodePlanRecord(value: ApiJsonObject): Either<readonly string[], AlmLa
     const issues = [
         ...validateRunIdentity(value),
         ...validateList(toField(value, 'families'), validatePlannedFamily),
-        ...validateUnique(toField(value, 'families'), 'family')
+        ...validateUniqueKey(toField(value, 'families'), 'family')
     ];
     if (issues.length > 0) {
         return Either.ofLeft(issues);
@@ -120,6 +124,6 @@ function validatePlannedFamily(field: AlmLaneFileField): readonly string[] {
     return validateObject(field, (planned) => [
         ...validateMember(toField(planned, 'family', field.path), ALM_CONFORMANCE_LANE_FAMILIES),
         ...validateList(toField(planned, 'scenarioKeys', field.path), validateText),
-        ...validateUnique(toField(planned, 'scenarioKeys', field.path), undefined)
+        ...validateUniqueEntries(toField(planned, 'scenarioKeys', field.path))
     ]);
 }

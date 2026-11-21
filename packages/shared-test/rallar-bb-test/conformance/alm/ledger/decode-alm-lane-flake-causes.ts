@@ -7,7 +7,7 @@ import {
     validateList,
     validateObject,
     validateText,
-    validateUnique,
+    validateUniqueKey,
     type AlmLaneFileField
 } from '../lane-result/alm-lane-file-field.ts';
 import type { AlmLaneFlakeCause } from './compute-alm-lane-ledger.ts';
@@ -22,7 +22,7 @@ export function decodeAlmLaneFlakeCauses(value: unknown): Either<readonly string
         return Either.ofLeft([`The flake causes must be an array; received ${received}.`]);
     }
     const causes: AlmLaneFileField = { path: 'causes', value };
-    const issues = [...validateList(causes, validateCause), ...validateUnique(causes, 'scenario')];
+    const issues = [...validateList(causes, validateCause), ...validateUniqueKey(causes, 'scenario')];
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
