@@ -1478,10 +1478,10 @@ The second part, S9-ii, made the full-scope lane one to trust (D627–D641). It
 changes one product path: a conflicted inbound admission is always retained and
 replayed (D640), so a `resync-required` drop that loses a commit race still
 reaches its sender as a NACK. On the WS server such a drop of a receipted room
-send first answers `pending-admission` and starts its `admitted` receipt, which
-can precede or follow the replay's NACK at the origin; a late one settles an
-`acknowledgement` after `relay-rejected`, and the handle reads `rejected`. The
-rest corrects the lane. No window, timeout or budget was widened; three cells
+send first answers `pending-admission`, which starts no receipt: the replay that
+admits a kept send starts its receipt, and a replay that refuses it answers its
+NACK and starts none, so the handle reads `rejected` (D697, D698). The rest
+corrects the lane. No window, timeout or budget was widened; three cells
 assert what the product documents instead of what they asserted before (D630,
 D633, D641), and each row states its cost:
 

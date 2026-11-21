@@ -805,7 +805,8 @@ message as a pending admission ([`retainPending`](./al-inbound-message-admission
 refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
 the floor is met or the deadline passes. The NACK ends the sending WS client's first-hop wait and nothing else, so
 the client writes the send no more. A replay that admits the message starts its receipt, and the sender reads
-`admitted`, then `complete` or `timed-out`; a replay its room refuses answers the sender with that refusal's NACK (see
+`admitted`, then `complete` or `timed-out`; a replay its room refuses answers the sender with that refusal's NACK when
+the refusal sends one (see
 "Replay authority and deadlines"); a message still kept at its deadline is answered nothing, and the handle reads
 `expired` (outbound README, "Server receipts on WS").
 
@@ -845,7 +846,7 @@ deadline of its own (no `expiresAtMs`, no expiry policy) holds the key until the
 read a free key conflict at the commit, and the loser's retained admission is replayed and planned against the winner.
 Every conflicted admission is retained (D640), so on the WS server every replayed drop of a receipted room send, a
 `held-by-other` claim, a `resync-required` gap or any other drop its replay NACKs, first answers `pending-admission`,
-which starts no receipt. The replay's NACK is the one answer the origin reads: it ends the send whatever its receipt,
+which starts no receipt. The replay's NACK is the only answer the origin reads: it ends the send whatever its receipt,
 and the handle reads `rejected`. A kept send its replay admits starts its receipt then. A `shared` message neither
 reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never reads or writes one, so a
 browser never drops a message for it.

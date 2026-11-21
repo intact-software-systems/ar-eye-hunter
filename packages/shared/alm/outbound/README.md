@@ -715,7 +715,8 @@ director's ACK completes it. Each recipient's ACK stays addressed to the origin 
 message's `senderId`); the server admits it at ingress as the aggregating relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
 held in memory on the instance that admitted the message: the one whose socket admitted it, or, for a send the
-server kept, the one whose replay admitted it, which can be another instance than the origin's. It is a
+server kept, the one whose replay, or a copy's own admission, admitted it, which can be another instance than the
+origin's. It is a
 `LatestRepository` of at most
 `WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES` (4 096) aggregates (D191). Its TTL is the 30 min receipt window plus
 the receipt deadline grace, strictly above every aggregate's deadline, so the deadline sweep is the one path that ends
@@ -761,8 +762,11 @@ with retry `none` waits for the server alone.
 
 **A duplicate is answered `admitted` again.** The server admits a message once by its id: a re-sent copy is accepted
 `duplicate` or `pending-admission` and never delivered twice. A retained send has no aggregate until it is admitted,
-by its replay or by a copy's own admission, whichever comes first, and one `admitted` follows; a copy that is itself
-retained behind the room view is answered that view's NACK again and nothing else. While the aggregate keyed by that
+by its replay or by a copy's own admission, whichever comes first, and the server starts one aggregate and its
+`admitted` follows; a copy that is itself retained behind the room view is answered that view's NACK again and nothing
+else. A send kept after a lost commit race whose other recipients have all left the room by its replay is admitted to
+nobody: its `admitted` names no expected recipient, the server keeps no aggregate, and the handle reads `acknowledged`
+at once (the characterization in `ws-kept-send-receipt.test.ts`). While the aggregate keyed by that
 sender and message id is live, the server answers the copy with the `admitted` receipt again, to that sender alone
 ([`writeAdmittedReceipt`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)); a copy
 accepted `not-admitted`, `resync-required` or `disposed` is answered nothing. The sender admits an identical second
@@ -847,7 +851,7 @@ admission with a `held-by-other` NACK, which the origin states the same way, a t
 that reason, so a receipted send reads `rejected` and a receipt-less one names it in `relayRejection` alone (D171,
 D175; the exclusive claim itself is [the inbound README's](../inbound/README.md)). Unlike the pre-admission refusals
 it refuses the whole send whatever the receipt, and it ends the receipt as `resync-required` does: a claim the server
-retained on a conflict has no receipt, and its replay's NACK is its one answer.
+retained on a conflict has no receipt, and its replay's NACK is its only answer.
 A volatile best-effort latest-wins publication
 ([`isALVolatileBestEffortPublication`](../../al-contracts/publication/is-al-volatile-best-effort-publication.ts)) on a
 topic whose effective fanout is `outbox` -- the topic's own, or a matching proxy rule's -- is refused at the router's
@@ -859,8 +863,9 @@ the publication even when it would itself have skipped (over-refusal). Neither i
 declares no proxy rule and no client topic with an `outbox` fanout. The origin states it as a trusted-server `relay-rejected` with that reason whatever the receipt; a live
 handle tracks none, so it keeps `transport-accepted` and names the refusal in `relayRejection` alone.
 A publication on a granted topic whose sender holds no effective `publish` grant is refused with a
-`no-publish-grant` NACK at socket admission or at `route` (D487); a pending replay or an inbox dispatch that reads the
-revocation first drops the message without a NACK, so its receipt settles at its deadline. Like `held-by-other` the
+`no-publish-grant` NACK at socket admission or at `route` (D487); an inbox dispatch that reads the revocation first
+drops the message without a NACK, so its receipt settles at its deadline, and a pending replay that reads it first
+answers the NACK, starts no receipt, and the handle reads `rejected`. Like `held-by-other` the
 NACK refuses the whole send whatever the receipt and ends it: a held dispatch already has its `admitted` receipt when
 `route` re-reads the grant.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no

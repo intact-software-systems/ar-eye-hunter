@@ -1148,8 +1148,10 @@ cached, the server decides. The server refuses a publication without effective
 `publish` at socket admission or at `route` with the NACK reason
 `no-publish-grant`, terminal whatever the receipt: the handle ends `rejected`
 with `failure: { kind: 'relay-rejected', rejection }`, `rejection.reason`
-`no-publish-grant`. A pending replay or an inbox dispatch that refuses it sends
-no NACK, and a receipted handle then reads its recipients unconfirmed. The
+`no-publish-grant`. An inbox dispatch that refuses it sends no NACK, and a
+receipted handle's receipt settles at its deadline; a pending replay that
+refuses it answers the NACK and starts no receipt, and the handle reads
+`rejected`. The
 cached check is advisory: a cache older than a grant refuses the send until the
 grant's delta lands.
 
@@ -1220,7 +1222,8 @@ its retries (3 by default), and then reads `failed` with `failure.kind:
 retry. Any receipt from the server ends that wait, and so does its
 `not-yet-in-sync` answer for a send it retains, which states nothing; the
 server answers that send again when it admits it, with its `admitted` receipt,
-or when it refuses it, with the refusal's NACK. The server answers a
+or when it refuses it, with the refusal's NACK when the refusal sends one.
+The server answers a
 duplicate of a message it admitted with its `admitted` receipt again, to that
 sender alone, while it holds the receipt; where it no longer does (another
 server instance, a restart) a send whose `admitted` receipt was lost can read
@@ -1844,7 +1847,7 @@ outcomes, none of them a new handle state (D175):
   claim is live is dropped at the server's admission and NACKed
   `held-by-other`; it reaches no one. A dropped claim starts no receipt, and
   neither does a claim retained on a conflict and dropped at its replay: the
-  `held-by-other` NACK is its one answer. The handle reads it as a
+  `held-by-other` NACK is its only answer. The handle reads it as a
   trusted-server relay rejection whatever receipt it already holds (unlike
   `no-leader`, which counts only before a receipt): with a receipt-bearing `ack`
   it ends `rejected` with `failure: { kind: 'relay-rejected', rejection }` and

@@ -335,7 +335,8 @@ and it has no status list.
 - `repair-exhausted` over `rtc-with-ws-fallback` is not asserted (S9-ii, D630).
   What a handed-over send does while its WS copy is held too is now pinned
   (`handed-over-send-held-on-ws.test.ts`, D700): it writes no frame, keeps no
-  receipt row and states no terminal fact, reads `submitted` to its 30 s
+  receipt row (a read that bites on `local-outbox` only) and states no terminal
+  fact, reads `submitted` to its 30 s
   deadline and `expired` after it, and sends nothing once the hold lifts late.
   The cell observes it for at most 10 s, so it still asserts `rtc` alone.
 - A `ws` send the server leaves `not-admitted` (`storage-unavailable`) gets no
@@ -346,7 +347,9 @@ and it has no status list.
   side, a server that answers nothing, is pinned by
   `al-outbound-first-hop-wait.test.ts`; the server's `not-admitted` half of the
   path is not tested. What a relay's refusal of a
-  held send means stays with the held-send slice.
+  held send means was the held-send slice's, which is built (D696–D700): a send
+  the server keeps and its room then refuses is answered with the refusal's
+  NACK when the refusal sends one (D698).
 - The WS server's `business-socket-decision` timing record omits the
   `not-admitted` reason (S9-ii; `recordSocketDecision` in
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`).
@@ -756,14 +759,33 @@ and it has no status list.
   deadline still kept: the handle reads `expired` at the deadline. It stays so
   by the maintainer's ruling of 2026-11-20 ("No, the handle's own deadline",
   D696); a retained send its room refuses is answered with the refusal's NACK
-  (D698).
+  when the refusal sends one (D698).
 - In a cluster a kept send's receipt lives on the instance whose replay admits
   it (D696). Without a relay publisher an ACK that lands on another instance
   is lost and its recipient stays unconfirmed.
 - A kept send that names no deadline keeps the kept row's deadline as its
   receipt deadline (D696). The WS client stamps one (`ts + 30 000`), so only a
   frame that reaches the server without a TTL, a runner's, would read its
-  `timed-out` later than a fresh one would.
+  `timed-out` later than a fresh one would. That such a raw frame keeps the
+  kept row's deadline at the server is read from
+  `al-inbound-message-admission.ts:233-234` and
+  `ws-queue-box-server-receipt-aggregation.ts:466-469`, not run.
+- A send kept after a lost commit race whose recipients have all left the room
+  by its replay is admitted to nobody: its `admitted` names no expected
+  recipient, the server keeps no aggregate, the one who left is sent nothing,
+  and the handle reads `acknowledged` at once (a characterization in
+  `ws-kept-send-receipt.test.ts`, D697). Open decision for the maintainer: keep
+  it, or start nothing so the handle reads `expired`.
+- A cap-evicted `timed-out` that confirmed nobody ends the server's own row of
+  an outbox-fanned room message before its deadline, and the server sends its
+  recipients nothing more (a characterization in
+  `ws-queue-box-server-receipt-aggregation.test.ts`). The same run with the
+  `timed-out` condition of `compute-al-outbound-receipt-admission.ts` put back
+  as it was before the held-send slice shows the same, so the slice did not
+  change it.
+- Every lost-race admission of a receipted room send awaits one outbox write
+  inside the inbound worker, whose concurrency is one; no figure exists.
+- The publisher recipe adds a fixed 41 s wait to the cluster profile.
 - A kept row polls the room authorizer every 50 ms while the room view is
   behind, and its replay does not read the sender's connection again (the
   held-send design's non-goals, D696).
@@ -884,8 +906,8 @@ and it has no status list.
   charge (D690): part C drops those copies when the receipt runs out, and a
   release inside the budget hands them to the carrier together. A first
   attempt of which only some copies are held is charged as before, and part C
-  then drops its held copies. Next step: a hold per recipient, with D640's
-  slice.
+  then drops its held copies. Next step: a hold per recipient, its own slice;
+  the held-send slice is built (D696–D700) and does not hold per recipient.
 - A first attempt whose plan changed or drops while it is held is charged as
   before, since the rule reads the copies planned at the deadline (D690). Open
   decision: whether a receipt should wait for a copy its re-plan no longer
