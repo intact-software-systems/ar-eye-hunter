@@ -11,6 +11,7 @@ import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipien
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 
 /**
  * How an outbound owner knows who spoke a recipient's control: the carrier authenticates its peer (a WS client's
@@ -73,4 +74,16 @@ export function validateALOutboundRecipientProof(
     return refusal === undefined
         ? []
         : [{ code: 'unauthorized', message: `AL control proof is refused: ${refusal.kind}`, class: 'refusal' }];
+}
+
+export function toALOutboundRefusedControlAdmission(
+    issues: readonly ALOutboundControlIssue[],
+    recipientProof: ALControlAdmissionRead['recipientProof']
+): ALOutboundControlAdmissionResult {
+    const reason = issues.map((issue) => issue.message).join('; ');
+    if (issues.every((issue) => issue.class === 'duplicate')) {
+        return { kind: 'duplicate', reason };
+    }
+    const proofRefusal = toALOutboundProofRefusal(recipientProof);
+    return proofRefusal === undefined ? { kind: 'rejected', reason } : { kind: 'rejected', reason, proofRefusal };
 }
