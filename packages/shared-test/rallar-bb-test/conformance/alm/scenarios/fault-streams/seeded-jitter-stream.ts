@@ -5,10 +5,10 @@ import type {
 
 import { toBudgetMs } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toGapNackWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
 import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import { toGapNackWait } from '../../alm-conformance-repair-waits.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,

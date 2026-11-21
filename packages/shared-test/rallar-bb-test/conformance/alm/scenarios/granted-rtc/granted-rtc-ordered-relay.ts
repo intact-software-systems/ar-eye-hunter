@@ -1,8 +1,9 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toOrderingPositionWait, toRepairDispatchWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { toOrderingPositionWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toReachedCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toRepairDispatchWait } from '../../alm-conformance-repair-waits.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,

@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoRepairRequestWaits } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoGapRepairWaits } from '../../alm-conformance-repair-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
