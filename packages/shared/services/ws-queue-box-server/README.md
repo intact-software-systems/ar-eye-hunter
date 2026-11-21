@@ -38,6 +38,20 @@ target, scope and delivery ports. The `scope/` translations prove producer and
 recipient scope at their current admission/send boundaries; they add no second
 scope authority or lifecycle.
 
+## Captured-audience re-check
+
+[`readWsQueueBoxServerEligibleAudience`](./scope/read-ws-queue-box-server-eligible-audience.ts)
+is the one re-check of a captured audience. It answers within
+`WS_CAPTURED_AUDIENCE_READ_DEADLINE_MS` (half the outbound work lease) or rejects,
+as a failed read does, so the row retries and a held send releases the session's
+next held row. Its three filters (`WsCapturedRecipientEligibilityFilters`):
+`durable` judges at the dequeue and the repair, `socket` narrows a send its
+dequeue already judged by this instance's open sockets and reads nothing, and
+`local` re-checks a send that carries no judgement (a held send, a cluster notice
+without one) afresh. The dequeue's judgement reaches the cluster publisher's send
+as `Handoff.judgedDrops` and every other instance's send as the notice's
+`droppedSessionIds`, so a granted cluster row reads its snapshot once per attempt.
+
 ## Private receipt evidence
 
 [`WsQueueBoxServerReceiptObservation`](./ws-queue-box-server-receipt-observation.ts)
