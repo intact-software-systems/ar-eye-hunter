@@ -40,6 +40,13 @@ test('a scoreboard receives pause live and recovers the frozen balance after vis
         await expect(guest.locator('#phase')).toHaveText('Paused');
         await expect(guest.getByLabel('Period clock')).toHaveText(frozen!);
         await expect(guest.getByRole('button', { name: 'Resume' })).toBeDisabled();
+        // A scoreboard has no director relay. Its referee may resume after relay heartbeats would be stale.
+        const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+        await expect.poll(() => page.evaluate(async ({ sdkUrl, court }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const director = rallar.director.status({ applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court });
+            return director.active && director.isDirector && !director.isFresh;
+        }, { sdkUrl, court }), { timeout: 30_000 }).toBe(true);
         await page.getByRole('button', { name: 'Resume' }).click();
         await expect(guest.locator('#phase')).toHaveText('Running');
     }

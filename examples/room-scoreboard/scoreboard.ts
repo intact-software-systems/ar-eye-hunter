@@ -57,7 +57,7 @@ function render() {
     appoint.disabled = busy;
     change.hidden = !face.action;
     change.textContent = face.action ? labels[face.action] : '';
-    change.disabled = busy || !face.action || !director.isFresh || !director.isDirector;
+    change.disabled = busy || !face.action || !director.active || !director.isDirector;
     return change.disabled ? undefined : face.action;
 }
 
