@@ -68,3 +68,16 @@ it('adds the requested duration to the existing phase end and preserves the occu
         ...command, durationMs: Number.MAX_SAFE_INTEGER
     }, 7000)).toHaveProperty('rejectionCode');
 });
+
+it('revises future schedule boundaries while protecting elapsed phases and manual clocks', () => {
+    const phases = [{ phase: 'halftime', startsAtEpochMs: 100 }, { phase: 'second', startsAtEpochMs: 500 }];
+    const publish = { operation: 'publish-schedule' as const, name: 'court', expectedDirectorEpoch: 1, expectedRevision: 0, phases };
+    const first = { name: 'court', status: 'scheduled' as const, revision: 1, phases };
+    expect(computeGroupClockChange([], publish, 200)).toEqual(first);
+    const later = [phases[0], { ...phases[1], startsAtEpochMs: 700 }];
+    const revise = { ...publish, expectedRevision: 1, phases: later };
+    expect(computeGroupClockChange([first], revise, 499)).toEqual({ ...first, revision: 2, phases: later });
+    expect(computeGroupClockChange([first], revise, 500)).toHaveProperty('rejectionCode');
+    expect(computeGroupClockChange([first], { ...publish, expectedRevision: 1, phases: [{ phase: 'new', startsAtEpochMs: 99 }, ...phases] }, 200)).toHaveProperty('rejectionCode');
+    expect(computeGroupClockChange([first], { name: 'court', operation: 'start', durationMs: 1000, expectedDirectorEpoch: 1, expectedRevision: 1 }, 200)).toHaveProperty('rejectionCode');
+});
