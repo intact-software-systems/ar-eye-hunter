@@ -17,6 +17,7 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { readWsQueueBoxServerEligibleAudience } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import {
@@ -91,6 +92,8 @@ export interface InstallQueueBoxPubSubBridgeOptions {
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     /** Re-checks a row's captured sessions before each local send: every scoped row's, and a frozen-audience row's (D498). */
     readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
+    /** Bounds each re-check's read; background timers by default. */
+    readonly timers?: Timers;
     /**
      * Announces a requeued row to the engine that owns the outbox. A requeue writes outside every ALM
      * runtime, so absence leaves the row waiting out the owner's idle ceiling.
@@ -106,6 +109,7 @@ interface RegisterQueueBoxOutboxPublisherInput {
     readonly publisherId: string;
     readonly timing?: RallarTimingSink;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    readonly timers: Timers;
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
     readonly heldSends: HeldSendChain;
 }
@@ -121,6 +125,7 @@ interface ReceiveQueueBoxPubSubMessageDependencies {
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    readonly timers: Timers;
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
     readonly heldSends: HeldSendChain;
 }
@@ -133,6 +138,7 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
     readonly jitterUnit: () => number;
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+    readonly timers: Timers;
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
     readonly heldSends: HeldSendChain;
 }
@@ -182,7 +188,8 @@ export function installQueueBoxPubSubBridge(
         timing,
         retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
         jitterUnit = Math.random,
-        clock = { nowMs: Date.now }
+        clock = { nowMs: Date.now },
+        timers = createDefaultBackgroundTimers()
     } = options;
     const heldSends = new HeldSendChain();
 
@@ -193,6 +200,7 @@ export function installQueueBoxPubSubBridge(
         publisherId,
         timing,
         filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        timers,
         heldSends,
         receiptObserver: options.receiptObserver
     });
@@ -216,6 +224,7 @@ export function installQueueBoxPubSubBridge(
                     onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived,
                     wakeQueueEngine: options.wakeQueueEngine,
                     filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+                    timers,
                     heldSends
                 });
             }, options.onSubscribed);
@@ -409,6 +418,7 @@ async function receiveQueueBoxPubSubMessage(
         jitterUnit: options.jitterUnit,
         wakeQueueEngine: options.wakeQueueEngine,
         filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        timers: options.timers,
         heldSends: options.heldSends
     });
 }
@@ -525,7 +535,7 @@ function deferAwaitedCapturedRecipients(
     result: Pick<WsServerLiveSendResult, 'failedCount'>,
     options: Pick<
         SendRemoteQueueBoxOutboxEntryDependencies,
-        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds' | 'heldSends'
+        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds' | 'timers' | 'heldSends'
     >
 ): ExpectedConnectionHolds.AudienceHold {
     const { policy } = input;
@@ -549,7 +559,10 @@ function deferAwaitedCapturedRecipients(
 
 async function sendToCapturedLocalTargets(
     input: SendToCapturedLocalTargetsInput,
-    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+    options: Pick<
+        SendRemoteQueueBoxOutboxEntryDependencies,
+        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds' | 'timers'
+    >
 ): Promise<WsServerLiveSendResult> {
     const { message, entry, policy } = input;
     if (
@@ -603,7 +616,10 @@ function toCapturedSendDrops(
  */
 async function readCapturedSendEligibility(
     { message, entry, policy }: SendToCapturedLocalTargetsInput,
-    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+    options: Pick<
+        SendRemoteQueueBoxOutboxEntryDependencies,
+        'wsQBoxServerService' | 'filterEligibleCapturedSessionIds' | 'timers'
+    >
 ): Promise<CapturedSendEligibility> {
     const captured = policy?.admittedAudience;
     const frozen = options.wsQBoxServerService.requiresFrozenAudience(message);
@@ -622,7 +638,8 @@ async function readCapturedSendEligibility(
         admittedAudience: captured,
         admittedConnectionGenerationIds: policy?.admittedConnectionGenerationIds,
         provenScope: policy?.recipientScope,
-        filterEligibleCapturedSessionIds: filter
+        filterEligibleCapturedSessionIds: filter,
+        timers: options.timers
     });
     return { rechecked: true, eligibleSessionIds };
 }

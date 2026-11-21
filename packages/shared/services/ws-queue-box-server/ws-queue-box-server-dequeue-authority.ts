@@ -6,6 +6,7 @@ import type { ALOutboundDequeueAuthority } from '../../alm/outbound/al-outbound-
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { Timers } from '../../resilience/timers.ts';
 import { readWsQueueBoxServerEligibleAudience } from './scope/read-ws-queue-box-server-eligible-audience.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import {
@@ -83,6 +84,8 @@ export namespace WsQueueBoxServerDequeueAuthority {
          */
         readonly targetResolution: Pick<WsQueueBoxServerTargetResolution, 'requiresFrozenAudience'>;
         readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
+        /** Bounds each re-check's read. */
+        readonly timers: Timers;
     }
 
     export type AudienceAuthority = Pick<
@@ -157,7 +160,8 @@ export class WsQueueBoxServerDequeueAuthority {
     /**
      * The row's admitted audience as this attempt finds it (D498): durable presence judges every captured row at the
      * dequeue and the retry; this instance's sockets judge a frozen-audience row at a send, where any other row keeps
-     * its captured audience. A re-check that cannot read rejects, so the row waits for its retry. With no filters
+     * its captured audience. A re-check that cannot read, or does not answer within the deadline, rejects, so the row waits
+     * for its retry. With no filters
      * wired a frozen row sends nobody and any other row keeps its captured audience: a composition with no filters
      * declares no exclusion, its sessions stay expected. A session the re-check drops is sent nothing, and its caller
      * records it outside the audience of the receipt its admission wrote (S4-R9).
@@ -167,7 +171,7 @@ export class WsQueueBoxServerDequeueAuthority {
         authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority,
         presence: WsCapturedPresence
     ): Promise<WsQueueBoxServerDequeueAuthority.CurrentAudience> {
-        const { targetResolution, capturedRecipientEligibilityFilters } = this.dependencies;
+        const { targetResolution, capturedRecipientEligibilityFilters, timers } = this.dependencies;
         const admittedAudience = authority.admittedAudience;
         if (admittedAudience === undefined || authority.sessionInvalidation !== undefined) {
             return { eligible: admittedAudience, dropped: [] };
@@ -184,7 +188,8 @@ export class WsQueueBoxServerDequeueAuthority {
             admittedAudience,
             admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
             provenScope: authority.recipientScope,
-            filterEligibleCapturedSessionIds: capturedRecipientEligibilityFilters[presence]
+            filterEligibleCapturedSessionIds: capturedRecipientEligibilityFilters[presence],
+            timers
         });
         return { eligible, dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)) };
     }

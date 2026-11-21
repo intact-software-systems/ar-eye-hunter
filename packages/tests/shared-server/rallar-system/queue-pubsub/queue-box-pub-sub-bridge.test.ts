@@ -33,7 +33,9 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { WsCapturedAudienceReadDeadlineError } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import type {
     CapturedWsRecipientEligibilityInputDto,
     WsServerLiveSendInputDto,
@@ -58,6 +60,12 @@ interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
 interface PublishedQueueMessage {
     readonly channel: string;
     readonly message: QueueBoxPubSubMessage;
+}
+
+interface ScheduledRun {
+    readonly delayMs: number;
+    readonly run: () => void | Promise<void>;
+    cancelled: boolean;
 }
 
 describe('QueueBoxPubSubBridge', () => {
@@ -438,6 +446,63 @@ describe('QueueBoxPubSubBridge', () => {
         await expect.poll(() => held).toEqual([messages[1]]);
         expect(heldSendCount).toBe(2);
         expect(loggedErrors).toEqual([['Held WebSocket send failed:', failure]]);
+    });
+
+    it('releases the session\'s next held row at the deadline when a held send\'s re-check never settles', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const held: string[] = [];
+        const rechecks: string[] = [];
+        const loggedErrors: (readonly [string, boolean])[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            loggedErrors.push([message, error instanceof WsCapturedAudienceReadDeadlineError]);
+        });
+        onTestFinished(() => consoleError.mockRestore());
+        const scheduled: ScheduledRun[] = [];
+        const service = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => ['late'],
+            requiresFrozenAudience: () => true,
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                if (recipientSessionIds?.includes('late')) {
+                    held.push(message.id.msgId);
+                }
+                return recipientSessionIds?.length ? sentLiveResult(message) : noRecipientLiveSendResult(message);
+            }
+        });
+        service.socket.expectedConnections.expect({ id: 'late', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
+        const rows = [createCanonicalRoomOutboxEntry(Date.now()), createCanonicalRoomOutboxEntry(Date.now() + 1)];
+        const [stalledMsgId, nextMsgId] = rows.map((row) => decodePersistedALMessage(row.resource).id.msgId);
+        let socketOpened = false;
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: service,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            timers: createManualTimers(scheduled),
+            filterEligibleCapturedSessionIds: async (input) => {
+                rechecks.push(input.message.id.msgId);
+                if (!socketOpened) {
+                    return [];
+                }
+                return input.message.id.msgId === stalledMsgId
+                    ? await new Promise<readonly string[]>(() => undefined)
+                    : input.candidateSessionIds;
+            }
+        });
+        for (const row of rows) {
+            await outboxPublishers[0](decodePersistedALMessage(row.resource), row, STORED_POLICY_HANDOFF);
+        }
+
+        socketOpened = true;
+        service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
+        await expect.poll(() => rechecks).toEqual([stalledMsgId, nextMsgId, stalledMsgId]);
+        expect(held).toEqual([]);
+        const pending = scheduled.filter((run) => !run.cancelled);
+        expect(pending.map((run) => run.delayMs)).toEqual([5_000]);
+        await pending[0].run();
+
+        await expect.poll(() => held).toEqual([nextMsgId]);
+        expect(loggedErrors).toEqual([['Held WebSocket send failed:', true]]);
     });
 
     it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {
@@ -1487,6 +1552,20 @@ describe('the captured audience of a cluster publication', () => {
         expect(sent).toEqual([]);
     });
 });
+
+/** Timers whose scheduled runs fire only when the test runs them; a cancel marks its run. */
+function createManualTimers(scheduled: ScheduledRun[]): Timers {
+    return {
+        nowMs: () => 1_000,
+        schedule: (run, delayMs) => {
+            const scheduledRun: ScheduledRun = { delayMs, run, cancelled: false };
+            scheduled.push(scheduledRun);
+            return () => {
+                scheduledRun.cancelled = true;
+            };
+        }
+    };
+}
 
 function createBridge(): TestQueueBoxPubSubBridge {
     let subscriber: Parameters<QueueBoxPubSubBridge['subscribe']>[1] | undefined;

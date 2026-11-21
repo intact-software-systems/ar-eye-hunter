@@ -4,7 +4,9 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { WsCapturedAudienceReadDeadlineError } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import type {
     WsCapturedRecipientEligibilityFilter,
     WsCapturedRecipientEligibilityFilters
@@ -18,9 +20,26 @@ const keepsBAndD: WsCapturedRecipientEligibilityFilter = (captured) => Promise.r
 const keepsB: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId === 'b'));
 const KEEPS_B_AND_D: WsCapturedRecipientEligibilityFilters = { durable: keepsBAndD, local: keepsB };
 
+interface ScheduledRun {
+    readonly delayMs: number;
+    readonly run: () => void | Promise<void>;
+}
+
+/** Timers whose scheduled runs fire only when the test runs them. */
+function createManualTimers(scheduled: ScheduledRun[]): Timers {
+    return {
+        nowMs: () => 1_000,
+        schedule: (run, delayMs) => {
+            scheduled.push({ delayMs, run });
+            return () => undefined;
+        }
+    };
+}
+
 function createAuthority(
     frozen: boolean,
-    capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined
+    capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined,
+    timers: Timers = createDefaultBackgroundTimers()
 ): WsQueueBoxServerDequeueAuthority {
     const nowMs = () => 1_000;
     return new WsQueueBoxServerDequeueAuthority({
@@ -35,7 +54,8 @@ function createAuthority(
         }),
         readProducerProvenance: undefined,
         targetResolution: { requiresFrozenAudience: () => frozen },
-        capturedRecipientEligibilityFilters
+        capturedRecipientEligibilityFilters,
+        timers
     });
 }
 
@@ -92,5 +112,33 @@ describe('the audience one dequeue attempt finds for a row', () => {
         );
 
         expect(audience).toEqual({ eligible: undefined, dropped: [] });
+    });
+
+    it('rejects the attempt at the read deadline when the durable re-check never settles, so the row retries', async () => {
+        const scheduled: ScheduledRun[] = [];
+        const never: WsCapturedRecipientEligibilityFilter = () => new Promise(() => undefined);
+        const authority = createAuthority(true, { durable: never, local: keepsB }, createManualTimers(scheduled));
+
+        const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
+        expect(scheduled.map((run) => run.delayMs)).toEqual([5_000]);
+        await scheduled[0].run();
+
+        await expect(read).rejects.toBeInstanceOf(WsCapturedAudienceReadDeadlineError);
+    });
+
+    it('ignores a re-check that settles after its deadline', async () => {
+        const scheduled: ScheduledRun[] = [];
+        let settleLate: (sessionIds: readonly string[]) => void = () => undefined;
+        const late: WsCapturedRecipientEligibilityFilter = () =>
+            new Promise((resolve) => {
+                settleLate = resolve;
+            });
+        const authority = createAuthority(true, { durable: late, local: keepsB }, createManualTimers(scheduled));
+
+        const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
+        await scheduled[0].run();
+        settleLate(['b', 'c', 'd']);
+
+        await expect(read).rejects.toBeInstanceOf(WsCapturedAudienceReadDeadlineError);
     });
 });
