@@ -20,6 +20,8 @@ export interface ComputeALOrderingObservationInput {
     readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
     /** Whether the store evicted this track's snapshot at its cap: a position it forgot, not one it never held. */
     readonly evictedTrack: boolean;
+    /** Whether the copy's plan supersedes by latest-wins: a predecessor it replaced was never owed to anyone. */
+    readonly latestWins: boolean;
 }
 
 export interface ALOrderingAcceptance {
@@ -47,7 +49,8 @@ const UNTRACKED: ALOrderingAcceptance = Object.freeze({
 
 /**
  * A recipient opens a recorded track at its first copy (`entered`) unless that copy's record names sends before it that
- * the recipient can still ask for: then it opens the track at position 0 and asks the gap up to the record's prior. It
+ * the recipient is owed and can still ask for: then it opens the track at position 0 and asks the gap up to the
+ * record's prior. It
  * delivers a copy whose record names its own position as the prior (`omitted`), and asks for a gap that ends at a prior
  * ahead of it. A prior behind its position, or `0` on a track it holds, says nothing it does not know, so today's rule
  * from its own position applies, as it does to a copy no authority recorded.
@@ -90,12 +93,13 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
 
 /**
  * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. A track the
- * store evicted at its cap enters at the copy instead, since its delivered past is forgotten, not absent.
+ * store evicted at its cap enters at the copy instead, since its delivered past is forgotten, not absent, and so does a
+ * latest-wins copy, whose predecessor may have been superseded before it was ever sent.
  */
 function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
     const priorSeq = track.priorSeq;
     return priorSeq !== undefined && priorSeq > 0 && priorSeq < track.seq &&
-        priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow && !track.input.evictedTrack;
+        priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow && !track.input.evictedTrack && !track.input.latestWins;
 }
 
 /** A tracked copy above the receiver's position: in order, an omission, or a gap ending at the record's prior. */

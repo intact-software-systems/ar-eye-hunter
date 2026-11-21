@@ -14,6 +14,7 @@ describe('AL admission policy transitions', () => {
             selfPeerId: 'receiver',
             bufferedPriorSeqs: {},
             evictedTrack: false,
+            latestWins: false,
             snapshot: {
                 lastContiguousSeq: 0,
                 bufferedSeqs: [2],

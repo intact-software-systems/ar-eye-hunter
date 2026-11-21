@@ -10,7 +10,7 @@ import {
     it
 } from 'vitest';
 
-const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false } as const;
+const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false, latestWins: false } as const;
 
 describe('AL ordering repair window', () => {
     it('requests resynchronization for a maximum-safe-integer initial sequence without expanding its gap', () => {
@@ -254,6 +254,13 @@ describe('a recorded track at its recipient: entry, omission and the record\'s p
         expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 1_001 });
     });
 
+    it('enters a fresh latest-wins track at the copy whatever its prior: a superseded predecessor is never owed', () => {
+        const result = observe({ msg: recordedMessage(2, {}), snapshot: undefined, latestWins: true });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 2, missingRanges: [], priorSeq: 1 });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
     it('asks 1..256 for a prior at the repair window\'s edge and enters at a prior past it', () => {
         const atWindow = observe({ msg: recordedMessage(257, {}), snapshot: undefined });
         const pastWindow = observe({ msg: recordedMessage(258, {}), snapshot: undefined });
@@ -409,6 +416,8 @@ interface ObserveInput {
     readonly bufferedPriorSeqs?: Readonly<Record<number, number>>;
     /** Absent, the store never evicted the track at its cap. */
     readonly evictedTrack?: boolean;
+    /** Absent, the copy's plan supersedes nothing. */
+    readonly latestWins?: boolean;
 }
 
 function observe(input: ObserveInput): ALOrderingAcceptance {
@@ -421,7 +430,8 @@ function observe(input: ObserveInput): ALOrderingAcceptance {
         role: input.role ?? 'recipient',
         selfPeerId: 'receiver',
         bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
-        evictedTrack: input.evictedTrack ?? false
+        evictedTrack: input.evictedTrack ?? false,
+        latestWins: input.latestWins ?? false
     });
 }
 
