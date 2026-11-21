@@ -171,6 +171,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS - 1_000);
         expect(readHandleState(link, second)).toBe('transport-accepted');
+        await link.advance(LINK_MESSAGE_TTL_MS - 1 - (Date.now() - LINK_START_MS));
+        expect(readHandleState(link, second)).toBe('transport-accepted');
 
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
         expect(toControlsOf(link, second)).toEqual([
@@ -209,10 +211,10 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.deliveredToPeer(sent)).toBe(0);
     });
 
-    it('characterization: a send kept after a lost race whose captured audience still has one member at its replay expects exactly that member', async () => {
-        const link = await createWsReceiptedSendLink('in-sync');
+    it('characterization: a send kept after a lost race whose captured audience keeps one member at its replay expects exactly that member, not the one who left', async () => {
+        const link = await createWsReceiptedSendLink('peer-c-joined');
         const [, second] = await sendTwoOrderedSideBySide(link);
-        link.setRoomView('peer-c-joined');
+        link.setRoomView('in-sync');
         await link.advance(0);
         await link.advance(200);
         await link.advance(200);
@@ -221,7 +223,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
             phase: 'admitted',
             expectedRecipientPeerIds: ['peer-b'],
-            snapshotVersion: 4
+            snapshotVersion: 2
         })]);
     });
 
