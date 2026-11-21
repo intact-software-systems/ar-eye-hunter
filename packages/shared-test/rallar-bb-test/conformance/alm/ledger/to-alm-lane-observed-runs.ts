@@ -137,23 +137,26 @@ function toDecodedFile(
 
 /** Each issue reads after the file's name. */
 function decodeAlmLaneFile(file: AlmLaneResultFile): Either<readonly string[], AlmLaneDecodedFile> {
-    let value: unknown;
     try {
-        value = JSON.parse(file.text);
+        return decodeAlmLaneFileValue(file.fileName, JSON.parse(file.text));
     }
     catch {
         return Either.ofLeft([' is not JSON.']);
     }
+}
+
+/** A parsed file, read as a plan or a family result by its name. */
+function decodeAlmLaneFileValue(fileName: string, value: unknown): Either<readonly string[], AlmLaneDecodedFile> {
     const toIssues = (issues: readonly string[]) => issues.map((issue) => `: ${issue}`);
-    if (file.fileName.endsWith('-plan.json')) {
+    if (fileName.endsWith('-plan.json')) {
         return decodeAlmLanePlanRecord(value).mapBoth(
             toIssues,
-            (record): AlmLaneDecodedFile => ({ kind: 'plan', fileName: file.fileName, record })
+            (record): AlmLaneDecodedFile => ({ kind: 'plan', fileName, record })
         );
     }
     return decodeAlmLaneFamilyResult(value).mapBoth(
         toIssues,
-        (record): AlmLaneDecodedFile => ({ kind: 'result', fileName: file.fileName, record })
+        (record): AlmLaneDecodedFile => ({ kind: 'result', fileName, record })
     );
 }
 

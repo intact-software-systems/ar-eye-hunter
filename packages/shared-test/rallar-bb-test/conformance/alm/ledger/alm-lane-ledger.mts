@@ -31,7 +31,7 @@ decodeAlmLaneLedgerArguments(process.argv.slice(2)).fold(
             process.stdout.write(readAlmLaneLedgerText(arguments_));
         }
         catch (error) {
-            writeFailure(toError(error).message);
+            writeFailure(error instanceof Error ? error.message : String(error));
         }
     }
 );
@@ -81,8 +81,4 @@ function readResultFiles(artifactDirectory: string): readonly AlmLaneResultFile[
 function writeFailure(message: string): void {
     console.error(`FAIL: alm lane ledger: ${message}`);
     process.exitCode = 1;
-}
-
-function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
 }
