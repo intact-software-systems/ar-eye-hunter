@@ -51,11 +51,10 @@ export async function readCapturedSendEligibility(
     if (filters === undefined) {
         return { rechecked: false, eligibleSessionIds: frozen ? [] : undefined };
     }
+    const dropped = new Set(judgedDrops);
     const eligibleSessionIds = await readWsQueueBoxServerEligibleAudience({
         message,
-        admittedAudience: judgedDrops === undefined
-            ? captured
-            : captured.filter((sessionId) => !judgedDrops.includes(sessionId)),
+        admittedAudience: captured.filter((sessionId) => !dropped.has(sessionId)),
         admittedConnectionGenerationIds: policy?.admittedConnectionGenerationIds,
         provenScope: policy?.recipientScope,
         filterEligibleCapturedSessionIds: judgedDrops === undefined ? filters.local : filters.socket,
@@ -64,7 +63,11 @@ export async function readCapturedSendEligibility(
     return { rechecked: true, eligibleSessionIds };
 }
 
-/** A send that no re-check judged declares no exclusion: its captured sessions stay expected, none is dropped. */
+/**
+ * A send that no re-check judged declares no exclusion: its captured sessions stay expected, none is dropped. A session
+ * the dequeue judged out is recorded outside again here as `open-here`, as the former second probe did: those writes
+ * are idempotent per session.
+ */
 export function toCapturedSendDrops(
     policy: ALOutboundCapturedPolicy | undefined,
     eligibility: CapturedSendEligibility

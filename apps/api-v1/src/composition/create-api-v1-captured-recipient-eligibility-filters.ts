@@ -25,7 +25,8 @@ export interface CreateApiV1CapturedRecipientEligibilityFiltersInput {
 export function createApiV1CapturedRecipientEligibilityFilters(
     input: CreateApiV1CapturedRecipientEligibilityFiltersInput
 ): WsCapturedRecipientEligibilityFilters {
-    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalSessions } = input;
+    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalSessions, nowEpochMs } =
+        input;
     return {
         durable: async (captured) =>
             await filterDurablyLiveWsSessionIds({
@@ -34,28 +35,24 @@ export function createApiV1CapturedRecipientEligibilityFilters(
                 serverPeerId,
                 readPublicationAuthority,
                 readPrincipalSessions,
-                nowEpochMs: input.nowEpochMs()
+                nowEpochMs: nowEpochMs()
             }),
         local: async (captured) => {
-            const nowEpochMs = input.nowEpochMs();
+            const nowMs = nowEpochMs();
             return await filterGrantedWsRecipientSessionIds({
                 ...captured,
-                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
-                    ...captured,
-                    socketServer,
-                    nowMs: nowEpochMs
-                }),
+                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({ ...captured, socketServer, nowMs }),
                 grantedTopics,
                 serverPeerId,
                 readPublicationAuthority,
-                nowEpochMs
+                nowEpochMs: nowMs
             });
         },
         socket: (captured) =>
             Promise.resolve(filterEligibleDurableWsSessionIds({
                 ...captured,
                 socketServer,
-                nowMs: input.nowEpochMs()
+                nowMs: nowEpochMs()
             }))
     };
 }
