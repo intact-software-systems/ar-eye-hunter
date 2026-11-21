@@ -207,8 +207,9 @@ roomBrowserTest(
         await registerRelicHunter(host, 'shared-session');
         // interaction: signing in does not allocate graphics for decorative opening artwork.
         expect(await host.locator('html').getAttribute('data-test-webgl-contexts')).toBeNull();
-        const { link, other } = await withdrawAcrossSharedSessionTabs(host);
+        const { link, other } = await openSharedSessionTab(host);
         try {
+            await withdrawFromSharedSessionTab(host, other);
             // Open the link in a new document to verify withdrawal independently of either tab's cache.
             await other.goto('about:blank');
             await other.goto(link);
@@ -226,28 +227,18 @@ roomBrowserTest(
     're-enters the room in the same document after a shared-session withdrawal',
     async ({ page: host }) => {
         await registerRelicHunter(host, 'shared-reentry');
-        const disconnect = host.context().waitForEvent('request', isSessionDisconnect);
-        const { link, other } = await withdrawAcrossSharedSessionTabs(host);
-        const sessionId = readDisconnectedSessionId(await disconnect);
+        const { link, other } = await openSharedSessionTab(host);
         const roomId = readRoomId(link);
         const isRoomRead = (url: URL) => url.pathname.endsWith(`/groups/${roomId}`);
         // The committed disconnect reaches this tab's room cache only with a later group read; holding those reads
         // until the participation check reads the game snapshot forces the current room to move inside the check.
+        // The holds go in before the leave: the lobby's periodic access check is such a read, and one answered between
+        // the disconnect and the holds would let this tab learn of the withdrawal before the participation check.
         const snapshotHeld = Promise.withResolvers<void>();
         const sessionRemoved = Promise.withResolvers<void>();
         const releasedRoomReads = new Set<Request>();
         let navigated = false;
         let held = false;
-        other.on('response', async (response) => {
-            if (!releasedRoomReads.has(response.request()) || !response.ok()) {
-                return;
-            }
-            const activeSessionIds = decodeActiveSessionIds(await response.json().catch(() => undefined));
-            if (activeSessionIds !== undefined && !activeSessionIds.includes(sessionId)) {
-                await response.finished();
-                sessionRemoved.resolve();
-            }
-        });
         await other.route(isRoomRead, async (route) => {
             if (route.request().method() === 'GET') {
                 await snapshotHeld.promise;
@@ -263,10 +254,23 @@ roomBrowserTest(
             }
             await route.continue();
         });
-        const joinRequested = other.waitForRequest((request) =>
-            request.method() === 'POST' && request.url().includes(`/groups/${roomId}/join/requests/`)
-        );
+        const disconnect = other.waitForRequest(isSessionDisconnect);
         try {
+            await withdrawFromSharedSessionTab(host, other);
+            const sessionId = readDisconnectedSessionId(await disconnect);
+            other.on('response', async (response) => {
+                if (!releasedRoomReads.has(response.request()) || !response.ok()) {
+                    return;
+                }
+                const activeSessionIds = decodeActiveSessionIds(await response.json().catch(() => undefined));
+                if (activeSessionIds !== undefined && !activeSessionIds.includes(sessionId)) {
+                    await response.finished();
+                    sessionRemoved.resolve();
+                }
+            });
+            const joinRequested = other.waitForRequest((request) =>
+                request.method() === 'POST' && request.url().includes(`/groups/${roomId}/join/requests/`)
+            );
             navigated = true;
             await other.goto(link);
             await joinRequested;
@@ -320,8 +324,8 @@ roomBrowserTest(
     }
 );
 
-/** Withdraws the shared hunter from a second tab whose Leave room is refused for the room's last owner. */
-async function withdrawAcrossSharedSessionTabs(host: Page): Promise<{ readonly link: string; readonly other: Page; }> {
+/** Opens a new unlisted room and enters it from a second tab of the same session. */
+async function openSharedSessionTab(host: Page): Promise<{ readonly link: string; readonly other: Page; }> {
     await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
     await waitForExpeditionScene(host);
     const link = await host.getByLabel('Room link', { exact: true }).inputValue();
@@ -331,6 +335,11 @@ async function withdrawAcrossSharedSessionTabs(host: Page): Promise<{ readonly l
     await waitForExpeditionScene(other, 'shared-context');
     // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
     await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+    return { link, other };
+}
+
+/** Withdraws the shared hunter from the second tab, whose Leave room is refused for the room's last owner. */
+async function withdrawFromSharedSessionTab(host: Page, other: Page): Promise<void> {
     const committed = Promise.withResolvers<void>();
     const response = Promise.withResolvers<void>();
     await host.route('**/commands/requests/*', async (route) => {
@@ -357,11 +366,6 @@ async function withdrawAcrossSharedSessionTabs(host: Page): Promise<{ readonly l
         await expect(other.locator('.lobby-party-row')).toHaveCount(0);
         // Leaving disconnects this session; the account remains because it is the room's last owner.
         expect((await membershipRemoval).status()).toBe(403);
-        return { link, other };
-    }
-    catch (error) {
-        await other.close();
-        throw error;
     }
     finally {
         response.resolve();
