@@ -283,6 +283,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ordering-gap-repair',
         'seeded-loss-stream',
         'seeded-loss-unreceipted-stream',
+        'lost-stream-start',
         'seeded-jitter-stream',
         'ws-unicast-receipt',
         'server-command',

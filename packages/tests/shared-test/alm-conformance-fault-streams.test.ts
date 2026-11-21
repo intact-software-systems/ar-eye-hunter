@@ -21,7 +21,7 @@ const STREAM_SENDS = 20;
 const CELL_CARRIERS = [
     ['seeded-loss-stream', ['ws', 'rtc']],
     ['seeded-loss-unreceipted-stream', ['ws']],
-    ['lost-stream-start', ['rtc']],
+    ['lost-stream-start', ['ws', 'rtc']],
     ['seeded-jitter-stream', ['ws']]
 ] as const;
 const STREAM_CELLS = [
@@ -29,6 +29,7 @@ const STREAM_CELLS = [
     ['seeded-loss-stream', 'rtc'],
     ['seeded-jitter-stream', 'ws']
 ] as const;
+const LOST_START_CARRIERS = ['ws', 'rtc'] as const;
 
 function findCell(key: string, carrier: Carrier): AlmConformanceScenario | undefined {
     return createAlmConformanceRecipes(toConformanceInput(carrier)).find((scenario) => scenario.scenarioKey === key);
@@ -91,7 +92,7 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each([...STREAM_CELLS, ['lost-stream-start', 'rtc'] as const])(
+    it.each([...STREAM_CELLS, ...LOST_START_CARRIERS.map((carrier) => ['lost-stream-start', carrier] as const)])(
         '%s over %s sends only receipted at-least-once sends on its own track, in sequence',
         (key, carrier) => {
             const sends = toSends(requireCell(key, carrier).sender);
@@ -292,60 +293,83 @@ describe('ALM fault stream cells', () => {
         );
     });
 
-    it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {
-        const sender = requireCell('lost-stream-start', 'rtc').sender;
-        const places = toPlaces(sender, [
-            'hold-rtc',
-            'send-1',
-            'hold-message-1-rtc',
-            'release-rtc',
-            'send-2',
-            'assert-reached-2',
-            'send-3',
-            'assert-reached-3',
-            'release-message-1-rtc',
-            'observe-failed-1',
-            'assert-receipt-exhausted-1'
-        ]);
-        const faults = sender.commands.filter((command) => command.kind === 'fault.inject');
+    it.each(LOST_START_CARRIERS)(
+        'lost-stream-start over %s holds send 1 by its message id until the sender admitted a gap NACK about the track, then reads every handle acknowledged',
+        (carrier) => {
+            const sender = requireCell('lost-stream-start', carrier).sender;
+            const places = toPlaces(sender, [
+                `hold-${carrier}`,
+                'send-1',
+                `hold-message-1-${carrier}`,
+                `release-${carrier}`,
+                'send-2',
+                'send-3',
+                'gap-nack',
+                `release-message-1-${carrier}`,
+                'assert-reached-1',
+                'assert-reached-2',
+                'assert-reached-3'
+            ]);
+            const hold = carrier === 'ws' ? 'not-ready' : 'drop';
 
-        expect(places.every((place) => place >= 0)).toBe(true);
-        expect([...places].sort((left, right) => left - right)).toEqual(places);
-        expect(findCommand(sender, 'hold-message-1-rtc')).toMatchObject({
-            match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
-            action: 'drop',
-            remaining: 'until-cleared'
-        });
-        expect(faults.every((fault) => fault.action === 'drop')).toBe(true);
-        expect(findCommand(sender, 'assert-receipt-exhausted-1')).toEqual(expect.objectContaining({
-            kind: 'assert',
-            source: `resultCache.${sender.recipeId}-observe-failed-1.value.failure.kind`,
-            operator: 'equals',
-            expected: 'receipt-exhausted'
-        }));
-    });
+            expect(places.every((place) => place >= 0)).toBe(true);
+            expect([...places].sort((left, right) => left - right)).toEqual(places);
+            expect(findCommand(sender, `hold-message-1-${carrier}`)).toMatchObject({
+                carrier,
+                match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
+                action: hold,
+                remaining: 'until-cleared'
+            });
+            expect(findCommand(sender, `release-message-1-${carrier}`)).toMatchObject({
+                carrier,
+                match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
+                remaining: 0
+            });
+            expect(sender.commands.filter((command) => command.kind === 'fault.inject').every((fault) => fault.action === hold))
+                .toBe(true);
+            expect(findCommand(sender, 'gap-nack')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep(carrier, 'lost-stream-start'))}:`
+                }
+            });
+            expect(findCommand(sender, 'gap-nack')).not.toHaveProperty('absent');
+            for (const seq of [1, 2, 3]) {
+                expect(findCommand(sender, `observe-acknowledged-${seq}`)).toMatchObject({ state: ['acknowledged'] });
+            }
+            expect(toNames(sender).filter((name) => name.startsWith('observe-') && !name.startsWith('observe-admitted-')))
+                .toEqual(['observe-acknowledged-1', 'observe-acknowledged-2', 'observe-acknowledged-3']);
+        }
+    );
 
-    it('lost-stream-start reads two arrivals in order, its entry at the second send, the first refused as before it, and no third', () => {
-        const receiver = requireCell('lost-stream-start', 'rtc').receiver;
-        const track = `"trackKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start'))}:`;
-        const position = { kind: 'diagnostic', topic: 'rallar.browser.alm.inbound_diagnostics', contains: track };
-        const steps = ['received-2', 'entered-2', 'before-entry-1', 'received-3'];
+    it.each(LOST_START_CARRIERS)(
+        'lost-stream-start over %s reads three arrivals in sequence order and no send refused as before the track\'s entry',
+        (carrier) => {
+            const receiver = requireCell('lost-stream-start', carrier).receiver;
+            const track = `"trackKey":"${toOrderingKey(toSenderStep(carrier, 'lost-stream-start'))}:`;
 
-        expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
-            { count: 2, ascendingBy: 'seq' },
-            { count: 3, absent: true }
-        ]);
-        expect(findCommand(receiver, 'entered-2')).toMatchObject({
-            kind: 'wait',
-            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 1 } }
-        });
-        expect(findCommand(receiver, 'before-entry-1')).toMatchObject({
-            kind: 'wait',
-            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.priorSeq': 0 } }
-        });
-        expect(findCommand(receiver, 'entered-2')).not.toHaveProperty('absent');
-        expect(findCommand(receiver, 'before-entry-1')).not.toHaveProperty('absent');
-        expect(toPlaces(receiver, steps)).toEqual([...toPlaces(receiver, steps)].sort((left, right) => left - right));
-        expect(toPlaces(receiver, steps).every((place) => place >= 0)).toBe(true);
-    });
+            expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
+                { count: 3, absent: false, ascendingBy: 'seq' }
+            ]);
+            expect(receiver.commands.filter((command) => command.kind === 'wait')).toEqual([
+                findCommand(receiver, 'no-before-entry')
+            ]);
+            expect(findCommand(receiver, 'no-before-entry')).toMatchObject({
+                kind: 'wait',
+                absent: true,
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    contains: track,
+                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
+                }
+            });
+            expect(toPlaces(receiver, ['received-3', 'no-before-entry'])).toEqual([
+                toPlaces(receiver, ['received-3'])[0],
+                toPlaces(receiver, ['received-3'])[0] + 1
+            ]);
+        }
+    );
 });

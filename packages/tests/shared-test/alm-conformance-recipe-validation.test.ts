@@ -62,6 +62,7 @@ const CARRIER_SCENARIO_IDS = {
         'ordering-gap-repair',
         'seeded-loss-stream',
         'seeded-loss-unreceipted-stream',
+        'lost-stream-start',
         'seeded-jitter-stream',
         'ws-unicast-receipt',
         'server-command',
