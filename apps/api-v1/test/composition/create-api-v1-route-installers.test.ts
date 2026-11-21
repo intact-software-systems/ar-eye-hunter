@@ -205,7 +205,8 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         groupRestSnapshotReadSelector: { read: rejectUnusedOperation },
         topologyServices: { rttRepository: { listMeasurementEntriesForEndpoints: rejectUnusedOperation } },
         groupsRepository: { readSnapshot: rejectUnusedOperation },
-        clientsRepository: { readSnapshot: rejectUnusedOperation }
+        clientsRepository: { readSnapshot: rejectUnusedOperation },
+        rtcTopologyExecutionRepository: { readTopologyReshapeGate: rejectUnusedOperation }
     };
 }
 

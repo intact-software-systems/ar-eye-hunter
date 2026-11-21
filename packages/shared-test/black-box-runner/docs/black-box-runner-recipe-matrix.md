@@ -149,7 +149,8 @@ column is the smallest gap
 between two reshapes planned in that phase; a line under the table gives the closest two
 reshapes of the whole room, phase boundaries included. Each room entry also carries its
 `reshapeGate` as read once it converged. Before it reads convergence the measurement waits,
-for at most 75 s, until the room owes no held reshape. Run it with:
+for at most 75 s, until the formation view, read under the room creator's session, states no
+held reshape. Run it with:
 
 ```bash
 npm run perf:api-v1:topology-reshapes
@@ -182,7 +183,9 @@ nodes that did not take those writes, and asserts that the second reshape is pla
 15 000 ms after the first and that the gate then reads one held pass, a 30 000 ms
 interval and nothing wanted. Each reshape's `plannedAtEpochMs` equals the gate's
 `lastPassAtEpochMs` of that pass, which is how the recipe captures both instants
-without depending on the order of the plans. The hold depends on the leave landing
+without depending on the order of the plans. The recipe also reads `heldReshape` in
+the formation view under the owner's session, on the tertiary while the kind change is
+held and on the primary after its release. The hold depends on the leave landing
 inside the first 15 s, and the recipe needs a fresh `runId`.
 
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
