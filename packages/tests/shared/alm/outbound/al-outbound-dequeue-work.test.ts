@@ -675,8 +675,8 @@ describe('AL outbound dequeue work', () => {
                 admittedAudience: ['peer-1'],
                 recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
             }),
-            afterDequeueAdmission: async (msg, entry, committedPolicy) => {
-                handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
+            afterDequeueAdmission: async (msg, entry, admission) => {
+                handed.push({ msgId: msg.id.msgId, entry, committedPolicy: admission.committedPolicy });
             },
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
@@ -700,6 +700,43 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
+    it('hands after-admission the authority its dequeue read planned from', async () => {
+        const outbox = createOutboxQueue();
+        const handed: (readonly string[] | undefined)[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            readDequeueAuthority: async () => ({
+                admittedAudience: ['b'],
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedAudience: ['b', 'c'],
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }),
+            afterDequeueAdmission: async (_msg, _entry, admission) => {
+                handed.push(admission.dequeueAuthority?.admittedAudience);
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const message = createDequeuedMessage('authority-handed');
+
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant()));
+            await runOutboundWorkTask(runtime);
+
+            expect(handed).toEqual([['b']]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
     it('hands nothing to the publication of a row whose commit conflicted', async () => {
         const outbox = createOutboxQueue();
         const stores = createDefaultOutboundTestStores(outbox);
@@ -716,8 +753,8 @@ describe('AL outbound dequeue work', () => {
                 lane: 'durable',
                 preparedMessages: []
             }),
-            afterDequeueAdmission: async (msg, entry, committedPolicy) => {
-                handed.push({ msgId: msg.id.msgId, entry, committedPolicy });
+            afterDequeueAdmission: async (msg, entry, admission) => {
+                handed.push({ msgId: msg.id.msgId, entry, committedPolicy: admission.committedPolicy });
             },
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });

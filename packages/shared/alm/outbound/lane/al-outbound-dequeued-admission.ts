@@ -459,11 +459,10 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         if (computed.msg && entry) {
             member.evidence?.recordStage('dequeue-after-admission');
             this.recordOrderedDispatchStart(member, entry.key, computed.verdict.kind);
-            await this.dependencies.runtime.afterDequeueAdmission?.(
-                computed.msg,
-                entry,
-                toBundleSentPolicy(computed.bundle)
-            );
+            await this.dependencies.runtime.afterDequeueAdmission?.(computed.msg, entry, {
+                committedPolicy: toBundleSentPolicy(computed.bundle),
+                dequeueAuthority: admission.dispatch.dequeueAuthority
+            });
         }
         return { status: 'completed' };
     }

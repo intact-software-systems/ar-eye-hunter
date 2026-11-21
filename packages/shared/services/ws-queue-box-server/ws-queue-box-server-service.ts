@@ -464,9 +464,9 @@ export class WsQueueBoxServerService {
             },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
-            afterDequeueAdmission: async (message, entry, committedPolicy) => {
-                await this.clusterPublication.writeDequeuedRow(message, entry, committedPolicy);
-                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, committedPolicy);
+            afterDequeueAdmission: async (message, entry, admission) => {
+                await this.clusterPublication.writeDequeuedRow(message, entry, admission.committedPolicy);
+                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
