@@ -100,6 +100,24 @@ room changes, director replacement and server restarts leave a pause intact. Los
 running clock. The [scoreboard](../examples/room-scoreboard/README.md) demonstrates these controls.
 Deploy clock-aware writers before creating clocks and before permitting raw room metadata replacement.
 
+## Director-controlled room timelines
+
+Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
+to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
+paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.
+A phase is an application-defined identifier of 1–64 ASCII letters, digits, dots, underscores or hyphens. The application supplies display text.
+
+`rooms.readTimeline` and `rooms.watchTimeline` accept the room and clock name. Each observation combines the phase identifier,
+its `startedAtRevision`, the current clock revision and either `endsAtEpochMs` or `remainingMs` from one room snapshot.
+A missing timeline returns null. A fresh watch on returning to the room recovers changes missed while away. Live updates reuse
+the room WebSocket. Idle watches make no periodic reads. Use the existing clock pause/resume commands with the same name.
+The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
+
+Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
+its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
+`room-director-changed`. Upgrade group writers and clients that replace room metadata before enabling timelines.
+The server owns both `rallarRoomTimelines` and `rallarRoomClocks`.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

@@ -332,7 +332,8 @@ export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-vol
 export type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
-export type { RoomClockObservation, RoomDeadlineObservation } from './rooms/time/room-time-operations.ts';
+export type { RoomClockObservation, RoomDeadlineObservation, RoomTimelineObservation } from './rooms/time/room-time-operations.ts';
+export type { RoomTimeline, RoomTimelineAdvance } from '@shared/api/group-deadlines/room-timeline.ts';
 export type { RoomClock, RoomClockCommand } from '@shared/api/group-deadlines/room-clock.ts';
 export type { RoomDeadline, RoomDeadlineChange } from '@shared/api/group-deadlines/room-deadline.ts';
 

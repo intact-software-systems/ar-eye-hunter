@@ -208,3 +208,16 @@ it('does not read an idle paused clock periodically and clears its balance on se
         vi.useRealTimers();
     }
 });
+
+it('reads the phase occurrence and its paused clock from one durable snapshot', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const clock = { name: 'match', revision: 4, status: 'paused', remainingMs: 133_000 };
+    const phase = { phase: 'halftime', startedAtRevision: 3 };
+    vi.stubGlobal('fetch', async () => {
+        const response = groupResponse([]);
+        const snapshot = await response.json();
+        snapshot.group.metadata = { rallarRoomClocks: [clock], rallarRoomTimelines: { match: phase } };
+        return Response.json(snapshot, { headers: response.headers });
+    });
+    await expect(createRallarFacade().rooms.readTimeline(room, 'match')).resolves.toEqual({ ...clock, ...phase });
+});

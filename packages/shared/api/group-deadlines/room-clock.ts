@@ -2,6 +2,8 @@ import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
+import type { RoomTimelineAdvance } from './room-timeline.ts';
+
 export const ROOM_CLOCKS_METADATA_KEY = 'rallarRoomClocks';
 export const MAX_ROOM_CLOCKS = 32;
 
@@ -23,10 +25,16 @@ export type RoomClockCommand =
         | { readonly operation: 'pause' | 'resume'; }
     );
 
-export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
+export type RoomClockMutation = RoomClockCommand | (RoomTimelineAdvance & { readonly operation: 'advance-phase'; });
+
+export function assertRoomClockMutation(value: unknown): asserts value is RoomClockMutation {
     const command = requireRecord(value, 'Room clock command');
     const keys = ['name', 'expectedRevision', 'expectedDirectorEpoch', 'operation'];
-    if (command.operation === 'start') {
+    if (command.operation === 'advance-phase') {
+        keys.push('phase');
+        assertRoomDeadlineName(command.phase);
+    }
+    if (command.operation === 'start' || command.operation === 'advance-phase') {
         keys.push('durationMs');
         requirePositiveInteger(command.durationMs, 'Clock duration');
     }
@@ -37,6 +45,13 @@ export function assertRoomClockCommand(value: unknown): asserts value is RoomClo
     assertRoomDeadlineName(command.name);
     requireEpoch(command.expectedRevision, 'Expected clock revision');
     requirePositiveInteger(command.expectedDirectorEpoch, 'Expected director epoch');
+}
+
+export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
+    assertRoomClockMutation(value);
+    if (value.operation === 'advance-phase') {
+        throw new TypeError('Use advanceTimeline to start a new timeline phase.');
+    }
 }
 
 export function readRoomClocks(metadata: ApiJsonObject): RoomClock[] {
