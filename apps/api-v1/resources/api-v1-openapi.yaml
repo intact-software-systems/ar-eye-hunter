@@ -9162,7 +9162,16 @@ components:
           type: object
           additionalProperties: false
           required: [name, expectedRevision, atEpochMs]
-          description: Supply expectedDirectorEpoch for an extension by the active appointed session. Leadership loss returns 409 with code room-director-changed. An appointment permits only the deadline change in this request. Active room owners and admins can create up to 32 named deadlines. Revision zero creates a future deadline at revision one. Each subsequent change must extend a live deadline and match its current revision. A stale revision returns 409 with code room-deadline-revision-conflict. Snapshots publish the records in metadata.rallarRoomDeadlines.
+          description: Supply expectedDirectorEpoch for an extension by the active appointed session. Leadership loss returns 409 with code room-director-changed. An appointment permits only the deadline change in this request. Active room owners and admins can create up to 32 named deadlines. Revision zero creates a future deadline at revision one. Match the current revision to extend a live deadline or explicitly start the next occurrence after expiry. Only owners and admins may start occurrences. Later occurrences retain startedAtRevision across extensions. A stale revision returns 409 with code room-deadline-revision-conflict. Snapshots publish the records in metadata.rallarRoomDeadlines.
+          oneOf:
+            - not:
+                required: [operation]
+            - required: [operation]
+              not:
+                required: [expectedDirectorEpoch]
+              properties:
+                expectedRevision:
+                  minimum: 1
           properties:
             name:
               type: string
@@ -9171,6 +9180,9 @@ components:
               type: integer
               minimum: 0
               maximum: 9007199254740991
+            operation:
+              type: string
+              enum: [start-next-occurrence]
             expectedDirectorEpoch:
               type: integer
               minimum: 1

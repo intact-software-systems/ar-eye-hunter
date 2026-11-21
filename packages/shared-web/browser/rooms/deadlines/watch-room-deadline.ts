@@ -70,7 +70,9 @@ export function watchRoomDeadline(input: WatchRoomDeadlineInput): () => void {
             }
             if (
                 previous && (!deadline || deadline.revision < previous.revision ||
-                    (deadline.revision === previous.revision && deadline.atEpochMs !== previous.atEpochMs))
+                    (deadline.startedAtRevision ?? 1) < (previous.startedAtRevision ?? 1) ||
+                    (deadline.revision === previous.revision && (deadline.atEpochMs !== previous.atEpochMs ||
+                        deadline.startedAtRevision !== previous.startedAtRevision)))
             ) {
                 throw new Error('Room deadline read regressed.');
             }

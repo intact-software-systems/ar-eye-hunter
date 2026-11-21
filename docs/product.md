@@ -62,8 +62,12 @@ A member can call `rallar.rooms.readDeadline(roomRef, name)` without switching
 the selected room. It reads the durable deadline or returns `null` for a name
 that has never been published. PostgreSQL deployments retain the instant and
 revision across API restarts. Each room supports up to 32 distinct names over
-its lifetime. Once a deadline expires, its name retains the final instant and
-revision. Plan for this limit when reusing a room across rounds.
+its lifetime. At or after expiry, an owner or admin can reuse the same slot for a new round:
+pass `operation: 'start-next-occurrence'`, the last observed `expectedRevision` and a future
+`atEpochMs` to `setDeadline`. Competing starts have one winner. Use
+`deadline.startedAtRevision ?? 1` as the occurrence identity. It stays constant across extensions
+and changes on every new round, even when a participant misses several updates.
+Deploy occurrence-aware readers and writers before starting a second occurrence.
 
 Connected room participants can use `rooms.watchDeadline` to observe an extension
 while the room is open. The server’s room WebSocket event announces the revision.

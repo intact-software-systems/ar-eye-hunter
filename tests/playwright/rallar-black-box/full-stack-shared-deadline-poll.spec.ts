@@ -584,3 +584,56 @@ async function startPollEndpoint(
         close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     };
 }
+
+test('a returning member recovers the next occurrence while a connected observer receives it live', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const room = { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: 'round-' + uniqueSuffix() };
+    const other = { ...room, groupId: 'away-' + uniqueSuffix() };
+    try {
+        await Promise.all([prepareMember(page, room, true), prepareMember(guest, room, false)]);
+        await page.evaluate(async ({ url, room, other }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            await rallar.rooms.create({ groupId: other.groupId, displayName: 'Other room', joinMode: 'open' });
+            await rallar.rooms.create({ groupId: room.groupId, displayName: 'Round room', joinMode: 'open' });
+        }, { url: rallarUrl, room, other });
+        await guest.evaluate(async ({ url, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            await rallar.rooms.enter(room);
+        }, { url: rallarUrl, room });
+        const end = await page.evaluate(async ({ url, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            const first = await rallar.rooms.setDeadline(room, {
+                name: 'round', expectedRevision: 0, atEpochMs: Date.now() + 4_000
+            }, crypto.randomUUID());
+            rallar.rooms.watchDeadline(room, 'round', observation => {
+                if (observation.status === 'current') {
+                    document.body.dataset.roundStart = String(observation.deadline?.startedAtRevision ?? 1);
+                }
+            });
+            return first.atEpochMs;
+        }, { url: rallarUrl, room });
+        await expect(page.locator('body')).toHaveAttribute('data-round-start', '1');
+        await guest.evaluate(async ({ url, other }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            await rallar.rooms.enter(other);
+        }, { url: rallarUrl, other });
+        await expect.poll(Date.now, { timeout: 10_000 }).toBeGreaterThanOrEqual(end);
+        await page.evaluate(async ({ url, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            await rallar.rooms.setDeadline(room, {
+                name: 'round', operation: 'start-next-occurrence', expectedRevision: 1, atEpochMs: Date.now() + 60_000
+            }, crypto.randomUUID());
+        }, { url: rallarUrl, room });
+        await expect(page.locator('body')).toHaveAttribute('data-round-start', '2');
+        const recovered = await guest.evaluate(async ({ url, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            await rallar.rooms.enter(room);
+            return await rallar.rooms.readDeadline(room, 'round');
+        }, { url: rallarUrl, room });
+        expect(recovered).toMatchObject({ name: 'round', revision: 2, startedAtRevision: 2 });
+    }
+    finally {
+        await guest.close();
+    }
+});

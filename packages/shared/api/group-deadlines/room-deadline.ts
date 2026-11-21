@@ -1,7 +1,6 @@
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
 import {
     requireEpoch,
-    requireExactKeys,
     requireExactOptionalKeys,
     requirePositiveInteger,
     requireRecord
@@ -10,12 +9,15 @@ import {
 export interface RoomDeadline {
     readonly name: string;
     readonly revision: number;
+    /** Set after the first occurrence ends. Stable across extensions within this occurrence. */
+    readonly startedAtRevision?: number;
     readonly atEpochMs: number;
 }
 
 export interface RoomDeadlineChange {
     readonly name: string;
     readonly expectedRevision: number;
+    readonly operation?: 'start-next-occurrence';
     /** Supply the captured appointment epoch to extend as the room director. */
     readonly expectedDirectorEpoch?: number;
     readonly atEpochMs: number;
@@ -35,9 +37,15 @@ export function assertRoomDeadlineChange(value: unknown): asserts value is RoomD
     requireExactOptionalKeys({
         value: change,
         required: ['name', 'expectedRevision', 'atEpochMs'],
-        optional: ['expectedDirectorEpoch'],
+        optional: ['expectedDirectorEpoch', 'operation'],
         label: 'Room deadline change'
     });
+    if (Object.hasOwn(change, 'operation')) {
+        if (change.operation !== 'start-next-occurrence' || Object.hasOwn(change, 'expectedDirectorEpoch')) {
+            throw new TypeError('Starting the next occurrence requires owner or admin authority.');
+        }
+        requirePositiveInteger(change.expectedRevision, 'An occurrence requires an existing deadline');
+    }
     if (Object.hasOwn(change, 'expectedDirectorEpoch')) {
         requirePositiveInteger(change.expectedDirectorEpoch, 'Expected director epoch');
         requirePositiveInteger(change.expectedRevision, 'A director can only extend an existing deadline');
@@ -66,7 +74,9 @@ export function readRoomDeadlines(metadata: ApiJsonObject): readonly RoomDeadlin
     const names = new Set<string>();
     return Array.from(values, (value: ApiJsonValue) => {
         const deadline = requireRecord(value, 'Room deadline');
-        requireExactKeys(deadline, ['name', 'revision', 'atEpochMs'], 'Room deadline');
+        requireExactOptionalKeys({
+            value: deadline, required: ['name', 'revision', 'atEpochMs'], optional: ['startedAtRevision'], label: 'Room deadline'
+        });
         assertRoomDeadlineName(deadline.name);
         requireEpoch(deadline.revision, 'Room deadline revision');
         assertDeadlineInstant(deadline.atEpochMs);
@@ -74,7 +84,15 @@ export function readRoomDeadlines(metadata: ApiJsonObject): readonly RoomDeadlin
             throw new TypeError('Room deadlines require positive revisions and unique names');
         }
         names.add(deadline.name);
-        return { name: deadline.name, revision: deadline.revision, atEpochMs: deadline.atEpochMs };
+        const current = { name: deadline.name, revision: deadline.revision, atEpochMs: deadline.atEpochMs };
+        if (!Object.hasOwn(deadline, 'startedAtRevision')) {
+            return current;
+        }
+        requireEpoch(deadline.startedAtRevision, 'Occurrence start revision');
+        if (deadline.startedAtRevision < 2 || deadline.startedAtRevision > deadline.revision) {
+            throw new TypeError('Invalid occurrence start revision');
+        }
+        return { ...current, startedAtRevision: deadline.startedAtRevision };
     });
 }
 

@@ -48,8 +48,9 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
         method: 'PUT', session: owner, body: publish
     });
     assert.deepEqual(deadlines(created), [{ name, revision: 1, atEpochMs: initial }]);
+    const roundEnd = Date.now() + 3_000;
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(second, crypto.randomUUID()), {
-        method: 'PUT', session: owner, body: { roomDeadline: { ...change, atEpochMs: initial + 1 } }
+        method: 'PUT', session: owner, body: { roomDeadline: { ...change, atEpochMs: roundEnd } }
     });
     await api.updateMemberRole({ ...room, actor: owner, memberClientId: deputy.clientId, role: 'admin', phase: 'edit' });
     const writes = [owner, deputy].map((session, index) => ({
@@ -66,15 +67,21 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const refusal = await results[1 - winningIndex]!.json();
     assert.equal(refusal.code, 'room-deadline-revision-conflict');
 
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, roundEnd - Date.now())));
+    const nextRound = { name, operation: 'start-next-occurrence', expectedRevision: 1, atEpochMs: initial };
+    const restarted = await requestJson(editor.baseUrl, toApiMutationRequestPath(second, crypto.randomUUID()), {
+        method: 'PUT', session: owner, body: { roomDeadline: nextRound }
+    });
+    const secondOccurrence = [{ name, revision: 2, startedAtRevision: 2, atEpochMs: initial }];
+    assert.deepEqual(deadlines(restarted), secondOccurrence);
+
     await controls.stop(writer.port, 'crash');
     await controls.restart(writer.port, { ...writer, logPath: writer.logPath + '.restarted' });
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {
         assert.deepEqual(deadlines(await requestJson(baseUrl, first, { method: 'GET', session: deputy })), expected);
-        assert.deepEqual(deadlines(await requestJson(baseUrl, second, { method: 'GET', session: owner })), [
-            { name, revision: 1, atEpochMs: initial + 1 }
-        ]);
+        assert.deepEqual(deadlines(await requestJson(baseUrl, second, { method: 'GET', session: owner })), secondOccurrence);
     }
 }
 
