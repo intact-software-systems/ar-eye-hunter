@@ -167,6 +167,15 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const preserved = requireRecord(requireRecord(venueUpdate.group, 'group').metadata, 'metadata');
     assert.equal(preserved.rallarRoomTimelines, 'custom');
     assert.deepEqual(preserved.rallarRoomClocks, phaseClocks);
+    const extension = { operation: 'extend-phase', durationMs: 1234, expectedRevision: 4, expectedDirectorEpoch: successorEpoch };
+    for (const durationMs of [0, -1, 1.5]) {
+        await clockWrite(deputy, { ...extension, durationMs }, 400);
+    }
+    assert.equal((await clockWrite(owner, extension, 409)).code, 'room-director-changed');
+    const extended = clock(await clockWrite(deputy, extension));
+    assert.equal(typeof published.endsAtEpochMs, 'number');
+    assert.deepEqual(extended, [{ ...published, revision: 5, endsAtEpochMs: Number(published.endsAtEpochMs) + 1234 }]);
+    assert.equal((await clockWrite(deputy, extension, 409)).code, 'room-clock-revision-conflict');
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {

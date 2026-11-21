@@ -2,7 +2,7 @@ import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
-import type { RoomTimeline, RoomTimelineAdvance } from './room-timeline.ts';
+import type { RoomTimeline, RoomTimelineAdvance, RoomTimelineExtension } from './room-timeline.ts';
 
 export const ROOM_CLOCKS_METADATA_KEY = 'rallarRoomClocks';
 export const MAX_ROOM_CLOCKS = 32;
@@ -25,7 +25,9 @@ export type RoomClockCommand =
         | { readonly operation: 'pause' | 'resume'; }
     );
 
-export type RoomClockMutation = RoomClockCommand | (RoomTimelineAdvance & { readonly operation: 'advance-phase'; });
+export type RoomClockMutation = RoomClockCommand
+    | (RoomTimelineAdvance & { readonly operation: 'advance-phase'; })
+    | (RoomTimelineExtension & { readonly operation: 'extend-phase'; });
 
 export function assertRoomClockMutation(value: unknown): asserts value is RoomClockMutation {
     const command = requireRecord(value, 'Room clock command');
@@ -34,7 +36,7 @@ export function assertRoomClockMutation(value: unknown): asserts value is RoomCl
         keys.push('phase');
         assertRoomDeadlineName(command.phase);
     }
-    if (command.operation === 'start' || command.operation === 'advance-phase') {
+    if (command.operation === 'start' || command.operation === 'advance-phase' || command.operation === 'extend-phase') {
         keys.push('durationMs');
         requirePositiveInteger(command.durationMs, 'Clock duration');
     }
@@ -49,8 +51,8 @@ export function assertRoomClockMutation(value: unknown): asserts value is RoomCl
 
 export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
     assertRoomClockMutation(value);
-    if (value.operation === 'advance-phase') {
-        throw new TypeError('Use advanceTimeline to start a new timeline phase.');
+    if (value.operation === 'advance-phase' || value.operation === 'extend-phase') {
+        throw new TypeError('Use a timeline command to change a phase.');
     }
 }
 

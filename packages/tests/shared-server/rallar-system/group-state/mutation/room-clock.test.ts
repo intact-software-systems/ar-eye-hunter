@@ -62,7 +62,9 @@ it('adds the requested duration to the existing phase end and preserves the occu
     const command = { name: 'match', operation: 'extend-phase' as const, durationMs: 1234, expectedRevision: 4, expectedDirectorEpoch: 1 };
     expect(computeGroupClockChange([clock], command, 7000)).toEqual({ ...clock, revision: 5, endsAtEpochMs: 10234 });
     expect(computeGroupClockChange([clock], command, 9000)).toHaveProperty('rejectionCode');
-    expect(computeGroupClockChange([{ ...clock, status: 'paused', remainingMs: 1000 }], {
+    const plain = { name: 'match', revision: 4, status: 'paused' as const, remainingMs: 1000 };
+    expect(computeGroupClockChange([plain], command, 7000)).toHaveProperty('rejectionCode');
+    expect(computeGroupClockChange([{ ...plain, phase: 'first', startedAtRevision: 2 }], {
         ...command, durationMs: Number.MAX_SAFE_INTEGER
     }, 7000)).toHaveProperty('rejectionCode');
 });

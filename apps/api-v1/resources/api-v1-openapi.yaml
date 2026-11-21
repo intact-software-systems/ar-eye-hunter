@@ -9161,14 +9161,14 @@ components:
         roomClock:
           type: object
           additionalProperties: false
-          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision on the matching metadata.rallarRoomClocks record. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision on the matching metadata.rallarRoomClocks record. An extend-phase adds durationMs to a running phase end or paused balance and preserves its occurrence. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
           required: [name, operation, expectedRevision, expectedDirectorEpoch]
           properties:
             name:
               type: string
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
-              enum: [start, pause, resume, advance-phase]
+              enum: [start, pause, resume, advance-phase, extend-phase]
             phase:
               type: string
               pattern: '^[A-Za-z0-9._-]{1,64}$'
@@ -9188,7 +9188,7 @@ components:
             - if:
                 properties:
                   operation:
-                    enum: [start, advance-phase]
+                    enum: [start, advance-phase, extend-phase]
               then:
                 required: [durationMs]
               else:

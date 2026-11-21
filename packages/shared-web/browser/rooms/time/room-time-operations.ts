@@ -19,7 +19,7 @@ import {
     type RoomClockCommand,
     type RoomClockMutation
 } from '@shared/api/group-deadlines/room-clock.ts';
-import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance } from '@shared/api/group-deadlines/room-timeline.ts';
+import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
 import { parseGroupStateDeltaEnvelope } from '../../state-cache/group-state-delta-application.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
@@ -42,6 +42,9 @@ export interface RoomTimelineObservation {
 }
 
 export interface RoomTimeOperations {
+    extendTimeline(
+        room: GroupRef, extension: RoomTimelineExtension, requestId: string, options?: { readonly signal?: AbortSignal; }
+    ): Promise<RoomTimeline>;
     advanceTimeline(
         room: GroupRef, advance: RoomTimelineAdvance, requestId: string, options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomTimeline>;
@@ -173,17 +176,29 @@ export function createRoomTimeOperations(
         }
         return snapshot.group.metadata;
     }
+    async function writeTimeline(
+        roomRef: GroupRef, roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>,
+        requestId: string, signal?: AbortSignal
+    ) {
+        assertRoomClockMutation(roomClock);
+        const metadata = await write({ roomRef, change: { roomClock }, requestId, signal });
+        const timeline = readRoomTimeline(metadata, roomClock.name);
+        if (!timeline || timeline.revision !== roomClock.expectedRevision + 1) {
+            throw new Error('Timeline acknowledgement has an unexpected revision.');
+        }
+        if (roomClock.operation === 'advance-phase'
+            ? timeline.status !== 'running' || timeline.phase !== roomClock.phase || timeline.startedAtRevision !== timeline.revision
+            : timeline.startedAtRevision > roomClock.expectedRevision) {
+            throw new Error('Timeline acknowledgement does not match the requested phase.');
+        }
+        return timeline;
+    }
     return {
-        async advanceTimeline(room, advance, requestId, { signal } = {}) {
-            const roomClock = { ...advance, operation: 'advance-phase' as const };
-            assertRoomClockMutation(roomClock);
-            const metadata = await write({ roomRef: room, change: { roomClock }, requestId, signal });
-            const timeline = readRoomTimeline(metadata, roomClock.name);
-            if (!timeline || timeline.status !== 'running' || timeline.phase !== roomClock.phase ||
-                timeline.revision !== roomClock.expectedRevision + 1 || timeline.startedAtRevision !== timeline.revision) {
-                throw new Error('Timeline acknowledgement does not match the requested phase.');
-            }
-            return timeline;
+        advanceTimeline(room, advance, requestId, { signal } = {}) {
+            return writeTimeline(room, { ...advance, operation: 'advance-phase' }, requestId, signal);
+        },
+        extendTimeline(room, extension, requestId, { signal } = {}) {
+            return writeTimeline(room, { ...extension, operation: 'extend-phase' }, requestId, signal);
         },
         async readTimeline(room, name, { signal } = {}) {
             return readRoomTimeline(await readMetadata(room, signal), name);

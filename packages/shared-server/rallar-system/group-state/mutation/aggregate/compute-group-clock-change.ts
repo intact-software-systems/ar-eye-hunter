@@ -40,6 +40,20 @@ export function computeGroupClockChange(
             occurrence = { phase: command.phase, startedAtRevision: identity.revision };
             durationMs = command.durationMs;
             break;
+        case 'extend-phase': {
+            if (!previous || !('phase' in previous) || (previous.status === 'running' && previous.endsAtEpochMs <= now)) {
+                return { rejectionCode: 'group-mutation-rejected', message: 'Only a live or paused phase can be extended.' };
+            }
+            if (previous.status === 'paused') {
+                const remainingMs = previous.remainingMs + command.durationMs;
+                if (now + remainingMs > 8_640_000_000_000_000) {
+                    return { rejectionCode: 'group-mutation-rejected', message: 'Extended balance exceeds the supported UTC range.' };
+                }
+                return { ...previous, revision: identity.revision, remainingMs };
+            }
+            durationMs = previous.endsAtEpochMs - now + command.durationMs;
+            break;
+        }
         case 'pause':
             if (previous?.status !== 'running' || previous.endsAtEpochMs <= now) {
                 return { rejectionCode: 'group-mutation-rejected', message: 'Only a live clock can pause.' };
