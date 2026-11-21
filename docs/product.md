@@ -123,6 +123,22 @@ its original request ID. A competing change reports `room-clock-revision-conflic
 `room-director-changed`. Upgrade group writers and clock readers before enabling timelines.
 The server stores phase and starting revision on the named `rallarRoomClocks` record. Clock-only records remain valid.
 
+## Fixed room schedules
+
+An appointed director publishes a named sequence of 1–32 strictly increasing UTC starts in one room revision.
+Use `rooms.publishSchedule(room, { name, expectedDirectorEpoch, expectedRevision, phases }, requestId)`,
+where each phase contains `phase` and `startsAtEpochMs`. Revision zero creates the schedule; retry the same
+publication with its original request ID. A later revision may edit future boundaries. Boundaries already reached
+at the server must match the previous revision, including their labels. A schedule and a manually controlled clock
+have separate names and share the room's existing capacity. Upgrade room clock readers and writers before publishing schedules.
+
+`rooms.readSchedule` reads the durable revision. `rooms.watchSchedule` recovers it on entry and WebSocket invalidation.
+On each local display update call `rallar.schedulePosition(schedule, authority?)`. It uses one calibrated time window.
+A current position supplies `current` and `next` with their UTC starts. Before the first start, current is null.
+At a start the new phase applies inclusively, and the final phase continues. A window crossing a start returns
+`uncertain`; loss of calibration returns `unavailable`. The app displays recovery while a watch is stale.
+A boundary crossing requires no server write or network read and triggers no gameplay side effects.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

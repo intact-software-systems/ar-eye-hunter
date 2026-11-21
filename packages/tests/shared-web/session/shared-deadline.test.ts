@@ -104,3 +104,27 @@ it('rejects invalid authority bounds before reading the live connection clock', 
         expect(() => facade.compareDeadline(100, authority)).toThrow(RangeError);
     }
 });
+
+it('projects a schedule from one calibrated window and withholds the phase across an uncertain boundary', async () => {
+    const facade = createRallarFacade();
+    const phases = [{ phase: 'halftime', startsAtEpochMs: 100 }, { phase: 'second', startsAtEpochMs: 200 }];
+    const schedule = { name: 'court', status: 'scheduled' as const, revision: 2, phases };
+    expect(facade.schedulePosition(schedule)).toEqual({ status: 'unavailable' });
+    const clock = createDefaultBrowserServerClockFixture(() => 200);
+    const middleware = vi.spyOn(BrowserTransportRuntime.prototype, 'readMiddleware');
+    try {
+        middleware.mockReturnValue(createDefaultApiMiddlewareTestDouble({ serverTime: clock }));
+        const sample = vi.spyOn(clock, 'readWindow');
+        sample.mockReturnValue(Either.ofRight({ earliestEpochMs: 10, latestEpochMs: 20 }));
+        expect(facade.schedulePosition(schedule)).toEqual({ status: 'current', current: null, next: phases[0] });
+        sample.mockReturnValue(Either.ofRight({ earliestEpochMs: 150, latestEpochMs: 195 }));
+        expect(facade.schedulePosition(schedule)).toEqual({ status: 'current', current: phases[0], next: phases[1] });
+        expect(facade.schedulePosition(schedule, { maxAuthorityOffsetMs: 5 })).toEqual({ status: 'uncertain' });
+        sample.mockReturnValue(Either.ofRight({ earliestEpochMs: 200, latestEpochMs: 205 }));
+        expect(facade.schedulePosition(schedule)).toEqual({ status: 'current', current: phases[1], next: null });
+    }
+    finally {
+        middleware.mockRestore();
+        await clock.close();
+    }
+});

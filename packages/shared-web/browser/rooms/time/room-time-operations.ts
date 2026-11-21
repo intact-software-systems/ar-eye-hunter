@@ -15,10 +15,12 @@ import {
     assertRoomClockCommand,
     assertRoomClockMutation,
     readRoomClock,
+    readRoomSchedule,
     type RoomClock,
     type RoomClockCommand,
     type RoomClockMutation
 } from '@shared/api/group-deadlines/room-clock.ts';
+import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
 import { parseGroupStateDeltaEnvelope } from '../../state-cache/group-state-delta-application.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
@@ -42,6 +44,11 @@ export interface RoomTimelineObservation {
 }
 
 export interface RoomTimeOperations {
+    publishSchedule(room: GroupRef, publication: RoomSchedule.Publication, requestId: string,
+        options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule>;
+    readSchedule(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule | null>;
+    watchSchedule(room: GroupRef, name: string, listener: (state: RoomSchedule.Observation) => void,
+        options?: { readonly signal?: AbortSignal; }): () => void;
     extendTimeline(
         room: GroupRef, extension: RoomTimelineExtension, requestId: string, options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomTimeline>;
@@ -198,6 +205,23 @@ export function createRoomTimeOperations(
         return timeline;
     }
     return {
+        async publishSchedule(roomRef, publication, requestId, { signal } = {}) {
+            const roomClock = { ...structuredClone(publication), operation: 'publish-schedule' as const };
+            assertRoomClockMutation(roomClock);
+            const metadata = await write({ roomRef, change: { roomClock }, requestId, signal });
+            const schedule = readRoomSchedule(metadata, roomClock.name);
+            if (!schedule || schedule.revision !== roomClock.expectedRevision + 1 || !sameSchedulePhases(schedule.phases, roomClock.phases)) {
+                throw new Error('Room schedule acknowledgement does not match the publication.');
+            }
+            return schedule;
+        },
+        async readSchedule(room, name, { signal } = {}) {
+            return readRoomSchedule(await readMetadata(room, signal), name);
+        },
+        watchSchedule(room, name, listener, { signal } = {}) {
+            return watch(room, name, readRoomSchedule, ({ status, value }) => listener({ status, schedule: value }),
+                (a, b) => a.revision === b.revision && !sameSchedulePhases(a.phases, b.phases), signal);
+        },
         advanceTimeline(room, advance, requestId, { signal } = {}) {
             const roomClock = { ...advance, operation: 'advance-phase' as const };
             return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });

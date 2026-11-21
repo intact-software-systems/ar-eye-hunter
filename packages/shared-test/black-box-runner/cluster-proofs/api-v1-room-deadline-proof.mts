@@ -176,6 +176,21 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     assert.equal(typeof published.endsAtEpochMs, 'number');
     assert.deepEqual(extended, [{ ...published, revision: 5, endsAtEpochMs: Number(published.endsAtEpochMs) + 1234 }]);
     assert.equal((await clockWrite(deputy, extension, 409)).code, 'room-clock-revision-conflict');
+    const program = { name: 'program', operation: 'publish-schedule', expectedDirectorEpoch: successorEpoch,
+        expectedRevision: 0, phases: [{ phase: 'break', startsAtEpochMs: 0 }, { phase: 'play', startsAtEpochMs: 8_000_000_000_000 }] };
+    await clockWrite(owner, program, 409);
+    await clockWrite(deputy, { ...program, phases: [program.phases[1], program.phases[0]] }, 400);
+    await clockWrite(deputy, program);
+    const revision = { ...program, expectedRevision: 1, phases: [program.phases[0], { phase: 'play', startsAtEpochMs: 8_100_000_000_000 }] };
+    const revisionPath = toApiMutationRequestPath(first, crypto.randomUUID());
+    const revise = { method: 'PUT' as const, session: deputy, body: { roomClock: revision } };
+    const acceptedSchedule = await requestJson(writer.baseUrl, revisionPath, revise);
+    assert.deepEqual(await requestJson(reader.baseUrl, revisionPath, revise), acceptedSchedule);
+    assert.equal((await clockWrite(deputy, revision, 409)).code, 'room-clock-revision-conflict');
+    const records = clock(await requestJson(editor.baseUrl, first, { method: 'GET', session: deputy }));
+    assert.ok(Array.isArray(records));
+    assert.deepEqual(records.find(record => requireRecord(record, 'time record').name === 'program'),
+        { name: 'program', revision: 2, status: 'scheduled', phases: revision.phases });
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {
