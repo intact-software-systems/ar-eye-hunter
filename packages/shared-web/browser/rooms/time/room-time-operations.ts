@@ -68,6 +68,13 @@ export interface RoomTimeOperations {
     ): Promise<RoomDeadline>;
 }
 
+interface WriteRoomTime {
+    readonly roomRef: GroupRef;
+    readonly change: { roomDeadline: RoomDeadlineChange; } | { roomClock: RoomClockCommand; };
+    readonly requestId: string;
+    readonly signal?: AbortSignal;
+}
+
 export function createRoomTimeOperations(
     { requireSession, roomEvents, ws, auth }: Pick<
         CreateBrowserRallarRoomsInput,
@@ -129,12 +136,7 @@ export function createRoomTimeOperations(
             }
         });
     }
-    async function write(
-        roomRef: GroupRef,
-        change: { roomDeadline: RoomDeadlineChange; } | { roomClock: RoomClockCommand; },
-        requestId: string,
-        signal?: AbortSignal
-    ) {
+    async function write({ roomRef, change, requestId, signal }: WriteRoomTime) {
         const room = toExplicitRoomRef(roomRef);
         const fence = captureRoomSession(requireSession, signal);
         fence.assertCurrent();
@@ -188,7 +190,7 @@ export function createRoomTimeOperations(
         async changeClock(room, command, requestId, { signal } = {}) {
             const roomClock = { ...command };
             assertRoomClockCommand(roomClock);
-            const metadata = await write(room, { roomClock }, requestId, signal);
+            const metadata = await write({ roomRef: room, change: { roomClock }, requestId, signal });
             const result = readRoomClock(metadata, roomClock.name);
             if (
                 result?.revision !== roomClock.expectedRevision + 1 ||
@@ -201,7 +203,7 @@ export function createRoomTimeOperations(
         async setDeadline(room, change, requestId, { signal } = {}) {
             const roomDeadline = { ...change };
             assertRoomDeadlineChange(roomDeadline);
-            const metadata = await write(room, { roomDeadline }, requestId, signal);
+            const metadata = await write({ roomRef: room, change: { roomDeadline }, requestId, signal });
             const acknowledged = readRoomDeadline(metadata, roomDeadline.name);
             if (
                 acknowledged?.revision !== roomDeadline.expectedRevision + 1 ||

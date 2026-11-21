@@ -23,7 +23,7 @@ import {
 } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { readRoomClocks, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
-import { computeRoomClock } from './compute-room-clock.ts';
+import { computeGroupClockChange } from './compute-group-clock-change.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
@@ -118,7 +118,7 @@ export function computeUpdate(
             return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' });
         }
         const clocks = readRoomClocks(current.metadata);
-        const updated = computeRoomClock(clocks, command.input.roomClock, facts.attemptAtEpochMs);
+        const updated = computeGroupClockChange(clocks, command.input.roomClock, facts.attemptAtEpochMs);
         if ('rejectionCode' in updated) return rejected({ command, read, facts, ...updated });
         const records = [...clocks.filter(clock => clock.name !== updated.name), updated];
         next = { ...next, metadata: { ...next.metadata, [ROOM_CLOCKS_METADATA_KEY]: records } };

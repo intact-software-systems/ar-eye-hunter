@@ -81,8 +81,8 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const appoint = (session: ProofSession) => requestJson(session.apiBaseUrl,
         toApiMutationRequestPath(first + '/director/appoint', crypto.randomUUID()), { method: 'POST', session, body: {} });
     const clock = (snapshot: ProofJsonObject) => requireRecord(requireRecord(snapshot.group, 'group').metadata, 'metadata').rallarRoomClocks;
-    const clockWrite = (session: ProofSession, command: object, expectedStatus = 200, id = crypto.randomUUID()) =>
-        requestJson(session.apiBaseUrl, toApiMutationRequestPath(first, id), {
+    const clockWrite = (session: ProofSession, command: object, expectedStatus = 200) =>
+        requestJson(session.apiBaseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
             method: 'PUT', session, expectedStatus, body: { roomClock: { name: 'period', ...command } }
         });
     await appoint(owner);

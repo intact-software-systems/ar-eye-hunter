@@ -6,7 +6,7 @@ interface ClockRefusal {
 }
 
 /** Evaluated against the same group revision and server time as director authorization. */
-export function computeRoomClock(
+export function computeGroupClockChange(
     clocks: readonly RoomClock[],
     command: RoomClockCommand,
     now: number

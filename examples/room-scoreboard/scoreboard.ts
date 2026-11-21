@@ -21,36 +21,44 @@ function display(ms: number): string {
     return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
 
+function clockFace(): { label: string; time: string; action?: RoomClockCommand['operation']; } {
+    const clock = state.clock;
+    if (state.status === 'stale') {
+        return { label: 'Recovering clock', time: '—' };
+    }
+    if (!clock) {
+        return { label: 'Ready', time: '10:00', action: 'start' };
+    }
+    if (clock.status === 'paused') {
+        return { label: 'Paused', time: display(clock.remainingMs), action: 'resume' };
+    }
+    const boundary = rallar.compareDeadline(clock.endsAtEpochMs);
+    if (boundary === 'at-or-after') {
+        return { label: 'Time expired', time: '0:00', action: 'start' };
+    }
+    const now = rallar.deadlineAfter(0);
+    if (now === undefined || boundary !== 'before') {
+        return { label: 'Waiting for server time', time: '—' };
+    }
+    return { label: 'Running', time: display(Math.max(0, clock.endsAtEpochMs - now)), action: 'pause' };
+}
+
+const labels = { start: 'Start 10 minutes', pause: 'Pause', resume: 'Resume' };
+
 function render() {
     if (!room) {
         return;
     }
     const director = rallar.director.status(room);
-    const clock = state.clock;
-    const boundary = clock?.status === 'running' ? rallar.compareDeadline(clock.endsAtEpochMs) : undefined;
-    const now = rallar.deadlineAfter(0);
-    const expired = boundary === 'at-or-after';
-    phase.textContent = state.status === 'stale' ? 'Recovering clock' : !clock
-        ? 'Ready'
-        : clock.status === 'paused'
-        ? 'Paused'
-        : expired
-        ? 'Time expired'
-        : boundary === 'unavailable' || boundary === 'overlaps'
-        ? 'Waiting for server time'
-        : 'Running';
-    output.value = clock?.status === 'paused' ? display(clock.remainingMs) : !clock
-        ? '10:00'
-        : expired
-        ? '0:00'
-        : now === undefined || boundary !== 'before'
-        ? '—'
-        : display(Math.max(0, clock.endsAtEpochMs - now));
+    const face = clockFace();
+    phase.textContent = face.label;
+    output.value = face.time;
     appoint.hidden = director.isDirector;
     appoint.disabled = busy;
-    change.textContent = !clock || expired ? 'Start 10 minutes' : clock.status === 'paused' ? 'Resume' : 'Pause';
-    change.disabled = busy || state.status !== 'current' || !director.isFresh || !director.isDirector ||
-        boundary === 'unavailable' || boundary === 'overlaps';
+    change.hidden = !face.action;
+    change.textContent = face.action ? labels[face.action] : '';
+    change.disabled = busy || !face.action || !director.isFresh || !director.isDirector;
+    return change.disabled ? undefined : face.action;
 }
 
 async function perform(action: () => Promise<void>) {
@@ -111,8 +119,8 @@ appoint.onclick = () => {
     }
 };
 change.onclick = () => {
-    render();
-    if (!room || change.disabled) {
+    const action = render();
+    if (!room || !action) {
         return;
     }
     const target = room;
@@ -126,10 +134,9 @@ change.onclick = () => {
         expectedRevision: clock?.revision ?? 0,
         expectedDirectorEpoch: director.appointment.epoch
     };
-    const command: RoomClockCommand =
-        !clock || (clock.status === 'running' && rallar.compareDeadline(clock.endsAtEpochMs) === 'at-or-after')
-            ? { ...base, operation: 'start', durationMs: 600_000 }
-            : { ...base, operation: clock.status === 'paused' ? 'resume' : 'pause' };
+    const command: RoomClockCommand = action === 'start'
+        ? { ...base, operation: action, durationMs: 600_000 }
+        : { ...base, operation: action };
     if (!retry || JSON.stringify(command) !== JSON.stringify(retry.command)) {
         retry = { command, id: crypto.randomUUID() };
     }
