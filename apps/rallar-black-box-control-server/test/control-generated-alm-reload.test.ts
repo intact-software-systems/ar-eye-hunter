@@ -503,9 +503,12 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
         };
 
-        await ports.sender.execute(toRecipeRun(sender));
+        const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
+        expect([sent.ok, readFailedCommandIds(sent)]).toEqual(
+            carrier === 'ws' ? [false, [`${sender.recipeId}-assert-acknowledged-1`]] : [true, []]
+        );
         expect(received.ok).toEqual(false);
         expect(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted)).toEqual([false, true]);
     });
@@ -523,10 +526,13 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             commands: receiver.commands.map((command) => command.commandId === floored ? { ...command, timeoutMs: 50 } : command)
         };
 
-        await ports.sender.execute(toRecipeRun(sender));
+        const sent = await ports.sender.execute(toRecipeRun(sender));
         const mover = await ports.recipientB.execute(toRecipeRun(recipientB));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
+        expect([sent.ok, readFailedCommandIds(sent)]).toEqual(
+            carrier === 'ws' ? [false, [`${sender.recipeId}-assert-acknowledged-1`]] : [true, []]
+        );
         expect(mover.ok).toEqual(false);
         expect(received.ok).toEqual(false);
         expect([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]]).toEqual([7, 4, []]);
@@ -559,6 +565,12 @@ function splitAtKeptSendRead(sender: RallarBlackBoxTestRecipe): readonly [Rallar
     return read < 0
         ? [sender, undefined]
         : [{ ...sender, commands: sender.commands.slice(0, read) }, { ...sender, commands: sender.commands.slice(read) }];
+}
+
+/** The commands a recipe run reports failed, in run order. */
+function readFailedCommandIds(run: RallarBlackBoxTestResult): readonly string[] {
+    assert(isJsonRecordValue(run.value) && Array.isArray(run.value.results));
+    return run.value.results.flatMap((entry) => isJsonRecordValue(entry) && entry.ok === false && typeof entry.commandId === 'string' ? [entry.commandId] : []);
 }
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {

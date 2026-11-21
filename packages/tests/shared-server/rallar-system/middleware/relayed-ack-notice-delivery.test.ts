@@ -7,11 +7,11 @@ import type {
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import { createInboundTestStores } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
+import { toWsDeliveredAckMessage } from '../../../ws-receipted-send-test-controls.ts';
 import {
     createRelayedAckMiddlewareInstance,
     readReceiptPhases,
     runKeptSendReplayedElsewhere,
-    toRelayedAckMessage,
     toRelayedAckRoomMessage
 } from './relayed-ack-middleware-fixture.ts';
 
@@ -45,7 +45,7 @@ describe('middleware relayed ACK notices', () => {
         await expect.poll(() => readReceiptPhases(owner.sockets.a!, 'room-message-1')).toEqual(['admitted']);
 
         const accepted = await other.service.acceptIncomingMessage(
-            toRelayedAckMessage({ ackedMsgId: 'room-message-1', fromPeerId: 'c', originPeerId: 'a', traceId: TRACE_ID }),
+            toWsDeliveredAckMessage({ ackedMsgId: 'room-message-1', fromPeerId: 'c', originPeerId: 'a', traceId: TRACE_ID }),
             'c'
         );
 

@@ -18,7 +18,6 @@ describe('a WS client\'s receipted room send the server retains behind its room 
 
     afterEach(() => {
         vi.useRealTimers();
-        vi.restoreAllMocks();
     });
 
     it('a server in step answers admitted, the one frame is delivered, and the send nobody acknowledges ends at the server\'s timed-out', async () => {

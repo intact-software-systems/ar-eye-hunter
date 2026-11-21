@@ -183,6 +183,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly dispatchOutcome?: 'completed' | 'retry';
     /** Absent leaves a retained admission's replay authorized by the source it captured. */
     readonly readPendingAdmissionAuthority?: ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority'];
+    /** Absent hands no replay's admission over, as a runtime without a receipt owner does. */
+    readonly onReplayAdmitted?: ALInboundMessageRuntime.Dependencies['onReplayAdmitted'];
     /** Absent settles every dispatch immediately; a message this awaits holds that claim's batch open until it resolves. */
     readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
     /** Absent sends every control; a call carrying a message this names throws, the way a transport refusal does. */
@@ -237,6 +239,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         canDispatchMessage: input.canDispatchMessage,
         forwardMessage: input.forwardMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
+        onReplayAdmitted: input.onReplayAdmitted,
         dispatchInboxEntry: async (entry) => {
             const msg = decodePersistedALMessage(entry.resource);
             await input.gateDispatch?.(msg);

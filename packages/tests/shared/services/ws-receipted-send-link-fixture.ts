@@ -1,9 +1,7 @@
 import { expect, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage, type ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -17,7 +15,13 @@ import { acceptWsQueueBoxClientControlMessage } from '@shared/services/ws-queue-
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import {
+    readSentReceipts,
+    toControlLabel,
+    toNotYetInSyncRefusal,
+    toWsDeliveredAckMessage,
+    type ControlFrameLabel
+} from '../../ws-receipted-send-test-controls.ts';
 import {
     createWsClientCarrierStores,
     createWsClientMintingPlanner,
@@ -46,9 +50,7 @@ const LINK_PASSES_PER_STEP = 12;
 export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced';
 
 /** One control the server sent the origin, `nack:<reason>` or `receipt:<phase>`, and what the origin's outbound owner decided. */
-export interface WsReceiptedSendServerControl {
-    readonly msgId: string;
-    readonly control: string;
+export interface WsReceiptedSendServerControl extends ControlFrameLabel {
     readonly admission: ALOutboundControlAdmissionResult['kind'];
 }
 
@@ -103,7 +105,7 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
             await exchange.run();
         },
         deliveredToPeer: (msg) => toFrames(peer).filter((frame) => frame.id.msgId === msg.id.msgId).length,
-        readReceiptsToOrigin: (msg) => toReceiptsFor(server.socket, msg),
+        readReceiptsToOrigin: (msg) => readSentReceipts(server.socket).filter((receipt) => receipt.msgId === msg.id.msgId),
         ...createLinkSenderReads(client.stores)
     };
 }
@@ -208,13 +210,7 @@ function createLinkSenderReads(
 
 function toRoomViewAuthorization(view: WsReceiptedSendRoomView): WsServerInboundAuthorization {
     if (view === 'behind') {
-        return {
-            authorized: false,
-            reason: 'not-yet-in-sync',
-            logMessage: 'Room snapshot is catching up',
-            sendNack: true,
-            serverSnapshotVersion: 1
-        };
+        return toNotYetInSyncRefusal(1);
     }
     if (view === 'fenced') {
         return { authorized: false, reason: 'membership-fenced', logMessage: 'Sender left the room', sendNack: true };
@@ -222,41 +218,13 @@ function toRoomViewAuthorization(view: WsReceiptedSendRoomView): WsServerInbound
     return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID, LINK_PEER_ID], snapshotVersion: 2 } };
 }
 
-/** One server-sent frame as `nack:<reason>` or `receipt:<phase>`, under the msgId it answers; any other frame by its typeId. */
-export function toControlLabel(frame: ALMessage): Omit<WsReceiptedSendServerControl, 'admission'> {
-    if (frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID) {
-        const receipt = decodeALReceiptPayload(JSON.parse(frame.payload.resource));
-        return { msgId: receipt.msgId, control: `receipt:${receipt.phase}` };
-    }
-    if (frame.payload.typeId === AL_CONTROL_NACK_TYPE_ID) {
-        const nack = decodeALNackPayload(JSON.parse(frame.payload.resource));
-        return { msgId: nack.msgId, control: `nack:${nack.reason}` };
-    }
-    return { msgId: frame.id.msgId, control: frame.payload.typeId };
-}
-
-function toReceiptsFor(socket: SimulatedWebSocket, msg: ALMessage): readonly ALReceiptPayload[] {
-    return toFrames(socket)
-        .filter((frame) => frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-        .map((frame) => decodeALReceiptPayload(JSON.parse(frame.payload.resource)))
-        .filter((receipt) => receipt.msgId === msg.id.msgId);
-}
-
 function toPeerAck(msg: ALMessage): ALMessage {
-    const nowMs = Date.now();
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${crypto.randomUUID()}`, senderId: LINK_PEER_ID, ts: nowMs, traceId: msg.id.traceId },
-        toTestALAckPayload({
-            ackedMsgId: msg.id.msgId,
-            fromPeerId: LINK_PEER_ID,
-            toPeerId: LINK_ORIGIN_ID,
-            originPeerId: LINK_ORIGIN_ID,
-            logicalRecipientPeerId: LINK_PEER_ID,
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: nowMs
-        })
-    );
+    return toWsDeliveredAckMessage({
+        ackedMsgId: msg.id.msgId,
+        fromPeerId: LINK_PEER_ID,
+        originPeerId: LINK_ORIGIN_ID,
+        traceId: msg.id.traceId
+    });
 }
 
 function toAcceptanceKind(accepted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>): string {

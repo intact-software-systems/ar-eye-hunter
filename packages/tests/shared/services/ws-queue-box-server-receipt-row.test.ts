@@ -33,13 +33,14 @@ import {
     createBridgeBus,
     createClusterInstance,
     installClock,
-    readSentReceipts,
     receiverAck,
     roomMessage,
     runReceiptWorkerHandoff,
     type ClusterInstance,
     type ReceiptClock
 } from './ws-queue-box-server-receipt-fixture.ts';
+
+import { readSentReceipts } from '../../ws-receipted-send-test-controls.ts';
 
 const SNAPSHOT_VERSION = 7;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;

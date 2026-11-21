@@ -44,6 +44,7 @@ import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { readSentReceipts } from '../../ws-receipted-send-test-controls.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
@@ -939,13 +940,6 @@ async function readReceiptMessages(fixture: ReceiptFixture): Promise<readonly AL
 
 function readRoomMessageCopies(socket: SimulatedWebSocket): number {
     return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === 'room-message-1').length;
-}
-
-function readSentReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
-    return socket.sent
-        .map((frame) => decodePersistedALMessage(frame))
-        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
 }
 
 function toPhaseOrder(message: ALMessage): number {

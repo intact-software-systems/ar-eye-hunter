@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { RelayedAckNotice } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 
+import { readSentReceipts, toWsDeliveredAckMessage } from '../../../ws-receipted-send-test-controls.ts';
 import {
     readReceiptPhases,
-    readSentReceipts,
-    toRelayedAckMessage,
+    RECIPE_RECEIPT_READ_WAIT_MS,
     toRelayedAckRoomMessage,
     type RelayedAckMiddlewareInstance
 } from '../../rallar-system/middleware/relayed-ack-middleware-fixture.ts';
@@ -16,8 +16,6 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 const SENDER = 'player';
 const LEADER = 'director';
 const TRACE_ID = 'trace-ws-relayed-leader-ack';
-/** The wait the ALM scale recipe gives a shot's receipt read. */
-const SHOT_RECEIPT_WAIT_MS = 5_000;
 
 /**
  * The hosted ALM scale shape: a player's `group-leader` shot carried over WS, admitted by the API replica the
@@ -64,7 +62,7 @@ describe('Postgres WS group-leader ACK relay', () => {
         expect(shot.ackAcceptance).toEqual({ kind: 'control', handled: false });
         expect(relayedAcks.map((notice) => notice.publisherId)).toEqual([`replica-2-${runId}`]);
         expect(shot.receiptPhases).toEqual(['admitted', 'complete']);
-        const complete = readSentReceipts(senderReplica.sockets[SENDER]!, toShotMsgId(runId)).at(-1);
+        const complete = readSentReceipts(senderReplica.sockets[SENDER]!).filter((receipt) => receipt.msgId === toShotMsgId(runId)).at(-1);
         expect(complete).toMatchObject({ expectedRecipientPeerIds: [LEADER], confirmedRecipientPeerIds: [LEADER] });
     });
 });
@@ -88,12 +86,12 @@ async function sendShotAndAcknowledge(input: ShotInput): Promise<ShotOutcome> {
     await expect.poll(() => readReceiptPhases(sender, msgId)).toEqual(['admitted']);
 
     const accepted = await input.leaderReplica.service.acceptIncomingMessage(
-        toRelayedAckMessage({ ackedMsgId: msgId, fromPeerId: LEADER, originPeerId: SENDER, traceId: TRACE_ID }),
+        toWsDeliveredAckMessage({ ackedMsgId: msgId, fromPeerId: LEADER, originPeerId: SENDER, traceId: TRACE_ID }),
         LEADER
     );
 
     expect(accepted.left).toBeUndefined();
-    await expect.poll(() => readReceiptPhases(sender, msgId), { timeout: SHOT_RECEIPT_WAIT_MS }).toContain('complete');
+    await expect.poll(() => readReceiptPhases(sender, msgId), { timeout: RECIPE_RECEIPT_READ_WAIT_MS }).toContain('complete');
     return { ackAcceptance: accepted.right, receiptPhases: readReceiptPhases(sender, msgId) };
 }
 

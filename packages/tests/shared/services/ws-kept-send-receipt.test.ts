@@ -25,7 +25,6 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
     afterEach(() => {
         vi.useRealTimers();
-        vi.restoreAllMocks();
     });
 
     it('kept behind the room view, then admitted: not-yet-in-sync, then admitted, then complete', async () => {

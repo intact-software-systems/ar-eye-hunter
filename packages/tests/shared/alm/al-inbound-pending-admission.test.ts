@@ -34,7 +34,9 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     INBOUND_TEST_SOURCE,
-    setNextInboundCommitConflicted
+    setNextInboundCommitConflicted,
+    type CreateInboundTestRuntimeInput,
+    type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
 
@@ -220,12 +222,11 @@ it('a hand-over that rejects leaves the message delivered once and is not made a
     expect(delivered).toHaveLength(1);
 });
 
-/** Each arrangement runs its replay to the status the row reaches without a hand-over, and returns its stores. */
-const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [
-    string,
-    EntityStatus | undefined,
-    (onReplayAdmitted: ALInboundMessageRuntime.Dependencies['onReplayAdmitted']) => Promise<ALInboundRuntimeStores>
-])[] = [
+/** Runs its replay to the status the row reaches without a hand-over, and returns its stores. */
+type ReplayThatHandsNothingOver = (onReplayAdmitted: ALInboundMessageRuntime.Dependencies['onReplayAdmitted']) => Promise<ALInboundRuntimeStores>;
+
+/** These never reach an authorized replay, so they hand nothing over whatever the replay does once authorized. */
+const REPLAYS_REFUSED_BEFORE_AUTHORITY: readonly (readonly [string, EntityStatus | undefined, ReplayThatHandsNothingOver])[] = [
     ['an authority that refuses', EntityStatus.COMPLETED, async (onReplayAdmitted) => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         await retainConflictedAdmission(stores);
@@ -233,23 +234,6 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [
         const runtime = new ALInboundMessageRuntime({
             ...dependencies,
             readPendingAdmissionAuthority: async () => ({ kind: 'rejected' }),
-            onReplayAdmitted
-        });
-        onTestFinished(() => runtime.dispose());
-        await runtime.ready();
-        await runUntilRetainedStatus(dependencies.queueEngine, stores, EntityStatus.COMPLETED);
-        return stores;
-    }],
-    ['a plan that drops the message', EntityStatus.COMPLETED, async (onReplayAdmitted) => {
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        await retainConflictedAdmission(stores);
-        const dependencies = runtimeDependencies(stores, [], []);
-        const runtime = new ALInboundMessageRuntime({
-            ...dependencies,
-            planIncomingMessage: (msg, source, observations) => ({
-                ...dependencies.planIncomingMessage(msg, source, observations),
-                dropReason: 'Room authorization was revoked'
-            }),
             onReplayAdmitted
         });
         onTestFinished(() => runtime.dispose());
@@ -268,6 +252,26 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
         await runUntilRetainedStatus(dependencies.queueEngine, stores, undefined);
+        return stores;
+    }]
+];
+
+const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [string, EntityStatus | undefined, ReplayThatHandsNothingOver])[] = [
+    ['a plan that drops the message', EntityStatus.COMPLETED, async (onReplayAdmitted) => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        await retainConflictedAdmission(stores);
+        const dependencies = runtimeDependencies(stores, [], []);
+        const runtime = new ALInboundMessageRuntime({
+            ...dependencies,
+            planIncomingMessage: (msg, source, observations) => ({
+                ...dependencies.planIncomingMessage(msg, source, observations),
+                dropReason: 'Room authorization was revoked'
+            }),
+            onReplayAdmitted
+        });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+        await runUntilRetainedStatus(dependencies.queueEngine, stores, EntityStatus.COMPLETED);
         return stores;
     }],
     ['a copy admitted before it', EntityStatus.COMPLETED, async (onReplayAdmitted) => {
@@ -293,11 +297,8 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [
         return stores;
     }],
     ['a commit that conflicts again', EntityStatus.RETRY, async (onReplayAdmitted) => {
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const dependencies = runtimeDependencies(stores, [], []);
         let authorityReads = 0;
-        const runtime = new ALInboundMessageRuntime({
-            ...dependencies,
+        const { fixture } = await startReplayThatConflictsAgain({
             // The first replay runs its attempt; every later one is held, so the row is read before its second replay.
             readPendingAdmissionAuthority: async (_msg, source) => {
                 authorityReads++;
@@ -305,52 +306,33 @@ const REPLAYS_THAT_HAND_NOTHING_OVER: readonly (readonly [
             },
             onReplayAdmitted
         });
-        onTestFinished(() => runtime.dispose());
-        await runtime.ready();
-        setNextInboundCommitConflicted(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
-        expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'replay-conflicts' }), PENDING_SOURCE)).right)
-            .toEqual({ kind: 'pending-admission' });
         await expect.poll(async () => {
-            await dependencies.queueEngine.executeOnce();
+            await fixture.queueEngine.executeOnce();
             return authorityReads;
         }).toBeGreaterThan(1);
-        return stores;
+        return fixture.stores;
     }],
     ['a shutdown before its verdict', EntityStatus.RETRY, async (onReplayAdmitted) => {
-        const authorityAsked = Promise.withResolvers<void>();
-        const authorityAnswer = Promise.withResolvers<void>();
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const runtime = new ALInboundMessageRuntime({
-            ...runtimeDependencies(stores, [], []),
-            readPendingAdmissionAuthority: async (_msg, source) => {
-                authorityAsked.resolve();
-                await authorityAnswer.promise;
-                return { kind: 'authorized', source };
-            },
-            onReplayAdmitted
-        });
-        await runtime.ready();
-        setNextInboundCommitConflicted(stores.admissionStore);
-        expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'shutdown-replay' }), PENDING_SOURCE)).right)
-            .toEqual({ kind: 'pending-admission' });
-        await authorityAsked.promise;
-        const disposed = runtime.dispose();
-        authorityAnswer.resolve();
-        await disposed;
-        return stores;
+        const { fixture } = await runReplayThatShutdownCutsShort(onReplayAdmitted);
+        return fixture.stores;
     }]
 ];
 
-it.each(REPLAYS_THAT_HAND_NOTHING_OVER)('hands nothing over when the replay meets %s', async (_replay, status, arrange) => {
-    const handedOver: ALInboundMessageRuntime.ReplayedAdmission[] = [];
+async function expectNothingHandedOver(status: EntityStatus | undefined, arrange: ReplayThatHandsNothingOver): Promise<void> {
+    const handOvers = recordHandOvers([]);
 
-    const stores = await arrange(async (admitted) => {
-        handedOver.push(admitted);
-    });
+    const stores = await arrange(handOvers.onReplayAdmitted);
 
     expect(await readRetainedAdmissionStatus(stores)).toBe(status);
-    expect(handedOver).toEqual([]);
+    expect(handOvers.handedOver).toEqual([]);
+}
+
+it.each(REPLAYS_REFUSED_BEFORE_AUTHORITY)('characterization: hands nothing over when the replay meets %s', async (_replay, status, arrange) => {
+    await expectNothingHandedOver(status, arrange);
+});
+
+it.each(REPLAYS_THAT_HAND_NOTHING_OVER)('hands nothing over when the replay meets %s', async (_replay, status, arrange) => {
+    await expectNothingHandedOver(status, arrange);
 });
 
 it.each(['authority', 'deadline'] as const)('checks current %s before admitting retained pending work', async (boundary) => {
@@ -734,24 +716,14 @@ it('a diagnostics sink that throws leaves a replay\'s delivery and its claim unc
 });
 
 it('a replay that conflicts again states pending again', async () => {
-    const { runtime, stores, diagnostics, delivered, queueEngine } = createInboundTestRuntime({
-        carrier: 'rtc',
-        stores: createDefaultInMemoryALInboundRuntimeStores(),
-        effectWorkerId: 'replay-conflicts-worker'
-    });
-    await runtime.ready();
-    const message = createInboundTestMessage({ msgId: 'replay-conflicts' });
-    setNextInboundCommitConflicted(stores.admissionStore);
-    // The replay's own write meets the fence again, as when another arrival moved the surface once more.
-    vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    const { fixture, message } = await startReplayThatConflictsAgain({});
 
-    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
     await expect.poll(async () => {
-        await queueEngine.executeOnce();
-        return delivered;
+        await fixture.queueEngine.executeOnce();
+        return fixture.delivered;
     }).toEqual(['dispatched']);
 
-    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+    expect(toAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
         { outcome: 'pending', reason: 'pending-admission' },
         { outcome: 'pending', reason: 'pending-admission' },
         { outcome: 'committed', reason: 'admitted' }
@@ -816,9 +788,44 @@ it('a replay its stored WS client scope no longer authorizes states unauthorized
 });
 
 it('a replay that shutdown cuts short before its verdict states nothing', async () => {
+    const { fixture, message } = await runReplayThatShutdownCutsShort(undefined);
+
+    expect(toAdmissionOutcomes(fixture.diagnostics, message).map(({ outcome }) => outcome)).toEqual(['pending']);
+    expect(fixture.delivered).toEqual([]);
+});
+
+type ReplayArrangementInput = Pick<CreateInboundTestRuntimeInput, 'readPendingAdmissionAuthority' | 'onReplayAdmitted'>;
+
+interface StartedReplay {
+    readonly fixture: InboundTestRuntime;
+    readonly message: ALMessage;
+}
+
+/** A conflicted admission retained, whose replay's own write meets the fence again. */
+async function startReplayThatConflictsAgain(input: ReplayArrangementInput): Promise<StartedReplay> {
+    const fixture = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        effectWorkerId: 'replay-conflicts-worker',
+        ...input
+    });
+    await fixture.runtime.ready();
+    const message = createInboundTestMessage({ msgId: 'replay-conflicts' });
+    setNextInboundCommitConflicted(fixture.stores.admissionStore);
+    // The replay's own write meets the fence again, as when another arrival moved the surface once more.
+    vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+
+    expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    return { fixture, message };
+}
+
+/** A conflicted admission retained, whose replay the runtime's disposal cuts short while it asks its authority. */
+async function runReplayThatShutdownCutsShort(
+    onReplayAdmitted: ALInboundMessageRuntime.Dependencies['onReplayAdmitted']
+): Promise<StartedReplay> {
     const authorityAsked = Promise.withResolvers<void>();
     const authorityAnswer = Promise.withResolvers<void>();
-    const { runtime, stores, diagnostics, delivered } = createInboundTestRuntime({
+    const fixture = createInboundTestRuntime({
         carrier: 'rtc',
         stores: createDefaultInMemoryALInboundRuntimeStores(),
         effectWorkerId: 'shutdown-replay-worker',
@@ -826,21 +833,20 @@ it('a replay that shutdown cuts short before its verdict states nothing', async 
             authorityAsked.resolve();
             await authorityAnswer.promise;
             return { kind: 'authorized', source };
-        }
+        },
+        onReplayAdmitted
     });
-    await runtime.ready();
+    await fixture.runtime.ready();
     const message = createInboundTestMessage({ msgId: 'shutdown-replay' });
-    setNextInboundCommitConflicted(stores.admissionStore);
+    setNextInboundCommitConflicted(fixture.stores.admissionStore);
 
-    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    expect((await fixture.runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
     await authorityAsked.promise;
-    const disposed = runtime.dispose();
+    const disposed = fixture.runtime.dispose();
     authorityAnswer.resolve();
     await disposed;
-
-    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome }) => outcome)).toEqual(['pending']);
-    expect(delivered).toEqual([]);
-});
+    return { fixture, message };
+}
 
 /** Who stated each `admission-outcome` about one message, and over which carrier. */
 function toAdmissionOutcomeOrigins(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {

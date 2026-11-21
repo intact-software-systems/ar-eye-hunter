@@ -565,12 +565,9 @@ export class WsQueueBoxServerReceiptAggregation {
 }
 
 /**
- * A receipt is a durable outbox row: its immediate phase resolves nobody, and its dequeue reaches the
- * origin's socket on this instance or, through the cluster publisher, on another. The control message
- * itself stays volatile and best-effort, as every control must (`validateControlEnvelope`), so the QoS
- * planner would plan it volatile: the durable plan is built here instead, for the row alone.
+ * A kept WS client send its replay admitted, as the admission that starts its receipt; none when its source is
+ * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version.
  */
-/** A kept WS client send its replay admitted, as the admission that starts its receipt; none without a room audience. */
 export function toWsQueueBoxServerReplayedAdmittedMessage(
     replayed: ALInboundMessageRuntime.ReplayedAdmission
 ): WsQueueBoxServerReceiptAggregation.AdmittedMessage | undefined {
@@ -586,6 +583,12 @@ export function toWsQueueBoxServerReplayedAdmittedMessage(
     };
 }
 
+/**
+ * A receipt is a durable outbox row: its immediate phase resolves nobody, and its dequeue reaches the
+ * origin's socket on this instance or, through the cluster publisher, on another. The control message
+ * itself stays volatile and best-effort, as every control must (`validateControlEnvelope`), so the QoS
+ * planner would plan it volatile: the durable plan is built here instead, for the row alone.
+ */
 function toWsQueueBoxServerReceiptDispatchPlan(
     message: ALMessage
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
