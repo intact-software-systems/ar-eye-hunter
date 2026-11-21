@@ -8,11 +8,15 @@ export async function readDisposedResponse<Response extends Pick<APIResponse, 'd
     response: Response,
     read: (response: Response) => Promise<Value>
 ): Promise<Value> {
-    const value = await read(response).catch(async (readFailure: unknown) => {
+    let value: Value;
+    try {
+        value = await read(response);
+    }
+    catch (readFailure) {
         // The read failure says what went wrong; a failed dispose after it must not hide it.
         await response.dispose().catch(() => undefined);
         throw readFailure;
-    });
+    }
     await response.dispose();
     return value;
 }
