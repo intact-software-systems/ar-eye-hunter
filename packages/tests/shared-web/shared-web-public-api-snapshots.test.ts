@@ -341,7 +341,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
-                'RoomDeadlineObservation'
+                'RoomDeadlineObservation',
+                'RoomTimeline',
+                'RoomTimelineAdvance',
+                'RoomTimelineObservation'
             ],
             starExports: [],
             namespaceExports: []
@@ -508,7 +511,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
-                'RoomDeadlineObservation'
+                'RoomDeadlineObservation',
+                'RoomTimeline',
+                'RoomTimelineAdvance',
+                'RoomTimelineObservation'
             ],
             starExports: [],
             namespaceExports: []

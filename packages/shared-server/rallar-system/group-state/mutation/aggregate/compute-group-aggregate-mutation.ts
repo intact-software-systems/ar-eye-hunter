@@ -1,4 +1,4 @@
-import { readRoomClocks, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
+import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
     createRallarGroupDirectorAppointment,
@@ -47,7 +47,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeGroupClockChange } from './compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from './compute-group-clock-change.ts';
 import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
@@ -118,15 +118,13 @@ export function computeUpdate(
         }
         next = deadline;
     }
-    if (command.input.roomClock) {
-        if (current.kind !== 'room' || current.status !== 'active') {
-            return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' });
+    const clockCommand = command.input.roomClock;
+    if (clockCommand) {
+        const updated = computeGroupClockUpdate(next, clockCommand, facts.attemptAtEpochMs);
+        if ('rejectionCode' in updated) {
+            return rejected({ command, read, facts, ...updated });
         }
-        const clocks = readRoomClocks(current.metadata);
-        const updated = computeGroupClockChange(clocks, command.input.roomClock, facts.attemptAtEpochMs);
-        if ('rejectionCode' in updated) return rejected({ command, read, facts, ...updated });
-        const records = [...clocks.filter(clock => clock.name !== updated.name), updated];
-        next = { ...next, metadata: { ...next.metadata, [ROOM_CLOCKS_METADATA_KEY]: records } };
+        next = updated;
     }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {

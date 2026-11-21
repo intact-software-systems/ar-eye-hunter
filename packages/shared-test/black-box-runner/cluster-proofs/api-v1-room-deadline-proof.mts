@@ -132,6 +132,41 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const resumed = clock(await clockWrite(deputy, resume));
     assert.ok(Array.isArray(resumed));
     assert.equal(requireRecord(resumed[0], 'running').status, 'running');
+    const advance = { name: 'period', operation: 'advance-phase', phase: 'halftime', durationMs: 180_000,
+        expectedDirectorEpoch: successorEpoch, expectedRevision: 3 };
+    assert.equal((await clockWrite(owner, advance, 409)).code, 'room-director-changed');
+    const advances = ['halftime', 'overtime'].map(phase => ({
+        session: deputy,
+        path: toApiMutationRequestPath(first, crypto.randomUUID()),
+        body: { roomClock: { ...advance, phase } }
+    }));
+    const responses = await Promise.all(advances.map(putDeadline));
+    assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+    const acceptedIndex = responses.findIndex(response => response.ok);
+    const acceptedAdvance = advances[acceptedIndex]!;
+    const phaseSnapshot = await responses[acceptedIndex]!.json();
+    const phaseClocks = clock(phaseSnapshot);
+    assert.ok(Array.isArray(phaseClocks));
+    const published = requireRecord(phaseClocks[0], 'phase clock');
+    assert.equal(published.revision, 4);
+    assert.equal(published.phase, acceptedAdvance.body.roomClock.phase);
+    assert.equal(published.startedAtRevision, 4);
+    assert.equal((await responses[1 - acceptedIndex]!.json()).code, 'room-clock-revision-conflict');
+    const repeated = await requestJson(reader.baseUrl, acceptedAdvance.path, {
+        method: 'PUT', session: deputy, body: acceptedAdvance.body
+    });
+    assert.deepEqual(repeated, phaseSnapshot);
+    const forged = await putDeadline({
+        path: toApiMutationRequestPath(first, crypto.randomUUID()), session: owner,
+        body: { metadata: { rallarRoomClocks: [{ ...published, phase: 'forged' }] } }
+    });
+    assert.equal(forged.status, 400);
+    const venueUpdate = await requestJson(writer.baseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
+        method: 'PUT', session: owner, body: { metadata: { venue: 'updated', rallarRoomTimelines: 'custom' } }
+    });
+    const preserved = requireRecord(requireRecord(venueUpdate.group, 'group').metadata, 'metadata');
+    assert.equal(preserved.rallarRoomTimelines, 'custom');
+    assert.deepEqual(preserved.rallarRoomClocks, phaseClocks);
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {

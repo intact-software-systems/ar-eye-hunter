@@ -9161,14 +9161,17 @@ components:
         roomClock:
           type: object
           additionalProperties: false
-          description: The active appointed director starts, pauses or resumes one named countdown. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision on the matching metadata.rallarRoomClocks record. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
           required: [name, operation, expectedRevision, expectedDirectorEpoch]
           properties:
             name:
               type: string
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
-              enum: [start, pause, resume]
+              enum: [start, pause, resume, advance-phase]
+            phase:
+              type: string
+              pattern: '^[A-Za-z0-9._-]{1,64}$'
             expectedRevision:
               type: integer
               minimum: 0
@@ -9181,15 +9184,25 @@ components:
               type: integer
               minimum: 1
               maximum: 9007199254740991
-          if:
-            properties:
-              operation:
-                const: start
-          then:
-            required: [durationMs]
-          else:
-            not:
-              required: [durationMs]
+          allOf:
+            - if:
+                properties:
+                  operation:
+                    enum: [start, advance-phase]
+              then:
+                required: [durationMs]
+              else:
+                not:
+                  required: [durationMs]
+            - if:
+                properties:
+                  operation:
+                    const: advance-phase
+              then:
+                required: [phase]
+              else:
+                not:
+                  required: [phase]
         roomDeadline:
           type: object
           additionalProperties: false

@@ -1,5 +1,5 @@
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
-import { assertRoomClockCommand, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
+import { assertRoomClockMutation, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
@@ -27,7 +27,7 @@ export function validateGroupMetadataInput(
     }
     if (clockCommand !== undefined) {
         try {
-            assertRoomClockCommand(clockCommand);
+            assertRoomClockMutation(clockCommand);
         }
         catch (error) {
             if (!(error instanceof TypeError)) throw error;

@@ -13,10 +13,13 @@ import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
     assertRoomClockCommand,
+    assertRoomClockMutation,
     readRoomClock,
     type RoomClock,
-    type RoomClockCommand
+    type RoomClockCommand,
+    type RoomClockMutation
 } from '@shared/api/group-deadlines/room-clock.ts';
+import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance } from '@shared/api/group-deadlines/room-timeline.ts';
 import { parseGroupStateDeltaEnvelope } from '../../state-cache/group-state-delta-application.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
@@ -30,17 +33,30 @@ export interface RoomDeadlineObservation {
 }
 export interface RoomClockObservation {
     readonly status: 'current' | 'stale';
-    readonly clock: RoomClock | null;
+    readonly clock: RoomClock | RoomTimeline | null;
+}
+
+export interface RoomTimelineObservation {
+    readonly status: 'current' | 'stale';
+    readonly timeline: RoomTimeline | null;
 }
 
 export interface RoomTimeOperations {
+    advanceTimeline(
+        room: GroupRef, advance: RoomTimelineAdvance, requestId: string, options?: { readonly signal?: AbortSignal; }
+    ): Promise<RoomTimeline>;
+    readTimeline(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomTimeline | null>;
+    watchTimeline(
+        room: GroupRef, name: string, listener: (state: RoomTimelineObservation) => void,
+        options?: { readonly signal?: AbortSignal; }
+    ): () => void;
     changeClock(
         room: GroupRef,
         command: RoomClockCommand,
         requestId: string,
         options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomClock>;
-    readClock(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomClock | null>;
+    readClock(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomClock | RoomTimeline | null>;
     watchClock(
         room: GroupRef,
         name: string,
@@ -70,7 +86,7 @@ export interface RoomTimeOperations {
 
 interface WriteRoomTime {
     readonly roomRef: GroupRef;
-    readonly change: { roomDeadline: RoomDeadlineChange; } | { roomClock: RoomClockCommand; };
+    readonly change: { roomDeadline: RoomDeadlineChange; } | { roomClock: RoomClockMutation; };
     readonly requestId: string;
     readonly signal?: AbortSignal;
 }
@@ -158,6 +174,26 @@ export function createRoomTimeOperations(
         return snapshot.group.metadata;
     }
     return {
+        async advanceTimeline(room, advance, requestId, { signal } = {}) {
+            const roomClock = { ...advance, operation: 'advance-phase' as const };
+            assertRoomClockMutation(roomClock);
+            const metadata = await write({ roomRef: room, change: { roomClock }, requestId, signal });
+            const timeline = readRoomTimeline(metadata, roomClock.name);
+            if (!timeline || timeline.status !== 'running' || timeline.phase !== roomClock.phase ||
+                timeline.revision !== roomClock.expectedRevision + 1 || timeline.startedAtRevision !== timeline.revision) {
+                throw new Error('Timeline acknowledgement does not match the requested phase.');
+            }
+            return timeline;
+        },
+        async readTimeline(room, name, { signal } = {}) {
+            return readRoomTimeline(await readMetadata(room, signal), name);
+        },
+        watchTimeline(room, name, listener, { signal } = {}) {
+            return watch(room, name, readRoomTimeline, ({ status, value }) => listener({ status, timeline: value }),
+                (a, b) => b.startedAtRevision < a.startedAtRevision ||
+                    (a.startedAtRevision === b.startedAtRevision && a.phase !== b.phase) ||
+                    (a.revision === b.revision && JSON.stringify(a) !== JSON.stringify(b)), signal);
+        },
         async readDeadline(room, name, { signal } = {}) {
             return readRoomDeadline(await readMetadata(room, signal), name);
         },
