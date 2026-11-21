@@ -9,7 +9,6 @@ import {
     readGroupDisplayName,
     readGroupId
 } from '@shared/api/group-client-views.ts';
-import { ROOM_TIMELINES_METADATA_KEY } from '@shared/api/group-deadlines/room-timeline.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -283,9 +282,6 @@ export function toRoomLifecycleGroupStateRequest(
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
-    if (Object.hasOwn(input.patch, ROOM_TIMELINES_METADATA_KEY)) {
-        throw new TypeError('Use rooms.advanceTimeline to change a phase.');
-    }
     if (Object.hasOwn(input.patch, ROOM_CLOCKS_METADATA_KEY)) {
         throw new TypeError('Use rooms.changeClock to change a room clock.');
     }
@@ -293,7 +289,6 @@ export function toRoomMetadataGroupStateRequest(
         throw new TypeError('Use rooms.setDeadline to change a room deadline.');
     }
     const merged = { ...input.currentMetadata, ...input.patch };
-    delete merged[ROOM_TIMELINES_METADATA_KEY];
     delete merged[ROOM_CLOCKS_METADATA_KEY];
     delete merged[ROOM_DEADLINES_METADATA_KEY];
     return {

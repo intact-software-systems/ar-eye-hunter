@@ -1,5 +1,4 @@
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
-import { ROOM_TIMELINES_METADATA_KEY } from '@shared/api/group-deadlines/room-timeline.ts';
 import { assertRoomClockMutation, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 
@@ -19,9 +18,6 @@ export function validateGroupMetadataInput(
             kind: 'enum',
             allowed: ['listed', 'unlisted']
         }], 'Group metadata'));
-        if (Object.hasOwn(metadata, ROOM_TIMELINES_METADATA_KEY)) {
-            issues.push(new TypeError('Timeline metadata is server-owned.'));
-        }
         if (Object.hasOwn(metadata, ROOM_CLOCKS_METADATA_KEY)) {
             issues.push(new TypeError('Room clock metadata is server-owned.'));
         }

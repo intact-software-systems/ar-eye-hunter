@@ -216,7 +216,7 @@ it('reads the phase occurrence and its paused clock from one durable snapshot', 
     vi.stubGlobal('fetch', async () => {
         const response = groupResponse([]);
         const snapshot = await response.json();
-        snapshot.group.metadata = { rallarRoomClocks: [clock], rallarRoomTimelines: { match: phase } };
+        snapshot.group.metadata = { rallarRoomClocks: [{ ...clock, ...phase }] };
         return Response.json(snapshot, { headers: response.headers });
     });
     await expect(createRallarFacade().rooms.readTimeline(room, 'match')).resolves.toEqual({ ...clock, ...phase });

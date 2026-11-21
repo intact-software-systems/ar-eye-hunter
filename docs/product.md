@@ -115,8 +115,8 @@ The occurrence stays stable across those changes. At zero the current phase rema
 
 Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
 its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
-`room-director-changed`. Upgrade group writers and clients that replace room metadata before enabling timelines.
-The server owns both `rallarRoomTimelines` and `rallarRoomClocks`.
+`room-director-changed`. Upgrade group writers and clock readers before enabling timelines.
+The server stores phase and starting revision on the named `rallarRoomClocks` record. Clock-only records remain valid.
 
 ## Sharing rooms
 

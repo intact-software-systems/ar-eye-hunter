@@ -60,3 +60,34 @@ test('a returning participant recovers halftime and its paused clock together af
         await Promise.all([guest.close(), otherCourtOwner.close()]);
     }
 });
+
+test('a director can recover a clock-only court and explicitly advance its existing clock', async ({ page }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const court = 'court-' + crypto.randomUUID();
+    await page.goto(url);
+    await page.getByLabel('Username').fill(config.userA.username);
+    await page.getByLabel('Password').fill(config.userA.password);
+    await page.getByLabel('Room', { exact: true }).fill(court);
+    await page.getByRole('button', { name: 'Create room' }).click();
+    await page.getByRole('button', { name: 'Take clock control' }).click();
+    await expect(page.getByRole('button', { name: 'Start 10 minutes' })).toBeEnabled();
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    const remainingMs = await page.evaluate(async ({ sdkUrl, court }) => {
+        const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+        const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+        const expectedDirectorEpoch = rallar.director.status(room).appointment!.epoch;
+        const command = { name: 'match', expectedDirectorEpoch };
+        await rallar.rooms.changeClock(room, { ...command, operation: 'start', expectedRevision: 0, durationMs: 90_000 }, crypto.randomUUID());
+        const paused = await rallar.rooms.changeClock(room, { ...command, operation: 'pause', expectedRevision: 1 }, crypto.randomUUID());
+        if (paused.status !== 'paused') throw new Error('Expected a paused clock');
+        return paused.remainingMs;
+    }, { sdkUrl, court });
+    await page.getByRole('button', { name: 'Switch court' }).click();
+    await page.getByRole('button', { name: 'Enter room' }).click();
+    await expect(page.locator('#phase')).toHaveText('Paused');
+    const seconds = Math.ceil(remainingMs / 1000);
+    await expect(page.getByLabel('Period clock')).toHaveText(Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0'));
+    await page.getByRole('button', { name: 'Advance to halftime' }).click();
+    await expect(page.getByLabel('Current period')).toHaveText('halftime');
+    await expect(page.locator('#phase')).toHaveText('Running');
+});

@@ -33,7 +33,7 @@ export interface RoomDeadlineObservation {
 }
 export interface RoomClockObservation {
     readonly status: 'current' | 'stale';
-    readonly clock: RoomClock | null;
+    readonly clock: RoomClock | RoomTimeline | null;
 }
 
 export interface RoomTimelineObservation {
@@ -56,7 +56,7 @@ export interface RoomTimeOperations {
         requestId: string,
         options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomClock>;
-    readClock(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomClock | null>;
+    readClock(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomClock | RoomTimeline | null>;
     watchClock(
         room: GroupRef,
         name: string,

@@ -1,4 +1,3 @@
-import { ROOM_TIMELINES_METADATA_KEY } from '@shared/api/group-deadlines/room-timeline.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -454,9 +453,6 @@ function computeUpdatedGroupMetadata(
         !isDirectorResignation({ current, replacement, actor })
     ) {
         metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
-    }
-    if (Object.hasOwn(current, ROOM_TIMELINES_METADATA_KEY)) {
-        metadata[ROOM_TIMELINES_METADATA_KEY] = current[ROOM_TIMELINES_METADATA_KEY];
     }
     if (Object.hasOwn(current, ROOM_CLOCKS_METADATA_KEY)) {
         metadata[ROOM_CLOCKS_METADATA_KEY] = current[ROOM_CLOCKS_METADATA_KEY];

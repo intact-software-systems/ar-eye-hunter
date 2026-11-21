@@ -145,29 +145,27 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const acceptedIndex = responses.findIndex(response => response.ok);
     const acceptedAdvance = advances[acceptedIndex]!;
     const phaseSnapshot = await responses[acceptedIndex]!.json();
-    const phaseMetadata = requireRecord(requireRecord(phaseSnapshot.group, 'group').metadata, 'metadata');
-    assert.deepEqual(phaseMetadata.rallarRoomTimelines, {
-        period: { phase: acceptedAdvance.body.roomClock.phase, startedAtRevision: 4 }
-    });
     const phaseClocks = clock(phaseSnapshot);
     assert.ok(Array.isArray(phaseClocks));
-    assert.equal(requireRecord(phaseClocks[0], 'phase clock').revision, 4);
+    const published = requireRecord(phaseClocks[0], 'phase clock');
+    assert.equal(published.revision, 4);
+    assert.equal(published.phase, acceptedAdvance.body.roomClock.phase);
+    assert.equal(published.startedAtRevision, 4);
     assert.equal((await responses[1 - acceptedIndex]!.json()).code, 'room-clock-revision-conflict');
     const repeated = await requestJson(reader.baseUrl, acceptedAdvance.path, {
         method: 'PUT', session: deputy, body: acceptedAdvance.body
     });
     assert.deepEqual(repeated, phaseSnapshot);
-    const originalPhase = phaseMetadata.rallarRoomTimelines;
     const forged = await putDeadline({
         path: toApiMutationRequestPath(first, crypto.randomUUID()), session: owner,
-        body: { metadata: { rallarRoomTimelines: { period: { phase: 'forged', startedAtRevision: 4 } } } }
+        body: { metadata: { rallarRoomClocks: [{ ...published, phase: 'forged' }] } }
     });
     assert.equal(forged.status, 400);
     const venueUpdate = await requestJson(writer.baseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
-        method: 'PUT', session: owner, body: { metadata: { venue: 'updated' } }
+        method: 'PUT', session: owner, body: { metadata: { venue: 'updated', rallarRoomTimelines: 'custom' } }
     });
     const preserved = requireRecord(requireRecord(venueUpdate.group, 'group').metadata, 'metadata');
-    assert.deepEqual(preserved.rallarRoomTimelines, originalPhase);
+    assert.equal(preserved.rallarRoomTimelines, 'custom');
     assert.deepEqual(preserved.rallarRoomClocks, phaseClocks);
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);

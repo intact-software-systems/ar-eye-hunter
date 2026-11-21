@@ -9161,7 +9161,7 @@ components:
         roomClock:
           type: object
           additionalProperties: false
-          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision under metadata.rallarRoomTimelines[name]. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision on the matching metadata.rallarRoomClocks record. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
           required: [name, operation, expectedRevision, expectedDirectorEpoch]
           properties:
             name:

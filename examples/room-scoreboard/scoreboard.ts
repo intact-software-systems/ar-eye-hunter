@@ -1,4 +1,4 @@
-import { rallar, type RoomClockCommand, type RoomTimelineObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
+import { rallar, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 const entry = document.querySelector<HTMLFormElement>('#entry')!;
@@ -15,7 +15,7 @@ const scope = { applicationId: 'room-scoreboard', workspaceId: 'default' };
 rallar.configure({ apiBaseUrl: import.meta.env.VITE_RALLAR_API_BASE_URL ?? 'http://localhost:8080' });
 rallar.setDefaults(scope);
 let room: GroupRef | undefined;
-let state: RoomTimelineObservation = { status: 'stale', timeline: null };
+let state: RoomClockObservation = { status: 'stale', clock: null };
 let busy = false;
 let observation: AbortController | undefined;
 type ScoreboardCommand = RoomClockCommand | (RoomTimelineAdvance & { operation: 'advance-phase'; });
@@ -27,7 +27,7 @@ function display(ms: number): string {
 }
 
 function clockFace(): { label: string; time: string; action?: RoomClockCommand['operation']; } {
-    const clock = state.timeline;
+    const clock = state.clock;
     if (state.status === 'stale') {
         return { label: 'Recovering clock', time: '—' };
     }
@@ -56,9 +56,11 @@ function render() {
     }
     const director = rallar.director.status(room);
     const face = clockFace();
-    period.textContent = state.timeline?.phase ?? '';
+    const periodName = state.clock && 'phase' in state.clock ? state.clock.phase : undefined;
+    period.textContent = periodName ?? '';
     phase.textContent = face.label;
-    advance.hidden = state.status !== 'current' || state.timeline?.phase !== 'period-1';
+    advance.hidden = state.status !== 'current' || !state.clock ||
+        (periodName !== undefined && periodName !== 'period-1');
     advance.disabled = busy || !director.active || !director.isDirector;
     switchCourt.disabled = busy;
     output.value = face.time;
@@ -114,7 +116,7 @@ entry.onsubmit = (event) => {
         board.hidden = false;
         board.querySelector('h2')!.textContent = groupId;
         observation = new AbortController();
-        rallar.rooms.watchTimeline(target, 'match', (current) => {
+        rallar.rooms.watchClock(target, 'match', (current) => {
             state = current;
             render();
         }, { signal: observation.signal });
@@ -125,7 +127,7 @@ window.setInterval(render, 250);
 switchCourt.onclick = () => {
     observation?.abort();
     room = undefined;
-    state = { status: 'stale', timeline: null };
+    state = { status: 'stale', clock: null };
     retry = undefined;
     entry.hidden = false;
     board.hidden = true;
@@ -148,7 +150,7 @@ function updatePeriod(action: 'start' | 'pause' | 'resume' | 'halftime') {
     }
     const base = {
         name: 'match',
-        expectedRevision: state.timeline?.revision ?? 0,
+        expectedRevision: state.clock?.revision ?? 0,
         expectedDirectorEpoch: director.appointment.epoch
     };
     const command: ScoreboardCommand = action === 'start' || action === 'halftime'
@@ -175,5 +177,5 @@ change.onclick = () => {
     if (action) updatePeriod(action);
 };
 advance.onclick = () => {
-    if (state.timeline?.phase === 'period-1') updatePeriod('halftime');
+    if (!advance.hidden && !advance.disabled) updatePeriod('halftime');
 };
