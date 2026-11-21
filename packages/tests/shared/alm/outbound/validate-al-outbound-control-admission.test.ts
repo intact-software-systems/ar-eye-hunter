@@ -151,6 +151,14 @@ describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
             .toBe('AL gap NACK names no recipient the receipt still owes');
     });
 
+    it('refuses it from a next hop for a recipient the receipt holds outside', async () => {
+        const origin = await createOrderedOrigin('relayed-gap-outside');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r1', 'subtree-complete-not-subscribed'))).toBe('committed');
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r1' })))
+            .toContain('names no recipient the receipt still owes');
+    });
+
     it('refuses it from a peer that is neither a hop of the message nor a recipient the receipt expects', async () => {
         const origin = await createOrderedOrigin('relayed-gap-stranger');
 

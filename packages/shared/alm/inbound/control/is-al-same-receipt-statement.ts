@@ -60,8 +60,8 @@ export function hasALConfirmedStatement(
 /**
  * The row records `control`'s recipient outside by the same statement: the recipient is on
  * `pending.outsideAudiencePeerIds`, and a stored control that records it outside (an outside-audience NACK of the
- * history, or an ACK that confirms nobody) is the same statement as `control`, or the history holds none such any
- * more, so the recipient alone decides.
+ * history, or an ACK that confirms nobody) is the same statement as `control`. Once the history holds no such control,
+ * nothing here records the recipient outside: the relay forwards `control` and the origin judges it.
  */
 export function hasALOutsideStatement(
     pending: ALPendingAckSnapshot,
@@ -76,7 +76,7 @@ export function hasALOutsideStatement(
         ...history.nacks,
         ...history.acks.filter((prior) => !isConfirmation(prior))
     ].filter((prior) => prior.control.payload.logicalRecipientPeerId === recipientPeerId);
-    return recorders.length === 0 || recorders.some((prior) => isALSameReceiptStatement(prior, control));
+    return recorders.some((prior) => isALSameReceiptStatement(prior, control));
 }
 
 /**

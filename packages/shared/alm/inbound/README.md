@@ -332,7 +332,8 @@ for itself, which places it outside the audience as `not-subscribed` does. A rel
 (`not-subscribed`, `before-entry`, `gap` -- the NACKs inbound control admission handles; every other NACK stays its
 outbound owner's) from a child hop its row waits on and for a recipient of the frozen audience it has neither
 recorded outside nor relayed a confirmation for by the same statement. When the history no longer holds any control
-that recorded the recipient outside, the recipient alone decides, as before the statement rule. A non-gap NACK is
+that recorded the recipient outside, no recorder is left: the relay forwards the control and the origin judges it,
+refusing one for a recipient it holds outside. A non-gap NACK is
 refused as past the persistence limits when the row's outside list is full (256) and does not already name its
 recipient, since the list gains a recipient only when it is absent. A `gap` NACK must carry its `orderingKey`,
 `expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it
@@ -419,8 +420,9 @@ first one the cut of a retried copy is arbitrary among forwarded words; and a
 history flood can evict the control that recorded a recipient outside (a forged
 hop-end records it from the ACK history, where any 256 later child ACKs, honest
 ones included, evict it),
-after which the recipient alone decides, so its later true control is refused
-here at first arrival. That eviction needs only one forged hop-end and 256
+after which no recorder is left, so the relay forwards the recipient's later
+controls and the origin judges them: its true control goes up and is counted,
+and a stale one costs one more forward that the origin refuses. That eviction needs only one forged hop-end and 256
 later child ACKs, honest ones included, and in a room at the RTC room limit the
 cut falls even without a flood, so a few early forged statements can take the
 place of true forwarded words in a re-forward. A child that reuses one

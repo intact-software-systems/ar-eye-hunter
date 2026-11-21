@@ -1343,7 +1343,8 @@ outside list gains a recipient only when it is absent; the ACK admission refuses
 a duplicate or an outside recipient, and the NACK admission its two refusals,
 only against the same statement; and a retried copy re-forwards the first of
 each distinct stored statement. When the history no longer holds any control
-that recorded a recipient outside, the recipient alone decides, as before. Since
+that recorded a recipient outside, no recorder is left: since part C the relay
+forwards the control and the origin judges it. Since
 `null` is one identity, honest `ws`, `hop` and `subtree` flows key as before
 (under `hop` and `subtree` on `rtc` a child that attaches distinct non-null
 proofs makes distinct statements, no new class, since the upward audience is
@@ -1413,9 +1414,9 @@ copy's re-forward is cut to its commit cap with own words first, so at a relay
 above the first one, where every statement is a forwarded word, the cut is
 arbitrary among them. And a history flood can evict the control that recorded a
 recipient outside (a forged hop-end records it from the ACK history, where any
-256 later child ACKs, honest ones included, evict it), after which the
-recipient alone decides, so its
-later true control is refused at that relay at first arrival. Two of these need
+256 later child ACKs, honest ones included, evict it), after which that relay
+refused the recipient's later true control at first arrival; since part C, with
+no recorder left, the relay forwards the control and the origin judges it. Two of these need
 no flood: one forged hop-end and 256 later child ACKs, honest ones included,
 evict the recording control, and in a room at the RTC room limit the cut falls
 anyway, so a few early forged statements can take the place of true forwarded

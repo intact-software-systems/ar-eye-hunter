@@ -112,6 +112,8 @@ export interface RtcRelayOverlayFixtureInput {
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
 export interface RtcRelayOverlayFixture {
     receive(message: ALMessage, fromPeerId: string): Promise<void>;
+    /** Receives each of `messages` from `fromPeerId` in order, then waits once for the work they queued. */
+    receiveEach(messages: readonly ALMessage[], fromPeerId: string): Promise<void>;
     readSent(peerId: string): Promise<readonly ALMessage[]>;
     /** The ACKs and NACKs this session sent `peerId`, in send order. */
     readSentControls(peerId: string): Promise<readonly ALPeerControlMessage[]>;
@@ -214,9 +216,15 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     }
 
     async receive(message: ALMessage, fromPeerId: string): Promise<void> {
+        await this.receiveEach([message], fromPeerId);
+    }
+
+    async receiveEach(messages: readonly ALMessage[], fromPeerId: string): Promise<void> {
         await this.ready;
         const { connection, inboundStores, outboundResources } = this.dependencies;
-        await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
+        for (const message of messages) {
+            await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
+        }
         await waitForOwnedQueueWork(inboundStores.workQueue);
         await waitForOwnedQueueWork(outboundResources.workQueue);
     }

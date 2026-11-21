@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALCountedRecipient } from '@shared/alm/delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -20,12 +21,18 @@ import {
     ORIGIN_ROOM,
     signRoomNackPayload,
     toOriginDirectedSnapshot,
+    useFakeClock,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
 import { createRelayChain, deliverEach, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
-import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import {
+    signTestALReceiptControl,
+    toTestALAckPayload,
+    toTestALNackPayload,
+    toTestSignatureProof
+} from '../../../al-control-test-payloads.ts';
 import {
     acceptEach,
     readProofRefusals,
@@ -768,6 +775,65 @@ describe('a child hop at an honest relay that speaks for another recipient (S8-R
         expect(readProofRefusals(origin)).toContainEqual(
             { proofRefusal: 'invalid-signature', claimedRecipientPeerId: 'c', channelPeerId: 'r' }
         );
+    });
+});
+
+describe('a relay whose outside recorder is gone (D601)', () => {
+    useFakeClock();
+
+    it('a relay whose outside recorder was evicted by 256 later controls forwards the recipient\'s true signed ACK, and the origin counts it', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('evicted-recorder');
+        const forgedHopEnd = toChildAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'm',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+        const own = await signTestALReceiptControl(
+            chain.keys.c!,
+            toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' })
+        );
+
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forgedHopEnd), 'forged-hop-end'), 'm');
+        await relay.receiveEach(
+            Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => {
+                const payload = toTestALAckPayload({
+                    ackedMsgId: message.id.msgId,
+                    fromPeerId: 'm',
+                    toPeerId: 'r',
+                    originPeerId: 'a',
+                    logicalRecipientPeerId: 'c',
+                    observedAtEpochMs: Date.now(),
+                    proof: toTestSignatureProof(index + 1)
+                });
+                return toControlMessage({ type: 'ack', payload }, `flood-${index + 1}`);
+            }),
+            'm'
+        );
+        await relay.receive(toControlMessage(own, 'own'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+
+        expect((await relay.readSentControls('a')).map((control) => control.type === 'repair' ? null : control.payload.proof))
+            .toContainEqual(own.payload.proof);
+        expect((await readReceipt(origin, message))?.ackedPeerIds).toContain('c');
+    });
+
+    it('a recipient the origin holds outside is still refused there', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('outside-at-origin');
+        const nack = toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, nack), 'own-nack'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+        const forwarded = await signTestALReceiptControl(
+            chain.keys.c!,
+            toAckControl({ msgId: message.id.msgId, fromPeerId: 'r', logicalRecipientPeerId: 'c' })
+        );
+
+        expect(await origin.manager.acceptControlMessage(toControlMessage(forwarded, 'forwarded'))).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        });
+        expect((await readReceipt(origin, message))?.ackedPeerIds).not.toContain('c');
     });
 });
 

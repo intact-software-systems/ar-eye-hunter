@@ -150,10 +150,10 @@ describe('isALSameReceiptStatement over one proof\'s signed content', () => {
 });
 
 describe('hasALOutsideStatement', () => {
-    it('hasALOutsideStatement answers from the recipient alone once the history holds nothing that recorded it outside', () => {
+    it('hasALOutsideStatement answers false once the history holds nothing that recorded the recipient outside', () => {
         const confirmation = toALReceiptStatementSubject(toAck('child', 'x', toTestSignatureProof(1)));
 
-        expect(hasALOutsideStatement({ ...ROW, outsideAudiencePeerIds: ['x'] }, toALReceiptStatementHistory([], []), confirmation)).toBe(true);
+        expect(hasALOutsideStatement({ ...ROW, outsideAudiencePeerIds: ['x'] }, toALReceiptStatementHistory([], []), confirmation)).toBe(false);
         expect(hasALOutsideStatement({ ...ROW, outsideAudiencePeerIds: [] }, toALReceiptStatementHistory([], []), confirmation)).toBe(false);
     });
 

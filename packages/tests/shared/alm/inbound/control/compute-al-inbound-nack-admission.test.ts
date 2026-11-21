@@ -143,12 +143,13 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         }]);
     });
 
-    it('refuses a gap NACK for a recipient the relay recorded outside the audience', () => {
+    it('forwards a gap NACK for a recipient the row lists outside when no stored control recorded it', () => {
         const candidate = computeArrival({ reason: 'gap' }, { ...ROW, outsideAudiencePeerIds: ['leaf'] });
 
-        expect(validateALInboundNackAdmission(candidate)).toEqual([{
-            code: 'unauthorized',
-            message: 'Inbound NACK names a recipient already forwarded outside the audience'
+        expect(validateALInboundNackAdmission(candidate)).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{
+            type: 'nack',
+            payload: { ...toChildNack({ reason: 'gap' }), fromPeerId: 'relay', toPeerId: 'parent' }
         }]);
     });
 
