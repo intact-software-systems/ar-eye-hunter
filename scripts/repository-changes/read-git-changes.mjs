@@ -51,6 +51,17 @@ export function readChangedPathsBetweenRevisions(repoRoot, base, head) {
     );
 }
 
+export function readMergeBase(repoRoot, base, head) {
+    validateGitRevision(repoRoot, base);
+    validateGitRevision(repoRoot, head);
+    try {
+        return runGit(repoRoot, ['merge-base', '--end-of-options', base, head]).trim();
+    }
+    catch {
+        throw new Error(`Git revisions have no merge base: ${base} ${head}`);
+    }
+}
+
 export function validateGitRevision(repoRoot, revision) {
     if (typeof revision !== 'string' || revision === '') {
         throw new Error('Git base must be a non-empty revision');

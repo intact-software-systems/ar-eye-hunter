@@ -198,7 +198,7 @@ jobs:
   alm-smoke:
     name: ALM conformance smoke (${{ matrix.carrier }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

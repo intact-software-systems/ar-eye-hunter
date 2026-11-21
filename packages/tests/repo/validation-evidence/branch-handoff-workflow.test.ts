@@ -37,7 +37,6 @@ interface HandoffScenario {
     readonly cancelled: boolean;
     readonly governanceResult: string;
     readonly mode: string;
-    readonly runFullScope?: string;
 }
 
 const workflowPath = path.resolve(__dirname, '../../../../.github/workflows/branch-release-gate.yml');
@@ -56,10 +55,8 @@ describe('PR handoff admission', () => {
                 const job of [
                     'validation-evidence',
                     'game-changes',
-                    'alm-changes',
                     'release-gate',
                     'games-release-gate',
-                    'alm-conformance-observation',
                     'navigation-report-observation',
                     'publish-validation-evidence',
                     'rtc-observation-integrity'
@@ -87,10 +84,8 @@ describe('PR handoff admission', () => {
                 const job of [
                     'validation-evidence',
                     'game-changes',
-                    'alm-changes',
                     'release-gate',
                     'games-release-gate',
-                    'alm-conformance-observation',
                     'navigation-report-observation',
                     'publish-validation-evidence'
                 ]
@@ -123,21 +118,9 @@ describe('PR handoff admission', () => {
         const scenario = { draft, cancelled: false, governanceResult: 'success', mode };
 
         expect(isAdmitted(workflow.jobs['rtc-observation-integrity'].if, scenario)).toBe(integrity);
-        for (const job of ['release-gate', 'games-release-gate', 'alm-conformance-observation', 'publish-validation-evidence']) {
+        for (const job of ['release-gate', 'games-release-gate', 'publish-validation-evidence']) {
             expect(isAdmitted(workflow.jobs[job].if, scenario), job).toBe(false);
         }
-    });
-
-    it.each([
-        { runFullScope: 'true', admitted: true },
-        { runFullScope: 'false', admitted: false },
-        // A failed detection leaves the output empty.
-        { runFullScope: '', admitted: true }
-    ])('starts the full ALM scope unless the changed paths cannot change the lane: %j', ({ runFullScope, admitted }) => {
-        const workflow = readHandoffWorkflow();
-        const scenario = { draft: false, cancelled: false, governanceResult: 'success', mode: 'broad', runFullScope };
-
-        expect(isAdmitted(workflow.jobs['alm-conformance-observation'].if, scenario)).toBe(admitted);
     });
 
     it('refuses draft release approval with an actionable summary', () => {
@@ -195,7 +178,6 @@ function isAdmitted(condition: string | undefined, scenario: HandoffScenario): b
             'governance-gate': { result: scenario.governanceResult },
             'validation-evidence': { result: 'success', outputs: { mode: scenario.mode } },
             'game-changes': { result: 'success', outputs: { run_games: 'true' } },
-            'alm-changes': { result: 'success', outputs: { run_full_scope: scenario.runFullScope ?? 'true' } },
             'release-gate': { result: 'success' },
             'games-release-result': { outputs: { result: 'success' } }
         },

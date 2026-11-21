@@ -10,14 +10,29 @@ inputs:
 runs:
   using: composite
   steps:
-    # Two literal script lines, one per scope, so check:test-reachability can read the commands.
+    # A required lane must not pass having run nothing.
+    - name: Refuse an unknown ALM lane scope
+      shell: bash
+      env:
+        ALM_LANE_SCOPE: ${{ inputs.scope }}
+      run: |
+        case "$ALM_LANE_SCOPE" in
+          smoke | full) ;;
+          *)
+            echo "::error::The ALM lane scope must be smoke or full; received '${ALM_LANE_SCOPE}'."
+            exit 1
+            ;;
+        esac
+
+    # Two literal script lines, one per scope, so check:test-reachability can read the commands. Each global timeout
+    # sits below its job's time limit, so a hang ends as a failed step and the uploads still run.
     - name: Run the ALM conformance smoke scope over ${{ inputs.carrier }}
       if: ${{ inputs.scope == 'smoke' }}
       shell: bash
       env:
         RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ inputs.carrier }}
         RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.scope }}
-      run: npm run test:rallar:full-stack:memory:alm
+      run: npm run test:rallar:full-stack:memory:alm -- --global-timeout=840000
 
     - name: Run the ALM conformance full scope over ${{ inputs.carrier }}
       if: ${{ inputs.scope == 'full' }}
@@ -25,7 +40,7 @@ runs:
       env:
         RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ inputs.carrier }}
         RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.scope }}
-      run: npm run test:rallar:full-stack:postgres:alm
+      run: npm run test:rallar:full-stack:postgres:alm -- --global-timeout=3300000
 
     - name: Upload ALM conformance lane results
       if: always()
@@ -34,6 +49,7 @@ runs:
         name: alm-conformance-lane-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
         path: apps/rallar-black-box/test-results
         if-no-files-found: ignore
+        retention-days: 7
 
     - name: Upload ALM lane result records
       if: always()
