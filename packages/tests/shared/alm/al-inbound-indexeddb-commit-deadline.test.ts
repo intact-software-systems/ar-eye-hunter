@@ -40,6 +40,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 dbName: dbName,
                 storeName: 'entries',
                 nowMs: () => nowMs,
+                workNowMs: () => nowMs,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             });

@@ -63,6 +63,7 @@ function createStores(
             dbName: `outbound-readiness-probe-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs,
+            workNowMs: nowMs,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer
         });
