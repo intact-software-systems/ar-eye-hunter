@@ -95,7 +95,7 @@ The code uses "cell" for two things. This plan uses neither meaning without sayi
 Three were weighed with the maintainer, who picked the first.
 
 1. **One lane, two callers (picked).** Smoke moves into `release-gate.yml`; the observation workflow
-   becomes the full scope on PostgreSQL, run for every `main` push and by the branch gate when the
+   becomes the full scope on PostgreSQL, run for every `main` push and for a pull request whose
    diff can change ALM; the ledger is computed on demand from each run's result file. Cost: the
    ledger's history ends where artifact retention ends. One thing changed after the pick, when the
    design was checked against the code: on `main` the observation starts from its own `push` trigger
@@ -139,9 +139,22 @@ Three were weighed with the maintainer, who picked the first.
   own. `deploy.yml` loses its `alm-conformance-observation` job. Why: a `deploy.yml` run lasts
   about 11 minutes today. With 30 to 60 minute jobs inside it, pushes that arrive meanwhile would
   queue behind it and cancel each other, and those commits would get no Release Gate on `main`.
-- The branch gate still calls it (`workflow_call`) for a ready pull request in `broad` mode when
-  the new job `alm-changes` says so (section 4). That is safe there: the branch gate's group is per
-  pull request and cancels on a new push, and `pr:delivery` reads required checks only.
+- **On a pull request it starts itself too.** The workflow has a `pull_request` trigger (opened,
+  synchronize, reopened, ready for review). Its first job decides whether the diff can change the
+  lane (section 4); the lane jobs run for a pull request that is not a draft when that job says so,
+  or when that job failed. Its concurrency group is per pull request and cancels on a new push;
+  push and dispatched runs each get a group of their own. It is not a job of the branch gate,
+  and `branch-release-gate.yml` loses its `alm-conformance-observation` job. Why: a job of the
+  branch gate keeps that workflow run in progress until it ends, and the gate's evidence reuse
+  reads only runs that completed in success. For 30 to 60 minutes after the required result a
+  docs-only follow-up could not reuse the evidence, and any pull-request event in that window
+  would cancel the run and lose it.
+- **It checks out the event's own commit.** On a pull request that is the merge commit, so the
+  observation tests what `main` would become, its artifact names carry the commit it tested, and a
+  branch that predates this plan still finds the lane's action and scripts.
+- **A hang ends as a failed step, not a cancelled job.** Both lane scripts run with Playwright's
+  global timeout set below the job's time limit (14 minutes under a 20 minute limit for smoke, 55
+  under 60 for the full scope), so the uploads run and the job concludes in failure.
 - **Time.** The full scope has never run on a GitHub runner. Family times recorded on a developer
   machine add up to 20 to 30 minutes per carrier, and `rtc` is the longest. The first build sets the
   job's limit to 60 minutes and measures. The rule after measuring: a carrier whose job took more
@@ -158,8 +171,9 @@ Three were weighed with the maintainer, who picked the first.
   server already uses), `family`, and `scenarios`: one entry per planned scenario, in plan order,
   with its `scenarioKey` and an `outcome` of `passed`, `failed` or `not-run`. One more field,
   `familyOutcome`, is the family test's own outcome (`passed`, `failed`, or `not-finished` until the
-  family ends), because a family can fail outside any scenario (the identity check at its end, a
-  start barrier, the time limit).
+  family ends), because a family can fail outside any scenario (an error opening or closing its
+  pages, a start barrier, a recipe that never ends, the time limit). It is `failed` whenever the
+  family test fails, whichever step failed.
 - The file is written when the family's plan is resolved, with every scenario `not-run`, and again
   after each scenario. A family that is cut off by its time limit or an error therefore leaves a
   true file: what ran, and what did not.
@@ -185,8 +199,10 @@ Three were weighed with the maintainer, who picked the first.
 
 ### 4. Which pull requests run the full scope
 
-- A new branch-gate job, `alm-changes`, beside `game-changes` and shaped like it: it lists the
-  changed paths (`git diff --name-only base head`) and decides.
+- The observation workflow's first job on a pull request, `alm-changes`, reads the paths the pull
+  request changes, from the merge base of its base and head to its head, so a branch that is behind
+  `main` is not charged with what `main` changed. It reads them with the repository's shared reader
+  (`scripts/repository-changes/read-git-changes.mjs`), which returns both paths of a rename.
 - The decision is a pure function, tested on its own: the full scope runs unless **every** changed
   path is one that cannot change the lane. A path the function does not know runs the full scope.
 - Paths that cannot change the lane:
@@ -225,7 +241,7 @@ Three were weighed with the maintainer, who picked the first.
   fixed it, or `null` while it is open. The file starts empty. A decoder refuses a malformed file.
 - **The command**, `npm run alm:lane:ledger`: a thin entry point that reads the recent runs of
   `alm-conformance-observation.yml` (its `push` runs for the streak; for the side list, its
-  dispatched runs and the branch gate's runs that called it), with each job's conclusion, downloads
+  dispatched and pull-request runs), with each job's conclusion, downloads
   each run's `alm-lane-result-*-full-*` artifacts, and prints the ledger. It reads GitHub through
   `gh`, the way `scripts/validation-evidence/github-validation-evidence.mjs` does. That file's run
   reader is generalised to take the event and status, and one artifact reader serves both callers;
@@ -252,8 +268,8 @@ This goes into the roadmap as one decision row, with D639 named as amended.
 - Tests that pin the old shape and must be rewritten first, as the failing tests of slice 1:
   - `packages/tests/repo/alm-observation-workflow.test.ts` (asserts the ALM job is not in
     `release-gate.yml`, and the memory script in the observation);
-  - `packages/tests/repo/validation-evidence/branch-handoff-workflow.test.ts` (its `isAdmitted`
-    needs `alm-changes`; the full-scope caller's admission is new);
+  - `packages/tests/repo/validation-evidence/branch-handoff-workflow.test.ts` (the branch gate
+    no longer has an ALM job);
   - `packages/tests/repo/release-gate-lanes.test.ts` (pins the new lane: a carrier matrix, not a
     shard);
   - `packages/tests/hetzner/deploy-release-gate.test.ts` (pins `deploy.yml`'s job list, which loses
@@ -313,6 +329,24 @@ Calls made after a reviewer read the design as a builder, each from a fact in th
   catalog (section 3).
 - The ledger reads each job's conclusion, not only the run's, to tell a cancelled or skipped job
   from one that died (section 5).
+
+Calls made after the whole-branch review of slice 1, each from a fact in the code:
+
+- On a pull request the observation is its own workflow run, not a job of the branch gate, because
+  the gate's evidence reuse reads only runs that completed in success (section 2).
+- The observation checks out the event's own commit (section 2).
+- The changed paths are read from the merge base, with the shared reader (section 4).
+- Playwright's global timeout sits below each job's time limit (section 2).
+- `familyOutcome` follows the family test's whole outcome, not only its scenarios' (section 3).
+
+## What merging slice 1 does to open pull requests
+
+A pull request's workflows come from its merge with `main`, but the Release Gate checks out the
+pull request's head. After slice 1 is on `main`, a head that predates it has no
+`.github/actions/alm-conformance-lane`, so its required `alm-smoke` lane fails until `main` is
+merged into that branch. This is the one place where being behind `main` creates work, once per
+open branch. No guard for old heads is built: it would be migration code. The pull request says
+this, and the sessions with open branches are told.
 
 ## Left to the builder
 
