@@ -262,7 +262,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         expect(toControlsOf(link, sent)).toEqual([
             { control: 'nack:not-yet-in-sync', admission: 'committed' },
-            { control: 'nack:not-yet-in-sync', admission: 'rejected' },
+            { control: 'nack:not-yet-in-sync', admission: 'duplicate' },
             { control: 'receipt:admitted', admission: 'committed' },
             { control: 'receipt:complete', admission: 'committed' }
         ]);
