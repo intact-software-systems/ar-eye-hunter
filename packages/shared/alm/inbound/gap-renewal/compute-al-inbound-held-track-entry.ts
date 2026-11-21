@@ -1,5 +1,4 @@
 import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
-import type { ALOrderingHeldEntry } from '../../compute-al-ordering-observation.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundCommitBundle,
@@ -7,6 +6,7 @@ import type {
 } from '../al-inbound-admission-store.ts';
 import { toALInboundBufferedReleaseEffects } from '../al-inbound-effect-intent.ts';
 import { prepareALInboundCommitBundle, type ALInboundEffectFacts } from '../prepare-al-inbound-commit-bundle.ts';
+import type { ALOrderingHeldEntry } from './compute-al-ordering-held-entry.ts';
 
 export interface ComputeALInboundHeldTrackEntryInput {
     /** The admission surface of the track's lowest buffered copy, read with the plan that copy was admitted with. */

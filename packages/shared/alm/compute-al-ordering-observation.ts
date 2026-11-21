@@ -1,5 +1,4 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { isALFrozenMulticastRecipient } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type {
     ALOrderingObservation,
@@ -12,6 +11,10 @@ import {
     resolveALOrderingPriorSeq,
     toALOrderingTrackKey
 } from '../al-contracts/al-runtime.ts';
+import {
+    isALOrderingInformativePrior,
+    isALOrderingTrackStartOwed
+} from './inbound/admission/is-al-ordering-track-start-owed.ts';
 
 export interface ComputeALOrderingObservationInput {
     readonly snapshot: ALOrderingTrackSnapshot | undefined;
@@ -31,22 +34,9 @@ export interface ComputeALOrderingObservationInput {
     readonly repairsGaps: boolean;
 }
 
-/** A track's lowest buffered copy when its last gap renewal fell due unanswered, and what its plan says. */
-export type ComputeALOrderingHeldEntryInput = Pick<
-    ComputeALOrderingObservationInput,
-    'snapshot' | 'msg' | 'nowMs' | 'trackTtlMs' | 'selfPeerId' | 'bufferedPriorSeqs' | 'latestWins' | 'repairsGaps'
->;
-
 export interface ALOrderingAcceptance {
     readonly observation: ALOrderingObservation;
     readonly nextSnapshot?: ALOrderingTrackSnapshot;
-}
-
-/** Where a bounded hold enters its track: the entry observed at the lowest copy, and the position it moves to. */
-export interface ALOrderingHeldEntry {
-    readonly trackKey: string;
-    readonly observation: ALOrderingObservation;
-    readonly nextSnapshot: ALOrderingTrackSnapshot;
 }
 
 interface ALOrderingTrackInput {
@@ -75,22 +65,11 @@ const UNTRACKED: ALOrderingAcceptance = Object.freeze({
  * know, so today's rule from its own position applies, as it does to a copy no authority recorded.
  */
 export function computeALOrderingObservation(input: ComputeALOrderingObservationInput): ALOrderingAcceptance {
-    const trackKey = toALOrderingTrackKey(input.msg);
-    const seq = input.msg.ordering?.seq;
-    if (trackKey === undefined || seq === undefined || input.role === 'none') {
+    const track = toOrderingTrack(input);
+    if (track === undefined) {
         return UNTRACKED;
     }
-    const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
-        ? input.snapshot
-        : undefined;
-    const track: ALOrderingTrackInput = {
-        input,
-        trackKey,
-        seq,
-        snapshot,
-        expectedSeq: snapshot ? Math.min(Number.MAX_SAFE_INTEGER, snapshot.lastContiguousSeq + 1) : 1,
-        priorSeq: resolveALOrderingPriorSeq(input.msg, input.selfPeerId)
-    };
+    const { seq, snapshot } = track;
     if (input.role === 'witness') {
         return computeWitnessedOrdering(track);
     }
@@ -98,7 +77,7 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
     if ((snapshot?.bufferedSeqs.length ?? 0) > AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages) {
         return toOrderingNoop(track, 'resync-required');
     }
-    if (track.priorSeq !== undefined && snapshot === undefined && !isOpenedAtTrackStart(track)) {
+    if (track.priorSeq !== undefined && snapshot === undefined && !isALOrderingTrackStartOwed(input)) {
         return computeContiguousOrdering(track, 'entered');
     }
     if (snapshot && seq <= snapshot.lastContiguousSeq) {
@@ -111,76 +90,42 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
 }
 
 /**
- * The bounded hold. A track opened at its start that has delivered nothing (position `0`) enters at its lowest buffered
- * copy once its last gap renewal fell due unanswered: the copy and its contiguous successors are released, and a copy
- * below the new position that arrives later is stale, as it is at any entry. `undefined`, keeping today's behaviour,
- * for a track that delivered something, a copy that is not its lowest buffered one, or one the entry rule holds no
- * start for.
+ * The copy's track entered at the copy, the snapshot's buffered copies that follow it released: what a recipient
+ * observes where nothing before the copy is owed to it. A copy with no track is untracked.
  */
-export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInput): ALOrderingHeldEntry | undefined {
+export function computeALOrderingEntry(input: ComputeALOrderingObservationInput): ALOrderingAcceptance {
+    const track = toOrderingTrack(input);
+    return track === undefined ? UNTRACKED : computeContiguousOrdering(track, 'entered');
+}
+
+/**
+ * The copy on its track, against the snapshot only while it is live; `undefined` for a copy with no track, or for a peer
+ * that observes it on none.
+ */
+function toOrderingTrack(input: ComputeALOrderingObservationInput): ALOrderingTrackInput | undefined {
     const trackKey = toALOrderingTrackKey(input.msg);
     const seq = input.msg.ordering?.seq;
+    if (trackKey === undefined || seq === undefined || input.role === 'none') {
+        return undefined;
+    }
     const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
         ? input.snapshot
         : undefined;
-    if (
-        trackKey === undefined || seq === undefined || snapshot?.lastContiguousSeq !== 0 ||
-        snapshot.bufferedSeqs[0] !== seq
-    ) {
-        return undefined;
-    }
-    const track: ALOrderingTrackInput = {
-        input: { ...input, apply: true, role: 'recipient', evictedTrack: false },
+    return {
+        input,
         trackKey,
         seq,
-        snapshot: { ...snapshot, bufferedSeqs: snapshot.bufferedSeqs.slice(1) },
-        expectedSeq: 1,
+        snapshot,
+        expectedSeq: snapshot ? Math.min(Number.MAX_SAFE_INTEGER, snapshot.lastContiguousSeq + 1) : 1,
         priorSeq: resolveALOrderingPriorSeq(input.msg, input.selfPeerId)
     };
-    if (!holdsTrackStart(track)) {
-        return undefined;
-    }
-    const { observation, nextSnapshot } = computeContiguousOrdering(track, 'entered');
-    return nextSnapshot === undefined ? undefined : {
-        trackKey,
-        observation: { ...observation, releasableSeqs: [seq, ...observation.releasableSeqs] },
-        nextSnapshot
-    };
-}
-
-/**
- * A fresh recipient opens its track at the start where the copy's record holds it there. A track the store evicted at
- * its cap enters at the copy instead, since its delivered past is forgotten, not absent.
- */
-function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
-    return holdsTrackStart(track) && !track.input.evictedTrack;
-}
-
-/**
- * Whether a copy's record holds the recipient's track at its start: the sends below its prior are owed and still
- * repairable. The record speaks only for the copy's frozen audience, so a peer it does not name (the WS server, ordering
- * hop of every track) holds nothing, and neither does a copy whose plan repairs no gap, since it could never ask for the
- * start, nor a latest-wins copy, whose predecessor may have been superseded before it was ever sent.
- */
-function holdsTrackStart(track: ALOrderingTrackInput): boolean {
-    return isInformativePrior(track, 0) && track.priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow &&
-        isALFrozenMulticastRecipient(track.input.msg.targets, track.input.selfPeerId) && track.input.repairsGaps &&
-        !track.input.latestWins;
-}
-
-/** A prior that names sends between the position and the copy: one at the position or above it, below the copy. */
-function isInformativePrior(
-    track: ALOrderingTrackInput,
-    lastContiguousSeq: number
-): track is ALOrderingTrackInput & { readonly priorSeq: number; } {
-    const priorSeq = track.priorSeq;
-    return priorSeq !== undefined && priorSeq > 0 && priorSeq >= lastContiguousSeq && priorSeq < track.seq;
 }
 
 /** A tracked copy above the receiver's position: in order, an omission, or a gap ending at the record's prior. */
 function computeTrackedOrdering(track: ALOrderingTrackInput): ALOrderingAcceptance {
     const lastContiguousSeq = track.snapshot?.lastContiguousSeq ?? 0;
-    const missingThrough = isInformativePrior(track, lastContiguousSeq) ? track.priorSeq : track.seq - 1;
+    const prior = { priorSeq: track.priorSeq, lastContiguousSeq, seq: track.seq };
+    const missingThrough = isALOrderingInformativePrior(prior) ? prior.priorSeq : track.seq - 1;
     if (missingThrough - lastContiguousSeq > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
         return toOrderingNoop(track, 'resync-required');
     }

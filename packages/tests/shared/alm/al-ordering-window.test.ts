@@ -1,10 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOrderingObserverRole, ALOrderingTrackSnapshot } from '@shared/al-contracts/al-runtime.ts';
 import {
-    computeALOrderingHeldEntry,
     computeALOrderingObservation,
-    type ALOrderingAcceptance,
-    type ComputeALOrderingHeldEntryInput
+    type ALOrderingAcceptance
 } from '@shared/alm/compute-al-ordering-observation.ts';
 import {
     describe,
@@ -389,57 +387,6 @@ describe('a recorded track at its recipient: entry, omission and the record\'s p
     });
 });
 
-describe('the bounded hold: a track opened at its start whose last gap renewal went unanswered', () => {
-    it('enters at its lowest buffered copy and releases that copy and its contiguous successors', () => {
-        const result = enterHeld({ msg: recordedMessage(2, {}), snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 } });
-
-        expect(result?.observation).toEqual({
-            status: 'entered',
-            trackKey: expect.any(String),
-            seq: 2,
-            expectedSeq: 4,
-            lastContiguousSeq: 3,
-            missingRanges: [],
-            releasableSeqs: [2, 3],
-            priorSeq: 1
-        });
-        expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 });
-    });
-
-    it('keeps a successor past a further gap buffered behind the new position', () => {
-        const result = enterHeld({ msg: recordedMessage(2, {}), snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 } });
-
-        expect(result?.observation).toMatchObject({ status: 'entered', seq: 2, lastContiguousSeq: 2, releasableSeqs: [2] });
-        expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [5], updatedAtMs: 1_001 });
-    });
-
-    it('releases a successor whose own record names the lowest copy as its prior', () => {
-        const result = enterHeld({
-            msg: recordedMessage(2, {}),
-            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 },
-            bufferedPriorSeqs: { 2: 1, 5: 2 }
-        });
-
-        expect(result?.observation).toMatchObject({ lastContiguousSeq: 5, releasableSeqs: [2, 5] });
-    });
-
-    it.each<[string, Partial<ComputeALOrderingHeldEntryInput>]>([
-        ['a track that delivered something', { snapshot: { lastContiguousSeq: 1, bufferedSeqs: [3], updatedAtMs: 1_000 }, msg: recordedMessage(3, {}) }],
-        ['a copy that is not the lowest one buffered', { msg: recordedMessage(3, {}) }],
-        ['a track past its TTL', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: -60_000 } }],
-        ['a copy no authority recorded', { msg: orderedMessage(2) }],
-        ['a copy frozen to another audience', { msg: recordedMessage(2, {}, ['other']) }],
-        ['a copy whose plan repairs no gap', { repairsGaps: false }],
-        ['a latest-wins copy', { latestWins: true }]
-    ])('holds no start for %s, which keeps today\'s behaviour', (_name, overrides) => {
-        expect(enterHeld({
-            msg: recordedMessage(2, {}),
-            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 },
-            ...overrides
-        })).toBeUndefined();
-    });
-});
-
 describe('a track observed by a witness or by nobody', () => {
     it('moves a witness\'s position to the copy, buffering nothing and dropping buffered copies at or below it', () => {
         const result = observe({
@@ -507,30 +454,6 @@ function observe(input: ObserveInput): ALOrderingAcceptance {
         selfPeerId: 'receiver',
         bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
         evictedTrack: input.evictedTrack ?? false,
-        latestWins: input.latestWins ?? false,
-        repairsGaps: input.repairsGaps ?? true
-    });
-}
-
-interface EnterHeldInput {
-    readonly msg: ALMessage;
-    readonly snapshot: ALOrderingTrackSnapshot | undefined;
-    /** Absent, no buffered copy carries a record. */
-    readonly bufferedPriorSeqs?: Readonly<Record<number, number>>;
-    /** Absent, the copy's plan supersedes nothing. */
-    readonly latestWins?: boolean;
-    /** Absent, the copy's plan repairs gaps. */
-    readonly repairsGaps?: boolean;
-}
-
-function enterHeld(input: EnterHeldInput): ALOrderingAcceptance | undefined {
-    return computeALOrderingHeldEntry({
-        msg: input.msg,
-        snapshot: input.snapshot,
-        nowMs: 1_001,
-        trackTtlMs: 60_000,
-        selfPeerId: 'receiver',
-        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
         latestWins: input.latestWins ?? false,
         repairsGaps: input.repairsGaps ?? true
     });

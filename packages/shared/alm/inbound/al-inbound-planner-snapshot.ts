@@ -9,13 +9,7 @@ import {
 } from '../../al-contracts/al-runtime.ts';
 import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
-import {
-    computeALOrderingHeldEntry,
-    computeALOrderingObservation,
-    type ALOrderingAcceptance,
-    type ALOrderingHeldEntry,
-    type ComputeALOrderingHeldEntryInput
-} from '../compute-al-ordering-observation.ts';
+import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
     acceptALSupersedenceObservation,
     computeALSupersedenceObservation,
@@ -32,6 +26,11 @@ import type {
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
+import {
+    computeALOrderingHeldEntry,
+    type ALOrderingHeldEntry,
+    type ComputeALOrderingHeldEntryInput
+} from './gap-renewal/compute-al-ordering-held-entry.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;
