@@ -6,7 +6,11 @@ import {
 } from '@shared-web/browser/api-client-config.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { RallarConnectionOperations, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import type {
+    RallarConnectionOperations,
+    RallarDeadlineAuthority,
+    RallarDefaults
+} from '@shared-web/browser/rallar-connection-facade.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
@@ -28,32 +32,34 @@ export function createRallarSessionConnectionOperations(
         defaults: () => input.connectionRuntime.defaults(),
         connect: (options) => input.authLifecycle.connect(options),
         disconnect: () => input.authLifecycle.disconnect(),
-        deadlineAfter(durationMs) {
+        deadlineAfter(durationMs, authority) {
             if (!Number.isSafeInteger(durationMs) || durationMs < 0) {
                 throw new RangeError('Duration must be a nonnegative safe integer in milliseconds.');
             }
+            const offset = readMaxAuthorityOffsetMs(authority);
             const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
             if (window === undefined) {
                 return undefined;
             }
-            const deadline = window.latestEpochMs + durationMs;
+            const deadline = window.latestEpochMs + offset + durationMs;
             if (!Number.isSafeInteger(deadline)) {
                 throw new RangeError('Deadline exceeds the supported epoch range.');
             }
             return deadline;
         },
-        compareDeadline(deadlineEpochMs) {
+        compareDeadline(deadlineEpochMs, authority) {
             if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs < 0) {
                 throw new RangeError('Deadline must be a nonnegative safe integer epoch in milliseconds.');
             }
+            const offset = readMaxAuthorityOffsetMs(authority);
             const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
             if (window === undefined) {
                 return 'unavailable';
             }
-            if (window.latestEpochMs < deadlineEpochMs) {
+            if (deadlineEpochMs - window.latestEpochMs > offset) {
                 return 'before';
             }
-            return window.earliestEpochMs >= deadlineEpochMs ? 'at-or-after' : 'overlaps';
+            return window.earliestEpochMs - deadlineEpochMs >= offset ? 'at-or-after' : 'overlaps';
         },
         rtcCapture: () => input.transportRuntime.readRtcCaptureReceipt(),
         status: () => input.connectionRuntime.readConnectState(),
@@ -65,6 +71,17 @@ export function createRallarSessionConnectionOperations(
         subscriptions: () => new SubscriptionScope(),
         flow: <K, V>(policies = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
     };
+}
+
+function readMaxAuthorityOffsetMs(authority: RallarDeadlineAuthority | undefined): number {
+    if (authority === undefined) {
+        return 0;
+    }
+    const { maxAuthorityOffsetMs } = authority;
+    if (!Number.isSafeInteger(maxAuthorityOffsetMs) || maxAuthorityOffsetMs < 0) {
+        throw new RangeError('Authority offset bound must be a nonnegative safe integer in milliseconds.');
+    }
+    return maxAuthorityOffsetMs;
 }
 
 function configureRallarApiClient(

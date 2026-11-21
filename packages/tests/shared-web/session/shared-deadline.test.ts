@@ -29,7 +29,8 @@ it('compares a poll closing instant with each live connection window', async () 
             serverTime: createDefaultBrowserServerClockFixture(() => 110)
         }));
         expect(facade.compareDeadline(deadline)).toBe('at-or-after');
-    } finally {
+    }
+    finally {
         middleware.mockRestore();
     }
 });
@@ -60,7 +61,46 @@ it('publishes a minimum grace duration from the upper bound of the current windo
         expect(() => facade.deadlineAfter(Number.MAX_SAFE_INTEGER)).toThrow(RangeError);
         await clock.close();
         expect(facade.deadlineAfter(10_000)).toBeUndefined();
-    } finally {
+    }
+    finally {
         middleware.mockRestore();
+    }
+});
+
+it('compares and creates deadlines under a maintained authority offset bound', async () => {
+    const facade = createRallarFacade();
+    const clock = createDefaultBrowserServerClockFixture(() => 100);
+    const middleware = vi.spyOn(BrowserTransportRuntime.prototype, 'readMiddleware');
+    const authority = { maxAuthorityOffsetMs: 5 };
+    try {
+        middleware.mockReturnValue(createDefaultApiMiddlewareTestDouble({ serverTime: clock }));
+        const window = vi.spyOn(clock, 'readWindow');
+        window.mockReturnValue(Either.ofRight({ earliestEpochMs: 90, latestEpochMs: 100 }));
+        expect(facade.compareDeadline(106, authority)).toBe('before');
+        expect(facade.compareDeadline(105, authority)).toBe('overlaps');
+        expect(facade.compareDeadline(86, authority)).toBe('overlaps');
+        expect(facade.compareDeadline(85, authority)).toBe('at-or-after');
+        expect(facade.deadlineAfter(10, authority)).toBe(115);
+        expect(facade.deadlineAfter(0, authority)).toBe(105);
+        const max = Number.MAX_SAFE_INTEGER;
+        window.mockReturnValue(Either.ofRight({ earliestEpochMs: max, latestEpochMs: max }));
+        expect(facade.compareDeadline(max, authority)).toBe('overlaps');
+        expect(facade.compareDeadline(max - 5, authority)).toBe('at-or-after');
+        expect(() => facade.deadlineAfter(0, authority)).toThrow(RangeError);
+    }
+    finally {
+        middleware.mockRestore();
+        await clock.close();
+    }
+    expect(facade.compareDeadline(100, authority)).toBe('unavailable');
+    expect(facade.deadlineAfter(10, authority)).toBeUndefined();
+});
+
+it('rejects invalid authority bounds before reading the live connection clock', () => {
+    const facade = createRallarFacade();
+    for (const maxAuthorityOffsetMs of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        const authority = { maxAuthorityOffsetMs };
+        expect(() => facade.deadlineAfter(0, authority)).toThrow(RangeError);
+        expect(() => facade.compareDeadline(100, authority)).toThrow(RangeError);
     }
 });

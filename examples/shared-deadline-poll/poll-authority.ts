@@ -2,9 +2,16 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 export namespace PollAuthority {
     export type Choice = 'yes' | 'no';
+    export interface Schedule {
+        readonly opensAtEpochMs: number;
+        readonly closesAtEpochMs: number;
+    }
     export interface Snapshot {
         readonly roomRef: GroupRef;
-        readonly closesAtEpochMs: number;
+        readonly schedule: Schedule;
+        readonly revision: number | null;
+        readonly canExtend: boolean;
+        readonly closed: boolean;
         readonly yes: number;
         readonly no: number;
         readonly disposition: 'pending' | 'accepted' | 'late';
@@ -14,24 +21,35 @@ export namespace PollAuthority {
 /** One process owns this poll. The calling route supplies the authorized room member's principal. */
 export class PollAuthority {
     private readonly ballots = new Map<string, PollAuthority.Choice | 'late'>();
+    private closed = false;
     private yes = 0;
     private no = 0;
     private readonly roomRef: GroupRef;
-    private readonly closesAtEpochMs: number;
+    private revision = 0;
+    private schedule: PollAuthority.Schedule;
     private readonly nowEpochMs: () => number;
 
-    constructor(roomRef: GroupRef, closesAtEpochMs: number, nowEpochMs: () => number) {
-        if (!Number.isSafeInteger(closesAtEpochMs) || closesAtEpochMs < 0) {
-            throw new RangeError('Poll closing time must be a nonnegative integer epoch in milliseconds.');
+    private readonly hostId?: string;
+
+    constructor(roomRef: GroupRef, schedule: PollAuthority.Schedule, nowEpochMs: () => number, hostId?: string) {
+        this.hostId = hostId;
+        const { opensAtEpochMs, closesAtEpochMs } = schedule;
+        if (
+            !Number.isSafeInteger(opensAtEpochMs) || opensAtEpochMs < 0 || !Number.isSafeInteger(closesAtEpochMs) ||
+            closesAtEpochMs <= opensAtEpochMs
+        ) {
+            throw new RangeError('Poll epochs must be safe nonnegative integers with opening before closing.');
         }
         this.roomRef = Object.freeze({ ...roomRef });
-        this.closesAtEpochMs = closesAtEpochMs;
+        this.schedule = Object.freeze({ ...schedule });
         this.nowEpochMs = nowEpochMs;
     }
 
     vote(principalId: string, choice: PollAuthority.Choice): PollAuthority.Snapshot {
-        if (!this.ballots.has(principalId)) {
-            const ballot = this.nowEpochMs() >= this.closesAtEpochMs ? 'late' : choice;
+        const receivedAt = this.nowEpochMs();
+        this.closed ||= receivedAt >= this.schedule.closesAtEpochMs;
+        if (!this.ballots.has(principalId) && (this.closed || receivedAt >= this.schedule.opensAtEpochMs)) {
+            const ballot = this.closed ? 'late' : choice;
             this.ballots.set(principalId, ballot);
             if (ballot === 'yes') {
                 this.yes++;
@@ -40,14 +58,39 @@ export class PollAuthority {
                 this.no++;
             }
         }
-        return this.read(principalId);
+        return this.snapshot(principalId);
+    }
+
+    extend(principalId: string, expectedRevision: number): PollAuthority.Snapshot {
+        if (principalId !== this.hostId) {
+            throw new Error('Only the designated poll host may extend voting.');
+        }
+        const now = this.nowEpochMs();
+        this.closed ||= now >= this.schedule.closesAtEpochMs;
+        const closesAtEpochMs = this.schedule.closesAtEpochMs + 60_000;
+        if (
+            expectedRevision === this.revision && this.revision === 0 && !this.closed &&
+            now >= this.schedule.opensAtEpochMs && Number.isSafeInteger(closesAtEpochMs)
+        ) {
+            this.schedule = Object.freeze({ ...this.schedule, closesAtEpochMs });
+            this.revision++;
+        }
+        return this.snapshot(principalId);
     }
 
     read(principalId: string): PollAuthority.Snapshot {
+        this.closed ||= this.nowEpochMs() >= this.schedule.closesAtEpochMs;
+        return this.snapshot(principalId);
+    }
+
+    private snapshot(principalId: string): PollAuthority.Snapshot {
         const ballot = this.ballots.get(principalId);
         return {
             roomRef: this.roomRef,
-            closesAtEpochMs: this.closesAtEpochMs,
+            schedule: this.schedule,
+            closed: this.closed,
+            revision: this.hostId === undefined ? null : this.revision,
+            canExtend: this.hostId === principalId && this.revision === 0 && !this.closed,
             yes: this.yes,
             no: this.no,
             disposition: ballot === undefined ? 'pending' : ballot === 'late' ? 'late' : 'accepted'

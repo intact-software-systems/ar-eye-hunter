@@ -12,6 +12,7 @@ import { SelectedRoomRecovery } from '@shared-web/browser/rooms/entry/selected-r
 import type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 import { isApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { createManualTimers } from '../../../shared/resilience/manual-timers.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
@@ -499,3 +500,21 @@ function decodePresenceRequest(body: RequestInit['body']): DecodedPresenceReques
         expiresAtEpochMs: parsed.expiresAtEpochMs
     };
 }
+
+it('withholds a replacement lease when clock uncertainty consumes its useful lifetime', async () => {
+    const test = fixture({ leaseMs: 250, requestTimeoutMs: 50, renewalIntervalMs: 50, retryMs: 20 });
+    vi.spyOn(test.serverTime, 'readWindow').mockReturnValue(Either.ofRight({ earliestEpochMs: 999999, latestEpochMs: 1000306 }));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const writes: string[] = [];
+    vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+            writes.push(String(init.body));
+            return new Response(null, { status: 400 });
+        }
+        return pointRead(snapshot);
+    });
+    test.owner.onSocket('connected');
+    test.owner.observePresence(snapshot, test.context);
+    await test.owner.changeRoom(async () => {});
+    expect(writes).toEqual([]);
+});

@@ -1,3 +1,5 @@
+import type { ApiMiddleware } from '../rallar-connection-facade.ts';
+
 /** Opt-in room presence timing. This does not shorten the authenticated client session. */
 export interface RallarGroupPresencePolicy {
     readonly leaseMs: number;
@@ -36,7 +38,7 @@ function validateGroupPresencePolicy(policy: RallarGroupPresencePolicy): readonl
         );
     }
     // Budget the previous completion, a failed renewal and its retry at the same whole-attempt bound.
-    if (leaseMs <= renewalIntervalMs + 3 * requestTimeoutMs + retryMs) {
+    if (!canIssueGroupPresenceLease(policy, 0)) {
         issues.push(
             new RangeError(
                 'Group presence lease must allow renewal completion, the next attempt and one bounded retry.'
@@ -44,4 +46,26 @@ function validateGroupPresencePolicy(policy: RallarGroupPresencePolicy): readonl
         );
     }
     return issues;
+}
+
+/** Clock uncertainty consumes the same lease headroom as renewal work. */
+export function canIssueGroupPresenceLease(policy: RallarGroupPresencePolicy, windowWidthMs: number): boolean {
+    return policy.leaseMs > windowWidthMs + policy.renewalIntervalMs + 3 * policy.requestTimeoutMs + policy.retryMs;
+}
+
+export function readGroupPresenceCreationEpochMs(context: ApiMiddleware): number {
+    return context.serverTime.readWindow().fold(
+        (failure) => {
+            throw failure.cause;
+        },
+        (window) => {
+            const policy = context.middleware.heartbeat.groupPresence;
+            if (policy && !canIssueGroupPresenceLease(policy, window.latestEpochMs - window.earliestEpochMs)) {
+                throw new TypeError(
+                    'Server clock uncertainty leaves insufficient time to renew the group presence lease.'
+                );
+            }
+            return window.earliestEpochMs;
+        }
+    );
 }

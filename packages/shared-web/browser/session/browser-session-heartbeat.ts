@@ -24,7 +24,11 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
-import { captureGroupPresencePolicy, type RallarGroupPresencePolicy } from './group-presence-policy.ts';
+import {
+    canIssueGroupPresenceLease,
+    captureGroupPresencePolicy,
+    type RallarGroupPresencePolicy
+} from './group-presence-policy.ts';
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
 export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
@@ -213,9 +217,14 @@ class BrowserStateHeartbeatRuntime {
         if (!this.isCurrent()) {
             return;
         }
-        const joinedGroups = this.readJoinedGroups();
+        const heartbeatAtEpochMs = this.#options.creationEpochMs();
+        const policy = this.handle.groupPresence;
+        const joinedGroups =
+            !policy || canIssueGroupPresenceLease(policy, this.#options.expiryEpochMs() - heartbeatAtEpochMs)
+                ? this.readJoinedGroups()
+                : [];
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
-            heartbeatAtEpochMs: this.#options.creationEpochMs(),
+            heartbeatAtEpochMs,
             generationId: this.handle.generationId,
             wsConnectionGenerationId: wsConnectionGeneration?.right,
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(

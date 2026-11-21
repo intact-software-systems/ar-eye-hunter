@@ -23,12 +23,19 @@ The foundation PR supplies an uncached server observation, a connection-scoped t
 
 The connected SDK comparison and [runnable room poll](../../examples/shared-deadline-poll/README.md) demonstrate a server-owned cutoff, first-ballot replay and recovery after browser reload. The two Chromium sessions run with opposite two-minute wall-clock offsets. One submission arrives in time, and another crosses the cutoff in transit. The example authority lives in one process and receives ballots over HTTP.
 
-The next product decision is whether a second application can consume the same public comparison without duplicating phase or recovery policy. Grumpy Town and physical-device testing remain the candidates described below.
+Grumpy Town now consumes the connected deadline APIs for away-seat recovery across host replacement on [PR #832](https://github.com/intact-software-systems/ar-eye-hunter/pull/832). A poll with two phase boundaries is the next test of read-only room timelines.
 
-## Next two slices
+The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. The voter also recovers a missing receipt after request or response loss. The operator probe now measures the signed interval between directly addressed calibration and enforcement nodes. One observation can check a deployment assumption for that instant. A deployment that independently maintains a bound can also use it in client deadline decisions.
 
-1. **Create a grace deadline on the connected client.** A room authority with a minimum grace duration needs to publish an absolute instant once. Add `rallar.deadlineAfter(durationMs)` returning the latest plausible server epoch plus the duration, or `undefined` when no live estimate exists. This gives a participant at least the requested duration under the clock bounds. Reject invalid durations and arithmetic overflow. Check skew-independent creation, loss of calibration, and comparison at equality through the public facade. Run shared-web type, export and browser bundle checks.
-2. **Apply it to Grumpy Town seat recovery.** The game director publishes the ten-second away-seat deadline in the existing match checkpoint. Successor directors compare that same instant. A definitively early return can reclaim the seat, a definitely expired seat becomes an observer, and uncertainty defers the time-dependent decision. Explicit departure remains immediate. Verify the existing game build, focused seat tests and a host-loss browser journey. Round countdown, simulation and scoring keep their tick semantics. The game lives on dependent PR #832.
+The SDK and poll now use the deployment bound for deadline decisions. Chromium verified uncertain opening and closing with a controlled two-second offset.
+
+## Next three qualification slices
+
+1. **Foreground recovery.** On returning to the visible poll, recover the connection, room and authoritative snapshot before enabling votes. Exercise suspension across close, verify the original schedule and accepted tally, and provide the same acceptance sequence for a physical phone. Record device evidence only when a real device is available.
+2. **Carrier fallback at the poll authority.** Send a ballot through the room message API with RTC-to-WebSocket fallback, verify the carrier actually used, preserve the message identity and deadline, and exercise receipt-time acceptance, duplicate and late delivery. Keep the poll authority's receipt policy separate from transport expiry. Preserve the HTTP example's existing coverage.
+3. **Independent API node qualification.** Make repeated, time-spaced offset checks practical for operators. Record per-sample outcomes, latency and uncertainty; preserve one-shot CLI compatibility. Exercise passing, inconclusive and unavailable observations. Run against independently hosted direct node origins under representative load when the deployment and its maintained offset budget are available. Local runs qualify the tooling only.
+
+Timeline revision and managed timeline work await a separate decision.
 
 ## Public product and launch evidence
 
