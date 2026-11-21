@@ -199,7 +199,8 @@ and refuted hosted: every acceptance queued behind the joins and was superseded)
 joins it, connects without an RTC readiness wait, and appoints itself before the
 `group-created` barrier releases the players. The first layout with peers is therefore already
 rooted at the director and no rebuild follows the appointment; its stable-layout
-wait gates its traffic instead. Each player joins the open group inside its
+wait gates its traffic instead. The wait also reads the formation view once the layout has settled, and
+waits a reshape the gate holds out, up to 60 s longer. Each player joins the open group inside its
 `rtc.connect` room join, under the whole setup allowance; the players' connect
 and the `connected` barrier get the setup allowance plus 650 ms per participant,
 because the hosted lane admits about 1.5 joining players per second at 50 members. A `director.status`

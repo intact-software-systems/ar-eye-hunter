@@ -1,5 +1,6 @@
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
+import type { HeldTopologyReshape } from '../topology-plan/topology-reshape-gate.ts';
 import type {
     GroupActivationCondition,
     GroupActivationRemediation
@@ -46,6 +47,11 @@ export type GroupFormationView = Readonly<{
      * not comparable across reads.
      */
     pending: PendingTopologyReplan | null;
+    /**
+     * The reshape the room's gate holds: null unless the stage follows the replanning policy and the stored gate
+     * wants a reason. The gate opening is not the reshape, which follows at the next work that plans the room.
+     */
+    heldReshape: HeldTopologyReshape | null;
     /**
      * The attempt budget the series is spending, so an application can explain
      * `formation-attempts-exhausted` (product decision 39). The numerator is

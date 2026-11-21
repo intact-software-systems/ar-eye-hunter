@@ -864,6 +864,115 @@ their last phase: a re-root held near the end of `leader-churn` and released whe
   third run three led rooms held the change back to a star for about 59 s. Nobody dials an empty layout, and the
   hold counts as any other. Recorded in the backlog.
 
+### The held reshape in the formation read
+
+Built (pull request #848). Approach and lane behaviour ruled by the maintainer on 2026-11-19.
+
+**Why.** A reshape the gate holds publishes nothing, so nothing outside the operator read can tell that a
+room still owes one. The lanes' stable-layout wait (`create-stable-rtc-layout-wait.ts`) reads the page's own
+formation status and passes when no planned layout differs from the accepted one. A room that owes a reshape
+passes it, and is reshaped when the gate opens, up to 60 s later, which can fall inside a lane's traffic
+window. The hosted ALM scale lanes (15, 30 and 50 agents) and the paced publication cells use that wait. The
+plan's goal says the wait is "bounded, stated, and visible"; today it is visible to an operator only.
+
+**What an application reads.** The formation view (`GET …/groups/{groupId}/formation`,
+`room.formation.readView()`) gains one required field beside `pending`:
+
+```json
+"heldReshape": { "wantedReasons": ["leader-rooting"], "opensAtEpochMs": 1795060154711 }
+```
+
+- It is `null` when the room owes no reshape.
+- It is an object exactly when the room's stage is one where the gate applies and the stored gate record
+  holds at least one wanted reason. `wantedReasons` is the stored list, in its stored order.
+- In a stage where the gate does not apply it is `null`, even if the record still holds reasons from an
+  earlier `active` stage: work there plans ungated and does not consult the record.
+- `opensAtEpochMs` is the instant the gate opens, computed as the operator read computes it: from the stored
+  gate and the bounds the topology work itself would use (the policy's, or the default preset's when the
+  policy is absent or unreadable).
+- The gate opening is not the room being reshaped. The reshape follows at the next work that plans the room:
+  the due-dated row where the policy plans automatically, the next command in a `commanded` room. So
+  `opensAtEpochMs` can lie in the past, briefly in the first case and for as long as nobody commands in the
+  second.
+
+**What the server does.** The formation route reads the room's gate record beside the reads it already
+makes: one more runtime-state read, no write. It adds no route, no WebSocket message and no stored field,
+and it changes nothing in the gate, the planner or the topology work. The browser gets the field through
+the shared decoder of the view; `readView()` gains no method.
+
+**What the lanes do.** The stable-layout wait passes only when the page's layout is stable, as today, and
+the formation view states no held reshape. A lane waits the hold out; it sends no command.
+
+- The view is read only once the page's own checks pass, and not again before the instant the last read
+  gave. A hosted run has 50 agents polling twice a second, and the formation read is several queries.
+- A read counts as "no held reshape" only when the view also states `layoutStale: false`. The work clears a
+  hold and writes the reshaped layout in one transaction, and a page hears of that layout later, so at the
+  instant of a release the view can state no hold on a page whose layout has not changed yet. The route reads
+  the gate record before the planned slot for the same reason.
+- In the scale setup the `setup-complete` barrier shares the wait's limit, because a barrier's window opens at
+  the first arrival and one agent can wait a hold out that another did not see.
+- The wait's time limit covers one hold at the default upper bound (60 s) and the work's own latency, in the
+  scale setup and in the paced cells.
+- A room that owes nothing passes as fast as today.
+
+**What the measurement does.** The reshape measurement's wait for "owed no held reshape" reads the formation
+view with a present member's session, in place of the operator read's plans, and gets a unit test.
+
+**Approaches considered.**
+
+| Approach                              | What it trades                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A. The formation read states it       | One more read per formation read. Applications, lanes and the measurement read one field. Picked.                                                             |
+| B. The lanes read the operator read   | No product change, but lane agents are ordinary users without operator access, and an application still cannot see a held reshape.                            |
+| C. The hold is pushed over state sync | Live, no polling, but a hold with no membership change would need its own published event, against the gate's property that a hold publishes nothing. Larger. |
+
+For a lane that meets a held reshape: wait the hold out (picked), send a formation `reconfigure` (it passes
+the gate but takes an `active` room through `reconfiguring`, a path the lane does not exercise today), or
+lower the lane rooms' upper bound to 15 s (the lanes would no longer run the default policy).
+
+**Not in this slice.**
+
+- Pushing the hold to browsers over state sync.
+- The lanes' wait reading `pending`. A queued re-plan is a second thing the page cannot see; the 3.5 s quiet
+  window covers it today.
+- Whether a layout of no or one member passes the gate (ruling 14 of pull request #844).
+
+**Calls made here, to check.**
+
+- The name `heldReshape` and its two fields. The operator read's `intervalMs` and the gate's counters stay
+  with the operator read.
+- `null` outside the stages where the gate applies, although reasons may still be stored.
+- The lanes' bounded reading of the view, which puts a small rule into the lane's readiness controller.
+- `pending` stays out of the lanes' wait.
+- The lanes' wait requires `layoutStale: false` beside no held reshape; `pending` still stays out.
+- The `setup-complete` barrier's window is the wait's limit; no other limit is raised.
+
+**Left to the builder.** The names in the lane's readiness diagnostics, and how they say "the view was not
+read at this observation" so the wait cannot pass on it. Which present member's session the measurement
+uses.
+
+**Validation.**
+
+- Unit tests for the view's rule (stage, empty reasons, bounds) and its decoder, for the readiness
+  controller's reading rule, and for the measurement's wait.
+- The cluster recipe `api-v1-cluster-reshape-gate` reads the formation view while a reshape is held and
+  after its release.
+- The OpenAPI document and the API reference state the field; the shared-web public API snapshots and
+  bundle checks run.
+- The hosted manifests that contain the wait (18 to 21) are regenerated, and the control server's tests
+  that build readiness diagnostics follow.
+- No mutation path changes, so the medium-scale gate is not selected by this slice.
+- One local lane run over `rtc` of a cell that uses the wait.
+
+**Risks.**
+
+- The lane gives a role 180 s, and the backlog already records that authored timeouts exceed it. A longer
+  wait limit adds to that sum, though time is spent only when a reshape is owed.
+- The formation read becomes part of every lane setup. Its cost at 50 agents is not measured.
+
+**Closes** two backlog entries: the held reshape that the stable-layout wait cannot see, and the
+measurement's owed-reshape wait.
+
 ### Later, decided after slice 2
 
 - Answered: what a leave that forces a rebuild does under the reshape gate. A leave is repaired at
