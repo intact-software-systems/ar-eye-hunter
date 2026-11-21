@@ -188,8 +188,13 @@ function createSubscriptionsFixture(): SubscriptionsFixture {
         detach: () => {},
         isAttached: () => true
     };
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sendReply = vi.fn<RallarMessageReplySender>(async (request) => await Promise.resolve(registry.open(request, 'ws')));
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
+    const sendReply = vi.fn<RallarMessageReplySender>(async (request) => await Promise.resolve(registry.open({ message: request, carrier: 'ws', readDeadlineEpochMs: Date.now })));
     const middleware = createDefaultApiMiddlewareTestDouble();
     const rtcCallbacks = new Map<string, Parameters<typeof middleware.middleware.rtcRxStreamer.onInboxMessageDo>[1]>();
     vi.mocked(middleware.middleware.rtcRxStreamer.onInboxMessageDo).mockImplementation((typeId, callback) => {

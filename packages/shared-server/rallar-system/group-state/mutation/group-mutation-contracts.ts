@@ -35,6 +35,7 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import type { UpdateGroupRequest } from '@shared/api/state-types.ts';
 import type { StoredGroupSessionIntent } from '../schedule/group-session-intent-storage.ts';
 import type { StoredGroupSessionReservations } from '../schedule/group-session-reservation-storage.ts';
 import type { GroupSessionViewAudience } from '../schedule/read-group-session-view-audience.ts';
@@ -114,6 +115,7 @@ export type GroupMutationCommand =
             operation: 'updateGroup';
             input:
                 & NullableActorInput
+                & Pick<UpdateGroupRequest, 'roomDeadline'>
                 & Readonly<{
                     slug: string | null;
                     displayName: string | null;

@@ -177,7 +177,7 @@ test('fourteen automatic receiver ACKs cross native API sockets and complete the
         heldAck.setSubject(subject.id.msgId);
         const arrivals = observeNativeReceiptArrivals(peers, expectedAudience);
         const receipts = observeNativeOriginReceipts(origin.socket, subject.id.msgId);
-        const handle = registry.open(subject, 'ws');
+        const handle = registry.open({ message: subject, carrier: 'ws', readDeadlineEpochMs: Date.now });
         const expiresAtMs = subject.constraints?.expiresAtMs;
         assert.ok(expiresAtMs);
         const admittedSubject = await origin.service.enqueueOutboxIfAbsent(subject);
@@ -330,15 +330,18 @@ function createNativeReceiptEvent(originPeerId: string, roomRef: GroupRef): ALMe
         payload: { kind: 'match-started', roomRef }
     });
     return newALMulticastMessage(
-        originPeerId,
-        { topicId: EVENT_TOPIC, resourceId: 'match-started', contextId: roomRef.groupId },
-        roomRef,
-        EVENT_TYPE,
-        envelope,
         {
-            ack: AL_CHANNEL_SEND_DEFAULTS.notification.ack,
-            reliability: AL_CHANNEL_SEND_DEFAULTS.notification.reliability,
-            ttlMs: AL_CHANNEL_SEND_DEFAULTS.notification.ttlMs
+            createdAtEpochMs: Date.now(),
+            senderId: originPeerId,
+            route: { topicId: EVENT_TOPIC, resourceId: 'match-started', contextId: roomRef.groupId },
+            groupRef: roomRef,
+            typeId: EVENT_TYPE,
+            resource: envelope,
+            options: {
+                ack: AL_CHANNEL_SEND_DEFAULTS.notification.ack,
+                reliability: AL_CHANNEL_SEND_DEFAULTS.notification.reliability,
+                ttlMs: AL_CHANNEL_SEND_DEFAULTS.notification.ttlMs
+            }
         }
     );
 }

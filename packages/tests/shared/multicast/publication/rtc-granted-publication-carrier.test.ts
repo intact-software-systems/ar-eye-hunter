@@ -44,12 +44,28 @@ const GRANTED = createFrozenGrantedMulticast({
     snapshotVersion: 3
 });
 
-const GRANTED_UNICAST = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {}, { ack: 'none', groupRef: ORIGIN_ROOM });
+const GRANTED_UNICAST = newALUnicastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'a',
+    route: GRANTED.route,
+    toPeerId: 'b',
+    typeId: GRANTED.payload.typeId,
+    resource: {},
+    options: { ack: 'none', groupRef: ORIGIN_ROOM }
+});
 
-const GRANTED_LIST = newALBroadcastMessage('a', GRANTED.route, 'room', GRANTED.payload.typeId, {}, {
-    ack: 'none',
-    groupRef: ORIGIN_ROOM,
-    recipientPeerIds: ['b', 'c']
+const GRANTED_LIST = newALBroadcastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'a',
+    route: GRANTED.route,
+    scope: 'room',
+    typeId: GRANTED.payload.typeId,
+    resource: {},
+    options: {
+        ack: 'none',
+        groupRef: ORIGIN_ROOM,
+        recipientPeerIds: ['b', 'c']
+    }
 });
 
 const MEMBERS: ALMessage = { ...GRANTED, route: { ...GRANTED.route, topicId: 'room.chat' } };
@@ -68,7 +84,14 @@ describe('RtcGrantedPublicationCarrier', () => {
     });
 
     it('refuses a granted leg naming no room before it asks for the admitted message', () => {
-        const unicast = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {});
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: GRANTED.route,
+            toPeerId: 'b',
+            typeId: GRANTED.payload.typeId,
+            resource: {}
+        });
 
         const admitted = createKeylessCarrier().admitLeg(unicast, () => {
             throw new Error('A shape refusal admits nothing.');

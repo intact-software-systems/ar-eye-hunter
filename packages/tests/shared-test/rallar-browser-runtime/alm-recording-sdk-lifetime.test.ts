@@ -176,12 +176,15 @@ it.each([true, false])('binds actual SDK inbound recovery to the originating sto
         throw new Error('Actual SDK did not register its WS inbox');
     }
     const message = newALUnicastMessage(
-        'sender',
-        { topicId: 'test.recovery', resourceId: crypto.randomUUID(), contextId: 'room' },
-        'session',
-        'test.recovery',
-        {},
-        { ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'test.recovery', resourceId: crypto.randomUUID(), contextId: 'room' },
+            toPeerId: 'session',
+            typeId: 'test.recovery',
+            resource: {},
+            options: { ttlMs: 60_000 }
+        }
     );
     const orderingKey = crypto.randomUUID();
     await inbound.onMessage({ ...message, ordering: { orderingKey, seq: 1 } }, new MessageEvent('message'));

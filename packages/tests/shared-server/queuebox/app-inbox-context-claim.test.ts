@@ -147,11 +147,14 @@ async function drain(reader: InboxQueueReader): Promise<number> {
 
 function createContextMessage(contextId: string, resourceId: string): ALMessage {
     return newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.context-claim', contextId, resourceId),
-        'test.context-claim',
-        { resourceId },
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.context-claim', contextId, resourceId),
+            typeId: 'test.context-claim',
+            resource: { resourceId },
+            options: { ttlMs: 300_000 }
+        }
     );
 }
 

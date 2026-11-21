@@ -101,12 +101,15 @@ describe('outbound IndexedDB durable queue replay', () => {
         const { admissionStore, stores } = createAdmission(storage);
         const messages = ['complete', 'partial'].map((resourceId) =>
             newALMulticastMessage(
-                'self',
-                { topicId: 'chat', resourceId, contextId: 'room' },
-                { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-                'chat.message.v1',
-                { text: resourceId },
-                { ttlMs: 30_000, ack: 'receiver', reliability: 'at-least-once' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: { topicId: 'chat', resourceId, contextId: 'room' },
+                    groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                    typeId: 'chat.message.v1',
+                    resource: { text: resourceId },
+                    options: { ttlMs: 30_000, ack: 'receiver', reliability: 'at-least-once' }
+                }
             )
         );
         const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();

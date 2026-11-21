@@ -165,6 +165,20 @@ describe('director status observation before connection', () => {
         expect(status.read().lastHeartbeatAtEpochMs).toBe(3_456);
     });
 
+    it('expires the director at the latest bound and records heartbeats at the earliest bound', () => {
+        const cache = new DirectorStatusCache();
+        cache.repositories.set(snapshotsToken, [createAppointmentSnapshot()]);
+        let window: { earliestEpochMs: number; latestEpochMs: number; } | undefined = { earliestEpochMs: 1010, latestEpochMs: 1030 };
+        const runtime = createStatusRuntime(cache, session, () => window);
+        const appointment = runtime.read(roomRef).appointment!;
+        runtime.recordHeartbeat(roomRef, appointment);
+        expect(runtime.read(roomRef)).toMatchObject({ isFresh: true, lastHeartbeatAtEpochMs: 1010, nowEpochMs: 1030 });
+        window = { earliestEpochMs: 59_990, latestEpochMs: 60_000 };
+        expect(runtime.read(roomRef).active).toBe(false);
+        window = undefined;
+        expect(runtime.read(roomRef, { now: 1010 }).isFresh).toBe(false);
+    });
+
     it.each(['banned', 'removed'] as const)('invalidates a %s director despite a retained appointment and heartbeat', (membership) => {
         const cache = new DirectorStatusCache();
         const snapshot = createAppointmentSnapshot();
@@ -200,7 +214,11 @@ describe('director status observation before connection', () => {
     });
 });
 
-function createStatusRuntime(cache: DirectorStatusCache, restoredSession: AuthSession | undefined): BrowserDirectorStatusRuntime {
+function createStatusRuntime(
+    cache: DirectorStatusCache,
+    restoredSession: AuthSession | undefined,
+    readWindow: BrowserDirectorStatusRuntime.Input['readWindow'] = () => ({ earliestEpochMs: 1_234, latestEpochMs: 1_234 })
+): BrowserDirectorStatusRuntime {
     const roomStateStore = new RoomStateStore({
         runtime: {
             currentRoomRef: () => undefined,
@@ -214,7 +232,7 @@ function createStatusRuntime(cache: DirectorStatusCache, restoredSession: AuthSe
     });
     return new BrowserDirectorStatusRuntime({
         roomStateStore,
-        nowMs: () => 1_234,
+        readWindow,
         readSession: () => restoredSession,
         resolveDefaultRoom: () => undefined
     });

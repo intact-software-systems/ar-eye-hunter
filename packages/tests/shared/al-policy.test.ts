@@ -27,9 +27,17 @@ import type { ALOrderingObservation } from '@shared/al-contracts/al-runtime.ts';
 
 describe('AL QoS policy', () => {
     it('requires resynchronization without delivery, forwarding, ACKs or sequence repair', () => {
-        const msg = newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'state' }, groupRef('room'), 'chat.v1', {}, {
-            reliability: 'at-least-once',
-            ack: 'receiver'
+        const msg = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'state' },
+            groupRef: groupRef('room'),
+            typeId: 'chat.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            }
         });
         Object.freeze(msg.id);
         Object.freeze(msg.route);
@@ -59,7 +67,14 @@ describe('AL QoS policy', () => {
 
     it('normalizes frozen policy facts deterministically without changing requests or defaults', () => {
         const message: ALMessage = Object.freeze({
-            ...newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'receiver', 'chat.v1', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', contextId: 'room', resourceId: 'message' },
+                toPeerId: 'receiver',
+                typeId: 'chat.v1',
+                resource: {}
+            }),
             qos: Object.freeze({
                 ack: Object.freeze({ algo: 'subtree' as const, opts: Object.freeze({ timeoutMs: 90_000 }) }),
                 durability: Object.freeze({ algo: 'local-inbox' as const }),
@@ -86,7 +101,15 @@ describe('AL QoS policy', () => {
     });
 
     it('does not emit a resync NACK without an upstream peer or after expiry', () => {
-        const message = newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'self', 'chat.v1', {}, { ttlMs: 1 });
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'message' },
+            toPeerId: 'self',
+            typeId: 'chat.v1',
+            resource: {},
+            options: { ttlMs: 1 }
+        });
         const context: ALMessagePlanningContext = {
             nowMs: message.id.ts,
             selfPeerId: 'self',
@@ -106,37 +129,46 @@ describe('AL QoS policy', () => {
         const ttlOptions = { ttlMs: 15_000 };
 
         const untargeted = newALUntargetedMessage(
-            'sender-ttl',
             {
-                topicId: 'rtt',
-                resourceId: '1',
-                contextId: 'peer-a:peer-b'
-            },
-            'rtt.v1',
-            { rttMs: 12 },
-            ttlOptions
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-ttl',
+                route: {
+                    topicId: 'rtt',
+                    resourceId: '1',
+                    contextId: 'peer-a:peer-b'
+                },
+                typeId: 'rtt.v1',
+                resource: { rttMs: 12 },
+                options: ttlOptions
+            }
         );
         const unicast = newALUnicastMessage(
-            'sender-ttl',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'room-1'
-            },
-            'peer-b',
-            'chat.v1',
-            { text: 'hi' },
-            ttlOptions
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-ttl',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-b',
+                typeId: 'chat.v1',
+                resource: { text: 'hi' },
+                options: ttlOptions
+            }
         );
         const noTtl = newALUntargetedMessage(
-            'sender-ttl',
             {
-                topicId: 'rtt',
-                resourceId: '2',
-                contextId: 'peer-a:peer-b'
-            },
-            'rtt.v1',
-            { rttMs: 13 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-ttl',
+                route: {
+                    topicId: 'rtt',
+                    resourceId: '2',
+                    contextId: 'peer-a:peer-b'
+                },
+                typeId: 'rtt.v1',
+                resource: { rttMs: 13 }
+            }
         );
 
         expect(untargeted.constraints?.expiresAtMs).toBe(untargeted.id.ts + ttlOptions.ttlMs);
@@ -146,55 +178,58 @@ describe('AL QoS policy', () => {
 
     it('normalizes requested policy against local caps and authz', () => {
         const msg = newALMulticastMessage(
-            'sender-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            {
-                ttlHops: 12,
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                fanoutLimit: 9,
-                qos: {
-                    forwarding: {
-                        algo: 'target',
-                        opts: {
-                            overlayId: 'group-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: {
+                    ttlHops: 12,
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    fanoutLimit: 9,
+                    qos: {
+                        forwarding: {
+                            algo: 'target',
+                            opts: {
+                                overlayId: 'group-1'
+                            }
+                        },
+                        repair: {
+                            algo: 'retransmit',
+                            opts: {
+                                maxRepairs: 3
+                            }
+                        },
+                        ack: {
+                            algo: 'subtree',
+                            opts: {
+                                timeoutMs: 60_000
+                            }
+                        },
+                        fanout: {
+                            algo: 'limit',
+                            opts: {
+                                limit: 12
+                            }
+                        },
+                        retry: {
+                            algo: 'exp-backoff',
+                            opts: {
+                                maxAttempts: 12
+                            }
+                        },
+                        durability: {
+                            algo: 'local-inbox'
                         }
-                    },
-                    repair: {
-                        algo: 'retransmit',
-                        opts: {
-                            maxRepairs: 3
-                        }
-                    },
-                    ack: {
-                        algo: 'subtree',
-                        opts: {
-                            timeoutMs: 60_000
-                        }
-                    },
-                    fanout: {
-                        algo: 'limit',
-                        opts: {
-                            limit: 12
-                        }
-                    },
-                    retry: {
-                        algo: 'exp-backoff',
-                        opts: {
-                            maxAttempts: 12
-                        }
-                    },
-                    durability: {
-                        algo: 'local-inbox'
                     }
                 }
             }
@@ -236,36 +271,39 @@ describe('AL QoS policy', () => {
     it('plans multicast delivery, forwarding and a deferred logical receiver ack', () => {
         const msg = {
             ...newALMulticastMessage(
-                'sender-2',
                 {
-                    topicId: 'chat',
-                    resourceId: 'msg-2',
-                    contextId: 'group-1'
-                },
-                groupRef('group-1'),
-                'chat.message.v1',
-                {
-                    text: 'group hello'
-                },
-                {
-                    ttlHops: 2,
-                    reliability: 'at-least-once',
-                    ack: 'all-logical-recipients',
-                    qos: {
-                        forwarding: {
-                            algo: 'target',
-                            opts: {
-                                overlayId: 'group-1'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender-2',
+                    route: {
+                        topicId: 'chat',
+                        resourceId: 'msg-2',
+                        contextId: 'group-1'
+                    },
+                    groupRef: groupRef('group-1'),
+                    typeId: 'chat.message.v1',
+                    resource: {
+                        text: 'group hello'
+                    },
+                    options: {
+                        ttlHops: 2,
+                        reliability: 'at-least-once',
+                        ack: 'all-logical-recipients',
+                        qos: {
+                            forwarding: {
+                                algo: 'target',
+                                opts: {
+                                    overlayId: 'group-1'
+                                }
+                            },
+                            fanout: {
+                                algo: 'limit',
+                                opts: {
+                                    limit: 1
+                                }
+                            },
+                            durability: {
+                                algo: 'local-inbox'
                             }
-                        },
-                        fanout: {
-                            algo: 'limit',
-                            opts: {
-                                limit: 1
-                            }
-                        },
-                        durability: {
-                            algo: 'local-inbox'
                         }
                     }
                 }
@@ -316,10 +354,18 @@ describe('AL QoS policy', () => {
         { label: 'a relay whose owned child it cannot reach', neighbours: ['a', 'c', 'd'], repairs: true }
     ])('asks its sender to retransmit only as $label: $repairs', ({ neighbours, repairs }) => {
         const msg = {
-            ...newALMulticastMessage('a', { topicId: 'chat', resourceId: 'owned', contextId: 'group-1' }, groupRef('group-1'), 'chat.v1', {}, {
-                reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-                qos: { repair: { algo: 'retransmit' } }
+            ...newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'owned', contextId: 'group-1' },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.v1',
+                resource: {},
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'all-logical-recipients',
+                    qos: { repair: { algo: 'retransmit' } }
+                }
             }),
             diagnostics: { visitedPeerIds: ['a', 'b', 'c'] }
         };
@@ -340,11 +386,27 @@ describe('AL QoS policy', () => {
 
     it('gives an at-least-once multicast four repairs, from its request and, when its request names none, from the default policy', () => {
         const route = { topicId: 'chat', resourceId: 'msg-repairs', contextId: 'group-1' };
-        const requested = newALMulticastMessage('sender', route, groupRef('group-1'), 'chat.message.v1', {}, {
-            reliability: 'at-least-once'
+        const requested = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once'
+            }
         });
-        const defaulted = newALMulticastMessage('sender', route, groupRef('group-1'), 'chat.message.v1', {}, {
-            qos: { delivery: { algo: 'at-least-once' }, repair: { algo: 'retransmit' } }
+        const defaulted = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route,
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                qos: { delivery: { algo: 'at-least-once' }, repair: { algo: 'retransmit' } }
+            }
         });
 
         expect(normalizeALQosPolicy(requested).requested.repair).toEqual({ algo: 'retransmit', opts: { maxRepairs: 4 } });
@@ -354,8 +416,16 @@ describe('AL QoS policy', () => {
 
     it('never asks for a retransmit as the addressee of a unicast', () => {
         const msg = {
-            ...newALUnicastMessage('a', { topicId: 'tasks', resourceId: 'job', contextId: 'queue' }, 'b', 'tasks.v1', {}, {
-                qos: { repair: { algo: 'retransmit' } }
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'tasks', resourceId: 'job', contextId: 'queue' },
+                toPeerId: 'b',
+                typeId: 'tasks.v1',
+                resource: {},
+                options: {
+                    qos: { repair: { algo: 'retransmit' } }
+                }
             }),
             forwarding: { nextHopPeerIds: ['b'] }
         };
@@ -368,16 +438,19 @@ describe('AL QoS policy', () => {
 
     it('drops duplicate messages before delivery or forwarding', () => {
         const msg = newALUnicastMessage(
-            'sender-3',
             {
-                topicId: 'chat',
-                resourceId: 'msg-3',
-                contextId: 'conversation-1'
-            },
-            'self',
-            'chat.private-text.v1',
-            {
-                text: 'private hello'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-3',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-3',
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.private-text.v1',
+                resource: {
+                    text: 'private hello'
+                }
             }
         );
 
@@ -432,41 +505,47 @@ describe('AL QoS policy', () => {
 
     it('keeps semantic dedup sender-scoped by default', () => {
         const first = newALUnicastMessage(
-            'sender-semantic-1',
             {
-                topicId: 'presence',
-                resourceId: 'state',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'first sender'
-            },
-            {
-                qos: {
-                    dedup: {
-                        algo: 'semantic-key'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-semantic-1',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'first sender'
+                },
+                options: {
+                    qos: {
+                        dedup: {
+                            algo: 'semantic-key'
+                        }
                     }
                 }
             }
         );
         const second = newALUnicastMessage(
-            'sender-semantic-2',
             {
-                topicId: 'presence',
-                resourceId: 'state',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'second sender'
-            },
-            {
-                qos: {
-                    dedup: {
-                        algo: 'semantic-key'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-semantic-2',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'second sender'
+                },
+                options: {
+                    qos: {
+                        dedup: {
+                            algo: 'semantic-key'
+                        }
                     }
                 }
             }
@@ -496,41 +575,47 @@ describe('AL QoS policy', () => {
 
     it('keeps default supersedence keys sender-scoped', () => {
         const first = newALUnicastMessage(
-            'sender-supersedence-1',
             {
-                topicId: 'presence',
-                resourceId: 'state',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'first sender'
-            },
-            {
-                qos: {
-                    supersedence: {
-                        algo: 'latest-wins'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-supersedence-1',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'first sender'
+                },
+                options: {
+                    qos: {
+                        supersedence: {
+                            algo: 'latest-wins'
+                        }
                     }
                 }
             }
         );
         const second = newALUnicastMessage(
-            'sender-supersedence-2',
             {
-                topicId: 'presence',
-                resourceId: 'state',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'second sender'
-            },
-            {
-                qos: {
-                    supersedence: {
-                        algo: 'latest-wins'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-supersedence-2',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'second sender'
+                },
+                options: {
+                    qos: {
+                        supersedence: {
+                            algo: 'latest-wins'
+                        }
                     }
                 }
             }
@@ -561,20 +646,23 @@ describe('AL QoS policy', () => {
 
     it('defers local delivery for an observed small gap while preserving forward progress', () => {
         const second = newALMulticastMessage(
-            'sender-4',
             {
-                topicId: 'chat',
-                resourceId: 'msg-5',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'third'
-            },
-            {
-                seq: 3,
-                reliability: 'at-least-once'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-4',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-5',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'third'
+                },
+                options: {
+                    seq: 3,
+                    reliability: 'at-least-once'
+                }
             }
         );
 
@@ -602,16 +690,19 @@ describe('AL QoS policy', () => {
 
     it('resolves topic defaults, authz and live state from a qos provider', () => {
         const msg = newALBroadcastMessage(
-            'sender-6',
             {
-                topicId: 'alerts',
-                resourceId: 'alert-1',
-                contextId: 'room-1'
-            },
-            'all',
-            'alerts.notice.v1',
-            {
-                text: 'system maintenance'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-6',
+                route: {
+                    topicId: 'alerts',
+                    resourceId: 'alert-1',
+                    contextId: 'room-1'
+                },
+                scope: 'all',
+                typeId: 'alerts.notice.v1',
+                resource: {
+                    text: 'system maintenance'
+                }
             }
         );
 
@@ -655,23 +746,26 @@ describe('AL QoS policy', () => {
 
     it('drops superseded messages when a newer message already owns the supersedence key', () => {
         const newer = newALUnicastMessage(
-            'sender-7',
             {
-                topicId: 'presence',
-                resourceId: 'state-2',
-                contextId: 'room-1'
-            },
-            'self',
-            'presence.state.v1',
-            {
-                text: 'newer'
-            },
-            {
-                qos: {
-                    supersedence: {
-                        algo: 'latest-wins',
-                        opts: {
-                            supersedenceKey: 'presence:peer-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-7',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'state-2',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'presence.state.v1',
+                resource: {
+                    text: 'newer'
+                },
+                options: {
+                    qos: {
+                        supersedence: {
+                            algo: 'latest-wins',
+                            opts: {
+                                supersedenceKey: 'presence:peer-1'
+                            }
                         }
                     }
                 }
@@ -679,23 +773,26 @@ describe('AL QoS policy', () => {
         );
         const older = {
             ...newALUnicastMessage(
-                'sender-7',
                 {
-                    topicId: 'presence',
-                    resourceId: 'state-1',
-                    contextId: 'room-1'
-                },
-                'self',
-                'presence.state.v1',
-                {
-                    text: 'older'
-                },
-                {
-                    qos: {
-                        supersedence: {
-                            algo: 'latest-wins',
-                            opts: {
-                                supersedenceKey: 'presence:peer-1'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender-7',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'state-1',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'self',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        text: 'older'
+                    },
+                    options: {
+                        qos: {
+                            supersedence: {
+                                algo: 'latest-wins',
+                                opts: {
+                                    supersedenceKey: 'presence:peer-1'
+                                }
                             }
                         }
                     }
@@ -727,16 +824,19 @@ describe('AL QoS policy', () => {
 
     it('drops low-priority traffic under overload when congestion policy is drop-low', () => {
         const msg = newALUnicastMessage(
-            'sender-8',
             {
-                topicId: 'chat',
-                resourceId: 'typing-1',
-                contextId: 'room-1'
-            },
-            'self',
-            'chat.typing.v1',
-            {
-                text: 'typing'
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender-8',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'typing-1',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'self',
+                typeId: 'chat.typing.v1',
+                resource: {
+                    text: 'typing'
+                }
             }
         );
 
@@ -759,12 +859,15 @@ describe('AL QoS policy', () => {
 
 function roomBroadcast(ownership: 'shared' | 'exclusive'): ALMessage {
     return newALBroadcastMessage(
-        'claimant-b',
-        { topicId: 'arena.intent', contextId: 'room', resourceId: 'pickup-1' },
-        'room',
-        'pickup-intent.v1',
-        {},
-        { groupRef: groupRef('room'), ownership, ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'claimant-b',
+            route: { topicId: 'arena.intent', contextId: 'room', resourceId: 'pickup-1' },
+            scope: 'room',
+            typeId: 'pickup-intent.v1',
+            resource: {},
+            options: { groupRef: groupRef('room'), ownership, ttlMs: 30_000 }
+        }
     );
 }
 
@@ -778,11 +881,19 @@ function groupRef(groupId: string) {
 
 describe('a frozen copy below the recipient\'s position', () => {
     const below = toALFrozenMulticastMessage(
-        newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'below' }, groupRef('room'), 'chat.v1', {}, {
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            orderingKey: 'chat',
-            seq: 3
+        newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'below' },
+            groupRef: groupRef('room'),
+            typeId: 'chat.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                orderingKey: 'chat',
+                seq: 3
+            }
         }),
         { recipientPeerIds: ['self'], snapshotVersion: 1 }
     );
@@ -820,9 +931,17 @@ describe('durability decoupled from retry (S3a)', () => {
     const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
     it('normalizes an at-least-once message that requests no durability to volatile, still retrying and waiting for a route', () => {
-        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
-            reliability: 'at-least-once',
-            ack: 'receiver'
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: room,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            }
         });
 
         const { effective } = normalizeALQosPolicy(message);
@@ -839,9 +958,17 @@ describe('durability decoupled from retry (S3a)', () => {
         { algo: 'local-outbox' as const, outbox: 'durable', inbox: false },
         { algo: 'local-inbox' as const, outbox: 'durable', inbox: true }
     ])('honours a requested $algo: outbox lane $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
-        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
-            reliability: 'at-least-once',
-            qos: { durability: { algo } }
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: room,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                reliability: 'at-least-once',
+                qos: { durability: { algo } }
+            }
         });
 
         const { effective } = normalizeALQosPolicy(message);
@@ -852,8 +979,16 @@ describe('durability decoupled from retry (S3a)', () => {
     });
 
     it('lets a best-effort checkpointed message wait for a route and forwards it as kept beyond memory', () => {
-        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
-            qos: { durability: { algo: 'local-checkpoint' } }
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: room,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                qos: { durability: { algo: 'local-checkpoint' } }
+            }
         });
         const { effective } = normalizeALQosPolicy(message);
 
@@ -877,8 +1012,16 @@ describe('durability decoupled from retry (S3a)', () => {
     ])('ranks local-checkpoint between volatile and local-outbox: $requested under $maxDurability is $effective', (
         { requested, maxDurability, effective }
     ) => {
-        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
-            qos: { durability: { algo: requested } }
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: room,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                qos: { durability: { algo: requested } }
+            }
         });
 
         const normalized = normalizeALQosPolicy(message, { authorization: { maxDurability } });
@@ -887,7 +1030,14 @@ describe('durability decoupled from retry (S3a)', () => {
     });
 
     it('lets a best-effort volatile message be refused for lacking a route', () => {
-        const message = newALMulticastMessage('self', route, room, 'chat.typing.v1', {});
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            groupRef: room,
+            typeId: 'chat.typing.v1',
+            resource: {}
+        });
 
         expect(shouldAwaitALRoute(normalizeALQosPolicy(message).effective)).toBe(false);
     });
@@ -896,8 +1046,16 @@ describe('durability decoupled from retry (S3a)', () => {
 describe('the congestion policy on a live cause', () => {
     const route = { topicId: 'chat', resourceId: 'congested', contextId: 'room' };
 
-    function originate(options: Parameters<typeof newALUnicastMessage>[5] = {}): ALMessage {
-        return newALUnicastMessage('self', route, 'peer', 'chat.message.v1', {}, options);
+    function originate(options: Parameters<typeof newALUnicastMessage>[0]['options'] = {}): ALMessage {
+        return newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route,
+            toPeerId: 'peer',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options
+        });
     }
 
     function planOrigination(

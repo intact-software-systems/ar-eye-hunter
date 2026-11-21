@@ -130,16 +130,19 @@ describe('row-bound WS producer provenance', () => {
 
     it('verifies a CRDT world fanout as scoped subscriber-local delivery', async () => {
         const message = newALBroadcastMessage(
-            'server',
             {
-                topicId: 'app.crdt',
-                resourceId: 'crdt-update',
-                contextId: 'app'
-            },
-            'world',
-            'rallar.crdt.update.v1',
-            {},
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: {
+                    topicId: 'app.crdt',
+                    resourceId: 'crdt-update',
+                    contextId: 'app'
+                },
+                scope: 'world',
+                typeId: 'rallar.crdt.update.v1',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts = {
@@ -176,16 +179,19 @@ describe('row-bound WS producer provenance', () => {
 
     it('binds a CRDT principal fanout to its logical principal and frozen sessions', async () => {
         const message = newALUnicastMessage(
-            'server',
             {
-                topicId: 'principal.crdt',
-                resourceId: 'crdt-update',
-                contextId: 'alice'
-            },
-            'alice',
-            'rallar.crdt.update.v1',
-            {},
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: {
+                    topicId: 'principal.crdt',
+                    resourceId: 'crdt-update',
+                    contextId: 'alice'
+                },
+                toPeerId: 'alice',
+                typeId: 'rallar.crdt.update.v1',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts = {
@@ -325,12 +331,15 @@ describe('row-bound WS producer provenance', () => {
 
 function toWorldFanoutRow(resourceId: string): WsOutboxMessageRow {
     const message = newALBroadcastMessage(
-        'server',
-        { topicId: 'app.crdt', resourceId, contextId: 'app' },
-        'world',
-        'rallar.crdt.update.v1',
-        {},
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'app.crdt', resourceId, contextId: 'app' },
+            scope: 'world',
+            typeId: 'rallar.crdt.update.v1',
+            resource: {},
+            options: { ttlMs: 30_000 }
+        }
     );
     return { message, entry: QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()) };
 }
@@ -361,8 +370,16 @@ async function writeWorldFanoutProof(
 }
 
 async function createFixture(admittedAudience: readonly string[]): Promise<WsOutboxProvenanceFixture> {
-    const message = newALUnicastMessage('server', { topicId: 'snapshot', contextId: 'request', resourceId: 'page' }, 'peer', 'snapshot.v1', {}, {
-        ttlMs: 30_000
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: { topicId: 'snapshot', contextId: 'request', resourceId: 'page' },
+        toPeerId: 'peer',
+        typeId: 'snapshot.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000
+        }
     });
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
@@ -387,12 +404,15 @@ async function createPrincipalRoomFixture(mismatch: 'applicationId' | 'workspace
     const principalRef = { applicationId: 'app', workspaceId: 'workspace', principalId: 'alice' };
     const groupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room', ...(mismatch === null ? {} : { [mismatch]: 'other' }) };
     const message = newALPrincipalBroadcastMessage(
-        'server',
-        { topicId: 'room.relic.hunter', contextId: 'room', resourceId: 'private' },
-        { principalRef, groupRef },
-        'relic.hunter.v1',
-        {},
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'room.relic.hunter', contextId: 'room', resourceId: 'private' },
+            target: { principalRef, groupRef },
+            typeId: 'relic.hunter.v1',
+            resource: {},
+            options: { ttlMs: 30_000 }
+        }
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const facts: Omit<WsOutboxProvenance, 'digest'> = {

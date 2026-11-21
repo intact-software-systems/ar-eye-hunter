@@ -27,7 +27,14 @@ describe('isInstanceLocalRtcSignal', () => {
             ...signalOfBytes(1_000, 'a'),
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
         };
-        const other = newALUnicastMessage('sender', newALEventRoute('app.notes', 'receiver', 'note'), 'receiver', 'notes.v1', {});
+        const other = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('app.notes', 'receiver', 'note'),
+            toPeerId: 'receiver',
+            typeId: 'notes.v1',
+            resource: {}
+        });
 
         expect(isInstanceLocalRtcSignal(acknowledged)).toBe(false);
         expect(isInstanceLocalRtcSignal(other)).toBe(false);
@@ -47,20 +54,23 @@ function utf8Length(text: string): number {
 
 function signal(sdp: string): ALMessage {
     return newALUnicastMessage(
-        'sender',
-        newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
-        'receiver',
-        AppTopics.rtcSignaling,
         {
-            channel: 'RtcSignal',
-            type: 'Signal',
-            fromId: 'sender',
-            toId: 'receiver',
-            sessionId: 'sender',
-            token: 'fixture-ticket',
-            signalType: 'Offer',
-            offerId: 'offer-1',
-            payload: { description: { type: 'offer', sdp }, candidate: null }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
+            toPeerId: 'receiver',
+            typeId: AppTopics.rtcSignaling,
+            resource: {
+                channel: 'RtcSignal',
+                type: 'Signal',
+                fromId: 'sender',
+                toId: 'receiver',
+                sessionId: 'sender',
+                token: 'fixture-ticket',
+                signalType: 'Offer',
+                offerId: 'offer-1',
+                payload: { description: { type: 'offer', sdp }, candidate: null }
+            }
         }
     );
 }

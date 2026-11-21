@@ -98,8 +98,16 @@ it('retains a message its ingress authority is behind on to its deadline and adm
         diagnostics: (event) => diagnostics.push(event)
     });
     onTestFinished(() => runtime.dispose());
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
-        ttlMs: 60_000
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
+        toPeerId: 'receiver',
+        typeId: 'chat',
+        resource: {},
+        options: {
+            ttlMs: 60_000
+        }
     });
 
     expect(await runtime.retainIncomingMessage(message, PENDING_SOURCE)).toEqual({ kind: 'pending-admission' });
@@ -263,7 +271,14 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
+        toPeerId: 'receiver',
+        typeId: 'chat',
+        resource: {}
+    });
     const untrackedAck = newALAckControlMessage(
         {
             v: 4,
@@ -696,9 +711,17 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         disposing = runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
         return stored;
     });
-    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
-        ttlMs: 60_000,
-        qos: { ack: { algo: 'hop' } }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
+        toPeerId: 'receiver',
+        typeId: 'chat',
+        resource: {},
+        options: {
+            ttlMs: 60_000,
+            qos: { ack: { algo: 'hop' } }
+        }
     });
     const result = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
     await disposing;

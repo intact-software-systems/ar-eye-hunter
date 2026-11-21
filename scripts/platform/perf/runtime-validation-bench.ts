@@ -743,20 +743,23 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
             liveUntil: liveUntilEpochMs
         });
         const original = newALBroadcastMessage(
-            'runtime-validation-benchmark',
-            newALEventRoute(
-                AppTopics.groupStateSnapshot,
-                groupSnapshot.group.groupId,
-                groupSnapshot.group.groupId
-            ),
-            'room',
-            AppTopics.groupStateSnapshot,
-            {},
             {
-                groupRef: {
-                    applicationId: groupSnapshot.group.applicationId,
-                    workspaceId: groupSnapshot.group.workspaceId,
-                    groupId: groupSnapshot.group.groupId
+                createdAtEpochMs: Date.now(),
+                senderId: 'runtime-validation-benchmark',
+                route: newALEventRoute(
+                    AppTopics.groupStateSnapshot,
+                    groupSnapshot.group.groupId,
+                    groupSnapshot.group.groupId
+                ),
+                scope: 'room',
+                typeId: AppTopics.groupStateSnapshot,
+                resource: {},
+                options: {
+                    groupRef: {
+                        applicationId: groupSnapshot.group.applicationId,
+                        workspaceId: groupSnapshot.group.workspaceId,
+                        groupId: groupSnapshot.group.groupId
+                    }
                 }
             }
         );

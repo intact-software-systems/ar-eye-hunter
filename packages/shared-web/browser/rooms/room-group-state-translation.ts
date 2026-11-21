@@ -3,7 +3,13 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
+import {
+    isGroupActive,
+    isSessionInGroup,
+    readGroupDisplayName,
+    readGroupId
+} from '@shared/api/group-client-views.ts';
+import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
@@ -13,6 +19,7 @@ import type {
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
+
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
@@ -274,10 +281,14 @@ export function toRoomLifecycleGroupStateRequest(
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
-    const merged = Object.entries({ ...input.currentMetadata, ...input.patch });
+    if (Object.hasOwn(input.patch, ROOM_DEADLINES_METADATA_KEY)) {
+        throw new TypeError('Use rooms.setDeadline to change a room deadline.');
+    }
+    const merged = { ...input.currentMetadata, ...input.patch };
+    delete merged[ROOM_DEADLINES_METADATA_KEY];
     return {
         metadata: Object.fromEntries(
-            merged.filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))
+            Object.entries(merged).filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))
         ),
         ...toActorRequest(input)
     };
@@ -387,8 +398,11 @@ export function toTransferRoomOwnershipGroupStateRequest(
  * A joined row takes the heartbeat's lease rather than the server's 24 h default: the group heartbeats renew it while
  * the browser lives, and a row no socket close cleans lapses within one lease.
  */
-export function toRoomPresenceLeaseExpiresAtEpochMs(nowEpochMs: number): number {
-    return nowEpochMs + DEFAULT_STATE_HEARTBEAT_TTL_MSECS;
+export function toRoomPresenceLeaseExpiresAtEpochMs(
+    nowEpochMs: number,
+    leaseMs = DEFAULT_STATE_HEARTBEAT_TTL_MSECS
+): number {
+    return nowEpochMs + leaseMs;
 }
 
 export function toConnectRoomPresenceGroupStateRequest(
@@ -512,31 +526,25 @@ function toActorRequest({
 }
 
 function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody {
-    return {
-        ...(request.slug === undefined ? {} : { slug: request.slug }),
-        ...(request.displayName === undefined ? {} : { displayName: request.displayName }),
-        ...(request.description === undefined ? {} : { description: request.description }),
-        ...(request.kind === undefined ? {} : { kind: request.kind }),
-        ...(request.status === undefined ? {} : { status: request.status }),
-        ...(request.joinMode === undefined ? {} : { joinMode: request.joinMode }),
-        ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
-        ...(request.maxMembers === undefined ? {} : { maxMembers: request.maxMembers }),
-        ...(request.maxSpectators === undefined ? {} : { maxSpectators: request.maxSpectators }),
-        ...(request.maxSessionsPerMember === undefined
-            ? {}
-            : { maxSessionsPerMember: request.maxSessionsPerMember }),
-        ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-        ...(request.expiresAtEpochMs === undefined
-            ? {}
-            : { expiresAtEpochMs: request.expiresAtEpochMs }),
-        ...(request.emptySinceEpochMs === undefined
-            ? {}
-            : { emptySinceEpochMs: request.emptySinceEpochMs }),
-        ...(request.purgeAfterEpochMs === undefined
-            ? {}
-            : { purgeAfterEpochMs: request.purgeAfterEpochMs }),
-        ...toMutationAuditFields(request)
-    };
+    const fields = {
+        slug: request.slug,
+        displayName: request.displayName,
+        description: request.description,
+        kind: request.kind,
+        status: request.status,
+        joinMode: request.joinMode,
+        directoryListing: request.directoryListing,
+        maxMembers: request.maxMembers,
+        maxSpectators: request.maxSpectators,
+        maxSessionsPerMember: request.maxSessionsPerMember,
+        metadata: request.metadata,
+        roomDeadline: request.roomDeadline,
+        expiresAtEpochMs: request.expiresAtEpochMs,
+        emptySinceEpochMs: request.emptySinceEpochMs,
+        purgeAfterEpochMs: request.purgeAfterEpochMs,
+        reason: request.reason
+    } satisfies UpdateStateGroupBody;
+    return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
 
 function toMutationAuditFields(

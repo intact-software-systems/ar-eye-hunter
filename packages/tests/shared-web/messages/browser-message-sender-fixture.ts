@@ -41,7 +41,7 @@ export function createBrowserMessageSenderFixture(
     middleware = createDefaultApiMiddlewareTestDouble()
 ): BrowserMessageSenderFixture {
     let activeMiddleware = middleware;
-    const publicationStages = new BrowserPublicationStages({ nowMs: Date.now });
+    const publicationStages = new BrowserPublicationStages();
     const registry = givenRegistry ?? new BrowserRallarDeliveryRegistry({
         nowMs: Date.now,
         ...BROWSER_DELIVERY_RETENTION,
@@ -72,7 +72,6 @@ export function createBrowserMessageSenderFixture(
             deliveries: registry,
             sessionDeliveries,
             publicationStages,
-            nowMs: Date.now,
             readPublicationPermissions: () => undefined,
             grantedTopics: NO_RTC_GRANTED_TOPICS
         }),

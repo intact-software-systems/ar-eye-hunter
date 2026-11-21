@@ -247,12 +247,15 @@ describe('the RTC origin of a granted publication', () => {
             members: [...snapshot.members, { ...snapshot.members[0]!, principalId }]
         });
         const message = newALPrincipalBroadcastMessage(
-            'a',
-            GRANTED_ROUTE,
-            { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
-            'room.granted-feed.v1',
-            { text: 'feed' },
-            { ack: 'none', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: GRANTED_ROUTE,
+                target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+                typeId: 'room.granted-feed.v1',
+                resource: { text: 'feed' },
+                options: { ack: 'none', ttlMs: 30_000 }
+            }
         );
 
         const admitted = await enqueueLegAndDrain(fixture, message, 'hand-over');
@@ -627,10 +630,18 @@ function toSubscribedRoomSnapshot(crypto: AvailablePublicationCrypto, sessionCou
 
 /** A granted unicast to `toPeerId` (`b` unless named) in the origin room, asking a receipt unless `ack` says otherwise. */
 function createGrantedUnicast(ack: 'none' | 'receiver' = 'receiver', toPeerId = 'b'): ALMessage {
-    return newALUnicastMessage('a', GRANTED_ROUTE, toPeerId, 'room.granted-feed.v1', { text: 'feed' }, {
-        ack,
-        groupRef: ORIGIN_ROOM,
-        ttlMs: 30_000
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: GRANTED_ROUTE,
+        toPeerId,
+        typeId: 'room.granted-feed.v1',
+        resource: { text: 'feed' },
+        options: {
+            ack,
+            groupRef: ORIGIN_ROOM,
+            ttlMs: 30_000
+        }
     });
 }
 
@@ -646,12 +657,15 @@ function createDurableGrantedMulticast(): ALMessage {
 
 function createGrantedMulticast(ack: ALAckMode): ALMessage {
     return newALMulticastMessage(
-        'a',
-        GRANTED_ROUTE,
-        ORIGIN_ROOM,
-        'room.granted-feed.v1',
-        { text: 'feed' },
-        { ack, reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-rtc-publication-signing' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: GRANTED_ROUTE,
+            groupRef: ORIGIN_ROOM,
+            typeId: 'room.granted-feed.v1',
+            resource: { text: 'feed' },
+            options: { ack, reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-rtc-publication-signing' }
+        }
     );
 }
 

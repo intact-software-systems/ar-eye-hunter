@@ -80,7 +80,14 @@ it('guards every queue observation and atomically aborts sibling ownership on re
 
 function workEntry() {
     return QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
+        newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('test', crypto.randomUUID()),
+            toPeerId: 'receiver',
+            typeId: 'test',
+            resource: { value: 1 }
+        }),
         'TEST_WORK',
         Temporal.Now.instant()
     );

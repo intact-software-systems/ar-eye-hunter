@@ -196,11 +196,14 @@ function createCheckpointStorage(expectedFailure?: Error): ALRuntimeStorage {
 
 function createMessage() {
     return newALUnicastMessage(
-        'session-1',
-        { topicId: 'chat', resourceId: 'checkpoint', contextId: 'conversation' },
-        'peer',
-        'chat.message.v1',
-        { text: 'checkpoint' },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: { topicId: 'chat', resourceId: 'checkpoint', contextId: 'conversation' },
+            toPeerId: 'peer',
+            typeId: 'chat.message.v1',
+            resource: { text: 'checkpoint' },
+            options: { ttlMs: 30_000 }
+        }
     );
 }

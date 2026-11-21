@@ -2,6 +2,7 @@ import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import { captureGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupId } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -281,6 +282,7 @@ export function cloneRallarRuntimeDefaults(
         ...(defaults.operations
             ? { operations: { ...defaults.operations } }
             : {}),
+        ...(defaults.groupPresence ? { groupPresence: captureGroupPresencePolicy(defaults.groupPresence) } : {}),
         ...(defaults.diagnosticsPorts
             ? { diagnosticsPorts: { ...defaults.diagnosticsPorts } }
             : {})

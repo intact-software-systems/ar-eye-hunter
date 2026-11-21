@@ -118,6 +118,7 @@ export type {
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions,
     RallarFacade,
+    RallarGroupPresencePolicy,
     RallarIncomingCallInvite,
     RallarJoinRoomInput,
     RallarJoinRoomOptions,
@@ -331,5 +332,7 @@ export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-vol
 export type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+export type { RoomDeadlineObservation } from './rooms/deadlines/watch-room-deadline.ts';
+export type { RoomDeadline, RoomDeadlineChange } from '@shared/api/group-deadlines/room-deadline.ts';
 
 export type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';

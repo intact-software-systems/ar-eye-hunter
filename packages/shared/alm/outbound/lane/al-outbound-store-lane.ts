@@ -130,7 +130,7 @@ export class ALOutboundStoreLane<TPrepared> {
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
         const { stores, runtime } = input;
-        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.clock.nowMs());
+        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.workClock.nowMs());
         const workPort = createALOutboundLaneWorkPort(input, this.leaseRecovery);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
         const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
@@ -267,7 +267,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
         // A commit that resolves after dispose must not refill what dispose cleared.
         if (!this.disposed && result.committed && result.computed.bundle !== undefined) {
-            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.readNowMs());
+            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.input.runtime.workClock.nowMs());
         }
     }
 
@@ -279,7 +279,7 @@ export class ALOutboundStoreLane<TPrepared> {
             storageHealth?.recordFailure({ cause: verdict.cause, detail: verdict.detail });
         }
         else if (result.committed) {
-            storageHealth?.recordRecoveryPoint(this.readNowMs());
+            storageHealth?.recordRecoveryPoint(this.input.runtime.workClock.nowMs());
         }
     }
 
@@ -340,9 +340,9 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
-        const startedAtMs = this.readNowMs();
+        const startedAtMs = this.input.runtime.workClock.nowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
-        const claimDurationMs = Math.max(0, this.readNowMs() - startedAtMs);
+        const claimDurationMs = Math.max(0, this.input.runtime.workClock.nowMs() - startedAtMs);
         if (this.input.runtime.dequeueTiming !== undefined) {
             recordALOutboundDequeueTiming(this.input.runtime.dequeueTiming, {
                 kind: 'reservation-returns',
@@ -454,7 +454,7 @@ export class ALOutboundStoreLane<TPrepared> {
         return await settleALOutboundClaim({
             ...settlement,
             capture: this.input.runtime.receiptWorkCapture,
-            readNowMs: () => this.readNowMs()
+            readNowMs: () => this.input.runtime.workClock.nowMs()
         });
     }
 
@@ -484,7 +484,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ? toALOutboundDequeueWork(entry, this.input.runtime.readMessageFromEntry)
             : await this.input.stores.admissionStore.readWorkSnapshot(
                 entry,
-                this.input.canonicalHandoff?.takeCanonical(entry.key, this.readNowMs())
+                this.input.canonicalHandoff?.takeCanonical(entry.key, this.input.runtime.workClock.nowMs())
             );
     }
 
@@ -661,7 +661,7 @@ export class ALOutboundStoreLane<TPrepared> {
             port: workPort,
             queueEngine: runtime.queueEngine,
             ownsQueueEngine: runtime.ownsQueueEngine,
-            clock: runtime.clock,
+            clock: runtime.workClock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
             readNextReadyAtMs: (port, nowMs) =>
                 this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port, nowMs), undefined),
@@ -707,7 +707,7 @@ function createALOutboundLaneWorkPort<TPrepared>(
         queue: stores.workQueue,
         workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
-        nowMs: () => runtime.clock.nowMs(),
+        nowMs: () => runtime.workClock.nowMs(),
         random: runtime.random,
         leaseRecovery
     });

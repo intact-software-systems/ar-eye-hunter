@@ -6,7 +6,14 @@ import { toALMessageTrace, toALMessageTraceOrNull } from '@shared/al-contracts/t
 const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
 
 function newMessage(actions?: ALMessage['actions']): ALMessage {
-    return newALUntargetedMessage('client', ROUTE, 'app.ask.v1', { q: 1 }, { traceId: 'trace-x', actions });
+    return newALUntargetedMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'client',
+        route: ROUTE,
+        typeId: 'app.ask.v1',
+        resource: { q: 1 },
+        options: { traceId: 'trace-x', actions }
+    });
 }
 
 describe('the trace of a message', () => {

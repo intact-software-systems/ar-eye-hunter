@@ -95,12 +95,15 @@ describe('Rallar server AI WebSocket topic', () => {
         const request = {
             payload: unicast.payload,
             raw: newALBroadcastMessage(
-                'peer-1',
-                newALRoute('room.ai.generate', 'custom-context', 'request-1'),
-                'room',
-                unicast.raw.payload.typeId,
-                createRallarServerAiTestRequestJson('request-1'),
-                { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.ai.generate', 'custom-context', 'request-1'),
+                    scope: 'room',
+                    typeId: unicast.raw.payload.typeId,
+                    resource: createRallarServerAiTestRequestJson('request-1'),
+                    options: { groupRef: RALLAR_SERVER_AI_TEST_ROOM_REF }
+                }
             )
         };
 
@@ -193,10 +196,13 @@ function createRouterWithSessions(sessionIds: readonly string[]) {
 
 function worldRequest() {
     return newALUnicastMessage(
-        'asker',
-        newALRoute('app.ai.generate', 'world', 'request-1'),
-        'rallar-ai-server',
-        TEST_WEBSOCKET_CONFIG.requestTypeId,
-        createRallarServerAiTestRequestJson()
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'asker',
+            route: newALRoute('app.ai.generate', 'world', 'request-1'),
+            toPeerId: 'rallar-ai-server',
+            typeId: TEST_WEBSOCKET_CONFIG.requestTypeId,
+            resource: createRallarServerAiTestRequestJson()
+        }
     );
 }

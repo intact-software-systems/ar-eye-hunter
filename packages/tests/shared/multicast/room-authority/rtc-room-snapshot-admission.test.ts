@@ -30,7 +30,14 @@ import { Either } from '@shared/resilience/Either.ts';
 import { createGroupSnapshotFixture } from '../../../shared-web/authoritative-group-fixtures.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});
+const message = newALMulticastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'origin',
+    route: { topicId: 'room.chat', contextId: 'room', resourceId: 'message' },
+    groupRef: roomRef,
+    typeId: 'chat.v1',
+    resource: {}
+});
 const nowMs = 100;
 const noLayoutChanges: RtcRoomLayoutChanges = { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null };
 
@@ -694,9 +701,17 @@ describe('the room roster fence at RTC ingress', () => {
 });
 
 function stampedMessage(minSnapshotVersion: number, rosterVersion: number) {
-    return newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {}, {
-        minSnapshotVersion,
-        rosterVersion
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: { topicId: 'room.chat', contextId: 'room', resourceId: 'message' },
+        groupRef: roomRef,
+        typeId: 'chat.v1',
+        resource: {},
+        options: {
+            minSnapshotVersion,
+            rosterVersion
+        }
     });
 }
 
@@ -798,9 +813,17 @@ describe('a granted publication\'s admission on its room plan', () => {
 
     describe('at a frozen recipient that is not subscribed', () => {
         const receipted = planALMessageHandling(
-            newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'receipted' }, roomRef, 'chat.v1', {}, {
-                ack: 'receiver',
-                ttlMs: 30_000
+            newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'origin',
+                route: { topicId: 'room.chat', contextId: 'room', resourceId: 'receipted' },
+                groupRef: roomRef,
+                typeId: 'chat.v1',
+                resource: {},
+                options: {
+                    ack: 'receiver',
+                    ttlMs: 30_000
+                }
             }),
             {
                 nowMs,
@@ -827,12 +850,20 @@ describe('a granted publication\'s admission on its room plan', () => {
         });
 
         it('answers a witnessed ordered copy not-subscribed and keeps its ACK: a witness holds no gap back', () => {
-            const ordered = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'witnessed' }, roomRef, 'chat.v1', {}, {
-                ack: 'receiver',
-                reliability: 'at-least-once',
-                ttlMs: 30_000,
-                orderingKey: 'room-track',
-                seq: 2
+            const ordered = newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'origin',
+                route: { topicId: 'room.chat', contextId: 'room', resourceId: 'witnessed' },
+                groupRef: roomRef,
+                typeId: 'chat.v1',
+                resource: {},
+                options: {
+                    ack: 'receiver',
+                    reliability: 'at-least-once',
+                    ttlMs: 30_000,
+                    orderingKey: 'room-track',
+                    seq: 2
+                }
             });
             const witnessed = planALMessageHandling(ordered, {
                 nowMs,

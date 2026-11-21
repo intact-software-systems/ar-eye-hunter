@@ -65,6 +65,7 @@ export namespace ALCheckpoint {
         readonly storage: ALCheckpointStorage;
         readonly ownership: ALDurableWorkOwnership;
         readonly nowMs: () => number;
+        readonly workNowMs: () => number;
     }
 }
 
@@ -147,7 +148,7 @@ export class ALCheckpoint implements ALCheckpointPort {
     }
 
     private createTracking(): ALCheckpointTracking {
-        const { storage, nowMs } = this.input;
+        const { storage, workNowMs: nowMs } = this.input;
         const dirty = new ALCheckpointDirtySet({ backend: storage.memory, nowMs });
         const writer = new ALCheckpointWriter({
             memory: storage.memory,

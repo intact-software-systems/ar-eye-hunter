@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeGroupFormationView } from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
+import {
+    decodeGroupFormationView,
+    toGroupFormationViewError
+} from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
 
 import { createFormationView } from '../shared-web/rooms/formation/room-formation-test-fixtures.ts';
 
@@ -93,5 +96,37 @@ describe('group formation view decoding', () => {
             ...view,
             causalRevision: { groupRevision: 1, presenceRevision: 1, observedAtEpochMs: 5 }
         }))).toEqual([]);
+    });
+
+    it('requires the held reshape and accepts null or a decoded one', () => {
+        const view = createFormationView(groupRef);
+        const { heldReshape: _heldReshape, ...withoutHeldReshape } = view;
+        const held = { wantedReasons: ['kind-change'], opensAtEpochMs: 1_795_060_154_711 };
+
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutHeldReshape)), groupRef).left).toEqual([
+            { path: 'heldReshape', code: 'missing-field', message: 'Formation view is missing heldReshape' }
+        ]);
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify({ ...view, heldReshape: held })), groupRef).right?.heldReshape)
+            .toEqual(held);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: [] } }))).toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['kind-change', 'kind-change'] } })))
+            .toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['refinement'] } }))).toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['leader-rooting', 'kind-change'] } })))
+            .toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: {} }))).toEqual(['heldReshape']);
+    });
+
+    it('joins every issue into one TypeError naming the group', () => {
+        const error = toGroupFormationViewError('room-1', [
+            { path: 'condition', code: 'invalid-value', message: 'condition is not a known value' },
+            { path: 'groupRef', code: 'invalid-value', message: 'Formation view names a different group' }
+        ]);
+
+        expect(error).toBeInstanceOf(TypeError);
+        expect(error.message).toBe(
+            'Formation view for room-1 is invalid: condition: condition is not a known value; ' +
+                'groupRef: Formation view names a different group'
+        );
     });
 });

@@ -179,9 +179,17 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
     });
 
     it('refuses that step beside a buffered slot: an admission that retains its copy witnessed nothing', () => {
-        const msg = newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'copy-9' }, ROOM, 'chat.v1', {}, {
-            orderingKey: 'chat',
-            seq: 9
+        const msg = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'copy-9' },
+            groupRef: ROOM,
+            typeId: 'chat.v1',
+            resource: {},
+            options: {
+                orderingKey: 'chat',
+                seq: 9
+            }
         });
         const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
         const slot: ALInboundAdmissionMutation = {

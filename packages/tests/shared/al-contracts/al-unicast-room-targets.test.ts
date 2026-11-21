@@ -17,12 +17,20 @@ const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
 
 describe('a unicast that names its room (D53, S3c-i C1)', () => {
     it('carries the room and the delivery it was built with, and is room-scoped', () => {
-        const message = newALUnicastMessage('a', ROUTE, 'b', 'app.command.v1', { go: true }, {
-            groupRef: ROOM,
-            ttlMs: 30_000,
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ownership: 'shared'
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'app.command.v1',
+            resource: { go: true },
+            options: {
+                groupRef: ROOM,
+                ttlMs: 30_000,
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ownership: 'shared'
+            }
         });
 
         expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'b', groupRef: ROOM });
@@ -36,8 +44,16 @@ describe('a unicast that names its room (D53, S3c-i C1)', () => {
     });
 
     it('keeps a unicast built without a room or a delivery exactly as before', () => {
-        const message = newALUnicastMessage('a', ROUTE, 'b', 'app.command.v1', { go: true }, {
-            ttlMs: 30_000
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'app.command.v1',
+            resource: { go: true },
+            options: {
+                ttlMs: 30_000
+            }
         });
 
         expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'b' });
@@ -47,9 +63,17 @@ describe('a unicast that names its room (D53, S3c-i C1)', () => {
     });
 
     it('decodes a room-naming unicast live and persisted, and refuses one whose room is not canonical', () => {
-        const message = newALUnicastMessage('a', ROUTE, 'b', 'app.command.v1', {}, {
-            groupRef: ROOM,
-            ttlMs: 30_000
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'b',
+            typeId: 'app.command.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                ttlMs: 30_000
+            }
         });
         const serialized = JSON.stringify(message);
         const loose = JSON.stringify({
@@ -66,8 +90,16 @@ describe('a unicast that names its room (D53, S3c-i C1)', () => {
     });
 
     it('names a unicast addressed to exactly one peer', () => {
-        const toServer = newALUnicastMessage('a', ROUTE, 'server', 'app.command.v1', {}, {
-            groupRef: ROOM
+        const toServer = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            toPeerId: 'server',
+            typeId: 'app.command.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM
+            }
         });
 
         expect(isALUnicastAddressedTo(toServer, 'server')).toBe(true);

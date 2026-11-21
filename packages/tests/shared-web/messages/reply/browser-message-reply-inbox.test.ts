@@ -191,7 +191,7 @@ function createReplyInboxFixture(): ReplyInboxFixture {
     };
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const sendReply = vi.fn<RallarMessageReplySender>(
-        async () => await Promise.resolve(registry.open(toRequestMessage('sent-reply', 'requester-1'), 'ws'))
+        async () => await Promise.resolve(registry.open({ message: toRequestMessage('sent-reply', 'requester-1'), carrier: 'ws', readDeadlineEpochMs: Date.now }))
     );
     const inbox = new BrowserMessageReplyInbox({
         wsInbox,
@@ -208,7 +208,7 @@ function createReplyInboxFixture(): ReplyInboxFixture {
         get unsubscribed() {
             return unsubscribed;
         },
-        openRequest: (toPeerId) => registry.open(toRequestMessage(REQUEST_ID, toPeerId), 'ws'),
+        openRequest: (toPeerId) => registry.open({ message: toRequestMessage(REQUEST_ID, toPeerId), carrier: 'ws', readDeadlineEpochMs: Date.now }),
         deliver: async (message) => {
             for (const handler of handlers) {
                 await handler.onMessage(message);

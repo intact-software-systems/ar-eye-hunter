@@ -61,11 +61,19 @@ describe('a counted recipient\'s refusal of a receipted RTC send (S8-R1, S8-R6)'
 
 /** A `receiver` multicast that no recipient may admit below the origin's own room version. */
 function createFlooredReceiptedSend(resourceId: string): ALMessage {
-    return newALMulticastMessage('a', { topicId: 'chat', resourceId, contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', { text: resourceId }, {
-        ack: 'all-logical-recipients',
-        reliability: 'at-least-once',
-        ttlMs: 30_000,
-        minSnapshotVersion: ORIGIN_SNAPSHOT_VERSION
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: { topicId: 'chat', resourceId, contextId: 'room' },
+        groupRef: ORIGIN_ROOM,
+        typeId: 'chat.message.v1',
+        resource: { text: resourceId },
+        options: {
+            ack: 'all-logical-recipients',
+            reliability: 'at-least-once',
+            ttlMs: 30_000,
+            minSnapshotVersion: ORIGIN_SNAPSHOT_VERSION
+        }
     });
 }
 

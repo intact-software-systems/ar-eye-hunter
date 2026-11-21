@@ -13,7 +13,7 @@ describe('browser session delivery observation', () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         const fixture = createObservation();
-        const handle = fixture.registry.open(createMessage('retained'), 'ws');
+        const handle = fixture.registry.open({ message: createMessage('retained'), carrier: 'ws', readDeadlineEpochMs: Date.now });
         expect(handle.rtcCapture()).toEqual({ status: 'unavailable', reason: 'absent' });
         const waiting = handle.wait();
         const oldEpoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
@@ -50,12 +50,12 @@ describe('browser session delivery observation', () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         const fixture = createObservation();
-        const oldHandle = fixture.registry.open(createMessage('old'), 'ws');
+        const oldHandle = fixture.registry.open({ message: createMessage('old'), carrier: 'ws', readDeadlineEpochMs: Date.now });
         const oldWaiting = oldHandle.wait();
         const replacement = { ...fixture.session, sessionId: 'replacement' };
         fixture.owner.beginSession(replacement);
         expect((await oldWaiting).lifecycle.state).toBe('unobservable');
-        const currentHandle = fixture.registry.open(createMessage('current'), 'rtc');
+        const currentHandle = fixture.registry.open({ message: createMessage('current'), carrier: 'rtc', readDeadlineEpochMs: Date.now });
         const currentWaiting = currentHandle.wait();
         fixture.owner.endSession(fixture.session);
         expect(currentHandle.lifecycle().state).toBe('submitted');
@@ -68,7 +68,7 @@ describe('browser session delivery observation', () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         const fixture = createObservation();
-        const handle = fixture.registry.open(createMessage('closing'), 'ws');
+        const handle = fixture.registry.open({ message: createMessage('closing'), carrier: 'ws', readDeadlineEpochMs: Date.now });
         const epoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
         epoch.onClose(() =>
             epoch.settlements.ws({
@@ -91,7 +91,7 @@ describe('browser session delivery observation', () => {
         vi.setSystemTime(0);
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const fixture = createObservation();
-        const handle = fixture.registry.open(createMessage('ending'), 'ws');
+        const handle = fixture.registry.open({ message: createMessage('ending'), carrier: 'ws', readDeadlineEpochMs: Date.now });
         const statesAtEnd: string[] = [];
         fixture.owner.onSessionEnd(() => {
             throw new Error('A session-end listener failed.');
@@ -114,7 +114,12 @@ interface DeliveryObservationFixture {
 }
 
 function createObservation(): DeliveryObservationFixture {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
     const middleware = createDefaultApiMiddlewareTestDouble();
     const feed = new BrowserDeliverySettlements();
     const owner = new BrowserSessionDeliveries(registry, {

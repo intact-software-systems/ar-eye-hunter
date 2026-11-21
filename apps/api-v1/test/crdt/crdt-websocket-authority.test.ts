@@ -357,16 +357,18 @@ function message(
     envelope: RallarCrdtUpdateEnvelope
 ): ALMessage {
     const value = newALBroadcastMessage(
-        sessionId,
-        newALRoute(
-            RALLAR_CRDT_APP_TOPIC_ID,
-            envelope.document.applicationId,
-            envelope.updateId
-        ),
-        // A browser sends an app document's live update to its own world; a client's all is refused at ingress.
-        'world',
-        RALLAR_CRDT_UPDATE_TYPE_ID,
-        envelope
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: newALRoute(
+                RALLAR_CRDT_APP_TOPIC_ID,
+                envelope.document.applicationId,
+                envelope.updateId
+            ),
+            scope: 'world',
+            typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+            resource: envelope
+        }
     );
     return { ...value, id: { ...value.id, msgId, senderId: sessionId } };
 }

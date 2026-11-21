@@ -23,7 +23,14 @@ const NACK_REASON_BY_PLAN_REASON = {
     'before-entry': 'before-entry'
 } satisfies Record<ALInboundNackPlanReason, ALNackReason>;
 
-const message = newALUnicastMessage('origin', newALRoute('app.topic', 'context', 'resource'), 'self', 'app.v1', {});
+const message = newALUnicastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'origin',
+    route: newALRoute('app.topic', 'context', 'resource'),
+    toPeerId: 'self',
+    typeId: 'app.v1',
+    resource: {}
+});
 
 function toNackReasons(reason: ALInboundNackPlanReason): readonly ALNackReason[] {
     const planned = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', fromPeerId: 'origin' });

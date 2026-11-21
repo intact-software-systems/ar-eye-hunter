@@ -366,7 +366,11 @@ async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<R
     const room = createOriginSnapshot(['a', 'b', 'c'], 4);
     const snapshot = expectation.mode === 'leader' ? toOriginDirectedSnapshot(room, 'c', Date.now()) : room;
     const server = await createReceiptLoopServer(snapshot);
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        ...BROWSER_DELIVERY_RETENTION,
+        cancel: () => {}
+    });
     registerReceiptLoopCleanup([() => registry.releaseAll()]);
     const ws = await createReceiptLoopPeer('a', (settlement) => registry.record(settlement), () => undefined);
     const rtc = createRtcOriginOverlayFixture({
@@ -564,8 +568,7 @@ function createReceiptLoopOrigin(
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries: owners.registry,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => undefined,
         grantedTopics: NO_RTC_GRANTED_TOPICS
     });
@@ -583,21 +586,24 @@ function createReceiptLoopOrigin(
         onStorageUnavailable: 'refuse',
         publication: undefined
     };
-    return { ...owners, dispatch, delivery, handle: owners.registry.open(delivery.message, 'rtc'), rtcAdmissions };
+    return { ...owners, dispatch, delivery, handle: owners.registry.open({ message: delivery.message, carrier: 'rtc', readDeadlineEpochMs: Date.now }), rtcAdmissions };
 }
 
 function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessage {
     const message = newALMulticastMessage(
-        'a',
-        { topicId: 'room.ar-eye-hunter.director', resourceId: 'start', contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { start: true },
         {
-            ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
-            reliability: 'at-least-once',
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'volatile' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.ar-eye-hunter.director', resourceId: 'start', contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { start: true },
+            options: {
+                ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'volatile' } }
+            }
         }
     );
     expect(message.constraints?.expiresAtMs).toBe(Date.now() + 30_000);

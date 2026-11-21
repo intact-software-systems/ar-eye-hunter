@@ -139,14 +139,17 @@ describe('Postgres transaction write boundary', () => {
         const context: AppInboxMessageContext<JsonWireValue> = {
             enqueue,
             message: newALUntargetedMessage(
-                'server-1',
-                newALRoute(
-                    incomingEntry.key.topicId,
-                    incomingEntry.key.contextId,
-                    incomingEntry.key.resourceId
-                ),
-                enqueue.type,
-                enqueue
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALRoute(
+                        incomingEntry.key.topicId,
+                        incomingEntry.key.contextId,
+                        incomingEntry.key.resourceId
+                    ),
+                    typeId: enqueue.type,
+                    resource: enqueue
+                }
             ),
             entry: incomingEntry,
             attemptTelemetry: computeResourceInboxAttempt({

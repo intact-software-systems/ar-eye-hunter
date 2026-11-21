@@ -76,15 +76,18 @@ describe('AL admission policy transitions', () => {
 function createOrderedMessage(seq: number) {
     return {
         ...newALUnicastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: `msg-${seq}`,
-                contextId: 'conversation-1'
-            },
-            'peer-2',
-            'chat.private-text.v1',
-            { text: `message-${seq}` }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: `msg-${seq}`,
+                    contextId: 'conversation-1'
+                },
+                toPeerId: 'peer-2',
+                typeId: 'chat.private-text.v1',
+                resource: { text: `message-${seq}` }
+            }
         ),
         ordering: {
             orderingKey: 'conversation-1',

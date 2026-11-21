@@ -432,6 +432,7 @@ export class AlmReloadPorts {
                 hasPendingLayout: false,
                 acceptedHeldSinceEpochMs,
                 acceptedHeldForMs: this.now - acceptedHeldSinceEpochMs,
+                heldReshape: { reading: 'none', readAtEpochMs: this.now },
                 formation: {}
             }
         };

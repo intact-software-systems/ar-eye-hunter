@@ -38,9 +38,6 @@ export namespace BrowserPublicationStages {
         readonly writeLeg: () => Promise<void>;
     }
 
-    export interface Input {
-        readonly nowMs: () => number;
-    }
 }
 
 interface BrowserConnectPublicationStage {
@@ -55,12 +52,8 @@ interface BrowserConnectPublicationStage {
  * (D479), so it is built before the registry and each staged delivery carries its own leg writer.
  */
 export class BrowserPublicationStages {
-    private readonly input: BrowserPublicationStages.Input;
     private current: BrowserConnectPublicationStage | undefined;
 
-    constructor(input: BrowserPublicationStages.Input) {
-        this.input = input;
-    }
 
     stage(staged: BrowserPublicationStages.StagedDelivery): void {
         if (this.current?.context === staged.delivery.context) {
@@ -104,7 +97,7 @@ export class BrowserPublicationStages {
         const stage = new ALOutboundPublicationStage<BrowserPublicationStages.StagedDelivery>({
             taskId: PUBLICATION_STAGE_TASK_ID,
             queueEngine: context.middleware.qboxEngine,
-            clock: { nowMs: this.input.nowMs },
+            clock: { nowMs: () => context.serverTime.readWorkEpochMs() },
             submit: async (selected) => await this.submit(selected),
             settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
             diagnostics: context.middleware.outboundDiagnostics,
@@ -171,7 +164,7 @@ export class BrowserPublicationStages {
             msgId: message.id.msgId,
             traceId: message.id.traceId,
             carrier,
-            atMs: this.input.nowMs(),
+            atMs: delivery.context.serverTime.readWorkEpochMs(),
             verdict,
             trackedReceiptAlgo: 'none'
         });

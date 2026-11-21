@@ -74,12 +74,15 @@ for (const enabled of [false, true]) {
             };
             try {
                 await server.runtime.wsQBoxServerService.enqueueOutboxIfAbsent(newALUnicastMessage(
-                    'server',
-                    { topicId: 'timing-test', resourceId: 'no-recipient', contextId: 'test' },
-                    'absent-peer',
-                    'timing.test.v1',
-                    {},
-                    { ttlMs: 30_000 }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'server',
+                        route: { topicId: 'timing-test', resourceId: 'no-recipient', contextId: 'test' },
+                        toPeerId: 'absent-peer',
+                        typeId: 'timing.test.v1',
+                        resource: {},
+                        options: { ttlMs: 30_000 }
+                    }
                 ));
             }
             finally {

@@ -23,7 +23,15 @@ test('the durable filter judges a room row by the room\'s live generations and t
         nowEpochMs: Date.now
     });
     const captured = {
-        message: newALBroadcastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'chat'), 'room', 'chat.v1', {}, { groupRef: ROOM }),
+        message: newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: newALEventRoute('room.chat', ROOM.groupId, 'chat'),
+            scope: 'room',
+            typeId: 'chat.v1',
+            resource: {},
+            options: { groupRef: ROOM }
+        }),
         candidateSessionIds: ['bob', 'carol'],
         recipientScope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId },
         capturedConnectionGenerationIds: null

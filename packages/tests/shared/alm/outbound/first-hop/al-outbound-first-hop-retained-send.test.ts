@@ -204,12 +204,13 @@ async function createRetainedSendLink(startsBehind: boolean): Promise<RetainedSe
 }
 
 function toRoomNotice(): ALMessage {
-    return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.notification', ROOM.groupId, 'only'),
-        'room',
-        'notice.v1',
-        { text: 'hello' },
-        { groupRef: ROOM, ttlMs: MESSAGE_TTL_MS, reliability: 'at-least-once', ack: 'receiver' }
-    );
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: newALRoute('room.notification', ROOM.groupId, 'only'),
+        scope: 'room',
+        typeId: 'notice.v1',
+        resource: { text: 'hello' },
+        options: { groupRef: ROOM, ttlMs: MESSAGE_TTL_MS, reliability: 'at-least-once', ack: 'receiver' }
+    });
 }

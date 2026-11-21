@@ -1,50 +1,40 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
     newALRoute,
-    newALUnicastMessage
+    newALUnicastMessage,
+    newALUntargetedMessage
 } from '@shared/al-contracts/al-contract.ts';
 
-const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
-const ROUTE = newALRoute('app.command', 'room-1', 'resource-1');
-const TTL_MS = 30_000;
+const groupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const input = {
+    createdAtEpochMs: 100_000,
+    senderId: 'a',
+    route: newALRoute('app.command', 'room-1', 'resource-1'),
+    typeId: 'app.command.v1',
+    resource: {}
+};
 
-function tickClockOnEveryRead(): void {
-    let now = 1_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now++);
-}
-
-describe('a message deadline is measured from the message id timestamp', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('for a unicast', () => {
-        tickClockOnEveryRead();
-
-        const message = newALUnicastMessage('a', ROUTE, 'b', 'app.command.v1', {}, { ttlMs: TTL_MS });
-
-        expect(message.constraints?.expiresAtMs).toBe(message.id.ts + TTL_MS);
-    });
-
-    it('for a multicast', () => {
-        tickClockOnEveryRead();
-
-        const message = newALMulticastMessage('a', ROUTE, ROOM, 'app.command.v1', {}, { ttlMs: TTL_MS });
-
-        expect(message.constraints?.expiresAtMs).toBe(message.id.ts + TTL_MS);
-    });
-
-    it('for a broadcast', () => {
-        tickClockOnEveryRead();
-
-        const message = newALBroadcastMessage('a', ROUTE, 'room', 'app.command.v1', {}, {
-            groupRef: ROOM,
-            ttlMs: TTL_MS
-        });
-
-        expect(message.constraints?.expiresAtMs).toBe(message.id.ts + TTL_MS);
+describe('an AL envelope uses the creation epoch supplied by its owner', () => {
+    it.each([undefined, 0, 1000])('preserves a TTL of %s across audiences', (ttlMs) => {
+        const message = { ...input, options: { ttlMs } };
+        const envelopes = [
+            newALUntargetedMessage(message),
+            newALUnicastMessage({ ...message, toPeerId: 'b' }),
+            newALMulticastMessage({ ...message, groupRef }),
+            newALBroadcastMessage({ ...message, scope: 'world' }),
+            newALPrincipalBroadcastMessage({
+                ...message,
+                target: { groupRef, principalRef: { applicationId: 'app', workspaceId: 'workspace', principalId: 'b' } }
+            })
+        ];
+        for (const envelope of envelopes) {
+            expect(envelope.id.ts).toBe(100_000);
+            expect(envelope.audit?.createdTs).toBe(100_000);
+            expect(envelope.constraints?.expiresAtMs).toBe(ttlMs === undefined ? undefined : 100_000 + ttlMs);
+        }
     });
 });

@@ -12,6 +12,7 @@ import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { readGroupPresenceCreationEpochMs } from '../session/group-presence-policy.ts';
 
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
@@ -39,11 +40,15 @@ import {
     quickJoinStateGroup,
     type StateGroupWorkflowValue
 } from './room-group-state-workflows.ts';
-import { readSummarisedRoomPresence, type SummarisedRoomPresenceInput } from './room-presence.ts';
+import { readConfirmedRoomArrival, readSummarisedRoomPresence } from './room-presence.ts';
 import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 
-export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
+export interface RoomPresenceDependencies {
+    readonly newPresenceGenerationId: () => string;
+}
+
+export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly room: string | GroupRef | RallarJoinRoomInput;
     readonly options?: RallarJoinRoomOptions;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
@@ -79,8 +84,10 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     sessionFence.assertCurrent(context);
     const session = sessionFence.session;
     const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
-    const generationId = crypto.randomUUID();
+    const generationId = input.newPresenceGenerationId();
     const snapshot = await joinStateGroup({
+        nowMs: () => readGroupPresenceCreationEpochMs(context),
+        groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: roomId,
         principalId: session.clientId,
         sessionId: session.sessionId,
@@ -89,7 +96,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         publicationKey: await input.readPublicationKey(),
         scope,
         authSession: session,
-        assertCurrent: sessionFence.assertCurrent,
+        assertCurrent: () => sessionFence.assertCurrent(context),
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(options),
         intent: {
             inviteToken: target.options.inviteToken,
@@ -97,15 +104,12 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
             participation: target.options.participation
         }
     });
-    const arrived = await readRoomSessionPresence({
+    const arrived = await readConfirmedRoomArrival({
         snapshot,
-        sessionId: session.sessionId,
         generationId,
-        present: true,
         fence: sessionFence,
         context,
-        options,
-        minPresenceRevision: 0
+        options
     }).catch((cause) => {
         throw createRoomJoinPartialFailureError(snapshot, toError(cause));
     });
@@ -176,7 +180,7 @@ async function completeRoomJoin(completion: RoomJoinCompletion): Promise<GroupSn
     return adopted;
 }
 
-export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
+export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly move: GroupMove;
     readonly options: RallarOperationOptions;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
@@ -267,8 +271,10 @@ interface GroupMoveActivation {
 async function connectMovedSession(
     { input, move, context, fence, options }: GroupMoveActivation
 ): Promise<GroupSnapshot> {
-    const generationId = crypto.randomUUID();
+    const generationId = input.newPresenceGenerationId();
     const connected = await createStateGroupPresenceCommand({
+        nowMs: () => readGroupPresenceCreationEpochMs(context),
+        groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: move.destination.groupId,
         principalId: fence.session.clientId,
         sessionId: fence.session.sessionId,
@@ -284,12 +290,9 @@ async function connectMovedSession(
     if (!connected) {
         throw new Error('Destination presence did not produce a snapshot.');
     }
-    const snapshot = await readRoomSessionPresence({
+    const snapshot = await readConfirmedRoomArrival({
         snapshot: connected,
-        sessionId: fence.session.sessionId,
         generationId,
-        present: true,
-        minPresenceRevision: 0,
         fence,
         context,
         options
@@ -337,49 +340,23 @@ async function disconnectRoomSession(
     }, toRallarCommandOptions(options)).run();
     fence.assertCurrent(context);
     if (source) {
-        return await readRoomSessionPresence({
+        const minRevision = sourceBeforeDisconnect && sourceSession
+            ? sourceBeforeDisconnect.causalRevision.presenceRevision + 1
+            : 0;
+        return await readSummarisedRoomPresence({
             snapshot: source,
-            sessionId: fence.session.sessionId,
-            generationId: request.generationId,
-            present: false,
             fence,
             context,
             options,
-            minPresenceRevision: sourceBeforeDisconnect && sourceSession
-                ? sourceBeforeDisconnect.causalRevision.presenceRevision + 1
-                : 0
+            isSummarised: (candidate) =>
+                candidate.causalRevision.presenceRevision >= minRevision &&
+                !candidate.activeSessions.some((row) => row.sessionId === fence.session.sessionId)
         });
     }
     return undefined;
 }
 
-interface RoomSessionPresenceInput extends Omit<SummarisedRoomPresenceInput, 'isSummarised'> {
-    readonly sessionId: string;
-    readonly generationId: string;
-    readonly present: boolean;
-    readonly minPresenceRevision: number;
-}
-
-async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
-    const { snapshot, fence, context, options } = input;
-    return await readSummarisedRoomPresence({
-        snapshot,
-        fence,
-        context,
-        options,
-        isSummarised: (candidate) => {
-            if (candidate.causalRevision.presenceRevision < input.minPresenceRevision) {
-                return false;
-            }
-            const session = candidate.activeSessions.find((row) => row.sessionId === input.sessionId);
-            return input.present
-                ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
-                : session === undefined;
-        }
-    });
-}
-
-export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
+export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly options: RallarQuickJoinRoomInput;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
@@ -457,8 +434,10 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         input.options.signal
     );
     input.assertCurrent();
-    const generationId = crypto.randomUUID();
+    const generationId = input.dependencies.newPresenceGenerationId();
     const snapshot = await createStateGroupPresenceCommand({
+        nowMs: () => readGroupPresenceCreationEpochMs(input.context),
+        groupPresence: input.context.middleware.heartbeat.groupPresence,
         groupId: input.joinedRoom.group.groupId,
         principalId: input.session.clientId,
         sessionId: input.session.sessionId,
@@ -467,21 +446,19 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         publicationKey: await input.dependencies.readPublicationKey(),
         scope,
         authSession: input.session,
+        assertCurrent: input.assertCurrent,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)
     }).run();
     input.assertCurrent();
     if (!snapshot) {
         throw new Error('Quick Join presence did not produce a snapshot.');
     }
-    const arrived = await readRoomSessionPresence({
+    const arrived = await readConfirmedRoomArrival({
         snapshot,
-        sessionId: input.session.sessionId,
         generationId,
-        present: true,
         fence: { session: input.session, assertCurrent: input.assertCurrent },
         context: input.context,
-        options: input.options,
-        minPresenceRevision: 0
+        options: input.options
     });
     return await adoptJoinedRoom({
         dependencies: input.dependencies,

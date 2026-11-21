@@ -96,12 +96,12 @@ afterEach(() => {
 function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessageHandle {
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
-    const handle = registry.open({
+    const handle = registry.open({ message: {
         id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
         route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
         payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
         delivery: { ack: 'group-leader', reliability: 'at-least-once' }
-    }, 'rtc');
+    }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
     starts.push({ atMs: Date.now(), msgId, payload });
     registry.record({
         kind: 'admission',
@@ -264,7 +264,12 @@ class ScaleActor {
     readonly index: number;
     readonly role: 'director' | 'player';
     readonly session: AuthSession;
-    readonly registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1_000, cancel: () => undefined });
+    readonly registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 1_000,
+        cancel: () => undefined
+    });
     readonly native: BlackBoxRallarRuntime;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly recipe: RallarBlackBoxTestRecipe;
@@ -503,6 +508,7 @@ class ScaleCohort {
     private acceptedLayoutIdentity: GroupLayoutIdentity | undefined;
     private plannedLayoutIdentity: GroupLayoutIdentity | undefined;
     private acceptedUpdatedAtMs: number | undefined;
+    private heldReshapeOpensAtMs: number | undefined;
     private groupRevision = 56;
     private groupRevisionAtMs = Date.now();
     private presenceRevision = 1;
@@ -538,6 +544,9 @@ class ScaleCohort {
         return {
             readyAtEpochMs: Date.now(),
             hasPendingLayout: this.plannedLayoutIdentity !== undefined,
+            heldReshape: this.heldReshapeOpensAtMs === undefined
+                ? { reading: 'none', readAtEpochMs: Date.now() }
+                : { reading: 'held', readAtEpochMs: Date.now(), wantedReasons: ['kind-change'], opensAtEpochMs: this.heldReshapeOpensAtMs },
             formation: {
                 roomRef: GROUP,
                 ...(this.plannedLayoutIdentity === undefined ? {} : { planned: { identity: { ...this.plannedLayoutIdentity } } }),
@@ -578,6 +587,17 @@ class ScaleCohort {
             this.acceptedUpdatedAtMs = plannedAtMs;
             this.publishLayout({ kind: 'layoutAccepted', role: 'accepted', identity });
         }, this.policy.promotionMs);
+    }
+
+    /** The reshape gate holds a wanted reshape until `opensAtMs`; nothing is planned or published meanwhile. */
+    holdReshape(opensAtMs: number): void {
+        this.heldReshapeOpensAtMs = opensAtMs;
+    }
+
+    /** The gate opens and the held reshape is planned like any other. */
+    releaseHeldReshape(): void {
+        this.heldReshapeOpensAtMs = undefined;
+        this.planLayout();
     }
 
     private advanceGroupRevision(): void {
@@ -697,13 +717,13 @@ class ScaleCohort {
 
     send(actor: ScaleActor, payload: ScaleWirePayload): RallarMessageHandle {
         const msgId = `${actor.agentId}-message-${actor.starts.length + 1}`;
-        const handle = actor.registry.open({
+        const handle = actor.registry.open({ message: {
             id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
             route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
             payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
             delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },
             constraints: { expiresAtMs: Date.now() + 30_000 }
-        }, 'rtc');
+        }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
         actor.starts.push({ atMs: Date.now(), msgId, payload });
         const admit = () => {
             actor.registry.record({
@@ -907,6 +927,23 @@ it('releases setup-complete without a further quiet wait once the accepted layou
 
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
     expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - startedAtMs).toBeLessThan(1_000);
+});
+
+it('holds setup-complete while the formation view states a held reshape, for a hold of the default upper bound', async () => {
+    const cohort = new ScaleCohort(NORMAL_POLICY);
+    cohort.planLayout();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const opensAtMs = Date.now() + 60_000;
+    cohort.holdReshape(opensAtMs);
+    setTimeout(() => cohort.releaseHeldReshape(), 60_000);
+    const execution = Promise.all(cohort.actors.map((actor) => actor.runSetupCompletion()));
+    await vi.runAllTimersAsync();
+    const results = await execution;
+
+    expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
+    // The reshape is accepted 0.5 s after the gate opens; the quiet window counts from there.
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - opensAtMs).toBeGreaterThanOrEqual(500 + 3_500);
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - opensAtMs).toBeLessThan(6_000);
 });
 
 async function runCohortSetup(policy: CohortPolicy): Promise<ScaleCohort> {

@@ -35,12 +35,15 @@ describe('the receipt timeout of a copy an RTC relay forwarded', () => {
 
     it('advances the relay row at each deadline without a repair hint, while the origin retries its own', async () => {
         const message = newALMulticastMessage(
-            'origin',
-            { topicId: 'room.ar-eye-hunter.director', resourceId: 'unanswered-shot', contextId: room.groupId },
-            room,
-            'room.ar-eye-hunter.director.intent.v1',
-            { kind: 'player-shot-intent', senderId: 'origin', seq: 1 },
-            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'origin',
+                route: { topicId: 'room.ar-eye-hunter.director', resourceId: 'unanswered-shot', contextId: room.groupId },
+                groupRef: room,
+                typeId: 'room.ar-eye-hunter.director.intent.v1',
+                resource: { kind: 'player-shot-intent', senderId: 'origin', seq: 1 },
+                options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            }
         );
         const origin = createEndpoint('origin', ['relay']);
         const relay = createEndpoint('relay', ['origin', 'director']);

@@ -160,16 +160,19 @@ describe('the fallback-within-the-deadline family (D56)', () => {
 
     it('keeps the expiring lifetime under the default RTC receipt budget, so no receipt end precedes the deadline', () => {
         const message = newALMulticastMessage(
-            'sender',
             {
-                topicId: 'room.alm-conformance',
-                resourceId: 'receipt-budget',
-                contextId: 'room-alm'
-            },
-            { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
-            'alm.conformance',
-            {},
-            { reliability: 'at-least-once', ack: 'receiver', ttlMs: EXPIRY_TTL_MS }
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: {
+                    topicId: 'room.alm-conformance',
+                    resourceId: 'receipt-budget',
+                    contextId: 'room-alm'
+                },
+                groupRef: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                typeId: 'alm.conformance',
+                resource: {},
+                options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: EXPIRY_TTL_MS }
+            }
         );
 
         const tracking = toRtcAckTrackingPlan(normalizeALQosPolicy(message).effective, [

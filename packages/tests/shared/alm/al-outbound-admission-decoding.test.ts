@@ -609,16 +609,19 @@ async function scheduleNotYetInSyncRetry(
 
 function createMessage() {
     return newALUnicastMessage(
-        'sender',
         {
-            topicId: 'chat',
-            resourceId: 'resource',
-            contextId: 'context'
-        },
-        'peer',
-        'chat.text.v1',
-        { text: 'hello' },
-        { ttlMs: 60_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: {
+                topicId: 'chat',
+                resourceId: 'resource',
+                contextId: 'context'
+            },
+            toPeerId: 'peer',
+            typeId: 'chat.text.v1',
+            resource: { text: 'hello' },
+            options: { ttlMs: 60_000 }
+        }
     );
 }
 

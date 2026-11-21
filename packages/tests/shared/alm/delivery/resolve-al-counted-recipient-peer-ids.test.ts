@@ -9,7 +9,14 @@ import {
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 function createRoomMulticast(): ALMessage {
-    return newALMulticastMessage('a', { topicId: 'chat', resourceId: 'm', contextId: 'room' }, ROOM, 'chat.v1', {});
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: { topicId: 'chat', resourceId: 'm', contextId: 'room' },
+        groupRef: ROOM,
+        typeId: 'chat.v1',
+        resource: {}
+    });
 }
 
 function createFrozenMulticast(recipientPeerIds: readonly string[]): ALMessage {
@@ -27,7 +34,14 @@ describe('the sessions a receiver or leader receipt counts', () => {
     });
 
     it('counts a unicast\'s addressee under leader', () => {
-        const message = newALUnicastMessage('a', { topicId: 'chat', resourceId: 'm', contextId: 'room' }, 'b', 'chat.v1', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId: 'm', contextId: 'room' },
+            toPeerId: 'b',
+            typeId: 'chat.v1',
+            resource: {}
+        });
 
         expect(resolveALCountedRecipientPeerIds(message, 'leader')).toEqual(['b']);
         expect(isALCountedRecipient(message, 'leader', 'b')).toBe(true);

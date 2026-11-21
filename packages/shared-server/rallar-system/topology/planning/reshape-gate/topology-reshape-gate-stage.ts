@@ -1,10 +1,11 @@
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
+    type HeldTopologyReshape,
     type TopologyReshapeGateState,
     type TopologyReshapePermission
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
-import type { BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
+import { computeBackoffGateOpensAt, type BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
 
 import { consultsReplanningPolicy, type TopologyWorkOrigin } from '../resolve-topology-plan-action.ts';
 import {
@@ -63,6 +64,20 @@ export function computeStagedTopologyReshapeGate(
     });
 }
 
-function isTopologyReshapeGateApplied(stage: TopologyReshapeGateStage): boolean {
+/** A gate that never passed is open, so it opens at epoch 0 while it still holds wanted reasons. */
+export function computeStagedHeldTopologyReshape(
+    stage: Pick<TopologyReshapeGateStage, 'lifecycleState' | 'state' | 'bounds'>
+): HeldTopologyReshape | null {
+    const { state } = stage;
+    if (!isTopologyReshapeGateApplied(stage) || state === null || state.wantedReasons.length === 0) {
+        return null;
+    }
+    return {
+        wantedReasons: state.wantedReasons,
+        opensAtEpochMs: computeBackoffGateOpensAt(state.gate, stage.bounds) ?? 0
+    };
+}
+
+function isTopologyReshapeGateApplied(stage: Pick<TopologyReshapeGateStage, 'lifecycleState'>): boolean {
     return consultsReplanningPolicy(stage.lifecycleState);
 }

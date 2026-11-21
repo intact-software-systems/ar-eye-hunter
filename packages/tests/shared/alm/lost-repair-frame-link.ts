@@ -224,12 +224,13 @@ function toWireMessage(message: ALMessage): ALMessage {
 
 /** The WS client's ordered room send named `name` on the track `stream`, at least once. */
 export function createOrderedRoomBroadcast(name: string, ack: ALAckMode): ALMessage {
-    return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.stream', ORIGIN_ROOM.groupId, name),
-        'room',
-        'stream.message.v1',
-        { name },
-        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack, ordering: { orderingKey: 'stream' } }
-    );
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: newALRoute('room.stream', ORIGIN_ROOM.groupId, name),
+        scope: 'room',
+        typeId: 'stream.message.v1',
+        resource: { name },
+        options: { groupRef: ORIGIN_ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack, ordering: { orderingKey: 'stream' } }
+    });
 }

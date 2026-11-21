@@ -162,6 +162,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDirectorStatusListener',
                 'RallarDirectorStatusOptions',
                 'RallarFacade',
+                'RallarGroupPresencePolicy',
                 'RallarIncomingCallInvite',
                 'RallarJoinRoomInput',
                 'RallarJoinRoomOptions',
@@ -334,7 +335,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsSendInput',
                 'RallarWsStatus',
                 'RallarWsStatusListener',
-                'RallarWsWaitForOpenResult'
+                'RallarWsWaitForOpenResult',
+                'RoomDeadline',
+                'RoomDeadlineChange',
+                'RoomDeadlineObservation'
             ],
             starExports: [],
             namespaceExports: []
@@ -411,6 +415,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDefaults',
                 'RallarDiagnosticsPorts',
                 'RallarDiagnosticsPortsInput',
+                'RallarGroupPresencePolicy',
                 'RallarJoinRoomOptions',
                 'RallarLeaveRoomOptions',
                 'RallarListPeopleEventsOptions',
@@ -494,7 +499,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarTypedRtcSendOptions',
                 'RallarTypedWsSendOptions',
                 'RallarUnsubscribe',
-                'RallarWsSendInput'
+                'RallarWsSendInput',
+                'RoomDeadline',
+                'RoomDeadlineChange',
+                'RoomDeadlineObservation'
             ],
             starExports: [],
             namespaceExports: []

@@ -152,7 +152,8 @@ export class ALInboundStoreLane {
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
-            nowMs: () => this.readNowMs(),
+            // Selection schedules work; delivery rechecks authority with the strict runtime clock.
+            nowMs: () => this.dependencies.workClock.nowMs(),
             lane: input.lane
         });
         this.work = this.createWorkHandler(workPort, workType);
@@ -221,7 +222,7 @@ export class ALInboundStoreLane {
             return Either.ofRight(this.announceRetention(await this.admission.retainPending(result.pending)));
         }
         if (result.wroteWork) {
-            this.input.stores.storageHealth?.recordRecoveryPoint(this.readNowMs());
+            this.input.stores.storageHealth?.recordRecoveryPoint(this.dependencies.workClock.nowMs());
             this.commitWork();
         }
         return Either.ofRight(result.acceptance);
@@ -397,7 +398,7 @@ export class ALInboundStoreLane {
      * round is exactly the relay cost the suppression removed.
      */
     private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
-        const nowMs = this.readNowMs();
+        const nowMs = this.dependencies.workClock.nowMs();
         this.emptyRoundCount += 1;
         this.emptyRoundsFromMs ??= nowMs - event.durationMs;
         this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
@@ -442,7 +443,7 @@ export class ALInboundStoreLane {
         const effect = decodeALInboundWorkEntry(claim.entry, this.input.stores.admissionStore.namespace);
         assertALInboundWorkCarrier(effect, this.dependencies.carrier);
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
-        const startedAtMs = this.readNowMs();
+        const startedAtMs = this.dependencies.workClock.nowMs();
         const diagnostics = this.dependencies.diagnostics;
         const evidence = diagnostics?.acknowledgementCapture?.evidence.tryCreateClaim({
             effect,
@@ -461,7 +462,7 @@ export class ALInboundStoreLane {
                 claim,
                 effect,
                 outcome,
-                durationMs: Math.max(0, this.readNowMs() - startedAtMs),
+                durationMs: Math.max(0, this.dependencies.workClock.nowMs() - startedAtMs),
                 batchStartedAtMs,
                 startedAtMs
             });
@@ -535,7 +536,7 @@ export class ALInboundStoreLane {
             if (replayed.wroteWork) {
                 this.commitWork();
             }
-            return toALInboundReplayOutcome(replayed.outcome, this.readNowMs());
+            return toALInboundReplayOutcome(replayed.outcome, this.dependencies.workClock.nowMs());
         }
         if (payload.kind === 'admit-control') {
             return await this.replayControl(payload, evidence);
@@ -638,7 +639,7 @@ export class ALInboundStoreLane {
             port: workPort,
             queueEngine: dependencies.queueEngine,
             ownsQueueEngine: dependencies.ownsQueueEngine,
-            clock: dependencies.clock,
+            clock: dependencies.workClock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
             readNextReadyAtMs: (port, nowMs) =>
@@ -676,7 +677,7 @@ function createALInboundLaneWorkPort(dependencies: ALInboundMessageRuntime.Depen
         queue: dependencies.workQueue,
         workTypes: new Set([toALInboundWorkType(dependencies.admissionStore.namespace, dependencies.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
-        nowMs: () => dependencies.clock.nowMs(),
+        nowMs: () => dependencies.workClock.nowMs(),
         random: dependencies.random,
         // The rotation's probe has no lease clamp: a limited sweep would run empty batches until it reopened.
         leaseRecovery: { kind: 'every-batch' }

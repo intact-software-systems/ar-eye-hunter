@@ -1,4 +1,3 @@
-import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 import {
     beforeEach,
     describe,
@@ -6,10 +5,13 @@ import {
     it,
     vi
 } from 'vitest';
-import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+
+import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { EmptyMediaStream } from '../../shared/rtc-media-test-events.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
@@ -53,6 +55,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({
             middleware: (await mocks.initialiseApiMiddleware()).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })

@@ -130,11 +130,14 @@ describe('the session volatile bound at the inbound admission (D74, C6)', () => 
     it('does not count a received RTC signal, whose deadline is only the carrier\'s lifetime stamp (R-S3c-ii-3)', async () => {
         const { budget, runtime } = createBudgetedInboundRuntime({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 10, maxBytes: 1_000_000 });
         const signal = newALUnicastMessage(
-            INBOUND_TEST_SENDER_PEER_ID,
-            { topicId: 'rtc-signaling', resourceId: INBOUND_TEST_SELF_PEER_ID, contextId: INBOUND_TEST_SELF_PEER_ID },
-            INBOUND_TEST_SELF_PEER_ID,
-            'rtc-signaling',
-            { kind: 'offer' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: INBOUND_TEST_SENDER_PEER_ID,
+                route: { topicId: 'rtc-signaling', resourceId: INBOUND_TEST_SELF_PEER_ID, contextId: INBOUND_TEST_SELF_PEER_ID },
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                typeId: 'rtc-signaling',
+                resource: { kind: 'offer' }
+            }
         );
         // As the sender's WS planner and the server's relay plan emit it.
         const planned = toALOutboundMessage(signal, normalizeALQosPolicy(signal).effective);

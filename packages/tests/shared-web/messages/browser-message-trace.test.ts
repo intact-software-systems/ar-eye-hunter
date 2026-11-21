@@ -107,12 +107,15 @@ describe('the trace of a browser send', () => {
         const fixture = createBrowserMessageSenderFixture();
         const ws = captureEnvelopes(fixture.middleware.middleware.webSocketQueueBox);
         const request = newALMulticastMessage(
-            'requester-1',
-            newALRoute('room.ask', 'room', 'resource-1'),
-            ROOM_REF,
-            'app.ask.v1',
-            { question: 'ping' },
-            { traceId: 'trace-of-the-request' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'requester-1',
+                route: newALRoute('room.ask', 'room', 'resource-1'),
+                groupRef: ROOM_REF,
+                typeId: 'app.ask.v1',
+                resource: { question: 'ping' },
+                options: { traceId: 'trace-of-the-request' }
+            }
         );
 
         const handle = await fixture.sender.sendReply(request, { answer: 42 }, undefined);

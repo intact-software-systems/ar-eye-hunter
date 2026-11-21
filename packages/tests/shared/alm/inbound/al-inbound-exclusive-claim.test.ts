@@ -76,12 +76,15 @@ describe('the exclusive claim key a WS client admission reads', () => {
 
     it('keys an exclusive room unicast by the room it names', async () => {
         const message = newALUnicastMessage(
-            'claimant-a',
-            { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
-            'director',
-            'pickup-intent.v1',
-            {},
-            { groupRef: ROOM, ownership: 'exclusive', reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'claimant-a',
+                route: { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
+                toPeerId: 'director',
+                typeId: 'pickup-intent.v1',
+                resource: {},
+                options: { groupRef: ROOM, ownership: 'exclusive', reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
 
         expect(await readClaimKey(message)).toBe('app/workspace/room-1/arena.intent/room/pickup-1');
@@ -92,23 +95,29 @@ describe('the exclusive claim key a WS client admission reads', () => {
         {
             name: 'an exclusive world broadcast',
             message: newALBroadcastMessage(
-                'claimant-a',
-                { topicId: 'arena.intent', contextId: 'world', resourceId: RESOURCE_ID },
-                'world',
-                'pickup-intent.v1',
-                {},
-                { ownership: 'exclusive' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'claimant-a',
+                    route: { topicId: 'arena.intent', contextId: 'world', resourceId: RESOURCE_ID },
+                    scope: 'world',
+                    typeId: 'pickup-intent.v1',
+                    resource: {},
+                    options: { ownership: 'exclusive' }
+                }
             )
         },
         {
             name: 'an exclusive unicast that names no room',
             message: newALUnicastMessage(
-                'claimant-a',
-                { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
-                'director',
-                'pickup-intent.v1',
-                {},
-                { ownership: 'exclusive', reliability: 'at-least-once', ack: 'receiver' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'claimant-a',
+                    route: { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
+                    toPeerId: 'director',
+                    typeId: 'pickup-intent.v1',
+                    resource: {},
+                    options: { ownership: 'exclusive', reliability: 'at-least-once', ack: 'receiver' }
+                }
             )
         }
     ])('claims nothing for $name', async ({ message }) => {
@@ -324,12 +333,15 @@ function createRoomBroadcast(input: RoomBroadcastInput): ALMessage {
     const { senderId, ownership, groupRef } = input;
     const sentAtMs = input.sentAtMs ?? STARTED_AT_MS;
     const message = newALBroadcastMessage(
-        senderId,
-        { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
-        'room',
-        'pickup-intent.v1',
-        {},
-        { groupRef, ownership }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: { topicId: 'arena.intent', contextId: 'room', resourceId: RESOURCE_ID },
+            scope: 'room',
+            typeId: 'pickup-intent.v1',
+            resource: {},
+            options: { groupRef, ownership }
+        }
     );
     return {
         ...message,

@@ -28,6 +28,7 @@ import {
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 interface AuthFixture {
     readonly lifecycle: BrowserSessionAuthLifecycle;
@@ -491,11 +492,17 @@ function createDefaultAuthFixture(
     const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     onTestFinished(() => runtime.clearAuthExpiryTimer());
     const middleware = createDefaultApiMiddlewareTestDouble();
-    const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime, readSession);
     const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue({
         middleware,
         diagnosticsPorts: Object.freeze(toRallarDiagnosticsPorts(undefined)),
+        serverClock: createDefaultBrowserServerClockFixture(),
         rtcCapture: { status: 'unavailable', reason: 'absent' }
     });
     runtime.setConnectState('connected');
@@ -517,10 +524,10 @@ function createDefaultAuthFixture(
 }
 
 function openObservedMessage(fixture: AuthFixture, msgId: string): RallarMessageHandle {
-    return fixture.deliveries.open({
+    return fixture.deliveries.open({ message: {
         id: { v: 4, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId, traceId: 'trace-session-auth-lifecycle-notifications' },
         route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
         payload: { typeId: 'app.event', resource: 'true' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
-    }, 'ws');
+    }, carrier: 'ws', readDeadlineEpochMs: Date.now });
 }

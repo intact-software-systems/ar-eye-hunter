@@ -41,12 +41,15 @@ export function createPublicationRoomSnapshot(input: PublicationRoomInput): Grou
 /** The room multicast an origin `senderId` admits: frozen to `recipientPeerIds` at `snapshotVersion`, expiry bound. */
 export function createFrozenGrantedMulticast(input: FrozenGrantedMulticastInput): ALMessage {
     const message = newALMulticastMessage(
-        input.senderId,
-        { topicId: PUBLICATION_TOPIC_ID, resourceId: input.resourceId, contextId: ORIGIN_ROOM.groupId },
-        ORIGIN_ROOM,
-        'room.granted-feed.v1',
-        { text: input.text ?? `feed ${input.resourceId}` },
-        { ack: input.ack ?? 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${input.resourceId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: input.senderId,
+            route: { topicId: PUBLICATION_TOPIC_ID, resourceId: input.resourceId, contextId: ORIGIN_ROOM.groupId },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'room.granted-feed.v1',
+            resource: { text: input.text ?? `feed ${input.resourceId}` },
+            options: { ack: input.ack ?? 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${input.resourceId}` }
+        }
     );
     return {
         ...message,

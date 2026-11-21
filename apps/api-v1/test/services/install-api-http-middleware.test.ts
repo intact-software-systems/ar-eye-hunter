@@ -56,6 +56,7 @@ function createTimedApp(events: RallarTimingEvent[]): Hono {
     });
     app.post('/api/auth/login/requests/:requestId', (c) => c.json({ ok: true }));
     registerWsRoutes(app, {
+        serverPeerId: 'test-server',
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: {
             writeAuthorisedWsClientConnect: rejectUnusedDependency,

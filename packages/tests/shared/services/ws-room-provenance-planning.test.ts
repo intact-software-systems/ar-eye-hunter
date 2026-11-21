@@ -134,10 +134,18 @@ function createFixture(): RoomProvenanceFixture {
         targetResolution,
         deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
     });
-    const message = newALBroadcastMessage('server', DIRECT_KEY, 'room', 'snapshot.v1', {}, {
-        ttlMs: 30_000,
-        groupRef: { ...SCOPE, groupId: 'room' },
-        qos: { durability: { algo: 'local-outbox' }, ack: { algo: 'receiver', opts: { timeoutMs: 1000 } } }
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: DIRECT_KEY,
+        scope: 'room',
+        typeId: 'snapshot.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            groupRef: { ...SCOPE, groupId: 'room' },
+            qos: { durability: { algo: 'local-outbox' }, ack: { algo: 'receiver', opts: { timeoutMs: 1000 } } }
+        }
     });
     return { planner, message, socket };
 }

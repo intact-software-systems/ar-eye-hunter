@@ -1,4 +1,5 @@
 import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { replyToSocketClockRequest } from '@shared/websocket/socket-clock.ts';
 import type { WSContext, WSEvents } from 'hono/ws';
 
 export interface JsonWebSocketConnectionIdentity {
@@ -14,7 +15,8 @@ export interface JsonWebSocketConnectionIdentity {
  */
 export function createJsonWebSocketEvents(
     socketServer: JsonWebSocketServer,
-    identity: JsonWebSocketConnectionIdentity
+    identity: JsonWebSocketConnectionIdentity,
+    clock: { readonly serverPeerId: string; readonly nowEpochMs: () => number; }
 ): WSEvents<ConnectionContext.Socket> {
     let connection: ConnectionContext | undefined;
     const toConnection = (ws: WSContext<ConnectionContext.Socket>): ConnectionContext =>
@@ -27,9 +29,17 @@ export function createJsonWebSocketEvents(
             }
         },
         onMessage: (event) => {
-            if (connection !== undefined) {
-                void socketServer.dispatchConnectionMessage(connection, event.data);
+            if (!connection || socketServer.connections.get(connection.id) !== connection) {
+                return;
             }
+            const reply = typeof event.data === 'string'
+                ? replyToSocketClockRequest(event.data, clock.serverPeerId, clock.nowEpochMs)
+                : undefined;
+            if (reply !== undefined) {
+                connection.socket.send(reply);
+                return;
+            }
+            void socketServer.dispatchConnectionMessage(connection, event.data);
         },
         onClose: (event, ws) => {
             socketServer.dispatchConnectionClose(connection ?? toConnection(ws), event.code, event.reason);

@@ -1,3 +1,4 @@
+import { createDefaultBrowserServerClockFixture } from '../../connection/browser-server-clock-fixture.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import { toBrowserPublicationDelivery } from '@shared-web/browser/messages/publication/to-browser-publication-delivery.ts';
@@ -41,7 +42,7 @@ interface ConnectFixture {
 
 function createStagesFixture(): StagesFixture {
     const clock = { atMs: START_MS };
-    const stages = new BrowserPublicationStages({ nowMs: () => clock.atMs });
+    const stages = new BrowserPublicationStages();
     return {
         clock,
         stages,
@@ -86,7 +87,7 @@ function createConnect(
         fixture.settlements.push(settlement);
     };
     return {
-        context: createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine, publicationStageLimits } }),
+        context: createDefaultApiMiddlewareTestDouble({ serverTime: createDefaultBrowserServerClockFixture(() => fixture.clock.atMs), middleware: { qboxEngine: engine, publicationStageLimits } }),
         engine,
         epoch: fixture.feed.open({ ws: record, rtc: record, holds: () => true }, { relaySettlement: () => {} })
     };
@@ -98,12 +99,15 @@ function toLiveDelivery(
     publication: ALPublicationPolicy = LIVE_POLICY
 ): BrowserPublicationStages.LiveDelivery {
     const message = newALMulticastMessage(
-        'session-1',
-        newALRoute('arena', 'room', resourceId),
-        ROOM_REF,
-        'arena.pose.v1',
-        { resourceId, text: 'pose' },
-        { ttlMs: 1_000, reliability: 'best-effort', ack: 'none' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALRoute('arena', 'room', resourceId),
+            groupRef: ROOM_REF,
+            typeId: 'arena.pose.v1',
+            resource: { resourceId, text: 'pose' },
+            options: { ttlMs: 1_000, reliability: 'best-effort', ack: 'none' }
+        }
     );
     const live = toBrowserPublicationDelivery(message, {
         purpose: 'live',

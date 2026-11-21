@@ -5,8 +5,20 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { describe, expect, it } from 'vitest';
 
-const chatFrame = JSON.stringify(newALUntargetedMessage('a', newALRoute('room.chat', 'room-1', 'r-1'), 'chat', {}));
-const moveFrame = JSON.stringify(newALUntargetedMessage('a', newALRoute('room.move', 'room-1', 'r-2'), 'move', {}));
+const chatFrame = JSON.stringify(newALUntargetedMessage({
+    senderId: 'a',
+    createdAtEpochMs: 1000,
+    route: newALRoute('room.chat', 'room-1', 'r-1'),
+    typeId: 'chat',
+    resource: {}
+}));
+const moveFrame = JSON.stringify(newALUntargetedMessage({
+    senderId: 'a',
+    createdAtEpochMs: 1000,
+    route: newALRoute('room.move', 'room-1', 'r-2'),
+    typeId: 'move',
+    resource: {}
+}));
 const chatMatch = { controlType: undefined, typeId: 'chat', msgId: undefined };
 const FRAMES = 1_000;
 

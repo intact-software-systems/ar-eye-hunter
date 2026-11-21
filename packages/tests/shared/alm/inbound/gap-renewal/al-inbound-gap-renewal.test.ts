@@ -346,14 +346,15 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
 
 /** The sender's ordered room message at `seq`, at least once, frozen to this receiver. */
 function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage {
-    const message = newALMulticastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: 'chat', resourceId: String(seq), contextId: 'room' },
-        ROOM,
-        'chat.message.v1',
-        { text: String(seq) },
-        { ack: input.ack ?? 'none', reliability: 'at-least-once', ttlMs: input.ttlMs === null ? undefined : input.ttlMs ?? 60_000 }
-    );
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: INBOUND_TEST_SENDER_PEER_ID,
+        route: { topicId: 'chat', resourceId: String(seq), contextId: 'room' },
+        groupRef: ROOM,
+        typeId: 'chat.message.v1',
+        resource: { text: String(seq) },
+        options: { ack: input.ack ?? 'none', reliability: 'at-least-once', ttlMs: input.ttlMs === null ? undefined : input.ttlMs ?? 60_000 }
+    });
     const frozen = toALFrozenMulticastMessage(
         { ...message, id: { ...message.id, msgId: String(seq) } },
         { recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }

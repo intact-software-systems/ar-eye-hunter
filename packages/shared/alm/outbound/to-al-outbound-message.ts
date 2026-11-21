@@ -13,3 +13,8 @@ export function toALOutboundMessage(msg: ALMessage, effective: ALQosEffectivePol
         constraints: { ...msg.constraints, expiresAtMs }
     };
 }
+
+/** A handover or re-plan preserves the origin's signed envelope while the carrier applies its own scheduling policy. */
+export function toProofPreservingALOutboundMessage(msg: ALMessage, effective: ALQosEffectivePolicy): ALMessage {
+    return msg.proof === undefined ? toALOutboundMessage(msg, effective) : msg;
+}

@@ -22,6 +22,7 @@ import type {
     BlackBoxRallarFormationSummary
 } from '../black-box-rallar-operation-contracts.ts';
 import { FormationAcceptedHold } from './formation-accepted-hold.ts';
+import { FORMATION_LAYOUT_QUIET_WINDOW_MS, FormationHeldReshapeReading } from './formation-held-reshape-reading.ts';
 import { FormationLayoutTiming } from './formation-layout-timing.ts';
 import { toFormationReadinessRejection } from './formation-readiness-rejection.ts';
 
@@ -43,14 +44,20 @@ export interface BlackBoxRallarFormationControllerDependencies {
 /**
  * The browser-side formation surface the black-box agents drive: it issues one of the eight
  * lifecycle commands through the shipped room handle, awaits the browser's own room readiness
- * without touching the network, and forwards what it observes as diagnostics.
+ * without opening a lane, reads the formation view only once the page's layout has settled, and
+ * forwards what it observes as diagnostics.
  */
 export class BlackBoxRallarFormationController implements BlackBoxRallarFormationRuntime {
     readonly #dependencies: BlackBoxRallarFormationControllerDependencies;
     readonly #acceptedHold = new FormationAcceptedHold();
+    readonly #heldReshape: FormationHeldReshapeReading;
 
     constructor(dependencies: BlackBoxRallarFormationControllerDependencies) {
         this.#dependencies = dependencies;
+        this.#heldReshape = new FormationHeldReshapeReading({
+            readView: (roomRef, timeoutMs) => dependencies.formation(roomRef).readView({ timeoutMs }),
+            now: () => dependencies.now()
+        });
     }
 
     command = async (
@@ -74,42 +81,61 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             ? undefined
             : toFormationSummary(room.roomRef, formationStatus, status.rtc);
         if (
+            formationStatus === undefined ||
             summary === undefined ||
             summary.room.state !== 'open' ||
             summary.room.desiredPeerIds.length === 0
         ) {
-            const observation = toFormationReadinessRejection(status.rtc, summary !== undefined);
-            const error = this.#notReady(room);
-            try {
-                this.#emit('rallar.browser.formation.not-ready', room.roomRef, observation);
-            }
-            catch {
-                // The captured observation must not replace the original readiness failure.
-            }
-            throw error;
+            throw this.#emitNotReady(room, status.rtc, summary !== undefined);
         }
-
-        const readyAtEpochMs = this.#dependencies.now();
-        const acceptedHeldSinceEpochMs = formationStatus === undefined
-            ? undefined
-            : this.#acceptedHold.observe(formationStatus, readyAtEpochMs);
-        const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
-            readyAtEpochMs,
-            formation: summary,
-            hasPendingLayout: summary.planned !== undefined &&
-                (summary.accepted === undefined ||
-                    !isSameGroupLayoutIdentity(summary.planned.identity, summary.accepted.identity)),
-            ...(acceptedHeldSinceEpochMs === undefined ? {} : {
-                acceptedHeldSinceEpochMs,
-                acceptedHeldForMs: Math.max(0, readyAtEpochMs - acceptedHeldSinceEpochMs)
-            })
-        };
-        this.#emit(
-            BLACK_BOX_RALLAR_FORMATION_TOPICS.ready,
-            room.roomRef,
-            diagnostics
-        );
+        const diagnostics = await this.#observeReadiness(room, formationStatus, summary);
+        this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.ready, room.roomRef, diagnostics);
         return diagnostics;
+    };
+
+    /** The clock and the accepted hold are taken before the view read, so a slow read cannot lengthen the hold. */
+    #observeReadiness = async (
+        room: BlackBoxRallarFormationRoomInput,
+        formationStatus: RallarRoomFormationStatus,
+        summary: BlackBoxRallarFormationSummary
+    ): Promise<BlackBoxRallarFormationReadinessDiagnostics> => {
+        const readyAtEpochMs = this.#dependencies.now();
+        const acceptedHeldSinceEpochMs = this.#acceptedHold.observe(formationStatus, readyAtEpochMs);
+        const acceptedHeld = acceptedHeldSinceEpochMs === undefined ? undefined : {
+            acceptedHeldSinceEpochMs,
+            acceptedHeldForMs: Math.max(0, readyAtEpochMs - acceptedHeldSinceEpochMs)
+        };
+        const hasPendingLayout = isPendingLayout(summary);
+        const settled = !hasPendingLayout &&
+            acceptedHeld !== undefined &&
+            acceptedHeld.acceptedHeldForMs >= FORMATION_LAYOUT_QUIET_WINDOW_MS;
+        const heldReshape = await this.#heldReshape.observe(
+            settled
+                ? {
+                    roomRef: room.roomRef,
+                    settled,
+                    acceptedHeldSinceEpochMs: acceptedHeld.acceptedHeldSinceEpochMs,
+                    timeoutMs: room.timeoutMs
+                }
+                : { roomRef: room.roomRef, settled }
+        );
+        return { readyAtEpochMs, formation: summary, hasPendingLayout, ...acceptedHeld, heldReshape };
+    };
+
+    #emitNotReady = (
+        room: BlackBoxRallarFormationRoomInput,
+        rtc: RallarRtcRoomTransportStatus,
+        roomHeld: boolean
+    ): Error => {
+        const observation = toFormationReadinessRejection(rtc, roomHeld);
+        const error = this.#notReady(room);
+        try {
+            this.#emit('rallar.browser.formation.not-ready', room.roomRef, observation);
+        }
+        catch {
+            // The captured observation must not replace the original readiness failure.
+        }
+        return error;
     };
 
     summary = (roomRef: GroupRef): BlackBoxRallarFormationSummary | undefined => {
@@ -244,6 +270,13 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             data
         });
     };
+}
+
+/** A planned slot with the exact accepted identity is already settled, not a pending replacement. */
+function isPendingLayout(summary: BlackBoxRallarFormationSummary): boolean {
+    return summary.planned !== undefined &&
+        (summary.accepted === undefined ||
+            !isSameGroupLayoutIdentity(summary.planned.identity, summary.accepted.identity));
 }
 
 /**

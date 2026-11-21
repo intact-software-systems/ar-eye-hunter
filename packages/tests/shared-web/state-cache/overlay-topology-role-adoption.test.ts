@@ -56,6 +56,19 @@ describe('browser overlay topology role adoption', () => {
         });
     }
 
+    async function adoptPublication(
+        topology: RallarOverlayTopologySnapshot,
+        manager: ReturnType<typeof webRtcGroupManager>
+    ): ReturnType<typeof adoptOverlayTopology> {
+        return await adoptOverlayTopology({
+            topology,
+            sessionId: 'session-a',
+            deferredTopologies,
+            webRtcGroupManager: manager,
+            adoption: 'publication'
+        });
+    }
+
     beforeEach(() => {
         deferredTopologies = new DeferredOverlayTopologies();
         configureTestCacheRepositories(undefined, () => ADOPTION_EPOCH_MS);
@@ -487,6 +500,82 @@ describe('browser overlay topology role adoption', () => {
             changed: true
         });
         expect(findPlannedOverlayById(currentTopology.overlayId)?.overlayVersion).toBe(4);
+    });
+
+    it('drops a planned layout the group snapshot accepted past, before and after the accepted layout arrives', async () => {
+        const manager = webRtcGroupManager();
+        const passed = topologySnapshot(groupAt({ groupRevision: 20, presenceRevision: 7 }), { groupRevision: 20, presenceRevision: 7 }, 5);
+        const accepted = topologySnapshot(groupAt({ groupRevision: 21, presenceRevision: 8 }), { groupRevision: 21, presenceRevision: 8 }, 6);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupAt({ groupRevision: 20, presenceRevision: 7 }));
+        await expect(adoptPublication(passed, manager)).resolves.toMatchObject({ role: 'planned', changed: true });
+
+        await acceptObservedSnapshot(groupAt({ groupRevision: 21, presenceRevision: 8 }, toGroupLayoutIdentity(accepted)), manager);
+        expect(findPlannedOverlayById(passed.overlayId)).toMatchObject({ provenance: 'bootstrap' });
+
+        await expect(adoptPublication(accepted, manager)).resolves.toMatchObject({ role: 'accepted', changed: true });
+        expect(findAcceptedOverlayById(accepted.overlayId)).toEqual(toOverlayInfoForSession(accepted, 'session-a'));
+        expect(findPlannedOverlayById(passed.overlayId)).toMatchObject({ provenance: 'bootstrap' });
+    });
+
+    it('an accepted publication drops a planned layout it has passed and reports the removal as a change', async () => {
+        let notifications = 0;
+        const manager = webRtcGroupManager(async () => {
+            notifications += 1;
+        });
+        const passed = topologySnapshot(groupAt({ groupRevision: 20, presenceRevision: 7 }), { groupRevision: 20, presenceRevision: 7 }, 5);
+        const accepted = topologySnapshot(groupAt({ groupRevision: 21, presenceRevision: 8 }), { groupRevision: 21, presenceRevision: 8 }, 6);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupAt({ groupRevision: 20, presenceRevision: 7 }));
+        await adoptPublication(passed, manager);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(
+            groupAt({ groupRevision: 21, presenceRevision: 8 }, toGroupLayoutIdentity(accepted))
+        );
+        notifications = 0;
+
+        await expect(adoptPublication(accepted, manager)).resolves.toMatchObject({ role: 'accepted', changed: true });
+        expect(findPlannedOverlayById(passed.overlayId)).toBeUndefined();
+        expect(findAcceptedOverlayById(accepted.overlayId)).toEqual(toOverlayInfoForSession(accepted, 'session-a'));
+        expect(notifications).toBe(1);
+
+        setPlannedOverlayById(passed.overlayId, toOverlayInfoForSession(passed, 'session-a'));
+        await waitForPlannedOverlayChangesIdle();
+        await expect(adoptPublication(accepted, manager)).resolves.toMatchObject({
+            role: 'accepted',
+            outcome: 'equal',
+            changed: true
+        });
+        expect(findPlannedOverlayById(passed.overlayId)).toBeUndefined();
+        expect(notifications).toBe(2);
+    });
+
+    it.each([
+        { order: 'newer than', plannedRevision: { groupRevision: 22, presenceRevision: 9 } },
+        { order: 'incomparable to', plannedRevision: { groupRevision: 22, presenceRevision: 7 } }
+    ])('keeps a planned layout $order the accepted one through the snapshot and the accepted publication', async ({ plannedRevision }) => {
+        const manager = webRtcGroupManager();
+        const planned = topologySnapshot(groupAt(plannedRevision), plannedRevision, 7);
+        const accepted = topologySnapshot(groupAt({ groupRevision: 21, presenceRevision: 8 }), { groupRevision: 21, presenceRevision: 8 }, 6);
+        const plannedOverlay = toOverlayInfoForSession(planned, 'session-a');
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupAt({ groupRevision: 20, presenceRevision: 7 }));
+        await expect(adoptPublication(planned, manager)).resolves.toMatchObject({ role: 'planned', changed: true });
+
+        await acceptObservedSnapshot(groupAt({ groupRevision: 21, presenceRevision: 8 }, toGroupLayoutIdentity(accepted)), manager);
+        expect(findPlannedOverlayById(planned.overlayId)).toEqual(plannedOverlay);
+
+        await expect(adoptPublication(accepted, manager)).resolves.toMatchObject({ role: 'accepted', changed: true });
+        expect(findPlannedOverlayById(planned.overlayId)).toEqual(plannedOverlay);
+    });
+
+    it('an accepted tombstone drops the active planned layout at the same tuple', async () => {
+        const manager = webRtcGroupManager();
+        const active = topologySnapshot(groupSnapshot(2), { groupRevision: 2, presenceRevision: 2 }, 2);
+        const tombstone: RallarOverlayTopologySnapshot = { ...active, state: 'removed', nextHopsBySessionId: { 'session-a': [], 'session-b': [] } };
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupSnapshot(2));
+        await expect(adoptPublication(active, manager)).resolves.toMatchObject({ role: 'planned', changed: true });
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupSnapshot(3, toGroupLayoutIdentity(tombstone)));
+
+        await expect(adoptPublication(tombstone, manager)).resolves.toMatchObject({ role: 'accepted', changed: true });
+
+        expect(findPlannedOverlayById(active.overlayId)).toBeUndefined();
     });
 
     it('drops a delayed publication after membership loss without recreating either role', async () => {

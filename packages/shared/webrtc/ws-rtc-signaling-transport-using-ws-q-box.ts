@@ -28,15 +28,18 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
 
     public readonly qbox: WsQueueBoxClientService;
     public readonly typeId: string;
+    private readonly creationEpochMs: () => number;
     private readonly wakeOutbox?: () => void;
 
     constructor(
         qbox: WsQueueBoxClientService,
         typeId: string,
+        creationEpochMs: () => number,
         wakeOutbox?: () => void
     ) {
         this.qbox = qbox;
         this.typeId = typeId;
+        this.creationEpochMs = creationEpochMs;
         this.wakeOutbox = wakeOutbox;
     }
 
@@ -102,11 +105,14 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
      */
     async send(payload: QRtcSignalingMessage): Promise<void> {
         const message = newALUnicastMessage(
-            payload.fromId,
-            newALEventRoute(this.typeId, payload.toId),
-            payload.toId,
-            this.typeId,
-            payload
+            {
+                createdAtEpochMs: this.creationEpochMs(),
+                senderId: payload.fromId,
+                route: newALEventRoute(this.typeId, payload.toId),
+                toPeerId: payload.toId,
+                typeId: this.typeId,
+                resource: payload
+            }
         );
         const admitted = await this.admitSignal(message);
         if (toSignalAdmissionOutcome(admitted.verdict) === 'accepted') {

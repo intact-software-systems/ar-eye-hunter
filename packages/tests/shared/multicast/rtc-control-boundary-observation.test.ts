@@ -75,17 +75,20 @@ describe('exact RTC ACK boundary observations', () => {
             ] as const;
             const messages = ['03', '02'].map((senderId) =>
                 newALMulticastMessage(
-                    senderId,
-                    { topicId: 'room.ar-eye-hunter.director', resourceId: `${senderId}-shot`, contextId: ORIGIN_ROOM.groupId },
-                    ORIGIN_ROOM,
-                    'room.ar-eye-hunter.director.intent.v1',
-                    { kind: 'player-shot-intent', senderId, seq: 1 },
                     {
-                        ack: 'group-leader',
-                        reliability: 'at-least-once',
-                        ttlMs: 30_000,
-                        qos: { durability: { algo: 'volatile' } },
-                        traceId: `trace-${senderId}-shot`
+                        createdAtEpochMs: Date.now(),
+                        senderId,
+                        route: { topicId: 'room.ar-eye-hunter.director', resourceId: `${senderId}-shot`, contextId: ORIGIN_ROOM.groupId },
+                        groupRef: ORIGIN_ROOM,
+                        typeId: 'room.ar-eye-hunter.director.intent.v1',
+                        resource: { kind: 'player-shot-intent', senderId, seq: 1 },
+                        options: {
+                            ack: 'group-leader',
+                            reliability: 'at-least-once',
+                            ttlMs: 30_000,
+                            qos: { durability: { algo: 'volatile' } },
+                            traceId: `trace-${senderId}-shot`
+                        }
                     }
                 )
             );

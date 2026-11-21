@@ -5,7 +5,7 @@ import {
     type Response
 } from '@playwright/test';
 
-import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
+import { installRoomCacheClock, renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { roomRotationReturnJourney, roomSharingCacheRecoveryJourney } from '../room-sharing-recovery-journey.ts';
 
@@ -62,7 +62,7 @@ test(
     'recovers a private arena after delayed browser callbacks and can still start a match',
     async ({ page }, testInfo) => {
         test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires the local API-v1 memory fixture.');
-        await page.clock.install();
+        await installRoomCacheClock(page);
         const operations = await openOperations(page, '/');
         await signIn(page, 'alice');
         await operations.getByRole('button', { name: 'New invite-only arena', exact: true }).click();

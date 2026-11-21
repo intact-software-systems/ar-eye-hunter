@@ -16,6 +16,7 @@ import {
     createClientSnapshotFixture,
     createGroupSnapshotFixture
 } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 export interface PeopleEventFixtureInput {
     readonly principalId: string;
@@ -112,6 +113,7 @@ export function resetPeopleEventTestRuntime(): void {
     peopleEventMocks.initialiseMiddleware.mockResolvedValue({
         middleware: peopleEventMocks.context.middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     });
     peopleEventMocks.listStateClientEvents.mockRejectedValue(new Error('client events not mocked'));
@@ -141,11 +143,14 @@ export async function dispatchPeopleWsMessage(message: ALMessage): Promise<void>
 
 export function toPeopleEventMessage(event: ClientEvent) {
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
-        'all',
-        AppTopics.clientStateEvent,
-        event
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(AppTopics.clientStateEvent, event.principalId, event.eventId),
+            scope: 'all',
+            typeId: AppTopics.clientStateEvent,
+            resource: event
+        }
     );
 }
 

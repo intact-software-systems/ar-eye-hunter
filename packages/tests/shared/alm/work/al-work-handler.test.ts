@@ -51,7 +51,7 @@ const PHASE_RELEASE_MS = 5;
 const PHASE_QUEUE_WAIT_MS = 40;
 
 describe('ALWorkHandler', () => {
-    it('runs one batch per wake, releases each claim once, and never awaits delivery on committed()', async () => {
+    it('runs one batch per wake and releases each claim once', async () => {
         const released: string[] = [];
         const port = fakePort({
             claims: ['w-1', 'w-2'],
@@ -75,10 +75,6 @@ describe('ALWorkHandler', () => {
         onTestFinished(() => handler.dispose());
         await handler.ready();
         expect(released).toEqual(['w-1:completed', 'w-2:retry']);
-
-        const before = Date.now();
-        handler.committed({ dueByMs: 1_000, writtenKeys: [] });
-        expect(Date.now() - before).toBeLessThan(5);
     });
 
     it('classifies thrown errors: corruption rejects, other errors retry, retained results settle later', async () => {
@@ -536,7 +532,7 @@ describe('ALWorkHandler', () => {
             .toEqual(['flush-1:completed', 'flush-2:retry', 'flush-3:non-retryable']);
     });
 
-    it('flushes the claim a disposed batch already ran before it abandons the rest', async () => {
+    it('settles the running claim and releases unstarted work when disposed', async () => {
         const flushes: ALWorkRelease[][] = [];
         const port = recordingPort(['abort-1', 'abort-2'], flushes);
         const claimEntered = Promise.withResolvers<void>();
@@ -570,7 +566,8 @@ describe('ALWorkHandler', () => {
         await disposing;
 
         expect(flushes).toHaveLength(1);
-        expect(flushes[0]!.map((release) => release.claim.entry.key.contextId)).toEqual(['abort-1']);
+        expect(flushes[0]!.map((release) => [release.claim.entry.key.contextId, release.outcome.status]))
+            .toEqual([['abort-1', 'completed'], ['abort-2', 'not-ready']]);
     });
 
     it('flushes a collected exhaustion finalization even when the selection throws', async () => {

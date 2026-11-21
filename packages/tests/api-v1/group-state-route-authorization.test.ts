@@ -35,7 +35,7 @@ describe('group mutation route authorization with stale cached membership', () =
         expect(granted.result.snapshot.members.find((member) => member.principalId === 'alice')?.role).toBe('admin');
         expect(await cached.service.readSnapshot(ref)).toEqual(before);
 
-        await expect(cached.authorization.assertCanUpdateGroup('alice', ref)).resolves.toBeUndefined();
+        await expect(cached.authorization.assertCanUpdateGroup('alice', ref, { displayName: 'Updated' })).resolves.toBeUndefined();
         const updated = requireGroupStateResult(await updateAsAlice(harness, groupId, 'Admin updated immediately'));
 
         expect(updated.result.snapshot.group.displayName).toBe('Admin updated immediately');
@@ -56,7 +56,7 @@ describe('group mutation route authorization with stale cached membership', () =
         expect(revoked.result.snapshot.members.find((member) => member.principalId === 'alice')?.role).toBe('member');
         expect(await cached.service.readSnapshot(ref)).toEqual(before);
 
-        await expect(cached.authorization.assertCanUpdateGroup('alice', ref)).rejects.toMatchObject({
+        await expect(cached.authorization.assertCanUpdateGroup('alice', ref, { displayName: 'Updated' })).rejects.toMatchObject({
             code: 'authorization-denied',
             status: 403
         });

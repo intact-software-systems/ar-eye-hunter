@@ -16,13 +16,18 @@ export function createMessageDelivery(
     verdict: ALDeliveryAdmissionVerdict | undefined,
     ack: ALAckMode = 'none'
 ): MessageDeliveryFixture {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1, cancel: () => {} });
-    const handle = registry.open({
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 1,
+        cancel: () => {}
+    });
+    const handle = registry.open({ message: {
         id: { v: 4, msgId: `test-message-${++messageSequence}`, ts: Date.now(), senderId: 'client-1', traceId: 'trace-test-message-delivery' },
         route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
         payload: { typeId: 'test', contentType: 'application/json', resource: '{}' },
         delivery: ack === 'none' ? undefined : { reliability: 'at-least-once', ack }
-    }, carrier);
+    }, carrier: carrier, readDeadlineEpochMs: Date.now });
     if (verdict) {
         registry.record({
             kind: 'admission',

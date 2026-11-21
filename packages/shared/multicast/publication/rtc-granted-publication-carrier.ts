@@ -8,7 +8,7 @@ import type {
     ALOutboundRepairRequest
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
+import { toALOutboundMessage, toProofPreservingALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import type { ReadableKeyedValues } from '../../cache/RepositoryInterfaces.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -18,7 +18,6 @@ import {
     toRtcPublicationHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from '../room-authority/rtc-room-snapshot-admission.ts';
-import { toRtcOutboundMessage } from '../to-rtc-outbound-message.ts';
 import { computeRtcFrozenAudienceRefusal } from '../web-rtc-overlay-frozen-audience.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
@@ -220,7 +219,7 @@ export class RtcGrantedPublicationCarrier {
      */
     async verifyPublicationProof(msg: ALMessage): Promise<boolean> {
         return this.isGrantedPublication(msg) &&
-            await this.#dependencies.publicationVerifier.verifyPublicationProof(msg);
+            await this.#dependencies.publicationVerifier.verifyPublicationProof(msg, this.#dependencies.clock);
     }
 
     /**
@@ -257,7 +256,7 @@ export class RtcGrantedPublicationCarrier {
     /** Only a granted frame, which its incoming plan verified, keeps its signed fields; any other is normalized. */
     toForwardedMessage(msg: ALMessage, effective: ALQosEffectivePolicy): ALMessage {
         return this.isGrantedPublication(msg)
-            ? toRtcOutboundMessage(msg, effective)
+            ? toProofPreservingALOutboundMessage(msg, effective)
             : toALOutboundMessage(msg, effective);
     }
 

@@ -23,6 +23,7 @@ import {
 export type BrowserPeerSendStrategy = Exclude<RallarTypedMessageSendStrategy, 'ws-then-rtc'>;
 
 export interface CreateBrowserUnicastMessageInput<T> {
+    readonly createdAtEpochMs: number;
     readonly creation: Readonly<{ createUnicast: typeof newALUnicastMessage; newResourceId(): string; }>;
     readonly resolved: ResolvedWsMessageInput<T>;
     readonly peerId: string;
@@ -57,24 +58,27 @@ export function createBrowserUnicastMessage<T>(
         laneTtlMs: input.laneTtlMs
     });
     return input.creation.createUnicast(
-        input.senderId,
-        newALRoute(
-            send.topicId ?? send.typeId,
-            send.contextId ?? resolved.roomId ?? resolved.scope,
-            send.resourceId ?? input.creation.newResourceId()
-        ),
-        input.peerId,
-        send.typeId,
-        input.payload,
         {
-            groupRef: resolved.roomRef,
-            ttlMs: defaults.ttlMs,
-            reliability: defaults.reliability,
-            ack: defaults.ack,
-            ownership: send.ownership ?? 'shared',
-            qos: defaults.qos,
-            actions: input.actions,
-            traceId: send.traceId
+            createdAtEpochMs: input.createdAtEpochMs,
+            senderId: input.senderId,
+            route: newALRoute(
+                send.topicId ?? send.typeId,
+                send.contextId ?? resolved.roomId ?? resolved.scope,
+                send.resourceId ?? input.creation.newResourceId()
+            ),
+            toPeerId: input.peerId,
+            typeId: send.typeId,
+            resource: input.payload,
+            options: {
+                groupRef: resolved.roomRef,
+                ttlMs: defaults.ttlMs,
+                reliability: defaults.reliability,
+                ack: defaults.ack,
+                ownership: send.ownership ?? 'shared',
+                qos: defaults.qos,
+                actions: input.actions,
+                traceId: send.traceId
+            }
         }
     );
 }

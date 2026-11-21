@@ -48,6 +48,12 @@ describe('room request translation', () => {
             .not.toHaveProperty('directoryListing');
     });
 
+    it('forwards a revision-checked deadline as an update command', () => {
+        const roomDeadline = { name: 'vote', expectedRevision: 1, atEpochMs: 9_000 };
+        expect(toUpdateGroupStateRequest({ request: { roomDeadline }, ...actor }))
+            .toEqual({ roomDeadline, ...actor });
+    });
+
     it('translates minimal and fully populated create fields with literal defaults', () => {
         expect(
             toCreateGroupStateRequest({
@@ -351,6 +357,16 @@ describe('room request translation', () => {
             metadata: { keep: true, replace: 'new' },
             ...actor
         });
+    });
+
+    it('keeps server-owned deadlines out of an ordinary metadata patch and rejects explicit changes', () => {
+        const currentMetadata = { rallarRoomDeadlines: [{ name: 'vote', atEpochMs: 5000, revision: 1 }], topic: 'old' };
+        expect(toRoomMetadataGroupStateRequest({ currentMetadata, patch: { topic: 'new' }, ...actor })).toEqual({
+            metadata: { topic: 'new' },
+            ...actor
+        });
+        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { rallarRoomDeadlines: null }, ...actor }))
+            .toThrow(/setDeadline/);
     });
 
     it('translates every invite and member-governance request', () => {

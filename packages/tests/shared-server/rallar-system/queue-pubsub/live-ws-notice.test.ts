@@ -220,7 +220,14 @@ describe('live WS notice codec', () => {
     });
 
     it('encodes a standard broadcast builder as the exact JSON-clean notice sent by transport', () => {
-        const built = newALBroadcastMessage('server', newALRoute('room.match', 'world', 'resource'), 'all', 'room.match', { text: 'hello' });
+        const built = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: newALRoute('room.match', 'world', 'resource'),
+            scope: 'all',
+            typeId: 'room.match',
+            resource: { text: 'hello' }
+        });
         const { scope: _scope, ...broadPublication } = publication();
         const encoded = encodeLiveWsNotice({
             ...broadPublication,

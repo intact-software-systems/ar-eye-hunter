@@ -113,49 +113,100 @@ describe('resolveRtcGrantedPublicationShapeRefusal', () => {
 });
 
 function createMulticast(ack: ALAckMode): ALMessage {
-    return newALMulticastMessage('a', ROUTE, ORIGIN_ROOM, 'room.granted-feed.v1', {}, {
-        ack,
-        reliability: 'best-effort',
-        ttlMs: 30_000
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        groupRef: ORIGIN_ROOM,
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: {
+            ack,
+            reliability: 'best-effort',
+            ttlMs: 30_000
+        }
     });
 }
 
 function createUnicast(): ALMessage {
-    return newALUnicastMessage('a', ROUTE, 'b', 'room.granted-feed.v1', {}, { ack: 'none', groupRef: ORIGIN_ROOM });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        toPeerId: 'b',
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: { ack: 'none', groupRef: ORIGIN_ROOM }
+    });
 }
 
 function createRoomBroadcast(): ALMessage {
-    return newALBroadcastMessage('a', ROUTE, 'room', 'room.granted-feed.v1', {}, {
-        ack: 'none',
-        groupRef: ORIGIN_ROOM,
-        recipientPeerIds: ['b', 'c']
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        scope: 'room',
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: {
+            ack: 'none',
+            groupRef: ORIGIN_ROOM,
+            recipientPeerIds: ['b', 'c']
+        }
     });
 }
 
 function createRoomlessUnicast(): ALMessage {
-    return newALUnicastMessage('a', ROUTE, 'b', 'room.granted-feed.v1', {}, { ack: 'none' });
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        toPeerId: 'b',
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: { ack: 'none' }
+    });
 }
 
 function createExclusionsBroadcast(): ALMessage {
-    return newALBroadcastMessage('a', ROUTE, 'room', 'room.granted-feed.v1', {}, {
-        ack: 'none',
-        groupRef: ORIGIN_ROOM,
-        exceptPeerIds: ['c']
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        scope: 'room',
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: {
+            ack: 'none',
+            groupRef: ORIGIN_ROOM,
+            exceptPeerIds: ['c']
+        }
     });
 }
 
 function createWorldBroadcast(): ALMessage {
-    return newALBroadcastMessage('a', ROUTE, 'world', 'room.granted-feed.v1', {}, { ack: 'none' });
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: ROUTE,
+        scope: 'world',
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: { ack: 'none' }
+    });
 }
 
 function createPrincipalBroadcast(): ALMessage {
     return newALPrincipalBroadcastMessage(
-        'a',
-        ROUTE,
-        { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
-        'room.granted-feed.v1',
-        {},
-        { ack: 'none' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: ROUTE,
+            target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+            typeId: 'room.granted-feed.v1',
+            resource: {},
+            options: { ack: 'none' }
+        }
     );
 }
 

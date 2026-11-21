@@ -205,6 +205,21 @@ describe('Rallar group public contracts', () => {
         }
     );
 
+    it('requires the held reshape in a formation view and pins its shape', () => {
+        const view = createFormationView(groupRef);
+        const validate = createSchemaValidator('GroupFormationView');
+        const held = { wantedReasons: ['kind-change', 'leader-rooting'], opensAtEpochMs: 1_795_060_154_711 };
+
+        expectComplete('GroupFormationView', view);
+        expect(validate({ ...view, heldReshape: held }), JSON.stringify(validate.errors)).toBe(true);
+        expect(validate({ ...view, heldReshape: { ...held, wantedReasons: [] } })).toBe(false);
+        expect(validate({ ...view, heldReshape: { ...held, wantedReasons: ['refinement'] } })).toBe(false);
+        expect(validate({ ...view, heldReshape: { ...held, wantedReasons: ['kind-change', 'kind-change'] } })).toBe(false);
+        expect(validate({ ...view, heldReshape: { ...held, opensAtEpochMs: null } })).toBe(false);
+        expect(validate({ ...view, heldReshape: { ...held, intervalMs: 15_000 } })).toBe(false);
+        expect(validate({ ...view, heldReshape: { wantedReasons: ['kind-change'] } })).toBe(false);
+    });
+
     it('allows sparse topology requests while requiring complete effective and stored output', () => {
         const validateRequest = createSchemaValidator('PutGroupTopologyConfigRequest');
         expect(validateRequest({ config: {} })).toBe(true);

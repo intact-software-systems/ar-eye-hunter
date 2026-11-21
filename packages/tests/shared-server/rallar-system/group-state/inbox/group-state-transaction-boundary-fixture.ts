@@ -331,11 +331,14 @@ async function createReservedContext(
         enqueue,
         entry,
         message: newALUntargetedMessage(
-            'owner',
-            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
-            enqueue.type,
-            enqueue,
-            { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'owner',
+                route: newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+                typeId: enqueue.type,
+                resource: enqueue,
+                options: { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
+            }
         ),
         attemptTelemetry: computeResourceInboxAttempt({
             entry: entry,
@@ -382,11 +385,14 @@ async function createReconfigureReservedContext(
         enqueue,
         entry,
         message: newALUntargetedMessage(
-            'owner',
-            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
-            enqueue.type,
-            enqueue,
-            { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'owner',
+                route: newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+                typeId: enqueue.type,
+                resource: enqueue,
+                options: { traceId: GROUP_STATE_TRANSACTION_BOUNDARY_TRACE_ID }
+            }
         ),
         attemptTelemetry: computeResourceInboxAttempt({
             entry: entry,

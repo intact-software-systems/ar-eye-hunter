@@ -17,6 +17,7 @@ import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from './browser-server-clock-fixture.ts';
 
 const mocks = readAuthSessionContractMocks();
 const roomRef: GroupRef = { applicationId: 'capture-app', workspaceId: 'capture-workspace', groupId: 'capture-room' };
@@ -57,6 +58,7 @@ beforeEach(async () => {
     });
     mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => ({
         middleware: mocks.ctx.middleware,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: [],
         rtcCaptureReceipt: createBrowserRtcCapture({
             configuration: options.rtcCaptureConfiguration,

@@ -17,15 +17,18 @@ describe('Rallar message selectors', () => {
 
     it('matches messages by topic, type, or both', () => {
         const message = newALMulticastMessage(
-            'session-1',
-            newALRoute('room.chat', 'room-1', 'message-1'),
             {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1'
-            },
-            'chat.message.v1',
-            { text: 'hello' }
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.chat', 'room-1', 'message-1'),
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1'
+                },
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         expect(message.targets).not.toHaveProperty('groupId');
@@ -78,39 +81,51 @@ describe('Rallar message selectors', () => {
             groupId: 'room-1'
         };
         const multicast = newALMulticastMessage(
-            'session-1',
-            newALRoute('room.chat', 'context-1', 'message-1'),
-            groupRef,
-            'chat.message.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.chat', 'context-1', 'message-1'),
+                groupRef,
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         );
         const roomBroadcast = newALBroadcastMessage(
-            'session-1',
-            newALRoute('room.chat', 'room-2', 'message-2'),
-            'room',
-            'chat.message.v1',
-            { text: 'hello' },
-            { groupRef: { ...groupRef, groupId: 'room-2' } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.chat', 'room-2', 'message-2'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' },
+                options: { groupRef: { ...groupRef, groupId: 'room-2' } }
+            }
         );
         const worldBroadcast = newALBroadcastMessage(
-            'session-1',
-            newALRoute('room.chat', 'room-3', 'message-3'),
-            'world',
-            'chat.message.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.chat', 'room-3', 'message-3'),
+                scope: 'world',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         expect(readRallarMessageRoomId(multicast)).toBe('room-1');
         expect(readRallarMessageRoomId(roomBroadcast)).toBe('room-2');
         const principalBroadcast = newALPrincipalBroadcastMessage(
-            'session-1',
-            newALRoute('room.chat', 'context-4', 'message-4'),
             {
-                groupRef: { ...groupRef, groupId: 'room-4' },
-                principalRef: { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-1' }
-            },
-            'chat.message.v1',
-            { text: 'hello' }
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.chat', 'context-4', 'message-4'),
+                target: {
+                    groupRef: { ...groupRef, groupId: 'room-4' },
+                    principalRef: { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'principal-1' }
+                },
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         expect(readRallarMessageRoomId(principalBroadcast)).toBe('room-4');

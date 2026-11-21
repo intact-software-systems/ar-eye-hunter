@@ -3,7 +3,6 @@ import {
     isRoomScopedALMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
@@ -11,10 +10,8 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';
 import { isALVolatileBestEffortPublication } from '@shared/al-contracts/publication/is-al-volatile-best-effort-publication.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import {
     isReservedRallarWsTopicId,
-    RALLAR_AL_CONTROL_TOPIC_ID,
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
@@ -26,12 +23,12 @@ import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
-import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import {
     authorizeRallarServerWsIngress,
     computeAdmittedRallarServerWsMessage,
     computeRallarServerWsRetainedAudience,
     decodeRallarServerWsIngress,
+    isMiddlewareOwnedMessage,
     readRallarServerWsRoomId,
     readRallarServerWsRoomRef,
     toRallarServerWsMessage,
@@ -59,7 +56,6 @@ import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-se
 import { RallarServerWsTopicRegistry, resolveRallarServerWsTopicFanout } from './rallar-server-ws-topic-registry.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
-const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
 
 export namespace RallarServerWsRouter {
     export interface Ingress {
@@ -197,7 +193,7 @@ export class RallarServerWsRouter {
     }
 
     async route(message: ALMessage, source?: ALInboundMessageRuntime.Source): Promise<void> {
-        if (this.isMiddlewareOwnedMessage(message)) {
+        if (isMiddlewareOwnedMessage(message)) {
             return;
         }
         const admittedPeerIds = source?.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
@@ -241,8 +237,14 @@ export class RallarServerWsRouter {
     }
 
     private async authorizeBeforeAdmission(message: ALMessage): Promise<WsServerInboundAuthorization> {
-        if (this.isMiddlewareOwnedMessage(message)) {
-            return { authorized: true };
+        if (isMiddlewareOwnedMessage(message)) {
+            return message.proof === undefined ? { authorized: true } : {
+                authorized: false,
+                reason: 'unauthorized',
+                rejectionCode: 'unauthorized',
+                logMessage: 'A sender publication proof requires room authorization.',
+                sendNack: this.sendNacks
+            };
         }
         const admitted = await this.readAuthorizedIngress(message);
         if (admitted.left) {
@@ -513,16 +515,6 @@ export class RallarServerWsRouter {
                     inboundScope
                 )
         };
-    }
-
-    private isSystemMessage(message: ALMessage): boolean {
-        return RESERVED_TOPIC_IDS.has(message.route.topicId) ||
-            message.route.topicId === RALLAR_AL_CONTROL_TOPIC_ID ||
-            isALControlTypeId(message.payload.typeId);
-    }
-
-    private isMiddlewareOwnedMessage(message: ALMessage): boolean {
-        return decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message);
     }
 
     /** A granted topic id is always a defined topic: a type its definitions do not name is unknown, never implicit. */

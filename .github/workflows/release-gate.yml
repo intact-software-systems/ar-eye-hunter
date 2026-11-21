@@ -490,6 +490,9 @@ jobs:
           path: .artifacts/api-v1-black-box/ordering
           if-no-files-found: error
 
+      - name: Verify room deadline race and PostgreSQL restart recovery
+        run: npm run test:api-v1:black-box:postgres:room-deadlines
+
       - name: Run group delta cluster proof
         id: group_delta
         run: |

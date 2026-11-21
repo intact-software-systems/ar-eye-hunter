@@ -358,10 +358,18 @@ describe('a WS client\'s receipted unicast when the server answers not-yet-in-sy
     it('has no form outside a room: a receiver unicast that names no room is refused at admission', async () => {
         const fixture = createFirstHopFixture('memory');
         const result = await fixture.ws.enqueueIfAbsent(
-            newALUnicastMessage(SESSION_ID, newALRoute('command', 'context', 'to-peer-b'), 'peer-b', 'command.v1', {}, {
-                ttlMs: 30_000,
-                reliability: 'at-least-once',
-                ack: 'receiver'
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: SESSION_ID,
+                route: newALRoute('command', 'context', 'to-peer-b'),
+                toPeerId: 'peer-b',
+                typeId: 'command.v1',
+                resource: {},
+                options: {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             })
         );
 
@@ -709,13 +717,14 @@ async function readFirstHopWait(
 }
 
 function toRoomBroadcast(ack: ALAckMode, qos?: ALQosPolicyRequest): ALMessage {
-    return newALBroadcastMessage(
-        SESSION_ID,
-        newALRoute('room.stream', ORIGIN_ROOM.groupId, 'only'),
-        'room',
-        'stream.message.v1',
-        { name: 'only' },
-        {
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: newALRoute('room.stream', ORIGIN_ROOM.groupId, 'only'),
+        scope: 'room',
+        typeId: 'stream.message.v1',
+        resource: { name: 'only' },
+        options: {
             groupRef: ORIGIN_ROOM,
             ttlMs: 30_000,
             reliability: 'at-least-once',
@@ -723,33 +732,35 @@ function toRoomBroadcast(ack: ALAckMode, qos?: ALQosPolicyRequest): ALMessage {
             ordering: { orderingKey: 'stream' },
             ...(qos === undefined ? {} : { qos })
         }
-    );
+    });
 }
 
 function toSessionUnicast(ack: ALAckMode, qos?: ALQosPolicyRequest): ALMessage {
-    return newALUnicastMessage(
-        SESSION_ID,
-        newALRoute('room.command', ORIGIN_ROOM.groupId, 'to-peer-b'),
-        'peer-b',
-        'command.v1',
-        {},
-        {
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: newALRoute('room.command', ORIGIN_ROOM.groupId, 'to-peer-b'),
+        toPeerId: 'peer-b',
+        typeId: 'command.v1',
+        resource: {},
+        options: {
             groupRef: ORIGIN_ROOM,
             ttlMs: 30_000,
             reliability: 'at-least-once',
             ack,
             ...(qos === undefined ? {} : { qos })
         }
-    );
+    });
 }
 
 function toServerUnicast(): ALMessage {
-    return newALUnicastMessage(
-        SESSION_ID,
-        newALRoute('room.command', ORIGIN_ROOM.groupId, 'to-server'),
-        SERVER_PEER_ID,
-        'command.v1',
-        {},
-        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
-    );
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SESSION_ID,
+        route: newALRoute('room.command', ORIGIN_ROOM.groupId, 'to-server'),
+        toPeerId: SERVER_PEER_ID,
+        typeId: 'command.v1',
+        resource: {},
+        options: { groupRef: ORIGIN_ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+    });
 }

@@ -1,13 +1,17 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { RtcNativeObservationScope } from '@shared/webrtc/rtc-native-observation-scope.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from './browser-server-clock-fixture.ts';
 
 const mocks = readAuthSessionContractMocks();
 installFakeBroadcastChannelPerTest();
@@ -16,6 +20,7 @@ beforeEach(async () => {
     let construction = 0;
     mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => ({
         middleware: mocks.ctx.middleware,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: [],
         rtcCaptureReceipt: createBrowserRtcCapture({
             configuration: options.rtcCaptureConfiguration,
@@ -386,7 +391,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
         try {
             const outcome = await facade.messages.ws.send({ typeId: 'test', topicId: 'app.capture', payload: {}, rtcCaptureMode: 'native' }).then(
                 () => ({ sent: true }),
-                (error: unknown) => ({ error })
+                (error: unknown) => ({ error: toError(error) })
             );
             expect.soft(mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls).toEqual([]);
             expect.soft(outcome).toMatchObject({ error: { code: 'RALLAR_RTC_CAPTURE_UNVERIFIED', reason: 'application-unavailable' } });
@@ -415,7 +420,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
                 rtcCaptureMode: 'off'
             }).then(
                 () => ({ sent: true }),
-                (error: unknown) => ({ error })
+                (error: unknown) => ({ error: toError(error) })
             );
             expect.soft(mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls).toEqual([]);
             expect(outcome).toMatchObject({ error: { code: 'RALLAR_RTC_CAPTURE_UNVERIFIED', reason: 'session-not-current' } });
@@ -442,7 +447,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
                         return 1;
                     }
                 }
-            }).then(() => ({ sent: true }), (error: unknown) => ({ error }));
+            }).then(() => ({ sent: true }), (error: unknown) => ({ error: toError(error) }));
             expect(outcome).toEqual({ sent: true });
         }
         finally {
@@ -477,7 +482,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
         const capture: RallarOperationOptions = { rtcCaptureMode: 'off' };
         const send = facade.messages.ws.send({ ...capture, typeId: 'test', topicId: 'app.capture', payload: {} }).then(
             () => ({ sent: true }),
-            (error: unknown) => ({ error })
+            (error: unknown) => ({ error: toError(error) })
         );
         release.resolve();
         try {
@@ -511,7 +516,7 @@ describe('implicit message acquisition of the owned capture connection', () => {
         }
         const send = facade.messages.ws.send({ typeId: 'test', topicId: 'app.capture', payload: { value: 1 } }).then(
             (handle) => ({ sent: true, rtcCapture: handle.rtcCapture() }),
-            (error: unknown) => ({ error })
+            (error: unknown) => ({ error: toError(error) })
         );
         release.resolve();
         try {
@@ -544,9 +549,9 @@ describe('implicit message acquisition of the owned capture connection', () => {
             entered.resolve();
             return pending.promise;
         });
-        const first = facade.connect({ rtcCaptureContext: { run: 'native' } }).catch((error: unknown) => error);
+        const first = facade.connect({ rtcCaptureContext: { run: 'native' } }).catch((error: unknown) => toError(error));
         await entered.promise;
-        const send = facade.messages.ws.send({ typeId: 'test', topicId: 'app.capture', payload: {} }).catch((error: unknown) => error);
+        const send = facade.messages.ws.send({ typeId: 'test', topicId: 'app.capture', payload: {} }).catch((error: unknown) => toError(error));
         const failure = new Error('construction cancelled');
         pending.reject(failure);
         expect(await first).toBe(failure);
