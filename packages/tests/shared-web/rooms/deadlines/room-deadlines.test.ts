@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import type { RoomDeadlineObservation } from '@shared-web/browser/rallar.ts';
+import type { RoomClockObservation, RoomDeadlineObservation } from '@shared-web/browser/rallar.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
@@ -170,4 +170,41 @@ it('only acknowledges a next occurrence when it starts at the accepted revision'
     await expect(rooms.setDeadline(room, restart, 'start-round-two-request')).resolves.toEqual(response);
     vi.stubGlobal('fetch', () => Promise.resolve(groupResponse([{ ...deadline, revision: 2 }])));
     await expect(rooms.setDeadline(room, restart, 'start-round-two-request')).rejects.toThrow(/acknowledgement/);
+});
+
+it('does not read an idle paused clock periodically and clears its balance on session end', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const { rooms, ws, auth } = createRallarFacade();
+    vi.spyOn(ws, 'status').mockReturnValue({ ...ws.status(), isOpen: true });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    const clock = { name: 'period', revision: 2, status: 'paused', remainingMs: 494_000 };
+    const fetchClock = vi.fn(async () => {
+        const response = groupResponse([]);
+        const snapshot = await response.json();
+        snapshot.group.metadata = { rallarRoomClocks: [clock] };
+        return Response.json(snapshot, { headers: response.headers });
+    });
+    vi.stubGlobal('fetch', fetchClock);
+    let endSession!: () => void;
+    vi.spyOn(auth, 'onChange').mockImplementation(listener => {
+        endSession = () => listener({ session: undefined } as Parameters<typeof listener>[0]);
+        return () => undefined;
+    });
+    const observed: RoomClockObservation[] = [];
+    const stop = rooms.watchClock(room, 'period', value => observed.push(value));
+    await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', clock }));
+    vi.useFakeTimers();
+    try {
+        fetchClock.mockClear();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(fetchClock.mock.calls).toHaveLength(0);
+        endSession();
+        expect(observed.at(-1)).toEqual({ status: 'stale', clock: null });
+    }
+    finally {
+        stop();
+        vi.useRealTimers();
+    }
 });

@@ -22,6 +22,8 @@ import {
     readGroupSpectatorCapacity
 } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
+import { readRoomClocks, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
+import { computeRoomClock } from './compute-room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
@@ -44,7 +46,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeGroupDeadlineChange, refuseDirectorDeadlineExtension } from './compute-group-deadline-change.ts';
+import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
@@ -64,10 +66,10 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    const directorEpoch = command.input.roomDeadline?.expectedDirectorEpoch;
+    const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
     if (directorEpoch !== undefined) {
         const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
-        const refusal = refuseDirectorDeadlineExtension({
+        const refusal = refuseDirectorTimeChange({
             update: command.input, snapshot, expectedEpoch: directorEpoch, nowEpochMs: facts.attemptAtEpochMs
         });
         if (refusal) {
@@ -110,6 +112,16 @@ export function computeUpdate(
             return rejected({ command, read, facts, ...deadline });
         }
         next = deadline;
+    }
+    if (command.input.roomClock) {
+        if (current.kind !== 'room' || current.status !== 'active') {
+            return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' });
+        }
+        const clocks = readRoomClocks(current.metadata);
+        const updated = computeRoomClock(clocks, command.input.roomClock, facts.attemptAtEpochMs);
+        if ('rejectionCode' in updated) return rejected({ command, read, facts, ...updated });
+        const records = [...clocks.filter(clock => clock.name !== updated.name), updated];
+        next = { ...next, metadata: { ...next.metadata, [ROOM_CLOCKS_METADATA_KEY]: records } };
     }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
@@ -428,6 +440,9 @@ function computeUpdatedGroupMetadata(
     delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     if (Object.hasOwn(current, RALLAR_GROUP_DIRECTOR_METADATA_KEY)) {
         metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
+    }
+    if (Object.hasOwn(current, ROOM_CLOCKS_METADATA_KEY)) {
+        metadata[ROOM_CLOCKS_METADATA_KEY] = current[ROOM_CLOCKS_METADATA_KEY];
     }
     if (Object.hasOwn(current, ROOM_DEADLINES_METADATA_KEY)) {
         metadata[ROOM_DEADLINES_METADATA_KEY] = current[ROOM_DEADLINES_METADATA_KEY];

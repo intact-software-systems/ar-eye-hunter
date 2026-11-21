@@ -9136,6 +9136,38 @@ components:
     UpdateGroupRequest:
       type: object
       properties:
+        roomClock:
+          type: object
+          additionalProperties: false
+          description: The active appointed director starts, pauses or resumes one named countdown. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          required: [name, operation, expectedRevision, expectedDirectorEpoch]
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9._-]{1,64}$'
+            operation:
+              enum: [start, pause, resume]
+            expectedRevision:
+              type: integer
+              minimum: 0
+              maximum: 9007199254740991
+            expectedDirectorEpoch:
+              type: integer
+              minimum: 1
+              maximum: 9007199254740991
+            durationMs:
+              type: integer
+              minimum: 1
+              maximum: 9007199254740991
+          if:
+            properties:
+              operation:
+                const: start
+          then:
+            required: [durationMs]
+          else:
+            not:
+              required: [durationMs]
         roomDeadline:
           type: object
           additionalProperties: false

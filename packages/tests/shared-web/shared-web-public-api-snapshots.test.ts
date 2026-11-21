@@ -336,6 +336,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsStatus',
                 'RallarWsStatusListener',
                 'RallarWsWaitForOpenResult',
+                'RoomClock',
+                'RoomClockCommand',
+                'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
                 'RoomDeadlineObservation'
@@ -500,6 +503,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarTypedWsSendOptions',
                 'RallarUnsubscribe',
                 'RallarWsSendInput',
+                'RoomClock',
+                'RoomClockCommand',
+                'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
                 'RoomDeadlineObservation'

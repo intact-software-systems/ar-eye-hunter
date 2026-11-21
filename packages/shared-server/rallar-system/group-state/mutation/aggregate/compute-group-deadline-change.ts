@@ -68,7 +68,7 @@ interface DirectorDeadlineExtensionInput {
 }
 
 /** A director intent never inherits the session's other room privileges. */
-export function refuseDirectorDeadlineExtension({
+export function refuseDirectorTimeChange({
     update,
     snapshot,
     expectedEpoch,
@@ -85,11 +85,11 @@ export function refuseDirectorDeadlineExtension({
             message: 'The requesting session no longer holds this room director appointment.'
         };
     }
-    const allowed = ['actorPrincipalId', 'actorSessionId', 'reason', 'roomDeadline'];
+    const allowed = ['actorPrincipalId', 'actorSessionId', 'reason', update.roomClock ? 'roomClock' : 'roomDeadline'];
     if (Object.entries(update).some(([key, value]) => value != null && !allowed.includes(key))) {
         return {
             rejectionCode: 'group-mutation-rejected',
-            message: 'Director deadline extensions cannot change other room settings.'
+            message: 'Director time commands cannot change other room settings.'
         };
     }
     return null;
