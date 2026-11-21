@@ -31,6 +31,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -1020,6 +1021,25 @@ describe('QueueBoxPubSubBridge', () => {
             .toEqual([['a'], 'absent', 'absent', 'absent']);
     });
 
+    it('keeps the drops of a judged notice encoding at 7,999 bytes and publishes one at 8,000 bytes without them', () => {
+        const entry = createWsOutboxEntry();
+        const unjudged = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-1', entry, droppedSessionIds: undefined });
+        const drops = [7_999, 8_000].map((targetBytes) => toDropsEncodingAt(unjudged, targetBytes));
+
+        expect(drops.map((droppedSessionIds) => computeUtf8ByteLength(JSON.stringify({ ...unjudged, droppedSessionIds }))))
+            .toEqual([7_999, 8_000]);
+        expect(
+            drops.map((droppedSessionIds) =>
+                Object.keys(
+                    toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-1', entry, droppedSessionIds })
+                ).toSorted()
+            )
+        ).toEqual([
+            ['channel', 'delivery', 'droppedSessionIds', 'expiresAtMs', 'key', 'publisherId', 'typeId'],
+            ['channel', 'delivery', 'expiresAtMs', 'key', 'publisherId', 'typeId']
+        ]);
+    });
+
     it('hands a row with no captured audience to the local and the remote send as absent, so each resolves its targets as before', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const bridge = createBridge();
@@ -1800,6 +1820,18 @@ function toUnjudgedRecheckFilters(
         local,
         socket: () => Promise.reject(new Error('A send no dequeue judged never runs the socket filter'))
     };
+}
+
+/** Unique drops that make the notice they join encode at exactly `targetBytes`: 100-character ids, then one to fill. */
+function toDropsEncodingAt(notice: QueueBoxPubSubMessage, targetBytes: number): readonly string[] {
+    const drops: string[] = [];
+    const encodedBytes = () => computeUtf8ByteLength(JSON.stringify({ ...notice, droppedSessionIds: drops }));
+    while (targetBytes - encodedBytes() > 130) {
+        drops.push(`${drops.length}`.padStart(100, 's'));
+    }
+    const separatorAndQuotes = drops.length === 0 ? 2 : 3;
+    drops.push('last'.padStart(targetBytes - encodedBytes() - separatorAndQuotes, 'x'));
+    return drops;
 }
 
 function createBridge(): TestQueueBoxPubSubBridge {

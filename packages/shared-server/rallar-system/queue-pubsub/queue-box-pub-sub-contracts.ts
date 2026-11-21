@@ -88,14 +88,13 @@ function decodeQueueBoxPubSubDroppedSessionIds(
     if (droppedSessionIds === undefined) {
         return undefined;
     }
-    if (
-        !Array.isArray(droppedSessionIds) ||
-        !droppedSessionIds.every((sessionId: JsonWireValue) => isNonEmptyString(sessionId, 128)) ||
-        new Set(droppedSessionIds).size !== droppedSessionIds.length
-    ) {
-        return 'malformed';
-    }
-    return droppedSessionIds as readonly string[];
+    return isQueueBoxPubSubDroppedSessionIds(droppedSessionIds) ? droppedSessionIds : 'malformed';
+}
+
+function isQueueBoxPubSubDroppedSessionIds(value: JsonWireValue): value is readonly string[] {
+    return Array.isArray(value) &&
+        value.every((sessionId: JsonWireValue) => isNonEmptyString(sessionId, 128)) &&
+        new Set(value).size === value.length;
 }
 
 function decodeQueueBoxPubSubMessageKey(
@@ -168,10 +167,14 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
         delivery: 'key',
         expiresAtMs
     };
-    const judged = droppedSessionIds === undefined ? undefined : { ...unjudged, droppedSessionIds };
-    const notice = judged !== undefined && decodeQueueBoxPubSubMessage(judged, channel) ? judged : unjudged;
-    if (!decodeQueueBoxPubSubMessage(notice, channel)) {
+    if (droppedSessionIds !== undefined) {
+        const judged = { ...unjudged, droppedSessionIds };
+        if (decodeQueueBoxPubSubMessage(judged, channel)) {
+            return judged;
+        }
+    }
+    if (!decodeQueueBoxPubSubMessage(unjudged, channel)) {
         throw new TypeError('QueueBox notification exceeds physical key or wire bounds');
     }
-    return notice;
+    return unjudged;
 }
