@@ -555,7 +555,7 @@ describe('full-stack private upstream receipt capture', () => {
         { failedGuards: ['connection-replaced'] },
         { failedGuards: ['aggregate-absent', 'deadline-expired'] },
         { failedGuards: ['aggregate-absent'] },
-        { failedGuards: Array.from({ length: 7 }, () => 'deadline-expired') },
+        { failedGuards: Array.from({ length: 8 }, () => 'deadline-expired') },
         { validationAtEpochMs: undefined },
         { validationAtEpochMs: -1 },
         { validationAtEpochMs: NaN },
@@ -567,6 +567,24 @@ describe('full-stack private upstream receipt capture', () => {
     ])('refuses the whole terminal ACK record for an invalid owner/stage/guard/identity/clock combination %j', (corruption) => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         expect(toSafeApiWsReceiptObservation({ ...ACK_REJECTION, ...corruption })).toBeUndefined();
+    });
+
+    it.each([
+        { failedGuards: ['never-sent'] },
+        {
+            failedGuards: [
+                'origin-addressee-mismatch',
+                'sender-recipient-mismatch',
+                'outside-frozen-audience',
+                'already-confirmed',
+                'already-outside',
+                'deadline-expired',
+                'never-sent'
+            ]
+        }
+    ])('keeps an aggregate ACK rejection whose every guard is a known aggregate guard %j', (guards) => {
+        const rejection = { ...ACK_REJECTION, ...guards };
+        expect(toSafeApiWsReceiptObservation(rejection)).toEqual(rejection);
     });
 
     it.each([
