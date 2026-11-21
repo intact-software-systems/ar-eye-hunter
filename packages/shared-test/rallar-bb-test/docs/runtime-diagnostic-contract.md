@@ -130,8 +130,10 @@ bare room id resolves no ref and installs nothing.
   each planned, accepted or removed layout event
 - `rallar.browser.formation.room-status` carries the room transport block and
   the group revision it was read at, on every RTC status change
-- `rallar.browser.formation.ready` carries the readiness diagnostic captured in
-  the tick `formation.readiness` resolved
+- `rallar.browser.formation.ready` carries the readiness diagnostic: its
+  summary is captured in the tick `formation.readiness` resolved, before the
+  formation view read, and the diagnostic is emitted after that read, with its
+  `heldReshape`
 
 The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin

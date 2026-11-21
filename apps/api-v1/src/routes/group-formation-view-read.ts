@@ -2,8 +2,11 @@ import {
     toReadGroupLifecyclePolicy,
     type GroupLifecyclePolicyRead
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
+import { computeStagedHeldTopologyReshape } from '@shared-server/rallar-system/topology/planning/reshape-gate/topology-reshape-gate-stage.ts';
 import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import {
     computeGroupActivationCondition,
     computeLayoutStale,
@@ -34,6 +37,7 @@ import {
 } from '@shared/api/group-lifecycle/resolve-group-lifecycle-managers.ts';
 import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { GraphTopologyRoutePlanning, GraphTopologyRouteQuery } from './graph-topology-routes.ts';
 
 export interface ReadGroupFormationViewDependencies {
@@ -42,6 +46,7 @@ export interface ReadGroupFormationViewDependencies {
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     /** The planned slot's stored topology-input fingerprint; null before a planning cycle stored one. */
     readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
+    readonly reshapeGates: Pick<RtcTopologyExecutionRepository, 'readTopologyReshapeGate'>;
 }
 
 export async function readGroupFormationView(
@@ -49,23 +54,12 @@ export async function readGroupFormationView(
     snapshot: GroupSnapshot,
     deps: ReadGroupFormationViewDependencies
 ): Promise<GroupFormationView> {
-    const [authority, view] = await Promise.all([
-        deps.topologyPlanning.readTopologyPlanningAuthority({
-            groupRef,
-            knownGroup: snapshot
-        }),
-        deps.topologyQuery.readTopologyView(groupRef)
-    ]);
+    const { authority, view, policy, layoutStale, reshapeGate } = await readFormationViewInputs(
+        groupRef,
+        snapshot,
+        deps
+    );
     const group = authority.group.group;
-    const [policyRead, layoutStale] = await Promise.all([
-        deps.readLifecyclePolicy(groupRef),
-        readLayoutStale({ groupRef, authority, planned: view.snapshot, deps })
-    ]);
-    // One resolution for every field the policy answers: a corrupt stored
-    // policy resolves no manager, no budget and no coverage thresholds, so
-    // the whole surface fails closed together rather than per field.
-    const policy = toReadGroupLifecyclePolicy(policyRead);
-    const readiness = toFormationReadiness(view.snapshot, authority);
     const status = computeActivationStatus({
         group,
         policy,
@@ -82,15 +76,59 @@ export async function readGroupFormationView(
         formationAttemptCount: group.formationAttemptCount,
         lastFormationOutcome: group.lastFormationOutcome,
         establishmentStartedAtEpochMs: group.establishmentStartedAtEpochMs,
-        readiness,
+        readiness: toFormationReadiness(view.snapshot, authority),
         managerPrincipalIds: resolveManagerPrincipalIds(groupRef, authority, policy),
         layoutStale,
         pending: view.pending,
+        heldReshape: computeStagedHeldTopologyReshape({
+            lifecycleState: group.lifecycleState,
+            state: reshapeGate,
+            bounds: authority.reshapeBounds
+        }),
         maxFormationAttempts: policy === null ? null : policy.activation.maxFormationAttempts,
         condition: status.condition,
         remediation: status.remediation,
         coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity,
         causalRevision: authority.group.causalRevision
+    };
+}
+
+interface GroupFormationViewInputs {
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly view: GroupTopologyManagementView;
+    readonly policy: GroupLifecyclePolicy | null;
+    readonly layoutStale: boolean;
+    readonly reshapeGate: TopologyReshapeGateState | null;
+}
+
+async function readFormationViewInputs(
+    groupRef: GroupRef,
+    snapshot: GroupSnapshot,
+    deps: ReadGroupFormationViewDependencies
+): Promise<GroupFormationViewInputs> {
+    // The gate is read before the planned slot, so a release committed in between is stated as still held, never
+    // as nothing held on the old layout.
+    const storedReshapeGate = await deps.reshapeGates.readTopologyReshapeGate(groupRef);
+    const [authority, view] = await Promise.all([
+        deps.topologyPlanning.readTopologyPlanningAuthority({
+            groupRef,
+            knownGroup: snapshot
+        }),
+        deps.topologyQuery.readTopologyView(groupRef)
+    ]);
+    const [policyRead, layoutStale] = await Promise.all([
+        deps.readLifecyclePolicy(groupRef),
+        readLayoutStale({ groupRef, authority, planned: view.snapshot, deps })
+    ]);
+    return {
+        authority,
+        view,
+        // One resolution for every field the policy answers: a corrupt stored
+        // policy resolves no manager, no budget and no coverage thresholds, so
+        // the whole surface fails closed together rather than per field.
+        policy: toReadGroupLifecyclePolicy(policyRead),
+        layoutStale,
+        reshapeGate: storedReshapeGate?.state ?? null
     };
 }
 

@@ -21,6 +21,14 @@ export interface TopologyReshapeGateState {
     readonly wantedReasons: readonly HeldTopologyReshapeReason[];
 }
 
+/** A reshape the gate holds for a room, as an application reads it. */
+export interface HeldTopologyReshape {
+    /** The stored wanted reasons, in HELD_TOPOLOGY_RESHAPE_REASONS order; never empty. */
+    readonly wantedReasons: readonly HeldTopologyReshapeReason[];
+    /** When the gate opens. The reshape follows at the next work that plans the room, so this can lie in the past. */
+    readonly opensAtEpochMs: number;
+}
+
 export type TopologyReshapePermission =
     | Readonly<{ reshape: 'held'; }>
     | Readonly<{ reshape: 'allowed'; wantedReasons: readonly HeldTopologyReshapeReason[]; }>;

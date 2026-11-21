@@ -75,6 +75,10 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
     >;
     readonly groupsRepository: Pick<ApiV1Runtime['groupsRepository'], 'readSnapshot'>;
     readonly clientsRepository: Pick<ApiV1Runtime['clientsRepository'], 'readSnapshot'>;
+    readonly rtcTopologyExecutionRepository: Pick<
+        ApiV1Runtime['rtcTopologyExecutionRepository'],
+        'readTopologyReshapeGate'
+    >;
 }
 
 export interface ApiV1RouteInstallerTopology {
@@ -284,6 +288,7 @@ function registerApiV1StateRoutes<
         adminClientIds: input.topology.adminClientIds,
         readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
         readPlannedLayoutFingerprint: input.topology.readPlannedLayoutFingerprint,
+        reshapeGates: input.runtime.rtcTopologyExecutionRepository,
         strictReadAuthorization: input.strictReadAuthorization,
         now: input.nowEpochMs
     });

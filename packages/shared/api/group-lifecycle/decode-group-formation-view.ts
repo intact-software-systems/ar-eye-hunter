@@ -4,6 +4,7 @@ import { isSameGroupRef } from '../api-type-utils.ts';
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
 import { validateRallarGroupRef, validateRallarNonNegativeInteger } from '../rallar-validation.ts';
+import { decodeHeldTopologyReshape } from '../topology-plan/decode-held-topology-reshape.ts';
 import {
     GROUP_ACTIVATION_CONDITIONS,
     GROUP_ACTIVATION_REMEDIATIONS,
@@ -58,6 +59,11 @@ const FIELD_CHECKS = {
         message: 'Pending replan must be null or the queued replan',
         isValid: isNullOr(isPendingTopologyReplan)
     },
+    heldReshape: {
+        message:
+            'Held reshape must be null or name its wanted reasons, known, once each and in order, and the instant its gate opens',
+        isValid: isNullOr(isHeldTopologyReshape)
+    },
     maxFormationAttempts: {
         message: 'Attempt budget must be null or a positive integer',
         isValid: isNullOr(isPositiveInteger)
@@ -97,6 +103,15 @@ export function decodeGroupFormationView(
             : [])
     ];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupFormationView);
+}
+
+/** A reader that refuses an undecodable view throws this: every issue, joined in the decoder's order. */
+export function toGroupFormationViewError(groupId: string, issues: readonly GroupFormationViewIssue[]): TypeError {
+    return new TypeError(
+        `Formation view for ${groupId} is invalid: ${
+            issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+        }`
+    );
 }
 
 function toFieldIssues(
@@ -176,6 +191,10 @@ function isPendingTopologyReplan(value: unknown): value is PendingTopologyReplan
         typeof value.reconfigureQueued === 'boolean' &&
         (value.dueAtEpochMs === null || isNonNegativeInteger(value.dueAtEpochMs)) &&
         (value.generation === null || isNonNegativeInteger(value.generation));
+}
+
+function isHeldTopologyReshape(value: ApiJsonValue): boolean {
+    return decodeHeldTopologyReshape(value).right !== undefined;
 }
 
 function isCausalRevision(value: unknown): value is GroupStateCausalRevision {
