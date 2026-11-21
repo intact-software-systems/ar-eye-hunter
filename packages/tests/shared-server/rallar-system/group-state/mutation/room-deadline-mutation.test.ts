@@ -101,3 +101,30 @@ it('refuses an owner acting under a missing appointment even with the correct de
         { name: 'vote', revision: 1, atEpochMs: 3_000 }
     ]);
 });
+
+it('starts one next occurrence at expiry and fences delayed work from the previous occurrence', async () => {
+    const runtime = new GroupBarrierRepository();
+    await seedOpenGroup(runtime, groupId);
+    const writer = service(runtime);
+    await writer.updateGroup(SCOPE, groupId, change('publish', 0, 3_000));
+    const restart = (id: string, at: number) => {
+        const request = change(id, 1, at);
+        return { ...request, roomDeadline: { ...request.roomDeadline, operation: 'start-next-occurrence' as const } };
+    };
+    await expect(writer.updateGroup(SCOPE, groupId, restart('early', 5_000))).rejects.toThrow();
+    const next = service(runtime, 3_000);
+    await expect(next.updateGroup(SCOPE, groupId, { ...restart('guest', 5_000), actorPrincipalId: 'bob' }))
+        .rejects.toMatchObject({ status: 403 });
+    runtime.armGroupReadBarrier(2);
+    const attempts = [restart('round-two-a', 5_000), restart('round-two-b', 6_000)];
+    const results = await Promise.allSettled(attempts.map(request => next.updateGroup(SCOPE, groupId, request)));
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    const winner = attempts[results.findIndex(result => result.status === 'fulfilled')];
+    await next.updateGroup(SCOPE, groupId, winner);
+    await expect(next.updateGroup(SCOPE, groupId, change('delayed', 1, 7_000)))
+        .rejects.toMatchObject({ code: 'room-deadline-revision-conflict' });
+    await next.updateGroup(SCOPE, groupId, change('extend-round-two', 2, 8_000));
+    expect((await requireSnapshot(runtime, groupId)).group.metadata.rallarRoomDeadlines).toEqual([
+        { name: 'vote', revision: 3, startedAtRevision: 2, atEpochMs: 8_000 }
+    ]);
+});
