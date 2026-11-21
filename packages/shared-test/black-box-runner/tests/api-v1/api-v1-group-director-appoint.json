@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 browser-director appointment: the route no recipe calls. Every eligibility branch is observed -- a non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch, since all four share one code. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged.",
+  "description": "No-browser API-v1 browser-director appointment: the route no recipe calls. Every eligibility branch is observed -- a non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch, since all four share one code. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged. A generic metadata replacement that leaves the director out keeps the appointment when another principal or another session of the appointed principal writes it, and removes it, in one metadata version, when the appointed session itself writes it.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -1012,6 +1012,147 @@
             }
           }
         }
+      }
+    },
+    {
+      "name": "loginOwnerSecondSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/dirapt-login-owner-second-{runId}",
+        "body": {
+          "username": "dirapt-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerSecondSessionId": "body.sessionId",
+          "ownerSecondAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{ownerClientId}",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerSecondAuthHeader",
+      "type": "set",
+      "output": "ownerSecondAuthHeader",
+      "secret": true,
+      "redactAs": "ownerSecondAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerSecondAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "anotherSessionOfTheDirectorKeepsTheAppointment",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/dirapt-second-session-replaces-topic-{runId}",
+        "headers": {
+          "Authorization": "{ownerSecondAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "metadata": {
+            "topic": "overtime"
+          }
+        },
+        "outputs": {
+          "metadataVersionBeforeResignation": "body.group.metadataVersion"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "topic": "overtime",
+              "rallarDirector": {
+                "principalId": "{ownerClientId}",
+                "sessionId": "{ownerSessionId}",
+                "epoch": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deriveResignationMetadataVersion",
+      "type": "set",
+      "output": "resignationMetadataVersion",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.metadataVersionBeforeResignation"
+          },
+          1
+        ]
+      }
+    },
+    {
+      "name": "theAppointedSessionResignsByLeavingTheDirectorOut",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/dirapt-director-resigns-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "metadata": {
+            "topic": "overtime"
+          }
+        },
+        "outputs": {
+          "resignedGroup": "body.group"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "metadata": {
+              "topic": "overtime"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "theResignationRemovedTheAppointmentInOneMetadataVersion",
+      "type": "assert",
+      "actual": "{resignedGroup}",
+      "expect": {
+        "comparators": [
+          {
+            "path": "metadata.rallarDirector",
+            "exists": false
+          },
+          {
+            "path": "metadataVersion",
+            "equals": "{resignationMetadataVersion}"
+          }
+        ]
       }
     }
   ],

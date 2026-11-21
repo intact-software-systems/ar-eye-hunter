@@ -5,7 +5,12 @@ import {
 } from 'vitest';
 
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationComputed,
+    GroupMutationFacts,
+    GroupMutationRead
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutationOperationReads } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-operation-reads.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
@@ -16,6 +21,8 @@ import {
     PUBLICATION_GRANTS_NAMESPACE
 } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStatePublicationGrantStorageKey } from '@shared-server/rallar-system/group-state/persistence/publication/group-publication-grant-storage-key.ts';
+import type { RallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
+import type { Group } from '@shared/api/group-types.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import {
     createMutationCommand,
@@ -25,7 +32,13 @@ import {
 
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
-import { createGroupAuthorityRead, SCOPE, transitionCommand } from './group-mutation-test-runtime.ts';
+import {
+    createGroupAuthorityRead,
+    groupStorageKey,
+    SCOPE,
+    storedEntry,
+    transitionCommand
+} from './group-mutation-test-runtime.ts';
 import {
     computeDescriptorMutation,
     GRANT_ROOM,
@@ -98,6 +111,93 @@ describe('group aggregate mutation computation', () => {
         ).toThrow(/resolved.*join code|generated|missing/i);
     });
 });
+
+describe('generic metadata replacement and the room director appointment', () => {
+    // The browser resigns by replacing the metadata without the director key.
+    it('lets the appointed session remove its own appointment', () => {
+        const command = metadataReplacement({ displayName: null, metadata: {} });
+
+        const computed = computeGroupMutation({
+            command,
+            read: readWithDirector(directorAppointment('alice', 'alice-session')),
+            facts: createMutationFacts()
+        });
+
+        expect(computed.outcome).toBe('write');
+        expect(Object.hasOwn(requireWrittenGroup(computed).metadata, 'rallarDirector')).toBe(false);
+        expect(requireWrittenGroup(computed).metadataVersion).toBe(2);
+    });
+
+    it.each([
+        ['another session of the same principal', directorAppointment('alice', 'alice-other-session')],
+        ['another principal', directorAppointment('bob', 'bob-session')]
+    ])('keeps an appointment held by %s', (_holder, appointment) => {
+        const command = metadataReplacement({ displayName: 'After', metadata: {} });
+
+        const computed = computeGroupMutation({ command, read: readWithDirector(appointment), facts: createMutationFacts() });
+
+        expect(requireWrittenGroup(computed).metadata.rallarDirector).toEqual(appointment);
+    });
+
+    it('keeps the appointment when the appointed session\'s replacement carries a director value', () => {
+        const appointment = directorAppointment('alice', 'alice-session');
+        const command = metadataReplacement({
+            displayName: 'After',
+            metadata: { rallarDirector: { ...appointment, epoch: 7, sessionId: 'forged-session' } }
+        });
+
+        const computed = computeGroupMutation({ command, read: readWithDirector(appointment), facts: createMutationFacts() });
+
+        expect(requireWrittenGroup(computed).metadata.rallarDirector).toEqual(appointment);
+    });
+
+    it('keeps the appointment when the appointed session sends no metadata replacement', () => {
+        const appointment = directorAppointment('alice', 'alice-session');
+        const command = metadataReplacement({ displayName: 'After', metadata: null });
+
+        const computed = computeGroupMutation({ command, read: readWithDirector(appointment), facts: createMutationFacts() });
+
+        expect(requireWrittenGroup(computed).metadata.rallarDirector).toEqual(appointment);
+    });
+});
+
+interface MetadataReplacementInput {
+    readonly displayName: string | null;
+    readonly metadata: Group['metadata'] | null;
+}
+
+function metadataReplacement(
+    { displayName, metadata }: MetadataReplacementInput
+): Extract<GroupMutationCommand, { operation: 'updateGroup'; }> {
+    const base = createMutationCommand();
+    return { ...base, input: { ...base.input, displayName, metadata } };
+}
+
+function directorAppointment(principalId: string, sessionId: string): RallarGroupDirectorAppointment {
+    return {
+        version: 1,
+        mode: 'appointed-spa',
+        sessionId,
+        principalId,
+        epoch: 1,
+        appointedAtEpochMs: 1_000,
+        heartbeatTtlMs: 5_000
+    };
+}
+
+function readWithDirector(appointment: RallarGroupDirectorAppointment): GroupMutationRead {
+    const read = createMutationRead();
+    const group = read.group!.value;
+    return { ...read, group: storedEntry(groupStorageKey(), { ...group, metadata: { rallarDirector: appointment } }) };
+}
+
+function requireWrittenGroup(computed: GroupMutationComputed): Group {
+    const { guard } = requireWrite(computed);
+    if (guard.kind !== 'group') {
+        throw new Error(`Expected a group write, received ${guard.kind}`);
+    }
+    return guard.value;
+}
 
 describe('group mutation roster read contract', () => {
     const actor = { actorPrincipalId: 'alice', actorSessionId: 'alice-session', reason: null };
