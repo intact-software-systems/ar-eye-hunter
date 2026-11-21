@@ -472,12 +472,15 @@ describe('a receipted granted send its own RTC origin signs', () => {
         const tokens = createPendingTopicSubscriptions();
         const pending = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'], topicSubscriptions: tokens.reader });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            'room.granted-feed.v1',
-            { text: 'feed' },
-            { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'room.granted-feed.v1',
+                resource: { text: 'feed' },
+                options: { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed' }
+            }
         );
 
         const admitted = await origin.manager.enqueueLegIfAbsent(message, 'hold');
@@ -518,12 +521,15 @@ describe('a receipted granted send its own RTC origin signs', () => {
         const unlisted = createChainHop(chain, { selfPeerId: 'd', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
         const message: ALMessage = {
             ...newALMulticastMessage(
-                'a',
-                { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
-                ORIGIN_ROOM,
-                'room.granted-feed.v1',
-                { text: 'feed' },
-                { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed-list' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route: { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+                    groupRef: ORIGIN_ROOM,
+                    typeId: 'room.granted-feed.v1',
+                    resource: { text: 'feed' },
+                    options: { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed-list' }
+                }
             ),
             targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, recipientPeerIds: ['b', 'c'] }
         };

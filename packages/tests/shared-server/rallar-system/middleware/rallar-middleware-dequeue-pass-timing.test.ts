@@ -41,11 +41,14 @@ describe('Rallar middleware dequeue-pass timing', () => {
         const reader = infrastructure.inboxQueueReader;
         reader.onInboxMessageDo('test.dequeue-pass', { onMessage: async () => undefined });
         await reader.enqueueIfAbsent(newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-inbox.test', 'test-scope', 'claimed'),
-            'test.dequeue-pass',
-            {},
-            { ttlMs: 300_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-inbox.test', 'test-scope', 'claimed'),
+                typeId: 'test.dequeue-pass',
+                resource: {},
+                options: { ttlMs: 300_000 }
+            }
         ));
 
         const advertisedLanes = await reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
@@ -109,11 +112,14 @@ describe('Rallar middleware dequeue-pass timing', () => {
         const reader = infrastructure.inboxQueueReader;
         reader.onInboxMessageDo('test.dequeue-pass', { onMessage: async () => undefined });
         await reader.enqueueIfAbsent(newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-inbox.test', 'test-scope', 'claimed'),
-            'test.dequeue-pass',
-            {},
-            { ttlMs: 300_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-inbox.test', 'test-scope', 'claimed'),
+                typeId: 'test.dequeue-pass',
+                resource: {},
+                options: { ttlMs: 300_000 }
+            }
         ));
         const timingClockReads: number[] = [];
         const readTimingClock = performance.now.bind(performance);
@@ -153,11 +159,14 @@ describe('Rallar middleware dequeue-pass timing', () => {
         const reader = infrastructure.outboxQueueReader;
         reader.onOutboxMessageDo('test.outbox-pass', { onMessage: async () => undefined }, ['app-outbox.test']);
         await reader.enqueueIfAbsent(newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-outbox.test', 'test-scope', 'claimed-outbox'),
-            'test.outbox-pass',
-            {},
-            { ttlMs: 300_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-outbox.test', 'test-scope', 'claimed-outbox'),
+                typeId: 'test.outbox-pass',
+                resource: {},
+                options: { ttlMs: 300_000 }
+            }
         ));
 
         const advertisedLanes = await reader.readWorkAdvertisement(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, resilience);

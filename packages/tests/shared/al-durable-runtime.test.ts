@@ -62,18 +62,21 @@ describe('AL state retained across runtime recreation', () => {
 
         const runtime1 = createDefaultInboundRuntime(stores, dispatchedMsgIds);
         const msg = newALMulticastMessage(
-            'peer-1',
             {
-                topicId: 'chat',
-                resourceId: 'msg-1',
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: 'hello'
-            },
-            { ttlMs: 30_000, reliability: 'at-least-once' }
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: {
+                    topicId: 'chat',
+                    resourceId: 'msg-1',
+                    contextId: 'group-1'
+                },
+                groupRef: groupRef('group-1'),
+                typeId: 'chat.message.v1',
+                resource: {
+                    text: 'hello'
+                },
+                options: { ttlMs: 30_000, reliability: 'at-least-once' }
+            }
         );
 
         await runtime1.admitIncomingMessage(msg, {
@@ -413,36 +416,42 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
 
 function createPresenceMessage(resourceId: string, online: boolean): ALMessage {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'presence', resourceId, contextId: 'room-1' },
-        'peer-1',
-        'presence.state.v1',
-        { online },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'presence', resourceId, contextId: 'room-1' },
+            toPeerId: 'peer-1',
+            typeId: 'presence.state.v1',
+            resource: { online },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 
 function createBufferedOrderedMessage(seq: number, text: string): ALMessage {
     return newALMulticastMessage(
-        'peer-1',
         {
-            topicId: 'chat',
-            resourceId: `msg-${seq}`,
-            contextId: 'group-1'
-        },
-        groupRef('group-1'),
-        'chat.message.v1',
-        {
-            text
-        },
-        {
-            ttlMs: 30_000,
-            seq,
-            reliability: 'at-least-once',
-            ack: 'none',
-            qos: {
-                durability: {
-                    algo: 'volatile'
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: {
+                topicId: 'chat',
+                resourceId: `msg-${seq}`,
+                contextId: 'group-1'
+            },
+            groupRef: groupRef('group-1'),
+            typeId: 'chat.message.v1',
+            resource: {
+                text
+            },
+            options: {
+                ttlMs: 30_000,
+                seq,
+                reliability: 'at-least-once',
+                ack: 'none',
+                qos: {
+                    durability: {
+                        algo: 'volatile'
+                    }
                 }
             }
         }
@@ -451,18 +460,21 @@ function createBufferedOrderedMessage(seq: number, text: string): ALMessage {
 
 function createOutboundMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'self',
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        { ttlMs: 30_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 

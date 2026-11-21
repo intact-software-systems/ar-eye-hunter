@@ -164,17 +164,20 @@ function toDeadlineFreeCopy(message: ALMessage): ALMessage {
 /** A best-effort frame of a position stream with no receipt, as a peer sends many a second. */
 function createPositionFrame(input: PositionFrameInput): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'position', resourceId: input.resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'position.frame.v1',
-        { resourceId: input.resourceId, seq: input.seq },
         {
-            reliability: 'best-effort',
-            ack: 'none',
-            ttlMs: 30_000,
-            qos: input.qos,
-            ...(input.seq === undefined ? {} : { seq: input.seq, orderingKey: 'position-track' })
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'position', resourceId: input.resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'position.frame.v1',
+            resource: { resourceId: input.resourceId, seq: input.seq },
+            options: {
+                reliability: 'best-effort',
+                ack: 'none',
+                ttlMs: 30_000,
+                qos: input.qos,
+                ...(input.seq === undefined ? {} : { seq: input.seq, orderingKey: 'position-track' })
+            }
         }
     );
 }
@@ -635,12 +638,15 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
     /** A receipted frame whose receipt counts next hops and their subtrees, not recipients. */
     function createOriginSubtreeMulticast(resourceId: string): ALMessage {
         return newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId, contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            { text: resourceId },
-            { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId, contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: { text: resourceId },
+                options: { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
+            }
         );
     }
 

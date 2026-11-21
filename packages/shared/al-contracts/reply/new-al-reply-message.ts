@@ -11,18 +11,21 @@ export interface ALReplyMessageInput<T> {
 
 export function newALReplyMessage<T>(request: ALMessage, input: ALReplyMessageInput<T>): ALMessage {
     return newALUnicastMessage(
-        input.senderId,
-        newALEventRoute(request.route.topicId, toALReplyContextId(request)),
-        request.id.senderId,
-        input.typeId,
-        input.payload,
         {
-            groupRef: readALTargetGroupRef(request),
-            reliability: AL_CHANNEL_SEND_DEFAULTS.command.reliability,
-            ack: AL_CHANNEL_SEND_DEFAULTS.command.ack,
-            ttlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs,
-            actions: toALReplyActions(request),
-            traceId: request.id.traceId
+            createdAtEpochMs: Date.now(),
+            senderId: input.senderId,
+            route: newALEventRoute(request.route.topicId, toALReplyContextId(request)),
+            toPeerId: request.id.senderId,
+            typeId: input.typeId,
+            resource: input.payload,
+            options: {
+                groupRef: readALTargetGroupRef(request),
+                reliability: AL_CHANNEL_SEND_DEFAULTS.command.reliability,
+                ack: AL_CHANNEL_SEND_DEFAULTS.command.ack,
+                ttlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs,
+                actions: toALReplyActions(request),
+                traceId: request.id.traceId
+            }
         }
     );
 }

@@ -34,6 +34,12 @@ import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
+import { signPublication } from '../../../../packages/tests/shared/multicast/rtc-publication-proof-fixtures.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    ROOM_PUBLICATION_CRYPTO,
+    ROOM_PUBLICATION_KEY
+} from '../../../../packages/tests/shared/signature/publication-crypto-fixtures.ts';
 import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import { API_V1_LIVE_WS_NOTICE_CHANNEL, createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
@@ -85,6 +91,42 @@ interface GrantedDeliveryHarnessInput {
     /** Wires the server, and the bridge when installed, without the D498 re-check port: the half-wired composition. */
     readonly withoutRecheck?: boolean;
 }
+
+test('WS verifies the signed publication and delivers a server copy with the original deadline', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const authority = createAuthority(GRANTS);
+        harness.reads.push(async () => ({
+            ...authority,
+            snapshot: {
+                ...authority.snapshot,
+                activeSessions: authority.snapshot.activeSessions.map((session) =>
+                    session.sessionId === 'alice' ? { ...session, publicationKey: ROOM_PUBLICATION_KEY } : session
+                )
+            }
+        }));
+        const other = await createAvailablePublicationCryptoFixture();
+        const unregistered = await signPublication(other, feedMessage({ senderId: 'alice', msgId: 'different-key' }));
+        await harness.service.acceptIncomingMessage(unregistered, 'alice');
+        assert.deepEqual(readNackReasons(frames.alice, unregistered), ['unauthorized']);
+        const signed = await signPublication(ROOM_PUBLICATION_CRYPTO, feedMessage({ senderId: 'alice', msgId: 'signed-fallback' }));
+        assert.equal((await harness.service.acceptIncomingMessage(signed, 'alice')).right?.kind, 'admitted');
+        await waitFor(() => readDelivered(frames.bob, signed) === 1);
+        const copy = frames.bob.map(decodePersistedALMessage).find((frame) => frame.id.msgId === signed.id.msgId);
+        assert.ok(copy);
+        assert.deepEqual(copy.id, signed.id);
+        assert.equal(copy.constraints?.expiresAtMs, signed.constraints?.expiresAtMs);
+        assert.equal(copy.proof, undefined);
+        assert.equal(readDelivered(frames.bob, unregistered), 0);
+        const expired = await signPublication(ROOM_PUBLICATION_CRYPTO, {
+            ...feedMessage({ senderId: 'alice', msgId: 'expired-fallback' }),
+            constraints: { expiresAtMs: Date.now() }
+        });
+        await harness.service.acceptIncomingMessage(expired, 'alice');
+        assert.deepEqual(readNackReasons(frames.alice, expired), ['expired']);
+        assert.equal(readDelivered(frames.bob, expired), 0);
+    });
+});
 
 test('each of socket admission, pending replay, inbox dispatch and route refuses a publication without a grant', async () => {
     for (const pass of ['socket admission', 'pending replay', 'inbox dispatch', 'route'] as const) {
@@ -888,21 +930,37 @@ interface FeedMessageInput {
 
 /** An at-least-once receiver-acknowledged room broadcast, on the granted feed unless another topic is named. */
 function feedMessage({ senderId, msgId, minSnapshotVersion, topicId = FEED }: FeedMessageInput): ALMessage {
-    const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, msgId), 'room', 'feed.v1', { msgId }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 30_000,
-        ...(minSnapshotVersion === undefined ? {} : { minSnapshotVersion }),
-        traceId: 'trace-ws-room-granted-delivery'
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: { msgId },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 30_000,
+            ...(minSnapshotVersion === undefined ? {} : { minSnapshotVersion }),
+            traceId: 'trace-ws-room-granted-delivery'
+        }
     });
     return { ...base, id: { ...base.id, msgId } };
 }
 
 /** A server's world broadcast with a deadline, as another node publishes it live. */
 function worldMessage(topicId: string): ALMessage {
-    const base = newALBroadcastMessage(SERVER_PEER_ID, newALEventRoute(topicId, 'world', 'broad-notice'), 'world', 'feed.v1', {}, {
-        ttlMs: 30_000
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SERVER_PEER_ID,
+        route: newALEventRoute(topicId, 'world', 'broad-notice'),
+        scope: 'world',
+        typeId: 'feed.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000
+        }
     });
     return { ...base, id: { ...base.id, msgId: `broad-${topicId}` } };
 }

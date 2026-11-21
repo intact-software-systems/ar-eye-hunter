@@ -277,12 +277,15 @@ async function writeProvedWsRows(storage: PSqlAdmissionTestStorage, count: numbe
     const rows: ResourceEntry[] = [];
     for (let index = 0; index < count; index += 1) {
         const message = newALUnicastMessage(
-            'server',
-            { topicId: 'snapshot', resourceId: `page-${index}`, contextId: 'request' },
-            'peer',
-            'snapshot.v1',
-            {},
-            { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'snapshot', resourceId: `page-${index}`, contextId: 'request' },
+                toPeerId: 'peer',
+                typeId: 'snapshot.v1',
+                resource: {},
+                options: { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+            }
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts: Omit<WsOutboxProvenance, 'digest'> = {

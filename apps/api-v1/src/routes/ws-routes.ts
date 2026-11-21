@@ -31,6 +31,7 @@ import { RequestAuthFailure, toAuthErrorResponse } from '../services/request-aut
 const EXPECTED_CONNECTION_TTL_MS = 120_000;
 
 export interface RegisterWsRoutesInput {
+    readonly serverPeerId: string;
     readonly socketServer: JsonWebSocketServer;
     readonly appClientInboxService: Pick<
         AppClientInboxService,
@@ -176,7 +177,7 @@ async function registerAuthorisedWebSocket(
     try {
         await input.upgradeWebSocket(
             context,
-            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation })
+            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation }, input)
         );
         rememberAuthorisedWsConnection(
             connect.expected.id,

@@ -1,4 +1,3 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     afterEach,
     beforeEach,
@@ -9,6 +8,7 @@ import {
 } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -242,6 +242,9 @@ describe('browser ICE configuration reuse', () => {
         expect(requests.filter((request) => request.url.endsWith('/api/webrtc/ice')).map((request) => request.url)).toEqual([
             'https://first.test/api/webrtc/ice'
         ]);
+        expect(requests.filter((request) => request.url.endsWith('/api/time')).map((request) => request.url)).toEqual([
+            'https://first.test/api/time'
+        ]);
     });
 
     it('rejects non-finite server expiry decoded from JSON', async () => {
@@ -274,6 +277,9 @@ async function readResponse(url: RequestInfo | URL, init?: RequestInit): Promise
     requests.push({ url: String(url), authorization: new Headers(init?.headers).get('authorization') });
     if (String(url).endsWith('/api/config')) {
         return configResponse(new URL(String(url)));
+    }
+    if (String(url).endsWith('/api/time')) {
+        return Response.json({ serverPeerId: 'ice-fixture-server', serverNowEpochMs: Date.now() });
     }
     if (String(url).endsWith('/api/webrtc/ice')) {
         return iceResponse();

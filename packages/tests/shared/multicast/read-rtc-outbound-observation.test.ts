@@ -116,11 +116,14 @@ function readFor(
     groups.accept('any-key', createOriginSnapshot(['a', 'b'], 1));
     const message: ALMessage = {
         ...newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'observe', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'observe', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {}
+            }
         ),
         ...extra
     };

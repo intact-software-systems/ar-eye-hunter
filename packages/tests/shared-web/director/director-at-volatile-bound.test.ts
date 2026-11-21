@@ -129,12 +129,15 @@ function createDirectorAtTheBound(): DirectorAtTheBound {
 
 function createClientIntent(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'a',
-        { topicId: 'room.director', resourceId, contextId: 'room' },
-        DIRECTOR_PEER_ID,
-        'room.director.intent.v1',
-        { intent: resourceId },
-        { groupRef: ORIGIN_ROOM, reliability: 'at-least-once', ack: 'receiver', ownership: 'shared', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.director', resourceId, contextId: 'room' },
+            toPeerId: DIRECTOR_PEER_ID,
+            typeId: 'room.director.intent.v1',
+            resource: { intent: resourceId },
+            options: { groupRef: ORIGIN_ROOM, reliability: 'at-least-once', ack: 'receiver', ownership: 'shared', ttlMs: 30_000 }
+        }
     );
 }
 

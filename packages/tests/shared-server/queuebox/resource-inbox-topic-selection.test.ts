@@ -170,7 +170,14 @@ async function createQueue(backend: 'memory' | 'indexeddb' | 'sql'): Promise<Que
 function createEntry(topic: string, lane: string): ResourceEntry {
     const now = Temporal.Now.instant();
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUntargetedMessage('test', newALRoute(topic, 'same-context', lane), topic, {}, { ttlMs: 300000 }),
+        newALUntargetedMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'test',
+            route: newALRoute(topic, 'same-context', lane),
+            typeId: topic,
+            resource: {},
+            options: { ttlMs: 300000 }
+        }),
         'APP_INBOX',
         now.subtract({ seconds: 90 })
     );

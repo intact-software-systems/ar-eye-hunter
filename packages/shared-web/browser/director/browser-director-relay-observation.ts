@@ -70,11 +70,7 @@ export function recordDirectorRelayHeartbeat<T>(
         return;
     }
     if (status.roomRef && status.appointment) {
-        statusRuntime.recordHeartbeat(
-            status.roomRef,
-            status.appointment,
-            message.receivedAtEpochMs
-        );
+        statusRuntime.recordHeartbeat(status.roomRef, status.appointment);
         statusRuntime.emit();
     }
 }

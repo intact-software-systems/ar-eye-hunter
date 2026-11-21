@@ -38,9 +38,17 @@ describe('the RTC enqueue circuit breaker', () => {
         for (const resourceId of ['world-1', 'world-2', 'world-3']) {
             const refused = await enqueueAndDrain(
                 fixture.manager,
-                newALBroadcastMessage('a', { topicId: 'chat', resourceId, contextId: 'world' }, 'world', 'chat.v1', {}, {
-                    ack: 'receiver',
-                    reliability: 'at-least-once'
+                newALBroadcastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route: { topicId: 'chat', resourceId, contextId: 'world' },
+                    scope: 'world',
+                    typeId: 'chat.v1',
+                    resource: {},
+                    options: {
+                        ack: 'receiver',
+                        reliability: 'at-least-once'
+                    }
                 })
             );
             expect(refused.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });

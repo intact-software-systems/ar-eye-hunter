@@ -34,10 +34,12 @@ import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -59,7 +61,12 @@ const mocks = await vi.hoisted(async () => {
 const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] }))
+    initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({
+        middleware: mocks.apiMiddleware.middleware,
+        rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
+        checkpoints: []
+    }))
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
@@ -430,21 +437,27 @@ describe('Rallar typed message channel', () => {
 
         const deliverFrames = async () => {
             const rtcMessage = newALMulticastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'match-1', 'rtc-message-1'),
-                { applicationId: 'game-app', workspaceId: 'arena-1', groupId: 'match-1' },
-                'chat.message.v1',
-                { text: 'rtc' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'match-1', 'rtc-message-1'),
+                    groupRef: { applicationId: 'game-app', workspaceId: 'arena-1', groupId: 'match-1' },
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'rtc' }
+                }
             );
             for (const callback of rtcCallbacks.values()) {
                 await callback.onMessage(rtcMessage, toResourceEntry('chat.message.v1', { text: 'rtc' }));
             }
             const wsMessage = newALBroadcastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'match-1', 'ws-message-1'),
-                'room',
-                'chat.message.v1',
-                { text: 'ws' }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'match-1', 'ws-message-1'),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'ws' }
+                }
             );
             for (const callback of wsCallbacks.values()) {
                 await callback.onMessage(wsMessage, toResourceEntry('chat.message.v1', { text: 'ws' }));
@@ -823,12 +836,28 @@ describe('Rallar typed message channel', () => {
         };
 
         const route = (resourceId: string) => newALRoute('room.command', 'room-1', resourceId);
-        const answer = newALUnicastMessage('peer-1', route('r-1'), 'session-1', 'room.command.v1', { text: 'answer' }, {
-            groupRef: roomRef,
-            actions: { corrId: asked.corrId, replyToMsgId: asked.msgId }
+        const answer = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: route('r-1'),
+            toPeerId: 'session-1',
+            typeId: 'room.command.v1',
+            resource: { text: 'answer' },
+            options: {
+                groupRef: roomRef,
+                actions: { corrId: asked.corrId, replyToMsgId: asked.msgId }
+            }
         });
-        const question = newALUnicastMessage('peer-1', route('r-2'), 'session-1', 'room.command.v1', { text: 'question' }, {
-            groupRef: roomRef
+        const question = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: route('r-2'),
+            toPeerId: 'session-1',
+            typeId: 'room.command.v1',
+            resource: { text: 'question' },
+            options: {
+                groupRef: roomRef
+            }
         });
 
         await deliver(answer);
@@ -937,8 +966,15 @@ describe('Rallar typed message channel', () => {
                 received.push(`${groupId}:${event.resourceId}`);
             }).wait();
         }
-        const unicast = newALUnicastMessage('peer-1', newALRoute('room.feed', 'room-1', 'unicast-1'), 'session-1', 'room.feed.v1', {
-            text: 'feed'
+        const unicast = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: newALRoute('room.feed', 'room-1', 'unicast-1'),
+            toPeerId: 'session-1',
+            typeId: 'room.feed.v1',
+            resource: {
+                text: 'feed'
+            }
         });
 
         for (const message of [unicast, createGrantedFeedMulticast('room-2-feed', 'room-2')]) {
@@ -1016,10 +1052,8 @@ function toGrantedFeedDefinition(groupId = 'room-1'): RallarRoomMessageChannelDe
     };
 }
 
-type WsInboxCallback = Parameters<typeof webSocketQueueBox.onAnyInboxMessageDo>[1];
-
-function captureWsInboxCallbacks(): Map<string, WsInboxCallback> {
-    const wsCallbacks = new Map<string, WsInboxCallback>();
+function captureWsInboxCallbacks(): Map<string, OnInboxMessageCallback> {
+    const wsCallbacks = new Map<string, OnInboxMessageCallback>();
     webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((id, callback) => {
         wsCallbacks.set(id, callback);
         return webSocketQueueBox;
@@ -1029,19 +1063,25 @@ function captureWsInboxCallbacks(): Map<string, WsInboxCallback> {
 }
 
 /** A granted room publication as the server delivers it over WS: a broadcast to its room. */
-async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string, groupId = 'room-1'): Promise<void> {
-    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', groupId, msgId), 'room', 'room.feed.v1', {
-        text: 'feed'
-    }, { groupRef: toGrantedFeedDefinition(groupId).roomRef! });
+async function deliverWsFeed(wsCallbacks: Map<string, OnInboxMessageCallback>, msgId: string, groupId = 'room-1'): Promise<void> {
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: newALRoute('room.feed', groupId, msgId),
+        scope: 'room',
+        typeId: 'room.feed.v1',
+        resource: {
+            text: 'feed'
+        },
+        options: { groupRef: toGrantedFeedDefinition(groupId).roomRef! }
+    });
     for (const callback of wsCallbacks.values()) {
         await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
     }
 }
 
-type RtcInboxCallback = Parameters<typeof rtcRxStreamer.onInboxMessageDo>[1];
-
-function captureRtcInboxCallbacks(): Map<string, RtcInboxCallback> {
-    const rtcCallbacks = new Map<string, RtcInboxCallback>();
+function captureRtcInboxCallbacks(): Map<string, OnInboxMessageCallback> {
+    const rtcCallbacks = new Map<string, OnInboxMessageCallback>();
     rtcRxStreamer.onInboxMessageDo.mockImplementation((id, callback) => {
         rtcCallbacks.set(id, callback);
         return rtcRxStreamer;
@@ -1050,7 +1090,7 @@ function captureRtcInboxCallbacks(): Map<string, RtcInboxCallback> {
     return rtcCallbacks;
 }
 
-async function deliverRtcFeed(rtcCallbacks: Map<string, RtcInboxCallback>, msgId: string): Promise<void> {
+async function deliverRtcFeed(rtcCallbacks: Map<string, OnInboxMessageCallback>, msgId: string): Promise<void> {
     const message = createGrantedFeedMulticast(msgId);
     for (const callback of rtcCallbacks.values()) {
         await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
@@ -1060,8 +1100,15 @@ async function deliverRtcFeed(rtcCallbacks: Map<string, RtcInboxCallback>, msgId
 /** A granted room publication as its origin admits it: frozen to the room's audience. */
 function createGrantedFeedMulticast(msgId: string, groupId = 'room-1'): ALMessage {
     const roomRef = toGrantedFeedDefinition(groupId).roomRef!;
-    const message = newALMulticastMessage('peer-1', newALRoute('room.feed', groupId, msgId), roomRef, 'room.feed.v1', {
-        text: 'feed'
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: newALRoute('room.feed', groupId, msgId),
+        groupRef: roomRef,
+        typeId: 'room.feed.v1',
+        resource: {
+            text: 'feed'
+        }
     });
     return {
         ...message,
@@ -1077,8 +1124,8 @@ interface SharedInboundCarriers {
 
 /** The session's WS and RTC inbound runtimes over its one store pair, each dispatching to its carrier's callbacks. */
 function createSharedInboundCarriers(callbacks: {
-    readonly ws: Map<string, WsInboxCallback>;
-    readonly rtc: Map<string, RtcInboxCallback>;
+    readonly ws: Map<string, OnInboxMessageCallback>;
+    readonly rtc: Map<string, OnInboxMessageCallback>;
 }): SharedInboundCarriers {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
     const [ws, rtc] = (['ws', 'rtc'] as const).map((carrier) => {

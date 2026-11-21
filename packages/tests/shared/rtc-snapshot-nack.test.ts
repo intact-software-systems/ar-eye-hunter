@@ -176,15 +176,23 @@ function createSnapshotAdmissionFixture(
     const controls: ALMessage[] = [];
     const stores = createDefaultInMemoryALInboundRuntimeStores();
     const message = toALFrozenMulticastMessage(
-        newALMulticastMessage('sender', { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' }, roomRef, 'snapshot.probe.v1', {
-            probe: true
-        }, {
-            minSnapshotVersion: 5,
-            rosterVersion: 1,
-            seq,
-            ack: 'none',
-            reliability: 'at-least-once',
-            qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
+        newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' },
+            groupRef: roomRef,
+            typeId: 'snapshot.probe.v1',
+            resource: {
+                probe: true
+            },
+            options: {
+                minSnapshotVersion: 5,
+                rosterVersion: 1,
+                seq,
+                ack: 'none',
+                reliability: 'at-least-once',
+                qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
+            }
         }),
         { recipientPeerIds: ['receiver'], snapshotVersion: 5 }
     );

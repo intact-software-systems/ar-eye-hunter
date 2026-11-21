@@ -4,6 +4,15 @@
 results, and state live in `rallar-room-contracts.ts`. Start at the concrete facade
 method, then follow its named workflow below.
 
+`rallar.rooms.selected()` reads a defensive copy of this authenticated session's
+explicit room selection. It can remain available while `rooms.current()` has no
+active presence snapshot, allowing an application to retain its paused view.
+It is intent, not proof of membership, room existence or permission. Explicit
+departure and observed membership revocation clear selection; session replacement
+cannot inherit it. Rallar's selected-room recovery owns presence restoration.
+Applications must keep a bounded unavailable outcome and local exit for a room
+that cannot be restored, including a missing or inactive room.
+
 | Capability                                                                 | Owner                                                                             |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Private link, pending sign-in destination, scoped reload, and cancellation | `entry/rallar-room-entry.ts` and `entry/room-entry-validation.ts`                 |
@@ -15,6 +24,7 @@ method, then follow its named workflow below.
 | Adopt admitted snapshots and recover conflicting observations              | `adopt-joined-room.ts`                                                            |
 | Leave membership and presence                                              | `leave-room.ts`                                                                   |
 | Invite, revoke, rotate codes, and govern members                           | `room-membership.ts`                                                              |
+| Read or conditionally extend a durable named room deadline                 | `deadlines/room-deadlines.ts`                                                     |
 | Apply a targeted room mutation and accept its snapshot                     | `update-room.ts`                                                                  |
 | Resolve scope and fence replaced sessions or aborted operations            | `room-target.ts`, `room-session-fence.ts`                                         |
 | Observe current state, presence readiness, and accepted transport targets  | `room-state-store.ts`, `room-presence.ts`, `room-transport-target-observation.ts` |
@@ -59,3 +69,25 @@ accounts and destinations. `sessions/scheduled-session-http-api.ts` owns exact H
 bounded transport attempts. Shared timing and preview contracts live in `shared/api/group-sessions`.
 `RallarRoomEntry` persists `preview-session` intent and performs admission only after explicit lobby
 entry. The optional React view lives in `shared-react/scheduled-sessions-panel.tsx`.
+
+## Named deadlines
+
+After authentication, call `rallar.rooms.readDeadline(roomRef, name, { signal })` for the durable
+deadline or `null` if the room has no deadline with that name. Supply the full application,
+workspace, and group reference. To create one, use
+`rallar.rooms.setDeadline(roomRef, { name, expectedRevision: 0, atEpochMs }, requestId, { signal })`.
+The returned deadline carries its committed revision. An authorized extension supplies that revision
+and a later instant before the current deadline expires. Keep one request ID (such as
+`crypto.randomUUID()`) per intended write and reuse it when retrying after a lost response.
+
+Call `rallar.rooms.watchDeadline(roomRef, name, listener, { signal })` after connecting
+and entering the room. The listener receives `{ status, deadline }`. A current
+null means the name is absent. A stale value is the previous observation during
+initial load, suspension, disconnection or read failure. Dispose with the returned
+function or abort the signal when switching rooms.
+
+The initial durable read is followed by server WebSocket group events. A higher
+named revision triggers a durable read. Unchanged deadlines generate no periodic
+requests. Reconnect and page resume reread current authority. A failed read has
+three backoff retries per wakeup. Display countdowns locally using the calibrated
+clock and enforce time-sensitive actions at their receiving authority.

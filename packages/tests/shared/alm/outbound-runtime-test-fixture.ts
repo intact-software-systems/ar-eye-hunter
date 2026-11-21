@@ -85,9 +85,8 @@ import {
 } from '@shared/services/inbox-outbox-engine.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
-import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
-
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /**
  * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst, a
@@ -113,6 +112,7 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly carrier?: ALDeliveryCarrier;
     readonly settlements?: ALDeliverySettlementSink;
     readonly nowMs?: () => number;
+    readonly workNowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
     /** The hops the composition sends every frame through; absent, as for every carrier but the WS client. */
@@ -228,6 +228,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             recipientAuthentication: { kind: 'carrier' },
             settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
+            workNowMs: options.workNowMs,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
@@ -382,8 +383,8 @@ export interface OutboundTestStores extends ALOutboundRuntimeStores<OutboundTest
 }
 
 /** The memory pair a runtime routes its volatile admissions to. */
-export function createVolatileOutboundTestStores(): ALVolatileOutboundRuntimeStores<OutboundTestPayload> {
-    return createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined);
+export function createVolatileOutboundTestStores(nowMs = Date.now): ALVolatileOutboundRuntimeStores<OutboundTestPayload> {
+    return createVolatileALOutboundRuntimeStores({ nowMs, workNowMs: nowMs, decodePrepared: decodeOutboundTestPayload }, undefined);
 }
 
 export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): OutboundTestStores {
@@ -561,18 +562,21 @@ export function createOutboundMessage(
     options?: { ttlMs?: number; traceId?: string; }
 ) {
     return newALUnicastMessage(
-        'self',
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        { ttlMs: options?.ttlMs ?? 30_000, traceId: options?.traceId }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            },
+            options: { ttlMs: options?.ttlMs ?? 30_000, traceId: options?.traceId }
+        }
     );
 }
 

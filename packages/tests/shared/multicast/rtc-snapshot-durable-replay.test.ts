@@ -437,20 +437,23 @@ function createMessage(input: ReplayMessageInput): ALMessage {
 
 function createUnfrozenMessage(input: ReplayMessageInput): ALMessage {
     return newALMulticastMessage(
-        'sender',
-        { topicId: 'chat', resourceId: `message-${input.seq}`, contextId: 'room' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-        'chat.message.v1',
-        { text: `message ${input.seq}` },
         {
-            seq: input.seq,
-            minSnapshotVersion: input.versioned ? 5 : undefined,
-            ack: input.acknowledge ? 'receiver' : 'none',
-            reliability: 'at-least-once',
-            qos: {
-                ack: { algo: 'hop' },
-                durability: { algo: input.persist ? 'local-inbox' : 'volatile' },
-                congestion: { algo: 'reject' }
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: `message-${input.seq}`, contextId: 'room' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            typeId: 'chat.message.v1',
+            resource: { text: `message ${input.seq}` },
+            options: {
+                seq: input.seq,
+                minSnapshotVersion: input.versioned ? 5 : undefined,
+                ack: input.acknowledge ? 'receiver' : 'none',
+                reliability: 'at-least-once',
+                qos: {
+                    ack: { algo: 'hop' },
+                    durability: { algo: input.persist ? 'local-inbox' : 'volatile' },
+                    congestion: { algo: 'reject' }
+                }
             }
         }
     );

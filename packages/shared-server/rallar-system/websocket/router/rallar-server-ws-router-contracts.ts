@@ -150,6 +150,8 @@ export interface RallarServerWsRoomAuthorizationDenied {
 
 export interface RallarServerWsRoomAuthorizationAllowed {
     readonly authorized: true;
+    /** The exact signed envelope this authorizer verified against the room sender's registered key. */
+    readonly verifiedPublication?: ALMessage;
     /** Absent only for generic authorizers whose target resolver owns the audience. */
     readonly audience?: RallarServerWsRoomAudience;
 }

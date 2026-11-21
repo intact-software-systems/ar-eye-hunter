@@ -122,6 +122,8 @@ export namespace ALInboundMessageRuntime {
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
+        /** Queue scheduling, measurements and mandatory releases remain available during retirement. */
+        readonly workClock: Clock;
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;

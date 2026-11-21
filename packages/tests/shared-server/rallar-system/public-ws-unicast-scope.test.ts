@@ -19,8 +19,16 @@ describe('public WS publication scope', () => {
         });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
-        const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
-            ttlMs: 30_000
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' },
+            toPeerId: 'peer',
+            typeId: 'message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000
+            }
         });
         await expect(Reflect.apply(router.publish, router, [message, 'outbox'])).rejects.toBeInstanceOf(TypeError);
         expect(await outbox.getAllKeys()).toEqual([]);
@@ -56,8 +64,16 @@ describe('public WS publication scope', () => {
             });
             onTestFinished(() => service.dispose());
             const router = new RallarServerWsRouter(service, { grantedTopics: new WsGrantedTopicSet() });
-            const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
-                ttlMs: 30_000
+            const message = newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' },
+                toPeerId: 'peer',
+                typeId: 'message.v1',
+                resource: {},
+                options: {
+                    ttlMs: 30_000
+                }
             });
 
             const result = await Reflect.apply(router.publish, router, [{ message, scope, fanout: 'outbox' }]);
@@ -109,15 +125,18 @@ const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 function createRoomUnicast(): ALMessage {
     return newALUnicastMessage(
-        'server',
-        { topicId: 'room.chat', contextId: 'room', resourceId: 'scope' },
-        'peer',
-        'message.v1',
-        {},
         {
-            ttlMs: 30_000,
-            groupRef: { ...SCOPE, groupId: 'room' },
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'room.chat', contextId: 'room', resourceId: 'scope' },
+            toPeerId: 'peer',
+            typeId: 'message.v1',
+            resource: {},
+            options: {
+                ttlMs: 30_000,
+                groupRef: { ...SCOPE, groupId: 'room' },
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 }

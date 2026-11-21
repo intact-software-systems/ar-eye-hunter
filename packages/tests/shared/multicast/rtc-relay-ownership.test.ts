@@ -110,7 +110,14 @@ describe('the child hops an RTC relay owns', () => {
 
         await enqueueAndDrain(
             origin.manager,
-            newALUnicastMessage('a', { topicId: 'chat', resourceId: 'direct', contextId: 'room' }, 'b', 'chat.v1', {})
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'direct', contextId: 'room' },
+                toPeerId: 'b',
+                typeId: 'chat.v1',
+                resource: {}
+            })
         );
 
         expect(origin.channels.b!.sent).toHaveLength(1);
@@ -456,12 +463,15 @@ describe('a relay across a layout promotion, for the session\'s replaced-layout 
 /** One frame of a position stream: best effort, no receipt, so no retry runs while the clock moves. */
 function createPromotionFrame(seq: number): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
-        ORIGIN_ROOM,
-        'position.frame.v1',
-        { seq },
-        { reliability: 'best-effort', ack: 'none', ttlMs: 60_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'position.frame.v1',
+            resource: { seq },
+            options: { reliability: 'best-effort', ack: 'none', ttlMs: 60_000 }
+        }
     );
 }
 
@@ -518,12 +528,15 @@ async function createChainAfterParentLeft(message: ALMessage): Promise<RelayChai
 
 function createOriginSubtreeMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ORIGIN_ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'chat', resourceId, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
+        }
     );
 }
 

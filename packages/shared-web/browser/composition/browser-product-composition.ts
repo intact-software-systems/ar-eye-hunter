@@ -14,6 +14,7 @@ import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-ral
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
+
 import { SelectedRoomRecovery } from '../rooms/entry/selected-room-recovery.ts';
 
 import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
@@ -77,16 +78,26 @@ export function createBrowserRoomsComposition(
     const recovery = new SelectedRoomRecovery({
         selected: input.state.selectedForRecovery,
         timers: createDefaultTimers(),
+        newPresenceGenerationId: () => crypto.randomUUID(),
         requireSession: input.session.requireSession,
         connect: input.session.acquireConnection,
         readPublicationKey: input.session.readPublicationKey,
         acceptSnapshots: (snapshots) => input.state.stateStore.acceptSnapshots(snapshots)
     });
     input.realtime.wsController.facade.onLifecycle((event) => recovery.onSocket(event.kind), { emitCurrent: false });
+    input.state.stateStore.onAfterEmit(() => {
+        const context = input.session.readMiddleware();
+        if (context?.middleware.heartbeat.groupPresence) {
+            const snapshot = input.state.roomStateStore.findGroupSnapshot(input.state.selectedForRecovery());
+            recovery.observePresence(snapshot, context);
+        }
+    });
     const rooms = createBrowserRallarRooms({
         changeRoom: (operation) => recovery.changeRoom(operation),
         stateStore: input.state.roomStateStore,
         roomEvents: input.stateEvents.roomEvents,
+        ws: input.realtime.wsController.facade,
+        auth: input.session.auth,
         roomLayoutSlots: input.state.roomLayoutSlots,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
@@ -168,7 +179,7 @@ export function createBrowserDirectorComposition(
     input: CreateBrowserDirectorCompositionInput
 ): BrowserDirectorComposition {
     const directorStatus = new BrowserDirectorStatusRuntime({
-        nowMs: Date.now,
+        readWindow: () => input.session.readMiddleware()?.serverTime.readWindow().right,
         roomStateStore: input.state.roomStateStore,
         readSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom

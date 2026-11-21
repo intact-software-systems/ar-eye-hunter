@@ -29,17 +29,20 @@ it('enqueues a browser room message with a queue creator that fits the durable c
     });
     onTestFinished(() => service.dispose());
     const message = newALBroadcastMessage(
-        browserSessionId,
-        newALRoute('room.chat', 'room-1', 'message-1'),
-        'room',
-        'chat.message.v1',
-        {},
         {
-            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-            ttlMs: 30_000,
-            reliability: 'at-least-once',
-            ack: 'all-logical-recipients',
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: browserSessionId,
+            route: newALRoute('room.chat', 'room-1', 'message-1'),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+                ttlMs: 30_000,
+                reliability: 'at-least-once',
+                ack: 'all-logical-recipients',
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 

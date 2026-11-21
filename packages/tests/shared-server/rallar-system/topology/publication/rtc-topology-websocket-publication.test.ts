@@ -124,13 +124,16 @@ describe('RTC topology websocket publication', () => {
             createClientSnapshot('session-c')
         ]);
         const message = newALBroadcastMessage(
-            'session-a',
-            newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-1'),
-            'room',
-            AppTopics.groupStateSnapshot,
-            group,
             {
-                groupRef: group.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-1'),
+                scope: 'room',
+                typeId: AppTopics.groupStateSnapshot,
+                resource: group,
+                options: {
+                    groupRef: group.group
+                }
             }
         );
 
@@ -187,13 +190,16 @@ describe('RTC topology websocket publication', () => {
 
         await senderSocket.dispatchMessage(
             newALBroadcastMessage(
-                'session-a',
-                newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-active'),
-                'room',
-                AppTopics.groupStateSnapshot,
-                group,
                 {
-                    groupRef: group.group
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-a',
+                    route: newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-active'),
+                    scope: 'room',
+                    typeId: AppTopics.groupStateSnapshot,
+                    resource: group,
+                    options: {
+                        groupRef: group.group
+                    }
                 }
             )
         );
@@ -233,17 +239,20 @@ describe('RTC topology websocket publication', () => {
         const archivedGroup = createInactiveGroupSnapshot(group, 'archived');
         await senderSocket.dispatchMessage(
             newALBroadcastMessage(
-                'session-a',
-                newALEventRoute(
-                    AppTopics.groupStateSnapshot,
-                    archivedGroup.group.groupId,
-                    'group-snapshot-archived'
-                ),
-                'room',
-                AppTopics.groupStateSnapshot,
-                archivedGroup,
                 {
-                    groupRef: archivedGroup.group
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-a',
+                    route: newALEventRoute(
+                        AppTopics.groupStateSnapshot,
+                        archivedGroup.group.groupId,
+                        'group-snapshot-archived'
+                    ),
+                    scope: 'room',
+                    typeId: AppTopics.groupStateSnapshot,
+                    resource: archivedGroup,
+                    options: {
+                        groupRef: archivedGroup.group
+                    }
                 }
             )
         );
@@ -283,12 +292,15 @@ describe('RTC topology websocket publication', () => {
 
         await senderSocket.dispatchMessage(
             newALBroadcastMessage(
-                'session-a',
-                newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-1'),
-                'room',
-                AppTopics.groupStateSnapshot,
-                group,
-                { groupRef: group.group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'session-a',
+                    route: newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, 'group-snapshot-1'),
+                    scope: 'room',
+                    typeId: AppTopics.groupStateSnapshot,
+                    resource: group,
+                    options: { groupRef: group.group }
+                }
             )
         );
 
@@ -333,12 +345,15 @@ describe('RTC topology websocket publication', () => {
         });
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, group.group.groupId),
-            'all',
-            AppTopics.groupStateSnapshot,
-            group,
-            { groupRef: group.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALEventRoute(AppTopics.groupStateSnapshot, group.group.groupId, group.group.groupId),
+                scope: 'all',
+                typeId: AppTopics.groupStateSnapshot,
+                resource: group,
+                options: { groupRef: group.group }
+            }
         );
 
         await service.enqueueOutboxIfAbsent(message);

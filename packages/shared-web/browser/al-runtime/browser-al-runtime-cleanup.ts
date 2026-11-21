@@ -183,51 +183,58 @@ export interface InitBrowserALRuntimeExpiryEvictionInput {
     readonly currentScope: StateScope;
     readonly storage: ALStorageEventSink;
     readonly intervalMs?: number;
+    readonly signal?: AbortSignal;
+    readonly nowMs?: () => number;
 }
 
-let browserALRuntimeExpiryEvictionStarting: Promise<() => void> | undefined;
-let browserALRuntimeExpiryEvictionGeneration = 0;
+interface ActiveExpiryEviction {
+    readonly signal?: AbortSignal;
+    readonly started: Promise<() => void>;
+    stop(): void;
+}
 
-/**
- * Starts the recurring eviction of expired browser AL runtime rows, sharing one interval across
- * callers, and returns a `stop()` to cancel its owned timers. Resolves once the first eviction cycle completes.
- */
+let activeExpiryEviction: ActiveExpiryEviction | undefined;
+
+/** A replacement connection takes over the sweep with its own calibrated clock. */
 export async function initBrowserALRuntimeExpiryEviction(
     input: InitBrowserALRuntimeExpiryEvictionInput
 ): Promise<() => void> {
-    browserALRuntimeExpiryEvictionStarting ??= startBrowserALRuntimeExpiryEviction(input);
-    return await browserALRuntimeExpiryEvictionStarting;
-}
-
-/** Each generation owns its recurring and retry timers; a stale stop cannot clear a newer singleton. */
-function startBrowserALRuntimeExpiryEviction(
-    input: InitBrowserALRuntimeExpiryEvictionInput
-): Promise<() => void> {
-    const generation = ++browserALRuntimeExpiryEvictionGeneration;
+    input.signal?.throwIfAborted();
+    if (activeExpiryEviction && activeExpiryEviction.signal === input.signal) {
+        return await activeExpiryEviction.started;
+    }
+    activeExpiryEviction?.stop();
     const lifetime = new AbortController();
     const stop = (): void => {
         lifetime.abort();
-        if (browserALRuntimeExpiryEvictionGeneration === generation) {
-            browserALRuntimeExpiryEvictionStarting = undefined;
+        input.signal?.removeEventListener('abort', stop);
+        if (activeExpiryEviction?.stop === stop) {
+            activeExpiryEviction = undefined;
         }
     };
-    return tryRunInIntervals({
+    input.signal?.addEventListener('abort', stop, { once: true });
+    const started = runExpiryEviction(input, lifetime.signal).then(() => stop).catch((error) => {
+        stop();
+        throw error;
+    });
+    activeExpiryEviction = { signal: input.signal, started, stop };
+    return await started;
+}
+
+async function runExpiryEviction(input: InitBrowserALRuntimeExpiryEvictionInput, signal: AbortSignal): Promise<void> {
+    await tryRunInIntervals({
         handler: async () => {
             await evictExpiredBrowserALRuntimeEntries({
+                nowMs: input.nowMs?.(),
                 currentScope: input.currentScope,
                 storage: input.storage
             });
         },
-        signal: lifetime.signal,
+        signal,
         intervalMsecs: input.intervalMs ?? BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS,
         retryIntervalMsecs: 10_000,
         maxAttempts: Number.MAX_VALUE
-    })
-        .then(() => stop)
-        .catch((error) => {
-            stop();
-            throw error;
-        });
+    });
 }
 
 /**

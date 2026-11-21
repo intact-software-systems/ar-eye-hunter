@@ -188,17 +188,20 @@ interface PickupSendInput {
 /** A receiver-acknowledged room broadcast from `senderId` on the one pickup resource every case contends for. */
 function createPickupSend({ room, senderId, ownership, ttlMs }: PickupSendInput): ALMessage {
     return newALBroadcastMessage(
-        senderId,
-        newALRoute('room.pickup', room.groupId, 'pickup-1'),
-        'room',
-        'room.pickup.v1',
-        { pickupId: 'pickup-1' },
         {
-            groupRef: { applicationId: room.applicationId, workspaceId: room.workspaceId, groupId: room.groupId },
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ownership,
-            ttlMs
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route: newALRoute('room.pickup', room.groupId, 'pickup-1'),
+            scope: 'room',
+            typeId: 'room.pickup.v1',
+            resource: { pickupId: 'pickup-1' },
+            options: {
+                groupRef: { applicationId: room.applicationId, workspaceId: room.workspaceId, groupId: room.groupId },
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ownership,
+                ttlMs
+            }
         }
     );
 }

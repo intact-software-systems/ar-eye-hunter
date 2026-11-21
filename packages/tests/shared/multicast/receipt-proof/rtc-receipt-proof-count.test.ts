@@ -98,12 +98,15 @@ describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
             publicationCrypto: toCounted(chain, 'd', directorCounting)
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'count-leader', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            {},
-            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'count-leader', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            }
         );
         expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
 

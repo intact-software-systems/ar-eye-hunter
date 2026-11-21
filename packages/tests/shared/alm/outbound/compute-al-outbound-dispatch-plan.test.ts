@@ -65,9 +65,17 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
 });
 
 function roomMessage(): ALMessage {
-    return newALBroadcastMessage('server', newALEventRoute('room.feed', ROOM.groupId, 'planned'), 'room', 'feed.v1', {}, {
-        groupRef: ROOM,
-        ttlMs: 30_000
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: newALEventRoute('room.feed', ROOM.groupId, 'planned'),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: {},
+        options: {
+            groupRef: ROOM,
+            ttlMs: 30_000
+        }
     });
 }
 

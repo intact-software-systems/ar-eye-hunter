@@ -1,5 +1,5 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
+    beforeEach,
     describe,
     expect,
     it,
@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import { initialiseMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -24,13 +25,34 @@ import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publica
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
+beforeEach(() => {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+        if (String(url).endsWith('/api/time')) {
+            return Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() });
+        }
+        throw new Error(`Unexpected HTTP request: ${url}`);
+    });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+});
+
 describe('browser IndexedDB terminal ownership', () => {
     it('retires each successful connection while a fresh connection keeps persisted rows usable', async () => {
         const opened: IDBDatabase[] = [];
+        const closed = new Set<IDBDatabase>();
         const originalOpen = indexedDB.open.bind(indexedDB);
         vi.spyOn(indexedDB, 'open').mockImplementation((...arguments_) => {
             const request = originalOpen(...arguments_);
-            request.addEventListener('success', () => opened.push(request.result));
+            request.addEventListener('success', () => {
+                const db = request.result;
+                opened.push(db);
+                const close = db.close.bind(db);
+                vi.spyOn(db, 'close').mockImplementation(() => {
+                    closed.add(db);
+                    close();
+                });
+            });
             return request;
         });
         const runtime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
@@ -84,8 +106,14 @@ describe('browser IndexedDB terminal ownership', () => {
             }
         });
         await runtime.init(options);
-        await vi.waitFor(() => expect(opened.length).toBeGreaterThan(retired.length));
-        const current = opened.slice(retired.length);
+        // The reconnect sweep opens and releases its own handle to the now-existing database.
+        const current = await vi.waitFor(() => {
+            const reopened = opened.slice(retired.length);
+            expect(reopened.some((database) => closed.has(database))).toBe(true);
+            const live = reopened.filter((database) => !closed.has(database));
+            expect(live).toHaveLength(retired.length);
+            return live;
+        });
         for (const database of current) {
             expect(() => database.transaction(database.objectStoreNames[0])).not.toThrow();
         }

@@ -69,14 +69,15 @@ function toEffective(msg: ALMessage) {
 }
 
 function roomBroadcast(ack: ALAckMode, qos?: ALQosPolicyRequest): ALMessage {
-    return newALMulticastMessage(
-        'self',
-        { topicId: 'chat', resourceId: `room-${ack}`, contextId: ROOM.groupId },
-        ROOM,
-        'chat.message.v1',
-        {},
-        { reliability: 'at-least-once', ack, ttlMs: 30_000, ...(qos === undefined ? {} : { qos }) }
-    );
+    return newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'self',
+        route: { topicId: 'chat', resourceId: `room-${ack}`, contextId: ROOM.groupId },
+        groupRef: ROOM,
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { reliability: 'at-least-once', ack, ttlMs: 30_000, ...(qos === undefined ? {} : { qos }) }
+    });
 }
 
 function frozenToNobody(): ALMessage {
@@ -87,23 +88,25 @@ function frozenToNobody(): ALMessage {
 }
 
 function sessionUnicast(ack: ALAckMode, groupRef: typeof ROOM | undefined): ALMessage {
-    return newALUnicastMessage(
-        'self',
-        { topicId: 'room.command', resourceId: 'command-1', contextId: ROOM.groupId },
-        'peer-b',
-        'command.v1',
-        {},
-        { ...(groupRef === undefined ? {} : { groupRef }), ttlMs: 30_000, reliability: 'at-least-once', ack }
-    );
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'self',
+        route: { topicId: 'room.command', resourceId: 'command-1', contextId: ROOM.groupId },
+        toPeerId: 'peer-b',
+        typeId: 'command.v1',
+        resource: {},
+        options: { ...(groupRef === undefined ? {} : { groupRef }), ttlMs: 30_000, reliability: 'at-least-once', ack }
+    });
 }
 
 function serverUnicast(): ALMessage {
-    return newALUnicastMessage(
-        'self',
-        { topicId: 'room.command', resourceId: 'command-2', contextId: ROOM.groupId },
-        SERVER_PEER_ID,
-        'command.v1',
-        {},
-        { groupRef: ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
-    );
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'self',
+        route: { topicId: 'room.command', resourceId: 'command-2', contextId: ROOM.groupId },
+        toPeerId: SERVER_PEER_ID,
+        typeId: 'command.v1',
+        resource: {},
+        options: { groupRef: ROOM, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+    });
 }

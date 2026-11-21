@@ -20,12 +20,15 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 const CREATED_AT = Temporal.Instant.from('2026-10-13T00:00:00.123456789Z');
 
 const HELD = newALMulticastMessage(
-    'origin',
-    newALRoute('room.chat', 'room-1', 'message-1'),
-    { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-    'chat.message.v1',
-    {},
-    { ttlMs: 30_000 }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'origin',
+        route: newALRoute('room.chat', 'room-1', 'message-1'),
+        groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+        typeId: 'chat.message.v1',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    }
 );
 const FROZEN = toALFrozenMulticastMessage(HELD, { recipientPeerIds: ['b', 'c'], snapshotVersion: 4 });
 /** A retained request of a keyed frame, and its admission: the record its read stamped and the proof it was signed with. */

@@ -260,30 +260,32 @@ export function toOrderedRoomNotice(): ALMessage {
 }
 
 function toLinkRoomNotice(ordering: { readonly orderingKey: string; } | undefined): ALMessage {
-    return newALBroadcastMessage(
-        LINK_ORIGIN_ID,
-        newALRoute('room.notification', LINK_ROOM.groupId, 'only'),
-        'room',
-        'notice.v1',
-        { text: 'hello' },
-        {
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: LINK_ORIGIN_ID,
+        route: newALRoute('room.notification', LINK_ROOM.groupId, 'only'),
+        scope: 'room',
+        typeId: 'notice.v1',
+        resource: { text: 'hello' },
+        options: {
             groupRef: LINK_ROOM,
             ttlMs: LINK_MESSAGE_TTL_MS,
             reliability: 'at-least-once',
             ack: 'receiver',
             ...(ordering === undefined ? {} : { ordering })
         }
-    );
+    });
 }
 
 /** A receiver-receipted unicast that names the room, so the server answers it as a room send. */
 export function toRoomUnicast(toPeerId: string): ALMessage {
-    return newALUnicastMessage(
-        LINK_ORIGIN_ID,
-        newALRoute('room.command', LINK_ROOM.groupId, `to-${toPeerId}`),
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: LINK_ORIGIN_ID,
+        route: newALRoute('room.command', LINK_ROOM.groupId, `to-${toPeerId}`),
         toPeerId,
-        'command.v1',
-        {},
-        { groupRef: LINK_ROOM, ttlMs: LINK_MESSAGE_TTL_MS, reliability: 'at-least-once', ack: 'receiver' }
-    );
+        typeId: 'command.v1',
+        resource: {},
+        options: { groupRef: LINK_ROOM, ttlMs: LINK_MESSAGE_TTL_MS, reliability: 'at-least-once', ack: 'receiver' }
+    });
 }

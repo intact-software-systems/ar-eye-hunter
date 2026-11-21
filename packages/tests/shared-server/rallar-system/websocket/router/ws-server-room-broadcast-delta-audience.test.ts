@@ -126,12 +126,15 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
         const recipients = resolver.resolveBroadcastRecipients?.(
             'room',
             newALBroadcastMessage(
-                'rallar-server',
-                newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, 'event-foreign'),
-                'room',
-                AppTopics.groupStateEvent,
-                foreignEnvelope,
-                { groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'rallar-server',
+                    route: newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, 'event-foreign'),
+                    scope: 'room',
+                    typeId: AppTopics.groupStateEvent,
+                    resource: foreignEnvelope,
+                    options: { groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF }
+                }
             )
         );
 
@@ -141,11 +144,14 @@ describe('room-scope broadcast delivery of persisted state-sync audiences', () =
 
 function toRoomEnvelopeMessage(envelope: GroupStateDeltaEnvelope): ALMessage {
     return newALBroadcastMessage(
-        'rallar-server',
-        newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, envelope.event.eventId),
-        'room',
-        AppTopics.groupStateEvent,
-        envelope,
-        { groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'rallar-server',
+            route: newALEventRoute(AppTopics.groupStateEvent, DELTA_ENVELOPE_FIXTURE_GROUP_REF.groupId, envelope.event.eventId),
+            scope: 'room',
+            typeId: AppTopics.groupStateEvent,
+            resource: envelope,
+            options: { groupRef: DELTA_ENVELOPE_FIXTURE_GROUP_REF }
+        }
     );
 }

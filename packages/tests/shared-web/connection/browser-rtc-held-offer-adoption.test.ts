@@ -131,7 +131,7 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
         acceptedOverlayCache: acceptedOverlays
     });
     const connectionService = new WebRtcConnectionService(
-        new WsRtcSignalingTransportUsingWsQBox(queueBoxClient, SIGNALING_TYPE),
+        new WsRtcSignalingTransportUsingWsQBox(queueBoxClient, SIGNALING_TYPE, Date.now),
         {
             sessionId: SELF,
             token: 'test-token',
@@ -238,16 +238,23 @@ function acceptedOverlay(group: GroupSnapshot): OverlayInfo {
 }
 
 function toOfferEnvelope(msgId: string): string {
-    const message = newALUnicastMessage(SENDER, newALEventRoute(SIGNALING_TYPE, SELF), SELF, SIGNALING_TYPE, {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: SENDER,
-        toId: SELF,
-        sessionId: SENDER,
-        token: 'test-token',
-        signalType: 'Offer',
-        offerId: 'offer-1',
-        payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SENDER,
+        route: newALEventRoute(SIGNALING_TYPE, SELF),
+        toPeerId: SELF,
+        typeId: SIGNALING_TYPE,
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: SENDER,
+            toId: SELF,
+            sessionId: SENDER,
+            token: 'test-token',
+            signalType: 'Offer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+        }
     });
     return JSON.stringify({ ...message, id: { ...message.id, msgId } });
 }

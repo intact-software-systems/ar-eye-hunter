@@ -83,14 +83,17 @@ test('a room unicast to a session outside the room is refused before admission (
 
 function roomUnicast(groupRef: GroupRef, resourceId: string, toPeerId: string): ALMessage {
     return newALUnicastMessage(
-        'session-1',
-        newALEventRoute('room.chat', groupRef.groupId, resourceId),
-        toPeerId,
-        'chat.message.v1',
         {
-            text: 'for you'
-        },
-        { groupRef, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-1',
+            route: newALEventRoute('room.chat', groupRef.groupId, resourceId),
+            toPeerId,
+            typeId: 'chat.message.v1',
+            resource: {
+                text: 'for you'
+            },
+            options: { groupRef, ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        }
     );
 }
 

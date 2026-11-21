@@ -49,6 +49,8 @@ export async function openRecoveryOwner({
     const drain = captureOutboundWorkRunnable(engine);
     const settlements: ALDeliverySettlement[] = [];
     const connecting = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: faults,
@@ -62,7 +64,7 @@ export async function openRecoveryOwner({
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

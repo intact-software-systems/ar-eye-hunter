@@ -31,8 +31,16 @@ interface ReadyRoomSubmission extends BrowserWsRoomSubmissionInput {
 
 function createReadyRoomSubmission(): ReadyRoomSubmission {
     return {
-        message: newALBroadcastMessage('alice', { topicId: 'room.chat', contextId: 'room', resourceId: 'original' }, 'room', 'chat.message', {}, {
-            groupRef: roomRef
+        message: newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'alice',
+            route: { topicId: 'room.chat', contextId: 'room', resourceId: 'original' },
+            scope: 'room',
+            typeId: 'chat.message',
+            resource: {},
+            options: {
+                groupRef: roomRef
+            }
         }),
         client: { clientId: 'alice', sessionId: 'alice', isOnline: true },
         currentSession: { clientId: 'alice', sessionId: 'alice', accessToken: 'test-only', username: 'alice', expiresAtEpochMs: 60_000 },
@@ -130,7 +138,14 @@ describe('browser room submission prerequisite', () => {
     it('leaves ordinary unicast eligibility with its transport owner', () => {
         expect(
             requiresBrowserWsRoomPresence(
-                newALUnicastMessage('alice', { topicId: 'app.chat', contextId: 'conversation', resourceId: 'one' }, 'bob', 'chat', {})
+                newALUnicastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'alice',
+                    route: { topicId: 'app.chat', contextId: 'conversation', resourceId: 'one' },
+                    toPeerId: 'bob',
+                    typeId: 'chat',
+                    resource: {}
+                })
             )
         ).toBe(false);
     });

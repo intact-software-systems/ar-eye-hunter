@@ -713,8 +713,10 @@ and it has no status list.
   side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
   against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
   three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
-  noise in all five. Open for the maintainer: require a quiet machine, make alternating runs the protocol, or compare another
-  figure. The band is not widened.
+  noise in all five. Ruled (2026-11-18): the runs alternate between the two sides, with no quiet-machine requirement
+  and no other figure; as the maintainer chose on 2026-11-20, the comparison refuses sides that did not alternate,
+  baseline first (D695). What remains: no comparison of one commit with itself has been taken under the enforced
+  order, so whether alternating brings the median inside the band is not measured. The band is not widened.
 - The platform fault steps (D666) reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
@@ -1138,11 +1140,6 @@ and it has no status list.
   re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild after a failed update or a broken
   invariant is not held. The quality bound for these paths, the tree-keeping gate of #810 that they skip, is still
   open.
-- A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
-  reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
-  (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
-  the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
-  (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
 - Reshape gate leftovers (pull request #844):
   - The plan record's `changeGated` input is overloaded for a `reshape-due` row, so a wake-up's plan has empty
     `causes`; naming a cause for it would change the plan record contract.
@@ -1151,7 +1148,6 @@ and it has no status list.
   - Bounds raised after a period's wake-up has run leave a later hold of that period without a row until the next
     work.
   - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
-  - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
   - A room that empties while its gate is closed keeps its empty layout's kind until the gate opens, and that hold
     counts as any other. Whether a layout of no or one member should pass the gate is not decided.
   - `packages/shared/encoding` imports `packages/shared/api/exact-object-decoding.ts` at runtime (the GroupRef
@@ -1163,6 +1159,17 @@ and it has no status list.
     to the queue was not checked.
   - Two older GroupRef decoders (`decode-stored-group-lifecycle-policy.ts`, `decode-rtc-topology-snapshot.ts`)
     differ from `decodeExactGroupRef` in their checks and messages and were left as they are.
+  - The ALM cell settle (`to-alm-cell-settle.ts`) polls the formation view and requires `pending` null and
+    `layoutStale` false, but not `heldReshape` null; a cell can settle while a reshape is held. Requiring it needs
+    the settle's own limit raised by one hold.
+  - The lanes' view read uses the readiness command's flat 5 s `timeoutMs`, while the same setup gives a cohort's
+    single REST read 5 s plus 250 ms per participant. Timeouts on `…-layout-readiness` in a hosted scale run would
+    be the sign to scale it.
+  - The scale setup's accepted-layout gate is a `formation.readiness` too, so a page already settled there reads
+    the formation view at the gate and again in the stable-layout wait.
+  - A stored gate record that does not decode makes the formation read answer 400 with the storage key in the
+    body: the graph-topology routes map an error that carries no status by its message. The mapping predates the
+    held reshape and the fingerprint read shares it; a route test pins the status.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

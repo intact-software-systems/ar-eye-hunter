@@ -233,12 +233,15 @@ describe('the browser minting plan', () => {
 
     it('leaves an unkeyed send, a world broadcast, a relayed frame and a dropping plan as they are', () => {
         const world = newALBroadcastMessage(
-            BROWSER_SESSION_ID,
-            newALRoute('app.chat', 'world', 'world-keyed'),
-            'world',
-            'app.chat.v1',
-            {},
-            { ordering: { orderingKey: 'chat' } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: BROWSER_SESSION_ID,
+                route: newALRoute('app.chat', 'world', 'world-keyed'),
+                scope: 'world',
+                typeId: 'app.chat.v1',
+                resource: {},
+                options: { ordering: { orderingKey: 'chat' } }
+            }
         );
         const plans = [
             base,
@@ -381,12 +384,15 @@ describe('the room-wide sent position a mint moves', () => {
 
 function createRoomSend(name: string, ordering: Readonly<{ orderingKey?: string; seq?: number; }>): ALMessage {
     return newALMulticastMessage(
-        BROWSER_SESSION_ID,
-        newALRoute('room.chat', ROOM.groupId, name),
-        ROOM,
-        'room.chat.v1',
-        { name },
-        { ttlMs: ROUND_EVENT_TTL_MS, ...ordering }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: BROWSER_SESSION_ID,
+            route: newALRoute('room.chat', ROOM.groupId, name),
+            groupRef: ROOM,
+            typeId: 'room.chat.v1',
+            resource: { name },
+            options: { ttlMs: ROUND_EVENT_TTL_MS, ...ordering }
+        }
     );
 }
 
@@ -402,12 +408,15 @@ function createBrowserMintingRuntime(stores: OutboundTestStores): ALOutboundMess
 
 function createRoundEvent(name: string, ordering: Readonly<{ orderingKey: string; epoch: number; }>): ALMessage {
     return newALBroadcastMessage(
-        'server',
-        newALRoute('room.app.event', ROOM.groupId, name),
-        'room',
-        'app.event.v1',
-        { name },
-        { groupRef: ROOM, ttlMs: ROUND_EVENT_TTL_MS, ordering }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: newALRoute('room.app.event', ROOM.groupId, name),
+            scope: 'room',
+            typeId: 'app.event.v1',
+            resource: { name },
+            options: { groupRef: ROOM, ttlMs: ROUND_EVENT_TTL_MS, ordering }
+        }
     );
 }
 

@@ -136,12 +136,15 @@ export async function publishArenaTournamentSnapshot(
 ): Promise<void> {
     const frame = await encodeArenaTournamentFrame(snapshot);
     const message = newALBroadcastMessage(
-        ARENA_TOURNAMENT_SNAPSHOT_SENDER,
-        arenaTournamentFrameRoute(snapshot.binding),
-        'room',
-        ARENA_TOURNAMENT_SNAPSHOT_TOPIC,
-        frame,
-        { groupRef: snapshot.binding.roomRef, ttlMs: 5000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: ARENA_TOURNAMENT_SNAPSHOT_SENDER,
+            route: arenaTournamentFrameRoute(snapshot.binding),
+            scope: 'room',
+            typeId: ARENA_TOURNAMENT_SNAPSHOT_TOPIC,
+            resource: frame,
+            options: { groupRef: snapshot.binding.roomRef, ttlMs: 5000 }
+        }
     );
     const receipt = await ws.publish({ message, producerId: ARENA_TOURNAMENT_SNAPSHOT_SENDER, fanout: 'live-only' });
     if (receipt.reason !== undefined || !['cluster-published', 'sent-live', 'no-recipients'].includes(receipt.status)) {

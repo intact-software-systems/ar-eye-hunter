@@ -121,13 +121,14 @@ async function openPresentWsHoldSender(): Promise<WsHoldSender> {
  * `volatile`.
  */
 function toHandedOverMessage(sessionId: string, durability: ALDurabilityAlgo): ALMessage {
-    const message = newALMulticastMessage(
-        sessionId,
-        { topicId: 'held', contextId: 'group-1', resourceId: 'handed-over' },
-        ROOM_REF,
-        'held.message',
-        { seq: 2 },
-        {
+    const message = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: sessionId,
+        route: { topicId: 'held', contextId: 'group-1', resourceId: 'handed-over' },
+        groupRef: ROOM_REF,
+        typeId: 'held.message',
+        resource: { seq: 2 },
+        options: {
             ack: 'receiver',
             reliability: 'at-least-once',
             seq: 2,
@@ -135,7 +136,7 @@ function toHandedOverMessage(sessionId: string, durability: ALDurabilityAlgo): A
             ttlMs: ACK_UNDER_HOLD_MESSAGE_TTL_MS,
             qos: { durability: { algo: durability } }
         }
-    );
+    });
     const frozen = toALFrozenMulticastMessage(message, { recipientPeerIds: FROZEN_RECIPIENT_PEER_IDS, snapshotVersion: 1 });
     return { ...frozen, ordering: { orderingKey: 'held-track', seq: 2, priorSeqByRecipient: {} } };
 }

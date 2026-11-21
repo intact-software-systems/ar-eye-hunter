@@ -72,7 +72,7 @@ it.each([
     }).enableDefaultCallbacks();
     onTestFinished(() => service.close());
     const ingress = vi.spyOn(service, 'acceptIncomingMessage');
-    const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
+    const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', Date.now);
     const delivered: string[] = [];
     await transport.connect({
         sessionId: 'self',
@@ -88,19 +88,22 @@ it.each([
     });
     const incoming = Array.from({ length: 12 }, (_, index) =>
         newALUnicastMessage(
-            `peer-${index % 2}`,
-            newALEventRoute('rtc', 'self'),
-            'self',
-            'rtc',
             {
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: `peer-${index % 2}`,
-                toId: 'self',
-                sessionId: 'self',
-                token: 'test-token',
-                signalType: QRtcSignalingType.IceCandidate,
-                payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
+                createdAtEpochMs: Date.now(),
+                senderId: `peer-${index % 2}`,
+                route: newALEventRoute('rtc', 'self'),
+                toPeerId: 'self',
+                typeId: 'rtc',
+                resource: {
+                    channel: QRtcSignalingChannel.RtcSignal,
+                    type: QRtcSignalingMsgType.Signal,
+                    fromId: `peer-${index % 2}`,
+                    toId: 'self',
+                    sessionId: 'self',
+                    token: 'test-token',
+                    signalType: QRtcSignalingType.IceCandidate,
+                    payload: { description: null, candidate: { candidate: `test-candidate-${index}` } }
+                }
             }
         ));
     const sends = Array.from({ length: duplex ? 12 : 0 }, (_, index) =>

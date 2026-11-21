@@ -70,8 +70,7 @@ function createFallbackFixture(
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,
-        publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-        nowMs: Date.now,
+        publicationStages: new BrowserPublicationStages(),
         readPublicationPermissions: () => undefined,
         grantedTopics: NO_RTC_GRANTED_TOPICS
     });
@@ -81,14 +80,17 @@ function createFallbackFixture(
         settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
         send: async (firstCarrier, ttlMs, canFallback = true) => {
             const message = newALMulticastMessage(
-                context.session.sessionId,
-                { topicId: 'room.command', resourceId: crypto.randomUUID(), contextId: 'room-1' },
-                ROOM,
-                'room.command.v1',
-                { action: 'ready' },
-                { reliability: 'at-least-once', ack: 'receiver', ttlMs }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: context.session.sessionId,
+                    route: { topicId: 'room.command', resourceId: crypto.randomUUID(), contextId: 'room-1' },
+                    groupRef: ROOM,
+                    typeId: 'room.command.v1',
+                    resource: { action: 'ready' },
+                    options: { reliability: 'at-least-once', ack: 'receiver', ttlMs }
+                }
             );
-            const handle = deliveries.open(message, firstCarrier);
+            const handle = deliveries.open({ message: message, carrier: firstCarrier, readDeadlineEpochMs: Date.now });
             dispatch.send({
                 requestedConfiguration: undefined,
                 rtcCapture: { status: 'unavailable', reason: 'absent' },

@@ -76,7 +76,14 @@ describe('middleware remote live WS notices', () => {
                 ...common,
                 scope,
                 audience: { mode: 'peer', recipientSessionIds: ['remote-session'] },
-                message: newALUnicastMessage('sender', route, 'remote-session', 'notice.v1', { value: 'peer' })
+                message: newALUnicastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route,
+                    toPeerId: 'remote-session',
+                    typeId: 'notice.v1',
+                    resource: { value: 'peer' }
+                })
             })
             : mode === 'principal'
             ? encodeLiveWsNotice({
@@ -88,7 +95,14 @@ describe('middleware remote live WS notices', () => {
                     recipientSessionIds: ['remote-session']
                 },
                 message: {
-                    ...newALBroadcastMessage('sender', route, 'all', 'notice.v1', { value: mode }),
+                    ...newALBroadcastMessage({
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'sender',
+                        route,
+                        scope: 'all',
+                        typeId: 'notice.v1',
+                        resource: { value: mode }
+                    }),
                     targets: {
                         mode: 'broadcast',
                         scope: 'principal',
@@ -99,7 +113,14 @@ describe('middleware remote live WS notices', () => {
             : encodeLiveWsNotice({
                 ...common,
                 audience: { mode: 'broad', targetMode: 'all' },
-                message: newALBroadcastMessage('sender', route, 'all', 'notice.v1', { value: 'broad' })
+                message: newALBroadcastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'sender',
+                    route,
+                    scope: 'all',
+                    typeId: 'notice.v1',
+                    resource: { value: 'broad' }
+                })
             });
         if (encoded.kind !== 'inline') {
             throw new Error('Expected inline notice');
@@ -160,11 +181,14 @@ describe('middleware remote live WS notices', () => {
         });
         await runtime.liveWsNoticeSubscriberReadiness;
         const message = newALBroadcastMessage(
-            'sender',
-            { topicId: 'app.notice', contextId: 'direct', resourceId: 'notice' },
-            'all',
-            'notice.v1',
-            { value: 'late' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'app.notice', contextId: 'direct', resourceId: 'notice' },
+                scope: 'all',
+                typeId: 'notice.v1',
+                resource: { value: 'late' }
+            }
         );
         const encoded = encodeLiveWsNotice({
             channel: 'live',

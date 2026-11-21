@@ -72,9 +72,17 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     });
     const old = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: oldFaults, beforeOpenDelayMs: 0 });
     const original = {
-        ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
-            ttlMs: 30_000,
-            qos: { durability: { algo: 'local-outbox' } }
+        ...newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'reload', contextId: 'room', resourceId: 'one' },
+            toPeerId: 'receiver',
+            typeId: 'reload.original',
+            resource: { original: true },
+            options: {
+                ttlMs: 30_000,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     } as const;
@@ -144,9 +152,17 @@ it('retains the restored room original until actual scoped presence authorizes i
     });
     const old = await openRecoveryOwner({ sessionId, principalId, faults: oldFaults, beforeOpenDelayMs: 0 });
     const original: ALMessage = {
-        ...newALBroadcastMessage(sessionId, { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: 'one' }, 'room', 'reload.room-original', {
-            original: true
-        }, { groupRef: roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }),
+        ...newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: 'one' },
+            scope: 'room',
+            typeId: 'reload.room-original',
+            resource: {
+                original: true
+            },
+            options: { groupRef: roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
+        }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     };
     expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
@@ -241,7 +257,14 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const owner = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
-    const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
+    const signaling = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: sessionId,
+        route: { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' },
+        toPeerId: 'peer',
+        typeId: 'signal',
+        resource: {}
+    });
     const control = newALNackControlMessage(
         {
             v: 4,
@@ -384,12 +407,15 @@ it('does not invent an unsubmitted refusal after the default callback writes and
 function createRoomOriginal(sessionId: string, ref: GroupRef): ALMessage {
     return {
         ...newALBroadcastMessage(
-            sessionId,
-            { topicId: 'room.reload', contextId: ref.groupId, resourceId: crypto.randomUUID() },
-            'room',
-            'reload.original',
-            {},
-            { groupRef: ref, ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: sessionId,
+                route: { topicId: 'room.reload', contextId: ref.groupId, resourceId: crypto.randomUUID() },
+                scope: 'room',
+                typeId: 'reload.original',
+                resource: {},
+                options: { groupRef: ref, ttlMs: 30_000 }
+            }
         ),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     };

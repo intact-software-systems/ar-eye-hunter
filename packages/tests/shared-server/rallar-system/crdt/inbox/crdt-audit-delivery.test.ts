@@ -169,7 +169,13 @@ class RecordingOutboxQueueReader extends OutboxQueueReader {
 }
 
 function createAuditMessage(event: object): ALMessage {
-    return newALUntargetedMessage('server-1', newALRoute('crdt.audit', 'document-1', 'audit-1'), CRDT_AUDIT_APP_OUTBOX_TYPE, event);
+    return newALUntargetedMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server-1',
+        route: newALRoute('crdt.audit', 'document-1', 'audit-1'),
+        typeId: CRDT_AUDIT_APP_OUTBOX_TYPE,
+        resource: event
+    });
 }
 
 function createResourceEntry(): ResourceEntry {

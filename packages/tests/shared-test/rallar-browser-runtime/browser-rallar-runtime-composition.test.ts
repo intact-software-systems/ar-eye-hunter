@@ -40,6 +40,7 @@ import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../shared-web/api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../../shared-web/connection/browser-server-clock-fixture.ts';
 import { createInitialiseMiddlewareDouble } from '../../shared-web/connection/create-initialise-middleware-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
 
@@ -303,6 +304,7 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
     vi.spyOn(cache.browserStateCacheLifecycle, 'hydrate').mockResolvedValue();
     vi.spyOn(middleware, 'initialiseMiddleware').mockImplementation(createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
         middleware: context.middleware,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: [],
         rtcCaptureReceipt: createBrowserRtcCapture({
             configuration: options.rtcCaptureConfiguration,

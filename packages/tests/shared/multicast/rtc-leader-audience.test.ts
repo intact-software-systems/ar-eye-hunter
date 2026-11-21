@@ -76,12 +76,15 @@ describe('the RTC leg of a group-leader room send', () => {
         const messages = ['03', '02'].flatMap((senderId) =>
             Array.from({ length: 6 }, (_, index) =>
                 newALMulticastMessage(
-                    senderId,
-                    { topicId: 'room.ar-eye-hunter.director', resourceId: `${senderId}-shot-${index + 1}`, contextId: room.groupId },
-                    room,
-                    'room.ar-eye-hunter.director.intent.v1',
-                    { kind: 'player-shot-intent', senderId, seq: index + 1 },
-                    { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId,
+                        route: { topicId: 'room.ar-eye-hunter.director', resourceId: `${senderId}-shot-${index + 1}`, contextId: room.groupId },
+                        groupRef: room,
+                        typeId: 'room.ar-eye-hunter.director.intent.v1',
+                        resource: { kind: 'player-shot-intent', senderId, seq: index + 1 },
+                        options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                    }
                 ))
         );
         const deliveryWaiters = new Map(messages.map((message) => [message.id.msgId, Promise.withResolvers<ALMessage>()]));
@@ -223,12 +226,15 @@ describe('the RTC leg of a group-leader room send', () => {
             };
             const sessionIds = Object.keys(tree);
             const message = newALMulticastMessage(
-                '12',
-                { topicId: 'room.ar-eye-hunter.director', resourceId: 'far-leaf-shot', contextId: room.groupId },
-                room,
-                'room.ar-eye-hunter.director.intent.v1',
-                { kind: 'player-shot-intent', senderId: '12', seq: 1 },
-                { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: '12',
+                    route: { topicId: 'room.ar-eye-hunter.director', resourceId: 'far-leaf-shot', contextId: room.groupId },
+                    groupRef: room,
+                    typeId: 'room.ar-eye-hunter.director.intent.v1',
+                    resource: { kind: 'player-shot-intent', senderId: '12', seq: 1 },
+                    options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+                }
             );
             const receipt = Promise.withResolvers<ALDeliverySettlement>();
             const endpoints = sessionIds.map((sessionId) => {
@@ -280,12 +286,15 @@ describe('the RTC leg of a group-leader room send', () => {
 
     it('confirms a leader receipt from a director that relays to a silent leaf, with one ACK reaching the origin', async () => {
         const message = newALMulticastMessage(
-            'origin',
-            { topicId: 'room.ar-eye-hunter.director', resourceId: 'internal-director-shot', contextId: room.groupId },
-            room,
-            'room.ar-eye-hunter.director.intent.v1',
-            { kind: 'player-shot-intent', senderId: 'origin', seq: 1 },
-            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'origin',
+                route: { topicId: 'room.ar-eye-hunter.director', resourceId: 'internal-director-shot', contextId: room.groupId },
+                groupRef: room,
+                typeId: 'room.ar-eye-hunter.director.intent.v1',
+                resource: { kind: 'player-shot-intent', senderId: 'origin', seq: 1 },
+                options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            }
         );
         const receipts: ALDeliverySettlement[] = [];
         const topology = [
@@ -505,16 +514,19 @@ describe('the RTC leg of a group-leader room send', () => {
     it('refuses a room send that asks for a leader receipt by quality of service alone as unsupported, sending nothing', async () => {
         const fixture = createLeaderFixture(createDirectedSnapshot('d'));
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'qos-leader', contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            {},
             {
-                ack: 'receiver',
-                reliability: 'at-least-once',
-                ttlMs: 30_000,
-                qos: { ack: { algo: 'leader' } }
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'qos-leader', contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    ack: 'receiver',
+                    reliability: 'at-least-once',
+                    ttlMs: 30_000,
+                    qos: { ack: { algo: 'leader' } }
+                }
             }
         );
 
@@ -580,29 +592,64 @@ function createLeaderSend(
     } as const;
     switch (audience) {
         case 'room multicast':
-            return newALMulticastMessage('a', route, ORIGIN_ROOM, 'chat.message.v1', {}, options);
-        case 'room broadcast':
-            return newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, { ...options, groupRef: ORIGIN_ROOM });
-        case 'room except':
-            return newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, {
-                ...options,
+            return newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
                 groupRef: ORIGIN_ROOM,
-                exceptPeerIds: namedPeerIds
+                typeId: 'chat.message.v1',
+                resource: {},
+                options
+            });
+        case 'room broadcast':
+            return newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ...options, groupRef: ORIGIN_ROOM }
+            });
+        case 'room except':
+            return newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    ...options,
+                    groupRef: ORIGIN_ROOM,
+                    exceptPeerIds: namedPeerIds
+                }
             });
         case 'principal':
             return newALPrincipalBroadcastMessage(
-                'a',
-                route,
-                { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
-                'chat.message.v1',
-                {},
-                options
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route,
+                    target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+                    typeId: 'chat.message.v1',
+                    resource: {},
+                    options
+                }
             );
         case 'list':
-            return newALBroadcastMessage('a', route, 'room', 'chat.message.v1', {}, {
-                ...options,
-                groupRef: ORIGIN_ROOM,
-                recipientPeerIds: namedPeerIds
+            return newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    ...options,
+                    groupRef: ORIGIN_ROOM,
+                    recipientPeerIds: namedPeerIds
+                }
             });
     }
 }

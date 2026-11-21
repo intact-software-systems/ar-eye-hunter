@@ -308,12 +308,15 @@ export interface InboundTestMessageInput {
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
     const message = newALUnicastMessage(
-        input.senderId ?? INBOUND_TEST_SENDER_PEER_ID,
-        { topicId: INBOUND_TEST_ORDERING_KEY, resourceId: input.msgId, contextId: 'room' },
-        INBOUND_TEST_SELF_PEER_ID,
-        'chat.private-text.v1',
-        { text: input.msgId },
-        { ttlMs: 60_000, qos: toInboundTestQos(input), traceId: input.traceId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: input.senderId ?? INBOUND_TEST_SENDER_PEER_ID,
+            route: { topicId: INBOUND_TEST_ORDERING_KEY, resourceId: input.msgId, contextId: 'room' },
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            typeId: 'chat.private-text.v1',
+            resource: { text: input.msgId },
+            options: { ttlMs: 60_000, qos: toInboundTestQos(input), traceId: input.traceId }
+        }
     );
     return {
         ...message,

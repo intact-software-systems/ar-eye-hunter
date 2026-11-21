@@ -26,12 +26,6 @@ interface BrowserMessageFallbackWatch {
     notReadyRun: number;
 }
 
-export namespace BrowserMessageFallbackController {
-    export interface Input {
-        readonly nowMs: () => number;
-    }
-}
-
 /**
  * Post-admission fallback for `rtc-with-ws-fallback` (D56). The registry hands it every settlement it
  * records; on a declared retryable outcome of a watched RTC leg inside the unchanged deadline it hands the
@@ -39,12 +33,7 @@ export namespace BrowserMessageFallbackController {
  * same envelope on WS. A durable message resumed after a reload has no handle, so it is never watched (Q9).
  */
 export class BrowserMessageFallbackController {
-    private readonly input: BrowserMessageFallbackController.Input;
     private readonly watches = new Map<string, BrowserMessageFallbackWatch>();
-
-    constructor(input: BrowserMessageFallbackController.Input) {
-        this.input = input;
-    }
 
     /** The first registration of a msgId wins: a fallback re-sends the same envelope. */
     watch(candidate: BrowserMessageFallbackCandidate): void {
@@ -79,8 +68,11 @@ export class BrowserMessageFallbackController {
             return [settlement];
         }
         this.watches.delete(settlement.msgId);
-        const atMs = this.input.nowMs();
-        if (isALDeliveryFallbackPastDeadline(watch.candidate.message.constraints?.expiresAtMs, atMs)) {
+        const atMs = watch.candidate.context.serverTime.readWindow().right?.latestEpochMs;
+        if (
+            atMs === undefined ||
+            isALDeliveryFallbackPastDeadline(watch.candidate.message.constraints?.expiresAtMs, atMs)
+        ) {
             return [settlement];
         }
         void this.writeFallback(watch.candidate);

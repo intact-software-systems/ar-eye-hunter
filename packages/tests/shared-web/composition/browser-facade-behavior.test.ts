@@ -1,5 +1,3 @@
-import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
-import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
     beforeEach,
     describe,
@@ -9,6 +7,10 @@ import {
     vi
 } from 'vitest';
 
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
+import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { FakeBroadcastChannel, installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -96,7 +98,12 @@ installFakeBroadcastChannelPerTest();
 beforeEach(() => {
     browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
-    runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
+    runtime.initialiseMiddleware.mockImplementation(async () => ({
+        middleware: runtime.middleware.middleware,
+        rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
+        checkpoints: []
+    }));
     runtime.readSession.mockReturnValue(runtime.middleware.session);
     runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     runtime.hydrateStateCache.mockResolvedValue(undefined);

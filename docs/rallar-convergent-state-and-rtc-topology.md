@@ -428,6 +428,14 @@ so a wake-up that found the room frozen does not strand the want. In a
 the next command. Commanded work takes an owed reshape that still applies at
 once, gate open or closed.
 
+An application reads a hold in the formation view
+(`GET …/groups/{groupId}/formation`, `room.formation.readView()`).
+`heldReshape` is `null` unless the gate applies in the room's stage and the
+record wants a reason; otherwise it carries `wantedReasons` and
+`opensAtEpochMs`. The gate opening is not the reshape, which follows at the
+next work that plans the room. The interval and the gate's counters stay with
+the operator's topology-plans read.
+
 ## Durable Publications
 
 Topology calculation and network fanout are separated by

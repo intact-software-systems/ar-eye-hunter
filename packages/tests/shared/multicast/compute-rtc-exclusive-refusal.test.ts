@@ -96,26 +96,61 @@ function createPickupSend(audience: ExclusiveAudience, ownership: SendOwnership)
     const options = { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, ...ownership } as const;
     switch (audience) {
         case 'room multicast':
-            return newALMulticastMessage('a', route, ORIGIN_ROOM, 'room.pickup.v1', {}, options);
+            return newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                groupRef: ORIGIN_ROOM,
+                typeId: 'room.pickup.v1',
+                resource: {},
+                options
+            });
         case 'room broadcast':
-            return newALBroadcastMessage('a', route, 'room', 'room.pickup.v1', {}, { ...options, groupRef: ORIGIN_ROOM });
+            return newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                scope: 'room',
+                typeId: 'room.pickup.v1',
+                resource: {},
+                options: { ...options, groupRef: ORIGIN_ROOM }
+            });
         case 'principal':
             return newALPrincipalBroadcastMessage(
-                'a',
-                route,
-                { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
-                'room.pickup.v1',
-                {},
-                options
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route,
+                    target: { groupRef: ORIGIN_ROOM, principalRef: ORIGIN_PRINCIPAL_REF },
+                    typeId: 'room.pickup.v1',
+                    resource: {},
+                    options
+                }
             );
         case 'list':
-            return newALBroadcastMessage('a', route, 'room', 'room.pickup.v1', {}, {
-                ...options,
-                groupRef: ORIGIN_ROOM,
-                recipientPeerIds: ['b', 'c']
+            return newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                scope: 'room',
+                typeId: 'room.pickup.v1',
+                resource: {},
+                options: {
+                    ...options,
+                    groupRef: ORIGIN_ROOM,
+                    recipientPeerIds: ['b', 'c']
+                }
             });
         case 'room unicast':
-            return newALUnicastMessage('a', route, 'b', 'room.pickup.v1', {}, { ...options, ack: 'receiver', groupRef: ORIGIN_ROOM });
+            return newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route,
+                toPeerId: 'b',
+                typeId: 'room.pickup.v1',
+                resource: {},
+                options: { ...options, ack: 'receiver', groupRef: ORIGIN_ROOM }
+            });
     }
 }
 

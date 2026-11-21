@@ -44,18 +44,21 @@ describe('producer provenance through WS dequeue', () => {
             const fixture = await createFixture();
             fixture.authentication.principalId = recipient === 'same-principal' ? 'principal' : 'other';
             const message = newALUnicastMessage(
-                'server',
                 {
-                    topicId: 'principal.crdt',
-                    resourceId: 'crdt-update',
-                    contextId: 'principal'
-                },
-                'principal',
-                'rallar.crdt.update.v1',
-                {},
-                {
-                    ttlMs: 30_000,
-                    qos: { durability: { algo: 'local-outbox' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server',
+                    route: {
+                        topicId: 'principal.crdt',
+                        resourceId: 'crdt-update',
+                        contextId: 'principal'
+                    },
+                    toPeerId: 'principal',
+                    typeId: 'rallar.crdt.update.v1',
+                    resource: {},
+                    options: {
+                        ttlMs: 30_000,
+                        qos: { durability: { algo: 'local-outbox' } }
+                    }
                 }
             );
             const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
@@ -102,19 +105,22 @@ describe('producer provenance through WS dequeue', () => {
         async (recipient) => {
             const fixture = await createFixture();
             const message = newALBroadcastMessage(
-                'server',
                 {
-                    topicId: 'app.crdt',
-                    resourceId: 'crdt-update',
-                    contextId: 'app'
-                },
-                'world',
-                'rallar.crdt.update.v1',
-                {},
-                {
-                    ttlMs: 30_000,
-                    reliability: 'at-least-once',
-                    qos: { durability: { algo: 'local-outbox' } }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server',
+                    route: {
+                        topicId: 'app.crdt',
+                        resourceId: 'crdt-update',
+                        contextId: 'app'
+                    },
+                    scope: 'world',
+                    typeId: 'rallar.crdt.update.v1',
+                    resource: {},
+                    options: {
+                        ttlMs: 30_000,
+                        reliability: 'at-least-once',
+                        qos: { durability: { algo: 'local-outbox' } }
+                    }
                 }
             );
             const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
@@ -177,9 +183,17 @@ describe('producer provenance through WS dequeue', () => {
             const entry = kind === 'broadcast'
                 ? {
                     ...fixture.entry,
-                    resource: JSON.stringify(newALBroadcastMessage('server', fixture.message.route, 'room', 'snapshot.v1', {}, {
-                        ttlMs: 30_000,
-                        groupRef: { ...SCOPE, groupId: 'room' }
+                    resource: JSON.stringify(newALBroadcastMessage({
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'server',
+                        route: fixture.message.route,
+                        scope: 'room',
+                        typeId: 'snapshot.v1',
+                        resource: {},
+                        options: {
+                            ttlMs: 30_000,
+                            groupRef: { ...SCOPE, groupId: 'room' }
+                        }
                     }))
                 }
                 : fixture.entry;
@@ -250,9 +264,17 @@ interface ProvenanceDequeueFixture {
 }
 
 async function createFixture(): Promise<ProvenanceDequeueFixture> {
-    const message = newALUnicastMessage('server', { topicId: 'snapshot', resourceId: 'page', contextId: 'request' }, 'peer', 'snapshot.v1', {}, {
-        ttlMs: 30_000,
-        qos: { durability: { algo: 'local-outbox' } }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: { topicId: 'snapshot', resourceId: 'page', contextId: 'request' },
+        toPeerId: 'peer',
+        typeId: 'snapshot.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } }
+        }
     });
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const proof = createProof(message.id.msgId, entry);

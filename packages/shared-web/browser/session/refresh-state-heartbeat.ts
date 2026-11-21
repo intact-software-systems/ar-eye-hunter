@@ -14,6 +14,7 @@ import {
     toApiMutationWorkflowRequestId,
     tolerateStateWorkflowNotFound
 } from '@shared-web/browser/state-read/state-workflow-support.ts';
+
 import { ApiHttpError } from '../api/http-error.ts';
 import { defaultStateScope } from '../api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '../rooms/room-group-state-http-api.ts';
@@ -38,8 +39,9 @@ export interface RefreshStateHeartbeatOptions {
     readonly publicationKey: GroupPresencePublicationKey | null;
     readonly scope?: StateScope;
     readonly authSession?: AuthSession;
-    readonly heartbeatAtEpochMs?: number;
+    readonly heartbeatAtEpochMs: number;
     readonly ttlMs?: number;
+    readonly groupTtlMs?: number;
     readonly policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
 }
 
@@ -87,7 +89,7 @@ export async function refreshStateHeartbeat(
     options: RefreshStateHeartbeatOptions
 ): Promise<RefreshStateHeartbeatResult> {
     const scope = options.scope ?? defaultStateScope();
-    const heartbeatAtEpochMs = options.heartbeatAtEpochMs ?? Date.now();
+    const heartbeatAtEpochMs = options.heartbeatAtEpochMs;
     const expiresAtEpochMs = heartbeatAtEpochMs + (options.ttlMs ?? DEFAULT_STATE_HEARTBEAT_TTL_MSECS);
     const clientRequestId = toApiMutationWorkflowRequestId();
     const repairRequestId = toApiMutationWorkflowRequestId();
@@ -128,7 +130,9 @@ export async function refreshStateHeartbeat(
                 generationId: options.generationId,
                 publicationKey: options.publicationKey,
                 heartbeatAtEpochMs,
-                expiresAtEpochMs,
+                expiresAtEpochMs: options.groupTtlMs === undefined
+                    ? expiresAtEpochMs
+                    : heartbeatAtEpochMs + options.groupTtlMs,
                 scope,
                 authSession: options.authSession,
                 commandPolicy

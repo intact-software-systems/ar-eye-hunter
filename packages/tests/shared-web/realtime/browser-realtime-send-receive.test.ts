@@ -19,6 +19,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createRoomTransportFixture, type RoomTransportFixture } from './create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
@@ -50,6 +51,7 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
         middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     }))
 }));

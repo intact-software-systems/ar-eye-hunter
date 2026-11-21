@@ -80,11 +80,14 @@ class NativeRtcSignalingTransport implements QRtcSignalingTransport {
             throw new Error('Connect the signaling transport before receiving');
         }
         const envelope = newALUnicastMessage(
-            senderId,
-            newALEventRoute(this.input.rtcSignalingTopicId, this.input.sessionId),
-            this.input.sessionId,
-            'rtc',
-            null
+            {
+                createdAtEpochMs: Date.now(),
+                senderId,
+                route: newALEventRoute(this.input.rtcSignalingTopicId, this.input.sessionId),
+                toPeerId: this.input.sessionId,
+                typeId: 'rtc',
+                resource: null
+            }
         );
         return await connected.callbacks.onMessage(this.input.sessionId, this.input.token, { ...envelope, payload: { ...envelope.payload, resource } });
     };

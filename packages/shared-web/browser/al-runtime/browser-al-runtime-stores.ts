@@ -200,12 +200,22 @@ export function createBrowserALOutboundRuntimeStores(
 /** Always memory, whatever the browser supports: the pair a carrier routes volatile admissions to. */
 export function createBrowserALVolatileOutboundRuntimeStores(
     name: string,
-    budget: ALVolatileSessionBudget
+    budget: ALVolatileSessionBudget,
+    clocks: BrowserVolatileStoreClocks
 ): ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage> {
     return createVolatileALOutboundRuntimeStores(
-        { namespace: `browser:${name}:volatile`, decodePrepared: decodeALOutboundTransportMessage },
+        { namespace: `browser:${name}:volatile`, decodePrepared: decodeALOutboundTransportMessage, ...clocks },
         budget
     );
+}
+
+export interface BrowserVolatileStoreClocks {
+    readonly nowMs: () => number;
+    readonly workNowMs: () => number;
+}
+
+export interface BrowserVolatileInboundDependencies extends BrowserVolatileStoreClocks {
+    readonly storage: ALStorageEventSink;
 }
 
 /**
@@ -217,9 +227,12 @@ export function createBrowserALVolatileOutboundRuntimeStores(
 export function createBrowserALVolatileInboundRuntimeStores(
     name: string,
     budget: ALVolatileSessionBudget,
-    storage: ALStorageEventSink
+    dependencies: BrowserVolatileInboundDependencies
 ): ALVolatileInboundRuntimeStores {
+    const { storage, nowMs, workNowMs } = dependencies;
     return createVolatileALInboundRuntimeStores({
+        nowMs,
+        workNowMs,
         namespace: `browser:${name}:volatile`,
         maxOrderingTracks: AL_INBOUND_MAX_ORDERING_TRACKS,
         reportOrderingTracks: toALOrderingTracksReport(storage, `${name}/volatile`),

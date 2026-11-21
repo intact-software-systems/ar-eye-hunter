@@ -312,15 +312,19 @@ as the differences between consecutive statuses: a bootstrap or tombstoned slot 
 layout that appears and disappears before the browser observes it raises no event, and
 `layoutAccepted` fires once the accepted slot and the snapshot name the same layout.
 `formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
-`layoutStale`, `pending`, the attempt budget, both status axes, the coverage basis and the group's
-`causalRevision` that `layoutStale` and `condition` were derived at) and decodes
+`layoutStale`, `pending`, `heldReshape`, the attempt budget, both status axes, the coverage basis and
+the group's `causalRevision` that `layoutStale` and `condition` were derived at) and decodes
 it against the bound room, rejecting a body that is malformed or names another group. `pending`
 reports any queued group-revision replan of the group: the coalesced head, a replan parked behind a
 settled head, an explicit reconfigure or a topology-config write. Its `dueAtEpochMs` is the earliest
 due coalesced row's (not a bound on when the room settles). `dueAtEpochMs` and `generation` are
 `null` for a per-command replan and a head that no longer decodes; `generation` is the reported
 row's own coalescing count, so it is not comparable across reads. RTT-refresh work is not reported,
-and neither is a row other than the head that does not decode. Readiness
+and neither is a row other than the head that does not decode. `heldReshape` is `null` unless the
+room is `active` and its reshape gate holds a reshape. It then carries the `wantedReasons`
+(`kind-change`, `leader-rooting`) and `opensAtEpochMs`, the instant the gate opens. The reshape
+follows at the next work that plans the room, so the instant can lie in the past: briefly where the
+policy plans automatically, and until the next command in a `commanded` room. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.
 

@@ -155,14 +155,15 @@ function createRuntime(stores: ALInboundRuntimeStores, controls: ALMessage[]): A
 
 /** A WS client's ordered room send at `seq`, at least once, ack none. */
 function createMessage(name: string, seq: number, ttlMs: number): ALMessage {
-    const message = newALBroadcastMessage(
-        'sender',
-        newALRoute('room.stream', ROOM.groupId, name),
-        'room',
-        'stream.message.v1',
-        { name },
-        { groupRef: ROOM, ttlMs, reliability: 'at-least-once', ack: 'none', ordering: { orderingKey: 'stream' } }
-    );
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: newALRoute('room.stream', ROOM.groupId, name),
+        scope: 'room',
+        typeId: 'stream.message.v1',
+        resource: { name },
+        options: { groupRef: ROOM, ttlMs, reliability: 'at-least-once', ack: 'none', ordering: { orderingKey: 'stream' } }
+    });
     return { ...message, ordering: { orderingKey: 'stream', seq } };
 }
 

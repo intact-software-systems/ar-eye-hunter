@@ -19,11 +19,27 @@ describe('outbound scope authority', () => {
     it.each([
         [
             'room unicast',
-            newALUnicastMessage('server', ROUTE, 'peer', 'chat.v1', {}, { groupRef: ROOM })
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: ROUTE,
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {},
+                options: { groupRef: ROOM }
+            })
         ],
         [
             'room broadcast',
-            newALBroadcastMessage('server', ROUTE, 'room', 'chat.v1', {}, { groupRef: ROOM })
+            newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: ROUTE,
+                scope: 'room',
+                typeId: 'chat.v1',
+                resource: {},
+                options: { groupRef: ROOM }
+            })
         ]
     ])('takes a %s scope from its wire groupRef', (_, message) => {
         expect(resolveALOutboundScopeAuthority(message, {}).right).toEqual({
@@ -37,8 +53,16 @@ describe('outbound scope authority', () => {
     }])(
         'refuses a group-addressed row that also stores %j',
         (fields) => {
-            const message = newALUnicastMessage('server', ROUTE, 'peer', 'chat.v1', {}, {
-                groupRef: ROOM
+            const message = newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: ROUTE,
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {},
+                options: {
+                    groupRef: ROOM
+                }
             });
             expect(resolveALOutboundScopeAuthority(message, fields).left)
                 .toEqual(['A row whose targets name a group stores no second recipient authority']);
@@ -47,11 +71,14 @@ describe('outbound scope authority', () => {
 
     it('keeps the stored scope and principal of a row that names no group', () => {
         const message = newALUnicastMessage(
-            'server',
-            { ...ROUTE, contextId: 'peer' },
-            'peer',
-            'chat.v1',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { ...ROUTE, contextId: 'peer' },
+                toPeerId: 'peer',
+                typeId: 'chat.v1',
+                resource: {}
+            }
         );
         expect(
             resolveALOutboundScopeAuthority(message, {
@@ -64,7 +91,14 @@ describe('outbound scope authority', () => {
     });
 
     it('keeps session invalidation exclusive', () => {
-        const message = newALUnicastMessage('server', ROUTE, 'peer', 'auth.session.logout.v1', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: ROUTE,
+            toPeerId: 'peer',
+            typeId: 'auth.session.logout.v1',
+            resource: {}
+        });
         expect(
             resolveALOutboundScopeAuthority(message, { sessionInvalidation: INVALIDATION }).right
         )
@@ -85,7 +119,14 @@ describe('outbound scope authority', () => {
             'Public WS unicast requires explicit application and workspace scope'
         ]
     ])('refuses %j', (fields, issue) => {
-        const message = newALUnicastMessage('server', ROUTE, 'peer', 'chat.v1', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: ROUTE,
+            toPeerId: 'peer',
+            typeId: 'chat.v1',
+            resource: {}
+        });
         expect(resolveALOutboundScopeAuthority(message, fields).left).toEqual([issue]);
     });
 });

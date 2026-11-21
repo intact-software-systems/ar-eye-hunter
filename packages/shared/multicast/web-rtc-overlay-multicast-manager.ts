@@ -49,6 +49,7 @@ import {
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
 import { writeALOutboundRelayForwardDiagnostic } from '../alm/outbound/lane/write-al-outbound-relay-forward-diagnostic.ts';
+import { toProofPreservingALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -120,7 +121,6 @@ import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-dro
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
 import { toRtcNoRouteDispatchPlan } from './to-rtc-no-route-dispatch-plan.ts';
-import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
 import { toRtcSentPositionRecordingPlan } from './to-rtc-sent-position-recording-plan.ts';
 import {
     computeRtcBroadcastScopeRefusal,
@@ -797,7 +797,7 @@ export class WebRtcOverlayMulticastManager {
         const frozen = toRtcCarrierGapFrozenMessage(original, availability, origin) ??
             toRtcOriginFrozenMessage(original, context, origin);
         const policy = this.readOutgoingQosPolicy(frozen, context);
-        return { availability, policy, message: toRtcOutboundMessage(frozen, policy.effective) };
+        return { availability, policy, message: toProofPreservingALOutboundMessage(frozen, policy.effective) };
     }
 
     private computeOriginRefusal(

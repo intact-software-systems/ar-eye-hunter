@@ -197,7 +197,14 @@ async function reserveAll(queue: RecoveryStore['stores']['workQueue'], typeId = 
 /** Undefined `expiresAtMs` keeps the row until it is claimed. */
 function workEntry(expiresAtMs: number | undefined, typeId = WORK_TYPE): ResourceEntry {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
+        newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: newALEventRoute('test', crypto.randomUUID()),
+            toPeerId: 'receiver',
+            typeId: 'test',
+            resource: { value: 1 }
+        }),
         typeId,
         Temporal.Now.instant()
     );

@@ -375,12 +375,15 @@ function createOutboxOnlyTestRuntime(
 
 function createOutboundMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'chat', resourceId, contextId: 'chat-1' },
-        'peer-1',
-        'chat.private-text.v1',
-        { text: 'hello' },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId, contextId: 'chat-1' },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: { text: 'hello' },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 
@@ -405,12 +408,15 @@ function conflictNextAdmissionCommit(
 
 function createInboundMessage(msgId: string): ALMessage {
     const original = newALUnicastMessage(
-        'peer-1',
-        { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
-        'self',
-        'chat.private-text.v1',
-        { text: 'retry' },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
+            toPeerId: 'self',
+            typeId: 'chat.private-text.v1',
+            resource: { text: 'retry' },
+            options: { ttlMs: 30_000 }
+        }
     );
     return { ...original, id: { ...original.id, msgId } };
 }

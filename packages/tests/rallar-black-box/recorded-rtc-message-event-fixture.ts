@@ -66,7 +66,15 @@ export function createRecordedRtcMessageEvent(input: RecordedRtcMessageEventInpu
 
 function toRtcArrival(payload: RallarMessagePayload): RallarMessage<RallarMessagePayload> {
     const route = newALRoute('live-rtc', ROOM_REF.groupId, 'live-rtc-message');
-    const raw = newALMulticastMessage('session-sender', route, ROOM_REF, 'live-rtc.matrix', payload, { rosterVersion: 3 });
+    const raw = newALMulticastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'session-sender',
+        route,
+        groupRef: ROOM_REF,
+        typeId: 'live-rtc.matrix',
+        resource: payload,
+        options: { rosterVersion: 3 }
+    });
     return {
         transport: 'rtc',
         typeId: raw.payload.typeId,

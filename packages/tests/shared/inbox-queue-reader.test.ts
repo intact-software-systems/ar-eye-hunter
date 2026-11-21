@@ -106,11 +106,14 @@ describe('InboxQueueReader', () => {
 
 function createAppInboxMessage(typeId: string): ALMessage {
     return newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.group-state', 'group-1', crypto.randomUUID()),
-        typeId,
         {
-            requestId: crypto.randomUUID()
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.group-state', 'group-1', crypto.randomUUID()),
+            typeId,
+            resource: {
+                requestId: crypto.randomUUID()
+            }
         }
     );
 }

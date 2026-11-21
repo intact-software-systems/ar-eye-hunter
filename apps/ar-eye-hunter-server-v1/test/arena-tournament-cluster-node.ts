@@ -70,7 +70,7 @@ export class ArenaTournamentClusterNode {
                     id: context.req.param('id'),
                     generationId: context.req.param('generationId'),
                     generationStartedAtEpochMs: Date.now()
-                })
+                }, { serverPeerId: this.id, nowEpochMs: Date.now })
             );
             return new Response(null, { status: 101 });
         });

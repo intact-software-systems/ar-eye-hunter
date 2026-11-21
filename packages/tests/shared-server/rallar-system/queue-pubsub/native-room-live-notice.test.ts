@@ -22,9 +22,17 @@ const topic = 'rallar.server.room-snapshot';
 const channel = 'live';
 const generations = { alice: 'generation-a', spectator: 'generation-s' };
 function publication(size: number) {
-    const message = newALBroadcastMessage('room-producer', newALRoute(topic, 'room', 'game'), 'room', topic, { data: 'a'.repeat(size) }, {
-        groupRef,
-        ttlMs: 5000
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'room-producer',
+        route: newALRoute(topic, 'room', 'game'),
+        scope: 'room',
+        typeId: topic,
+        resource: { data: 'a'.repeat(size) },
+        options: {
+            groupRef,
+            ttlMs: 5000
+        }
     });
     return {
         message,
@@ -114,7 +122,15 @@ it('writes only frozen generations, and drops a failed socket so its replacement
 it('does not grant a replacement socket room frames from its predecessor room presence', () => {
     const snapshot = createGroupSnapshot(2, ['current', 'reconnected']);
     const ref = snapshot.group;
-    const message = newALBroadcastMessage('room-producer', newALRoute(topic, ref.groupId, 'game'), 'room', topic, {}, { groupRef: ref, ttlMs: 5000 });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'room-producer',
+        route: newALRoute(topic, ref.groupId, 'game'),
+        scope: 'room',
+        typeId: topic,
+        resource: {},
+        options: { groupRef: ref, ttlMs: 5000 }
+    });
     const result = computeServerRoomPublicationAudience({
         message,
         producerId: 'room-producer',
@@ -213,7 +229,15 @@ it('publishes a registered server topic only for its listed producer, only live,
             nowEpochMs: Date.now
         })
     }).defineTopic({ topicId: topic, scope: 'room', fanout: 'live-only', participation: 'server', serverProducerIds: ['room-producer'] });
-    const message = newALBroadcastMessage('room-producer', newALRoute(topic, room.groupId, 'game'), 'room', topic, {}, { groupRef: room, ttlMs: 5000 });
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'room-producer',
+        route: newALRoute(topic, room.groupId, 'game'),
+        scope: 'room',
+        typeId: topic,
+        resource: {},
+        options: { groupRef: room, ttlMs: 5000 }
+    });
 
     expect(await router.publish({ message, producerId: 'intruder', fanout: 'live-only' })).toMatchObject({ status: 'refused', refusal: 'topic-not-granted' });
     expect((await router.publish({ message, producerId: 'room-producer', fanout: 'outbox' })).status).toBe('failed');

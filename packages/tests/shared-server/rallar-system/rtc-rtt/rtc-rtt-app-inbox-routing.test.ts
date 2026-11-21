@@ -43,11 +43,14 @@ describe('RTC RTT websocket AppInbox routing', () => {
         };
 
         await socket.receive(JSON.stringify(newALUntargetedMessage(
-            'session-a',
-            newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
-            AppTopics.rtt,
-            rtt,
-            { traceId: 'trace-rtt-measurement' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
+                typeId: AppTopics.rtt,
+                resource: rtt,
+                options: { traceId: 'trace-rtt-measurement' }
+            }
         )));
 
         await expect.poll(() => enqueuedMutations).toEqual([{
@@ -68,16 +71,19 @@ describe('RTC RTT websocket AppInbox routing', () => {
         });
 
         await socket.receive(JSON.stringify(newALUntargetedMessage(
-            'session-a',
-            newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
-            AppTopics.rtt,
             {
-                sessionIdFrom: 'session-a',
-                sessionIdTo: 'session-b',
-                rttMs: 12,
-                createdAtEpochMs: 1,
-                version: 1,
-                unexpected: true
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-a',
+                route: newALEventRoute(AppTopics.rtt, 'room-1', 'rtt-1'),
+                typeId: AppTopics.rtt,
+                resource: {
+                    sessionIdFrom: 'session-a',
+                    sessionIdTo: 'session-b',
+                    rttMs: 12,
+                    createdAtEpochMs: 1,
+                    version: 1,
+                    unexpected: true
+                }
             }
         )));
         expect(enqueuedMutations).toEqual([]);

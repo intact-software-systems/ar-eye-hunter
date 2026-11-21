@@ -10,12 +10,15 @@ const TRACK_KEY = 'chat:sender:0';
 /** The plan a recipient makes of seq 5 on the track, as its observation of the copy reads. */
 function planCopy(orderingObservation: ALOrderingObservation): ALMessageHandlingPlan {
     const message = newALMulticastMessage(
-        'sender',
-        { topicId: 'chat', contextId: 'room', resourceId: 'copy-5' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-        'chat.v1',
-        {},
-        { orderingKey: 'chat', seq: 5 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'copy-5' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            typeId: 'chat.v1',
+            resource: {},
+            options: { orderingKey: 'chat', seq: 5 }
+        }
     );
     return planALMessageHandling(message, {
         nowMs: message.id.ts,

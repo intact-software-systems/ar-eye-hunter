@@ -40,6 +40,7 @@ export interface RallarRoomStateStorePort {
     ): RallarUnsubscribe;
     onCacheChange(listener: StateCacheChangeListener): RallarUnsubscribe;
     resolveCurrentRoomRef(): GroupRef | undefined;
+    selectedForRecovery(): GroupRef | undefined;
     readGroupSnapshots(): GroupSnapshot[];
     findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
     /** Whether the cache ever held the room; an expired snapshot reads as absent but stays observed. */
