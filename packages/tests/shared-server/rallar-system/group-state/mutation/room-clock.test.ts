@@ -56,3 +56,13 @@ it('resumes a plain clock without interpreting app-owned timeline metadata', asy
         { name: 'match', revision: 4, status: 'running', endsAtEpochMs: 10000 }
     ] } });
 });
+
+it('adds the requested duration to the existing phase end and preserves the occurrence', () => {
+    const clock = { name: 'match', phase: 'first', startedAtRevision: 2, revision: 4, status: 'running' as const, endsAtEpochMs: 9000 };
+    const command = { name: 'match', operation: 'extend-phase' as const, durationMs: 1234, expectedRevision: 4, expectedDirectorEpoch: 1 };
+    expect(computeGroupClockChange([clock], command, 7000)).toEqual({ ...clock, revision: 5, endsAtEpochMs: 10234 });
+    expect(computeGroupClockChange([clock], command, 9000)).toHaveProperty('rejectionCode');
+    expect(computeGroupClockChange([{ ...clock, status: 'paused', remainingMs: 1000 }], {
+        ...command, durationMs: Number.MAX_SAFE_INTEGER
+    }, 7000)).toHaveProperty('rejectionCode');
+});
