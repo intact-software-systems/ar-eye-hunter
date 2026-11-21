@@ -195,10 +195,17 @@ test(
         const previousUsername = await registerPrivateHunter(page, 'previous');
         await expect(page.locator('.profile-row strong')).toHaveText(previousUsername);
         await expect(page.getByRole('button', { name: 'New unlisted room', exact: true })).toBeEnabled();
+        // The creating session initializes the new room's game after the room link appears. A logout the server
+        // commits before that request is answered turns it into a 401, which the browser logs as an error; this test
+        // switches accounts after the room exists, so it waits for the initialization.
+        const roomInitialized = page.waitForResponse((response) =>
+            response.request().method() === 'POST' && /\/api\/relic\/games\/[^/]+\/initialize\//.test(response.url())
+        );
         await page.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         const roomLink = page.getByLabel('Room link', { exact: true });
         await expect(roomLink).toHaveValue(/#rallar-room\?/);
         const previousRoomLink = await roomLink.inputValue();
+        expect((await roomInitialized).ok()).toBe(true);
 
         await page.getByRole('button', { name: 'Logout', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Enter', exact: true })).toBeVisible();

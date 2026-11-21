@@ -161,6 +161,10 @@ roomBrowserTest(
         if (!destinationId) {
             throw new Error('Expected the destination expedition room reference');
         }
+        // A room member republishes its snapshot to the room's peers over RTC every 2 s, which hydrates an entering
+        // tab without its game read. The owner leaves its page so that the held read below is the only way in;
+        // otherwise the RTC repair can allocate the destination's graphics while the read is still held.
+        await guest.goto('about:blank');
         const hydrationRequested = Promise.withResolvers<void>();
         const releaseHydration = Promise.withResolvers<void>();
         await host.route(`**/api/relic/games/${destinationId}`, async (route) => {
