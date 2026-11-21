@@ -97,8 +97,11 @@ export function computeGroupClockUpdate(group: Group, command: RoomClockMutation
     if (!('status' in clock)) {
         return clock;
     }
+    const records = [...clocks.filter(previous => previous.name !== clock.name), clock];
     return { ...group, metadata: {
         ...group.metadata,
-        [ROOM_CLOCKS_METADATA_KEY]: [...clocks.filter(previous => previous.name !== clock.name), clock]
+        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => record.status === 'scheduled'
+            ? { ...record, phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs })) }
+            : record)
     } };
 }

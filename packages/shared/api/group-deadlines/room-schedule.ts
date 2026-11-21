@@ -1,9 +1,8 @@
-import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
 export namespace RoomSchedule {
-    export interface Phase extends ApiJsonObject {
+    export interface Phase {
         readonly phase: string;
         readonly startsAtEpochMs: number;
     }
@@ -21,7 +20,7 @@ export namespace RoomSchedule {
         | { readonly status: 'current'; readonly current: Phase | null; readonly next: Phase | null; };
 }
 
-export interface RoomSchedule extends ApiJsonObject {
+export interface RoomSchedule {
     readonly name: string;
     readonly revision: number;
     readonly status: 'scheduled';
