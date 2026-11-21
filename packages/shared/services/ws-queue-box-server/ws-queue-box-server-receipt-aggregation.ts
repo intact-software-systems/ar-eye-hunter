@@ -2,6 +2,7 @@ import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     decodeALControlMessage,
+    isALOwnWord,
     newALReceiptControlMessage,
     type ALAckPayload,
     type ALReceiptPayload
@@ -635,7 +636,7 @@ function validateWsQueueBoxServerReceiptAck(
             message: 'AL acknowledgement is not addressed to the origin it names'
         });
     }
-    if (ack.fromPeerId !== ack.logicalRecipientPeerId && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
+    if (!isALOwnWord(ack) && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
         issues.push({
             code: 'sender-recipient-mismatch',
             message: 'AL acknowledgement speaks for another recipient than its sender'

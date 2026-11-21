@@ -1327,7 +1327,8 @@ As applied (S8-ii): a relay keys every receipt fact by statement. Two child
 controls are one statement when they name the same recipient and either are
 one proof over one signed content (both ACKs or both NACKs, one proof identity
 `keyId|signature`, and every field the proof signs equal, compared as its
-signing input, `isALSameReceiptProofContent`; D606), or both carry `proof:
+signing input, which each control's prepared subject,
+`toALReceiptStatementSubject`, encodes at most once; D606), or both carry `proof:
 null`, whatever their content, or are both that recipient's own word on its
 own channel (`fromPeerId === logicalRecipientPeerId`); relays still verify
 nothing, and the origin judges each statement as S8-i built it. So a peer that
@@ -1419,11 +1420,13 @@ no flood: one forged hop-end and 256 later child ACKs, honest ones included,
 evict the recording control, and in a room at the RTC room limit the cut falls
 anyway, so a few early forged statements can take the place of true forwarded
 words in a re-forward. A child that reuses one well-formed proof over up to 256
-altered contents makes a relay encode the signed content pairwise: about 90 ms
+altered contents made a relay encode the signed content pairwise: about 90 ms
 per retried copy's grouping against about 1.2 ms before, up to about 180 ms
 with the NACK history flooded the same way and about 3 ms per admission on a
-full history, bounded by the histories, paced by the origin's retries and not
-fixed here (D606). In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
+full history, bounded by the histories and paced by the origin's retries
+(D606); part C encodes each control once per scan, and a retried copy's
+grouping, `toFirstOfEachALReceiptStatement`, compares only within one
+recipient. In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
 still moves another next hop outside (pinned); a forger that is the recipient's
 own parent is on its path and can still withhold the copy or its control, which
 the origin's timeout, retry and fallback cover; and a recipient's redundant own

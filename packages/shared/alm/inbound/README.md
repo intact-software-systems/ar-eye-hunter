@@ -242,10 +242,12 @@ recipient and, under `receiver` and `leader`, only for a member of the frozen
 audience, the only recipients the origin counts. Two child controls are one
 statement when they name the same recipient and either are one signed
 statement -- both ACKs or both NACKs, one proof identity (`keyId|signature`)
-and the same signed content, compared as the proof's own signing input
-([`isALSameReceiptProofContent`](../../al-contracts/receipt-proof/al-receipt-proof.ts)) --
+and the same signed content, compared as the proof's own signing input,
+which each control's prepared subject encodes at most once
+([`toALReceiptStatementSubject`](./control/is-al-same-receipt-statement.ts)) --
 or both carry `proof: null`, whatever their content, or are both that
-recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`)
+recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`,
+[`isALOwnWord`](../../al-contracts/al-control.ts))
 ([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)). So
 above the first relay, where every forward carries the relay's `fromPeerId`,
 the proof and what it signs still tell two statements apart, a copied proof
@@ -422,10 +424,13 @@ here at first arrival. That eviction needs only one forged hop-end and 256
 later child ACKs, honest ones included, and in a room at the RTC room limit the
 cut falls even without a flood, so a few early forged statements can take the
 place of true forwarded words in a re-forward. A child that reuses one
-well-formed proof over many altered contents also makes the relay encode the
-signed content of each pair it compares: about 90 ms per retried copy's
-grouping against about 1.2 ms, bounded by the histories. The origin counts only
-what verifies. The
+well-formed proof over many altered contents makes the relay encode each
+control's signed content once per scan, not once per pair it compares: a
+validation prepares its history and control once for every scan, and a retried
+copy's grouping
+([`toFirstOfEachALReceiptStatement`](./control/is-al-same-receipt-statement.ts))
+prepares each stored control once and compares only within one recipient. The
+origin counts only what verifies. The
 signing runs in
 [`signALInboundReceiptControls`](./receipt-proof/sign-al-inbound-receipt-controls.ts)
 at the four commit sites (the message admission, both ordered-delivery

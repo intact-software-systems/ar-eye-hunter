@@ -143,9 +143,16 @@ export type ALPeerRepairControlMessage = Exclude<ALPeerControlMessage, Readonly<
  * A relay that passes on an ACK for a recipient below it speaks for that recipient, not for its hop.
  */
 export function isALHopCompletionAck(ack: ALAckPayload): boolean {
-    return ack.fromPeerId === ack.logicalRecipientPeerId &&
+    return isALOwnWord(ack) &&
         (ack.status === 'delivered' || ack.status === 'subtree-complete' ||
             ack.status === 'subtree-complete-not-subscribed');
+}
+
+/** A control its recipient sent on its own channel: the one kind a relay heard from the recipient itself. */
+export function isALOwnWord(
+    control: Pick<ALAckPayload | ALNackPayload, 'fromPeerId' | 'logicalRecipientPeerId'>
+): boolean {
+    return control.fromPeerId === control.logicalRecipientPeerId;
 }
 
 export interface ALCompletedPendingAck {

@@ -1,4 +1,4 @@
-import type { ALNackPayload, ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import { isALOwnWord, type ALNackPayload, type ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
 
 /**
  * A gap NACK a relay re-sends for a recipient below it (S4ii-R3): the one NACK a hop sends naming another recipient
@@ -8,5 +8,5 @@ export function isALOutboundRelayedGapNack(
     control: ALPeerControlMessage
 ): control is Readonly<{ type: 'nack'; payload: ALNackPayload; }> {
     return control.type === 'nack' && control.payload.reason === 'gap' &&
-        control.payload.fromPeerId !== control.payload.logicalRecipientPeerId;
+        !isALOwnWord(control.payload);
 }

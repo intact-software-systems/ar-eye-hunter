@@ -15,7 +15,11 @@ import { resolveALCountedRecipientPeerIds } from '../delivery/resolve-al-counted
 import {
     hasALConfirmedStatement,
     hasALOutsideStatement,
-    isALSameReceiptStatement
+    isALSameReceiptStatement,
+    toALReceiptStatementHistory,
+    toALReceiptStatementSubject,
+    type ALReceiptStatementHistory,
+    type ALReceiptStatementSubject
 } from './control/is-al-same-receipt-statement.ts';
 
 export interface TrackALPendingAckSnapshotInput {
@@ -142,15 +146,17 @@ export function acceptALPendingAckPayload(
     if (current === undefined) {
         return NO_AL_PENDING_ACK_TRANSITION;
     }
+    const history = toALReceiptStatementHistory(input.acks, input.nacks);
+    const subject = toALReceiptStatementSubject(ack);
     const ackedFromPeerIds = isALHopCompletionAck(ack)
         ? [...new Set([...current.ackedFromPeerIds, ack.fromPeerId])]
         : current.ackedFromPeerIds;
     const relayed = isALRecipientConfirmationAck(ack) &&
         isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
-        !input.acks.some((prior) => isALSameReceiptStatement(prior, ack));
+        !history.acks.some((prior) => isALSameReceiptStatement(prior, subject));
     const outside = isALImpliedNotSubscribedNack(
         ack,
-        isALOwedByStatement(current, input) ? [ack.logicalRecipientPeerId] : []
+        isALOwedByStatement(current, history, subject) ? [ack.logicalRecipientPeerId] : []
     );
     const recipientRecordedOutside = current.outsideAudiencePeerIds.includes(ack.logicalRecipientPeerId);
     return toALPendingAckTransition({
@@ -172,11 +178,14 @@ export function acceptALPendingAckPayload(
  * The ACK's recipient is of the row's frozen upward audience, and no earlier control of the same statement confirmed
  * it or recorded it outside.
  */
-function isALOwedByStatement(current: ALPendingAckSnapshot, input: AcceptALPendingAckPayloadInput): boolean {
-    const { ack } = input;
-    return (current.upwardAudiencePeerIds ?? []).includes(ack.logicalRecipientPeerId) &&
-        !hasALConfirmedStatement(input.acks, ack) &&
-        !hasALOutsideStatement(current, { acks: input.acks, nacks: input.nacks }, ack);
+function isALOwedByStatement(
+    current: ALPendingAckSnapshot,
+    history: ALReceiptStatementHistory,
+    ack: ALReceiptStatementSubject
+): boolean {
+    return (current.upwardAudiencePeerIds ?? []).includes(ack.control.payload.logicalRecipientPeerId) &&
+        !hasALConfirmedStatement(history.acks, ack) &&
+        !hasALOutsideStatement(current, history, ack);
 }
 
 /**

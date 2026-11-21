@@ -2,7 +2,12 @@ import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-admission.ts';
-import { hasALConfirmedStatement, hasALOutsideStatement } from './is-al-same-receipt-statement.ts';
+import {
+    hasALConfirmedStatement,
+    hasALOutsideStatement,
+    toALReceiptStatementHistory,
+    toALReceiptStatementSubject
+} from './is-al-same-receipt-statement.ts';
 
 /**
  * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on and name a recipient of
@@ -17,6 +22,8 @@ export function validateALInboundNackAdmission(
     if (!pending) {
         return [rejectInboundNack('Inbound NACK sender has no pending obligation')];
     }
+    const history = toALReceiptStatementHistory(acks, nacks);
+    const subject = toALReceiptStatementSubject(nack);
     const issues: ALMessageRejection[] = [];
     if (!pending.expectedFromPeerIds.includes(nack.fromPeerId)) {
         issues.push(rejectInboundNack('Inbound NACK sender has no pending obligation'));
@@ -27,10 +34,10 @@ export function validateALInboundNackAdmission(
     if (pending.upwardAudiencePeerIds?.includes(nack.logicalRecipientPeerId) !== true) {
         issues.push(rejectInboundNack('Inbound NACK names no recipient of the frozen audience'));
     }
-    if (hasALOutsideStatement(pending, { acks, nacks }, nack)) {
+    if (hasALOutsideStatement(pending, history, subject)) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient already forwarded outside the audience'));
     }
-    if (hasALConfirmedStatement(acks, nack)) {
+    if (hasALConfirmedStatement(history.acks, subject)) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already forwarded'));
     }
     if (nack.reason === 'gap' && !hasGapOrderingHints(nack)) {

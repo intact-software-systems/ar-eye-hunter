@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
+    isALOwnWord,
     type ALAckStatus,
     type ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
@@ -14,7 +15,7 @@ import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts'
 import { toALInboundAckEffect, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
-import { isALOwnWord, isALSameReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
+import { toFirstOfEachALReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
 import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
@@ -204,7 +205,7 @@ function toStoredUpwardControls(
         )
         .map((ack): ALReceiptControl => ({ type: 'ack', payload: ack }));
     const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId) => toStoredOutsideControls(read, peerId));
-    return [...toFirstOfEachStatement(confirmations), ...outside];
+    return [...toFirstOfEachALReceiptStatement(confirmations), ...outside];
 }
 
 /**
@@ -220,13 +221,7 @@ function toStoredOutsideControls(read: ALInboundMessageReadDto, peerId: string):
             stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
         )
         .map((hopEnd): ALReceiptControl => ({ type: 'ack', payload: hopEnd }));
-    return toFirstOfEachStatement([...nacks, ...hopEnds]);
-}
-
-function toFirstOfEachStatement(controls: readonly ALReceiptControl[]): readonly ALReceiptControl[] {
-    return controls.filter((control, index) =>
-        controls.findIndex((prior) => isALSameReceiptStatement(prior.payload, control.payload)) === index
-    );
+    return toFirstOfEachALReceiptStatement([...nacks, ...hopEnds]);
 }
 
 /**

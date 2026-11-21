@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import { isALOwnWord, type ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import {
     toALReceiptProofRefusal,
@@ -45,10 +45,10 @@ export async function readALOutboundRecipientProof(
     ) {
         return 'carrier-authenticated';
     }
-    const { logicalRecipientPeerId, fromPeerId } = parsed.payload;
+    const { logicalRecipientPeerId } = parsed.payload;
     const msg = await input.readSentMessage();
     if (msg !== undefined && !isALCountedRecipient(msg, mode, logicalRecipientPeerId)) {
-        return fromPeerId === logicalRecipientPeerId
+        return isALOwnWord(parsed.payload)
             ? 'carrier-authenticated'
             : toALReceiptProofRefusal('unknown-key', parsed);
     }

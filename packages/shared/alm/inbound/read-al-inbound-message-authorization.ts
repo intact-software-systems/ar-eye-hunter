@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALControlMessage,
+    isALOwnWord,
     toALControlRecipientPeerId,
     type ALAckPayload,
     type ALNackPayload,
@@ -103,7 +104,7 @@ async function readALInboundControlRejection(
     }
     if (
         (control.type === 'ack' || control.type === 'nack') && source.kind === 'ws-client' &&
-        control.payload.fromPeerId !== control.payload.logicalRecipientPeerId
+        !isALOwnWord(control.payload)
     ) {
         const controlName = control.type === 'ack' ? 'acknowledgement' : 'NACK';
         return {
