@@ -63,6 +63,14 @@ export interface AlmLaneSideRun {
     readonly green: boolean;
 }
 
+/** A job the ledger does not read: still running, skipped, or a cancelled pull-request or dispatched job. */
+export interface AlmLaneLeftOutRun {
+    readonly runId: number;
+    readonly event: AlmLaneRunEvent;
+    readonly carrier: AlmConformanceCarrier;
+    readonly jobConclusion: AlmLaneJobConclusion;
+}
+
 export interface AlmLaneLedger {
     readonly carriers: readonly AlmLaneCarrierStreak[];
     /** Read from push runs only: a pull request's red run may be its own regression, caught as intended. */
@@ -70,6 +78,7 @@ export interface AlmLaneLedger {
     /** Red push runs that name no scenario or family to blame, such as a job that died before planning. */
     readonly unattributedRedRunIds: readonly number[];
     readonly sideRuns: readonly AlmLaneSideRun[];
+    readonly leftOutRuns: readonly AlmLaneLeftOutRun[];
 }
 
 export interface ComputeAlmLaneLedgerInput {
@@ -101,7 +110,13 @@ export function computeAlmLaneLedger(input: ComputeAlmLaneLedgerInput): AlmLaneL
             read.run.event === 'push'
                 ? []
                 : [{ runId: read.run.runId, event: read.run.event, carrier: read.run.carrier, green: read.green }]
-        )
+        ),
+        leftOutRuns: input.runs.filter((run) => !isReadRun(run)).map(({ runId, event, carrier, jobConclusion }) => ({
+            runId,
+            event,
+            carrier,
+            jobConclusion
+        }))
     };
 }
 

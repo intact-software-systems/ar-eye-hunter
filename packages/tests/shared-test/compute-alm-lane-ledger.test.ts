@@ -215,6 +215,7 @@ describe('computeAlmLaneLedger', () => {
         expect(ledger.carriers[0]).toEqual({ carrier: 'ws', streak: 1, lastRed: null, uncaused: [] });
         expect(ledger.unattributedRedRunIds).toEqual([]);
         expect(ledger.sideRuns).toEqual([]);
+        expect(ledger.leftOutRuns).toEqual([{ runId: 1, event: 'push', carrier: 'ws', jobConclusion }]);
     });
 
     it('reads a cancelled push job as red, and as unattributed when it has no plan', () => {
@@ -235,6 +236,7 @@ describe('computeAlmLaneLedger', () => {
 
         expect(ledger.sideRuns).toEqual([]);
         expect(ledger.unattributedRedRunIds).toEqual([]);
+        expect(ledger.leftOutRuns).toEqual([{ runId: 1, event, carrier: 'ws', jobConclusion: 'cancelled' }]);
     });
 
     it.each(['failure', 'success'] as const)(

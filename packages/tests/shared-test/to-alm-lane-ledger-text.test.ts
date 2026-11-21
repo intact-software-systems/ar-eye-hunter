@@ -27,6 +27,10 @@ const ledger: AlmLaneLedger = {
     sideRuns: [
         { runId: 9, event: 'pull_request', carrier: 'ws', green: false },
         { runId: 10, event: 'workflow_dispatch', carrier: 'rtc-with-ws-fallback', green: true }
+    ],
+    leftOutRuns: [
+        { runId: 11, event: 'pull_request', carrier: 'rtc', jobConclusion: 'in-progress' },
+        { runId: 11, event: 'pull_request', carrier: 'ws', jobConclusion: 'cancelled' }
     ]
 };
 
@@ -70,6 +74,11 @@ describe('toAlmLaneLedgerText', () => {
             '  9    pull_request       ws                    red',
             '  10   workflow_dispatch  rtc-with-ws-fallback  green',
             '',
+            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job):',
+            '  run  event         carrier  job',
+            '  11   pull_request  rtc      in-progress',
+            '  11   pull_request  ws       cancelled',
+            '',
             'Issues met while reading:',
             '  run 9 ws: ws-full-plan.json is not JSON.',
             ''
@@ -81,7 +90,8 @@ describe('toAlmLaneLedgerText', () => {
             carriers: [{ carrier: 'ws', streak: 0, lastRed: null, uncaused: [] }],
             scenarios: [],
             unattributedRedRunIds: [],
-            sideRuns: []
+            sideRuns: [],
+            leftOutRuns: []
         };
 
         expect(toAlmLaneLedgerText({ ledger: empty, commitShas: [], issues: [] }).split('\n')).toEqual([
@@ -96,6 +106,8 @@ describe('toAlmLaneLedgerText', () => {
             'Red main-push runs with nothing to attribute: none.',
             '',
             'Pull-request and dispatched runs: none.',
+            '',
+            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job): none.',
             '',
             'Issues met while reading: none.',
             ''

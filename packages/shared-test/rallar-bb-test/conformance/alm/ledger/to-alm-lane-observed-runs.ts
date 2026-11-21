@@ -20,7 +20,8 @@ export interface AlmLaneResultFile {
 
 export interface AlmLaneResultArtifact {
     readonly name: string;
-    readonly files: readonly AlmLaneResultFile[];
+    /** Null when the artifact could not be downloaded. */
+    readonly files: readonly AlmLaneResultFile[] | null;
 }
 
 /** One workflow run as GitHub reports it, with the files of its lane result artifacts. */
@@ -93,12 +94,14 @@ function toObservedRun(
 ): AlmLaneObservedRunsReading {
     const toIssue = (issue: string) => `run ${input.runId} ${read.carrier}: ${issue}`;
     const artifacts = input.artifacts.filter((artifact) => artifact.name.startsWith(toArtifactPrefix(read.carrier)));
-    const decoded = (artifacts[0]?.files ?? []).map((file) => toDecodedFile(file, read.carrier));
+    const artifact = artifacts[0];
+    const decoded = (artifact?.files ?? []).map((file) => toDecodedFile(file, read.carrier));
     const accepted = EitherCollectors.toListFoldRights(decoded);
     const plans = accepted.flatMap((file) => file.kind === 'plan' ? [file] : []);
     const results = accepted.flatMap((file) => file.kind === 'result' ? [file] : []);
     const issues = [
         ...(artifacts.length > 1 ? [toArtifactsIssue(artifacts)] : []),
+        ...(artifact?.files === null ? [`artifact ${artifact.name} could not be downloaded.`] : []),
         ...EitherCollectors.toListFoldLefts(decoded).flat(),
         ...plans.slice(1).map((plan) => `${plan.fileName} is a second plan.`),
         ...results.filter((result, index) =>

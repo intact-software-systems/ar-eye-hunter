@@ -1,4 +1,11 @@
-import type { AlmLaneCarrierStreak, AlmLaneLedger, AlmLaneRedRun } from './compute-alm-lane-ledger.ts';
+import type {
+    AlmLaneCarrierStreak,
+    AlmLaneLedger,
+    AlmLaneLeftOutRun,
+    AlmLaneRedRun,
+    AlmLaneScenarioFailures,
+    AlmLaneSideRun
+} from './compute-alm-lane-ledger.ts';
 
 /** The streak a carrier needs before its lane may become required. */
 const ALM_LANE_PROMOTION_STREAK = 10;
@@ -22,30 +29,15 @@ export function toAlmLaneLedgerText(input: ToAlmLaneLedgerTextInput): string {
     const sections = [
         [toHeaderLine(input.commitShas)],
         ['Streak of green main-push runs, per carrier:', ...ledger.carriers.flatMap(toCarrierLines)],
-        toSection(
-            'Scenarios failed or not run in main-push runs',
-            toColumnLines([
-                ['scenario', 'failed in', 'not run in', 'cause'],
-                ...ledger.scenarios.map((failures) => [
-                    failures.scenario,
-                    toRunIdsText(failures.failedRunIds),
-                    toRunIdsText(failures.notRunRunIds),
-                    failures.hasCause ? 'yes' : 'no'
-                ])
-            ])
-        ),
+        toSection('Scenarios failed or not run in main-push runs', toScenarioLines(ledger.scenarios)),
         toSection(
             'Red main-push runs with nothing to attribute',
             ledger.unattributedRedRunIds.map((runId) => `  run ${runId}`)
         ),
+        toSection('Pull-request and dispatched runs', toSideRunLines(ledger.sideRuns)),
         toSection(
-            'Pull-request and dispatched runs',
-            toColumnLines([
-                ['run', 'event', 'carrier', 'result'],
-                ...ledger.sideRuns.map((
-                    run
-                ) => [String(run.runId), run.event, run.carrier, run.green ? 'green' : 'red'])
-            ])
+            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job)',
+            toLeftOutRunLines(ledger.leftOutRuns)
         ),
         toSection('Issues met while reading', input.issues.map((issue) => `  ${issue}`))
     ];
@@ -88,6 +80,32 @@ function toKeyListLines(label: string, keys: readonly string[]): readonly string
         ...keys.slice(0, ALM_LANE_PRINTED_KEYS).map((key) => `      ${key}`),
         ...(hidden > 0 ? [`      and ${hidden} more`] : [])
     ];
+}
+
+function toScenarioLines(scenarios: readonly AlmLaneScenarioFailures[]): readonly string[] {
+    return toColumnLines([
+        ['scenario', 'failed in', 'not run in', 'cause'],
+        ...scenarios.map((failures) => [
+            failures.scenario,
+            toRunIdsText(failures.failedRunIds),
+            toRunIdsText(failures.notRunRunIds),
+            failures.hasCause ? 'yes' : 'no'
+        ])
+    ]);
+}
+
+function toSideRunLines(sideRuns: readonly AlmLaneSideRun[]): readonly string[] {
+    return toColumnLines([
+        ['run', 'event', 'carrier', 'result'],
+        ...sideRuns.map((run) => [String(run.runId), run.event, run.carrier, run.green ? 'green' : 'red'])
+    ]);
+}
+
+function toLeftOutRunLines(leftOutRuns: readonly AlmLaneLeftOutRun[]): readonly string[] {
+    return toColumnLines([
+        ['run', 'event', 'carrier', 'job'],
+        ...leftOutRuns.map((run) => [String(run.runId), run.event, run.carrier, run.jobConclusion])
+    ]);
 }
 
 /** A titled list of lines, or one line saying the list is empty. */

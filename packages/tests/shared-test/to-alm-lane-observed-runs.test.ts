@@ -177,6 +177,13 @@ describe('toAlmLaneObservedRuns', () => {
         ]);
     });
 
+    it('names an artifact that could not be downloaded and reads the job as having no files', () => {
+        const reading = toAlmLaneObservedRuns(toInput({ artifacts: [{ ...wsArtifact, files: null }] }));
+
+        expect(reading.runs[0]?.plan).toBeNull();
+        expect(reading.issues).toEqual(['run 7 ws: artifact alm-lane-result-ws-full-merge-sha could not be downloaded.']);
+    });
+
     it('reads no run for an event the ledger does not read', () => {
         const reading = toAlmLaneObservedRuns(toInput({ event: 'schedule' }));
 
