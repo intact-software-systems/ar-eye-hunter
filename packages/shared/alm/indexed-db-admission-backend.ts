@@ -75,6 +75,7 @@ export namespace IndexedDbAdmissionBackend {
         readonly dbName: string;
         readonly storeName: string;
         readonly nowMs: () => number;
+        readonly workNowMs: () => number;
         readonly newWriteToken: () => string;
         readonly observer: IndexedDbOperationObserver;
         readonly schemaId: string;
@@ -110,7 +111,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             return opened.db;
         });
         this.workQueue = new IndexedDbQueueBox({
-            now: () => Temporal.Instant.fromEpochMilliseconds(this.#nowMs()),
+            now: () => Temporal.Instant.fromEpochMilliseconds(input.workNowMs()),
             connection: this.#connection,
             storeName: AL_ADMISSION_WORK_STORE_NAME,
             completedRetention: AL_ADMISSION_WORK_COMPLETED_RETENTION,

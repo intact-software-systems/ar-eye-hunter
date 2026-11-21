@@ -71,6 +71,7 @@ async function createObserverGate(): Promise<ObserverGateFixture> {
         schemaId: AL_ADMISSION_SCHEMA_ID,
         onStorageReset: () => {},
         nowMs: () => 10,
+        workNowMs: () => 10,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: {
             observe: () => {

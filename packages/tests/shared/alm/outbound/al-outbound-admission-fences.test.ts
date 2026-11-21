@@ -439,6 +439,7 @@ function createIndexedDbFenceBackend(dbName: string): Omit<FenceFixture, 'store'
             dbName,
             storeName: ADMISSION_STORE_NAME,
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         }),

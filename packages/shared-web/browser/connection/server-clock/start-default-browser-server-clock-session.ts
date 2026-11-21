@@ -5,12 +5,12 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { BrowserServerClockSession } from './browser-server-clock-session.ts';
 import { BrowserServerClock } from './browser-server-clock.ts';
 
-import { readSocketClockSample } from './read-socket-clock-sample.ts';
+import { readSocketClockSample, type ReadSocketClockSampleInput } from './read-socket-clock-sample.ts';
 
 export interface StartDefaultBrowserServerClockSessionInput {
     readonly baseUrl: string;
     readonly serverPeerId: string;
-    readonly readSocket: () => WebSocket | undefined;
+    readonly readSocket: ReadSocketClockSampleInput['readSocket'];
     readonly signal: AbortSignal | undefined;
 }
 
@@ -43,15 +43,18 @@ export async function startDefaultBrowserServerClockSession(
         timers: createDefaultBackgroundTimers(),
         // Leave ten seconds of the existing validity budget for a delayed timer, a timeout and a retry.
         refreshIntervalMs: BROWSER_SERVER_CLOCK_DEFAULTS.policy.maxAgeMs - 10_000,
+        // A tab whose socket was replaced by another tab of the same session keeps its clock over HTTP.
         renewClock: () =>
-            clock.refresh((signal, nowMonotonicMs) =>
-                readSocketClockSample({
-                    readSocket: input.readSocket,
-                    expectedServerPeerId: input.serverPeerId,
-                    signal,
-                    nowMonotonicMs
-                })
-            )
+            input.readSocket()?.readyState === 1
+                ? clock.refresh((signal, nowMonotonicMs) =>
+                    readSocketClockSample({
+                        readSocket: input.readSocket,
+                        expectedServerPeerId: input.serverPeerId,
+                        signal,
+                        nowMonotonicMs
+                    })
+                )
+                : clock.refresh()
     });
     const signal = input.signal;
     if (signal) {

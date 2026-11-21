@@ -122,6 +122,7 @@ function createStore(storage: 'memory' | 'indexeddb'): ALOutboundRuntimeStores<O
             dbName: `supersedence-${crypto.randomUUID()}`,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

@@ -43,6 +43,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -108,6 +109,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
             dbName: dbName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });

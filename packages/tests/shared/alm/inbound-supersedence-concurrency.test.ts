@@ -207,6 +207,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<
             dbName: namespace,
             storeName: 'admission',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         })

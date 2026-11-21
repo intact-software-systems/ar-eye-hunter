@@ -136,6 +136,7 @@ function createBackend(observer: IndexedDbOperationObserver): IndexedDbAdmission
         dbName: `storage-faults-${crypto.randomUUID()}`,
         storeName: 'entries',
         nowMs: Date.now,
+        workNowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer
     });

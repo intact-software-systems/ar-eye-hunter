@@ -215,6 +215,7 @@ function createIndexedDbAdmissionBackend(
         dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: input.nowMs,
+        workNowMs: input.workNowMs,
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: input.observer,
         schemaId: input.schemaId,

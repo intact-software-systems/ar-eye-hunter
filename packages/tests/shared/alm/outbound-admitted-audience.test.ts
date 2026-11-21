@@ -192,6 +192,7 @@ describe('captured outbound audience read', () => {
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {},
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: {
                 observe: (operation) => {

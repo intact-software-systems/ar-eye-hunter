@@ -117,6 +117,7 @@ describe('computeALCheckpointMutations', () => {
             dbName,
             storeName: 'entries',
             nowMs: () => 1_000,
+            workNowMs: () => 1_000,
             newWriteToken: () => 'unused',
             observer: createPassThroughIndexedDbOperationObserver(),
             schemaId: AL_ADMISSION_SCHEMA_ID,

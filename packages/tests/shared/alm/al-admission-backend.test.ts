@@ -51,6 +51,7 @@ const backends: readonly BackendCase[] = [
                 dbName: `admission-decode-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: Date.now,
+                workNowMs: Date.now,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             })
@@ -128,6 +129,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -160,6 +162,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -212,6 +215,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -232,6 +236,7 @@ describe('admission storage envelopes', () => {
                 dbName: `admission-clock-${crypto.randomUUID()}`,
                 storeName: 'entries',
                 nowMs: clock,
+                workNowMs: clock,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             })
@@ -283,6 +288,7 @@ describe('admission storage envelopes', () => {
             dbName: `admission-async-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -303,6 +309,7 @@ describe('admission storage envelopes', () => {
             dbName: `admission-async-success-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -322,6 +329,7 @@ describe('admission storage envelopes', () => {
             dbName: `admission-expired-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -341,6 +349,7 @@ describe('admission storage envelopes', () => {
                 dbName: databaseName,
                 storeName: 'entries',
                 nowMs: () => 10,
+                workNowMs: () => 10,
                 newWriteToken: crypto.randomUUID.bind(crypto),
                 observer: createPassThroughIndexedDbOperationObserver()
             });
@@ -408,6 +417,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -544,6 +554,7 @@ describe('admission storage envelopes', () => {
             dbName: `admission-recreated-row-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -570,6 +581,7 @@ describe('admission storage envelopes', () => {
             dbName: `admission-listed-removal-${crypto.randomUUID()}`,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -596,6 +608,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
@@ -615,6 +628,7 @@ describe('admission storage envelopes', () => {
             dbName: databaseName,
             storeName: 'entries',
             nowMs: Date.now,
+            workNowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         });
