@@ -1026,6 +1026,12 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(render?.run).toContain('printf \'RALLAR_API_SERVER_TIMING=%s\\n\' "$(quote "${RALLAR_API_SERVER_TIMING}")"');
     });
 
+    it('offers server timing at the manual boundary, off by default, and hands it to the runner', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        expect(manual.on.workflow_dispatch?.inputs?.server_timing).toMatchObject({ type: 'boolean', default: false });
+        expect(manual.jobs.run.with?.server_timing).toBe('${{ inputs.server_timing }}');
+    });
+
     it('binds external-agent and split prepare/run operator modes at their public workflow fields', async () => {
         const manual = await readWorkflow(distributedWorkflowPath);
         const runner = await readWorkflow(distributedRunnerWorkflowPath);
@@ -1496,6 +1502,29 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(args).toContain('stop_after_run=false');
         expect(args).toContain('run_id=debug-keep-headless');
         expect(stdout).toContain('Stop headless: false');
+    });
+
+    it('asks for the API timing logs only when --server-timing is given', async (context) => {
+        const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-server-timing-gh-', secretResponses: completeSecretResponses });
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                dispatchScriptPath,
+                'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+                '--server-timing',
+                '--run-id',
+                'timing-on'
+            ],
+            options: {
+                cwd: repoRoot,
+                env: fixture.environment
+            }
+        });
+
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('server_timing=true');
+        expect(args).toContain('run_id=timing-on');
+        expect(stdout).toContain('Timing   : API timing logs on');
     });
 
     it('rejects invalid timeout inputs before invoking gh', async (context) => {

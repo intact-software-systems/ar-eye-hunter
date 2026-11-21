@@ -180,11 +180,23 @@ with `--register-before-login false` (or
 `-f register_before_login=false`) when the target API already has
 persistent pre-provisioned users; those runs keep signing every agent in as the
 shared `RALLAR_BLACK_BOX_USERNAME`. With registration on, each hosted agent
-registers and signs in as its own user named after its agent id
-(`controller-01`, `controller-02`, ...) with the shared password, matching the
-all-local lifecycle and the GitHub Free job, because every WebSocket connect of
-one shared principal fans out a full snapshot to all of that principal's
-sessions on the serial AppInbox and stalls a 15-agent room join. The
+registers and signs in as its own user with the shared password, as the
+all-local lifecycle and the GitHub Free job do, because every WebSocket connect
+of one shared principal fans out a full snapshot to all of that principal's
+sessions on the serial AppInbox and stalls a 15-agent room join. The user is
+named after the agent id and the run's room: `controller-01-<digest>`,
+`controller-02-<digest>`, ..., where the digest is the first twelve hex digits
+of the room id's SHA-256. Member rows never expire and a connect lists every
+group its user is a member of, so a user shared by runs in different rooms
+would carry each earlier room into every later connect. A default dispatch has
+a room of its own and therefore users no earlier run used; a run that reuses a
+room with `--room-id` reuses that room's users, so a stable room's roster does
+not grow with each run. Only a spawned run (`agent_source=hetzner`) with a
+blank `room_id` gets a room of its own: mixed and external runs keep the
+manifest's room, and `hetzner-headless-browsers.yml` defaults to
+`hetzner-headless-room`, so their agents sign in as that room's users every
+time. Each run in a new room leaves its users in the kept store, one per
+agent; nothing removes them. Agent ids stay `controller-NN`. The
 `RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
 controller smoke and other operator phases. The ALM scale recipes (19–21 and
 their diagnostic checkpoints) sign in as their first step, a read of the
@@ -266,6 +278,14 @@ defaults `register_before_login=true` and `stop_after_run=true`. Passing only
 `install_playwright=false` is also supplied. Pass `--keep-headless` only when
 you intentionally want to leave browser processes running after artifact capture
 for live debugging or back-to-back warm experiments.
+
+Pass `--server-timing` to attribute where a run's time goes on the server. It
+sends `server_timing=true`, the run rolls the API out with its timing and
+AppInbox phase timing logs on, and the operation artifact's `api-journal.log`
+then carries one line per HTTP request and per AppInbox phase. The flag is sent
+only when given, so the helper still dispatches a ref whose workflow has no such
+input. The next run without it rolls the API out uninstrumented again.
+
 The distributed recipe runner sends control-server admin API calls to the
 `control_http_url` input (default `https://control.rallar.intactss.com`)
 because distributed-run creation requires TLS; `control_url` (default

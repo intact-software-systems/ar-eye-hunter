@@ -185,8 +185,8 @@ jobs:
             echo "::error::target_agent_count must be a positive integer." >&2
             exit 1
           fi
-          if [[ "${TARGET_AGENT_COUNT}" -gt 1 && "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then
-            echo "::error::GitHub free multi-agent runs require register_before_login=true." >&2
+          if [[ "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then
+            echo "::error::GitHub free runs require register_before_login=true: each agent signs in as a user named after its room, which only this run registers." >&2
             exit 1
           fi
           if [[ ! -r "${MANIFEST_PATH}" ]]; then
@@ -364,8 +364,10 @@ jobs:
           RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
           RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+          RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
         run: |
           set -euo pipefail
+          source scripts/hosted-rallar/controller/rallar-headless-worker-env.sh
           quote() { printf '%q' "$1"; }
 
           token_env_file="${RUNNER_TEMP}/rallar-github-headless-token.env"
@@ -381,6 +383,7 @@ jobs:
           for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
             ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
             agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
+            username="$(to_rallar_headless_worker_agent_username "${agent_id}" "${RALLAR_BLACK_BOX_ROOM_ID}")"
             encoded_run_id="$(jq -nr --arg v "${RALLAR_BLACK_BOX_RUN_ID}" '$v|@uri')"
             encoded_agent_id="$(jq -nr --arg v "${agent_id}" '$v|@uri')"
             token_url="${RALLAR_CONTROL_HTTP_URL%/}/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens"
@@ -393,7 +396,7 @@ jobs:
             echo "::add-mask::${token}"
             env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"
             printf '%s=%s\n' "${env_key}" "$(quote "${token}")" >> "${token_env_file}"
-            printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${agent_id}")" >> "${token_env_file}"
+            printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${username}")" >> "${token_env_file}"
             printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"
           done
 
@@ -403,25 +406,29 @@ jobs:
         env:
           RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
-          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
-          RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
           RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
         run: |
           set -euo pipefail
           # The recipe's sign-in then logs in only: one password derivation per agent instead of two.
+          # The users are the ones the mint step named for the worker, read back rather than named again.
+          source "${RUNNER_TEMP}/rallar-github-headless-token.env"
           api_base_url="${RALLAR_API_BASE_URL%/}"
           for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
-            ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
-            agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
-            request_id="$(printf 'register-%s-%s' "${agent_id}" "${RALLAR_BLACK_BOX_RUN_ID}" | tr -c 'A-Za-z0-9_-' '-')"
-            response_file="${RUNNER_TEMP}/rallar-register-${agent_id}.json"
-            if ! status="$(AGENT_ID="${agent_id}" jq -nc '{username: env.AGENT_ID, password: env.RALLAR_BLACK_BOX_PASSWORD}' |
+            username_key="RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME"
+            username="${!username_key-}"
+            if [[ -z "${username}" ]]; then
+              echo "::error::The minted agent env file has no ${username_key}." >&2
+              exit 1
+            fi
+            request_id="$(printf 'register-%s-%s' "${username}" "${RALLAR_BLACK_BOX_RUN_ID}" | tr -c 'A-Za-z0-9_-' '-')"
+            response_file="${RUNNER_TEMP}/rallar-register-${username}.json"
+            if ! status="$(AGENT_USERNAME="${username}" jq -nc '{username: env.AGENT_USERNAME, password: env.RALLAR_BLACK_BOX_PASSWORD}' |
               curl -sS --max-time 60 -o "${response_file}" -w '%{http_code}' -X POST \
                 -H 'content-type: application/json' --data @- \
                 "${api_base_url}/api/auth/register/requests/${request_id:0:128}")"; then
               rm -f "${response_file}"
-              echo "::error::Registering ${agent_id} failed before an HTTP response." >&2
+              echo "::error::Registering ${username} failed before an HTTP response." >&2
               exit 1
             fi
             existing_user=false
@@ -444,11 +451,11 @@ jobs:
             fi
             rm -f "${response_file}"
             if [[ "${status}" == 201 ]]; then
-              echo "Registered ${agent_id}."
+              echo "Registered ${username}."
             elif [[ "${status}" == 409 && "${existing_user}" == true ]]; then
-              echo "${agent_id} is already registered."
+              echo "${username} is already registered."
             else
-              echo "::error::Registering ${agent_id} returned HTTP ${status}." >&2
+              echo "::error::Registering ${username} returned HTTP ${status}." >&2
               exit 1
             fi
           done
