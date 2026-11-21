@@ -82,7 +82,7 @@ function validateAcknowledgement(
 /**
  * Any other NACK, and a repair request, comes from a peer a repair may come from; a gap NACK a relay re-sends for a
  * recipient below it comes from a next hop and names a recipient the receipt still owes, as an outside-audience NACK
- * does (S4ii-R3). Its ordering hints name the retained message's track.
+ * does, and is refused under `hop` and `subtree` (S4ii-R3, D582). Its ordering hints name the retained message's track.
  */
 function validateRepairRequest(
     read: ALControlAdmissionRead,

@@ -1427,8 +1427,9 @@ with the NACK history flooded the same way and about 3 ms per admission on a
 full history, bounded by the histories and paced by the origin's retries
 (D606); part C encodes each control once per scan, and a retried copy's
 grouping, `toFirstOfEachALReceiptStatement`, compares only within one
-recipient. In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
-still moves another next hop outside (pinned); a forger that is the recipient's
+recipient. In every case the origin counts only what verifies. Under `hop` and `subtree` only a hop's own word
+speaks for it: a next hop's hop-end that names another recipient moves nobody outside, and its `not-subscribed` or
+gap NACK that names another recipient is refused, so relayed gap recovery there stays closed (D582); a forger that is the recipient's
 own parent is on its path and can still withhold the copy or its control, which
 the origin's timeout, retry and fallback cover; and a recipient's redundant own
 NACK after its own hop-end is refused at a relay as the same statement, as

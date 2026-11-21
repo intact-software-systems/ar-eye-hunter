@@ -301,15 +301,33 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect(receipt?.ackedPeerIds).not.toContain('c');
     });
 
-    it('Limit: under hop, a next hop\'s unsigned not-subscribed NACK that names another next hop moves it outside', async () => {
+    it.each(['hop', 'subtree'] as const)(
+        'under %s, a next hop\'s unsigned not-subscribed NACK that names another next hop is refused and moves nobody outside',
+        async (algo) => {
+            const { origin } = await createStarOrigin();
+            const message = { ...createOriginReceiverMulticast(`hop-nack-other-${algo}`), qos: { ack: { algo } } } as const;
+            expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+            const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
+
+            expect(await origin.manager.acceptControlMessage(toControlMessage(nack, algo))).toEqual({
+                kind: 'rejected',
+                reason: expect.stringContaining('speaks for another recipient under a hop receipt')
+            });
+
+            const receipt = await readReceipt(origin, message);
+            expect(receipt?.outsideAudiencePeerIds).toEqual([]);
+            expect(receipt?.expectedPeerIds).toContain('c');
+        }
+    );
+
+    it('under hop, c\'s own not-subscribed NACK still moves c outside', async () => {
         const { origin } = await createStarOrigin();
-        const message = { ...createOriginReceiverMulticast('hop-nack-other'), qos: { ack: { algo: 'hop' } } } as const;
+        const message = { ...createOriginReceiverMulticast('hop-nack-own'), qos: { ack: { algo: 'hop' } } } as const;
         expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
-        const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
+        const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
 
-        await origin.manager.acceptControlMessage(toControlMessage(nack, 'hop'));
+        expect(await origin.manager.acceptControlMessage(toControlMessage(nack, 'hop'))).toEqual({ kind: 'committed' });
 
-        // S8-R1 (a) keeps `hop` on channel trust: the next hop's word about another next hop stands, unsigned.
         expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
     });
 

@@ -7,8 +7,10 @@ import type { ALOutboundControlSource } from '@shared/alm/outbound/compute-al-ou
 
 import {
     createDefaultOutboundTestRuntime,
+    createDefaultOutboundTestStores,
     createOutboundMessage,
-    enqueueOutboundOrThrow
+    enqueueOutboundOrThrow,
+    type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
@@ -23,30 +25,39 @@ const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     mode: 'receiver'
 };
 
+/** A `hop` or `subtree` receipt that counts the message's two next hops. */
+function toHopTracking(mode: 'hop' | 'subtree'): ALOutboundAckTrackingPlan {
+    return { ...RECEIVER_TRACKING, expectedPeerIds: ['h1', 'h2'], nextHopPeerIds: ['h1', 'h2'], mode };
+}
+
 /** The origin's own track `game-1`, epoch 1, as the receiver's gap NACK names it. */
 const TRACK_KEY = 'game-1:self:1';
 
 interface OriginFixture {
     readonly msg: ALMessage;
+    readonly stores: OutboundTestStores;
     accept(control: ALMessage, source?: ALOutboundControlSource): Promise<string>;
 }
 
-/** Sequence 3 of the origin's track, sent with the receipt above. */
-async function createOrderedOrigin(id: string): Promise<OriginFixture> {
+/** Sequence 3 of the origin's track, sent with the receipt `ackTracking`, the `receiver` receipt above by default. */
+async function createOrderedOrigin(id: string, ackTracking = RECEIVER_TRACKING): Promise<OriginFixture> {
+    const stores = createDefaultOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
+        stores,
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking: RECEIVER_TRACKING
+            ackTracking
         })
     });
     const msg: ALMessage = { ...createOutboundMessage(id), ordering: { orderingKey: 'game-1', epoch: 1, seq: 3 } };
     await enqueueOutboundOrThrow(runtime, msg);
     return {
         msg,
+        stores,
         accept: async (control, source = 'peer') => {
             const result = await runtime.acceptControlMessage(control, source);
             return result.kind === 'rejected' ? result.reason : result.kind;
@@ -222,6 +233,32 @@ describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
             .toBe('committed');
     });
 });
+
+describe('a gap NACK a next hop sends under a hop receipt', () => {
+    it.each(['hop', 'subtree'] as const)('under %s, a next hop\'s gap NACK that names another hop is refused', async (mode) => {
+        const origin = await createOrderedOrigin(`hop-gap-other-${mode}`, toHopTracking(mode));
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'h1', logicalRecipientPeerId: 'h2' })))
+            .toContain('AL gap NACK speaks for another recipient under a hop receipt');
+        expect(await readRepairHintRows(origin.stores)).toEqual([]);
+    });
+
+    it.each(['hop', 'subtree'] as const)('under %s, a next hop\'s own gap NACK raises its repair hint', async (mode) => {
+        const origin = await createOrderedOrigin(`hop-gap-own-${mode}`, toHopTracking(mode));
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'h2', logicalRecipientPeerId: 'h2' })))
+            .toBe('committed');
+        expect(await readRepairHintRows(origin.stores)).toHaveLength(1);
+    });
+});
+
+/** Every retained repair-hint work row. */
+async function readRepairHintRows(stores: OutboundTestStores): Promise<readonly string[]> {
+    const rows = await Promise.all(
+        (await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key))
+    );
+    return rows.flatMap((row) => row?.resource.includes('"kind":"repair-hint"') ? [row.resource] : []);
+}
 
 describe('a gap request asked again at the origin', () => {
     it('refuses a gap NACK equal to one it admitted, and admits the same NACK with the next number', async () => {

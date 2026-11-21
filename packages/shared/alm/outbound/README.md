@@ -74,8 +74,9 @@ filed again. Both controls carry the same `gapRequestNumber`, 1 for every report
 each renewal of a gap that stands ([inbound README](../inbound/README.md), "Ordering gaps and resynchronization"), so a
 renewal is a new hint; a hint names the number exactly when it names a missing range, so the hint of a gap NACK that
 names no range carries none. A relay's gap NACK for a recipient below it also names that recipient
-(`logicalRecipientPeerId`, absent when the requester is the recipient): the origin admits it from a next hop
-for a recipient the receipt still owes, the responder admits the copy on that recipient while sending it to the
+(`logicalRecipientPeerId`, absent when the requester is the recipient): under a logical receipt the origin admits it
+from a next hop for a recipient the receipt still owes; under `hop` and `subtree` it refuses it as one hop speaking for
+another, so relayed gap recovery stays closed there (D582). The responder admits the copy on that recipient while sending it to the
 relay, and the recipient joins the hint's identity, so each recipient a relay reports one gap for is its own
 hint and a hint without one keeps its identity. One execution of a hint retransmits at most
 `AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
@@ -1559,8 +1560,8 @@ names no first attempt. The copies a gap repair or a not-yet-in-sync retry queue
 release can still hand the carrier more than one frame of it. A deadline that runs in the batch that hands the copy
 over reads its row reserved and waits one timeout more.
 
-A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop forwarded it: it comes from a
-next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
+A `not-subscribed` NACK speaks for one recipient, as an ACK does: under a logical receipt whichever hop forwarded it,
+under `hop` and `subtree` only from the recipient itself. It comes from a next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
 a hop every frame passes), and a WS session's NACK speaks only for itself; it moves a recipient the receipt still owes
 into the row's `outsideAudiencePeerIds` and is refused for any other peer, a repeat or a confirmed one, and no ACK
 confirms a recipient after it. A dishonest peer can thus remove itself. Under a `receiver` or `leader` receipt on RTC
@@ -1571,9 +1572,14 @@ while the receipt still owes that recipient it also stands for the NACK, from th
 relayed NACK may come from
 ([`isALOutboundRecipientControlSender`](./control/is-al-outbound-expected-repair-peer.ts)), so a lost NACK records
 the recipient outside at once, as every relay reads it
-([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)). The forwarded form is read
-only under a logical receipt; under `hop` and `subtree` only a hop's own hop-end stands for its NACK
-([`isALOutboundImpliedNotSubscribedAck`](./control/is-al-outbound-implied-not-subscribed-ack.ts)).
+([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)). One own-word rule covers the
+hop-end, the outside-audience NACK and the relayed gap NACK
+([`isALReceiptModeOwnWord`](../delivery/is-al-receipt-mode-own-word.ts)): under a logical receipt, whose counted
+recipients sign their own, any hop's control speaks for its recipient; under `hop` and `subtree` only the recipient's
+own control on its own channel does, so one hop cannot move another outside
+([`isALOutboundImpliedNotSubscribedAck`](./control/is-al-outbound-implied-not-subscribed-ack.ts)), and a hop's NACK
+naming another recipient is refused `unauthorized`
+([`validateALOutboundRelayedNack`](./control/validate-al-outbound-relayed-nack.ts)).
 The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
 the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
 every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).
