@@ -33,7 +33,6 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { Timers } from '@shared/resilience/timers.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WsCapturedAudienceReadDeadlineError } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import type {
@@ -45,6 +44,8 @@ import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-que
 import type { WsOutsideAudienceJudgement } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
 import { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+import { createManualTimers } from '../../../shared/resilience/manual-timers.ts';
 
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
@@ -60,12 +61,6 @@ interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
 interface PublishedQueueMessage {
     readonly channel: string;
     readonly message: QueueBoxPubSubMessage;
-}
-
-interface ScheduledRun {
-    readonly delayMs: number;
-    readonly run: () => void | Promise<void>;
-    cancelled: boolean;
 }
 
 describe('QueueBoxPubSubBridge', () => {
@@ -457,7 +452,7 @@ describe('QueueBoxPubSubBridge', () => {
             loggedErrors.push([message, error instanceof WsCapturedAudienceReadDeadlineError]);
         });
         onTestFinished(() => consoleError.mockRestore());
-        const scheduled: ScheduledRun[] = [];
+        const timers = createManualTimers(1_000);
         const service = createTestQueueBoxPubSubWsService({
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
             readAudience: async () => ['late'],
@@ -478,7 +473,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            timers: createManualTimers(scheduled),
+            timers,
             filterEligibleCapturedSessionIds: async (input) => {
                 rechecks.push(input.message.id.msgId);
                 if (!socketOpened) {
@@ -496,10 +491,10 @@ describe('QueueBoxPubSubBridge', () => {
         socketOpened = true;
         service.socket.expectedConnections.open({ id: 'late', generationId: 'generation' });
         await expect.poll(() => rechecks).toEqual([stalledMsgId, nextMsgId, stalledMsgId]);
+        expect(timers.pendingCount()).toBe(1);
+        await timers.advance(4_999);
         expect(held).toEqual([]);
-        const pending = scheduled.filter((run) => !run.cancelled);
-        expect(pending.map((run) => run.delayMs)).toEqual([5_000]);
-        await pending[0].run();
+        await timers.advance(1);
 
         await expect.poll(() => held).toEqual([nextMsgId]);
         expect(loggedErrors).toEqual([['Held WebSocket send failed:', true]]);
@@ -1552,20 +1547,6 @@ describe('the captured audience of a cluster publication', () => {
         expect(sent).toEqual([]);
     });
 });
-
-/** Timers whose scheduled runs fire only when the test runs them; a cancel marks its run. */
-function createManualTimers(scheduled: ScheduledRun[]): Timers {
-    return {
-        nowMs: () => 1_000,
-        schedule: (run, delayMs) => {
-            const scheduledRun: ScheduledRun = { delayMs, run, cancelled: false };
-            scheduled.push(scheduledRun);
-            return () => {
-                scheduledRun.cancelled = true;
-            };
-        }
-    };
-}
 
 function createBridge(): TestQueueBoxPubSubBridge {
     let subscriber: Parameters<QueueBoxPubSubBridge['subscribe']>[1] | undefined;

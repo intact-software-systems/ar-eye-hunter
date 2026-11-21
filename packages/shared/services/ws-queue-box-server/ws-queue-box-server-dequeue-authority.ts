@@ -160,11 +160,10 @@ export class WsQueueBoxServerDequeueAuthority {
     /**
      * The row's admitted audience as this attempt finds it (D498): durable presence judges every captured row at the
      * dequeue and the retry; this instance's sockets judge a frozen-audience row at a send, where any other row keeps
-     * its captured audience. A re-check that cannot read, or does not answer within the deadline, rejects, so the row waits
-     * for its retry. With no filters
-     * wired a frozen row sends nobody and any other row keeps its captured audience: a composition with no filters
-     * declares no exclusion, its sessions stay expected. A session the re-check drops is sent nothing, and its caller
-     * records it outside the audience of the receipt its admission wrote (S4-R9).
+     * its captured audience. A re-check that cannot read, or does not answer within the deadline, rejects, so the row
+     * waits for its retry. With no filters wired a frozen row sends nobody and any other row keeps its captured
+     * audience: a composition with no filters declares no exclusion, its sessions stay expected. A session the re-check
+     * drops is sent nothing, and its caller records it outside the audience of the receipt its admission wrote (S4-R9).
      */
     async readCurrentAudience(
         message: ALMessage,

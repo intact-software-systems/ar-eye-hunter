@@ -13,28 +13,14 @@ import type {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerDequeueAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 
+import { createManualTimers } from '../resilience/manual-timers.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 /** `a` published to `b`, `c` and `d`; `b` and `d` are live somewhere, and only `b`'s socket is open on this instance. */
 const ADMITTED = { admittedAudience: ['b', 'c', 'd'], admittedConnectionGenerationIds: undefined, recipientScope: undefined, sessionInvalidation: undefined };
 const keepsBAndD: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId !== 'c'));
 const keepsB: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId === 'b'));
 const KEEPS_B_AND_D: WsCapturedRecipientEligibilityFilters = { durable: keepsBAndD, local: keepsB };
-
-interface ScheduledRun {
-    readonly delayMs: number;
-    readonly run: () => void | Promise<void>;
-}
-
-/** Timers whose scheduled runs fire only when the test runs them. */
-function createManualTimers(scheduled: ScheduledRun[]): Timers {
-    return {
-        nowMs: () => 1_000,
-        schedule: (run, delayMs) => {
-            scheduled.push({ delayMs, run });
-            return () => undefined;
-        }
-    };
-}
 
 function createAuthority(
     frozen: boolean,
@@ -115,30 +101,40 @@ describe('the audience one dequeue attempt finds for a row', () => {
     });
 
     it('rejects the attempt at the read deadline when the durable re-check never settles, so the row retries', async () => {
-        const scheduled: ScheduledRun[] = [];
+        const timers = createManualTimers(1_000);
         const never: WsCapturedRecipientEligibilityFilter = () => new Promise(() => undefined);
-        const authority = createAuthority(true, { durable: never, local: keepsB }, createManualTimers(scheduled));
+        const authority = createAuthority(true, { durable: never, local: keepsB }, timers);
+        const settlements: string[] = [];
 
         const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
-        expect(scheduled.map((run) => run.delayMs)).toEqual([5_000]);
-        await scheduled[0].run();
+        read.then(() => settlements.push('resolved'), () => settlements.push('rejected'));
+        await timers.advance(4_999);
+        expect(settlements).toEqual([]);
+        await timers.advance(1);
 
         await expect(read).rejects.toBeInstanceOf(WsCapturedAudienceReadDeadlineError);
+        expect(settlements).toEqual(['rejected']);
     });
 
-    it('ignores a re-check that settles after its deadline', async () => {
-        const scheduled: ScheduledRun[] = [];
-        let settleLate: (sessionIds: readonly string[]) => void = () => undefined;
-        const late: WsCapturedRecipientEligibilityFilter = () =>
-            new Promise((resolve) => {
-                settleLate = resolve;
-            });
-        const authority = createAuthority(true, { durable: late, local: keepsB }, createManualTimers(scheduled));
+    it.each(['resolves', 'rejects'] as const)(
+        'ignores a re-check that %s after its deadline: the attempt already rejected, and nothing late surfaces',
+        async (lateSettlement) => {
+            const timers = createManualTimers(1_000);
+            let settleLate: () => void = () => undefined;
+            const late: WsCapturedRecipientEligibilityFilter = (captured) =>
+                new Promise((resolve, reject) => {
+                    settleLate = lateSettlement === 'resolves'
+                        ? () => resolve(captured.candidateSessionIds)
+                        : () => reject(new Error('snapshot probe failed late'));
+                });
+            const authority = createAuthority(true, { durable: late, local: keepsB }, timers);
 
-        const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
-        await scheduled[0].run();
-        settleLate(['b', 'c', 'd']);
-
-        await expect(read).rejects.toBeInstanceOf(WsCapturedAudienceReadDeadlineError);
-    });
+            const read = authority.readCurrentAudience(feedEvent(), ADMITTED, 'durable');
+            await timers.advance(5_000);
+            await expect(read).rejects.toBeInstanceOf(WsCapturedAudienceReadDeadlineError);
+            settleLate();
+            // A late rejection nobody observed would fail the run as unhandled once this macrotask turn ends.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+    );
 });
