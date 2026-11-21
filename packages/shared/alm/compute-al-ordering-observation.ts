@@ -6,7 +6,11 @@ import type {
     ALOrderingTrackSnapshot,
     ALSeqRange
 } from '../al-contracts/al-runtime.ts';
-import { resolveALOrderingPriorSeq, toALOrderingTrackKey } from '../al-contracts/al-runtime.ts';
+import {
+    isALOrderingSnapshotLive,
+    resolveALOrderingPriorSeq,
+    toALOrderingTrackKey
+} from '../al-contracts/al-runtime.ts';
 
 export interface ComputeALOrderingObservationInput {
     readonly snapshot: ALOrderingTrackSnapshot | undefined;
@@ -50,10 +54,9 @@ const UNTRACKED: ALOrderingAcceptance = Object.freeze({
 /**
  * A recipient opens a recorded track at its first copy (`entered`) unless that copy's record names sends before it that
  * the recipient is owed and can still ask for: then it opens the track at position 0 and asks the gap up to the
- * record's prior. It
- * delivers a copy whose record names its own position as the prior (`omitted`), and asks for a gap that ends at a prior
- * ahead of it. A prior behind its position, or `0` on a track it holds, says nothing it does not know, so today's rule
- * from its own position applies, as it does to a copy no authority recorded.
+ * record's prior. It delivers a copy whose record names its own position as the prior (`omitted`), and asks for a gap
+ * that ends at a prior ahead of it. A prior behind its position, or `0` on a track it holds, says nothing it does not
+ * know, so today's rule from its own position applies, as it does to a copy no authority recorded.
  */
 export function computeALOrderingObservation(input: ComputeALOrderingObservationInput): ALOrderingAcceptance {
     const trackKey = toALOrderingTrackKey(input.msg);
@@ -61,7 +64,7 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
     if (trackKey === undefined || seq === undefined || input.role === 'none') {
         return UNTRACKED;
     }
-    const snapshot = input.snapshot && input.snapshot.updatedAtMs + input.trackTtlMs > input.nowMs
+    const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
         ? input.snapshot
         : undefined;
     const track: ALOrderingTrackInput = {
@@ -97,17 +100,23 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
  * latest-wins copy, whose predecessor may have been superseded before it was ever sent.
  */
 function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
+    return isInformativePrior(track, 0) && track.priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow &&
+        !track.input.evictedTrack && !track.input.latestWins;
+}
+
+/** A prior that names sends between the position and the copy: one at the position or above it, below the copy. */
+function isInformativePrior(
+    track: ALOrderingTrackInput,
+    lastContiguousSeq: number
+): track is ALOrderingTrackInput & { readonly priorSeq: number; } {
     const priorSeq = track.priorSeq;
-    return priorSeq !== undefined && priorSeq > 0 && priorSeq < track.seq &&
-        priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow && !track.input.evictedTrack && !track.input.latestWins;
+    return priorSeq !== undefined && priorSeq > 0 && priorSeq >= lastContiguousSeq && priorSeq < track.seq;
 }
 
 /** A tracked copy above the receiver's position: in order, an omission, or a gap ending at the record's prior. */
 function computeTrackedOrdering(track: ALOrderingTrackInput): ALOrderingAcceptance {
     const lastContiguousSeq = track.snapshot?.lastContiguousSeq ?? 0;
-    const priorSeq = track.priorSeq;
-    const informative = priorSeq !== undefined && priorSeq > 0 && priorSeq >= lastContiguousSeq && priorSeq < track.seq;
-    const missingThrough = informative ? priorSeq : track.seq - 1;
+    const missingThrough = isInformativePrior(track, lastContiguousSeq) ? track.priorSeq : track.seq - 1;
     if (missingThrough - lastContiguousSeq > AL_MESSAGE_RESOURCE_LIMITS.repairWindow) {
         return toOrderingNoop(track, 'resync-required');
     }

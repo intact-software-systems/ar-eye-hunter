@@ -82,6 +82,15 @@ export type ALSupersedencePersistenceValue =
         updatedAtMs: number;
     }>;
 
+/** Whether a stored snapshot still holds the track's position: one TTL after its last update, it is gone. */
+export function isALOrderingSnapshotLive(
+    snapshot: ALOrderingTrackSnapshot | undefined,
+    trackTtlMs: number,
+    nowMs: number
+): snapshot is ALOrderingTrackSnapshot {
+    return snapshot !== undefined && snapshot.updatedAtMs + trackTtlMs > nowMs;
+}
+
 export function toALOrderingTrackKey(msg: ALMessage): string | undefined {
     const orderingKey = msg.ordering?.orderingKey;
     const seq = msg.ordering?.seq;

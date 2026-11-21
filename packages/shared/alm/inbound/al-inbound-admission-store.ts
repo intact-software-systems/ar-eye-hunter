@@ -10,7 +10,7 @@ import type {
     ALReadyable,
     ALSeqRange
 } from '../../al-contracts/al-runtime.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { isALOrderingSnapshotLive, toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import {
     PersistenceWriteExpiredError,
     requireLivePersistenceWrite
@@ -34,10 +34,7 @@ import {
 } from '../compute-al-supersedence-observation.ts';
 import { markTerminalVolatileAdmissionRow } from '../storage/in-memory-admission-work-write-buffer.ts';
 import { ALInboundDeliveredMarkerIndex } from './admission/al-inbound-delivered-marker-index.ts';
-import {
-    decodeALInboundEvictedOrderingTracks,
-    isALInboundOrderingTrackEvicted
-} from './admission/al-inbound-evicted-ordering-tracks.ts';
+import { readALInboundOrderingTrackEvicted } from './admission/al-inbound-evicted-ordering-tracks.ts';
 import {
     evictALInboundDeliveredMarkersPastCap,
     type ALInboundDeliveredMarkersReport
@@ -598,8 +595,15 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             return { trackKey, snapshot: undefined, buffered: [], evicted: false };
         }
         const snapshot = await database.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot);
-        const evicted = !this.isLiveOrderingSnapshot(snapshot, nowMs) &&
-            await this.readOrderingTrackEvicted(database, trackKey, nowMs);
+        // A store without a cap evicts nothing, so it reads no row; a live snapshot was never evicted.
+        const evicted = !isALOrderingSnapshotLive(snapshot, this.orderingTrackTtlMs, nowMs) &&
+            this.maxOrderingTracks !== undefined &&
+            await readALInboundOrderingTrackEvicted({
+                database,
+                key: this.toEvictedOrderingTracksKey(),
+                trackKey,
+                nowMs
+            });
         const prefix = this.toBufferedTrackPrefix(trackKey);
         const stored = await database.list(
             prefix,
@@ -611,23 +615,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             )
         );
         return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq), evicted };
-    }
-
-    /** A store without a cap evicts nothing, so it reads no row. */
-    private async readOrderingTrackEvicted(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        trackKey: string,
-        nowMs: number
-    ): Promise<boolean> {
-        if (this.maxOrderingTracks === undefined) {
-            return false;
-        }
-        const held = await database.read(this.toEvictedOrderingTracksKey(), decodeALInboundEvictedOrderingTracks);
-        return held !== undefined && isALInboundOrderingTrackEvicted(held, trackKey, nowMs);
-    }
-
-    private isLiveOrderingSnapshot(snapshot: ALOrderingTrackSnapshot | undefined, nowMs: number): boolean {
-        return snapshot !== undefined && snapshot.updatedAtMs + this.orderingTrackTtlMs > nowMs;
     }
 
     /** The session holding the exclusive claim on `claimKey`, read beside the dedup key and guarded at the commit. */
@@ -703,7 +690,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         const snapshot = await this.backend.readWithin((session) =>
             session.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot)
         );
-        return this.isLiveOrderingSnapshot(snapshot, nowMs) ? snapshot : undefined;
+        return isALOrderingSnapshotLive(snapshot, this.orderingTrackTtlMs, nowMs) ? snapshot : undefined;
     }
 
     private async readDeliveryProgress(

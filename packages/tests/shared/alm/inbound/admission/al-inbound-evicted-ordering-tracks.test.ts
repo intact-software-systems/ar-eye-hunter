@@ -61,7 +61,7 @@ describe('the tracks an inbound store evicted at its ordering cap', () => {
         expect(decodeALInboundEvictedOrderingTracks(JSON.parse(JSON.stringify(tracks)))).toEqual(tracks);
     });
 
-    it.each<[string, unknown]>([
+    it.each([
         ['a value that is not an array', { trackKey: 'a', untilMs: 1 }],
         ['an entry that is not a record', ['a']],
         ['an entry without its instant', [{ trackKey: 'a' }]],

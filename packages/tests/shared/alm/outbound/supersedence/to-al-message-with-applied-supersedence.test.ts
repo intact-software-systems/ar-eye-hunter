@@ -9,8 +9,8 @@ import {
     createDefaultOutboundTestStores,
     createOutboundMessage,
     OUTBOUND_TEST_SEND_PLANNER
-} from '../outbound-runtime-test-fixture.ts';
-import type { OutboundTestPayload } from '../outbound-test-payload.ts';
+} from '../../outbound-runtime-test-fixture.ts';
+import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
 
 const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 'Q'.repeat(86) } as const;
 const DEFAULT_KEY = 'provider-default-key';

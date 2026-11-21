@@ -1,3 +1,4 @@
+import type { ALAdmissionReadContext } from '../../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -50,4 +51,19 @@ export function isALInboundOrderingTrackEvicted(
     nowMs: number
 ): boolean {
     return held.some((track) => track.trackKey === trackKey && track.untilMs > nowMs);
+}
+
+export interface ReadALInboundOrderingTrackEvictedInput {
+    readonly database: Pick<ALAdmissionReadContext, 'read'>;
+    /** The store's one row of evicted tracks. */
+    readonly key: string;
+    readonly trackKey: string;
+    readonly nowMs: number;
+}
+
+export async function readALInboundOrderingTrackEvicted(
+    input: ReadALInboundOrderingTrackEvictedInput
+): Promise<boolean> {
+    const held = await input.database.read(input.key, decodeALInboundEvictedOrderingTracks);
+    return held !== undefined && isALInboundOrderingTrackEvicted(held, input.trackKey, input.nowMs);
 }

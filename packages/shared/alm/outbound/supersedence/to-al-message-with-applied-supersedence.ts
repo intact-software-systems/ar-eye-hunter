@@ -1,5 +1,5 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALOutboundSupersedenceTrackingPlan } from './al-outbound-message-runtime.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALOutboundSupersedenceTrackingPlan } from '../al-outbound-message-runtime.ts';
 
 /**
  * The send with the supersedence its plan applied written into its own `qos` request, so every receiver plans it as if

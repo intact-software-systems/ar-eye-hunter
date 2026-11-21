@@ -63,7 +63,7 @@ import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-o
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
-import { toALMessageWithAppliedSupersedence } from './to-al-message-with-applied-supersedence.ts';
+import { toALMessageWithAppliedSupersedence } from './supersedence/to-al-message-with-applied-supersedence.ts';
 
 export type {
     ALOutboundControlAdmission,
