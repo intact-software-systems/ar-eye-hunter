@@ -856,11 +856,14 @@ const COMMAND_CAPABILITIES_WITHOUT_FIELDS: readonly CommandCapabilityWithoutFiel
         kind: 'formation.readiness',
         title: 'Await Room Readiness',
         description:
-            'Awaits the browser\'s own room readiness without refreshing the room or opening lanes, and reports the room formation summary captured when it resolved.',
+            'Awaits the browser\'s own room readiness without refreshing the room or opening lanes, and reports the room formation summary captured when it resolved. Once the page\'s layout has settled it also reads the formation view and reports the reshape the server holds.',
         supportedProviderModes: ['browser-rallar'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['connected browser Rallar session holding the named room'],
-        artifactExpectations: ['room formation summary at the tick readiness resolved'],
+        artifactExpectations: [
+            'room formation summary at the tick readiness resolved',
+            'held reshape reading of the formation view once the layout has settled'
+        ],
         example: {
             kind: 'formation.readiness',
             commandId: 'formation-readiness',

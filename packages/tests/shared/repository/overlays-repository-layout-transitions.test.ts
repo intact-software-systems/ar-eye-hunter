@@ -6,11 +6,13 @@ import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-
 import {
     configureOverlayRepositories,
     findAcceptedOverlayById,
+    findPlannedOverlayById,
     readableLayoutTransitionsCache,
     reconcileAcceptedOverlayIdentity,
     removeAcceptedOverlayByGroupRef,
     removeAcceptedOverlayById,
     removeAcceptedOverlayByIdIfUnchanged,
+    removePlannedOverlayByIdIfReachedBy,
     setAcceptedOverlayById,
     setCurrentAcceptedServerOverlayById,
     setPlannedOverlayById
@@ -462,6 +464,52 @@ describe('overlay repository layout transitions when the group snapshot names th
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
 
         expect(readNewestTransition()?.replacedAtEpochMs).toBe(5_000);
+    });
+});
+
+describe('overlay repository planned layout the accepted identity has passed', () => {
+    beforeEach(() => {
+        configureOverlayRepositories({
+            plannedOverlays: { ttlMs: 60_000 },
+            acceptedOverlays: { ttlMs: 60_000 },
+            nowEpochMs: () => 1_000
+        });
+    });
+
+    it('a group snapshot that accepts a removed tombstone drops the active server planned layout at the same tuple', () => {
+        const planned = overlay({ version: 2 });
+        setPlannedOverlayById(OVERLAY_ID, planned);
+
+        expect(reconcileAcceptedOverlayIdentity({
+            overlayId: OVERLAY_ID,
+            roomRef: ROOM,
+            acceptedIdentity: { ...toOverlayLayoutIdentity(planned), state: 'removed' }
+        })).toBe(true);
+
+        expect(findPlannedOverlayById(OVERLAY_ID)).toBeUndefined();
+        expect(findAcceptedOverlayById(OVERLAY_ID)).toBeUndefined();
+    });
+
+    it('a group snapshot keeps a bootstrap planned layout whose tuple the accepted identity has passed', () => {
+        const bootstrap = overlay({ version: 1, provenance: 'bootstrap' });
+        setPlannedOverlayById(OVERLAY_ID, bootstrap);
+
+        expect(reconcileAcceptedOverlayIdentity({
+            overlayId: OVERLAY_ID,
+            roomRef: ROOM,
+            acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 }))
+        })).toBe(false);
+
+        expect(findPlannedOverlayById(OVERLAY_ID)).toEqual(bootstrap);
+    });
+
+    it('an accepted identity that has passed a bootstrap planned layout does not remove it', () => {
+        const bootstrap = overlay({ version: 1, provenance: 'bootstrap' });
+        setPlannedOverlayById(OVERLAY_ID, bootstrap);
+
+        expect(removePlannedOverlayByIdIfReachedBy(OVERLAY_ID, toOverlayLayoutIdentity(overlay({ version: 2 })))).toBe(false);
+
+        expect(findPlannedOverlayById(OVERLAY_ID)).toEqual(bootstrap);
     });
 });
 

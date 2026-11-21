@@ -220,7 +220,7 @@ function adoptAcceptedOverlay(
     const outcome = input.adoption === 'current-state'
         ? overlaysRepository.setCurrentAcceptedServerOverlayById(input.topology.overlayId, overlay)
         : overlaysRepository.setAcceptedOverlayById(input.topology.overlayId, overlay);
-    const removedPlanned = overlaysRepository.removePlannedOverlayByIdIfIdentity(
+    const removedPlanned = overlaysRepository.removePlannedOverlayByIdIfReachedBy(
         input.topology.overlayId,
         toGroupLayoutIdentity(input.topology)
     );

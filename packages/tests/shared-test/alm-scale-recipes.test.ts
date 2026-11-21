@@ -388,9 +388,9 @@ describe('ALM scale recipes', () => {
             expect(recipe.commands[setupComplete - 1]).toEqual({
                 kind: 'loop',
                 commandId: `${prefix}-layout-stable`,
-                count: 90,
+                count: 210,
                 intervalMs: 500,
-                timeoutMs: 45_000,
+                timeoutMs: 105_000,
                 until: 'first-success',
                 commands: [
                     { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
@@ -409,9 +409,26 @@ describe('ALM scale recipes', () => {
                         source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
                             `${prefix}-layout-readiness.value.acceptedHeldForMs`,
                         expected: 3_500
+                    },
+                    {
+                        kind: 'assert',
+                        commandId: `${prefix}-assert-no-held-reshape`,
+                        operator: 'equals',
+                        source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.heldReshape.reading`,
+                        expected: 'none'
                     }
                 ]
             });
+            // A barrier's window opens at the first arrival, so the barrier after the wait shares the wait's limit.
+            expect(recipe.commands[setupComplete]).toEqual({
+                kind: 'barrier',
+                commandId: `${prefix}-setup-complete`,
+                barrierId: 'alm-scale-setup-complete',
+                timeoutMs: 105_000
+            });
+            expect(recipe.commands.find((command) => command.commandId === `${prefix}-traffic-ready`))
+                .toMatchObject({ kind: 'barrier', timeoutMs: 45_000 });
         }
     );
 
