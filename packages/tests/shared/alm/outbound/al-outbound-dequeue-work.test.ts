@@ -737,6 +737,51 @@ describe('AL outbound dequeue work', () => {
         }
     });
 
+    it('hands after-admission no authority when the stored row is not the row its dequeue read the authority for', async () => {
+        const outbox = createOutboxQueue();
+        const handed: { readonly resourceId: string; readonly judged: readonly string[] | undefined; }[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            readDequeueAuthority: async () => ({
+                admittedAudience: ['b'],
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: [],
+                admittedAudience: ['b', 'c'],
+                recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            }),
+            afterDequeueAdmission: async (_msg, entry, admission) => {
+                handed.push({ resourceId: entry.key.resourceId, judged: admission.dequeueAuthority?.admittedAudience });
+            },
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const message = createDequeuedMessage('authority-won');
+        const won = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        const raced = { ...won, key: { ...won.key, resourceId: 'authority-raced' } };
+
+        try {
+            await runtime.ready();
+            await outbox.enqueueIfAbsent(won);
+            await runOutboundWorkTask(runtime);
+            await outbox.enqueueIfAbsent(raced);
+            await runOutboundWorkTask(runtime);
+            console.log('handed after-admission', JSON.stringify(handed));
+
+            expect(handed).toEqual([
+                { resourceId: 'authority-won', judged: ['b'] },
+                { resourceId: 'authority-won', judged: undefined }
+            ]);
+        }
+        finally {
+            await runtime.dispose();
+        }
+    });
+
     it('hands nothing to the publication of a row whose commit conflicted', async () => {
         const outbox = createOutboxQueue();
         const stores = createDefaultOutboundTestStores(outbox);

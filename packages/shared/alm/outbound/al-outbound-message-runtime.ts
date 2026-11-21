@@ -610,7 +610,7 @@ export namespace ALOutboundMessageRuntime {
     export interface DequeuedAdmission {
         /** The captured policy the row's own commit wrote; absent when the commit wrote none. */
         readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
-        /** The authority this attempt's dequeue read planned from; absent when the runtime reads none. */
+        /** The authority this attempt's dequeue read planned from, when the plan applied it; absent otherwise. */
         readonly dequeueAuthority: ALOutboundDequeueAuthority | undefined;
     }
 

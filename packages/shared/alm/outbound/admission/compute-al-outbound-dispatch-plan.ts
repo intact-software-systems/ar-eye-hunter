@@ -2,8 +2,8 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isKeysEqual } from '../../../queuebox/ResourceEntry.ts';
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { isKeysEqual, type Key } from '../../../queuebox/ResourceEntry.ts';
+import type { ALOutboundDequeueAuthority, ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import {
     validateALOutboundAdmittedMessage,
     validateALOutboundPlannedMessage
@@ -20,10 +20,15 @@ export function computeALOutboundDispatchPlan<TPrepared>(
     const { msg, intent } = outgoing;
     const authority = stored?.policy ?? outgoing.dequeueAuthority;
     const source = canonical ?? msg;
+    const rechecked = resolveALOutboundAppliedDequeueAuthority(
+        outgoing.dequeueAuthority,
+        stored?.reference.key,
+        outgoing.observedCanonicalEntry?.key
+    );
     const selected = outgoing.planner(
         source,
         authority === undefined ? undefined : {
-            admittedAudience: toAttemptAudience(authority.admittedAudience, readRecheckedAudience(outgoing, stored)),
+            admittedAudience: toAttemptAudience(authority.admittedAudience, rechecked?.admittedAudience),
             admittedConnectionGenerationIds: stored?.policy.admittedConnectionGenerationIds,
             recipientScope: authority.recipientScope,
             principalTargetId: authority.principalTargetId,
@@ -41,14 +46,17 @@ export function computeALOutboundDispatchPlan<TPrepared>(
     return plan;
 }
 
-/** The dequeue authority re-checks the stored row only when it was read for that row, not for a canonical row that won. */
-function readRecheckedAudience<TPrepared>(
-    outgoing: ALOutboundOutgoingReadInput<TPrepared>,
-    stored: ALStoredOutboundMessage | undefined
-): readonly string[] | undefined {
-    const observedKey = outgoing.observedCanonicalEntry?.key;
-    return stored === undefined || (observedKey !== undefined && isKeysEqual(stored.reference.key, observedKey))
-        ? outgoing.dequeueAuthority?.admittedAudience
+/**
+ * The dequeue authority applies to the stored row only when it was read for that row, not for a canonical row that won;
+ * with no row stored yet, the plan is for the observed row the authority was read for.
+ */
+export function resolveALOutboundAppliedDequeueAuthority(
+    authority: ALOutboundDequeueAuthority | undefined,
+    storedKey: Key | undefined,
+    observedKey: Key | undefined
+): ALOutboundDequeueAuthority | undefined {
+    return storedKey === undefined || (observedKey !== undefined && isKeysEqual(storedKey, observedKey))
+        ? authority
         : undefined;
 }
 

@@ -16,6 +16,7 @@ import type {
     ALOutboundEffectSnapshot
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../admission/al-outbound-admission-validation.ts';
+import { resolveALOutboundAppliedDequeueAuthority } from '../admission/compute-al-outbound-dispatch-plan.ts';
 import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDequeueAuthority,
@@ -434,7 +435,8 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
 
     /**
      * Only a committed dispatch reaches its after-admission: a conflict rejects and an expiry carries no bundle, so
-     * the bundle a dispatch carries here is the one its commit wrote, and its captured policy needs no read back.
+     * the bundle a dispatch carries here is the one its commit wrote, and its captured policy needs no read back. The
+     * row it hands is the one its commit stored, so the dequeue authority goes with it only when it was read for it.
      */
     private async finishDequeuedAdmission(input: ALOutboundDequeuedFinishInput<TPrepared>): Promise<ALWorkOutcome> {
         const { member, read, commits, index } = input;
@@ -461,7 +463,11 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             this.recordOrderedDispatchStart(member, entry.key, computed.verdict.kind);
             await this.dependencies.runtime.afterDequeueAdmission?.(computed.msg, entry, {
                 committedPolicy: toBundleSentPolicy(computed.bundle),
-                dequeueAuthority: admission.dispatch.dequeueAuthority
+                dequeueAuthority: resolveALOutboundAppliedDequeueAuthority(
+                    admission.dispatch.dequeueAuthority,
+                    entry.key,
+                    admission.dispatch.options.observedOutboxEntry?.key
+                )
             });
         }
         return { status: 'completed' };
