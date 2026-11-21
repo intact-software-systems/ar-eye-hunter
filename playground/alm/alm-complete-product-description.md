@@ -538,8 +538,9 @@ after the new one still waits for that timeout.
 (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`) runs each scenario family
 under `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/` over `ws`, `rtc` and
 `rtc-with-ws-fallback` and asserts the same logical outcome on every carrier a scenario names. It
-runs beside the Release Gate as the non-blocking `.github/workflows/alm-conformance-observation.yml`
-job.
+runs its `smoke` scope as the required `alm-smoke` lane of the Release Gate, and its `full` scope on
+the PostgreSQL API in `.github/workflows/alm-conformance-observation.yml`, an observation nothing
+waits for.
 
 ## QoS negotiation
 

@@ -56,8 +56,9 @@ this plan must run manually, so no gate is left out.
 **Automatic on the PR (no manual step needed)** — `branch-release-gate.yml` runs on every PR and
 calls, in turn: `governance-gate.yml`, `release-gate.yml` (unit, tooling, Bun, browser, recipe
 console, and the API black-box recipes — standard 1/2, standard 2/2, cluster — plus the topology
-replay proof), `games-release-gate.yml`, and `alm-conformance-observation.yml` (non-blocking). These
-already run on PR #794 and cover the ephemeral-runner surface.
+replay proof), `games-release-gate.yml`, and `alm-conformance-observation.yml` (an observation of
+the ALM lane's full scope, which nothing waits for). These already run on PR #794 and cover the
+ephemeral-runner surface.
 
 **Manual in this plan** — the `workflow_dispatch`-only and Hetzner workflows:
 
@@ -74,7 +75,7 @@ already run on PR #794 and cover the ephemeral-runner surface.
 | `Run GitHub Free Distributed Recipe`          | dispatch             | Phase 3          |
 
 **Post-merge (no pre-merge action)** — `deploy.yml` ("Deploy Web + API") fires on `push` to `main`
-and now contains only the (disabled) Cloudflare controls, the release gate, and the ALM conformance
+and contains only the (disabled) Cloudflare controls, the release gate, and the IDE navigation report
 observation — its Deno Deploy jobs are gone. It runs automatically when #794 merges.
 
 **Optional / non-blocking extras** — `api-v1-black-box.yml` ("API v1 Black-Box") is a

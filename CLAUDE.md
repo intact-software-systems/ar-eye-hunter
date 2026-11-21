@@ -355,6 +355,7 @@ parallel:
 | `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
 | `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
+| `alm-smoke`            | `test:rallar:full-stack:memory:alm`: the ALM conformance lane's `smoke` scope on the in-memory API, one runner per carrier                                 |
 
 The games (`ar-eye-hunter-v1`, `relic-hunters-v1`, and their Bun servers) validate in
 `games-release-gate.yml`: required for broad ready-PR validation when game/shared changes select
@@ -375,9 +376,12 @@ what `npm run test:ci` runs;
 `packages/tests/repo/release-gate-lanes.test.ts` (and its `games-release-gate-lanes.test.ts` sibling)
 fails if a lane drops a suite or a Vitest project.
 
-The non-blocking ALM conformance observation is not a lane of `release-gate.yml`. It lives in
-`alm-conformance-observation.yml`, which `branch-release-gate.yml` and `deploy.yml` start beside the
-gate; neither `Branch Release Gate result` nor any deployment waits for it. The IDE navigation report
+The ALM conformance lane's `full` scope is an observation, not a lane of `release-gate.yml`. It lives
+in `alm-conformance-observation.yml`, which runs it on the PostgreSQL API, one runner per carrier. The
+workflow starts itself on every `main` push, `branch-release-gate.yml` calls it beside the gate for a
+ready pull request whose changed paths can change the lane (the `alm-changes` job,
+`scripts/alm-lane-selection.mjs`), and it can be dispatched on any branch; neither
+`Branch Release Gate result` nor any deployment waits for it. The IDE navigation report
 (`npm run check:repo-style:navigation-details`, which always exits 0) runs the same way in
 `navigation-report-observation.yml`, started beside the gate by `branch-release-gate.yml` and by
 `deploy.yml` on a `main` push.
