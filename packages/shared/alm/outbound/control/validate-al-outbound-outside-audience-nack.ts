@@ -1,6 +1,6 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
+import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from './read-al-outbound-recipient-proof.ts';
 import { validateALOutboundRelayedNack } from './validate-al-outbound-relayed-nack.ts';
 
 /**

@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALPeerControlMessage } from '../../../al-contracts/al-control.ts';
+import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import {
     isALOwnWord,
     toALReceiptProofRefusal,
@@ -10,8 +11,25 @@ import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-su
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
+
+// This file also holds the control-admission refusal vocabulary: an issue's class, its constructors and the result.
+
+/** A refusal's class beside its message: a `duplicate` repeats what the receipt already holds. */
+export interface ALOutboundControlIssue extends ALMessageRejection {
+    readonly class: 'duplicate' | 'refusal';
+}
+
+export function toALOutboundRefusalIssue(
+    message: string,
+    code: ALMessageRejection['code'] = 'unauthorized'
+): ALOutboundControlIssue {
+    return { code, message, class: 'refusal' };
+}
+
+export function toALOutboundDuplicateIssue(message: string): ALOutboundControlIssue {
+    return { code: 'unauthorized', message, class: 'duplicate' };
+}
 
 /**
  * How an outbound owner knows who spoke a recipient's control: the carrier authenticates its peer (a WS client's

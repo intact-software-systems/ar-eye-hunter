@@ -5,7 +5,6 @@ import {
     type ALPeerRepairControlMessage,
     type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
@@ -16,29 +15,18 @@ import {
 } from './control/is-al-outbound-expected-repair-peer.ts';
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
-import { validateALOutboundRecipientProof } from './control/read-al-outbound-recipient-proof.ts';
+import {
+    toALOutboundDuplicateIssue,
+    toALOutboundRefusalIssue,
+    validateALOutboundRecipientProof,
+    type ALOutboundControlIssue
+} from './control/read-al-outbound-recipient-proof.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { validateALOutboundRelayedNack } from './control/validate-al-outbound-relayed-nack.ts';
 import { validateALOutboundEndedMessageControl } from './message-end/validate-al-outbound-ended-message-control.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
-
-/** A refusal's class beside its message: a `duplicate` repeats what the receipt already holds. */
-export interface ALOutboundControlIssue extends ALMessageRejection {
-    readonly class: 'duplicate' | 'refusal';
-}
-
-export function toALOutboundRefusalIssue(
-    message: string,
-    code: ALMessageRejection['code'] = 'unauthorized'
-): ALOutboundControlIssue {
-    return { code, message, class: 'refusal' };
-}
-
-export function toALOutboundDuplicateIssue(message: string): ALOutboundControlIssue {
-    return { code: 'unauthorized', message, class: 'duplicate' };
-}
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(

@@ -1,8 +1,8 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { isALReceiptModeOwnWord } from '../../delivery/is-al-receipt-mode-own-word.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../validate-al-outbound-control-admission.ts';
 import { isALOutboundRecipientControlSender } from './is-al-outbound-expected-repair-peer.ts';
+import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from './read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
 /**
