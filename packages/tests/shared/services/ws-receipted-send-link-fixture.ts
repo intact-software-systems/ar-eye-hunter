@@ -64,6 +64,8 @@ export interface WsReceiptedSendLink {
     readonly settlements: readonly ALDeliverySettlement[];
     readonly serverControls: readonly WsReceiptedSendServerControl[];
     setRoomView(view: WsReceiptedSendRoomView): void;
+    /** The view the room authority answers with once it has answered `reads` reads of `msg`'s authority. */
+    setRoomViewAfterReadsOf(msg: ALMessage, reads: number, view: WsReceiptedSendRoomView): void;
     /** Admits at the client and writes its frame, to ingress or to the hold; runs no server work. */
     send(message: ALMessage): Promise<ALMessage>;
     holdFrames(): void;
@@ -84,11 +86,24 @@ export interface WsReceiptedSendLink {
 
 export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomView): Promise<WsReceiptedSendLink> {
     let view = startView;
+    const reads = new Map<string, number>();
+    let next: { readonly msgId: string; readonly reads: number; readonly view: WsReceiptedSendRoomView; } | undefined;
     const server = await createServerIngressFixture(undefined, LINK_ORIGIN_ID);
     const peer = new SimulatedWebSocket('ws://peer');
     await peer.open();
     attachTestWebSocket(server.server, new ConnectionContext({ id: LINK_PEER_ID, socket: peer }));
-    server.service.authorizeInboundMessagesWith({ sendNacks: true, authorize: async () => toRoomViewAuthorization(view) });
+    server.service.authorizeInboundMessagesWith({
+        sendNacks: true,
+        authorize: async (message) => {
+            const authorization = toRoomViewAuthorization(view);
+            const read = (reads.get(message.id.msgId) ?? 0) + 1;
+            reads.set(message.id.msgId, read);
+            if (next?.msgId === message.id.msgId && next.reads === read) {
+                view = next.view;
+            }
+            return authorization;
+        }
+    });
 
     const client = createLinkClient(server);
     const exchange = createLinkExchange(server, client);
@@ -96,8 +111,11 @@ export async function createWsReceiptedSendLink(startView: WsReceiptedSendRoomVi
         written: client.written,
         settlements: client.settlements,
         serverControls: exchange.serverControls,
-        setRoomView: (next) => {
-            view = next;
+        setRoomView: (nextView) => {
+            view = nextView;
+        },
+        setRoomViewAfterReadsOf: (msg, afterReads, nextView) => {
+            next = { msgId: msg.id.msgId, reads: afterReads, view: nextView };
         },
         send: client.send,
         holdFrames: client.holdFrames,
