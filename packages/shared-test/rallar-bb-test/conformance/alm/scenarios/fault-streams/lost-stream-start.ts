@@ -9,7 +9,7 @@ import {
     toReachedCommands
 } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
-import { toGapNackWait } from '../../alm-conformance-repair-waits.ts';
+import { toGapNackWait, toRepairDispatchWait } from '../../alm-conformance-repair-waits.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -20,7 +20,9 @@ import {
  * The first send of a new ordered track is not lost when later sends reach the track's ordering hop before it: the hop
  * opens the track at its start, holds the later sends, and asks the sender for the first with a gap NACK. Once the
  * first arrives, all three are delivered in sequence order and every handle ends `acknowledged`. The first send is
- * held by its message id, so no draw decides which frame comes late.
+ * held by its message id, so no draw decides which frame comes late. Over `ws` the WS server's initial-window gap
+ * already recovered send 1 before the receiver's entry rule changed, so `ws` is a regression guard and `rtc` the
+ * evidence.
  */
 export const lostStreamStart: AlmConformanceScenarioDefinition = {
     scenarioId: 'lost-stream-start',
@@ -34,8 +36,10 @@ export const lostStreamStart: AlmConformanceScenarioDefinition = {
 };
 
 /**
- * The hold is released only once the sender admitted a gap NACK about its track: a later send then reached the hop
- * before the first. Sends 2 and 3 are not awaited before the release: a copy the hop holds may already be acknowledged.
+ * The hold is released only once the sender admitted a gap NACK about its track, a later send having reached the hop
+ * before the first, and committed a repair of send 1: the origin served the gap, so the cell fails where it cannot,
+ * whatever the release delivers. Sends 2 and 3 are not awaited before the release: a copy the hop holds may already be
+ * acknowledged.
  */
 function toLostStreamStartSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const first = { ...sender, index: 1 };
@@ -44,6 +48,7 @@ function toLostStreamStartSenderCommands(sender: AlmConformanceStepInput): reado
         ...toOrderedSendCommands(sender, 2, { ack: 'receiver' }),
         ...toOrderedSendCommands(sender, 3, { ack: 'receiver' }),
         toGapNackWait({ step: sender, name: 'gap-nack', orderingKey: toOrderingKey(sender), absent: false }),
+        toRepairDispatchWait(first, 'repair-dispatch-1'),
         ...toHeldMessageFaultCommands(first, 'release-message-1', 0),
         ...[1, 2, 3].flatMap((seq) => toReachedCommands({ ...sender, index: seq }))
     ];

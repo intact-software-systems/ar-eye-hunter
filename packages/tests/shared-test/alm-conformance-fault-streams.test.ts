@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toOrderingKey } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts';
 import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toScenarioTypeId } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -294,7 +295,7 @@ describe('ALM fault stream cells', () => {
     });
 
     it.each(LOST_START_CARRIERS)(
-        'lost-stream-start over %s holds send 1 by its message id until the sender admitted a gap NACK about the track, then reads every handle acknowledged',
+        'lost-stream-start over %s holds send 1 by its message id until the sender admitted a gap NACK about the track and committed send 1\'s repair, then reads every handle acknowledged',
         (carrier) => {
             const sender = requireCell('lost-stream-start', carrier).sender;
             const places = toPlaces(sender, [
@@ -305,6 +306,7 @@ describe('ALM fault stream cells', () => {
                 'send-2',
                 'send-3',
                 'gap-nack',
+                'repair-dispatch-1',
                 `release-message-1-${carrier}`,
                 'assert-reached-1',
                 'assert-reached-2',
@@ -336,6 +338,17 @@ describe('ALM fault stream cells', () => {
                 }
             });
             expect(findCommand(sender, 'gap-nack')).not.toHaveProperty('absent');
+            const step = toSenderStep(carrier, 'lost-stream-start');
+            expect(findCommand(sender, 'repair-dispatch-1')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: `"msgId":"{resultCache.${sender.recipeId}-send-1.value.msgId}",` +
+                        `"typeId":"${toScenarioTypeId(step)}","origin":"repair"`
+                }
+            });
+            expect(findCommand(sender, 'repair-dispatch-1')).not.toHaveProperty('absent');
             for (const seq of [1, 2, 3]) {
                 expect(findCommand(sender, `observe-acknowledged-${seq}`)).toMatchObject({ state: ['acknowledged'] });
             }
