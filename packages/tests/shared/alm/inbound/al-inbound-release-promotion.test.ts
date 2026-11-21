@@ -202,7 +202,8 @@ describe('a fresh receiver whose first copy of a recorded track is not the track
             await fixture.runtime.admitIncomingMessage(toRepairedMessage(createRecordedMessage(seq, {})), INBOUND_TEST_SOURCE);
         }
 
-        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([1, 2, 3]), WAIT);
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 3)).toBe(3), WAIT);
+        expect(deliveredSeqs).toEqual([1, 2, 3]);
         const nacks = fixture.controlSends.flat().flatMap((msg) => {
             const control = decodeALPeerControlMessage(msg).right;
             return control?.type === 'nack' ? [control.payload] : [];

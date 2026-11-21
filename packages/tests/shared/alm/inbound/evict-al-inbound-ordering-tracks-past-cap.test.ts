@@ -272,6 +272,23 @@ describe('the ordering-track eviction pass\'s record of what it evicted', () => 
         ]);
     });
 
+    it('expires the record with its newest entry, so the row leaves once every entry has lapsed', async () => {
+        const { backend } = await createOrderingCapFixture('memory');
+        await writeOrderingSnapshots(backend, ['a', 'b', 'c']);
+        await evictPastCap(backend, 2);
+        vi.setSystemTime(START_MS + 1);
+        await writeOrderingSnapshots(backend, ['d']);
+        await evictPastCap(backend, 2);
+
+        vi.setSystemTime(START_MS + ORDERING_TRACK_TTL_MS);
+        expect(await readEvictedTracks(backend)).toEqual([
+            { trackKey: 'a', untilMs: START_MS + ORDERING_TRACK_TTL_MS },
+            { trackKey: 'b', untilMs: START_MS + 1 + ORDERING_TRACK_TTL_MS }
+        ]);
+        vi.setSystemTime(START_MS + 1 + ORDERING_TRACK_TTL_MS);
+        expect(await readEvictedTracks(backend)).toBeUndefined();
+    });
+
     it('neither removes nor records a snapshot updated between its list and its removal', async () => {
         const { backend } = await createOrderingCapFixture('memory');
         await writeOrderingSnapshots(backend, ['a', 'b', 'c']);

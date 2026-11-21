@@ -101,15 +101,14 @@ async function writeEvictedTracks(
         return;
     }
     const held = await transaction.read(input.evictedTracksKey, decodeALInboundEvictedOrderingTracks);
-    await transaction.set(
-        input.evictedTracksKey,
-        toALInboundEvictedOrderingTracks({
-            held: held ?? [],
-            evictedTrackKeys,
-            untilMs: input.nowMs + input.orderingTrackTtlMs,
-            nowMs: input.nowMs
-        })
-    );
+    const tracks = toALInboundEvictedOrderingTracks({
+        held: held ?? [],
+        evictedTrackKeys,
+        untilMs: input.nowMs + input.orderingTrackTtlMs,
+        nowMs: input.nowMs
+    });
+    // The row lapses with its newest entry, so it leaves the store once no entry names a live eviction.
+    await transaction.set(input.evictedTracksKey, tracks, Math.max(...tracks.map((track) => track.untilMs)));
 }
 
 /** Every snapshot expires one TTL after its update, so the least recently updated is also the next to expire. */
