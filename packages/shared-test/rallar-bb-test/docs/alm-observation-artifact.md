@@ -88,7 +88,8 @@ observation files and for the same reason, with the pure builders of
 The **plan file** states the run's plan before any family test of its carrier starts: `carrier`,
 `scope`, `backend` (`memory` or `postgres`, the API the full-stack configuration starts), and
 `families`, every lane family with the `scenarioKeys` it plans. A family that plans nothing is
-listed with no keys; a carrier whose families plan nothing fails its plan test. It comes from the
+listed with no keys; in a run not narrowed by `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP`, a carrier whose
+families plan nothing fails its plan test, and a narrowed run writes its plan as it is. It comes from the
 same planning function the family tests run, so a run is judged against its own plan, not against a
 later catalog. The keys are in the plan test's own order: a `shuffled` family that names no seed
 mints one per planning, so its run order may differ. Compare a plan with a result by key.

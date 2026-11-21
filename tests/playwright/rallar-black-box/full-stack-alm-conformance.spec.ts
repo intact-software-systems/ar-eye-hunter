@@ -66,6 +66,7 @@ import {
     type AlmLaneRoomKey
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 import { toAlmLaneEmptyPlanReason } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
+import { validateAlmLanePlanCoverage } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/validate-alm-lane-plan-coverage.ts';
 import {
     decodeALMObservationPageDiagnosticsFile,
     type ALMObservationPageDiagnosticsFile
@@ -229,10 +230,8 @@ test.describe('ALM conformance lane', () => {
                 }))
             };
             await writeLaneResultFile(toLaneResultDirectory(testInfo), toAlmLanePlanFileName(identity), plan);
-            expect(
-                plan.families.some(({ scenarioKeys }) => scenarioKeys.length > 0),
-                `no ${scope} ALM scenario runs over ${carrier}`
-            ).toBe(true);
+            const { only, skip } = requireLaneParameters();
+            expect(validateAlmLanePlanCoverage({ ...identity, families: plan.families, only, skip })).toEqual([]);
         });
 
         for (const family of ['two-agent', 'addressed'] as const) {
