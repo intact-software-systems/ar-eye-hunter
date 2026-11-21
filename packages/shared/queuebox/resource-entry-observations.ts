@@ -77,6 +77,9 @@ export function resolveResourceInboxWorkPageRequest(
     ) {
         issues.push('Queue work cursor requires a position matching its requested type and status');
     }
+    if (request.order !== 'key' && (request.order !== 'due' || request.cursor !== null)) {
+        issues.push('Queue work pages are read by key with an optional cursor, or by due order with none');
+    }
     return issues.length > 0 ? Either.ofLeft(new TypeError(issues.join('; '))) : Either.ofRight(request);
 }
 

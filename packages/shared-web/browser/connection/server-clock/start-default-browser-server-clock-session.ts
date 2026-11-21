@@ -5,9 +5,12 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { BrowserServerClockSession } from './browser-server-clock-session.ts';
 import { BrowserServerClock } from './browser-server-clock.ts';
 
+import { readSocketClockSample } from './read-socket-clock-sample.ts';
+
 export interface StartDefaultBrowserServerClockSessionInput {
     readonly baseUrl: string;
     readonly serverPeerId: string;
+    readonly readSocket: () => WebSocket | undefined;
     readonly signal: AbortSignal | undefined;
 }
 
@@ -38,7 +41,17 @@ export async function startDefaultBrowserServerClockSession(
         clock,
         page: readBrowserPageLifecycle(),
         timers: createDefaultBackgroundTimers(),
-        refreshIntervalMs: 5_000
+        // Leave ten seconds of the existing validity budget for a delayed timer, a timeout and a retry.
+        refreshIntervalMs: BROWSER_SERVER_CLOCK_DEFAULTS.policy.maxAgeMs - 10_000,
+        renewClock: () =>
+            clock.refresh((signal, nowMonotonicMs) =>
+                readSocketClockSample({
+                    readSocket: input.readSocket,
+                    expectedServerPeerId: input.serverPeerId,
+                    signal,
+                    nowMonotonicMs
+                })
+            )
     });
     const signal = input.signal;
     if (signal) {

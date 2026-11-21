@@ -96,6 +96,7 @@ async function readForwardWork(
         typeId: toALInboundWorkType(endpoint.inbound.admissionStore.namespace, 'rtc'),
         status,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return page.entries.filter((entry) => decodeALInboundWorkEntry(entry, endpoint.inbound.admissionStore.namespace).payload.kind === 'forward-message');

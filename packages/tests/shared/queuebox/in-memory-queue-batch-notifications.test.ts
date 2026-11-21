@@ -41,7 +41,7 @@ it.each(['completed', 'expired'] as const)('commits the complete %s cleanup befo
         }
         replaced = true;
         committedViews.push(entries.map((entry) => queue.peek(toKeyAsString(entry.key))?.status));
-        indexedViews.push(queue.readWorkPage({ typeId: 'checkpoint.work', status: entries[0].status, maxToRead: 10, cursor: null }));
+        indexedViews.push(queue.readWorkPage({ typeId: 'checkpoint.work', status: entries[0].status, maxToRead: 10, order: 'key', cursor: null }));
         for (const entry of entries) {
             void queue.enqueue({ ...createCheckpointTestEntry(entry.key.resourceId), resource: 'fresh observer-owned work' });
         }
@@ -53,7 +53,7 @@ it.each(['completed', 'expired'] as const)('commits the complete %s cleanup befo
     for (const entry of entries) {
         expect(queue.peek(toKeyAsString(entry.key))).toMatchObject({ status: EntityStatus.NEW, resource: 'fresh observer-owned work' });
     }
-    const indexed = await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+    const indexed = await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, order: 'key', cursor: null });
     expect(indexed.entries.map((entry) => entry.key.resourceId)).toEqual(['first', 'second']);
     expect(indexed.entries.map((entry) => entry.resource)).toEqual(['fresh observer-owned work', 'fresh observer-owned work']);
 });
@@ -79,7 +79,7 @@ it.each(['overdue', 'exhausted'] as const)('commits the complete %s reservation 
         }
         replaced = true;
         committedViews.push(entries.map((entry) => queue.peek(toKeyAsString(entry.key))?.dequeueAudit.attempts));
-        indexedViews.push(queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RESERVED, maxToRead: 10, cursor: null }));
+        indexedViews.push(queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RESERVED, maxToRead: 10, order: 'key', cursor: null }));
         for (const entry of entries) {
             void queue.enqueue({ ...createCheckpointTestEntry(entry.key.resourceId), resource: 'fresh observer-owned work' });
         }
@@ -112,8 +112,12 @@ it.each(['overdue', 'exhausted'] as const)('commits the complete %s reservation 
             dequeueAudit: { attempts: 0 }
         });
     }
-    const indexed = await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+    const indexed = await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.NEW, maxToRead: 10, order: 'key', cursor: null });
     expect(indexed.entries.map((entry) => entry.key.resourceId)).toEqual(['first', 'second']);
-    expect((await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RESERVED, maxToRead: 10, cursor: null })).entries).toEqual([]);
-    expect((await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RETRY, maxToRead: 10, cursor: null })).entries).toEqual([]);
+    expect((await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RESERVED, maxToRead: 10, order: 'key', cursor: null })).entries).toEqual(
+        []
+    );
+    expect((await queue.readWorkPage({ typeId: 'checkpoint.work', status: EntityStatus.RETRY, maxToRead: 10, order: 'key', cursor: null })).entries).toEqual(
+        []
+    );
 });

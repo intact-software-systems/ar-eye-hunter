@@ -717,32 +717,128 @@ and it has no status list.
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
   `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
   campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
-- An ordered receipted stream does not reliably recover from a seeded loss, on
-  `ws` or on `rtc` (D670): after three to six dropped frames in about 190 ms a
-  stream can stall, and a send the receiver delivered can read `failed`,
-  `receipt-exhausted`. No lane cell runs under a seeded loss, and a catalog
-  test pins that. Next slice by the maintainer's ruling (2026-11-18); the
-  `seeded-loss-stream` cell returns with the fix.
-- Three candidate causes of that stall, read from the code and not proven by
-  a test (D670): a repair attempt is named by its gap, so a lost repair frame
-  is never written again (`to-al-outbound-effect-id.ts`); ending a receipt
-  deletes the sender's repair-attempt row, so a receiver still behind a gap
-  is refused (`to-al-outbound-end-receipt-bundle.ts`); a conflicted control is
-  replayed on the generic backoff of up to 16 s while a receipt's budget is
-  three 2 s retries (`ResourceInboxRetryPolicy.ts`). Not determined: why sends
-  10 to 20 did not reach the `rtc` receiver for 28 s, and why a timed-out
-  handle shows one `sent` attempt.
+- An ordered receipted stream does not reliably recover from a seeded loss
+  over `ws` (D670, D673). Its first cause is fixed: the shared queue now hands
+  out work in the order it comes due (D671), and `seeded-loss-stream` was
+  green over `rtc` in 3 of 3 runs. Over `ws` it was green in 2 of 3: in the red
+  run the server never admitted send 1, the sender made 19 repair commits of
+  it, and after the last gap NACK it had no work left. Read from the code and
+  not proven by a test: a repair attempt is named by its gap
+  (`toALOutboundRepairGapAttemptIdentity`, `to-al-outbound-effect-id.ts`), so
+  a repair frame lost during the loss is never sent again. No lane cell runs
+  under a seeded loss, and a catalog test pins that. Next slice by the
+  maintainer's ruling (2026-11-18): a unit reproduction of the lost repair
+  frame, then a design for the repair rule; the cell returns with that fix.
+- Two more candidate causes from D670, read from the code and not proven by a
+  test: ending a receipt deletes the sender's repair-attempt row, so a
+  receiver still behind a gap is refused (`to-al-outbound-end-receipt-bundle.ts`);
+  a conflicted control is replayed on the generic backoff of up to 16 s while
+  a receipt's budget is three 2 s retries (`ResourceInboxRetryPolicy.ts`).
+  Neither showed in the six loss runs after the due order (D673): no gap NACK
+  was refused for a missing repair obligation, and no control was admitted
+  later than 445 ms. No step is ruled for either; the repair-rule design that
+  follows the lost repair frame's unit reproduction is to say whether either
+  still applies. D670's other unknown, why sends 10 to 20 did not reach the
+  `rtc` receiver for 28 s, was answered by the due order (`rtc` 3 of 3).
+- Three sender behaviours read from the loss runs before the due order
+  (D670): an ACK-timeout retry that wrote no frame (D670's timed-out handle
+  that shows one `sent` attempt), repair commits that mostly wrote no send,
+  and an ACK control admitted 7.9 s late. In the runs after the due order (D673):
+  whether an ACK-timeout retry writes a frame, and whether a given repair
+  commit writes one, is not observable from a control snapshot; the lane
+  needs a frame-written signal to say. A late `pending-control` was not seen
+  again (slowest 445 ms).
+- The IndexedDB `creation`-order claim (a claim of NEW rows without RETRY)
+  reads the first sixteen rows of each type and status by key and only then
+  asks which are due, so sixteen rows due later hide a due one, as the `due`
+  claim did before D671. No production caller makes that claim on that store.
+  Recorded and left by ruling (2026-11-18, D672);
+  `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`
+  ("a NEW-only claim reads its first sixteen rows by key") pins today's
+  behaviour.
+- The state-write cost of `resource_inbox_due_ix` (D674) is not measured
+  under load: every write to the queue table maintains one more index, and
+  both claim statements were slower with it in every paired run (2–23 %,
+  about 20 to 50 more buffers per claim). The maintainer kept the index
+  (2026-11-19) and left this comparison here. `perf:api-v1:state-write` must
+  run by its protocol, on the pinned perf-bench container
+  (`docker-compose.perf-bench.yml`, port 5433), with this branch against its
+  base.
+- The work-presence read's true generic plan takes about 22 ms against about
+  0.3 ms for its custom plan on a 200 k-row table, with or without
+  `resource_inbox_due_ix` (D674). Whether the server ever settles on that
+  cached generic plan was not checked. Next: check it (how many executions,
+  which driver settings) before anything is changed. The api-v1 adapter
+  forces a custom plan only for a statement marked `toPlannedPerExecution()`
+  (`postgres-sql-adapter.ts`, `p-sql-fragment.ts`); neither the presence read
+  nor the `due` page is marked.
+- No store orders RESERVED rows by lease end, so ALM's readiness scan pages
+  them by key, and with more than a page of reserved rows a lease that has
+  ended can be advertised up to one lease (10 s) late (D673). Pinned as
+  today's behaviour in
+  `packages/tests/shared/alm/outbound-work-readiness-reserved.test.ts`. "Up
+  to one lease late" holds only while the timeout sweep reaches the row: on
+  IndexedDB the sweep reads at most 64 reserved rows per type in key order
+  (`INDEXED_DB_QUEUE_PROBE_MAX_TO_READ`, `indexed-db-queue-box.ts`), so a
+  lease that ended behind 64 live leases is not recovered by it either until
+  rows ahead of it settle; memory and PostgreSQL find it.
+- A claim reads past expired rows and rows whose attempts are spent, and a
+  `due` page past expired rows, with no bound on how many (D671). On
+  IndexedDB a claim deletes the expired rows it reads past (one write it
+  already owes), so only the readiness probe walks them again, until the
+  cleanup that runs at most once per 60 s window and deletes at most 256
+  expired rows per pass; memory and PostgreSQL claims filter them without
+  deleting. Spent rows are walked again by every claim and probe on every
+  store. A cost, not a correctness gap; a bounded sweep or a page budget
+  would close it.
+- Three IndexedDB limits of the due order (D671), each a difference from
+  memory and PostgreSQL: the fairness pass selects an undated RETRY row at its
+  creation instant where the other stores exclude it (pinned in
+  `indexeddb-queuebox-indexed-reads.test.ts`), and no writer produces one
+  today (a RETRY release requires a delay); a due claim reads only the
+  statuses in the due index, so a claim naming RETRY with a non-pending
+  status would see none of that status's undated rows, and no caller makes
+  one; an undated pending row whose creation instant is ahead of the store's
+  clock is not read until the clock reaches it, though the rule calls it due
+  at once, and only a writer whose clock runs ahead of the store's produces
+  one.
+- While the dequeue circuit is open the outbound lane still claims gated
+  dequeue rows when a batch runs for other due work, and releases each as
+  not ready until the breaker's backoff (`al-outbound-dequeued-admission.ts`);
+  the readiness scan keeps every type's page whole so these rows never hide
+  the owner's due work (D671). Same as before D671. Skipping gated types in
+  the claim while the circuit is open would end the churn: a lane decision.
+- When every batch claims a full page of pending rows, the timeout sweep
+  that recovers a crashed lease gets no room (`claimALWork` gives it
+  `maxCount` less the pending claimed, `al-work-queue-port.ts`), so a crashed
+  lease is recovered late for as long as a backlog of pending work lasts. The
+  port's design is unchanged by D671, but claims fill more often now that due
+  work is no longer hidden. Option: a guaranteed share of each claim for the
+  sweep; a port decision.
+- The memory queue (`InMemoryQueueBox`) filters its whole map and sorts it for
+  every `due` page and claim (`in-memory-queue-box.ts`). It is a production
+  store: ALM's volatile and checkpoint lanes (`al-runtime-stores.ts`) and
+  the default in-memory ALM runtimes
+  (`create-default-al-inbound-message-runtime.ts`,
+  `create-default-al-outbound-message-runtime.ts`). Measured in the final
+  review: 2 000 rows with 200 pending, a `due` probe 1.3 ms against 0.01 ms
+  for the key probe before D671, a claim taking nothing 1.1 ms against 0.7
+  ms; 20 000 rows with 2 000 pending, 25 ms against 0.004 ms and 28 ms
+  against 8 ms. Option: a due-ordered read in
+  `in-memory-queue-work-index.ts`, its own change (the store file sits at 108
+  of 110 cognitive load).
+- `packages/tests/shared/alm/work/al-durable-work-ownership.test.ts` ("takes
+  over … reports restored") races a running batch: it waits only for the
+  send, which happens mid-batch, and `hasReadyWork` answers false without a
+  probe while a batch runs. The race predates D671 (identical before it). Fix:
+  `await other.runtime.ready()` before `executeOnce()`, as the sibling test
+  does.
 - Over `rtc`, the first send of a new ordered track is lost for good when a
   later send reaches the receiver before it (D669, `lost-stream-start`): the
   receiver enters at the first frame it sees and refuses the earlier one as
   `before-entry`. It widens D646's one-frame limit. Recorded by ruling
   (2026-11-18); a fix changes how a receiver enters a track and is its own
   slice.
-- An ordered at-least-once send that names no `ack` took receipt mode
-  `receiver` over `rtc` in a lane run (D670). Read from the code and not
-  proven by a test: the channel's `command` purpose gives it. A caller that
-  meant an unreceipted stream gets handles that can end `receipt-exhausted`.
-  Whether that default is wanted is unruled.
 - A crash of the instance that holds the publisher's socket mid-publication,
   and what the publisher reads after it reconnects, is unproven. The
   subscriber's case is (D669); this one belongs with the held-send path.

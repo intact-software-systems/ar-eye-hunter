@@ -236,6 +236,7 @@ function createApiV1WsRouteInstaller<
     const { input, operations } = construction;
     return (app) =>
         wsRoutes.registerWsRoutes(app, {
+            serverPeerId: input.publicConfiguration.serverPeerId,
             socketServer: input.runtime.wsQBoxServerService.socket,
             appClientInboxService: input.runtime.appClientInboxService,
             readWsConnectTicket: (ticketDigest) =>

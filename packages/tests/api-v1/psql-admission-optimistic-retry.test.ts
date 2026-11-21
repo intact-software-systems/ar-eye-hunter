@@ -142,6 +142,7 @@ describe('PSql admission optimistic retry', () => {
             typeId: toALInboundWorkType(store.namespace, 'ws'),
             status: EntityStatus.NEW,
             maxToRead: 2,
+            order: 'key',
             cursor: null
         });
         expect(page.entries).toHaveLength(1);
@@ -298,6 +299,7 @@ describe('PSql admission optimistic retry', () => {
             typeId: toALOutboundWorkType(store.namespace),
             status: EntityStatus.NEW,
             maxToRead: 2,
+            order: 'key',
             cursor: null
         });
         expect(page.entries).toHaveLength(1);

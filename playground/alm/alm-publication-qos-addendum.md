@@ -1548,10 +1548,19 @@ ordered receipted stream keeps its order under a seeded jitter over `ws`; and
 a receipt whose subscriber's server is lost ends `timed-out`, naming the
 subscriber it could not confirm. They also found that an ordered receipted
 stream does not reliably recover from a seeded loss on either carrier (D670),
-so no advertised mode may yet claim recovery under loss. The next outcome is
-that recovery; after it, the held-send path, where a retained admission starts
-its `admitted` receipt only once its replay commits, and the relay statement
-rules. With the figures in place, recovery proven and the contracts adopted,
+so no advertised mode may yet claim recovery under loss. That recovery is
+partly built: the shared queue now hands out work in the order it comes due,
+on every store, so timers that come due later no longer hide work that is due
+now (D671). On PostgreSQL an index of its own serves that order, and a send
+that names no `ack` keeps the receipt its channel's purpose gives (D674). After it the loss cell was green in three of three runs over `rtc`
+and in two of three over `ws`. What remains is the `ws` stall: as read from
+the code and not yet proven by a test, a repair frame that is lost is never
+sent again, because a repair attempt is named by its gap (D673). The next
+outcome is that repair rule, starting with a unit reproduction; the local
+baseline's alternating runs are their own small change after the recovery
+slice (D672), and whether that change comes before or after the repair rule
+has not been ruled. After them, the held-send path, where a retained admission starts its `admitted`
+receipt only once its replay commits, and the relay statement rules. With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world
 testing, outside this document: a publication workload family, probes at the

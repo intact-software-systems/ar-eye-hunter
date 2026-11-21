@@ -5,6 +5,8 @@ import type {
     WebSocketSubmissionReadinessFaultPort
 } from '../transport-faults/transport-fault-port.ts';
 
+import { SOCKET_CLOCK_REPLY_PREFIX } from './socket-clock.ts';
+
 export interface WebSocketClientCallbacks {
     onOpen?: (ev: Event) => void;
     onError?: (ev: Event) => void;
@@ -194,6 +196,9 @@ export class JsonWebSocketClient {
     }
 
     private async dispatchMessage(socket: WebSocket, event: MessageEvent): Promise<void> {
+        if (typeof event.data === 'string' && event.data.startsWith(SOCKET_CLOCK_REPLY_PREFIX)) {
+            return;
+        }
         for (const callback of this.onMessageCallbacks.values()) {
             if (this.ws !== socket) {
                 return;
