@@ -43,6 +43,8 @@ import '../../setup-browser-indexeddb.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const PENDING_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
+/** The audience a replay's authority answers with: the source it ran under differs from the one the message was kept under. */
+const NARROWED_AUDIENCE = { groupRecipientPeerIds: ['sender', 'receiver'], snapshotVersion: 7 };
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -134,7 +136,7 @@ it('retains a message its ingress authority is behind on to its deadline and adm
     expect(delivered).toHaveLength(1);
 });
 
-it('hands a kept message its replay admits to its owner once, under the authority the replay ran with, before the delivery it wrote runs', async () => {
+it('hands a kept message its replay admits to its owner once, under the authority the replay ran with and the source it was kept under, before the delivery it wrote runs', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
     const stores = createDefaultInMemoryALInboundRuntimeStores();
@@ -145,7 +147,7 @@ it('hands a kept message its replay admits to its owner once, under the authorit
     const runtime = new ALInboundMessageRuntime({
         ...dependencies,
         readPendingAdmissionAuthority: async (_msg, source) =>
-            behind ? { kind: 'retry', retryAfterMs: 50 } : { kind: 'authorized', source, snapshotVersion: 7 },
+            behind ? { kind: 'retry', retryAfterMs: 50 } : { kind: 'authorized', source: { ...source, ...NARROWED_AUDIENCE }, snapshotVersion: 7 },
         onReplayAdmitted: handOvers.onReplayAdmitted,
         diagnostics: undefined
     });
@@ -168,7 +170,8 @@ it('hands a kept message its replay admits to its owner once, under the authorit
     }
     expect(handOvers.handedOver).toEqual([{
         msg: expect.objectContaining({ id: message.id, constraints: { expiresAtMs: message.constraints?.expiresAtMs } }),
-        source: PENDING_SOURCE,
+        source: { ...PENDING_SOURCE, ...NARROWED_AUDIENCE },
+        pendingSource: PENDING_SOURCE,
         snapshotVersion: 7,
         deliveredBefore: 0
     }]);
@@ -192,6 +195,7 @@ it('hands over a message kept after a lost commit race, with no snapshot version
     expect(handOvers.handedOver).toEqual([{
         msg: expect.objectContaining({ id: delivered[0].id }),
         source: { kind: 'rtc-peer', peerId: 'sender' },
+        pendingSource: { kind: 'rtc-peer', peerId: 'sender' },
         snapshotVersion: undefined,
         deliveredBefore: 0
     }]);

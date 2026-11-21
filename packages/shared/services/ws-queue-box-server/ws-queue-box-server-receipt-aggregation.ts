@@ -566,7 +566,9 @@ export class WsQueueBoxServerReceiptAggregation {
 
 /**
  * A kept WS client send its replay admitted, as the admission that starts its receipt; none when its source is
- * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version.
+ * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version. The receipt expects
+ * the audience the replay's authority answered with, unless that authority left it nobody to expect while the
+ * audience captured at ingress had someone: then it expects the captured audience.
  */
 export function toWsQueueBoxServerReplayedAdmittedMessage(
     replayed: ALInboundMessageRuntime.ReplayedAdmission
@@ -578,9 +580,26 @@ export function toWsQueueBoxServerReplayedAdmittedMessage(
     return {
         message: replayed.msg,
         originPeerId: source.peerId,
-        roomAudience: { recipientPeerIds: source.groupRecipientPeerIds, snapshotVersion },
+        roomAudience: {
+            recipientPeerIds: resolveReplayedRecipientPeerIds(replayed, source.groupRecipientPeerIds),
+            snapshotVersion
+        },
         acceptance: { kind: 'admitted' }
     };
+}
+
+function resolveReplayedRecipientPeerIds(
+    { msg, pendingSource }: ALInboundMessageRuntime.ReplayedAdmission,
+    replayedRecipientPeerIds: readonly string[]
+): readonly string[] {
+    if (pendingSource.kind !== 'ws-client' || pendingSource.groupRecipientPeerIds === undefined) {
+        return replayedRecipientPeerIds;
+    }
+    const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
+    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
+            toFrozenAudience(msg, originPeerId, captured).length > 0
+        ? captured
+        : replayedRecipientPeerIds;
 }
 
 /**

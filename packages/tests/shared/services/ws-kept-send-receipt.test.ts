@@ -6,7 +6,7 @@ import {
     type ALDeliveryLifecycle,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import { computeALDeliveryDeadline, computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 
 import {
     createWsReceiptedSendLink,
@@ -153,7 +153,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(link.written.filter((id) => id === second.id.msgId)).toHaveLength(1);
     });
 
-    it('characterization: a send kept after a lost race whose captured audience has left by its replay is admitted to nobody, reads acknowledged at once, and peer-b is sent nothing', async () => {
+    it('a send kept after a lost race whose captured audience has left by its replay expects that audience: admitted at once, timed-out at its deadline, and its handle reads expired', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
         link.setRoomView('peer-b-left');
@@ -164,20 +164,89 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         expect(toControlsOf(link, second)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
         expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
             phase: 'admitted',
-            expectedRecipientPeerIds: [],
+            expectedRecipientPeerIds: ['peer-b'],
             confirmedRecipientPeerIds: [],
             snapshotVersion: 3
         })]);
-        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
-        const facts = link.settlements.filter((fact) => fact.msgId === second.id.msgId);
-        expect(facts.map(({ kind }) => kind)).toEqual(['attempt-started', 'attempt-settled', 'acknowledgement']);
-        expect(facts.at(-1)).toMatchObject({ complete: true, expectedRecipientPeerIds: [], confirmedRecipientPeerIds: [] });
-        expect(toLifecycleState(facts, second)).toBe('acknowledged');
-        expect((await link.readSenderRows(second)).ended).toBe(true);
+
+        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS - 1_000);
+        expect(readHandleState(link, second)).toBe('transport-accepted');
 
         await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
-        expect(toControlsOf(link, second)).toHaveLength(1);
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:timed-out', admission: 'committed' }
+        ]);
+        expect(link.settlements.filter((fact) => fact.msgId === second.id.msgId).at(-1)).toMatchObject({
+            kind: 'acknowledgement',
+            complete: false,
+            expectedRecipientPeerIds: ['peer-b'],
+            unconfirmedRecipientPeerIds: ['peer-b']
+        });
+        expect(readHandleState(link, second)).toBe('expired');
+        expect(link.written.filter((id) => id === second.id.msgId)).toHaveLength(1);
         expect(link.deliveredToPeer(second)).toBe(0);
+        expect((await link.readSenderRows(second)).ended).toBe(true);
+    });
+
+    it('characterization: a send kept behind the view, nothing captured at ingress, whose audience is the origin alone when the view catches up is admitted to nobody and reads acknowledged', async () => {
+        const link = await createWsReceiptedSendLink('behind');
+        const sent = await link.send(toRoomNotice());
+        await link.advance(1_000);
+        link.setRoomView('peer-b-left');
+        await link.advance(200);
+
+        expect(toControlsOf(link, sent)).toEqual([
+            { control: 'nack:not-yet-in-sync', admission: 'committed' },
+            { control: 'receipt:admitted', admission: 'committed' }
+        ]);
+        expect(link.readReceiptsToOrigin(sent)).toEqual([expect.objectContaining({
+            phase: 'admitted',
+            expectedRecipientPeerIds: [],
+            snapshotVersion: 3
+        })]);
+        expect(readHandleState(link, sent)).toBe('acknowledged');
+        expect(link.deliveredToPeer(sent)).toBe(0);
+    });
+
+    it('characterization: a send kept after a lost race whose captured audience still has one member at its replay expects exactly that member', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const [, second] = await sendTwoOrderedSideBySide(link);
+        link.setRoomView('peer-c-joined');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+
+        expect(toControlsOf(link, second)).toEqual([{ control: 'receipt:admitted', admission: 'committed' }]);
+        expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
+            phase: 'admitted',
+            expectedRecipientPeerIds: ['peer-b'],
+            snapshotVersion: 4
+        })]);
+    });
+
+    it('characterization: in a send kept after a lost race whose captured audience has left, an ACK from peer-b, which was never sent the frame, is counted inside the audience and draws receipt:complete', async () => {
+        const link = await createWsReceiptedSendLink('in-sync');
+        const [, second] = await sendTwoOrderedSideBySide(link);
+        link.setRoomView('peer-b-left');
+        await link.advance(0);
+        await link.advance(200);
+        await link.advance(200);
+
+        expect((await link.acknowledge(second)).right).toEqual({ kind: 'control', handled: false });
+        await link.advance(1_000);
+
+        expect(link.deliveredToPeer(second)).toBe(0);
+        expect(toControlsOf(link, second)).toEqual([
+            { control: 'receipt:admitted', admission: 'committed' },
+            { control: 'receipt:complete', admission: 'committed' }
+        ]);
+        expect(link.readReceiptsToOrigin(second).at(-1)).toMatchObject({
+            phase: 'complete',
+            expectedRecipientPeerIds: ['peer-b'],
+            confirmedRecipientPeerIds: ['peer-b']
+        });
+        expect(readHandleState(link, second)).toBe('acknowledged');
     });
 
     it('a copy written while the original is kept behind the view: one admitted, delivered once', async () => {
@@ -290,17 +359,22 @@ function toControlsOf(link: WsReceiptedSendLink, msg: ALMessage): readonly Omit<
         .map(({ control, admission }) => ({ control, admission }));
 }
 
-/** The state a receipted notice's handle reads once it has seen `facts`, in order. */
+function readHandleState(link: WsReceiptedSendLink, msg: ALMessage): ALDeliveryLifecycle['state'] {
+    return toLifecycleState(link.settlements.filter((fact) => fact.msgId === msg.id.msgId), msg);
+}
+
+/** The state a receipted notice's handle reads now, once it has seen `facts` in order, with its own deadline applied. */
 function toLifecycleState(facts: readonly ALDeliverySettlement[], msg: ALMessage): ALDeliveryLifecycle['state'] {
-    return facts.reduce(
+    const lifecycle = facts.reduce(
         computeALDeliveryLifecycle,
         createInitialALDeliveryLifecycle({
             msgId: msg.id.msgId,
             typeId: 'notice.v1',
             ackMode: 'receiver',
             receiptAlgo: 'receiver',
-            expiresAtMs: undefined,
+            expiresAtMs: msg.constraints?.expiresAtMs,
             submittedAtMs: 0
         })
-    ).state;
+    );
+    return computeALDeliveryDeadline(lifecycle, Date.now()).state;
 }

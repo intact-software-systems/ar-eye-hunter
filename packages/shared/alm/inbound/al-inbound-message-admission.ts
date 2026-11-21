@@ -288,13 +288,14 @@ export class ALInboundMessageAdmission {
         if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
             return REPLAY_STORED_SCOPE_REFUSED;
         }
-        return await this.replayAuthorized(pending.msg, authority);
+        return await this.replayAuthorized(pending.msg, authority, pending.source);
     }
 
     /** One fresh attempt under the source its current authority answered with; an admission is handed to its owner. */
     private async replayAuthorized(
         msg: ALMessage,
-        authority: Extract<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>
+        authority: Extract<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>,
+        pendingSource: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageAdmission.ReplayResult> {
         const { source } = authority;
         const authorization = await readALInboundMessageAuthorization(
@@ -315,7 +316,12 @@ export class ALInboundMessageAdmission {
         }
         const attempt = result.right!;
         if (attempt.kind === 'completed' && attempt.acceptance.kind === 'admitted' && !this.shutdown.signal.aborted) {
-            await this.dependencies.onReplayAdmitted?.({ msg, source, snapshotVersion: authority.snapshotVersion });
+            await this.dependencies.onReplayAdmitted?.({
+                msg,
+                source,
+                pendingSource,
+                snapshotVersion: authority.snapshotVersion
+            });
         }
         return toAttemptReplay(attempt, this.shutdown.signal.aborted);
     }

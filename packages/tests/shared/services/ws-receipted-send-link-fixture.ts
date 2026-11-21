@@ -49,8 +49,9 @@ const LINK_PASSES_PER_STEP = 12;
 /**
  * in-sync: authorized, audience [origin, peer-b], snapshotVersion 2. behind: `not-yet-in-sync`, sendNack, serverSnapshotVersion 1.
  * fenced: `membership-fenced`, sendNack. peer-b-left: authorized, audience [origin], snapshotVersion 3.
+ * peer-c-joined: authorized, audience [origin, peer-b, peer-c], snapshotVersion 4.
  */
-export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced' | 'peer-b-left';
+export type WsReceiptedSendRoomView = 'in-sync' | 'behind' | 'fenced' | 'peer-b-left' | 'peer-c-joined';
 
 /** One control the server sent the origin, `nack:<reason>` or `receipt:<phase>`, and what the origin's outbound owner decided. */
 export interface WsReceiptedSendServerControl extends ControlFrameLabel {
@@ -220,6 +221,9 @@ function toRoomViewAuthorization(view: WsReceiptedSendRoomView): WsServerInbound
     }
     if (view === 'peer-b-left') {
         return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID], snapshotVersion: 3 } };
+    }
+    if (view === 'peer-c-joined') {
+        return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID, LINK_PEER_ID, 'peer-c'], snapshotVersion: 4 } };
     }
     return { authorized: true, roomAudience: { recipientPeerIds: [LINK_ORIGIN_ID, LINK_PEER_ID], snapshotVersion: 2 } };
 }

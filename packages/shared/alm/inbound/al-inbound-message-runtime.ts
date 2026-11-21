@@ -100,6 +100,8 @@ export namespace ALInboundMessageRuntime {
     export interface ReplayedAdmission {
         readonly msg: ALMessage;
         readonly source: Source;
+        /** The source the message was kept under, with the audience it captured at ingress. */
+        readonly pendingSource: Source;
         readonly snapshotVersion: number | undefined;
     }
 
