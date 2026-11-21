@@ -1,4 +1,4 @@
-import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
@@ -8,6 +8,15 @@ import {
     type AlmConformanceLaneFamily,
     type AlmConformanceTag
 } from '../alm-conformance-scenario-definition.ts';
+import {
+    toField,
+    validateList,
+    validateMember,
+    validateObject,
+    validateText,
+    validateUnique,
+    type AlmLaneFileField
+} from './alm-lane-file-field.ts';
 import {
     ALM_LANE_BACKENDS,
     ALM_LANE_FAMILY_OUTCOMES,
@@ -21,14 +30,6 @@ import {
     type AlmLaneScenarioOutcome,
     type AlmLaneScenarioResult
 } from './alm-lane-result.ts';
-
-/** One member of a read file: its path from the file's root, and the value found there. */
-interface AlmLaneFileField {
-    readonly path: string;
-    readonly value: ApiJsonValue | undefined;
-}
-
-type AlmLaneFieldValidation = (field: AlmLaneFileField) => readonly string[];
 
 /**
  * A file read back from an artifact. Every issue names the field's path and what was there; an unknown extra field
@@ -121,55 +122,4 @@ function validatePlannedFamily(field: AlmLaneFileField): readonly string[] {
         ...validateList(toField(planned, 'scenarioKeys', field.path), validateText),
         ...validateUnique(toField(planned, 'scenarioKeys', field.path), undefined)
     ]);
-}
-
-function toField(record: ApiJsonObject, key: string, parentPath = ''): AlmLaneFileField {
-    return { path: parentPath === '' ? key : `${parentPath}.${key}`, value: record[key] };
-}
-
-function validateMember(field: AlmLaneFileField, accepted: readonly string[]): readonly string[] {
-    return typeof field.value === 'string' && accepted.includes(field.value)
-        ? []
-        : [toIssue(field, `one of ${accepted.join(', ')}`)];
-}
-
-function validateText(field: AlmLaneFileField): readonly string[] {
-    return typeof field.value === 'string' && field.value.length > 0 ? [] : [toIssue(field, 'a non-empty string')];
-}
-
-function validateObject(
-    field: AlmLaneFileField,
-    validateMembers: (record: ApiJsonObject) => readonly string[]
-): readonly string[] {
-    return isApiJsonObject(field.value) ? validateMembers(field.value) : [toIssue(field, 'an object')];
-}
-
-function validateList(field: AlmLaneFileField, validateEntry: AlmLaneFieldValidation): readonly string[] {
-    if (!Array.isArray(field.value)) {
-        return [toIssue(field, 'an array')];
-    }
-    return field.value.flatMap((entry, index) => validateEntry({ path: `${field.path}[${index}]`, value: entry }));
-}
-
-/** Names each text a list holds more than once: the entry itself, or the named key of each entry. */
-function validateUnique(field: AlmLaneFileField, key: string | undefined): readonly string[] {
-    const entries = Array.isArray(field.value) ? field.value : [];
-    const texts = entries.map((entry) => key === undefined ? entry : isApiJsonObject(entry) ? entry[key] : undefined)
-        .filter((text) => typeof text === 'string');
-    const repeated = [...new Set(texts.filter((text, index) => texts.indexOf(text) !== index))];
-    const named = key === undefined ? '' : `${key} `;
-    return repeated.map((text) => `${field.path} names ${named}${JSON.stringify(text)} more than once.`);
-}
-
-function toIssue(field: AlmLaneFileField, expected: string): string {
-    return field.value === undefined
-        ? `${field.path} is missing; expected ${expected}.`
-        : `${field.path} is ${toReceivedText(field.value)}; expected ${expected}.`;
-}
-
-function toReceivedText(value: ApiJsonValue): string {
-    if (Array.isArray(value)) {
-        return 'an array';
-    }
-    return value !== null && typeof value === 'object' ? 'an object' : JSON.stringify(value);
 }
