@@ -315,13 +315,13 @@ describe('verified direct room row delivery', () => {
         if (placement === 'remote') {
             fixture.addSocket('session');
             fixture.addSocket('late');
-            await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry }));
+            await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
         }
         expect(fixture.native.get('session')!.sent).toHaveLength(1);
         expect(fixture.native.get('late')!.sent).toEqual([]);
         expect(captured).toContainEqual({ audience: ['session'], scope: SCOPE });
         fixture.authentication.scope = { ...SCOPE, workspaceId: 'other' };
-        await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry }));
+        await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
         expect(fixture.native.get('session')!.sent).toHaveLength(1);
     });
 });

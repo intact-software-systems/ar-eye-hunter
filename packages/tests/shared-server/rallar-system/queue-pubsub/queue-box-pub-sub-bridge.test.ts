@@ -531,7 +531,7 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(addressed).toEqual([['admitted-session'], ['admitted-session']]);
     });
@@ -565,7 +565,7 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(rechecked).toEqual([['subscriber', 'revoked'], ['subscriber', 'revoked']]);
         expect(addressed).toEqual([['subscriber'], ['subscriber']]);
@@ -592,7 +592,7 @@ describe('QueueBoxPubSubBridge', () => {
             })
         });
 
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(sends).toEqual([]);
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
@@ -829,7 +829,7 @@ describe('QueueBoxPubSubBridge', () => {
             channel: 'queuebox-events',
             publisherId: 'local'
         });
-        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry });
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined });
         expect(new TextEncoder().encode(JSON.stringify(notice)).length).toBeLessThan(8_000);
         expect(JSON.stringify(notice)).not.toContain(longMessage.id.msgId);
         await bridge.subscriber?.(notice);
@@ -855,7 +855,7 @@ describe('QueueBoxPubSubBridge', () => {
             publisherId: 'local',
             onValidatedOutboxKeyReceived: wake
         });
-        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry });
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined });
         const getItem = outbox.getItem.bind(outbox);
         vi.spyOn(outbox, 'getItem').mockImplementation(async (key) => {
             if (key.topicId === 'AL_OUTBOUND_IDENTITY') {
@@ -870,7 +870,7 @@ describe('QueueBoxPubSubBridge', () => {
 
     it('rejects malformed and oversized notices before loading canonical storage', async () => {
         const entry = createWsOutboxEntry();
-        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry });
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined });
         const outbox = new InMemoryQueueBox();
         const read = vi.spyOn(outbox, 'getItem');
         const bridge = createBridge();
@@ -892,6 +892,36 @@ describe('QueueBoxPubSubBridge', () => {
             await bridge.subscriber?.(malformed);
         }
         expect(read).not.toHaveBeenCalled();
+    });
+
+    it('drops a notice whose carried drops are duplicated, empty, too long or not a list as malformed', async () => {
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined });
+        const bridge = createBridge();
+        const events: RallarTimingEvent[] = [];
+        const sends: WsServerLiveSendInputDto[] = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({ outbox, sends, readAudience: async () => ['a'] }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            timing: (event) => events.push(event)
+        });
+        events.length = 0;
+
+        for (const droppedSessionIds of [['a', 'a'], [''], ['d'.repeat(129)], 'a']) {
+            await bridge.subscriber!({ ...notice, droppedSessionIds });
+        }
+
+        expect(events.map((event) => event.operation)).toEqual([
+            'drop-malformed',
+            'drop-malformed',
+            'drop-malformed',
+            'drop-malformed'
+        ]);
+        expect(sends).toEqual([]);
     });
 
     it.each(['missing', 'malformed-json', 'malformed-provenance'] as const)(
@@ -918,7 +948,7 @@ describe('QueueBoxPubSubBridge', () => {
                 publisherId: 'local',
                 onValidatedOutboxKeyReceived: wake
             });
-            await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))
+            await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined })))
                 .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
             expect(wake).not.toHaveBeenCalled();
             expect(send).not.toHaveBeenCalled();
@@ -930,7 +960,7 @@ describe('QueueBoxPubSubBridge', () => {
         const originalMessage = decodePersistedALMessage(original.resource);
         const expiredMessage = { ...originalMessage, constraints: { expiresAtMs: Date.now() - 1 } };
         const expiredEntry = { ...original, resource: JSON.stringify(expiredMessage) };
-        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry: expiredEntry });
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry: expiredEntry, droppedSessionIds: undefined });
         const outbox = new InMemoryQueueBox();
         await persistCanonicalEntry(outbox, original);
         const load = vi.spyOn(outbox, 'getItem');
@@ -954,7 +984,8 @@ describe('QueueBoxPubSubBridge', () => {
             toPubSubMessage({
                 channel: 'queuebox-events',
                 publisherId: 'publisher-1',
-                entry
+                entry,
+                droppedSessionIds: undefined
             })
         ).toThrow('QueueBox cluster notifications require admitted WS outbox work');
     });
@@ -964,7 +995,8 @@ describe('QueueBoxPubSubBridge', () => {
         const message = toPubSubMessage({
             channel: 'queuebox-events',
             publisherId: 'publisher-1',
-            entry
+            entry,
+            droppedSessionIds: undefined
         });
 
         expect(message).toEqual({
@@ -976,6 +1008,16 @@ describe('QueueBoxPubSubBridge', () => {
             expiresAtMs: decodePersistedALMessage(entry.resource).constraints?.expiresAtMs
         });
         expect(JSON.stringify(message)).not.toContain(entry.resource);
+    });
+
+    it('builds a notice carrying its drops, and one whose drops the decoder would refuse carrying none', () => {
+        const entry = createWsOutboxEntry();
+        const notices = [['a'], ['a', 'a'], ['x'.repeat(129)], undefined].map((droppedSessionIds) =>
+            toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-1', entry, droppedSessionIds })
+        );
+
+        expect(notices.map((notice) => Object.hasOwn(notice, 'droppedSessionIds') ? notice.droppedSessionIds : 'absent'))
+            .toEqual([['a'], 'absent', 'absent', 'absent']);
     });
 
     it('hands a row with no captured audience to the local and the remote send as absent, so each resolves its targets as before', async () => {
@@ -1002,7 +1044,7 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
-        await bridge.subscriber?.(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry }));
+        await bridge.subscriber?.(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry, droppedSessionIds: undefined }));
 
         expect(handedAudiences).toEqual([undefined, undefined]);
     });
@@ -1034,7 +1076,8 @@ describe('QueueBoxPubSubBridge', () => {
             toPubSubMessage({
                 channel: 'queuebox-events',
                 publisherId: 'publisher-2',
-                entry
+                entry,
+                droppedSessionIds: undefined
             })
         );
 
@@ -1080,7 +1123,7 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.(
-            toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry })
+            toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry, droppedSessionIds: undefined })
         );
 
         // The row is back in the queue and the owner that must claim it learns of it only from here.
@@ -1110,7 +1153,7 @@ describe('QueueBoxPubSubBridge', () => {
             capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async (input) => input.candidateSessionIds)
         });
 
-        await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))
+        await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined })))
             .resolves.toBeUndefined();
         expect(send).not.toHaveBeenCalled();
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
@@ -1139,7 +1182,7 @@ describe('QueueBoxPubSubBridge', () => {
             wakeQueueEngine
         });
 
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
         expect(addressed).toEqual([[]]);
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
         expect(wakeQueueEngine).not.toHaveBeenCalled();
@@ -1173,11 +1216,12 @@ describe('QueueBoxPubSubBridge', () => {
             toPubSubMessage({
                 channel: 'queuebox-events',
                 publisherId: 'publisher-2',
-                entry
+                entry,
+                droppedSessionIds: undefined
             })
         );
         await bridge.subscriber?.({
-            ...toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry }),
+            ...toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry, droppedSessionIds: undefined }),
             delivery: 'entry',
             payload: entry.resource
         });
@@ -1208,7 +1252,8 @@ describe('QueueBoxPubSubBridge', () => {
             toPubSubMessage({
                 channel: 'queuebox-events',
                 publisherId: 'publisher-2',
-                entry
+                entry,
+                droppedSessionIds: undefined
             })
         )).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
@@ -1249,7 +1294,8 @@ describe('QueueBoxPubSubBridge', () => {
             toPubSubMessage({
                 channel: 'queuebox-events',
                 publisherId: 'publisher-2',
-                entry
+                entry,
+                droppedSessionIds: undefined
             })
         )).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
@@ -1299,7 +1345,7 @@ describe('QueueBoxPubSubBridge', () => {
         const bridge = createBridge();
         const outbox = new InMemoryQueueBox();
         const valid = createWsOutboxEntry();
-        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry: valid });
+        const notice = toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry: valid, droppedSessionIds: undefined });
         const entry = { ...valid, resource: '{"hello":"world"}' };
         await outbox.enqueue(entry);
         const sendToTargetsWithResult = vi.fn(sentLiveResult);
@@ -1336,7 +1382,7 @@ describe('the send-time drops of a remote send', () => {
             capturedRecipientEligibilityFilters: toUnjudgedRecheckFilters(async () => ['a'])
         });
 
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(outsideWrites).toEqual([{
             msgId: decodePersistedALMessage(entry.resource).id.msgId,
@@ -1363,7 +1409,7 @@ describe('the send-time drops of a remote send', () => {
             publisherId: 'local'
         });
 
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(outsideWrites).toEqual([{
             msgId: decodePersistedALMessage(entry.resource).id.msgId,
@@ -1390,13 +1436,131 @@ describe('the send-time drops of a remote send', () => {
             publisherId: 'local'
         });
 
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(outsideWrites).toEqual([{
             msgId: decodePersistedALMessage(entry.resource).id.msgId,
             sessionIds: ['a'],
             judgement: 'open-here'
         }]);
+    });
+});
+
+describe('the judgement a cluster notice carries', () => {
+    interface RemoteRecheck {
+        readonly filter: 'local' | 'socket';
+        readonly candidateSessionIds: readonly string[];
+        readonly capturedConnectionGenerationIds: Readonly<Record<string, string>> | null;
+    }
+
+    interface PublishToRemoteInput {
+        readonly captured: readonly string[];
+        readonly judgedDrops: readonly string[];
+        readonly openOnRemote: readonly string[];
+        readonly capturedGenerations?: Readonly<Record<string, string>>;
+    }
+
+    interface PublishedToRemote {
+        readonly notices: readonly QueueBoxPubSubMessage[];
+        readonly remoteRechecks: readonly RemoteRecheck[];
+        readonly remoteAddressed: readonly (readonly string[] | undefined)[];
+    }
+
+    /** One instance publishes a judged frozen-audience row; the other receives its notice and sends to its sockets. */
+    async function publishToRemote(input: PublishToRemoteInput): Promise<PublishedToRemote> {
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const outboxPublishers: ClusterPublisher[] = [];
+        const publisherBridge = createBridge();
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                readAudience: async () => input.captured,
+                requiresFrozenAudience: () => true
+            }),
+            bridge: publisherBridge,
+            channel: 'queuebox-events',
+            publisherId: 'publisher',
+            capturedRecipientEligibilityFilters: { local: async () => [], socket: async () => [] }
+        });
+        const remoteBridge = createBridge();
+        const remoteRechecks: RemoteRecheck[] = [];
+        const remoteAddressed: (readonly string[] | undefined)[] = [];
+        const open = new Set(input.openOnRemote);
+        const createRecordedRecheck = (filter: RemoteRecheck['filter']): WsCapturedRecipientEligibilityFilter => async (recheck) => {
+            remoteRechecks.push({
+                filter,
+                candidateSessionIds: recheck.candidateSessionIds,
+                capturedConnectionGenerationIds: recheck.capturedConnectionGenerationIds
+            });
+            return recheck.candidateSessionIds.filter((sessionId) => open.has(sessionId));
+        };
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: async () => input.captured,
+                capturedGenerations: input.capturedGenerations,
+                requiresFrozenAudience: () => true,
+                sendToTargetsWithResult: (message, recipientSessionIds) => {
+                    remoteAddressed.push(recipientSessionIds);
+                    return recipientSessionIds?.length ? sentLiveResult(message) : noRecipientLiveSendResult(message);
+                }
+            }),
+            bridge: remoteBridge,
+            channel: 'queuebox-events',
+            publisherId: 'remote',
+            capturedRecipientEligibilityFilters: { local: createRecordedRecheck('local'), socket: createRecordedRecheck('socket') }
+        });
+
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, {
+            ...STORED_POLICY_HANDOFF,
+            judgedDrops: input.judgedDrops
+        });
+        for (const published of publisherBridge.published) {
+            await remoteBridge.subscriber!(published.message);
+        }
+
+        return { notices: publisherBridge.published.map((published) => published.message), remoteRechecks, remoteAddressed };
+    }
+
+    it('a remote send narrows a carried judgement by its sockets and reads no re-check', async () => {
+        const generations = { b: 'generation-b', c: 'generation-c', d: 'generation-d' };
+
+        const published = await publishToRemote({
+            captured: ['b', 'c', 'd'],
+            judgedDrops: ['c'],
+            openOnRemote: ['b', 'c'],
+            capturedGenerations: generations
+        });
+
+        expect(published.notices.map((notice) => notice.droppedSessionIds)).toEqual([['c']]);
+        expect(published.remoteRechecks).toEqual([
+            { filter: 'socket', candidateSessionIds: ['b', 'd'], capturedConnectionGenerationIds: generations }
+        ]);
+        expect(published.remoteAddressed).toEqual([['b']]);
+    });
+
+    it('a carried drop outside the captured audience changes nothing', async () => {
+        const published = await publishToRemote({ captured: ['b', 'c', 'd'], judgedDrops: ['z'], openOnRemote: ['b', 'd'] });
+
+        expect(published.remoteRechecks).toEqual([
+            { filter: 'socket', candidateSessionIds: ['b', 'c', 'd'], capturedConnectionGenerationIds: null }
+        ]);
+        expect(published.remoteAddressed).toEqual([['b', 'd']]);
+    });
+
+    it('publishes a notice whose drops would pass the cap without them, and its receiver re-checks', async () => {
+        const judgedDrops = Array.from({ length: 400 }, (_, index) => `${index}`.padStart(40, 's'));
+
+        const published = await publishToRemote({ captured: ['b', ...judgedDrops], judgedDrops, openOnRemote: ['b'] });
+
+        expect(published.notices.map((notice) => Object.keys(notice).toSorted())).toEqual([
+            ['channel', 'delivery', 'expiresAtMs', 'key', 'publisherId', 'typeId']
+        ]);
+        expect(published.remoteRechecks.map((recheck) => recheck.filter)).toEqual(['local']);
+        expect(published.remoteAddressed).toEqual([['b']]);
     });
 });
 
@@ -1475,7 +1639,7 @@ describe('the captured audience of a cluster publication', () => {
                 nowMs = message.constraints!.expiresAtMs! + 1;
             }
             await bridge.subscriber!(
-                toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })
+                toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined })
             );
 
             expect(handed).toEqual(input.handed);
@@ -1504,7 +1668,7 @@ describe('the captured audience of a cluster publication', () => {
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, STORED_POLICY_HANDOFF);
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(sends.map((send) => send.recipientScope)).toEqual([recipientScope, recipientScope]);
     });
@@ -1555,7 +1719,7 @@ describe('the captured audience of a cluster publication', () => {
             deferObservation: undefined,
             judgedDrops: undefined
         });
-        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
 
         expect(effects).toEqual(['publish', 'send:committed-session', 'stored-read', 'send:stored-session']);
         expect(policyReads).toEqual([committedPolicy, undefined]);
@@ -1664,6 +1828,8 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
     readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
     readonly recipientScope?: StateScope;
+    /** The connection generation the stored policy captured for each session; none by default. */
+    readonly capturedGenerations?: Readonly<Record<string, string>>;
     readonly sends?: WsServerLiveSendInputDto[];
     /** The committed policy each captured-policy read was handed, or `undefined` for a stored read. */
     readonly policyReads?: (ALOutboundCapturedPolicy | undefined)[];
@@ -1711,7 +1877,10 @@ function createTestQueueBoxPubSubWsService(
                 repairTracking: null,
                 supersedenceTracking: null,
                 admittedAudience: await input.readAudience?.(message, entry),
-                ...(input.recipientScope === undefined ? {} : { recipientScope: input.recipientScope })
+                ...(input.recipientScope === undefined ? {} : { recipientScope: input.recipientScope }),
+                ...(input.capturedGenerations === undefined
+                    ? {}
+                    : { admittedConnectionGenerationIds: input.capturedGenerations })
             };
         }
     };

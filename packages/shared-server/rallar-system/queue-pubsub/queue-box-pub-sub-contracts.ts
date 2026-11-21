@@ -5,20 +5,29 @@ import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 
+/** A notice this large or larger is malformed; a publisher sheds its carried drops to stay under it. */
+export const QUEUE_BOX_PUB_SUB_NOTICE_MAX_BYTES = 8_000;
+
 export interface QueueBoxPubSubMessageKey extends JsonWireObject {
     readonly topicId: string;
     readonly resourceId: string;
     readonly contextId: string;
 }
 
-export interface QueueBoxPubSubMessage extends JsonWireObject {
+/** An intersection, not an interface extending the wire object, whose index signature refuses an optional field. */
+export type QueueBoxPubSubMessage = JsonWireObject & {
     readonly key: QueueBoxPubSubMessageKey;
     readonly channel: string;
     readonly publisherId: string;
     readonly typeId: typeof EnqueuedType.WS_OUTBOX;
     readonly delivery: 'key';
     readonly expiresAtMs: number;
-}
+    /**
+     * The captured sessions the publishing attempt's dequeue dropped; absent, the notice carries no judgement and its
+     * receiver re-checks.
+     */
+    readonly droppedSessionIds?: readonly string[];
+};
 
 export interface QueueBoxPubSubBridge {
     publish(channel: string, message: QueueBoxPubSubMessage): Promise<void>;
@@ -33,10 +42,14 @@ export function decodeQueueBoxPubSubMessage(
     message: JsonWireValue,
     expectedChannel: string
 ): QueueBoxPubSubMessage | undefined {
-    if (!isJsonWireObject(message) || computeUtf8ByteLength(JSON.stringify(message)) >= 8_000) {
+    if (
+        !isJsonWireObject(message) ||
+        computeUtf8ByteLength(JSON.stringify(message)) >= QUEUE_BOX_PUB_SUB_NOTICE_MAX_BYTES
+    ) {
         return undefined;
     }
     const key = decodeQueueBoxPubSubMessageKey(message.key);
+    const droppedSessionIds = decodeQueueBoxPubSubDroppedSessionIds(message.droppedSessionIds);
     if (
         message.channel !== expectedChannel ||
         !isNonEmptyString(message.publisherId) ||
@@ -44,8 +57,16 @@ export function decodeQueueBoxPubSubMessage(
         message.delivery !== 'key' ||
         typeof message.expiresAtMs !== 'number' || !Number.isSafeInteger(message.expiresAtMs) ||
         message.expiresAtMs < 0 ||
-        !hasExactKeys(message, ['key', 'channel', 'publisherId', 'typeId', 'delivery', 'expiresAtMs']) ||
-        !key
+        !hasExactKeys(message, [
+            'key',
+            'channel',
+            'publisherId',
+            'typeId',
+            'delivery',
+            'expiresAtMs',
+            ...(message.droppedSessionIds === undefined ? [] : ['droppedSessionIds'])
+        ]) ||
+        !key || droppedSessionIds === 'malformed'
     ) {
         return undefined;
     }
@@ -55,8 +76,26 @@ export function decodeQueueBoxPubSubMessage(
         publisherId: message.publisherId,
         typeId: message.typeId,
         delivery: 'key',
-        expiresAtMs: message.expiresAtMs
+        expiresAtMs: message.expiresAtMs,
+        ...(droppedSessionIds === undefined ? {} : { droppedSessionIds })
     };
+}
+
+/** Absent carries no judgement; anything but unique non-empty session ids of at most 128 characters is malformed. */
+function decodeQueueBoxPubSubDroppedSessionIds(
+    droppedSessionIds: JsonWireValue | undefined
+): readonly string[] | undefined | 'malformed' {
+    if (droppedSessionIds === undefined) {
+        return undefined;
+    }
+    if (
+        !Array.isArray(droppedSessionIds) ||
+        !droppedSessionIds.every((sessionId: JsonWireValue) => isNonEmptyString(sessionId, 128)) ||
+        new Set(droppedSessionIds).size !== droppedSessionIds.length
+    ) {
+        return 'malformed';
+    }
+    return droppedSessionIds as readonly string[];
 }
 
 function decodeQueueBoxPubSubMessageKey(
@@ -100,10 +139,15 @@ export interface ToPubSubMessageInput {
     readonly channel: string;
     readonly publisherId: string;
     readonly entry: ResourceEntry;
+    readonly droppedSessionIds: readonly string[] | undefined;
 }
 
+/**
+ * The notice carries the publishing attempt's drops while the decoder accepts them, under the notice cap; one whose
+ * drops it would refuse carries none, and its receiver re-checks.
+ */
 export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMessage {
-    const { channel, publisherId, entry } = input;
+    const { channel, publisherId, entry, droppedSessionIds } = input;
     if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
         throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
     }
@@ -116,7 +160,7 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
     ) {
         throw new TypeError('Cluster notification requires a canonical logical deadline');
     }
-    const notice: QueueBoxPubSubMessage = {
+    const unjudged: QueueBoxPubSubMessage = {
         key: entry.key,
         channel,
         publisherId,
@@ -124,6 +168,8 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
         delivery: 'key',
         expiresAtMs
     };
+    const judged = droppedSessionIds === undefined ? undefined : { ...unjudged, droppedSessionIds };
+    const notice = judged !== undefined && decodeQueueBoxPubSubMessage(judged, channel) ? judged : unjudged;
     if (!decodeQueueBoxPubSubMessage(notice, channel)) {
         throw new TypeError('QueueBox notification exceeds physical key or wire bounds');
     }

@@ -265,7 +265,12 @@ async function writeQueueBoxOutboxPublication(
     let result: WsServerLiveSendResult | undefined;
     let outcome: 'returned' | 'threw' = 'threw';
     try {
-        const envelope = toPubSubMessage({ channel: options.channel, publisherId: options.publisherId, entry });
+        const envelope = toPubSubMessage({
+            channel: options.channel,
+            publisherId: options.publisherId,
+            entry,
+            droppedSessionIds: judgedDrops
+        });
         publishCall = 'invoked';
         await publishOutboxClusterNotice(envelope, options);
         publishCall = 'returned';
@@ -457,7 +462,7 @@ async function sendRemoteQueueBoxOutboxEntry(
             entry,
             policy,
             sentPositions: await options.wsQBoxServerService.readSentPositions(remoteMessage),
-            judgedDrops: undefined
+            judgedDrops: message.droppedSessionIds
         };
         result = await sendToCapturedLocalTargets(local, options);
         awaited = deferAwaitedCapturedRecipients(local, result, options);
