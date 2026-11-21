@@ -120,7 +120,7 @@ export function validateGroupMutationOperationInput(
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
         ...(operation === 'createGroup' || operation === 'updateGroup'
-            ? validateGroupMetadataInput(input.metadata, input.roomDeadline)
+            ? validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock)
             : [])
     ];
     if (

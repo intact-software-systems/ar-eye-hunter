@@ -75,8 +75,56 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     const secondOccurrence = [{ name, revision: 2, startedAtRevision: 2, atEpochMs: initial }];
     assert.deepEqual(deadlines(restarted), secondOccurrence);
 
+    // Clock authority moves with the appointment; the paused balance remains a room fact.
+    await api.connectPresence({ ...room, actor: owner });
+    await api.connectPresence({ ...room, actor: deputy });
+    const appoint = (session: ProofSession) => requestJson(session.apiBaseUrl,
+        toApiMutationRequestPath(first + '/director/appoint', crypto.randomUUID()), { method: 'POST', session, body: {} });
+    const clock = (snapshot: ProofJsonObject) => requireRecord(requireRecord(snapshot.group, 'group').metadata, 'metadata').rallarRoomClocks;
+    const clockWrite = (session: ProofSession, command: object, expectedStatus = 200) =>
+        requestJson(session.apiBaseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
+            method: 'PUT', session, expectedStatus, body: { roomClock: { name: 'period', ...command } }
+        });
+    await appoint(owner);
+    await clockWrite(owner, { operation: 'start', durationMs: 494_000, expectedRevision: 0, expectedDirectorEpoch: 1 });
+    const pause = { operation: 'pause', expectedRevision: 1, expectedDirectorEpoch: 1 };
+    const pauseId = crypto.randomUUID();
+    const pausePaths = [pauseId, crypto.randomUUID()].map(id => toApiMutationRequestPath(first, id));
+    const races = await Promise.all(pausePaths.map(path => putDeadline({
+        path, session: owner, body: { roomClock: { name: 'period', ...pause } }
+    })));
+    assert.deepEqual(races.map(result => result.status).sort(), [200, 409]);
+    const winnerIndex = races.findIndex(result => result.ok);
+    const clockWinner = pausePaths[winnerIndex]!;
+    const paused = clock(await races[winnerIndex]!.json());
+    assert.ok(Array.isArray(paused));
+    const balance = requireRecord(paused[0], 'paused');
+    assert.equal(balance.status, 'paused');
+    assert.ok(typeof balance.remainingMs === 'number' && balance.remainingMs > 0 && balance.remainingMs <= 494_000);
+    const replayedPause = await requestJson(editor.baseUrl, clockWinner, {
+        method: 'PUT', session: owner, body: { roomClock: { name: 'period', ...pause } }
+    });
+    assert.deepEqual(clock(replayedPause), paused);
+    const replaced = await requestJson(writer.baseUrl, toApiMutationRequestPath(first, crypto.randomUUID()), {
+        method: 'PUT', session: owner, body: { metadata: { venue: 'court' } }
+    });
+    assert.deepEqual(clock(replaced), paused);
+    const mixed = await putDeadline({ path: toApiMutationRequestPath(first, crypto.randomUUID()), session: owner,
+        body: { displayName: 'mixed', roomClock: { name: 'period', operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 1 } } });
+    assert.equal(mixed.status, 400);
+    await requestJson(writer.baseUrl, toApiMutationRequestPath(first + '/sessions/' + owner.sessionId + '/disconnect', crypto.randomUUID()), {
+        method: 'POST', session: owner, body: { generationId: room.proofId + '-generation-' + owner.label, principalId: owner.clientId }
+    });
+    await appoint(deputy);
     await controls.stop(writer.port, 'crash');
     await controls.restart(writer.port, { ...writer, logPath: writer.logPath + '.restarted' });
+    assert.deepEqual(clock(await requestJson(writer.baseUrl, first, { method: 'GET', session: deputy })), paused);
+    const resume = { operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 2 };
+    assert.equal((await clockWrite(owner, { ...resume, expectedDirectorEpoch: 1 }, 409)).code, 'room-director-changed');
+    assert.equal((await clockWrite(deputy, { ...resume, expectedRevision: 1 }, 409)).code, 'room-clock-revision-conflict');
+    const resumed = clock(await clockWrite(deputy, resume));
+    assert.ok(Array.isArray(resumed));
+    assert.equal(requireRecord(resumed[0], 'running').status, 'running');
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {

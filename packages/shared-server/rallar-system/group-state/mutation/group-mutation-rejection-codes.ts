@@ -6,6 +6,7 @@ import {
 /** The registry the type and every runtime check derive from. */
 export const GROUP_MUTATION_REJECTION_CODES = [
     'group-already-exists',
+    'room-clock-revision-conflict',
     'room-deadline-revision-conflict',
     'room-director-changed',
     'group-retired',
@@ -52,6 +53,11 @@ export class GroupConnectDeniedError extends Error {
 export class GroupDirectorChangedError extends Error {
     readonly status = 409;
     readonly code = 'room-director-changed';
+}
+
+export class GroupClockRevisionConflictError extends Error {
+    readonly status = 409;
+    readonly code = 'room-clock-revision-conflict';
 }
 
 export class GroupDeadlineRevisionConflictError extends Error {

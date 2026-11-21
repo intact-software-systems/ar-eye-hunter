@@ -1,0 +1,12 @@
+:root { font-family: "Barlow", system-ui, sans-serif; color: #f5f3eb; background: #14201d; }
+body { margin: 0; }
+main { max-width: 36rem; margin: clamp(1rem, 8vh, 5rem) auto; padding: 1.25rem; }
+form:not([hidden]), section:not([hidden]) { display: grid; gap: 1rem; }
+section { border-top: .25rem solid #bdd763; padding-top: 1rem; }
+h1, h2, p { margin: 0 0 .6rem; }
+label { display: grid; gap: .35rem; }
+input, button { font: inherit; border-radius: .35rem; padding: .7rem; }
+button { background: #d8eb98; color: #14201d; border: 0; cursor: pointer; }
+button:disabled { background: #52605a; color: #e1e4df; cursor: default; }
+output { font: 700 clamp(4rem, 18vw, 8rem)/1 "Barlow", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+[role="alert"] { color: #ffc4ab; margin-top: 1rem; }

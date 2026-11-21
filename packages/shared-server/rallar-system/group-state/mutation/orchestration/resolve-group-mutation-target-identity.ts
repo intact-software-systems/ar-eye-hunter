@@ -23,7 +23,7 @@ export function resolveGroupMutationTargetSessionId(command: GroupMutationComman
         return command.sessionId;
     }
     if (command.operation === 'appointDirector' ||
-        (command.operation === 'updateGroup' && command.input.roomDeadline?.expectedDirectorEpoch !== undefined)) {
+        (command.operation === 'updateGroup' && (command.input.roomClock !== undefined || command.input.roomDeadline?.expectedDirectorEpoch !== undefined))) {
         return command.input.actorSessionId;
     }
     return null;

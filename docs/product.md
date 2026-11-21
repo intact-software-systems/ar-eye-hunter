@@ -85,6 +85,21 @@ instant to decide whether to accept a ballot. Rallar owns the deadline and its
 revision. The application owns voting rules and receipts. The deadline causes
 no automatic action when it passes.
 
+## Pausing a room clock
+
+An appointed room director can run a named countdown. For example, a referee starts a ten-minute period with
+`rooms.changeClock(roomRef, { name: 'period', operation: 'start', durationMs: 600000, expectedRevision: 0, expectedDirectorEpoch: appointment.epoch }, requestId)`.
+Send `pause` or `resume` with the current revision and appointment epoch and omit the duration. Retrying the same command
+uses the same request ID. A stale revision returns `room-clock-revision-conflict`; an obsolete director receives
+`room-director-changed`. An expired clock can start again at its current revision. Each room supports 32 clock names.
+
+`rooms.readClock` returns the durable record or `null`. `rooms.watchClock` delivers a current or stale observation, rereads
+on WebSocket invalidation and recovery, and makes no periodic clock reads. A running record stores its UTC end; clients use
+the calibrated clock to display time and derive expiry. A paused record stores the exact remaining milliseconds. Passing time,
+room changes, director replacement and server restarts leave a pause intact. Losing the director does not automatically pause a
+running clock. The [scoreboard](../examples/room-scoreboard/README.md) demonstrates these controls.
+Deploy clock-aware writers before creating clocks and before permitting raw room metadata replacement.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

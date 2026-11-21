@@ -9,6 +9,7 @@ import {
     readGroupDisplayName,
     readGroupId
 } from '@shared/api/group-client-views.ts';
+import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
@@ -281,10 +282,14 @@ export function toRoomLifecycleGroupStateRequest(
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
+    if (Object.hasOwn(input.patch, ROOM_CLOCKS_METADATA_KEY)) {
+        throw new TypeError('Use rooms.changeClock to change a room clock.');
+    }
     if (Object.hasOwn(input.patch, ROOM_DEADLINES_METADATA_KEY)) {
         throw new TypeError('Use rooms.setDeadline to change a room deadline.');
     }
     const merged = { ...input.currentMetadata, ...input.patch };
+    delete merged[ROOM_CLOCKS_METADATA_KEY];
     delete merged[ROOM_DEADLINES_METADATA_KEY];
     return {
         metadata: Object.fromEntries(

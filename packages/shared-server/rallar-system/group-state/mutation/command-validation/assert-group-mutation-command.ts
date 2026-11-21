@@ -121,7 +121,7 @@ function assertAggregateOperationInput(
         if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
             throw new TypeError('Group maxSpectators must be at most 64');
         }
-        const metadataIssues = validateGroupMetadataInput(input.metadata, input.roomDeadline);
+        const metadataIssues = validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock);
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
         }
@@ -408,6 +408,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'metadata',
         'expiresAtEpochMs',
         'roomDeadline',
+        'roomClock',
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],
