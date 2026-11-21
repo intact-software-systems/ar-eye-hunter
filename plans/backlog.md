@@ -770,32 +770,41 @@ and it has no status list.
   kept row's deadline at the server is read from
   `al-inbound-message-admission.ts:233-234` and
   `ws-queue-box-server-receipt-aggregation.ts:466-469`, not run.
-- A send kept after a lost commit race whose recipients have all left the room
-  by its replay is admitted to nobody: its `admitted` names no expected
-  recipient, the server keeps no aggregate, the one who left is sent nothing,
-  and the handle reads `acknowledged` at once (a characterization in
-  `ws-kept-send-receipt.test.ts`, D697). Open decision for the maintainer: keep
-  it, or start nothing so the handle reads `expired`.
+- Built by the maintainer's ruling of 2026-11-21 ("Expect the captured
+  audience", D701): a send kept after a lost commit race whose recipients have
+  all left the room by its replay expects the recipients captured at ingress;
+  its `admitted` names them, none is sent the message, its `timed-out` names
+  them unconfirmed, and the handle reads `expired` at its deadline
+  (`ws-kept-send-receipt.test.ts`, "a send kept after a lost race whose
+  captured audience has left by its replay expects that audience").
 - A cap-evicted `timed-out` that confirmed nobody ends the server's own row of
   an outbox-fanned room message before its deadline, and the server sends its
   recipients nothing more (a characterization in
   `ws-queue-box-server-receipt-aggregation.test.ts`). The same run with the
   `timed-out` condition of `compute-al-outbound-receipt-admission.ts` put back
   as it was before the held-send slice shows the same, so the slice did not
-  change it.
+  change it. Ruled 2026-11-21: leave it recorded.
 - Every lost-race admission of a receipted room send awaits one outbox write
   inside the inbound worker, whose concurrency is one; no figure exists.
-- The publisher recipe adds a fixed 41 s wait to the cluster profile.
+- The publisher recipe adds a fixed 41 s wait to the cluster profile. Ruled
+  2026-11-21: keep it in the cluster profile.
+- The PostgreSQL case `ws-kept-send-replayed-elsewhere.test.ts` waits the
+  existing 5 s for the replay's receipt (D696), so a replay slower than that
+  reads red. Ruled 2026-11-21: leave it, watch the hosted run.
 - A kept row polls the room authorizer every 50 ms while the room view is
   behind, and its replay does not read the sender's connection again (the
   held-send design's non-goals, D696).
 - A room member that never received a message can send an ACK the server
   counts before the message was delivered. It belongs with the relay statement
-  rules (part C).
+  rules (part C). It shows too in a send kept after a lost race whose captured
+  audience has left: an ACK from a recipient never sent the frame is counted
+  and draws `complete` (a characterization in `ws-kept-send-receipt.test.ts`,
+  D701).
 - A replay hand-over (`onReplayAdmitted`) that rejects skips
   `recordReplayedAdmission` and `commitWork`: the message's diagnostic records
   the retry's `duplicate`, never `admitted`, and the delivery it wrote waits
-  for the rotation (D697).
+  for the rotation (D697). Ruled 2026-11-21: leave the call site, keep this
+  line.
 - Unproven for kept sends: no lane cell meets one over `rtc`, and no cluster
   run replays a kept row on another instance outside the PostgreSQL
   integration case `ws-kept-send-replayed-elsewhere.test.ts` (D700).

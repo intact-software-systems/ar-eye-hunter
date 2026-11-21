@@ -1582,9 +1582,11 @@ kept send that expires is not reported, since the handle's own deadline says so
 row's; without a relay publisher an ACK on another instance than the one that
 admitted the send is lost; a send the server loses in a restart reads `expired`
 at its deadline (D694); and a receipt does not survive its server's crash, which
-`api-v1-cluster-publisher-instance-loss` pins (D700). The local baseline's
-alternating runs stay their own small change (D672). The next outcome is the
-relay statement rules.
+`api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
+commit race whose recipients all left by its replay expects the recipients
+captured at ingress, so its handle reads `expired` at its deadline (D701). The
+local baseline's alternating runs are pull request 851 (D672), which lands
+before the relay statement rules; they are the next outcome.
 With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world

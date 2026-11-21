@@ -20,8 +20,9 @@ client and RTC ingress also pass the optional `onResyncRequired` sink
 (`ALInboundMessageRuntime.Dependencies`), which the browser fills with its resynchronization
 recovery (see "Ordering gaps and resynchronization" below); the WS server passes none. The WS
 server alone passes the optional `onReplayAdmitted` dependency: the runtime hands it each kept
-message a replay admits, as a `ReplayedAdmission` (`msg`, the `source` the replay ran under and the
-room `snapshotVersion` its authority read), after the attempt's commit and before the replaying work
+message a replay admits, as a `ReplayedAdmission` (`msg`, the `source` the replay ran under, the
+`pendingSource` the message was kept under with the audience it captured at ingress, and the room
+`snapshotVersion` its authority read), after the attempt's commit and before the replaying work
 batch returns, and not while the runtime shuts down. The server starts that message's receipt from it
 (outbound README, "Server receipts on WS"). A hand-over that rejects leaves the attempt committed:
 the replay is retried, reads `duplicate` and hands nothing over again, so the message's diagnostic
