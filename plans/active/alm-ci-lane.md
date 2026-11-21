@@ -157,8 +157,9 @@ Three were weighed with the maintainer, who picked the first.
 - Contents: `carrier`, `scope`, `backend` (`memory` or `postgres`, from the reader the lane's API
   server already uses), `family`, and `scenarios`: one entry per planned scenario, in plan order,
   with its `scenarioKey` and an `outcome` of `passed`, `failed` or `not-run`. One more field,
-  `familyOutcome`, is the family test's own outcome, because a family can fail outside any scenario
-  (the identity check at its end, a start barrier, the time limit).
+  `familyOutcome`, is the family test's own outcome (`passed`, `failed`, or `not-finished` until the
+  family ends), because a family can fail outside any scenario (the identity check at its end, a
+  start barrier, the time limit).
 - The file is written when the family's plan is resolved, with every scenario `not-run`, and again
   after each scenario. A family that is cut off by its time limit or an error therefore leaves a
   true file: what ran, and what did not.
@@ -207,8 +208,8 @@ Three were weighed with the maintainer, who picked the first.
   runs (commit, event, attempt, carrier, the job's conclusion, and that run's plan and lane result
   files) and the recorded causes, it computes:
   - per carrier, the **streak**: the number of most recent runs, newest first, that are green. A run
-    is green when it is a first attempt, every family in its plan file has a result file, and every
-    scenario in them `passed` with `familyOutcome` passed;
+    is green when it is a first attempt, its job concluded in success, every family in its plan file
+    has a result file, and every scenario in them `passed` with `familyOutcome` passed;
   - how a run that is not plainly green or red is read, by its job's conclusion: a job still in
     progress, cancelled or skipped is left out and does not break the streak; any other job without
     a plan file (it died before planning) is a red run with nothing to attribute;
