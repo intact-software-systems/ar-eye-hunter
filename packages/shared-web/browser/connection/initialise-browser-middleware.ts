@@ -346,10 +346,11 @@ export async function initialiseMiddleware(
         await closeBrowserTransportResources({
             ...transports?.webSocketTransport,
             ...transports?.rtcTransport,
-            runtimeStorage,
-            serverClock,
             heartbeat: presence?.heartbeat
         })
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
+        // Startup still owns this unpublished clock. Queue work can read it while the transports drain.
+        await closeBrowserTransportResources({ serverClock, runtimeStorage })
             .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
