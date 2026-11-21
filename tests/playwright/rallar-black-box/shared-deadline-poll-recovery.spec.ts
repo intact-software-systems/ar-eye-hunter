@@ -21,6 +21,11 @@ test.beforeEach(async ({ page }) => {
             },
             rooms: {
                 async enter(room) { document.body.dataset.selected = room.groupId; },
+                watchDeadline(room, name, listener, { signal }) {
+                    this.readDeadline(room, name).then(deadline => {
+                        if (!signal.aborted) listener({ status: 'current', deadline });
+                    });
+                },
                 async readDeadline(room, name) {
                     if (document.body.dataset.deadlineOffline) throw new TypeError('Network unavailable');
                     const revision = Number(document.body.dataset.deadlineRevision ?? 1);

@@ -85,7 +85,7 @@ API supports subsequent authorized revisions.
 The ballot receiver gets a scoped, authenticated deadline reader when the poll
 starts. Each read and ballot uses the durable room snapshot. Requests are
 settled in receipt order, and an unavailable deadline leaves the tally
-untouched. Foreground browsers check every five seconds. Mount this view with `deadlineSource: 'room'`. Use `deadlineSource: 'fixed'` for the fixed-cutoff demonstration. Entry and recovery
+untouched. Foreground browsers watch the room deadline over WebSocket and fetch the ballot snapshot when its revision advances. Mount this view with `deadlineSource: 'room'`. Use `deadlineSource: 'fixed'` for the fixed-cutoff demonstration. Entry and recovery
 also read the deadline through `rallar.rooms.readDeadline` and require the
 ballot snapshot to agree before enabling the controls.
 

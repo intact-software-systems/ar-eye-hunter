@@ -46,6 +46,12 @@ revision across API restarts. Each room supports up to 32 distinct names over
 its lifetime. Once a deadline expires, its name retains the final instant and
 revision. Plan for this limit when reusing a room across rounds.
 
+Connected room participants can use `rooms.watchDeadline` to observe an extension
+while the room is open. The server’s room WebSocket event announces the revision.
+The SDK reads durable state on entry, revision changes, reconnect and resume.
+An idle deadline requires no polling. The calibrated clock drives the countdown
+on each device, and the receiving application decides whether an action arrived in time.
+
 Deploy the deadline-aware API on all writers before publishing the first
 deadline. Applications that replace room metadata must omit the reserved
 `rallarRoomDeadlines` field. Upgrade browser clients that use
