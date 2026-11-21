@@ -610,17 +610,18 @@ outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and `RALLAR_BLACK_BOX_ALM
 a `RALLAR_BLACK_BOX_ALM_SEED` without `RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a
 `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key
 that no cell of the selected scope and carriers runs throws a `RangeError` that names the value and
-what is accepted, before any browser starts. A `shuffled` family shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same
-seed gives the same order of the same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell
-whose definition declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
-no page rejoins a room it left. The lane
-prints `ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
+what is accepted, before any browser starts. A `shuffled` family shuffles its cells with the seed; a
+family that names none mints one in `0` to `2147483647`. The same seed gives the same order of the
+same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell whose definition
+declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
+no page rejoins a room it left. The lane prints
+`ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
 family's first cell, the observation artifact records the same plan as `cellOrder`, and the
 `alm-lane-result/` files record each planned scenario's outcome
-(`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`). To rerun a red, set the same
-`RALLAR_BLACK_BOX_ALM_ORDER=shuffled` and `RALLAR_BLACK_BOX_ALM_SEED=<seed>` with the same scope,
-carriers and rooms, and rerun it first with the same seed; `RALLAR_BLACK_BOX_ALM_ONLY=<scenarioKey>`
-then narrows the rerun to one cell.
+(`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`). To rerun a red, set the
+same `RALLAR_BLACK_BOX_ALM_ORDER=shuffled` and `RALLAR_BLACK_BOX_ALM_SEED=<seed>` with the same
+scope, carriers and rooms, and rerun it first with the same seed;
+`RALLAR_BLACK_BOX_ALM_ONLY=<scenarioKey>` then narrows the rerun to one cell.
 
 Agent-specific test variables are accepted in both long and short forms in
 some tests:

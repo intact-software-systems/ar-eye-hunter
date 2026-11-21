@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 # A newer run of one pull request cancels the older one; a push or dispatched run has a group of its own, so every main
-# push is observed.
+# push the trigger admits (all but one that changes only performance-observations/**) is observed.
 concurrency:
   group: alm-conformance-observation-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true

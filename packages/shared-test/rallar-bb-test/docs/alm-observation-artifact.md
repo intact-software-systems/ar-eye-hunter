@@ -88,16 +88,17 @@ observation files and for the same reason, with the pure builders of
 The **plan file** states the run's plan before any family test of its carrier starts: `carrier`,
 `scope`, `backend` (`memory` or `postgres`, the API the full-stack configuration starts), and
 `families`, every lane family with the `scenarioKeys` it plans. A family that plans nothing is
-listed with no keys; in a run not narrowed by `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP`, a carrier whose
-families plan nothing fails its plan test, and a narrowed run writes its plan as it is. It comes from the
-same planning function the family tests run, so a run is judged against its own plan, not against a
-later catalog. The keys are in the plan test's own order: a `shuffled` family that names no seed
-mints one per planning, so its run order may differ. Compare a plan with a result by key.
+listed with no keys; in a run not narrowed by `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP`, a carrier
+whose families plan nothing fails its plan test, and a narrowed run writes its plan as it is. It
+comes from the same planning function the family tests run, so a run is judged against its own plan,
+not against a later catalog. The keys are in the plan test's own order: a `shuffled` family that
+names no seed mints one per planning, so its run order may differ. Compare a plan with a result by
+key.
 
 A **family result file** carries the same `carrier`, `scope` and `backend`, its `family`,
-`familyOutcome`, and `scenarios`: one `{ scenarioKey, outcome }` per planned scenario, in plan order,
-and nothing the plan does not name. The family test writes it when its plan is resolved, with every
-scenario `not-run`, again after each scenario, and once more at its end, each time through a
+`familyOutcome`, and `scenarios`: one `{ scenarioKey, outcome }` per planned scenario, in plan
+order, and nothing the plan does not name. The family test writes it when its plan is resolved, with
+every scenario `not-run`, again after each scenario, and once more at its end, each time through a
 temporary file and a rename, so a worker killed mid-write leaves the previous complete file.
 
 - A scenario's `outcome` is `failed` when its body threw or added a soft-assertion error to the
@@ -106,9 +107,10 @@ temporary file and a rename, so a worker killed mid-write leaves the previous co
 - `familyOutcome` is `not-finished` until the family test's whole body ends, from opening its pages
   to closing them, then `failed` when that body threw or left an error on the test, and `passed`
   otherwise. A family can fail outside every scenario (opening or closing its pages, a start
-  barrier, a root that never ends), so a `failed` family may hold only `passed` scenarios. Only a
-  family test cut off before its body ended, by its time limit or the run's global timeout, leaves
-  `not-finished`.
+  barrier, a root that never ends), so a `failed` family may hold only `passed` scenarios. A family
+  test cut off before its body ended, by its time limit or the run's global timeout, leaves
+  `not-finished`, unless its abandoned body rejects during teardown, which writes `failed`; either
+  way the family is not `passed`.
 - A family whose plan names scenarios but has no result file was never started; every scenario it
   plans is `not-run`.
 

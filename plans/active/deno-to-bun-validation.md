@@ -75,8 +75,8 @@ scope that nothing waits for, starts itself on a ready pull request that can cha
 | `Run GitHub Free Distributed Recipe`          | dispatch             | Phase 3          |
 
 **Post-merge (no pre-merge action)** — `deploy.yml` ("Deploy Web + API") fires on `push` to `main`
-and contains only the (disabled) Cloudflare controls, the release gate, and the IDE navigation report
-observation — its Deno Deploy jobs are gone. It runs automatically when #794 merges.
+and contains only the (disabled) Cloudflare controls, the release gate, and the IDE navigation
+report observation — its Deno Deploy jobs are gone. It runs automatically when #794 merges.
 
 **Optional / non-blocking extras** — `api-v1-black-box.yml` ("API v1 Black-Box") is a
 `workflow_dispatch` re-run of the release-gate black-box lane (Postgres standard + cluster +

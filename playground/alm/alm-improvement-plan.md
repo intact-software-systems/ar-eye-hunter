@@ -3141,6 +3141,7 @@ Decision numbers continue after the last row of the decision table.
   headless agent budget 410 KiB (measured 409.359).
 - 2026-11-21 (the ALM conformance lane in CI, draft PR #867): decision D702, under the maintainer's rulings of
   2026-11-21. The `smoke` scope is the required `alm-smoke` lane of the Release Gate; the `full` scope is observed on
-  the PostgreSQL API, in a workflow that starts itself, for every `main` push and for each pull request that can
-  change ALM; each run records every planned scenario's outcome and its plan; one promotion rule serves both scopes
-  and amends D639. The ledger is the next slice.
+  the PostgreSQL API, in a workflow that starts itself, for every `main` push (except one that changes only
+  `performance-observations/**`) and for each pull request that can change ALM; each run records every planned
+  scenario's outcome and its plan; one promotion rule serves both scopes and amends D639. The ledger is the next
+  slice.
