@@ -4,6 +4,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
+import type { ALInboundEvictedOrderingTrack } from '@shared/alm/inbound/admission/al-inbound-evicted-ordering-tracks.ts';
 import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -244,6 +245,42 @@ describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair 
     }, CHURN_TIMEOUT_MS);
 });
 
+describe('the inbound store\'s read of the tracks its cap evicted', () => {
+    it('states a fresh track the row names until its instant, so a recorded copy enters there instead of asking 1..prior', async () => {
+        const fixture = await createOrderingCapFixture('memory');
+        await writeEvictedTracks(fixture.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 1 }]);
+
+        const named = await readInboundTestDecisionSurface(fixture.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+        const unnamed = await readInboundTestDecisionSurface(fixture.inbound.stores.admissionStore, createRecordedTrackMessage(1, 2));
+        const lapsed = await readInboundTestDecisionSurface(
+            fixture.inbound.stores.admissionStore,
+            createRecordedTrackMessage(0, 2),
+            START_MS + 1
+        );
+
+        expect(named.orderingTrackEvicted).toBe(true);
+        expect(computeALInboundPlanningObservations(named).orderingObservation?.status).toBe('entered');
+        expect(unnamed.orderingTrackEvicted).toBe(false);
+        expect(computeALInboundPlanningObservations(unnamed).orderingObservation)
+            .toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 1 }] });
+        expect(lapsed.orderingTrackEvicted).toBe(false);
+    });
+
+    it('states no eviction beside a live snapshot, nor in a store without a cap', async () => {
+        const capped = await createOrderingCapFixture('memory');
+        await admitAtNextMs(capped, createTrackMessage(0, 1));
+        await writeEvictedTracks(capped.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 60_000 }]);
+        const uncapped = await createOrderingCapFixture('memory', undefined, 'uncapped');
+        await writeEvictedTracks(uncapped.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 60_000 }]);
+
+        const held = await readInboundTestDecisionSurface(capped.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+        const unbounded = await readInboundTestDecisionSurface(uncapped.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+
+        expect(held.orderingTrackEvicted).toBe(false);
+        expect(unbounded.orderingTrackEvicted).toBe(false);
+    });
+});
+
 async function createOrderingCapFixture(
     storage: InboundTestStorage,
     reportOrderingTracks?: (tracks: number) => void,
@@ -299,6 +336,25 @@ async function admitAtNextMs(fixture: OrderingCapFixture, message: ALMessage): P
 function createTrackMessage(track: number, seq: number): ALMessage {
     const message = createInboundTestMessage({ msgId: `track-${track}-${seq}`, seq });
     return { ...message, ordering: { orderingKey: `track-${track}`, seq } };
+}
+
+/** A copy whose authority recorded that this receiver was sent every sequence below it. */
+function createRecordedTrackMessage(track: number, seq: number): ALMessage {
+    const message = createTrackMessage(track, seq);
+    return { ...message, ordering: { ...message.ordering, priorSeqByRecipient: {} } };
+}
+
+function toTrackKey(track: number): string {
+    return toALOrderingTrackKey(createTrackMessage(track, 1))!;
+}
+
+async function writeEvictedTracks(
+    backend: ALAdmissionWorkBackend,
+    tracks: readonly ALInboundEvictedOrderingTrack[]
+): Promise<void> {
+    await backend.write(async (transaction) => {
+        await transaction.set(`${NAMESPACE}:ordering-evicted`, tracks);
+    });
 }
 
 /** The ordering key of every track the store holds a snapshot for. */

@@ -3,6 +3,7 @@ import '../../../setup-browser-indexeddb.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_WORK_PAGE_SIZE } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
@@ -160,16 +161,46 @@ describe('delivery progress on a recorded track', () => {
     }, TEST_TIMEOUT_MS);
 });
 
+describe('a fresh receiver whose first copy of a recorded track is not the track\'s first', () => {
+    it('asks the missing start at copy 2, then delivers 1, 2 and 3 in order and refuses nothing as before its entry', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        const fixture = await startInboundRuntime('missing-start', {
+            gateDispatch: async (msg) => {
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        for (const seq of [2, 3, 1]) {
+            const message = createRecordedMessage(seq, {});
+            await fixture.runtime.admitIncomingMessage(
+                { ...message, qos: { ...message.qos, repair: { algo: 'retransmit' } } },
+                INBOUND_TEST_SOURCE
+            );
+        }
+
+        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([1, 2, 3]), WAIT);
+        const nacks = fixture.controlSends.flat().flatMap((msg) => {
+            const control = decodeALPeerControlMessage(msg).right;
+            return control?.type === 'nack' ? [control.payload] : [];
+        });
+        expect(nacks.find((nack) => nack.msgId === 'recorded-2'))
+            .toMatchObject({ reason: 'gap', expectedSeq: 1, missingRanges: [{ from: 1, to: 1 }] });
+        expect(nacks.filter((nack) => nack.reason === 'before-entry')).toEqual([]);
+        expect(fixture.diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+});
+
 async function admitRecorded(
     fixture: InboundTestRuntime,
     seq: number,
     priorSeqByRecipient: Readonly<Record<string, number>>
 ): Promise<void> {
+    await fixture.runtime.admitIncomingMessage(createRecordedMessage(seq, priorSeqByRecipient), INBOUND_TEST_SOURCE);
+}
+
+function createRecordedMessage(seq: number, priorSeqByRecipient: Readonly<Record<string, number>>): ALMessage {
     const message = createInboundTestMessage({ msgId: `recorded-${seq}`, seq });
-    await fixture.runtime.admitIncomingMessage(
-        { ...message, ordering: { ...message.ordering, priorSeqByRecipient } },
-        INBOUND_TEST_SOURCE
-    );
+    return { ...message, ordering: { ...message.ordering, priorSeqByRecipient } };
 }
 
 async function readCompletedThrough(fixture: InboundTestRuntime, seq: number): Promise<number> {

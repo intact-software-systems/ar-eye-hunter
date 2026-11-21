@@ -328,7 +328,8 @@ function observeAtRecipient(message: ALMessage, selfPeerId: string, lastContiguo
         apply: true,
         role: 'recipient',
         selfPeerId,
-        bufferedPriorSeqs: {}
+        bufferedPriorSeqs: {},
+        evictedTrack: false
     }).observation;
 }
 

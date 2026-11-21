@@ -34,6 +34,8 @@ export interface ALInboundPlannerSnapshot {
     readonly orderingObserver: ALOrderingObserver;
     readonly orderingTrackKey: string | undefined;
     readonly orderingSnapshot: ALOrderingTrackSnapshot | undefined;
+    /** Whether the store evicted the track's snapshot at its cap; never true beside a live snapshot. */
+    readonly orderingTrackEvicted: boolean;
     readonly bufferedSnapshots: readonly ALBufferedOrderedMessageSnapshot[];
     readonly orderingTrackTtlMs: number;
     readonly dedupExpiresAt: number | undefined;
@@ -154,7 +156,8 @@ export function computeALInboundOrderingAcceptance(
             observer: read.orderingObserver
         }),
         selfPeerId: read.selfPeerId,
-        bufferedPriorSeqs: toBufferedPriorSeqs(read)
+        bufferedPriorSeqs: toBufferedPriorSeqs(read),
+        evictedTrack: read.orderingTrackEvicted
     });
     if (
         !read.prePlan.localDelivery.enabled ||

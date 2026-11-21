@@ -168,7 +168,7 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
             mutations,
             observations: {
                 ...bundle.observations,
-                ordering: { trackKey, snapshot: { lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 0 }, buffered: [] },
+                ordering: { trackKey, snapshot: { lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 0 }, buffered: [], evicted: false },
                 deliveryProgress: { trackKey, value: { completedThrough: 2, expireAtTimestamp: 1_000 } }
             }
         };

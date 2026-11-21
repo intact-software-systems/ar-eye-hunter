@@ -10,7 +10,7 @@ import {
     it
 } from 'vitest';
 
-const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {} } as const;
+const AS_RECIPIENT = { role: 'recipient', selfPeerId: 'receiver', bufferedPriorSeqs: {}, evictedTrack: false } as const;
 
 describe('AL ordering repair window', () => {
     it('requests resynchronization for a maximum-safe-integer initial sequence without expanding its gap', () => {
@@ -201,6 +201,68 @@ describe('a recorded track at its recipient: entry, omission and the record\'s p
         expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 300, bufferedSeqs: [], updatedAtMs: 1_001 });
     });
 
+    it('opens a fresh track at position 0 when the record names a prior below the copy, asking 1..prior and buffering it', () => {
+        const result = observe({ msg: recordedMessage(2, {}), snapshot: undefined });
+
+        expect(result.observation).toEqual({
+            status: 'gap',
+            trackKey: expect.any(String),
+            seq: 2,
+            expectedSeq: 1,
+            lastContiguousSeq: 0,
+            missingRanges: [{ from: 1, to: 1 }],
+            releasableSeqs: [],
+            priorSeq: 1
+        });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 0, bufferedSeqs: [2], updatedAtMs: 1_001 });
+    });
+
+    it('buffers the next copy of a track opened at position 0 behind the same missing start', () => {
+        const result = observe({
+            msg: recordedMessage(3, {}),
+            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2], updatedAtMs: 1_000 }
+        });
+
+        expect(result.observation).toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 1 }] });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_001 });
+    });
+
+    it('delivers the late first copy of a track opened at position 0 and releases the copies buffered behind it', () => {
+        const result = observe({
+            msg: recordedMessage(1, {}),
+            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 }
+        });
+
+        expect(result.observation).toMatchObject({
+            status: 'in-order',
+            releasableSeqs: [2, 3],
+            lastContiguousSeq: 3,
+            priorSeq: 0
+        });
+    });
+
+    it('enters a fresh track at a copy whose record names a prior of 0: a late joiner was owed nothing before it', () => {
+        const result = observe({ msg: recordedMessage(5, { receiver: 0 }), snapshot: undefined });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 5, missingRanges: [] });
+    });
+
+    it('enters a track the store evicted at its cap at the copy: its position is forgotten, not absent', () => {
+        const result = observe({ msg: recordedMessage(2, {}), snapshot: undefined, evictedTrack: true });
+
+        expect(result.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 2, missingRanges: [] });
+        expect(result.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
+    it('asks 1..256 for a prior at the repair window\'s edge and enters at a prior past it', () => {
+        const atWindow = observe({ msg: recordedMessage(257, {}), snapshot: undefined });
+        const pastWindow = observe({ msg: recordedMessage(258, {}), snapshot: undefined });
+
+        expect(atWindow.observation).toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 256 }] });
+        expect(atWindow.nextSnapshot).toEqual({ lastContiguousSeq: 0, bufferedSeqs: [257], updatedAtMs: 1_001 });
+        expect(pastWindow.observation).toMatchObject({ status: 'entered', lastContiguousSeq: 258 });
+    });
+
     it('delivers an omission at its own position and releases a buffered successor that follows it in sequence', () => {
         const result = observe({
             msg: recordedMessage(5, { receiver: 2 }),
@@ -345,6 +407,8 @@ interface ObserveInput {
     readonly role?: ALOrderingObserverRole;
     /** Absent, no buffered copy carries a record. */
     readonly bufferedPriorSeqs?: Readonly<Record<number, number>>;
+    /** Absent, the store never evicted the track at its cap. */
+    readonly evictedTrack?: boolean;
 }
 
 function observe(input: ObserveInput): ALOrderingAcceptance {
@@ -356,7 +420,8 @@ function observe(input: ObserveInput): ALOrderingAcceptance {
         apply: true,
         role: input.role ?? 'recipient',
         selfPeerId: 'receiver',
-        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {}
+        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
+        evictedTrack: input.evictedTrack ?? false
     });
 }
 

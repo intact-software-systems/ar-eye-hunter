@@ -294,9 +294,9 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         expect(e.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
-    // A receiver with no state for a track enters it at the first frame it meets, so an older frame that arrives later
-    // by the other layout is stale.
-    it('a receiver that first meets an ordered track by the new path enters it there, and its predecessor by the old path is not delivered', async () => {
+    // A receiver with no state for a track whose first frame's record names a predecessor opens the track at its start
+    // and holds the frame, so the predecessor that arrives later by the other layout is delivered first.
+    it('a receiver that first meets an ordered track by the new path holds it there, and its predecessor by the old path delivers first', async () => {
         const mesh = createOverlapMesh({
             sessionIds: DIAMOND_SESSION_IDS,
             previousTree: DIAMOND_PREVIOUS,
@@ -309,8 +309,8 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         await d.receive(copies.promoted(frames[1]!), 'c');
         await d.receive(copies.previous(frames[0]!), 'b');
 
-        expect(d.delivered.map((message) => message.ordering?.seq)).toEqual([2]);
-        expect(readAdmissionReasons(d, frames[0]!)).toEqual(['Ordering runtime rejected message as stale']);
+        expect(d.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2]);
+        expect(readAdmissionReasons(d, frames[0]!)).toEqual(['admitted']);
     });
 
     it('a supersedence frame older than one already delivered by the other path is not delivered', async () => {

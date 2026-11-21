@@ -1,9 +1,10 @@
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type {
-    ALOrderingObservationStatus,
-    ALOrderingTrackSnapshot,
-    ALSeqRange
+import {
+    toALOrderingTrackKey,
+    type ALOrderingObservationStatus,
+    type ALOrderingTrackSnapshot,
+    type ALSeqRange
 } from '@shared/al-contracts/al-runtime.ts';
 import { computeALOrderingObservation } from '@shared/alm/compute-al-ordering-observation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -46,25 +47,30 @@ export function decodeSentOrderingSeqs(frames: readonly SentFrame[]): readonly n
     });
 }
 
-/** The frames as one recipient observes them in send order, each observation applied before the next. */
+/**
+ * The frames as one recipient observes them in send order, each observation applied before the next to its own track's
+ * snapshot; a copy that changes nothing leaves the snapshot as it was.
+ */
 export function replayALOrderingObservation(frames: readonly SentFrame[], recipientPeerId: string): ALOrderingFrameReplay {
-    let snapshot: ALOrderingTrackSnapshot | undefined;
+    const snapshots = new Map<string | undefined, ALOrderingTrackSnapshot | undefined>();
     const statuses: ALOrderingObservationStatus[] = [];
     const missingRanges: ALSeqRange[] = [];
     for (const msg of decodeSentFrames(frames)) {
+        const trackKey = toALOrderingTrackKey(msg);
         const acceptance = computeALOrderingObservation({
-            snapshot,
+            snapshot: snapshots.get(trackKey),
             msg,
             nowMs: 0,
             trackTtlMs: 60_000,
             apply: true,
             role: 'recipient',
             selfPeerId: recipientPeerId,
-            bufferedPriorSeqs: {}
+            bufferedPriorSeqs: {},
+            evictedTrack: false
         });
         statuses.push(acceptance.observation.status);
         missingRanges.push(...acceptance.observation.missingRanges);
-        snapshot = acceptance.nextSnapshot;
+        snapshots.set(trackKey, acceptance.nextSnapshot ?? snapshots.get(trackKey));
     }
     return { statuses, missingRanges };
 }

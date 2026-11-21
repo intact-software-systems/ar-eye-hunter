@@ -18,6 +18,8 @@ export interface ComputeALOrderingObservationInput {
     readonly selfPeerId: string;
     /** Each buffered copy's own prior for this receiver, by its sequence; a copy without a record has none. */
     readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
+    /** Whether the store evicted this track's snapshot at its cap: a position it forgot, not one it never held. */
+    readonly evictedTrack: boolean;
 }
 
 export interface ALOrderingAcceptance {
@@ -44,10 +46,11 @@ const UNTRACKED: ALOrderingAcceptance = Object.freeze({
 });
 
 /**
- * A recipient opens a recorded track at its first copy (`entered`), delivers a copy whose record names its own position
- * as the prior (`omitted`), and asks for a gap that ends at a prior ahead of it. A prior behind its position, or `0`
- * on a track it holds, says nothing it does not know, so today's rule from its own position applies, as it does to a
- * copy no authority recorded.
+ * A recipient opens a recorded track at its first copy (`entered`) unless that copy's record names sends before it that
+ * the recipient can still ask for: then it opens the track at position 0 and asks the gap up to the record's prior. It
+ * delivers a copy whose record names its own position as the prior (`omitted`), and asks for a gap that ends at a prior
+ * ahead of it. A prior behind its position, or `0` on a track it holds, says nothing it does not know, so today's rule
+ * from its own position applies, as it does to a copy no authority recorded.
  */
 export function computeALOrderingObservation(input: ComputeALOrderingObservationInput): ALOrderingAcceptance {
     const trackKey = toALOrderingTrackKey(input.msg);
@@ -73,7 +76,7 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
     if ((snapshot?.bufferedSeqs.length ?? 0) > AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages) {
         return toOrderingNoop(track, 'resync-required');
     }
-    if (track.priorSeq !== undefined && snapshot === undefined) {
+    if (track.priorSeq !== undefined && snapshot === undefined && !isOpenedAtTrackStart(track)) {
         return computeContiguousOrdering(track, 'entered');
     }
     if (snapshot && seq <= snapshot.lastContiguousSeq) {
@@ -83,6 +86,16 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
         return toOrderingNoop(track, 'duplicate');
     }
     return computeTrackedOrdering(track);
+}
+
+/**
+ * A fresh recipient trusts the record's prior at entry: the sends below it are owed and still repairable. A track the
+ * store evicted at its cap enters at the copy instead, since its delivered past is forgotten, not absent.
+ */
+function isOpenedAtTrackStart(track: ALOrderingTrackInput): boolean {
+    const priorSeq = track.priorSeq;
+    return priorSeq !== undefined && priorSeq > 0 && priorSeq < track.seq &&
+        priorSeq <= AL_MESSAGE_RESOURCE_LIMITS.repairWindow && !track.input.evictedTrack;
 }
 
 /** A tracked copy above the receiver's position: in order, an omission, or a gap ending at the record's prior. */

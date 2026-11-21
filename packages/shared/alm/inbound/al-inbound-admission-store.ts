@@ -35,6 +35,10 @@ import {
 import { markTerminalVolatileAdmissionRow } from '../storage/in-memory-admission-work-write-buffer.ts';
 import { ALInboundDeliveredMarkerIndex } from './admission/al-inbound-delivered-marker-index.ts';
 import {
+    decodeALInboundEvictedOrderingTracks,
+    isALInboundOrderingTrackEvicted
+} from './admission/al-inbound-evicted-ordering-tracks.ts';
+import {
     evictALInboundDeliveredMarkersPastCap,
     type ALInboundDeliveredMarkersReport
 } from './admission/evict-al-inbound-delivered-markers-past-cap.ts';
@@ -148,6 +152,7 @@ export interface ALInboundAdmissionObservations {
             trackKey: string;
             snapshot: ALOrderingTrackSnapshot | undefined;
             buffered: readonly ALInboundResolvedDeliverySnapshot[];
+            evicted: boolean;
         }>
         | undefined;
     readonly buffered: ALInboundResolvedDeliverySnapshot | undefined;
@@ -482,6 +487,8 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly trackKey: string | undefined;
         readonly snapshot: ALOrderingTrackSnapshot | undefined;
         readonly buffered: readonly ALInboundResolvedDeliverySnapshot[];
+        /** Whether the cap evicted the track's snapshot; read only for a track with no live snapshot. */
+        readonly evicted: boolean;
     }
 
     export interface Dependencies {
@@ -551,7 +558,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             });
             const dedupExpiresAt = await session.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
             const claim = await this.readClaim(session, toALInboundClaimKey(input));
-            const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
+            const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg), input.nowMs);
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
             const { pendingAck, acks, nacks } = await readStoredAcknowledgements({
@@ -584,12 +591,15 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     private async readOrderingState(
         database: Pick<ALAdmissionBackend, 'read' | 'list'>,
-        trackKey: string | undefined
+        trackKey: string | undefined,
+        nowMs: number
     ): Promise<ProviderBackedALInboundAdmissionStore.OrderingRead> {
         if (trackKey === undefined) {
-            return { trackKey, snapshot: undefined, buffered: [] };
+            return { trackKey, snapshot: undefined, buffered: [], evicted: false };
         }
         const snapshot = await database.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot);
+        const evicted = !this.isLiveOrderingSnapshot(snapshot, nowMs) &&
+            await this.readOrderingTrackEvicted(database, trackKey, nowMs);
         const prefix = this.toBufferedTrackPrefix(trackKey);
         const stored = await database.list(
             prefix,
@@ -600,7 +610,24 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 await readALInboundBufferedMessage({ database, namespace: this.namespace, stored: entry.value })
             )
         );
-        return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq) };
+        return { trackKey, snapshot, buffered: buffered.sort((left, right) => left.seq - right.seq), evicted };
+    }
+
+    /** A store without a cap evicts nothing, so it reads no row. */
+    private async readOrderingTrackEvicted(
+        database: Pick<ALAdmissionBackend, 'read'>,
+        trackKey: string,
+        nowMs: number
+    ): Promise<boolean> {
+        if (this.maxOrderingTracks === undefined) {
+            return false;
+        }
+        const held = await database.read(this.toEvictedOrderingTracksKey(), decodeALInboundEvictedOrderingTracks);
+        return held !== undefined && isALInboundOrderingTrackEvicted(held, trackKey, nowMs);
+    }
+
+    private isLiveOrderingSnapshot(snapshot: ALOrderingTrackSnapshot | undefined, nowMs: number): boolean {
+        return snapshot !== undefined && snapshot.updatedAtMs + this.orderingTrackTtlMs > nowMs;
     }
 
     /** The session holding the exclusive claim on `claimKey`, read beside the dedup key and guarded at the commit. */
@@ -676,7 +703,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         const snapshot = await this.backend.readWithin((session) =>
             session.read(this.toOrderingKey(trackKey), decodeALInboundOrderingSnapshot)
         );
-        return snapshot !== undefined && snapshot.updatedAtMs + this.orderingTrackTtlMs > nowMs ? snapshot : undefined;
+        return this.isLiveOrderingSnapshot(snapshot, nowMs) ? snapshot : undefined;
     }
 
     private async readDeliveryProgress(
@@ -861,7 +888,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         const claim = await this.readClaim(transaction, observed.claim?.key);
         const ordering = observed.ordering === undefined
             ? undefined
-            : await this.readOrderingState(transaction, observed.ordering.trackKey);
+            : await this.readOrderingState(transaction, observed.ordering.trackKey, this.nowMs());
         const deliveryProgress = await this.readDeliveryProgress(transaction, observed.deliveryProgress?.trackKey);
         const buffered = observed.buffered === undefined
             ? undefined
@@ -1044,6 +1071,11 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return `${this.toOrderingPrefix()}${trackKey}`;
     }
 
+    /** Beside the ordering prefix, not under it: the eviction pass lists that prefix as snapshots. */
+    private toEvictedOrderingTracksKey(): string {
+        return `${this.namespace}:ordering-evicted`;
+    }
+
     private toDeliveredPrefix(): string {
         return `${this.namespace}:delivered:`;
     }
@@ -1141,7 +1173,12 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
             claim,
             ordering: ordering.trackKey === undefined
                 ? undefined
-                : { trackKey: ordering.trackKey, snapshot: ordering.snapshot, buffered: ordering.buffered },
+                : {
+                    trackKey: ordering.trackKey,
+                    snapshot: ordering.snapshot,
+                    buffered: ordering.buffered,
+                    evicted: ordering.evicted
+                },
             buffered: undefined,
             deliveryProgress: observed.deliveryProgress,
             supersedence,
@@ -1159,6 +1196,7 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
         claimHolderPeerId: claim?.holderPeerId,
         orderingTrackKey: ordering.trackKey,
         orderingSnapshot: ordering.snapshot,
+        orderingTrackEvicted: ordering.evicted,
         orderingTrackTtlMs: observed.orderingTrackTtlMs,
         supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
         retention: observed.retention,
