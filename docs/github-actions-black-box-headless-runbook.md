@@ -102,7 +102,8 @@ comparison; success cannot establish CPU-only causality or replace hosted scale 
   `RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable
   runner in both `prepare-hetzner` and `operator` phases. It is the reusable
   runner's operator credential, not a GitHub-hosted per-agent username; the
-  `github-agents` job uses each global agent ID as that agent's username.
+  `github-agents` job names each agent's user after its global agent ID and the
+  `room_id` input (`<prefix>-NN-<room digest>`).
 - Public endpoint inputs point at production or the intended staging target:
   `spa_url`, `api_base_url`, `control_url`, and `control_http_url`.
 - The workflow always runs the immutable `${{ github.sha }}` associated with
@@ -154,10 +155,11 @@ after it reaches `passed`, `failed`, `cancelled`, or `timed-out`.
 Before launching a shard, the workflow calls
 `POST /runs/{runId}/agents/{agentId}/tokens` for each local agent and exports
 the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. It also
-writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` using that global `agentId` and
-the configured password as `RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
-(`register_before_login`) is enabled by default and required for every
-multi-agent run (the `plan` job fails otherwise), so every global agent ID
+writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` from that global `agentId` and the
+`room_id` input, and the configured password as
+`RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
+(`register_before_login`) is enabled by default and required for every run
+(the `plan` job fails otherwise), so every global agent ID
 registers and uses one distinct username. The short-lived run tokens are the only control tokens
 forwarded into browser-agent URLs. The admin/operator read token stays in the
 Node-side worker environment.
@@ -205,10 +207,14 @@ target_agent_count=50   agents_per_job=3   max_parallel_jobs=17
 All three set `metadata.rtcTopologyEnv` (mesh min size N + 1), so
 `rollout_control_plane=true` or `rollout_control_plane=preserve-public-settings`
 is required, and `register_before_login=true`.
-Hosted Hetzner agents now also sign in as one user per agent (`controller-NN`),
-matching the all-local lifecycle and these shards, because one shared principal
-fans every connect out to a full snapshot for each of its sessions and stalls
-the 15-agent room join.
+Hosted Hetzner agents also sign in as one user per agent, as the all-local
+lifecycle and these shards do, because one shared principal fans every connect
+out to a full snapshot for each of its sessions and stalls the 15-agent room
+join. Their users are named after the agent id and the run's room
+(`controller-NN-<room digest>`), and these shards' users by the same rule from
+the workflow's `room_id` input (`<prefix>-NN-<room digest>`). That input
+defaults to the fixed `hetzner-headless-room`, so a run gets users no earlier
+run used only when it is dispatched with a `room_id` of its own.
 The 30- and 50-agent runs occupy 16 and 18 of the account's roughly 20
 concurrent jobs, so dispatch them when no other workflow is running. TURN is
 configured on the Hetzner plane, so cross-runner RTC edges form.

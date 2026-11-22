@@ -12,6 +12,7 @@ TERMINAL_TIMEOUT_SECONDS="300"
 TERMINAL_TIMEOUT_SECONDS_EXPLICIT="0"
 REGISTER_BEFORE_LOGIN="true"
 STOP_AFTER_RUN="true"
+SERVER_TIMING="0"
 HEADLESS_ENTRY="headless"
 BROWSER_ENGINE="chromium"
 FAST_MODE="0"
@@ -58,6 +59,7 @@ Options:
   --browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
   --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
   --keep-headless                Keep browsers running after artifacts and analysis for debugging.
+  --server-timing                Run with the API's timing logs on; the run rolls the API out to apply them.
   --allow-diagnostic            Allow manifests marked as diagnostic.
   -h, --help                    Show this help.
 USAGE
@@ -249,6 +251,10 @@ while [[ $# -gt 0 ]]; do
 		STOP_AFTER_RUN="false"
 		shift
 		;;
+	--server-timing)
+		SERVER_TIMING="1"
+		shift
+		;;
 	--allow-diagnostic)
 		ALLOW_DIAGNOSTIC="1"
 		shift
@@ -406,6 +412,9 @@ echo "Entry    : ${HEADLESS_ENTRY}"
 echo "Browser  : ${BROWSER_ENGINE}"
 echo "Register : ${REGISTER_BEFORE_LOGIN}"
 echo "Stop headless: ${STOP_AFTER_RUN}"
+if [[ "${SERVER_TIMING}" == "1" ]]; then
+	echo "Timing   : API timing logs on"
+fi
 echo "Timeout  : ${TERMINAL_TIMEOUT_SECONDS}"
 if [[ -n "${load_stream_frames}" && -n "${load_logical_fanout_messages}" ]]; then
 	echo "Load     : stream frames=${load_stream_frames}, logical fanout=${load_logical_fanout_messages}"
@@ -425,6 +434,10 @@ if [[ -n "${ROOM_ID}" ]]; then
 fi
 if [[ -n "${RTC_CAPTURE_MODE}" ]]; then
 	workflow_args+=(-f "rtc_capture_mode=${RTC_CAPTURE_MODE}")
+fi
+# Sent only when asked for: a ref whose workflow predates the input refuses the dispatch.
+if [[ "${SERVER_TIMING}" == "1" ]]; then
+	workflow_args+=(-f "server_timing=true")
 fi
 workflow_args+=(
 	-f "application_id=${application_id}"
