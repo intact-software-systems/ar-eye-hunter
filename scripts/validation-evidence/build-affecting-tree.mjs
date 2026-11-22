@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-import { commandOutputMaxBuffer } from '../github-actions/command-output-max-buffer.mjs';
+import { commandOutputMaxBuffer } from '../command-output-max-buffer.mjs';
 
 const authoredRoots = ['apps/', 'examples/', 'packages/', 'scripts/', 'tests/'];
 const markdownDocumentation = /\.mdx?$/u;

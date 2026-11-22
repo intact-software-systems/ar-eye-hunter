@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+import { commandOutputMaxBuffer } from '../command-output-max-buffer.mjs';
 
 /**
  * The fields of a GitHub workflow run that typed callers read; the reader returns the API's whole object.

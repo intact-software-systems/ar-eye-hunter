@@ -13,6 +13,7 @@ import {
 import { fileURLToPath } from 'node:url';
 
 import { checkPlaywrightTestExecution } from './check-playwright-test-execution.mjs';
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TEST_FILE_PATTERN = /(\.(test|spec)\.(ts|tsx|mts|mjs|js)|_test\.(ts|mts))$/;
@@ -20,14 +21,14 @@ const manualSuitesPath = 'tests/manual-suites.json';
 const FLAGS_WITH_VALUE = new Set(['--config', '--project', '--shard', '--reporter', '--testTimeout']);
 
 function git(...args) {
-    return execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: commandOutputMaxBuffer });
 }
 
 function run(command, args) {
     return execFileSync(command, args, {
         cwd: repositoryRoot,
         encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
+        maxBuffer: commandOutputMaxBuffer,
         stdio: ['ignore', 'pipe', 'ignore']
     });
 }
