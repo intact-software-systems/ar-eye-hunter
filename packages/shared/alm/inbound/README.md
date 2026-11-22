@@ -342,8 +342,8 @@ that asks for no receipt leaves no relay row: on a lane that passes a copy down 
 `forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
 relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
 nothing (6c). It sends it to its current upstream peer when its accepted layout names the child its own, as a 6d new
-parent does, since a reshape may have removed the peer the message arrived from, and otherwise toward that peer. It admits one from a child it forwards the message to, never that
-peer, naming a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's
+parent does, since a reshape may have removed the peer the message arrived from, and otherwise toward that peer. It
+admits one from a child (one it forwards the message to, or one its accepted layout names), never that peer, naming a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's
 own track; the origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and
 its child lost is repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
 naming this relay a next hop, is passed down again as a retried forward to the next hops it would go to were it new,
@@ -713,13 +713,14 @@ leaf to the origin, the run asks the origin, whose copies no longer pass through
 is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward the origin
 ([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves (a WS runtime,
 a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again. Every run arms
-the next number. A relay never forwards a repair request. It forwards a child's gap NACK toward the origin while it
-holds a pending row that waits on that child; about a stored message that asked for no receipt, while the child is
-one it passes the copy down to (6c), to its current upstream peer when one resolves; and, as a new parent after a reshape does, while the NACK is the child's own word
-and the child is its child in its accepted layout (6d): about a message it holds nothing of, to its own upstream peer
-([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), and about one its receipt row
-holds for other children, to that same upstream peer, not the row's parent a reshape may have removed, with the row
-left as it was. Neither forward records anything. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
+the next number. A relay never forwards a repair request. Every relay path takes one child rule
+(`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one its current accepted layout
+names below it. It forwards a child's gap NACK toward the origin while it holds a pending row that waits on that
+child; about a stored message that asked for no receipt (6c); and, while the NACK is the child's own word, from a
+layout child its row does not wait on or about a message it holds nothing of (6d). On every path the NACK goes to
+the relay's current upstream peer ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)),
+not a parent a reshape may have removed, and to the row's parent or the peer the message arrived from only when none
+resolves. The forwards of 6c and 6d record nothing, and a row is left as it was. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
 repair to the relay, a ready room neighbour, and while the receipt still owes the recipient (or, with no receipt, the
 audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A
 sequence past the window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the

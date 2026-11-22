@@ -246,9 +246,7 @@ export class ALInboundControlAdmission {
             pending: surface.pendingAck,
             acks: surface.acks,
             nacks: surface.nacks,
-            layoutParentPeerId: surface.pendingAck?.expectedFromPeerIds.includes(nack.fromPeerId) === true
-                ? undefined
-                : this.readLayoutParentPeerId(nack),
+            layoutParentPeerId: this.readLayoutParentPeerId(nack),
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId

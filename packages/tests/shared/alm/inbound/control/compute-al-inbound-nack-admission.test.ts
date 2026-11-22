@@ -159,6 +159,16 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         }]);
     });
 
+    it('passes a gap NACK from a child the row waits on to its current upstream peer when one resolves (6d)', () => {
+        const candidate = computeALInboundNackAdmission({ ...computeArrival({ reason: 'gap' }).read, layoutParentPeerId: 'new-parent' }, RETENTION);
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{
+            type: 'nack',
+            payload: { ...toChildNack({ reason: 'gap' }), fromPeerId: 'relay', toPeerId: 'new-parent' }
+        }]);
+    });
+
     it('refuses a gap NACK for a recipient whose confirmation the relay already forwarded', () => {
         const candidate = computeArrival({ reason: 'gap' }, ROW, [toConfirmation('leaf')]);
 
@@ -344,6 +354,14 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
 
     it('forwards the child\'s gap NACK to the relay\'s current upstream peer, not the peer the message arrived from (6d)', () => {
         const read = { ...readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' }), layoutParentPeerId: 'new-parent' };
+        const candidate = computeALInboundUnreceiptedGapNackAdmission(read, RETENTION);
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{ type: 'nack', payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'new-parent' } }]);
+    });
+
+    it('forwards the own gap NACK of a peer the accepted layout names its child, though the copy\'s plan does not (6d)', () => {
+        const read = { ...readUnreceipted({ reason: 'gap', fromPeerId: 'leaf', logicalRecipientPeerId: 'leaf' }), layoutParentPeerId: 'new-parent' };
         const candidate = computeALInboundUnreceiptedGapNackAdmission(read, RETENTION);
 
         expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);

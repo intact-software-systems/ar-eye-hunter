@@ -39,9 +39,8 @@ export interface ALInboundNackAdmissionRead {
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     /**
-     * Read only for a gap NACK from a sender the row does not wait on: this relay's current upstream peer toward the
-     * origin in an accepted layout that names that sender its child, as a new parent's is after a reshape (6d); absent
-     * for any other NACK, which goes to the row's parent.
+     * For a gap NACK: this relay's current upstream peer toward the origin in an accepted layout that names the sender its
+     * child (6d); absent for any other NACK, or when none resolves, which goes to the row's parent.
      */
     readonly layoutParentPeerId: string | undefined;
     readonly nowMs: number;
