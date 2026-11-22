@@ -15,9 +15,9 @@ it('recovers a missed held-seat deadline across socket reconnect and rejects ano
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     let view: RoomLobbyAccountView = { scope, principalId: 'alice', seat: { roomRef, status: 'away', deadlineEpochMs: null } };
-    let readPath: string | undefined;
+    const reads: string[] = [];
     vi.stubGlobal('fetch', async (url: string) => {
-        readPath = url;
+        reads.push(url);
         return Response.json(view);
     });
     const push = new ViewPushBrowser(() => session);
@@ -25,9 +25,17 @@ it('recovers a missed held-seat deadline across socket reconnect and rejects ano
         session: () => session, ws: push.ws, messages: push.messages, auth: { onChange: () => () => {} }
     }, scope);
     try {
-        await owner.start();
-        expect(readPath).toEqual('http://api.test/api/room-lobbies/apps/courts/workspaces/league');
-        expect(owner.getState().view).toEqual(view);
+        vi.useFakeTimers();
+        try {
+            await owner.start();
+            expect(reads).toEqual(['http://api.test/api/room-lobbies/apps/courts/workspaces/league']);
+            expect(owner.getState().view).toEqual(view);
+            await vi.advanceTimersByTimeAsync(300000);
+            expect(reads).toHaveLength(1);
+        }
+        finally {
+            vi.useRealTimers();
+        }
         view = { ...view, seat: { roomRef, status: 'away', deadlineEpochMs: 120100 } };
         push.reopen();
         await expect.poll(() => owner.getState().view?.seat?.deadlineEpochMs).toBe(120100);

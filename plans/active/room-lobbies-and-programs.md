@@ -22,6 +22,12 @@ A program pause preserves the current phase balance. Resume shifts the remaining
 
 Establish durable queue order and serialize seat release, selection and allocation with new admission. Repeat a release/claim race across two API nodes and a process restart. Verify the oldest eligible account receives one effective offer, a walk-in cannot take it, and replays preserve the receipt. Cover decline, expiry, cancellation, access changes and a successful arrival. Keep private queue identities out of public room snapshots. Reassess the design after testing slice 1.
 
+The held-seat implementation exposes two places to extend. The room roster serializes capacity and the account record enforces one commitment across rooms. Use the same transaction for waiter registration, selection, and moving the account from waiting to offered. An observer keeps its subscription when it switches rooms.
+
+1. Write the race test first. Fill a room, register two waiters, release a seat concurrently with a walk-in and retry the release. Expect the first waiter alone to hold the offer and the second to keep their order. Assign order from an accepted roster mutation so writers with different clocks agree.
+2. Represent waiting and offered explicitly in the private account view. Add SDK actions to join and leave the queue. Entering through normal room admission confirms an offer. A notification, reconnect or reading the offer from another room leaves it unclaimed.
+3. Drive decline, loss of eligibility and expiry through the same seat allocation decision. An expired offer delivered twice must advance the queue once. Exercise delivery after a worker restart, and assert that public room discovery exposes capacity without participant identities.
+
 ## Subsequent outcomes
 
 | Order | Outcome | End-to-end evidence |
