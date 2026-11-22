@@ -1068,6 +1068,31 @@ and it has no status list.
   for a fresh receiver ruled "latest-wins tracks enter"). Options: the record
   names the earlier prior for a superseded unsent sequence, or the repair
   answer is read as an omission.
+- The bounded hold of a fresh track (#868, D713) has no lane proof and states
+  no `ordering-position` event when it ends, so `readUsage().ordering` and the
+  diagnostics never show that entry. A cell for it (hold send 1 past the
+  renewal schedule, then read 2 and 3, and send 1 refused `before-entry`) was
+  dropped: no existing command fits a hold of about 10.5 s without a longer
+  budget. Option: state `entered` from the hold's end commit, which also gives
+  such a cell its cue.
+- Mixed lifetimes on one held track (#868 final re-review): an expired buffered
+  copy next to a sequence that never arrived still becomes a mid-track gap when
+  the hold ends (buffered 3 live, 4 expired, 6 live, 5 missing: the track
+  enters at 3 and 4 then reads missing), and the retry after an `expired` hold
+  end assumes a buffered slot expires with its message.
+- The revealing copy of a track opened at 0 (#868, D713) is retained for the
+  ordering TTL, because its held start range's timer lives that long and a
+  message row outlives the work that names it: at most one message per track
+  under the 256-track cap. Option: the hold's end or the start's arrival returns
+  the row to its own lifetime.
+- A buffered copy is acknowledged at admission, and a retried duplicate of one
+  is acknowledged `delivered` while still buffered (#868 lane and fix wave), so
+  a receipt can read `acknowledged` for a stream start the app has not received.
+  Receipt truth's to judge.
+- A server-originated send whose latest-wins comes only from server QoS provider
+  defaults is not stamped into its `qos` (#868, D712: explicit plans never
+  stamp), so a fresh WS client of such a track can ask for a sequence superseded
+  before it was sent and wait for the bounded hold.
 - After the instance that admitted a publication crashes, the publisher,
   reconnected to a survivor, reads neither `complete` nor `timed-out` for it
   (`api-v1-cluster-publisher-instance-loss`, D700); a receipt that survives a
