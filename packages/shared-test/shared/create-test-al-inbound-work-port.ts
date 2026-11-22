@@ -41,6 +41,7 @@ export function createTestALInboundControlAdmission(
         retention: input.admissionStore.retention,
         receiptProofs: { kind: 'carrier-authenticated' },
         diagnostics: undefined,
-        planRetriedCopyNextHops: undefined
+        planRetriedCopyNextHops: undefined,
+        readGapNackParent: undefined
     });
 }

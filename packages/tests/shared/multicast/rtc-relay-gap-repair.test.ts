@@ -13,6 +13,7 @@ import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm
 import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 
 import { toAcceptedLayout, toPromotedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
@@ -43,6 +44,8 @@ type GapNackControl = Extract<ALPeerControlMessage, { type: 'nack'; }>;
 interface GapChain {
     readonly chain: OriginRelayChain;
     readonly relay: RtcRelayOverlayFixture;
+    /** The relay `b` a reshape parents the leaf on, which never carried the track; absent, none. */
+    readonly secondRelay: RtcRelayOverlayFixture | undefined;
     readonly leaf: RtcRelayOverlayFixture;
     /** The relay session's inbound rows. */
     readonly relayRows: ALAdmissionMemoryState;
@@ -58,6 +61,10 @@ interface GapChainInput {
     readonly grantsBySeq?: Readonly<Record<number, ChainGrants>>;
     /** The leaf's open edges and the layout it holds accepted from the start; absent, its edge to the relay alone. */
     readonly leaf?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
+    /** The layout the relay holds accepted from the start; absent, its edges and no adjacency. */
+    readonly relayLayout?: OverlayInfo;
+    /** The second relay `b`, in the room from the start; absent, the chain `a`, `r`, `c` alone. */
+    readonly secondRelay?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
 }
 
 /** The frames each link had carried when they were read. */
@@ -75,6 +82,8 @@ interface GapNackInput {
     readonly revealing: ALMessage;
     /** The control's own id; absent, `leaf-gap-` and its sender. */
     readonly controlMsgId?: string;
+    /** The relay the NACK is addressed to; absent, `r`. */
+    readonly toPeerId?: string;
 }
 
 /** The publish-only relay `r` is frozen into nothing: only the leaf `c` subscribes. */
@@ -91,6 +100,12 @@ const RELAYED_LEAF: SessionNextHops = { a: ['r'], r: ['a', 'c'], c: ['r'] };
 
 /** The layout a reshape promotes: the leaf `c` hangs directly below the origin `a`. */
 const DIRECT_LEAF: SessionNextHops = { a: ['r', 'c'], r: ['a'], c: ['a'] };
+
+/** The chain's layout with a second relay `b` in the room, which carries nothing of the track. */
+const RELAYED_LEAF_BESIDE_B: SessionNextHops = { a: ['r', 'b'], r: ['a', 'c'], b: ['a'], c: ['r'] };
+
+/** The layout a reshape promotes: the leaf `c` hangs below the relay `b`, which never carried the track. */
+const LEAF_BELOW_B: SessionNextHops = { a: ['r', 'b'], r: ['a'], b: ['a', 'c'], c: ['b'] };
 
 const RELAY_NAMESPACE = 'relay-gap-repair';
 
@@ -469,6 +484,8 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         const firstReport = await readLeafControls(gap);
 
         promoteDirectLeafLayout(gap);
+        // The relay the gap was reported to leaves: the leaf no longer routes over its edge.
+        await gap.leaf.closeEdge('r');
         await advanceChainBy(2_000);
         const toNewParent = await gap.leaf.readSent('a');
         const renewal = toNewParent.find((control) => readGapRequestNumber(control, 'c') === 2);
@@ -484,16 +501,129 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         expect(servedToLeaf.map((copy) => copy.ordering?.seq)).toEqual([2]);
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
+
+    it('during the overlap the old relay still routes to the leaf: the renewal goes to it and is served', async () => {
+        const gap = await createReshapeOntoSecondRelay('none');
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        await readLeafControls(gap);
+        const links = await readChainLinks(gap);
+
+        promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, gap.secondRelay!]);
+        await advanceChainBy(2_000);
+        const toOldRelay = (await gap.leaf.readSent('r')).slice(links.leafToRelay);
+        await deliverEach(toOldRelay, gap.relay, 'c');
+        await drainUntil(async () => (await gap.relay.readSent('a')).length > links.relayToOrigin);
+        const outcomes = await acceptEachAtOrigin(gap, (await gap.relay.readSent('a')).slice(links.relayToOrigin));
+        await repairThroughRelay(gap);
+
+        expect(readGapRequests(toOldRelay)).toEqual([['nack', 2, 'r'], ['repair', 2, 'r']]);
+        expect(readGapRequests(await gap.leaf.readSent('b'))).toEqual([]);
+        expect([...outcomes.values()]).toContain('committed');
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
+    it.each(['receiver', 'none'] as const)(
+        'after a reshape onto a relay that never carried the track, a %s track\'s renewal is relayed by it and served through it',
+        async (ack) => {
+            const gap = await createReshapeOntoSecondRelay(ack);
+            await forwardTrack(gap, [1, 3]);
+            await receiveAtLeaf(gap, [1, 3]);
+            await readLeafControls(gap);
+            const secondRelay = gap.secondRelay!;
+
+            promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, secondRelay]);
+            await gap.leaf.closeEdge('r');
+            // The origin's edge to `b` opens only as the relayed NACK arrives: it has sent `b` nothing of the track.
+            gap.chain.origin.ready.peerIds = ['r'];
+            await advanceChainBy(2_000);
+            const toSecondRelay = await gap.leaf.readSent('b');
+            await deliverEach(toSecondRelay, secondRelay, 'c');
+            await drainUntil(async () => findGapNack(await secondRelay.readSent('a')) !== undefined);
+            const relayed = await secondRelay.readSent('a');
+            gap.chain.origin.ready.peerIds = LEAF_BELOW_B.a!;
+            const outcomes = await acceptEachAtOrigin(gap, relayed);
+            await drainUntil(() => (gap.chain.origin.channels.b?.sent.length ?? 0) > 0);
+            await deliverEach(gap.chain.origin.channels.b!.sent, secondRelay, 'a');
+            await drainUntil(async () => (await secondRelay.readSent('c')).length > 0);
+            await deliverEach(await secondRelay.readSent('c'), gap.leaf, 'b');
+            await drainUntil(() => gap.leaf.delivered.length >= gap.frames.length);
+
+            expect(readGapRequests(toSecondRelay)).toEqual([['nack', 2, 'b'], ['repair', 2, 'b']]);
+            expect(readRelayedNacks(await secondRelay.readSentControls('a'))).toEqual([
+                { control: ['nack', 'c', 'gap'], orderingKey: readLeafTrackKey(gap), missingRanges: '2-2' }
+            ]);
+            expect(outcomes.get(relayed.find((control) => findGapNack([control]) !== undefined)!)).toBe('committed');
+            expect(gap.chain.origin.channels.b!.sent.map((copy) => copy.ordering?.seq)).toEqual([2]);
+            expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+            if (ack === 'receiver') {
+                // The origin's receipt retries reach the leaf through `b` now, and the leaf confirms what it delivered.
+                await advanceChainBy(2_000);
+                await deliverEach(gap.chain.origin.channels.b!.sent.slice(1), secondRelay, 'a');
+                await drainUntil(async () => (await secondRelay.readSent('c')).length > 1);
+                await deliverEach((await secondRelay.readSent('c')).slice(1), gap.leaf, 'b');
+                await confirmThroughRelays(gap);
+                // Every sequence the leaf delivered is confirmed once, by the leaf, and no receipt is left owing it.
+                for (const frame of gap.frames) {
+                    expect(gap.chain.origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.msgId === frame.id.msgId))
+                        .toEqual([expect.objectContaining({ confirmedRecipientPeerIds: ['c'], complete: true })]);
+                    expect(await readOriginUnconfirmed(gap, frame)).toBeUndefined();
+                }
+            }
+        }
+    );
+
+    it('refuses at the relay that never carried the track a gap NACK from a peer that is not its child in its layout', async () => {
+        const gap = await createReshapeOntoSecondRelay('none', ['a', 'c', 'r']);
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        const secondRelay = gap.secondRelay!;
+        promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, secondRelay]);
+
+        await secondRelay.receive(
+            await toGapNack(gap, { fromPeerId: 'r', logicalRecipientPeerId: 'r', revealing: gap.frames[2]!, toPeerId: 'b' }),
+            'r'
+        );
+        await drainUntil(() => false, 20);
+
+        expect(readAdmissionOutcomes(secondRelay, 'leaf-gap-r')).toEqual([['not-handled', 'control']]);
+        expect(await secondRelay.readSentControls('a')).toEqual([]);
+    });
+
+    it('an origin that plans no repair to the relay that never carried the track refuses the NACK it relays', async () => {
+        const gap = await createReshapeOntoSecondRelay('none');
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        await readLeafControls(gap);
+        const secondRelay = gap.secondRelay!;
+        promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, secondRelay]);
+        // The origin's edge to `b` is not open: it can plan no repair to `b`.
+        gap.chain.origin.ready.peerIds = ['r'];
+        await gap.leaf.closeEdge('r');
+
+        await advanceChainBy(2_000);
+        await deliverEach(await gap.leaf.readSent('b'), secondRelay, 'c');
+        await drainUntil(async () => findGapNack(await secondRelay.readSent('a')) !== undefined);
+        const outcomes = await acceptEachAtOrigin(gap, await secondRelay.readSent('a'));
+
+        expect([...outcomes.values()]).toContain('not-handled');
+        expect([...outcomes.values()]).not.toContain('committed');
+        expect(gap.chain.origin.channels.b!.sent).toEqual([]);
+    });
 });
 
 async function createGapChain(input: GapChainInput): Promise<GapChain> {
-    const chain = await createOriginRelayChain(GRANTS);
+    const chain = input.secondRelay === undefined
+        ? await createOriginRelayChain(GRANTS)
+        : await createOriginRelayChain({ ...GRANTS, b: PUBLISH_ONLY }, ['a', 'r', 'b', 'c']);
     const pair = createObservedVolatileInboundPair(RELAY_NAMESPACE);
     const relay = createChainHop(chain, {
         selfPeerId: 'r',
         neighbourPeerIds: ['a', ...(input.relayChildPeerIds ?? ['c'])],
-        inboundVolatileStores: pair.stores
+        inboundVolatileStores: pair.stores,
+        initialOverlay: input.relayLayout
     });
+    const secondRelay = input.secondRelay === undefined ? undefined : createChainHop(chain, { selfPeerId: 'b', ...input.secondRelay });
     const leaf = createChainHop(chain, {
         selfPeerId: 'c',
         neighbourPeerIds: input.leaf?.neighbourPeerIds ?? ['r'],
@@ -512,8 +642,9 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     }
     // The relay and the leaf hold the room the origin froze its last sequence in.
     relay.acceptSnapshot(snapshot);
+    secondRelay?.acceptSnapshot(snapshot);
     leaf.acceptSnapshot(snapshot);
-    return { chain, relay, leaf, relayRows: pair.state, frames };
+    return { chain, relay, secondRelay, leaf, relayRows: pair.state, frames };
 }
 
 /** The relay receives the origin's copies of `seqs`; any other is lost on `a→r`. */
@@ -609,6 +740,55 @@ function promoteDirectLeafLayout(gap: GapChain): void {
     gap.chain.origin.groups.accept('room', atOrigin.snapshot);
     gap.chain.origin.acceptOverlay(atOrigin.overlay);
     gap.chain.origin.ready.peerIds = DIRECT_LEAF.a!;
+}
+
+/** The chain with a second relay `b` in the room, which the origin never sends the track to; the leaf's edge to `b` is open. */
+async function createReshapeOntoSecondRelay(
+    ack: 'none' | 'receiver',
+    secondRelayNeighbourPeerIds: readonly string[] = ['a', 'c']
+): Promise<GapChain> {
+    return await createGapChain({
+        ack,
+        relayLayout: createOriginOverlay(RELAYED_LEAF_BESIDE_B.r!, RELAYED_LEAF_BESIDE_B),
+        secondRelay: {
+            neighbourPeerIds: secondRelayNeighbourPeerIds,
+            initialOverlay: createOriginOverlay(RELAYED_LEAF_BESIDE_B.b!, RELAYED_LEAF_BESIDE_B)
+        },
+        leaf: {
+            neighbourPeerIds: ['r', 'b'],
+            initialOverlay: createOriginOverlay(RELAYED_LEAF_BESIDE_B.c!, RELAYED_LEAF_BESIDE_B)
+        }
+    });
+}
+
+/** The origin and `sessions` promote `tree`, and the origin's edges to its next hops in it are open. */
+function promoteLayout(gap: GapChain, tree: SessionNextHops, sessions: readonly RtcRelayOverlayFixture[]): void {
+    const layout = toPromotedLayout(tree);
+    const sessionIds = new Map<RtcRelayOverlayFixture, string>([[gap.leaf, 'c'], [gap.relay, 'r']]);
+    if (gap.secondRelay !== undefined) {
+        sessionIds.set(gap.secondRelay, 'b');
+    }
+    for (const session of sessions) {
+        const promoted = toAcceptedLayout(gap.chain.snapshot, layout, sessionIds.get(session)!);
+        session.acceptSnapshot(promoted.snapshot);
+        session.acceptOverlay(promoted.overlay);
+    }
+    const atOrigin = toAcceptedLayout(gap.chain.snapshot, layout, 'a');
+    gap.chain.origin.groups.accept('room', atOrigin.snapshot);
+    gap.chain.origin.acceptOverlay(atOrigin.overlay);
+    gap.chain.origin.ready.peerIds = tree.a!;
+}
+
+/** The leaf's ACKs reach the relays they are addressed to, and the relays' forwards reach the origin. */
+async function confirmThroughRelays(gap: GapChain): Promise<void> {
+    await drainUntil(async () => (await gap.leaf.readSentControls('b')).some((control) => control.type === 'ack'));
+    for (const relay of [gap.relay, gap.secondRelay!]) {
+        const relayPeerId = relay === gap.relay ? 'r' : 'b';
+        const relayedBefore = (await relay.readSent('a')).length;
+        await deliverEach(await gap.leaf.readSent(relayPeerId), relay, 'c');
+        await drainUntil(() => false, 20);
+        await acceptEachAtOrigin(gap, (await relay.readSent('a')).slice(relayedBefore));
+    }
 }
 
 /** Each gap NACK and repair request among `controls`, as its type, its request number and the peer it is addressed to. */
@@ -746,7 +926,7 @@ function toGapNackPayload(gap: GapChain, input: GapNackInput): ALNackPayload {
     return toTestALNackPayload({
         msgId: revealing.id.msgId,
         fromPeerId,
-        toPeerId: 'r',
+        toPeerId: input.toPeerId ?? 'r',
         originPeerId: revealing.id.senderId,
         logicalRecipientPeerId: input.logicalRecipientPeerId,
         reason: 'gap',

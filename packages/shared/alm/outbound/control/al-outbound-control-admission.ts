@@ -1,4 +1,4 @@
-import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, type ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import {
     decodeALPeerControlMessage,
@@ -64,6 +64,7 @@ import {
     isALOutboundUnreceiptedSend,
     toALOutboundUnreceiptedRepairAudience
 } from './is-al-outbound-expected-repair-peer.ts';
+import { isALOutboundRelayedGapNack } from './is-al-outbound-relayed-gap-nack.ts';
 import {
     readALOutboundRecipientProof,
     toALOutboundRefusedControlAdmission,
@@ -364,27 +365,30 @@ export class ALOutboundControlAdmission<TPrepared> {
                 nowMs,
                 owner,
                 ...ownerSurface,
-                ...await this.readSentSurface(session, targetMsgId, ownerSurface.pending),
+                ...await this.readSentSurface(session, parsed, ownerSurface.pending),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
     }
 
     /**
-     * The retained send, and, for one that tracks no receipt and holds no receipt row, who may ask for its repair, read
-     * from its canonical copy.
+     * The retained send, and, read from its canonical copy: for one that tracks no receipt and holds no receipt row, who
+     * may ask for its repair; for a gap NACK a relay re-sends, whether the send is a room send.
      */
     private async readSentSurface(
         session: ALAdmissionReadSession,
-        msgId: string,
+        parsed: ALPeerControlMessage,
         pending: ALControlAdmissionRead['pending']
-    ): Promise<Pick<ALControlAdmissionRead, 'sent' | 'unreceiptedRepairAudience'>> {
+    ): Promise<Pick<ALControlAdmissionRead, 'sent' | 'unreceiptedRepairAudience' | 'isRoomRepairedRelayedGapNack'>> {
+        const msgId = controlTargetMsgId(parsed);
         const sent = await this.reads.readStoredMessage(session, msgId);
+        const unreceipted = isALOutboundUnreceiptedSend({ sent, pending });
+        const relayedGapNack = isALOutboundRelayedGapNack(parsed);
+        const msg = unreceipted || relayedGapNack ? (await this.reads.readSentMessage(session, msgId))?.msg : undefined;
         return {
             sent,
-            unreceiptedRepairAudience: isALOutboundUnreceiptedSend({ sent, pending })
-                ? toALOutboundUnreceiptedRepairAudience((await this.reads.readSentMessage(session, msgId))?.msg)
-                : undefined
+            unreceiptedRepairAudience: unreceipted ? toALOutboundUnreceiptedRepairAudience(msg) : undefined,
+            isRoomRepairedRelayedGapNack: relayedGapNack && msg !== undefined && isRoomScopedALMessage(msg)
         };
     }
 

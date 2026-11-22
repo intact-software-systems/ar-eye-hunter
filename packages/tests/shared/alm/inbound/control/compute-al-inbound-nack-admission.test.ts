@@ -13,6 +13,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import type { ALRelayedNackReason } from '@shared/alm/delivery/is-al-relayed-nack-reason.ts';
 import {
     computeALInboundNackAdmission,
+    computeALInboundUnheldGapNackAdmission,
     computeALInboundUnreceiptedGapNackAdmission,
     toALInboundNackCommitBundle,
     type ALInboundNackAdmissionCandidate,
@@ -20,6 +21,7 @@ import {
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import {
     validateALInboundNackAdmission,
+    validateALInboundUnheldGapNackAdmission,
     validateALInboundUnreceiptedGapNackAdmission
 } from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
 import type { SignatureProof } from '@shared/signature/signature-proof.ts';
@@ -373,6 +375,38 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
         const read = readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' });
 
         expect(validateALInboundUnreceiptedGapNackAdmission({ ...read, nack: { ...read.nack, expectedSeq: undefined } }))
+            .toEqual([{ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to forward' }]);
+    });
+});
+
+describe('a child\'s gap NACK at a relay that holds nothing of the message (6d)', () => {
+    const unheldRead = (arrival: Omit<NackArrival, 'reason'> = {}) => ({
+        namespace: 'relay',
+        nack: { ...toChildNack({ reason: 'gap', logicalRecipientPeerId: 'child', ...arrival }), reason: 'gap' as const },
+        parent: { kind: 'rtc-peer' as const, peerId: 'parent' },
+        nowMs: NOW_MS,
+        controlMsgId: 'forwarded',
+        traceId: 'trace-relayed-nack'
+    });
+
+    it('forwards the child\'s own gap NACK to the parent its layout names, observing no owner row and writing none', () => {
+        const read = unheldRead();
+        const candidate = computeALInboundUnheldGapNackAdmission(read, RETENTION);
+        const bundle = toALInboundNackCommitBundle(candidate);
+
+        expect(validateALInboundUnheldGapNackAdmission(read)).toEqual([]);
+        expect(bundle.mutations).toEqual([]);
+        expect(bundle.observations.messageOwner).toBeUndefined();
+        expect(toUpwardControls(candidate)).toEqual([{
+            type: 'nack',
+            payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'parent' }
+        }]);
+    });
+
+    it('refuses a NACK that speaks for another recipient than its sender, and one without its ordering hints', () => {
+        expect(validateALInboundUnheldGapNackAdmission(unheldRead({ logicalRecipientPeerId: 'leaf' })))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK speaks for another recipient than its sender' }]);
+        expect(validateALInboundUnheldGapNackAdmission(unheldRead({ ordering: {} })))
             .toEqual([{ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to forward' }]);
     });
 });

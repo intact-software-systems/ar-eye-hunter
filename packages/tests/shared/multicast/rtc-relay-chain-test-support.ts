@@ -101,10 +101,12 @@ export async function createRelayChain(
     return { keys, snapshot };
 }
 
+/** `sessionIds` absent, the chain `a`, `r`, `c`; a test that reshapes the chain names its further sessions. */
 export async function createOriginRelayChain(
-    grants: Readonly<Record<string, GroupPublicationTopicPermissions>>
+    grants: Readonly<Record<string, GroupPublicationTopicPermissions>>,
+    sessionIds: readonly string[] = ['a', 'r', 'c']
 ): Promise<OriginRelayChain> {
-    const chain = await createRelayChain(['a', 'r', 'c'], grants);
+    const chain = await createRelayChain(sessionIds, grants);
     const origin = createRtcOriginOverlayFixture({
         snapshot: chain.snapshot,
         nextHopPeerIds: ['r'],

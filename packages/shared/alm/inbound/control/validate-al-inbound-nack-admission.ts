@@ -3,8 +3,10 @@ import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-froze
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { isALOwnWord } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type {
     ALInboundNackAdmissionCandidate,
+    ALInboundUnheldGapNackAdmissionRead,
     ALInboundUnreceiptedGapNackAdmissionRead
 } from './compute-al-inbound-nack-admission.ts';
 import {
@@ -102,6 +104,22 @@ export function validateALInboundUnreceiptedGapNackAdmission(
         issues.push(rejectInboundNack('Inbound NACK names a track the message is not on'));
     }
     return issues;
+}
+
+/**
+ * Every reason a child's gap NACK about a message this relay holds nothing of may not be forwarded (6d): it is the
+ * recipient's own word, as only its own report reaches a parent it has no history with, and it carries the ordering hints
+ * the origin repairs by. The lane named this relay's parent only for a sender that is its child in its accepted layout.
+ */
+export function validateALInboundUnheldGapNackAdmission(
+    read: ALInboundUnheldGapNackAdmissionRead
+): readonly ALMessageRejection[] {
+    return [
+        ...(isALOwnWord(read.nack)
+            ? []
+            : [rejectInboundNack('Inbound NACK speaks for another recipient than its sender')]),
+        ...(hasGapOrderingHints(read.nack) ? [] : [MISSING_GAP_ORDERING_HINTS])
+    ];
 }
 
 /** The recipient's track key, the sequence it expected and the ranges it misses, all of which the origin repairs by. */

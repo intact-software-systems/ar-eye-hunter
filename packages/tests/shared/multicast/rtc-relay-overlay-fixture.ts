@@ -123,6 +123,8 @@ export interface RtcRelayOverlayFixture {
     enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult>;
     /** Replaces the room this relay sees, as a membership change reaches it. */
     acceptSnapshot(snapshot: GroupSnapshot): void;
+    /** Closes this session's channel to `peerId`, as a neighbour that left or restarted does. */
+    closeEdge(peerId: string): Promise<void>;
     /** Replaces the layout this relay holds accepted, as the server's promotion of a new layout reaches it. */
     acceptOverlay(overlay: OverlayInfo): void;
     /** Replaces the layout this relay holds planned (the server's published plan), and records no transition. */
@@ -249,6 +251,11 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
 
     acceptSnapshot(snapshot: GroupSnapshot): void {
         this.dependencies.groups.accept('room', snapshot);
+    }
+
+    async closeEdge(peerId: string): Promise<void> {
+        await this.ready;
+        await this.dependencies.connection.nativePeer(peerId).channels[0].close();
     }
 
     acceptOverlay(overlay: OverlayInfo): void {

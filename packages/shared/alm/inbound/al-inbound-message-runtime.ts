@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
+import { type ALControlAcceptance, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -72,6 +72,9 @@ export namespace ALInboundMessageRuntime {
             readonly groupRecipientPeerIds?: readonly string[];
         }
         | { readonly kind: 'trusted-server'; };
+
+    /** A source a peer sent from: a peer's control is forwarded back over the carrier it names. */
+    export type PeerSource = Exclude<Source, { readonly kind: 'trusted-server'; }>;
 
     export type Acceptance =
         | { readonly kind: 'admitted' | 'duplicate' | 'resync-required' | 'disposed' | 'pending-admission'; }
@@ -190,6 +193,17 @@ export namespace ALInboundMessageRuntime {
          * A runtime with no overlay (WS) passes `() => undefined` at its composition root.
          */
         readonly readUpstreamPeerId: (msg: ALMessage) => string | undefined;
+        /**
+         * Whether `peerId`, the peer a gap was first reported to, is still connected and still routed over by this lane,
+         * so its renewal keeps asking it. Absence means this lane routes over no layout: a renewal asks the upstream peer.
+         */
+        readonly isRoutedPeerReady?: (msg: ALMessage, peerId: string) => boolean;
+        /**
+         * The parent this relay forwards a child's gap NACK to when it holds neither a row nor a copy of the message, as
+         * a new parent after a reshape does: its upstream peer toward the NACK's origin, while the NACK's sender is its
+         * child in the accepted layout; `undefined` when no layout routes it. Absence means this lane relays no such NACK.
+         */
+        readonly readGapNackParent?: (nack: ALNackPayload) => ALInboundMessageRuntime.PeerSource | undefined;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         /** Absence means this runtime relays no session's NACK or repair to the origin it names. */

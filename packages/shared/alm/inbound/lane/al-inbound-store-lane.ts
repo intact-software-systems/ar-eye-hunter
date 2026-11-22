@@ -697,7 +697,8 @@ function createALInboundLaneControlAdmission(
         retention: dependencies.admissionStore.retention,
         receiptProofs: dependencies.receiptProofs,
         diagnostics: dependencies.diagnostics,
-        planRetriedCopyNextHops: resolveALInboundRetriedCopyNextHops(dependencies)
+        planRetriedCopyNextHops: resolveALInboundRetriedCopyNextHops(dependencies),
+        readGapNackParent: dependencies.readGapNackParent
     });
 }
 

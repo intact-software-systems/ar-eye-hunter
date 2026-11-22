@@ -208,6 +208,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly random?: () => number;
     /** Absent, no upstream peer resolves, as on a runtime with no overlay. */
     readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    /** Absent, the lane routes over no layout, as a WS lane does. */
+    readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -242,6 +244,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         canDispatchMessage: input.canDispatchMessage,
         forwardMessage: input.forwardMessage,
         readUpstreamPeerId: input.readUpstreamPeerId ?? (() => undefined),
+        isRoutedPeerReady: input.isRoutedPeerReady,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,
         dispatchInboxEntry: async (entry) => {

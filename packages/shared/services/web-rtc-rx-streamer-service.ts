@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import type { ALNackPayload } from '../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -29,6 +30,7 @@ import {
 } from '../api/api-config.ts';
 import type { RtcCarrierGapAdmission } from '../multicast/compute-rtc-outbound-carrier-availability.ts';
 import { RtcReceiptProofSigner } from '../multicast/receipt-proof/rtc-receipt-proof-signer.ts';
+import { isRtcRoutedPeerReady, resolveRtcRelayParentPeerId } from '../multicast/resolve-rtc-upstream-peer-id.ts';
 import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
@@ -185,10 +187,25 @@ export class WebRtcRxStreamerService {
                 },
                 isRoomPeerPresent: (msg, peerId) => this.multicast.isRoomPeerPresent(msg, peerId),
                 readUpstreamPeerId: (msg) => this.multicast.readUpstreamPeerId(msg),
+                isRoutedPeerReady: (msg, peerId) =>
+                    isRtcRoutedPeerReady(this.multicast.readOutboundObservation(msg), peerId),
+                readGapNackParent: (nack) => this.readGapNackParent(nack),
                 onResyncRequired: dependencies.onResyncRequired,
                 diagnostics: dependencies.inboundDiagnostics
             }
         );
+    }
+
+    /** This relay's parent for a child's gap NACK about a message it holds nothing of, over every room's accepted layout. */
+    private readGapNackParent(nack: ALNackPayload): ALInboundMessageRuntime.PeerSource | undefined {
+        const routes = {
+            rooms: this.multicast.groupCache,
+            acceptedOverlays: this.multicast.overlayCache,
+            selfPeerId: this.sessionId,
+            connectedPeerIds: this.multicast.connectionService.readyPeerIdsForLane()
+        };
+        const peerId = resolveRtcRelayParentPeerId(routes, nack.originPeerId, nack.fromPeerId);
+        return peerId === undefined ? undefined : { kind: 'rtc-peer', peerId };
     }
 
     addPeer(peer: WebRtcConnectionService.Peer): void {

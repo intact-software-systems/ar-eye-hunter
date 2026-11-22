@@ -18,11 +18,15 @@ import type {
     ALInboundControlOwnerIndex,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
+import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import type { ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingOutsideAudienceNack } from '../transition-al-pending-ack.ts';
 import type { NacksControlValue, PendingControlValue } from './al-inbound-control-rows.ts';
 import { toALInboundControlObservations } from './compute-al-inbound-control-admission.ts';
-import { toALInboundUpwardControlWork } from './to-al-inbound-upward-control-work.ts';
+import {
+    toALInboundUpwardControlWork,
+    type ALInboundUpwardControlContext
+} from './to-al-inbound-upward-control-work.ts';
 
 export interface ALInboundNackAdmissionRead {
     readonly namespace: string;
@@ -41,6 +45,8 @@ export interface ALInboundNackAdmissionRead {
 
 export interface ALInboundNackAdmissionCandidate {
     readonly read: ALInboundNackAdmissionRead;
+    /** The message-owner row the commit observes; absent for a message this relay holds nothing of (6d). */
+    readonly observedMessageOwner: ALInboundMessageOwner | undefined;
     /** The row with the recipient recorded outside; `undefined` for a gap NACK, which leaves the row as it was. */
     readonly pending: PendingControlValue | undefined;
     /** The NACK history with this outside-audience NACK appended; `undefined` for a gap NACK, which writes no row. */
@@ -70,6 +76,7 @@ export function computeALInboundNackAdmission(
     const retainedNacks = read.nacks.slice(-(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1));
     return {
         read,
+        observedMessageOwner: read.owner,
         pending: pending === undefined ? undefined : { kind: 'pending', value: pending },
         nacks: outside ? { kind: 'nacks', values: [...retainedNacks, read.nack] } : undefined,
         upwardEffects: row === undefined ? [] : toALInboundUpwardControlWork(
@@ -120,8 +127,59 @@ export function computeALInboundUnreceiptedGapNackAdmission(
     read: ALInboundUnreceiptedGapNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
+    return toALInboundRowlessGapNackCandidate(read, read.owner, {
+        toPeerId: read.parentPeerId,
+        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
+        upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
+    }, retention);
+}
+
+/** A child's gap NACK about a message this relay holds neither a row nor a copy of: a new parent after a reshape (6d). */
+export interface ALInboundUnheldGapNackAdmissionRead {
+    readonly namespace: string;
+    readonly nack: ALNackPayload & Readonly<{ reason: 'gap'; }>;
+    /** This relay's upstream peer toward the NACK's origin in its accepted layout, which names the sender its child. */
+    readonly parent: ALInboundMessageRuntime.PeerSource;
+    readonly nowMs: number;
+    readonly controlMsgId: string;
+    readonly traceId: string;
+}
+
+/**
+ * A relay that holds nothing of the message forwards a child's gap NACK to its upstream peer each time it admits one,
+ * and records nothing, as it does for a message that asked for no receipt; the NACK lives as long as a control's
+ * retention allows, since the relay knows no deadline of the message.
+ */
+export function computeALInboundUnheldGapNackAdmission(
+    read: ALInboundUnheldGapNackAdmissionRead,
+    retention: NormalizedALRuntimeStoreRetentionConfig
+): ALInboundNackAdmissionCandidate {
+    const { nack, parent } = read;
+    // The upward NACK names the origin and goes back over the parent's carrier; no owner row exists to observe.
+    const owner: ALInboundMessageOwner = {
+        msgId: nack.msgId,
+        senderId: nack.originPeerId,
+        source: parent,
+        supersedenceKey: null,
+        deliveredLocally: false
+    };
+    return toALInboundRowlessGapNackCandidate(
+        { ...read, owner },
+        undefined,
+        { toPeerId: parent.peerId, expireAtTimestamp: undefined, upwardAudiencePeerIds: undefined },
+        retention
+    );
+}
+
+/** A forward of a child's gap NACK the relay keeps no row for, toward `upward`'s parent. */
+function toALInboundRowlessGapNackCandidate(
+    read: Pick<ALInboundNackAdmissionRead, 'namespace' | 'nack' | 'owner' | 'nowMs' | 'controlMsgId' | 'traceId'>,
+    observedMessageOwner: ALInboundMessageOwner | undefined,
+    upward: ALInboundUpwardControlContext['pending'],
+    retention: NormalizedALRuntimeStoreRetentionConfig
+): ALInboundNackAdmissionCandidate {
     const { namespace, nack, owner, nowMs, controlMsgId, traceId } = read;
-    // The commit observes the message's control rows absent: a message that asked for no receipt writes none.
+    // The commit observes the message's control rows absent: a row-less forward writes none.
     return {
         read: {
             namespace,
@@ -135,6 +193,7 @@ export function computeALInboundUnreceiptedGapNackAdmission(
             controlMsgId,
             traceId
         },
+        observedMessageOwner,
         pending: undefined,
         nacks: undefined,
         upwardEffects: toALInboundUpwardControlWork(
@@ -143,11 +202,7 @@ export function computeALInboundUnreceiptedGapNackAdmission(
                 msgId: nack.msgId,
                 owner,
                 relayPeerId: nack.toPeerId,
-                pending: {
-                    toPeerId: read.parentPeerId,
-                    expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
-                    upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
-                },
+                pending: upward,
                 nowMs,
                 controlMsgId,
                 traceId
@@ -182,7 +237,10 @@ export function toALInboundNackCommitBundle(candidate: ALInboundNackAdmissionCan
     return {
         admissionExpiresAtMs: null,
         senderId: owner.senderId,
-        observations: toALInboundControlObservations(nack.msgId, candidate.read),
+        observations: {
+            ...toALInboundControlObservations(nack.msgId, candidate.read),
+            messageOwner: candidate.observedMessageOwner
+        },
         mutations,
         durableEffects: candidate.upwardEffects
     };

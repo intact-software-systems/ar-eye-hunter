@@ -79,6 +79,11 @@ export interface ALControlAdmissionRead {
      * room, or one gone.
      */
     readonly unreceiptedRepairAudience: ALOutboundUnreceiptedRepairAudience | undefined;
+    /**
+     * Read only for a gap NACK a relay re-sends: the send is a room send, whose repair authority admits that NACK only
+     * after it planned a repair to its sender, a ready room neighbour (6d); `false` for any other control.
+     */
+    readonly isRoomRepairedRelayedGapNack: boolean;
     /** The sender's wait for its own hop to first answer for the message; absent when it waits on none. */
     readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly history: ALControlHistory;

@@ -62,6 +62,8 @@ interface RenewalFixtureInput {
     readonly retention?: ALRuntimeStoreRetentionConfig;
     /** Absent, no upstream peer resolves, as on a runtime with no overlay. */
     readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    /** Absent, the lane routes over no layout. */
+    readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
 }
 
 /** How a timer run is composed outside its lane: which upstream peer resolves, and whether the revealing message is kept. */
@@ -354,6 +356,20 @@ describe('a renewal of a gap whose upstream peer has changed since it was first 
         expect(await readRenewalTimer(fixture, 3)).toEqual({ toPeerId: RECORDED_PEER_ID, dueAtMs: START_MS + 3_000 });
     });
 
+    it('keeps asking the recorded peer while the lane still routes over it, though another upstream peer resolves', async () => {
+        const fixture = createRenewalFixture('memory', {
+            readUpstreamPeerId: () => 'p2',
+            isRoutedPeerReady: (_msg, peerId) => peerId === RECORDED_PEER_ID
+        });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapTargets(readSentControls(fixture)).filter(([, number]) => number === 2)).toEqual([
+            ['nack', 2, RECORDED_PEER_ID],
+            ['repair', 2, RECORDED_PEER_ID]
+        ]);
+    });
+
     it.each<[string, DirectRenewalInput]>([
         ['no upstream peer resolves', { readUpstreamPeerId: () => undefined, keepsRevealingMessage: true }],
         ['the revealing message is no longer kept', { readUpstreamPeerId: () => 'p2', keepsRevealingMessage: false }]
@@ -389,7 +405,8 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         effectWorkerId: `al-inbound:gap-renewal-${fixtureCount}`,
         receiptProofs: input.receiptProofs,
         random: input.random ?? (() => 0),
-        readUpstreamPeerId: input.readUpstreamPeerId
+        readUpstreamPeerId: input.readUpstreamPeerId,
+        isRoutedPeerReady: input.isRoutedPeerReady
     });
 }
 

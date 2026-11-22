@@ -72,6 +72,7 @@ describe('outbound control version candidate', () => {
             ownerVersion: Object.freeze({ senderId: 'self', version: 7 }),
             sent: Object.freeze(sent),
             unreceiptedRepairAudience: undefined,
+            isRoomRepairedRelayedGapNack: false,
             history: { kind: 'nacks', values: [] },
             acknowledgements: []
         });
@@ -129,6 +130,7 @@ describe('outbound control version candidate', () => {
             ownerVersion: { senderId: 'self', version: 1 },
             sent,
             unreceiptedRepairAudience: undefined,
+            isRoomRepairedRelayedGapNack: false,
             pending: {
                 msgId: message.id.msgId,
                 mode: 'hop',
@@ -274,6 +276,7 @@ async function createNackRead(namespace: string): Promise<ALControlAdmissionRead
         ownerVersion: { senderId: 'self', version: 7 },
         sent,
         unreceiptedRepairAudience: undefined,
+        isRoomRepairedRelayedGapNack: false,
         history: { kind: 'nacks', values: [] },
         acknowledgements: [],
         recipientProof: 'carrier-authenticated'

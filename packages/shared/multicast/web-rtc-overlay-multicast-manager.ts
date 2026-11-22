@@ -708,7 +708,7 @@ export class WebRtcOverlayMulticastManager {
         return await this.outboundRuntime.acceptControlMessage(msg, 'peer');
     }
 
-    private readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
+    readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
         return readRtcOutboundObservation({
             message: msg,
             groupCache: this.groupCache,

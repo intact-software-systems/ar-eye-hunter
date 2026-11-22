@@ -41,6 +41,7 @@ export namespace ALInboundGapRenewal {
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+        readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
     }
 
     export interface Result {
@@ -57,7 +58,7 @@ interface ALInboundGapRenewalRun {
     readonly position: ALOrderingTrackSnapshot;
     readonly missingRanges: readonly ALSeqRange[];
     readonly facts: ALInboundEffectFacts;
-    /** The peer this run asks: the track's upstream peer now, else the one the timer records. */
+    /** The peer this run asks: the one the timer records while it is still routed over, else the upstream peer now. */
     readonly toPeerId: string;
 }
 
@@ -98,10 +99,17 @@ export class ALInboundGapRenewal {
         return { outcome: { status: 'completed' }, wroteWork: rows.length > 0 };
     }
 
+    /**
+     * The recorded peer while this lane still routes over it, so a reshape's overlap asks the relay that still forwards;
+     * once it is gone the track's upstream peer, and with none resolvable the recorded peer again.
+     */
     private async resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, nowMs: number): Promise<string> {
-        const surface = await this.dependencies.admissionStore.readDeliverySurface(payload.message, nowMs);
-        return (surface === undefined ? undefined : this.dependencies.readUpstreamPeerId(surface.msg)) ??
-            payload.toPeerId;
+        const { admissionStore, isRoutedPeerReady, readUpstreamPeerId } = this.dependencies;
+        const surface = await admissionStore.readDeliverySurface(payload.message, nowMs);
+        if (surface === undefined || isRoutedPeerReady?.(surface.msg, payload.toPeerId) === true) {
+            return payload.toPeerId;
+        }
+        return readUpstreamPeerId(surface.msg) ?? payload.toPeerId;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */
