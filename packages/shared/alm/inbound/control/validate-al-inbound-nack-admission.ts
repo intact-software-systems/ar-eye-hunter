@@ -27,10 +27,11 @@ const MISSING_GAP_ORDERING_HINTS: ALMessageRejection = {
 };
 
 /**
- * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on and name a recipient of
- * the frozen audience the origin counts that no stored control of the same statement recorded outside or confirmed (PL9,
- * PL16, S8ii-R1). An outside-audience NACK must also fit the row's outside list and its NACK history; a gap NACK, which
- * writes no row, must carry the ordering hints it forwards.
+ * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on, or for a gap NACK from a
+ * layout child of a new parent (6d), and name a recipient of the frozen audience the origin counts that no stored
+ * control of the same statement recorded outside or confirmed (PL9, PL16, S8ii-R1). An outside-audience NACK must also
+ * fit the row's outside list and its NACK history; a gap NACK, which writes no row, must carry the ordering hints it
+ * forwards.
  */
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
@@ -42,7 +43,7 @@ export function validateALInboundNackAdmission(
     const history = toALReceiptStatementHistory(acks, nacks);
     const subject = toALReceiptStatementSubject(nack);
     const issues: ALMessageRejection[] = [];
-    if (!pending.expectedFromPeerIds.includes(nack.fromPeerId)) {
+    if (!pending.expectedFromPeerIds.includes(nack.fromPeerId) && !isPassedUpward(candidate)) {
         issues.push(rejectInboundNack('Inbound NACK sender has no pending obligation'));
     }
     if (nack.originPeerId !== owner.senderId) {
@@ -71,6 +72,15 @@ export function validateALInboundNackAdmission(
         issues.push(rejectInboundNack('Inbound NACK candidate exceeds persistence limits'));
     }
     return issues;
+}
+
+/**
+ * A new parent passes a gap NACK upward from its layout child whose row waits on another child, as it does one it holds
+ * nothing of: the NACK is the child's own word, the row is left as it was, and the origin judges it (6d).
+ */
+function isPassedUpward(candidate: ALInboundNackAdmissionCandidate): boolean {
+    const { nack, isLayoutChild } = candidate.read;
+    return nack.reason === 'gap' && isLayoutChild && isALOwnWord(nack);
 }
 
 /**

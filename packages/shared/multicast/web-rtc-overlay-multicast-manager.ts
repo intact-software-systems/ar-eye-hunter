@@ -109,7 +109,7 @@ import {
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
 import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
-import { resolveRtcUpstreamPeerId, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
+import { createRtcInboundRoutes, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
@@ -586,9 +586,9 @@ export class WebRtcOverlayMulticastManager {
             this.connectionService.readyPeerIdsForLane().includes(peerId);
     }
 
-    readUpstreamPeerId(msg: ALMessage): string | undefined {
-        const selfPeerId = this.connectionService.input.sessionId;
-        return resolveRtcUpstreamPeerId(this.readOutboundObservation(msg), selfPeerId, msg.id.senderId);
+    /** The inbound runtime's route capabilities over this lane's layouts (6d). */
+    toInboundRoutes() {
+        return createRtcInboundRoutes(this, (msg) => this.readOutboundObservation(msg));
     }
 
     private planForwarding(
@@ -708,7 +708,7 @@ export class WebRtcOverlayMulticastManager {
         return await this.outboundRuntime.acceptControlMessage(msg, 'peer');
     }
 
-    readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
+    private readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
         return readRtcOutboundObservation({
             message: msg,
             groupCache: this.groupCache,

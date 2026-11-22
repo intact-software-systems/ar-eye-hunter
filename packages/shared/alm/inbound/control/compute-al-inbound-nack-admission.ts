@@ -38,6 +38,11 @@ export interface ALInboundNackAdmissionRead {
     readonly pending: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
+    /**
+     * Read only for a gap NACK from a sender the row does not wait on: the lane names that sender this relay's child in
+     * its accepted layout, as a new parent's is after a reshape (6d); `false` for any other NACK.
+     */
+    readonly isLayoutChild: boolean;
     readonly nowMs: number;
     readonly controlMsgId: string;
     readonly traceId: string;
@@ -201,6 +206,7 @@ function toALInboundRowlessGapNackCandidate(
             pending: undefined,
             acks: [],
             nacks: [],
+            isLayoutChild: false,
             nowMs,
             controlMsgId,
             traceId

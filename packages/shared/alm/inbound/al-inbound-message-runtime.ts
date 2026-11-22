@@ -194,8 +194,9 @@ export namespace ALInboundMessageRuntime {
          */
         readonly readUpstreamPeerId: (msg: ALMessage) => string | undefined;
         /**
-         * Whether `peerId`, the peer a gap was first reported to, is still connected and still routed over by this lane,
-         * so its renewal keeps asking it. Absence means this lane routes over no layout: a renewal asks the upstream peer.
+         * Whether `peerId`, the peer a gap was first reported to, is a connected neighbour of the layout this lane
+         * replaced while it still forwards over that one, so a renewal keeps asking it unless the accepted layout links
+         * this peer to the origin. Absence means this lane routes over no layout: a renewal asks the upstream peer.
          */
         readonly isRoutedPeerReady?: (msg: ALMessage, peerId: string) => boolean;
         /**

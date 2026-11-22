@@ -58,7 +58,7 @@ interface ALInboundGapRenewalRun {
     readonly position: ALOrderingTrackSnapshot;
     readonly missingRanges: readonly ALSeqRange[];
     readonly facts: ALInboundEffectFacts;
-    /** The peer this run asks: the one the timer records while it is still routed over, else the upstream peer now. */
+    /** The peer this run asks: the origin over a direct link, the recorded peer while still routed over, or upstream. */
     readonly toPeerId: string;
 }
 
@@ -100,16 +100,21 @@ export class ALInboundGapRenewal {
     }
 
     /**
-     * The recorded peer while this lane still routes over it, so a reshape's overlap asks the relay that still forwards;
+     * The origin itself once the accepted layout links this peer to it, since a direct link is always served; else the
+     * recorded peer while this lane still routes over it, so a reshape's overlap asks the relay that still forwards;
      * once it is gone the track's upstream peer, and with none resolvable the recorded peer again.
      */
     private async resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, nowMs: number): Promise<string> {
         const { admissionStore, isRoutedPeerReady, readUpstreamPeerId } = this.dependencies;
         const surface = await admissionStore.readDeliverySurface(payload.message, nowMs);
-        if (surface === undefined || isRoutedPeerReady?.(surface.msg, payload.toPeerId) === true) {
+        if (surface === undefined) {
             return payload.toPeerId;
         }
-        return readUpstreamPeerId(surface.msg) ?? payload.toPeerId;
+        const upstreamPeerId = readUpstreamPeerId(surface.msg);
+        if (upstreamPeerId !== surface.msg.id.senderId && isRoutedPeerReady?.(surface.msg, payload.toPeerId) === true) {
+            return payload.toPeerId;
+        }
+        return upstreamPeerId ?? payload.toPeerId;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */

@@ -705,18 +705,19 @@ wrote, and a burst of later frames arms one row; reports caused by arrivals keep
 with the message, and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
 removes it. A durable lane renews after a reload, a volatile lane does not. A run asks the peer the gap was first
 reported to, which the row records, while the lane still routes over it: on `rtc`, a connected neighbour of the
-accepted layout, or of the layout it replaced while that one is still forwarded over
+layout it replaced while that one is still forwarded over
 ([`isRtcRoutedPeerReady`](../../multicast/resolve-rtc-upstream-peer-id.ts)), so during a reshape's overlap the old
-relay, which still forwards to the leaf, is asked. Once that peer is gone the run asks the track's current upstream
-peer, the one connected neighbour the accepted layout routes toward the origin
+relay, which still forwards to the leaf, is asked. A direct link wins over that: once the accepted layout links the
+leaf to the origin, the run asks the origin, whose copies no longer pass through the old relay. Once the recorded peer
+is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward the origin
 ([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves (a WS runtime,
 a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again. Every run arms
 the next number. A relay never forwards a repair request. It forwards a child's gap NACK toward the origin while it
 holds a pending row that waits on that child; about a stored message that asked for no receipt, while the child is
-one it passes the copy down to (6c); and about a message it holds nothing of, as a new parent after a reshape does,
-while the NACK is the child's own word and the child is its child in its accepted layout, to its own upstream peer
-([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts), 6d). That last forward records
-nothing. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
+one it passes the copy down to (6c); and, as a new parent after a reshape does, while the NACK is the child's own word
+and the child is its child in its accepted layout (6d): about a message it holds nothing of, to its own upstream peer
+([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), and about one its receipt row
+holds for other children, to that row's parent with the row left as it was. Neither forward records anything. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
 repair to the relay, a ready room neighbour, and while the receipt still owes the recipient (or, with no receipt, the
 audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A
 sequence past the window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the

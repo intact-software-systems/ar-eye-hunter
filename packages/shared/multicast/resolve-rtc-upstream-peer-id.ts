@@ -1,8 +1,10 @@
+import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     resolveALUpstreamPeerId,
     toALOverlayAdjacency,
     type ALOverlayAdjacency
 } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { readGroupMemberSessionIds } from '../api/group-client-views.ts';
 import type { GroupSnapshot } from '../api/group-types.ts';
@@ -11,6 +13,22 @@ import { isAcceptedRoomLayoutOverlay } from '../repository/is-accepted-room-layo
 import { toAcceptedOverlayContext } from './compute-rtc-outbound-carrier-availability.ts';
 import { readRtcGroupSnapshotByRef, type RtcOutboundObservation } from './read-rtc-outbound-observation.ts';
 import { resolveRtcRoomRoutingEdges } from './room-authority/resolve-rtc-room-routing-edges.ts';
+
+/** The inbound runtime's route capabilities on an RTC lane (6d). */
+export type RtcInboundRoutes = Pick<
+    ALInboundMessageRuntime.Dependencies,
+    'readUpstreamPeerId' | 'isRoutedPeerReady' | 'readGapNackParent'
+>;
+
+/** What the route capabilities read of an RTC lane: its rooms, its accepted layouts and its connected peers. */
+export interface RtcInboundRouteLane {
+    readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
+    readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+    readonly connectionService: {
+        readonly input: { readonly sessionId: string; };
+        readyPeerIdsForLane(): readonly string[];
+    };
+}
 
 /** What a relay reads of every room it holds to route a NACK about a message it holds nothing of. */
 export interface RtcRelayRoutes {
@@ -42,8 +60,8 @@ export function resolveRtcUpstreamPeerId(
 }
 
 /**
- * Whether `peerId` is a connected neighbour this session still routes over: in the accepted layout, or in the layout it
- * replaced while a sender or relay still forwards over that one.
+ * Whether `peerId` is a connected neighbour of the layout this session replaced, while a sender or relay still forwards
+ * over that one: the old relay a reshape's overlap still routes through.
  */
 export function isRtcRoutedPeerReady(observation: RtcOutboundObservation, peerId: string): boolean {
     const context = toAcceptedOverlayContext(observation);
@@ -57,7 +75,7 @@ export function isRtcRoutedPeerReady(observation: RtcOutboundObservation, peerId
         authorizedPeerIds: readGroupMemberSessionIds(context.room),
         nowMs: context.nowMs
     });
-    return edges.acceptedNeighborPeerIds.includes(peerId) || edges.previous?.neighborPeerIds.includes(peerId) === true;
+    return edges.previous?.neighborPeerIds.includes(peerId) === true;
 }
 
 /**
@@ -83,4 +101,26 @@ export function resolveRtcRelayParentPeerId(
         })
     );
     return parentPeerIds.size === 1 ? [...parentPeerIds][0] : undefined;
+}
+
+/** The route capabilities of an RTC lane, each a pure read over the lane's observation of a message's room. */
+export function createRtcInboundRoutes(
+    lane: RtcInboundRouteLane,
+    readObservation: (msg: ALMessage) => RtcOutboundObservation
+): RtcInboundRoutes {
+    const selfPeerId = lane.connectionService.input.sessionId;
+    return {
+        readUpstreamPeerId: (msg) => resolveRtcUpstreamPeerId(readObservation(msg), selfPeerId, msg.id.senderId),
+        isRoutedPeerReady: (msg, peerId) => isRtcRoutedPeerReady(readObservation(msg), peerId),
+        readGapNackParent: (nack) => {
+            const routes = {
+                rooms: lane.groupCache,
+                acceptedOverlays: lane.overlayCache,
+                selfPeerId,
+                connectedPeerIds: lane.connectionService.readyPeerIdsForLane()
+            };
+            const parentPeerId = resolveRtcRelayParentPeerId(routes, nack.originPeerId, nack.fromPeerId);
+            return parentPeerId === undefined ? undefined : { kind: 'rtc-peer', peerId: parentPeerId };
+        }
+    };
 }

@@ -680,7 +680,10 @@ async function commitChildControl(
     const bundle = control.type === 'ack'
         ? toALInboundControlCommitBundle(computeALInboundControlAdmission({ ...read, ack: control.payload }, retention))
         : toALInboundNackCommitBundle(
-            computeALInboundNackAdmission({ ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) } }, retention)
+            computeALInboundNackAdmission(
+                { ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) }, isLayoutChild: false },
+                retention
+            )
         );
     expect(await store.commitBundle(bundle)).toBe('committed');
     return bundle;

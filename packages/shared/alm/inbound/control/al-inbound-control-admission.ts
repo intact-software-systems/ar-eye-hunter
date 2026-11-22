@@ -226,7 +226,8 @@ export class ALInboundControlAdmission {
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
-        const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
+        const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId }) ??
+            await this.readLayoutChildSurface(nack);
         // Only a receipted message's relay row writes a control-owner index, so a surface rules the row-less path out.
         const rowless = surface === undefined && nack.reason === 'gap'
             ? await this.readRowlessGapNack(arrival, { ...nack, reason: 'gap' }, nowMs)
@@ -245,6 +246,8 @@ export class ALInboundControlAdmission {
             pending: surface.pendingAck,
             acks: surface.acks,
             nacks: surface.nacks,
+            isLayoutChild: surface.pendingAck?.expectedFromPeerIds.includes(nack.fromPeerId) !== true &&
+                this.isLayoutChildGapNack(nack),
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -429,6 +432,26 @@ export class ALInboundControlAdmission {
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
         };
+    }
+
+    /**
+     * A new parent's row for a message it forwarded to other children, read for the gap NACK of a child its accepted
+     * layout names but its row does not wait on (6d); none for any other NACK.
+     */
+    private async readLayoutChildSurface(
+        nack: ALInboundNackAdmissionRead['nack']
+    ): Promise<(ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; }) | undefined> {
+        return this.isLayoutChildGapNack(nack)
+            ? await this.readDecisionSurface({
+                msgId: nack.msgId,
+                fromPeerId: nack.fromPeerId,
+                senderId: nack.originPeerId
+            })
+            : undefined;
+    }
+
+    private isLayoutChildGapNack(nack: ALInboundNackAdmissionRead['nack']): boolean {
+        return nack.reason === 'gap' && this.readGapNackParent?.(nack) !== undefined;
     }
 
     /** The surface of a child's control: none for a peer that owes no tracked message, never one without provenance. */

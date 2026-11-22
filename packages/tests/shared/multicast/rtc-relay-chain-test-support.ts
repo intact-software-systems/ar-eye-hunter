@@ -45,6 +45,8 @@ export interface ChainHopInput {
     readonly publicationCrypto?: PublicationCrypto;
     /** The layout the hop holds accepted from the start; absent, every neighbour as a next hop and no adjacency. */
     readonly initialOverlay?: OverlayInfo;
+    /** How long the hop still admits copies over a layout it replaced; absent, the served default. */
+    readonly replacedLayoutOverlapMs?: number;
 }
 
 export interface OrderedReceiptedPublicationInput {
@@ -101,15 +103,20 @@ export async function createRelayChain(
     return { keys, snapshot };
 }
 
-/** `sessionIds` absent, the chain `a`, `r`, `c`; a test that reshapes the chain names its further sessions. */
+/**
+ * `sessionIds` absent, the chain `a`, `r`, `c`; a test that reshapes the chain names its further sessions. `originLayout`
+ * absent, the origin's one next hop is `r` and its layout carries no adjacency.
+ */
 export async function createOriginRelayChain(
     grants: Readonly<Record<string, GroupPublicationTopicPermissions>>,
-    sessionIds: readonly string[] = ['a', 'r', 'c']
+    sessionIds: readonly string[] = ['a', 'r', 'c'],
+    originLayout?: Readonly<Record<string, readonly string[]>>
 ): Promise<OriginRelayChain> {
     const chain = await createRelayChain(sessionIds, grants);
     const origin = createRtcOriginOverlayFixture({
         snapshot: chain.snapshot,
-        nextHopPeerIds: ['r'],
+        nextHopPeerIds: originLayout?.a ?? ['r'],
+        nextHopsBySessionId: originLayout,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: chain.keys.a
     });
@@ -125,7 +132,8 @@ export function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRela
         publicationCrypto: input.publicationCrypto ?? chain.keys[input.selfPeerId],
         topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
         inboundVolatileStores: input.inboundVolatileStores,
-        initialOverlay: input.initialOverlay
+        initialOverlay: input.initialOverlay,
+        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
     });
 }
 

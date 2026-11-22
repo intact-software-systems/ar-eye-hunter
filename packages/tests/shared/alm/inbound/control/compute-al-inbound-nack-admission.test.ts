@@ -96,6 +96,7 @@ function computeArrival(
         pending: row,
         acks,
         nacks,
+        isLayoutChild: false,
         nowMs: NOW_MS,
         controlMsgId: 'forwarded',
         traceId: 'trace-relayed-nack'
