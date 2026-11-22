@@ -8,7 +8,10 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../al-admission-work-backend.ts';
-import { computeALOrderingDeliveryPredecessorSeq } from './admission/al-inbound-delivery-progress.ts';
+import {
+    computeALOrderingDeliveryPredecessorSeq,
+    isALInboundDeliveryReaching
+} from './admission/al-inbound-delivery-progress.ts';
 import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
@@ -70,7 +73,7 @@ export class ALInboundDurableEffectStore {
             if (predecessorSeq <= completedThrough) {
                 return { completedThrough, predecessor: undefined };
             }
-            const predecessor = await this.readSlot(session, trackKey, predecessorSeq);
+            const predecessor = await this.readReachingSlot(session, trackKey, predecessorSeq);
             return {
                 completedThrough,
                 predecessor: predecessor === undefined
@@ -90,6 +93,20 @@ export class ALInboundDurableEffectStore {
             `${prefix}${seq}`,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
+    }
+
+    /** The slot whose completed delivery reaches `seq`: its own, or one whose reach a bounded hold extended past it. */
+    private async readReachingSlot(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
+        const prefix = `${this.namespace}:buffered:${trackKey}:`;
+        const slots = await session.list(
+            prefix,
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
+        );
+        return slots.find((slot) => isALInboundDeliveryReaching(slot.value, seq))?.value;
     }
 
     private async readSlotPredecessor(

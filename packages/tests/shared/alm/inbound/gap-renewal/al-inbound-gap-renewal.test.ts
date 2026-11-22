@@ -79,6 +79,8 @@ interface RenewalFixtureInput {
     readonly retention?: ALRuntimeStoreRetentionConfig;
     /** Absent, the fixture opens its own stores over `storage`. */
     readonly stores?: ALInboundRuntimeStores;
+    /** Absent, every message is dispatched as soon as it is released. */
+    readonly canDispatchMessage?: (msg: ALMessage) => boolean;
 }
 
 interface OrderedMessageInput {
@@ -538,6 +540,29 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(await readPendingInboundWork(fixture)).toEqual([]);
     });
 
+    it('waits for the run\'s last delivery when the sequence after the passed copies arrives before it completed', async () => {
+        let thirdHeld = true;
+        const fixture = createRenewalFixture('memory', {
+            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
+        });
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        const askedBefore = gapControls(fixture).length;
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+        expect(fixture.deliveredMessages).toEqual([]);
+        thirdHeld = false;
+        await advanceThrough(fixture, [8_000, 10_000]);
+
+        expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
@@ -563,6 +588,7 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         carrier: input.carrier ?? 'ws',
         effectWorkerId: `al-inbound:gap-renewal-${fixtureCount}`,
         receiptProofs: input.receiptProofs,
+        canDispatchMessage: input.canDispatchMessage,
         random: input.random ?? (() => 0)
     });
 }

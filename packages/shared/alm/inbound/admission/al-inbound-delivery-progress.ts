@@ -21,6 +21,14 @@ export function computeALInboundDeliveryCompletion(input: ALInboundDeliveryCompl
         : undefined;
 }
 
+/** Whether a slot's completed delivery completes `seq`: its own sequence, or one its reach passes. */
+export function isALInboundDeliveryReaching(
+    slot: Readonly<{ seq: number; completesThrough: number; }>,
+    seq: number
+): boolean {
+    return slot.seq <= seq && seq <= slot.completesThrough;
+}
+
 export interface ALInboundWitnessedProgressInput {
     readonly completedThrough: number;
     /** The track position before the witness, `0` when the receiver held none. */
