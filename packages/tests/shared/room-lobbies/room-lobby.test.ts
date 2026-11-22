@@ -74,6 +74,24 @@ describe('named room lobby seats', () => {
         expect(projectRoomLobbyAccount(scope, 'alice', withdrawn).seat?.status).toBe('offered');
     });
 
+    it('shortens an existing invitation without changing queue order and fences its obsolete expiry', () => {
+        const full = apply(createRoomLobby(roomRef, 1, policy, 'sports'), { kind: 'arrive', principalId: 'host' }, 0);
+        const first = apply(full, { kind: 'wait', principalId: 'first', eligibleUntilEpochMs: null }, 1);
+        const queued = apply(first, { kind: 'wait', principalId: 'second', eligibleUntilEpochMs: null }, 2);
+        const limited = apply(queued, { kind: 'limit', principalId: 'first', eligibleUntilEpochMs: 90 }, 3);
+        expect(limited.waiters[0]).toEqual({ ...queued.waiters[0], eligibleUntilEpochMs: 90 });
+        const offered = apply(limited, { kind: 'release', principalId: 'host' }, 10);
+        const old = offered.seats[0]!.offerWindow!;
+        expect(old.dueAtEpochMs).toBe(90);
+        const shorter = apply(offered, { kind: 'limit', principalId: 'first', eligibleUntilEpochMs: 35 }, 20);
+        expect(shorter.seats[0]?.offerWindow?.dueAtEpochMs).toBe(35);
+        const extendedGrant = apply(shorter, { kind: 'limit', principalId: 'first', eligibleUntilEpochMs: 100 }, 21);
+        expect(extendedGrant).toBe(shorter);
+        const promoted = apply(shorter, { kind: 'expire', ...shorter.seats[0]!.offerWindow! }, 35);
+        expect(projectRoomLobbyAccount(scope, 'second', promoted).seat?.status).toBe('offered');
+        expect(apply(promoted, { kind: 'expire', ...old }, 90)).toBe(promoted);
+    });
+
     it('resolves only explicit application policies, including valid names shared by object prototypes', () => {
         expect(roomLobbyApplicationDefault(undefined, 'toString')).toBeUndefined();
         expect(roomLobbyApplicationDefault({ sports: policy }, 'toString')).toBeUndefined();

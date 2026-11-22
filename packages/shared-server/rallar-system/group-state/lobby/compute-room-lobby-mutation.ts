@@ -1,4 +1,3 @@
-import { computeWaitRegistration, revokedLobbyCandidates } from './room-lobby-wait-access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -15,6 +14,7 @@ import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 import { computeRoomLobbyPublication } from './room-lobby-publication.ts';
 import { computeRoomLobbyEffects, type RoomLobbyRead } from './room-lobby-storage.ts';
+import { computeWaitRegistration, revokedLobbyCandidates } from './room-lobby-wait-access.ts';
 
 export function computeRoomLobbyMutation(input: GroupMutationWriteInput, group: Group) {
     const { command, read, facts } = input;
@@ -64,8 +64,11 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
     }
 
     let lobby = state.lobby?.value;
-    if (!lobby && command.operation !== 'createGroup' &&
-        !(command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure' && read.group && !readRoomLobbyPolicy(read.group.value.metadata))) {
+    if (
+        !lobby && command.operation !== 'createGroup' &&
+        !(command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure' && read.group &&
+            !readRoomLobbyPolicy(read.group.value.metadata))
+    ) {
         throw new RuntimeStateWriteConflictError();
     }
     if (!lobby || command.operation === 'createGroup') {
@@ -115,11 +118,17 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
         const principalIds = timing.reservationsExpireAtEpochMs > now ? reservations.principalIds : [];
         const due = timing.reservationsExpireAtEpochMs;
         const current = lobby.capacityClaims;
-        if (principalIds.length !== (current?.principalIds.length ?? 0) || principalIds.length > 0 &&
-            (current?.dueAtEpochMs !== due || principalIds.some((id, index) => current.principalIds[index] !== id))) {
+        if (
+            principalIds.length !== (current?.principalIds.length ?? 0) || principalIds.length > 0 &&
+                (current?.dueAtEpochMs !== due || principalIds.some((id, index) => current.principalIds[index] !== id))
+        ) {
             const claims = principalIds.length ? { principalIds, dueAtEpochMs: due } : null;
             const updated = configureRoomLobbyCapacityClaims(lobby, claims, now);
-            if (updated.rejection) throw new GroupPolicyDeniedError(denyGroupPolicy('group-full', 'The scheduled places exceed the available lobby capacity.'));
+            if (updated.rejection) {
+                throw new GroupPolicyDeniedError(
+                    denyGroupPolicy('group-full', 'The scheduled places exceed the available lobby capacity.')
+                );
+            }
             lobby = updated.lobby;
         }
     }
@@ -141,7 +150,9 @@ function lobbyParticipationChanges(
     );
     if (command.operation === 'updateGroup') {
         if (command.input.roomLobby?.operation === 'wait' && command.input.actorPrincipalId) {
-            changes.push(computeWaitRegistration(input, command.input.actorPrincipalId, command.input.roomLobby.joinCode));
+            changes.push(
+                computeWaitRegistration(input, command.input.actorPrincipalId, command.input.roomLobby.joinCode)
+            );
         }
         if (command.input.roomLobby?.operation === 'release' && command.input.actorPrincipalId) {
             changes.push({ kind: 'release', principalId: command.input.actorPrincipalId });
@@ -156,7 +167,18 @@ function lobbyParticipationChanges(
     }
     for (const member of input.members) {
         const principalId = member.principalId;
-        if (member.status === 'active' && member.role !== 'spectator') {
+        const invitationControlsAccess = read.group?.value.joinMode === 'invite-only' ||
+            read.lifecyclePolicy?.status === 'present' &&
+                read.lifecyclePolicy.policy.admission.mode === 'manager-approval';
+        if (member.status === 'invited') {
+            if (invitationControlsAccess && member.invitationExpiresAtEpochMs !== null) {
+                changes.push({ kind: 'limit', principalId, eligibleUntilEpochMs: member.invitationExpiresAtEpochMs });
+            }
+        }
+        else if (command.operation === 'revokeGroupInvite' && !invitationControlsAccess) {
+            continue;
+        }
+        else if (member.status === 'active' && member.role !== 'spectator') {
             const predecessor = principalId === read.targetMember?.principalId ? read.targetMember : read.actorMember;
             if (
                 command.operation === 'createGroup' || command.operation === 'joinGroup' ||

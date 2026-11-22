@@ -29,7 +29,17 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
         const existing = seats.find(seat => seat.principalId === command.principalId);
         const prior = lobby.seats.find(seat => seat.principalId === command.principalId);
         const waiter = waiters.find(candidate => candidate.principalId === command.principalId);
-        if (command.kind === 'wait') {
+        if (command.kind === 'limit') {
+            const until = command.eligibleUntilEpochMs;
+            requireEpoch(until, 'Lobby eligibility deadline');
+            if (waiter && (waiter.eligibleUntilEpochMs === null || until < waiter.eligibleUntilEpochMs)) {
+                waiters = waiters.map(candidate => candidate === waiter ? { ...waiter, eligibleUntilEpochMs: until } : candidate);
+            }
+            if (existing?.offerWindow && until < existing.offerWindow.dueAtEpochMs) {
+                seats = updateSeat(seats, { ...existing, offerWindow: { generation, dueAtEpochMs: until } });
+            }
+        }
+        else if (command.kind === 'wait') {
             if (command.eligibleUntilEpochMs !== null) requireEpoch(command.eligibleUntilEpochMs, 'Lobby eligibility deadline');
             if (!existing && !waiter) {
                 if (command.eligibleUntilEpochMs !== null && command.eligibleUntilEpochMs <= nowEpochMs) rejection = 'eligibility-expired';

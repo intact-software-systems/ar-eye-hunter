@@ -24,7 +24,7 @@ export function readsGroupLifecyclePolicy(
     command: GroupMutationCommand
 ): boolean {
     const operation = command.operation;
-    return (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') || (
+    return operation === 'createGroupInvite' || operation === 'revokeGroupInvite' || (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') || (
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
@@ -169,6 +169,7 @@ export function requiresRoomLobbyRead(command: GroupMutationCommand, read: Group
         case 'grantGroupAdmission':
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
+        case 'createGroupInvite':
         case 'revokeGroupInvite':
         case 'declineGroupAdmission':
         case 'rotateGroupJoinCode':

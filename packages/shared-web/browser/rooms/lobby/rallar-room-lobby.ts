@@ -8,7 +8,7 @@ import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts'
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeRoomLobbyAccountView, decodeRoomLobbyPolicy, type RoomLobby, type RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
-import { decodeStateScope, type StateScope, type UpdateGroupRequest } from '@shared/api/state-types.ts';
+import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
@@ -26,7 +26,7 @@ export namespace RallarRoomLobby {
     }
     export interface Command {
         readonly roomRef: GroupRef;
-        readonly roomLobby: NonNullable<UpdateGroupRequest['roomLobby']>;
+        readonly roomLobby: RoomLobby.Mutation;
     }
 }
 
