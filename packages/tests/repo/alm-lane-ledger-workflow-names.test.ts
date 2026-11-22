@@ -86,7 +86,8 @@ describe('the names the ALM lane ledger reads from GitHub', () => {
         { jobName: 'ALM conformance observation (rtc, two-agent,addressed)', carrier: 'rtc' },
         { jobName: 'ALM conformance observation (rtc-with-ws-fallback)', carrier: 'rtc-with-ws-fallback' },
         { jobName: 'ALM conformance observation (rtc-with-ws-fallback, four-role)', carrier: 'rtc-with-ws-fallback' },
-        { jobName: 'Detect ALM lane changes', carrier: undefined }
+        { jobName: 'Detect ALM lane changes', carrier: undefined },
+        { jobName: 'ALM conformance observation (${{ matrix.carrier }})', carrier: undefined }
     ])('reads $jobName as the job of $carrier', ({ jobName, carrier }) => {
         expect(ALM_LANE_JOB_NAME_PATTERN.exec(jobName)?.[1]).toBe(carrier);
     });

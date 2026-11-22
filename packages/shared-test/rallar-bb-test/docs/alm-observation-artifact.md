@@ -160,18 +160,19 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
   that was skipped as a whole is not asked for its jobs or artifacts.
 - **A carrier's jobs are read as one run.** Every job of a carrier in a workflow run makes one run
   of that carrier, read from every artifact whose name starts with
-  `alm-lane-result-<carrier>-full-`, each name once (see the rerun rule below): the plan the jobs agree on, the results of all the artifacts,
-  and one conclusion. Each job writes the whole carrier's plan, so the plans are equal; jobs whose
-  plans differ (other families, or other scenario keys or order) are named as an issue,
-  `the plans of this carrier's jobs differ; read the first.`, and the first is read. A second plan
-  inside one artifact, and a second result for one family across all of them, are issues too. An
-  expired or undownloadable artifact is named on its own. The plan is read only when every job of
-  the carrier has a result artifact that could be read, counted by name: when one is missing,
-  expired or could not be downloaded, the run has no plan and reads red with nothing to attribute
-  (`no-plan`), as a one-job carrier whose artifact is missing does, so a dead runner or a failed
-  download is the run's fault, not a family's. For a split carrier this is named as an issue,
-  `<k> of <n> jobs has a readable result artifact; the plan is not read.` (`have` when k is not 1). A job missing from the run altogether leaves its families without a result, so the
-  carrier reads red with those families' keys.
+  `alm-lane-result-<carrier>-full-`, each name once (see the rerun rule below): the plan the jobs
+  agree on, the results of all the artifacts, and one conclusion. Each job writes the whole
+  carrier's plan, so the plans are equal; jobs whose plans differ (other families, or other scenario
+  keys or order) are named as an issue, `the plans of this carrier's jobs differ; read the first.`,
+  and the first is read. A second plan inside one artifact, and a second result for one family
+  across all of them, are issues too. An expired or undownloadable artifact is named on its own. The
+  plan is read only when every job of the carrier has a result artifact that could be read, counted
+  by name: when one is missing, expired or could not be downloaded, the run has no plan and reads
+  red with nothing to attribute (`no-plan`), as a one-job carrier whose artifact is missing does, so
+  a dead runner or a failed download is the run's fault, not a family's. For a split carrier this is
+  named as an issue, `<k> of <n> jobs has a readable result artifact; the plan is not read.` (`have`
+  when k is not 1). A job missing from the run altogether leaves its families without a result, so
+  the carrier reads red with those families' keys.
 - The jobs' one conclusion is `in-progress` when any job is still running; else `cancelled` when
   any was cancelled; else `failure` when any failed, or when some were skipped and others were not;
   else `success` when all succeeded; else `skipped`. A carrier with one job reads that job's

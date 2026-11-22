@@ -379,14 +379,14 @@ fails if a lane drops a suite or a Vitest project.
 The ALM conformance lane's `full` scope is an observation, not a lane of `release-gate.yml`. It
 lives in `alm-conformance-observation.yml`, which runs it on the PostgreSQL API, one runner per
 carrier (`rtc` on two, split by family), at the event's own commit (on a pull request, the merge
-commit). The workflow starts itself: on every `main` push except one that changes only `performance-observations/**`, on a ready
-pull request whose changed paths since the merge base can change the lane (its own `alm-changes`
-job, `scripts/alm-lane-selection.mjs`; a failed detection runs the scope), and on dispatch on any
-branch. It is not a job of `branch-release-gate.yml` or `deploy.yml`, so neither
-`Branch Release Gate result` nor any deployment waits for it. The IDE navigation report
-(`npm run check:repo-style:navigation-details`, which always exits 0) runs the same way in
-`navigation-report-observation.yml`, started beside the gate by `branch-release-gate.yml` and by
-`deploy.yml` on a `main` push.
+commit). The workflow starts itself: on every `main` push except one that changes only
+`performance-observations/**`, on a ready pull request whose changed paths since the merge base can
+change the lane (its own `alm-changes` job, `scripts/alm-lane-selection.mjs`; a failed detection
+runs the scope), and on dispatch on any branch. It is not a job of `branch-release-gate.yml` or
+`deploy.yml`, so neither `Branch Release Gate result` nor any deployment waits for it. The IDE
+navigation report (`npm run check:repo-style:navigation-details`, which always exits 0) runs the
+same way in `navigation-report-observation.yml`, started beside the gate by
+`branch-release-gate.yml` and by `deploy.yml` on a `main` push.
 
 The two changed-range checks — `check-changed-repo-style.mjs` and `check-test-structure-coupling.mjs
 --changed` — run only when `release-gate.yml` receives a non-empty `changed_repo_style_base`. The

@@ -166,9 +166,9 @@ function toNotReadRun(
 }
 
 /**
- * No reading for a job that is not a lane job, which includes a job skipped before its matrix expanded: GitHub names it
- * with the workflow's unevaluated name, which the pattern does not match. A lane job naming no known carrier is an
- * issue.
+ * No reading for a job that is not a lane job, which includes a job skipped before its matrix expanded, because the
+ * job name pattern refuses a name still holding an unevaluated `${{` expression. A lane job naming no known carrier is
+ * an issue.
  */
 function toJobRead(runId: number, job: AlmLaneReportedJob): readonly Either<string, AlmLaneJobRead>[] {
     const named = ALM_LANE_JOB_NAME_PATTERN.exec(job.name)?.[1];

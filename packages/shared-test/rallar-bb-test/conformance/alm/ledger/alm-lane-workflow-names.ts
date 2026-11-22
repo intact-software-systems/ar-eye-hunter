@@ -3,9 +3,10 @@ import type { AlmLaneRunIdentity } from '../lane-result/alm-lane-result.ts';
 
 /**
  * The name of a lane job in `alm-conformance-observation.yml`, `(<carrier>)` or `(<carrier>, <families>)`, with the
- * carrier alone captured. A repository test pins it against the workflow.
+ * carrier alone captured. A repository test pins it against the workflow. A name still holding `${{` is refused: GitHub
+ * names a job skipped before its matrix expanded with the workflow's unevaluated text, and that job is not a lane job.
  */
-export const ALM_LANE_JOB_NAME_PATTERN = /^ALM conformance observation \(([^,()]+)(?:, [^()]+)?\)$/;
+export const ALM_LANE_JOB_NAME_PATTERN = /^(?!.*\$\{\{)ALM conformance observation \(([^,()]+)(?:, [^()]+)?\)$/;
 
 /** The identity every file of a run the ledger reads states, beside the job's carrier. */
 export const ALM_LANE_LEDGER_IDENTITY: Omit<AlmLaneRunIdentity, 'carrier'> = { scope: 'full', backend: 'postgres' };

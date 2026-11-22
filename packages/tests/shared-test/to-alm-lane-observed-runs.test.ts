@@ -89,6 +89,7 @@ describe('toAlmLaneObservedRuns', () => {
         const reading = toAlmLaneObservedRuns(toInput({
             jobs: [
                 { name: 'Detect ALM lane changes', status: 'completed', conclusion: 'success' },
+                toLaneJob('${{ matrix.carrier }}', 'skipped'),
                 {
                     name: 'ALM conformance observation (${{ matrix.carrier }}${{ matrix.families && format(\', {0}\', matrix.families) || \'\' }})',
                     status: 'completed',
