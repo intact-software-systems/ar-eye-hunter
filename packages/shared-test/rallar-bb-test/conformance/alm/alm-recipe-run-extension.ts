@@ -10,8 +10,23 @@ export function toAlmRecipeRunExtensionMetadata(extensionMs: number | undefined)
     return extensionMs === undefined ? {} : { [ALM_RECIPE_RUN_EXTENSION_KEY]: extensionMs };
 }
 
-/** The recipe's run budget: the lane's ordinary one, extended by what the recipe's metadata states. */
+/**
+ * The recipe's run budget: the lane's ordinary one, extended by what the recipe's metadata states. Only a recipe
+ * builder writes the key, so a value that is not a non-negative integer of milliseconds is a broken builder.
+ */
 export function computeAlmRecipeRunTimeoutMs(recipe: RallarBlackBoxTestRecipe, ordinaryMs: number): number {
     const extensionMs = recipe.metadata?.[ALM_RECIPE_RUN_EXTENSION_KEY];
-    return ordinaryMs + (typeof extensionMs === 'number' ? extensionMs : 0);
+    if (extensionMs === undefined) {
+        return ordinaryMs;
+    }
+    assertAlmRecipeRunExtensionMs(recipe.recipeId, extensionMs);
+    return ordinaryMs + extensionMs;
+}
+
+function assertAlmRecipeRunExtensionMs(recipeId: string, value: unknown): asserts value is number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error(
+            `${recipeId} states ${ALM_RECIPE_RUN_EXTENSION_KEY} ${JSON.stringify(value)}, not a non-negative integer.`
+        );
+    }
 }

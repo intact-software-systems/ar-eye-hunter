@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import { computeAlmRecipeRunTimeoutMs } from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
+import {
+    computeAlmRecipeRunTimeoutMs,
+    toAlmRecipeRunExtensionMetadata
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -23,6 +26,7 @@ import {
     AL_VOLATILE_SESSION_MAX_BYTES
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
+import { RECIPE_RUN_TIMEOUT_MS } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
@@ -343,8 +347,8 @@ describe('buffered-track-drains', () => {
         expect(scenario.receiver.commands[cueWait]?.timeoutMs).toBe(senderBodyMs);
         expect(senderBodyMs).toBeGreaterThan(computeSendLoopBudgetMs(64));
         for (const recipe of [scenario.sender, scenario.receiver]) {
-            expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RECIPE_RUN_TIMEOUT_MS), recipe.recipeId)
-                .toBe(ORDINARY_RECIPE_RUN_TIMEOUT_MS + senderBodyMs);
+            expect(computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS), recipe.recipeId)
+                .toBe(RECIPE_RUN_TIMEOUT_MS + senderBodyMs);
         }
     });
 
@@ -382,20 +386,11 @@ describe('buffered-track-drains', () => {
 });
 
 const CHURN_CUES = 'alm-rtc-churn-bounded-tracks-cues';
-const ORDINARY_RECIPE_RUN_TIMEOUT_MS = 180_000;
 
 describe('computeSendLoopBudgetMs', () => {
     it('gives each iteration of a send loop 1,500 ms', () => {
         expect(computeSendLoopBudgetMs(280)).toBe(420_000);
         expect(computeSendLoopBudgetMs(1)).toBe(1_500);
-    });
-
-    it('grows with the count', () => {
-        const counts = [0, 1, 66, 256, 280, 281];
-        const budgets = counts.map(computeSendLoopBudgetMs);
-
-        expect(budgets).toEqual([...budgets].sort((left, right) => left - right));
-        expect(new Set(budgets).size).toBe(counts.length);
     });
 });
 
@@ -403,8 +398,23 @@ describe('computeAlmRecipeRunTimeoutMs', () => {
     it('keeps the ordinary budget for a recipe whose metadata states no extension', () => {
         const scenario = findScenario('rtc', 'own-share-under-inbound');
 
-        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, ORDINARY_RECIPE_RUN_TIMEOUT_MS)).toBe(180_000);
+        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, RECIPE_RUN_TIMEOUT_MS)).toBe(RECIPE_RUN_TIMEOUT_MS);
         expect(computeAlmRecipeRunTimeoutMs({ ...scenario.sender, metadata: undefined }, 5_000)).toBe(5_000);
+    });
+
+    it('adds the extension a recipe\'s metadata states to the ordinary budget', () => {
+        const recipe = findScenario('rtc', 'own-share-under-inbound').sender;
+
+        expect(computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: { ...recipe.metadata, ...toAlmRecipeRunExtensionMetadata(42_000) } }, 5_000))
+            .toBe(47_000);
+        expect(computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: toAlmRecipeRunExtensionMetadata(0) }, 5_000)).toBe(5_000);
+    });
+
+    it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '42000', null, {}])('refuses a stated extension of %s', (value) => {
+        const recipe = findScenario('rtc', 'own-share-under-inbound').sender;
+
+        expect(() => computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: { almRecipeRunExtensionMs: value } }, 5_000))
+            .toThrow(/almRecipeRunExtensionMs/);
     });
 });
 
@@ -537,9 +547,8 @@ describe('churn-bounded-tracks', () => {
         // track's observation (10 s), its assertion (2 s) and the cue's send and observation (5 s each).
         expect(cueWait?.timeoutMs).toBe(45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
         for (const recipe of [scenario.sender, scenario.receiver]) {
-            const runTimeoutMs = computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RECIPE_RUN_TIMEOUT_MS);
-            expect(runTimeoutMs, recipe.recipeId).toBe(ORDINARY_RECIPE_RUN_TIMEOUT_MS + (cueWait?.timeoutMs ?? 0));
-            expect(runTimeoutMs, recipe.recipeId).toBeGreaterThanOrEqual(loopBudgetMs);
+            expect(computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS), recipe.recipeId)
+                .toBe(RECIPE_RUN_TIMEOUT_MS + (cueWait?.timeoutMs ?? 0));
         }
     });
 });

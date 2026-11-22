@@ -272,6 +272,12 @@ export interface ReadControlRunUntilNarrowingInput<T, A extends T> extends ReadC
 }
 
 /** A root the lane reads, and the cancel that stops it on its agent once it outlived its deadline and grace. */
+/** A recipe and the run timeout both its recipe.run command and the lane's own deadline for its result name. */
+interface RecipeRunRequest {
+    readonly recipe: RallarBlackBoxTestRecipe;
+    readonly timeoutMs: number;
+}
+
 interface RecipeRunRoot {
     readonly agentId: string;
     readonly commandId: string;
@@ -340,7 +346,7 @@ const RUNNER_PANEL_TARGETS: Partial<Readonly<Record<ExhaustiveTabId, RunnerPanel
 const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
 const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 /** A recipe's ordinary run budget; a recipe whose metadata states a longer step extends its own. */
-const RECIPE_RUN_TIMEOUT_MS = 180_000;
+export const RECIPE_RUN_TIMEOUT_MS = 180_000;
 /** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
 const RECIPE_RESULT_GRACE_MS = 30_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
@@ -711,8 +717,9 @@ export async function startRecipeRun(
     agent: RecipeRunAgent,
     recipe: RallarBlackBoxTestRecipe
 ): Promise<StartedRecipeRun> {
-    const commandId = await enqueueRecipeRun(run, agent, recipe);
-    const timeoutMs = computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS);
+    const request = toRecipeRunRequest(recipe);
+    const { timeoutMs } = request;
+    const commandId = await enqueueRecipeRun(run, agent, request);
     return startRecipeRoot(run, {
         agentId: agent.agentId,
         commandId,
@@ -1010,7 +1017,7 @@ function isPassedResultEvent(value: unknown): value is PassedResultEvent {
 function toReloadRecipeRoot(
     run: RecipeRun,
     agent: RecipeRunAgent,
-    recipe: RallarBlackBoxTestRecipe
+    { recipe, timeoutMs }: RecipeRunRequest
 ): ControlCommandEnvelope {
     return {
         kind: 'command',
@@ -1018,8 +1025,13 @@ function toReloadRecipeRoot(
         runId: run.runId,
         agentId: agent.agentId,
         commandId: toRecipeRunCommandId(recipe),
-        command: { kind: 'recipe.run', recipe, timeoutMs: computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS) }
+        command: { kind: 'recipe.run', recipe, timeoutMs }
     };
+}
+
+/** The recipe's run timeout, computed once for its recipe.run command and the lane's deadline alike. */
+function toRecipeRunRequest(recipe: RallarBlackBoxTestRecipe): RecipeRunRequest {
+    return { recipe, timeoutMs: computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS) };
 }
 
 function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
@@ -1145,9 +1157,11 @@ async function closeTwoAgentParticipants(participants: readonly TwoAgentRunParti
 }
 
 async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair): Promise<RecipePairOutcome> {
+    const senderRequest = toRecipeRunRequest(recipes.sender);
+    const receiverRequest = toRecipeRunRequest(recipes.receiver);
     const pair = bindAlmReloadPair({
-        sender: toReloadRecipeRoot(run, run.sender, recipes.sender),
-        receiver: toReloadRecipeRoot(run, run.receiver, recipes.receiver)
+        sender: toReloadRecipeRoot(run, run.sender, senderRequest),
+        receiver: toReloadRecipeRoot(run, run.receiver, receiverRequest)
     }).fold(
         (issues) => {
             throw new Error(`Cannot enqueue paired reload: ${issues.join(' ')}`);
@@ -1161,7 +1175,7 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.sender.commandId,
         command: pair.sender.command
     });
-    const sender = startRecipeRoot(run, toReloadRunRoot(run.sender, pair.sender.commandId, recipes.sender));
+    const sender = startRecipeRoot(run, toReloadRunRoot(run.sender, pair.sender.commandId, senderRequest.timeoutMs));
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
@@ -1169,17 +1183,15 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.receiver.commandId,
         command: pair.receiver.command
     });
-    const receiver = startRecipeRoot(run, toReloadRunRoot(run.receiver, pair.receiver.commandId, recipes.receiver));
+    const receiver = startRecipeRoot(
+        run,
+        toReloadRunRoot(run.receiver, pair.receiver.commandId, receiverRequest.timeoutMs)
+    );
     return requireRecipePairOutcome(await Promise.allSettled([sender.readOutcome(), receiver.readOutcome()]));
 }
 
 /** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */
-function toReloadRunRoot(
-    agent: RecipeRunAgent,
-    commandId: string,
-    recipe: RallarBlackBoxTestRecipe
-): RecipeRunRoot {
-    const timeoutMs = computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS);
+function toReloadRunRoot(agent: RecipeRunAgent, commandId: string, timeoutMs: number): RecipeRunRoot {
     return {
         agentId: agent.agentId,
         commandId,
@@ -1322,7 +1334,7 @@ async function signInFullStackUser(input: FullStackSignInInput): Promise<void> {
 async function enqueueRecipeRun(
     run: RecipeRun,
     agent: RecipeRunAgent,
-    recipe: RallarBlackBoxTestRecipe
+    { recipe, timeoutMs }: RecipeRunRequest
 ): Promise<string> {
     const commandId = toRecipeRunCommandId(recipe);
     await enqueueControlCommand({
@@ -1330,7 +1342,7 @@ async function enqueueRecipeRun(
         runId: run.runId,
         agentId: agent.agentId,
         commandId,
-        command: { kind: 'recipe.run', recipe, timeoutMs: computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS) }
+        command: { kind: 'recipe.run', recipe, timeoutMs }
     });
     return commandId;
 }
