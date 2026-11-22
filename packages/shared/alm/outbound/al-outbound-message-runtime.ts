@@ -77,6 +77,8 @@ export interface ALOutboundDequeueAuthority {
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly accountView?: ALAccountViewAuthority;
     readonly admittedAudience: readonly string[] | undefined;
+    /** Whether a re-check judged `admittedAudience` at this attempt; false: the reader passed the captured audience through. */
+    readonly audienceJudged: boolean;
     readonly recipientScope: StateScope | undefined;
     readonly principalTargetId?: string;
 }

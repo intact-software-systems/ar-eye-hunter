@@ -51,6 +51,9 @@ dequeue already judged by this instance's open sockets and reads nothing, and
 without one) afresh. The dequeue's judgement reaches the cluster publisher's send
 as `Handoff.judgedDrops` and every other instance's send as the notice's
 `droppedSessionIds`, so a granted cluster row reads its snapshot once per attempt.
+A dequeue that passed the captured audience through (no filters wired, a session
+invalidation, a row admitted to no audience) hands no judgement: the authority's
+`audienceJudged` carries that one decision from `readCurrentAudience`.
 
 ## Private receipt evidence
 

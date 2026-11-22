@@ -99,6 +99,8 @@ export namespace WsQueueBoxServerDequeueAuthority {
         readonly eligible: readonly string[] | undefined;
         /** The admitted sessions the re-check no longer finds eligible: the attempt sends them nothing. */
         readonly dropped: readonly string[];
+        /** Whether the re-check ran; false when the attempt passed the captured audience through. */
+        readonly judged: boolean;
     }
 
     /** A dequeued row's authority, and the admitted sessions its attempt sends nothing. */
@@ -135,6 +137,7 @@ export class WsQueueBoxServerDequeueAuthority {
             return {
                 authority: {
                     admittedAudience: audience.eligible,
+                    audienceJudged: audience.judged,
                     recipientScope: policy.recipientScope,
                     principalTargetId: policy.principalTargetId,
                     sessionInvalidation: policy.sessionInvalidation,
@@ -154,7 +157,10 @@ export class WsQueueBoxServerDequeueAuthority {
             throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
         const audience = await this.readCurrentAudience(message, authority, 'durable');
-        return { authority: { ...authority, admittedAudience: audience.eligible }, dropped: audience.dropped };
+        return {
+            authority: { ...authority, admittedAudience: audience.eligible, audienceJudged: audience.judged },
+            dropped: audience.dropped
+        };
     }
 
     /**
@@ -173,14 +179,14 @@ export class WsQueueBoxServerDequeueAuthority {
         const { targetResolution, capturedRecipientEligibilityFilters, timers } = this.dependencies;
         const admittedAudience = authority.admittedAudience;
         if (admittedAudience === undefined || authority.sessionInvalidation !== undefined) {
-            return { eligible: admittedAudience, dropped: [] };
+            return { eligible: admittedAudience, dropped: [], judged: false };
         }
         const frozen = targetResolution.requiresFrozenAudience(message);
         if (capturedRecipientEligibilityFilters === undefined) {
-            return { eligible: frozen ? [] : admittedAudience, dropped: [] };
+            return { eligible: frozen ? [] : admittedAudience, dropped: [], judged: false };
         }
         if (!frozen && presence === 'local') {
-            return { eligible: admittedAudience, dropped: [] };
+            return { eligible: admittedAudience, dropped: [], judged: false };
         }
         const eligible = await readWsQueueBoxServerEligibleAudience({
             message,
@@ -190,7 +196,11 @@ export class WsQueueBoxServerDequeueAuthority {
             filterEligibleCapturedSessionIds: capturedRecipientEligibilityFilters[presence],
             timers
         });
-        return { eligible, dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)) };
+        return {
+            eligible,
+            dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)),
+            judged: true
+        };
     }
 
     /**

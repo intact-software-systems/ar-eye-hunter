@@ -4,6 +4,7 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALSessionInvalidationAuthority } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { WsCapturedAudienceReadDeadlineError } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
@@ -21,6 +22,14 @@ const ADMITTED = { admittedAudience: ['b', 'c', 'd'], admittedConnectionGenerati
 const keepsBAndD: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId !== 'c'));
 const keepsB: WsCapturedRecipientEligibilityFilter = (captured) => Promise.resolve(captured.candidateSessionIds.filter((sessionId) => sessionId === 'b'));
 const KEEPS_B_AND_D: WsCapturedRecipientEligibilityFilters = { durable: keepsBAndD, local: keepsB, socket: keepsB };
+const SESSION_INVALIDATION: ALSessionInvalidationAuthority = {
+    kind: 'auth-session-invalidation',
+    sessionId: 'b',
+    requestId: 'logout-request-0000001',
+    invalidatedAtMs: 1_000,
+    issuedAtMs: 1_000,
+    expiresAtMs: 61_000
+};
 
 function createAuthority(
     frozen: boolean,
@@ -61,33 +70,33 @@ describe('the audience one dequeue attempt finds for a row', () => {
     it('names beside the sessions the re-check keeps those it dropped, which the attempt sends nothing', async () => {
         const audience = await createAuthority(true, KEEPS_B_AND_D).readCurrentAudience(feedEvent(), ADMITTED, 'durable');
 
-        expect(audience).toEqual({ eligible: ['b', 'd'], dropped: ['c'] });
+        expect(audience).toEqual({ eligible: ['b', 'd'], dropped: ['c'], judged: true });
     });
 
     it('sends nobody and declares no exclusion when no re-check is wired: its sessions stay expected', async () => {
         const audience = await createAuthority(true, undefined).readCurrentAudience(feedEvent(), ADMITTED, 'durable');
 
-        expect(audience).toEqual({ eligible: [], dropped: [] });
+        expect(audience).toEqual({ eligible: [], dropped: [], judged: false });
     });
 
     it('drops a captured session no durable filter finds live, whatever this instance\'s sockets hold', async () => {
         const audience = await createAuthority(false, KEEPS_B_AND_D).readCurrentAudience(feedEvent(), ADMITTED, 'durable');
 
-        expect(audience).toEqual({ eligible: ['b', 'd'], dropped: ['c'] });
+        expect(audience).toEqual({ eligible: ['b', 'd'], dropped: ['c'], judged: true });
     });
 
     it('keeps a non-frozen row\'s captured audience when no durable filter is wired', async () => {
         const audience = await createAuthority(false, undefined).readCurrentAudience(feedEvent(), ADMITTED, 'durable');
 
-        expect(audience).toEqual({ eligible: ['b', 'c', 'd'], dropped: [] });
+        expect(audience).toEqual({ eligible: ['b', 'c', 'd'], dropped: [], judged: false });
     });
 
     it('re-checks a frozen row\'s sessions against this instance\'s sockets at a send, and keeps a non-frozen row\'s as captured', async () => {
         const frozen = await createAuthority(true, KEEPS_B_AND_D).readCurrentAudience(feedEvent(), ADMITTED, 'local');
         const notFrozen = await createAuthority(false, KEEPS_B_AND_D).readCurrentAudience(feedEvent(), ADMITTED, 'local');
 
-        expect(frozen).toEqual({ eligible: ['b'], dropped: ['c', 'd'] });
-        expect(notFrozen).toEqual({ eligible: ['b', 'c', 'd'], dropped: [] });
+        expect(frozen).toEqual({ eligible: ['b'], dropped: ['c', 'd'], judged: true });
+        expect(notFrozen).toEqual({ eligible: ['b', 'c', 'd'], dropped: [], judged: false });
     });
 
     it('admits nobody and drops nobody for a row admitted to no audience', async () => {
@@ -97,7 +106,17 @@ describe('the audience one dequeue attempt finds for a row', () => {
             'durable'
         );
 
-        expect(audience).toEqual({ eligible: undefined, dropped: [] });
+        expect(audience).toEqual({ eligible: undefined, dropped: [], judged: false });
+    });
+
+    it('passes a session invalidation\'s captured audience through unjudged', async () => {
+        const audience = await createAuthority(true, KEEPS_B_AND_D).readCurrentAudience(
+            feedEvent(),
+            { ...ADMITTED, sessionInvalidation: SESSION_INVALIDATION },
+            'durable'
+        );
+
+        expect(audience).toEqual({ eligible: ['b', 'c', 'd'], dropped: [], judged: false });
     });
 
     it('rejects the attempt at the read deadline when the durable re-check never settles, so the row retries', async () => {

@@ -16,7 +16,11 @@ function capturedPolicy(admittedAudience: readonly string[] | undefined): ALOutb
 }
 
 function judgedAuthority(admittedAudience: readonly string[] | undefined): ALOutboundDequeueAuthority {
-    return { admittedAudience, recipientScope: undefined };
+    return { admittedAudience, audienceJudged: true, recipientScope: undefined };
+}
+
+function unjudgedAuthority(admittedAudience: readonly string[]): ALOutboundDequeueAuthority {
+    return { admittedAudience, audienceJudged: false, recipientScope: undefined };
 }
 
 describe('the captured sessions a dequeue judged out', () => {
@@ -36,5 +40,10 @@ describe('the captured sessions a dequeue judged out', () => {
             toWsQueueBoxServerJudgedDrops(capturedPolicy(['a']), undefined),
             toWsQueueBoxServerJudgedDrops(capturedPolicy(['a']), judgedAuthority(undefined))
         ]).toEqual([undefined, undefined, undefined, undefined]);
+    });
+
+    it('names no judgement when the dequeue passed the captured audience through unjudged', () => {
+        expect(toWsQueueBoxServerJudgedDrops(capturedPolicy(['a', 'b']), unjudgedAuthority(['a'])))
+            .toBeUndefined();
     });
 });

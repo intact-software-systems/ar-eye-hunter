@@ -708,6 +708,7 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             readDequeueAuthority: async () => ({
                 admittedAudience: ['b'],
+                audienceJudged: true,
                 recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
             }),
             planOutgoingMessage: (msg) => ({
@@ -745,6 +746,7 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             readDequeueAuthority: async () => ({
                 admittedAudience: ['b'],
+                audienceJudged: true,
                 recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
             }),
             planOutgoingMessage: (msg) => ({

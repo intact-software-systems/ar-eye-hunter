@@ -468,10 +468,7 @@ export class WsQueueBoxServerService {
             afterDequeueAdmission: async (message, entry, admission) => {
                 await this.clusterPublication.writeDequeuedRow(message, entry, {
                     committedPolicy: admission.committedPolicy,
-                    // With no filters wired the dequeue judged nobody, so its audience is no judgement a send may trust.
-                    judgedDrops: dependencies.capturedRecipientEligibilityFilters === undefined
-                        ? undefined
-                        : toWsQueueBoxServerJudgedDrops(admission.committedPolicy, admission.dequeueAuthority)
+                    judgedDrops: toWsQueueBoxServerJudgedDrops(admission.committedPolicy, admission.dequeueAuthority)
                 });
                 await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
             },
