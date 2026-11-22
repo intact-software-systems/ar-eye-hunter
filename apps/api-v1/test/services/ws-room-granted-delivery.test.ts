@@ -24,7 +24,7 @@ import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsCapturedRecipientEligibilityFilters } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     createDefaultWsQueueBoxServerService,
@@ -726,6 +726,22 @@ test('a members-topic outbox row is narrowed by the durable filter only', async 
     });
 });
 
+test('a granted cluster row reads the publication authority once per dequeue attempt', async () => {
+    await withHarness({ fanout: 'outbox', cluster: true }, async (harness) => {
+        const frames = addAudience(harness.server);
+        const message = feedMessage({ senderId: 'alice', msgId: 'cluster-single-probe' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0 && readDelivered(frames.carol, message) > 0);
+        await settle();
+
+        assert.equal(readDelivered(frames.bob, message), 1);
+        assert.equal(readDelivered(frames.carol, message), 1);
+        // Admission, dispatch and route read the room; the dequeue re-checks it once, and the publisher's send reuses that.
+        assert.equal(harness.readCount(), 4);
+    });
+});
+
 async function withHarness(
     input: GrantedDeliveryHarnessInput,
     body: (harness: GrantedDeliveryHarness) => Promise<void>
@@ -761,15 +777,28 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
     };
     const readCurrentSnapshot = async (ref: GroupRef) => (await readRoom(ref))?.snapshot;
     const readRecheckRoom = (ref: GroupRef) => harness.recheckRead?.() ?? readRoom(ref);
-    const recheck: WsCapturedRecipientEligibilityFilter = (captured) =>
-        filterGrantedWsRecipientSessionIds({
-            ...captured,
-            durableEligibleSessionIds: captured.candidateSessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
-            grantedTopics,
-            serverPeerId: SERVER_PEER_ID,
-            readPublicationAuthority: readRecheckRoom,
-            nowEpochMs: Date.now()
-        });
+    const filterOpenSessionIds = (sessionIds: readonly string[]) => sessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true);
+    const filters: WsCapturedRecipientEligibilityFilters | undefined = input.withoutRecheck === true ? undefined : {
+        durable: (captured) =>
+            filterDurablyLiveWsSessionIds({
+                ...captured,
+                grantedTopics,
+                serverPeerId: SERVER_PEER_ID,
+                readPublicationAuthority: readRecheckRoom,
+                readPrincipalSessions: () => Promise.resolve(undefined),
+                nowEpochMs: Date.now()
+            }),
+        local: (captured) =>
+            filterGrantedWsRecipientSessionIds({
+                ...captured,
+                durableEligibleSessionIds: filterOpenSessionIds(captured.candidateSessionIds),
+                grantedTopics,
+                serverPeerId: SERVER_PEER_ID,
+                readPublicationAuthority: readRecheckRoom,
+                nowEpochMs: Date.now()
+            }),
+        socket: (captured) => Promise.resolve(filterOpenSessionIds(captured.candidateSessionIds))
+    };
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
@@ -782,18 +811,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => createSnapshot(GRANTS), grantedTopics }),
-        capturedRecipientEligibilityFilters: input.withoutRecheck === true ? undefined : {
-            durable: (captured) =>
-                filterDurablyLiveWsSessionIds({
-                    ...captured,
-                    grantedTopics,
-                    serverPeerId: SERVER_PEER_ID,
-                    readPublicationAuthority: readRecheckRoom,
-                    readPrincipalSessions: () => Promise.resolve(undefined),
-                    nowEpochMs: Date.now()
-                }),
-            local: recheck
-        }
+        capturedRecipientEligibilityFilters: filters
     });
     const router = new RallarServerWsRouter(service, {
         grantedTopics,
@@ -825,15 +843,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
             bridge: new LoopbackBridge(),
             channel: 'granted',
             publisherId: 'publisher',
-            filterEligibleCapturedSessionIds: input.withoutRecheck === true ? undefined : (captured) =>
-                filterGrantedWsRecipientSessionIds({
-                    ...captured,
-                    durableEligibleSessionIds: captured.candidateSessionIds,
-                    grantedTopics,
-                    serverPeerId: SERVER_PEER_ID,
-                    readPublicationAuthority: readRecheckRoom,
-                    nowEpochMs: Date.now()
-                })
+            capturedRecipientEligibilityFilters: filters
         });
     }
     return harness;

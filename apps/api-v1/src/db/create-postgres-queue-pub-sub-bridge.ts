@@ -1,6 +1,7 @@
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     decodeQueueBoxPubSubMessage,
+    QUEUE_BOX_PUB_SUB_NOTICE_MAX_BYTES,
     type QueueBoxPubSubBridge
 } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
@@ -34,7 +35,7 @@ export function createPostgresQueuePubSubBridge(
 }
 
 function parsePostgresPubSubMessage(payload: string): JsonWireValue | undefined {
-    if (computeUtf8ByteLength(payload) >= 8_000) {
+    if (computeUtf8ByteLength(payload) >= QUEUE_BOX_PUB_SUB_NOTICE_MAX_BYTES) {
         return undefined;
     }
     try {

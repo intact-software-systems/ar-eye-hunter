@@ -188,6 +188,22 @@ describe('WS first dequeue authority', () => {
         }
     });
 
+    it('hands its cluster publisher no judgement when no re-check is wired, so the remote send re-checks', async () => {
+        const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
+        const handed: { readonly msgId: string; readonly judgedDrops: readonly string[] | undefined; }[] = [];
+        fixture.service.onOutboxClusterPublishDo(async (message, _entry, handoff) => {
+            handed.push({ msgId: message.id.msgId, judgedDrops: handoff?.judgedDrops });
+        });
+        const message = createMessage('unicast');
+        await fixture.stores.workQueue.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
+
+        await fixture.engine.executeOnce();
+
+        await expect.poll(() => handed.length).toBe(1);
+        console.log('handed cluster publisher', JSON.stringify(handed));
+        expect(handed).toEqual([{ msgId: message.id.msgId, judgedDrops: undefined }]);
+    });
+
     it('holds the awaited audience of an unpublished row under the policy its commit wrote, reading none back', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
         fixture.socket.expectedConnections.expect({ id: 'awaited', generationId: 'generation', expiresAtEpochMs: Date.now() + 30_000 });
@@ -451,7 +467,7 @@ function createFixture(
         readProducerProvenance,
         capturedRecipientEligibilityFilters: recheck === undefined
             ? undefined
-            : { durable: recheck, local: recheck }
+            : { durable: recheck, local: recheck, socket: recheck }
     };
     const service = createDefaultWsQueueBoxServerService(input);
     onTestFinished(async () => {

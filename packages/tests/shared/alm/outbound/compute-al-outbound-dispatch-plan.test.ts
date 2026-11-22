@@ -25,7 +25,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
                     ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
                     key: CANONICAL_KEY
                 },
-                dequeueAuthority: { admittedAudience: ['carol', 'bob'], recipientScope: undefined },
+                dequeueAuthority: { admittedAudience: ['carol', 'bob'], audienceJudged: true, recipientScope: undefined },
                 planner: (msg, authority) => {
                     planned.push(authority);
                     return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
@@ -50,7 +50,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
                 msg: message,
                 intent: 'dequeue',
                 observedCanonicalEntry: { ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()), key: otherKey },
-                dequeueAuthority: { admittedAudience: ['bob'], recipientScope: undefined },
+                dequeueAuthority: { admittedAudience: ['bob'], audienceJudged: true, recipientScope: undefined },
                 planner: (msg, authority) => {
                     planned.push(authority);
                     return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };

@@ -27,6 +27,8 @@ export namespace WsQueueBoxServerClusterPublication {
         /** The captured policy the row's own commit wrote; absent, the publisher reads the stored one. */
         readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
         readonly deferObservation: ALWorkObservationDeferral | undefined;
+        /** The captured sessions this attempt's dequeue dropped; undefined when no dequeue judged the row. */
+        readonly judgedDrops: readonly string[] | undefined;
     }
 
     /**
@@ -75,13 +77,13 @@ export class WsQueueBoxServerClusterPublication {
     async writeDequeuedRow(
         message: ALMessage,
         entry: ResourceEntry,
-        committedPolicy: ALOutboundCapturedPolicy | undefined
+        handoff: Omit<WsQueueBoxServerClusterPublication.Handoff, 'deferObservation'>
     ): Promise<void> {
         const publisher = this.#publisher;
         if (publisher === undefined || isWsQueueBoxServerReceiptRow(message)) {
             return;
         }
-        await publisher(message, entry, { committedPolicy, deferObservation: undefined });
+        await publisher(message, entry, { ...handoff, deferObservation: undefined });
     }
 
     async writePreparedMessage(
@@ -116,7 +118,11 @@ export class WsQueueBoxServerClusterPublication {
                     key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
                 };
                 publisherCall = 'invoked';
-                await publisher(message, entry, { committedPolicy: undefined, deferObservation });
+                await publisher(message, entry, {
+                    committedPolicy: undefined,
+                    deferObservation,
+                    judgedDrops: undefined
+                });
                 publisherCall = 'returned';
             }
             result = originIsHere ? { status: 'sent', submissionAttempted: true } : {

@@ -15,6 +15,7 @@ import {
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
@@ -126,6 +127,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         },
         readProducerProvenance: undefined,
         capturedRecipientEligibilityFilters: undefined,
+        timers: createDefaultBackgroundTimers(),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             selfPeerId: 'server',
             nowMs: () => fixture.clock.nowMs(),

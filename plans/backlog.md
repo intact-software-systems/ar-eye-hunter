@@ -592,10 +592,6 @@ and it has no status list.
   child reads, one more statement per group (running it beside them risks a
   PGlite rejection under close); one batch-selector read per group, as the
   principal list already does, would remove the extra statement (S2-i).
-- A granted outbox row costs two snapshot probes per cluster dequeue attempt,
-  `readDequeueAuthority`'s and the bridge's local send's, where D498 budgeted
-  one; skip the dequeue authority's re-check when the cluster publisher sends the
-  row (S2-i).
 - The outbound planner cannot tell a re-checked audience from a captured one: a
   row whose dequeue authority was not read plans its captured audience whole, and
   the frozen-audience fact lives in the WS server's resolver, not in the row, so
@@ -609,9 +605,6 @@ and it has no status list.
 - The held sends' per-session admission key is a colon path, so the held rows of
   session `a` and session `a:b` order against each other; key on a colon-free
   encoding of the session id or a plain per-session chain (S2-i).
-- A snapshot read that hangs rather than fails stalls every later held row of
-  that session, `members` rows included, until it settles; bound the re-check's
-  read at the port (S2-i).
 - The WS server service and the pub/sub bridge each own a held-send chain, so a
   session's locally dequeued held rows and its remote-sent held rows are ordered
   independently of each other; hand the service's chain to the bridge and one

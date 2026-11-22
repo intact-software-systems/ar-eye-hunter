@@ -49,7 +49,10 @@ it.each(['local', 'remote'] as const)('delivers public catalog changes only to a
         },
         channel: 'events',
         publisherId: 'api-a',
-        filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+        capturedRecipientEligibilityFilters: {
+            local: async (input) => input.candidateSessionIds,
+            socket: async (input) => input.candidateSessionIds
+        }
     });
     await fixture.stores.workQueue.enqueue(entry);
     await fixture.engine.executeOnce();

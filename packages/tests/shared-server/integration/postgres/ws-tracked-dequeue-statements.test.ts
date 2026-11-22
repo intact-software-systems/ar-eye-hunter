@@ -483,7 +483,11 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
         targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
         readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry),
-        capturedRecipientEligibilityFilters: { durable: authorityBatch.filter, local: async ({ candidateSessionIds }) => candidateSessionIds }
+        capturedRecipientEligibilityFilters: {
+            durable: authorityBatch.filter,
+            local: async ({ candidateSessionIds }) => candidateSessionIds,
+            socket: async ({ candidateSessionIds }) => candidateSessionIds
+        }
     });
     installNotifyBridge(service, sql, runId);
     engine.start();

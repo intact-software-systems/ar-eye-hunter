@@ -56,7 +56,9 @@ describe('persisted public unicast scope replay', () => {
         attachTestWebSocket(fixture.socket, new ConnectionContext({ id: 'peer', socket: replacement }));
 
         if (delivery === 'remote') {
-            await fixture.bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'other', entry: admitted.entry }));
+            await fixture.bridge.subscriber?.(
+                toPubSubMessage({ channel: 'events', publisherId: 'other', entry: admitted.entry, droppedSessionIds: undefined })
+            );
         }
         else {
             await fixture.engine.executeOnce();
@@ -69,7 +71,7 @@ describe('persisted public unicast scope replay', () => {
             expect(fixture.bridge.published).toHaveLength(1);
         }
         fixture.proof.scope = SCOPE;
-        await fixture.bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'other', entry: admitted.entry }));
+        await fixture.bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'other', entry: admitted.entry, droppedSessionIds: undefined }));
         expect(replacement.sent).toHaveLength(1);
     });
 });
@@ -113,7 +115,10 @@ async function createReplayFixture(): Promise<ReplayFixture> {
         bridge,
         channel: 'events',
         publisherId: 'local',
-        filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+        capturedRecipientEligibilityFilters: {
+            local: async (input) => input.candidateSessionIds,
+            socket: async (input) => input.candidateSessionIds
+        }
     });
     return { service, socket, native, proof, engine, bridge };
 }

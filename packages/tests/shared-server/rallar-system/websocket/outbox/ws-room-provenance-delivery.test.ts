@@ -27,7 +27,10 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsCapturedRecipientEligibilityFilter,
+    WsOutboxDeliveryOutcome
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -47,7 +50,10 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => input.candidateSessionIds,
+                socket: async (input) => input.candidateSessionIds
+            }
         });
         await fixture.publish(['session', 'late'], 'excluded');
         await fixture.engine.executeOnce();
@@ -82,7 +88,7 @@ describe('verified direct room row delivery', () => {
             msg: message,
             observedCanonicalEntry: entry,
             intent: 'dequeue',
-            dequeueAuthority: { admittedAudience: ['session'], recipientScope: undefined },
+            dequeueAuthority: { admittedAudience: ['session'], audienceJudged: true, recipientScope: undefined },
             planner: (msg, authority) => {
                 authorities.push(authority);
                 return { msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] };
@@ -102,7 +108,10 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => input.candidateSessionIds,
+                socket: async (input) => input.candidateSessionIds
+            }
         });
         const winnerEngine = new InboxOutboxEngine();
         const winnerService = createDefaultWsQueueBoxServerService({
@@ -152,7 +161,10 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => input.candidateSessionIds,
+                socket: async (input) => input.candidateSessionIds
+            }
         });
         const message = newALBroadcastMessage({
             createdAtEpochMs: Date.now(),
@@ -262,7 +274,10 @@ describe('verified direct room row delivery', () => {
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => input.candidateSessionIds
+            capturedRecipientEligibilityFilters: {
+                local: async (input) => input.candidateSessionIds,
+                socket: async (input) => input.candidateSessionIds
+            }
         });
         const { message, entry } = await fixture.publish(['session']);
         const decodes = countMessageDecodes(message);
@@ -280,15 +295,16 @@ describe('verified direct room row delivery', () => {
         const fixture = new RoomFixture();
         const bridge = new RecordingBridge();
         const captured: { audience: readonly string[]; scope: StateScope | undefined; }[] = [];
+        const recheck: WsCapturedRecipientEligibilityFilter = async (input) => {
+            captured.push({ audience: input.candidateSessionIds, scope: input.recipientScope });
+            return input.candidateSessionIds;
+        };
         await installQueueBoxPubSubBridge({
             wsQBoxServerService: fixture.service,
             bridge,
             channel: 'events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: async (input) => {
-                captured.push({ audience: input.candidateSessionIds, scope: input.recipientScope });
-                return input.candidateSessionIds;
-            }
+            capturedRecipientEligibilityFilters: { local: recheck, socket: recheck }
         });
         if (placement === 'remote') {
             fixture.socket.connections.clear();
@@ -299,13 +315,13 @@ describe('verified direct room row delivery', () => {
         if (placement === 'remote') {
             fixture.addSocket('session');
             fixture.addSocket('late');
-            await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry }));
+            await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
         }
         expect(fixture.native.get('session')!.sent).toHaveLength(1);
         expect(fixture.native.get('late')!.sent).toEqual([]);
         expect(captured).toContainEqual({ audience: ['session'], scope: SCOPE });
         fixture.authentication.scope = { ...SCOPE, workspaceId: 'other' };
-        await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry }));
+        await bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'remote', entry, droppedSessionIds: undefined }));
         expect(fixture.native.get('session')!.sent).toHaveLength(1);
     });
 });

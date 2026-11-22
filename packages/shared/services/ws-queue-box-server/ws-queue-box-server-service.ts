@@ -55,6 +55,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
+import { createDefaultBackgroundTimers, type Timers } from '../../resilience/timers.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { HeldSendChain } from '../../websocket/held-send-chain.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
@@ -66,6 +67,7 @@ import {
     toWsQueueBoxServerCapturedSendInput,
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
+import { toWsQueueBoxServerJudgedDrops } from './scope/to-ws-queue-box-server-judged-drops.ts';
 import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
@@ -147,6 +149,8 @@ export namespace WsQueueBoxServerService {
          * repair, the local one a frozen row's awaited send.
          */
         readonly capturedRecipientEligibilityFilters?: WsCapturedRecipientEligibilityFilters;
+        /** Bounds each re-check's read; background timers by default. */
+        readonly timers?: Timers;
         readonly inboundStores?: ALInboundRuntimeStores;
         /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
@@ -217,6 +221,7 @@ export namespace WsQueueBoxServerService {
         readonly targetResolver: WsServerTargetResolver;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
         readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
+        readonly timers: Timers;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
@@ -298,7 +303,8 @@ export class WsQueueBoxServerService {
             admissionStore: this.admissionStore,
             readProducerProvenance: dependencies.readProducerProvenance,
             targetResolution: this.targetResolution,
-            capturedRecipientEligibilityFilters: dependencies.capturedRecipientEligibilityFilters
+            capturedRecipientEligibilityFilters: dependencies.capturedRecipientEligibilityFilters,
+            timers: dependencies.timers
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
         const receiptRouting = this.createReceiptRouting(dependencies);
@@ -459,9 +465,12 @@ export class WsQueueBoxServerService {
             },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
-            afterDequeueAdmission: async (message, entry, committedPolicy) => {
-                await this.clusterPublication.writeDequeuedRow(message, entry, committedPolicy);
-                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, committedPolicy);
+            afterDequeueAdmission: async (message, entry, admission) => {
+                await this.clusterPublication.writeDequeuedRow(message, entry, {
+                    committedPolicy: admission.committedPolicy,
+                    judgedDrops: toWsQueueBoxServerJudgedDrops(admission.committedPolicy, admission.dequeueAuthority)
+                });
+                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
@@ -1080,6 +1089,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         targetResolver: input.targetResolver ?? { requiresFrozenAudience: () => false },
         readProducerProvenance: input.readProducerProvenance,
         capturedRecipientEligibilityFilters: input.capturedRecipientEligibilityFilters,
+        timers: input.timers ?? createDefaultBackgroundTimers(),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
