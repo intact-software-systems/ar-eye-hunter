@@ -1,19 +1,46 @@
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
-import type { RallarWsFacade } from '../rallar-realtime-facade.ts';
+
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { Group, GroupEventType, GroupRef } from '@shared/api/group-types.ts';
+import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
+import { parseGroupStateDeltaEnvelope } from '../state-cache/group-state-delta-application.ts';
+import { readStateGroupSnapshot } from '../state-read/point-read.ts';
+import type { CreateBrowserRallarRoomsInput } from './browser-rallar-rooms.ts';
+import { captureRoomSession } from './room-session-fence.ts';
 
 interface WatchRoomRevisionInput<T> {
+    readonly room: GroupRef;
+    readonly services: Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'ws' | 'auth' | 'roomEvents'>;
     readonly signal?: AbortSignal;
-    readonly ws: Pick<RallarWsFacade, 'onLifecycle' | 'status'>;
-    onSessionEnd(stop: () => void): () => void;
-    subscribe(changed: (revision: number) => void): () => void;
-    read(signal: AbortSignal): Promise<T | null>;
+    readonly eventTypes?: readonly GroupEventType[];
+    project(group: Group): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
     regresses(previous: T, next: T): boolean;
+    meaningful?(previous: T, next: T): boolean;
+}
+
+export function explicitRoomRef(room: GroupRef): GroupRef {
+    assertValidRallarGroupRef(room, '$.roomRef');
+    assertValidRallarRouteId(room.workspaceId, '$.roomRef.workspaceId', 'Workspace ID');
+    return { ...room };
+}
+
+export async function readObservedRoom(roomRef: GroupRef, requireSession: CreateBrowserRallarRoomsInput['requireSession'], signal?: AbortSignal): Promise<Group> {
+    const room = explicitRoomRef(roomRef);
+    const fence = captureRoomSession(requireSession, signal);
+    fence.assertCurrent();
+    const result = await readStateGroupSnapshot(room.groupId, room, { authSession: fence.session, signal });
+    fence.assertCurrent();
+    if (result.source !== 'durable' || !isSameGroupRef(result.snapshot.group, room)) throw new Error('Room reads require the requested durable snapshot.');
+    return result.snapshot.group;
 }
 
 /** Socket events invalidate the durable read. A connected idle room generates no reads. */
 export function watchRoomRevision<T extends { readonly revision: number; }>(input: WatchRoomRevisionInput<T>): () => void {
     input.signal?.throwIfAborted();
+    const room = explicitRoomRef(input.room);
+    const { requireSession, ws, roomEvents, auth } = input.services;
+    const fence = captureRoomSession(requireSession, input.signal);
     const lifetime = new AbortController();
     const { signal } = lifetime;
     let request: AbortController | undefined;
@@ -21,7 +48,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
     let retries = 0;
     let announcedRevision = 0;
     let pageSuspended = false;
-    let socketLost = !input.ws.status().isOpen;
+    let socketLost = !ws.status().isOpen;
     let queued = false;
     let status: 'current' | 'stale' = 'stale';
     let observed: T | null = null;
@@ -57,7 +84,8 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
         request = attempt;
         let next: T | null;
         try {
-            next = await input.read(AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]));
+            fence.assertCurrent();
+            next = input.project(await readObservedRoom(room, requireSession, AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])));
             const previous = observed;
             if ((next?.revision ?? 0) < announcedRevision) {
                 throw new Error('Room read predates the server notification.');
@@ -111,25 +139,32 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
     document.addEventListener('visibilitychange', wake, options);
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
-    const unsubscribeRoom = input.subscribe((revision) => {
+    const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
+        if (message.transport !== 'ws') return;
+        const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
+        if (!delta) return;
+        const announced = input.project(delta.group);
+        if (announced && observed && input.meaningful && !input.meaningful(observed, announced)) return;
+        const revision = announced?.revision ?? 0;
         if (revision > Math.max(announcedRevision, observed?.revision ?? 0)) {
             announcedRevision = revision;
             publish('stale');
             wake();
         }
-    });
-    const unsubscribeSocket = input.ws.onLifecycle((event) => {
+    }, { roomRef: room, scope: room, eventTypes: input.eventTypes });
+    const unsubscribeSocket = ws.onLifecycle((event) => {
         socketLost = ['close', 'disconnected', 'error'].includes(event.kind);
         wake();
     }, { emitCurrent: false });
-    const unsubscribeAuth = input.onSessionEnd(() => {
+    const unsubscribeAuth = auth.onChange(({ session }) => {
+        if (session?.sessionId === fence.session.sessionId && session?.clientId === fence.session.clientId) return;
         try {
             publish('stale', null);
         }
         finally {
             dispose();
         }
-    });
+    }, { emitCurrent: false });
     function dispose(): void {
         lifetime.abort();
         suspend();

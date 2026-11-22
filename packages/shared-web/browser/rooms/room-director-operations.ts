@@ -3,13 +3,10 @@ import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-st
 import { readRallarGroupDirectorAppointment, type RallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import { decodeRoomDirectorSuccessionCommand, readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/group-director-succession-record.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
-import { parseGroupStateDeltaEnvelope } from '../state-cache/group-state-delta-application.ts';
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from './browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
 import { captureRoomSession } from './room-session-fence.ts';
-import { watchRoomRevision } from './watch-room-revision.ts';
+import { explicitRoomRef, readObservedRoom, watchRoomRevision } from './watch-room-revision.ts';
 
 export namespace RoomDirectorOperations {
     export interface View {
@@ -29,11 +26,6 @@ export interface RoomDirectorOperations {
     readDirector(room: GroupRef, options?: { readonly signal?: AbortSignal }): Promise<RoomDirectorOperations.View>;
     watchDirector(room: GroupRef, listener: (observation: RoomDirectorOperations.Observation) => void,
         options?: { readonly signal?: AbortSignal }): () => void;
-}
-
-function validateRoom(room: GroupRef): void {
-    assertValidRallarGroupRef(room, '$.roomRef');
-    assertValidRallarRouteId(room.workspaceId, '$.roomRef.workspaceId', 'Workspace ID');
 }
 
 function directorView(group: GroupSnapshot['group']): RoomDirectorOperations.View {
@@ -57,20 +49,15 @@ function acknowledges(view: RoomDirectorOperations.View, command: RoomDirectorSu
         appointment.sessionId === sessionId && succession.loss === null;
 }
 
-export function createRoomDirectorOperations({ requireSession, roomEvents, ws, auth }:
+export function createRoomDirectorOperations(services:
     Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'roomEvents' | 'ws' | 'auth'>): RoomDirectorOperations {
-    async function readDirector(room: GroupRef, options: { readonly signal?: AbortSignal } = {}) {
-        validateRoom(room);
-        const fence = captureRoomSession(requireSession, options.signal);
-        const result = await readStateGroupSnapshot(room.groupId, room, { authSession: fence.session, signal: options.signal });
-        fence.assertCurrent();
-        if (result.source !== 'durable' || !isSameGroupRef(result.snapshot.group, room)) throw new Error('Director observations require the requested durable room.');
-        return directorView(result.snapshot.group);
-    }
+    const { requireSession } = services;
     return {
-        readDirector,
-        async changeDirector(room, command, requestId, options = {}) {
-            validateRoom(room);
+        async readDirector(room, { signal } = {}) {
+            return directorView(await readObservedRoom(room, requireSession, signal));
+        },
+        async changeDirector(roomRef, command, requestId, options = {}) {
+            const room = explicitRoomRef(roomRef);
             const succession = decodeRoomDirectorSuccessionCommand(command);
             const fence = captureRoomSession(requireSession, options.signal);
             fence.assertCurrent();
@@ -86,30 +73,10 @@ export function createRoomDirectorOperations({ requireSession, roomEvents, ws, a
             return view;
         },
         watchDirector(room, listener, options = {}) {
-            validateRoom(room);
-            const fence = captureRoomSession(requireSession, options.signal);
-            let observed: RoomDirectorOperations.View | null = null;
-            return watchRoomRevision<RoomDirectorOperations.View>({
-                signal: options.signal, ws, listener,
+            return watchRoomRevision({ room, services, signal: options.signal, listener, project: directorView,
+                meaningful: (previous, next) => previous.appointment?.epoch !== next.appointment?.epoch || previous.succession?.revision !== next.succession?.revision,
                 regresses: (previous, next) => (next.appointment?.epoch ?? 0) < (previous.appointment?.epoch ?? 0) ||
-                    (next.succession?.revision ?? 0) < (previous.succession?.revision ?? 0),
-                onSessionEnd: stop => auth.onChange(({ session }) => {
-                    if (session?.sessionId !== fence.session.sessionId || session?.clientId !== fence.session.clientId) stop();
-                }, { emitCurrent: false }),
-                subscribe: changed => roomEvents.onEvent((_event, message) => {
-                    if (message.transport !== 'ws') return;
-                    const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
-                    if (!delta) return;
-                    const announced = directorView(delta.group);
-                    if (observed?.appointment?.epoch !== announced.appointment?.epoch ||
-                        observed?.succession?.revision !== announced.succession?.revision) changed(announced.revision);
-                }, { roomRef: room, scope: room }),
-                read: async signal => {
-                    fence.assertCurrent();
-                    observed = await readDirector(room, { signal });
-                    return observed;
-                }
-            });
+                    (next.succession?.revision ?? 0) < (previous.succession?.revision ?? 0) });
         }
     };
 }
