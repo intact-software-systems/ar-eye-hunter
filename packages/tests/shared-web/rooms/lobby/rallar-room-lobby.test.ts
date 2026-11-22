@@ -1,3 +1,4 @@
+import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 import { RallarRoomLobby } from '@shared-web/browser/rooms/lobby/rallar-room-lobby.ts';
 import type { RoomLobby, RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
@@ -117,19 +118,19 @@ it('waits from another room and receives an exclusive offer without entering', a
 it('reads a public registration revision using the calibrated uncertainty window', () => {
     const registration = { revision: 2, atEpochMs: 500 };
     const metadata = { rallarRoomLobbyRegistration: registration };
-    const clock = { compareDeadline: vi.fn<() => 'before' | 'overlaps' | 'at-or-after' | 'unavailable'>() };
     const authority = { maxAuthorityOffsetMs: 12 };
     for (const [comparison, status] of [
         ['before', 'open'], ['overlaps', 'uncertain'], ['at-or-after', 'closed'], ['unavailable', 'unavailable']
     ] as const) {
-        clock.compareDeadline.mockReturnValue(comparison);
+        const clock: Pick<RallarConnectionOperations, 'compareDeadline'> = {
+            compareDeadline: (deadline, bound) => deadline === registration.atEpochMs && bound?.maxAuthorityOffsetMs === authority.maxAuthorityOffsetMs
+                ? comparison : 'unavailable'
+        };
         expect(RallarRoomLobby.registration(metadata, clock, authority)).toEqual({ ...registration, status });
-        expect(clock.compareDeadline).toHaveBeenLastCalledWith(500, authority);
     }
-    clock.compareDeadline.mockClear();
-    expect(RallarRoomLobby.registration({}, clock)).toBeNull();
-    expect(RallarRoomLobby.registration({ rallarRoomLobbyRegistration: { revision: 3, atEpochMs: null } }, clock)?.status).toBe('open');
-    expect(clock.compareDeadline).not.toHaveBeenCalled();
+    const uncalibrated = { compareDeadline: () => 'unavailable' as const };
+    expect(RallarRoomLobby.registration({}, uncalibrated)).toBeNull();
+    expect(RallarRoomLobby.registration({ rallarRoomLobbyRegistration: { revision: 3, atEpochMs: null } }, uncalibrated)?.status).toBe('open');
 });
 
 it('sends a revision-bound cutoff update and validates the returned room snapshot', async () => {
