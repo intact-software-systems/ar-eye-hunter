@@ -49,6 +49,15 @@ export function computeALGapNackRelayHops(liveSessionCount: number): number {
     return Math.min(AL_GAP_NACK_RELAY_HOP_LIMIT, Math.max(0, liveSessionCount - 1));
 }
 
+/**
+ * The relay hops a relay's forward of a gap NACK carries: one fewer than it received, and never more than one fewer than
+ * its own grant for the message's room, so a child that claims more than its room allows is bounded at its first relay.
+ * Below zero, the relay forwards nothing.
+ */
+export function computeALRelayedGapNackHops(receivedHops: number, relayGrant: number): number {
+    return Math.min(receivedHops, relayGrant) - 1;
+}
+
 /** An arrival's own gap report carries 1, so a receiver's first renewal of it carries 2. */
 export const AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER = 2;
 

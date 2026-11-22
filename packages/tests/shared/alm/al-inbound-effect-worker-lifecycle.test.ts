@@ -105,6 +105,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -142,6 +143,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -198,6 +200,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -256,6 +259,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -319,6 +323,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -396,6 +401,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -429,6 +435,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dependencies = {
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             ...resources,
             carrier: 'ws' as const,
@@ -530,6 +537,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -564,6 +572,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -607,6 +616,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -694,6 +704,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -796,6 +807,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -908,6 +920,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -995,6 +1008,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -1038,6 +1052,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -1095,6 +1110,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -1235,6 +1251,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -1333,6 +1350,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dependencies = {
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             ...resources,
             carrier: 'ws' as const,

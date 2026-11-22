@@ -6,7 +6,11 @@ import type {
     ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import {
+    AL_GAP_NACK_RELAY_HOP_LIMIT,
+    AL_MESSAGE_RESOURCE_LIMITS,
+    computeALRelayedGapNackHops
+} from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
@@ -55,6 +59,8 @@ export interface ALInboundGapNackRoute {
     readonly isLayoutChild: boolean;
     /** This relay's upstream peer toward the origin in that layout, never the sender; absent when none resolves. */
     readonly upstreamPeerId: string | undefined;
+    /** The relays this relay grants a gap NACK about the message, by its room's live sessions, as a leaf grants it. */
+    readonly relayHops: number;
 }
 
 export interface ALInboundNackAdmissionCandidate {
@@ -104,7 +110,7 @@ export function computeALInboundNackAdmission(
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            toALInboundRelayedNackControls(read.nack),
+            toALInboundRelayedNackControls(read.nack, read.gapRoute?.relayHops ?? AL_GAP_NACK_RELAY_HOP_LIMIT),
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },
@@ -119,25 +125,28 @@ export function computeALInboundNackAdmission(
 
 /**
  * A relay passes a child's gap NACK to its current upstream peer in the message's room, and to the parent it knows of
- * the message only when none resolves: its row's, the peer the message arrived from, or, holding nothing of the message
- * and so reading no room for it, the upstream peer its accepted layouts name (6d). Relays whose accepted layouts disagree
- * can pass one NACK round a cycle: each forward spends one of its relay hops, so the cycle ends once the leaf's grant
- * is spent.
+ * the message only when none resolves: its row's, or the peer the message arrived from; one holding nothing of the
+ * message passes it to the upstream peer its accepted layouts name (6d). Relays whose accepted layouts disagree can pass
+ * one NACK round a cycle: each forward spends one of its relay hops and carries no more than its relay grants, so the
+ * cycle ends within the room's size whatever hop count the child claimed.
  */
 function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInboundGapNackRoute | undefined): string {
     return route?.upstreamPeerId ?? knownParentPeerId;
 }
 
 /**
- * The child's NACK as this relay forwards it: a gap NACK one relay hop lower, and none with no hop left; any other NACK
- * as it came.
+ * The child's NACK as this relay forwards it: a gap NACK one relay hop lower, clamped to this relay's own grant
+ * `relayGrant` (the wire ceiling where it reads no room for the message), and none with no hop left; any other NACK as it
+ * came.
  */
-function toALInboundRelayedNackControls(nack: ALNackPayload): readonly ALInboundUpwardControl[] {
-    if (nack.relayHopsLeft === 0) {
-        return [];
+function toALInboundRelayedNackControls(nack: ALNackPayload, relayGrant: number): readonly ALInboundUpwardControl[] {
+    if (nack.relayHopsLeft === undefined) {
+        return [{ kind: 'forwarded', control: { type: 'nack', payload: nack } }];
     }
-    const payload = nack.relayHopsLeft === undefined ? nack : { ...nack, relayHopsLeft: nack.relayHopsLeft - 1 };
-    return [{ kind: 'forwarded', control: { type: 'nack', payload } }];
+    const relayHopsLeft = computeALRelayedGapNackHops(nack.relayHopsLeft, relayGrant);
+    return relayHopsLeft < 0
+        ? []
+        : [{ kind: 'forwarded', control: { type: 'nack', payload: { ...nack, relayHopsLeft } } }];
 }
 
 /** A child's gap NACK about a stored message that asked for no receipt, for which the relay keeps no row (6c). */
@@ -173,7 +182,8 @@ export function computeALInboundUnreceiptedGapNackAdmission(
             toPeerId: resolveALInboundGapNackTarget(read.arrivalPeerId, read.route),
             expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
             upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
-        }
+        },
+        relayHops: read.route.relayHops
     }, retention);
 }
 
@@ -183,6 +193,8 @@ export interface ALInboundUnheldGapNackAdmissionRead {
     readonly nack: ALNackPayload & Readonly<{ reason: 'gap'; }>;
     /** This relay's upstream peer toward the NACK's origin in its accepted layout, which names the sender its child. */
     readonly parent: ALInboundMessageRuntime.PeerSource;
+    /** The relays this relay grants the NACK, by the live sessions of that layout's room. */
+    readonly relayHops: number;
     readonly nowMs: number;
     readonly controlMsgId: string;
     readonly traceId: string;
@@ -210,10 +222,11 @@ export function computeALInboundUnheldGapNackAdmission(
         read: { ...read, owner },
         observedMessageOwner: undefined,
         upward: {
-            toPeerId: resolveALInboundGapNackTarget(parent.peerId, undefined),
+            toPeerId: parent.peerId,
             expireAtTimestamp: undefined,
             upwardAudiencePeerIds: undefined
-        }
+        },
+        relayHops: read.relayHops
     }, retention);
 }
 
@@ -226,13 +239,15 @@ interface ToALInboundRowlessGapNackCandidateInput {
     readonly observedMessageOwner: ALInboundMessageOwner | undefined;
     /** The parent the NACK goes to, how long it lives, and whom the origin counts. */
     readonly upward: ALInboundUpwardControlContext['pending'];
+    /** The relays this relay grants the NACK, which its forward never exceeds. */
+    readonly relayHops: number;
 }
 
 function toALInboundRowlessGapNackCandidate(
     input: ToALInboundRowlessGapNackCandidateInput,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const { observedMessageOwner, upward } = input;
+    const { observedMessageOwner, upward, relayHops } = input;
     const { namespace, nack, owner, nowMs, controlMsgId, traceId } = input.read;
     // The commit observes the message's control rows absent: a row-less forward writes none.
     return {
@@ -263,7 +278,7 @@ function toALInboundRowlessGapNackCandidate(
                 controlMsgId,
                 traceId
             },
-            toALInboundRelayedNackControls(nack),
+            toALInboundRelayedNackControls(nack, relayHops),
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },

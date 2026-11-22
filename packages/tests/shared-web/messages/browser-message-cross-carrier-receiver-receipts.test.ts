@@ -551,6 +551,7 @@ async function createReceiptLoopReceiver(
     const rtc = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         // The room key every fixture session registers, so the origin verifies what this recipient signs.
         receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: ROOM_PUBLICATION_CRYPTO }) },

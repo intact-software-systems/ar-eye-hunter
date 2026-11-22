@@ -326,6 +326,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

@@ -1010,6 +1010,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
     return {
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         ...createDefaultALInboundRuntimeResources({

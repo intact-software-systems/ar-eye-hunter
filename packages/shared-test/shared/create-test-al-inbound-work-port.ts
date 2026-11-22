@@ -1,4 +1,5 @@
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AL_INBOUND_WORK_LEASE_MS, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
@@ -43,6 +44,7 @@ export function createTestALInboundControlAdmission(
         diagnostics: undefined,
         planRetriedCopyNextHops: undefined,
         readGapNackParent: undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         readUpstreamPeerId: () => undefined,
         isLayoutChildPeer: () => false
     });

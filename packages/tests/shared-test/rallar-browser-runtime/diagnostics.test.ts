@@ -853,6 +853,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     const inbound = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

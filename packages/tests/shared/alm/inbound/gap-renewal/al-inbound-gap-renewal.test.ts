@@ -379,7 +379,8 @@ describe('a receiver whose ordered track has a gap', () => {
             receiptProofs: { kind: 'carrier-authenticated' },
             diagnostics: undefined,
             readUpstreamPeerId: () => undefined,
-            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false
         });
         await renewal.renew(timer, timer.payload);
         const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
@@ -651,6 +652,7 @@ function createDirectRenewal(fixture: InboundTestRuntime, input: DirectRenewalIn
         receiptProofs: { kind: 'carrier-authenticated' },
         diagnostics: undefined,
         readUpstreamPeerId: input.readUpstreamPeerId,
-        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false
     });
 }

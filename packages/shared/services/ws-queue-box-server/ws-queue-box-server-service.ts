@@ -546,6 +546,7 @@ export class WsQueueBoxServerService {
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             diagnostics: dependencies.inboundDiagnostics
         });

@@ -86,6 +86,7 @@ export interface ALInboundControlAdmissionDependencies {
     /** `undefined` on a lane that relays no gap NACK about a message it holds nothing of (6d). */
     readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
     readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    readonly readGapNackRelayHops: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
     readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 }
 
@@ -163,6 +164,7 @@ export class ALInboundControlAdmission {
     private readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
     private readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
     private readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    private readonly readGapNackRelayHops: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
     private readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
@@ -176,6 +178,7 @@ export class ALInboundControlAdmission {
         this.planRetriedCopyNextHops = dependencies.planRetriedCopyNextHops;
         this.readGapNackParent = dependencies.readGapNackParent;
         this.readUpstreamPeerId = dependencies.readUpstreamPeerId;
+        this.readGapNackRelayHops = dependencies.readGapNackRelayHops;
         this.isLayoutChildPeer = dependencies.isLayoutChildPeer;
     }
 
@@ -372,7 +375,8 @@ export class ALInboundControlAdmission {
         return parent === undefined ? undefined : {
             namespace: this.admissionStore.namespace,
             nack,
-            parent,
+            parent: parent.source,
+            relayHops: parent.relayHops,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -398,7 +402,8 @@ export class ALInboundControlAdmission {
         const upstreamPeerId = this.readUpstreamPeerId(stored.msg);
         return {
             isLayoutChild: stored.isLayoutChild,
-            upstreamPeerId: upstreamPeerId === nack.fromPeerId ? undefined : upstreamPeerId
+            upstreamPeerId: upstreamPeerId === nack.fromPeerId ? undefined : upstreamPeerId,
+            relayHops: this.readGapNackRelayHops(stored.msg)
         };
     }
 

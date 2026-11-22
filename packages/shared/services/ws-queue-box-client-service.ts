@@ -293,6 +293,7 @@ export class WsQueueBoxClientService {
                 onResyncRequired: this.dependencies.onResyncRequired,
                 readUpstreamPeerId: () => undefined,
                 readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+                isRoutedPeerReady: () => false,
                 isLayoutChildPeer: () => false,
                 diagnostics: this.dependencies.inboundDiagnostics
             }

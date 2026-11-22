@@ -411,10 +411,11 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         await deliverEach(renewal, gap.relay, 'c');
         const relayed = readGapNackMessage(await readRelayUpwardControls(gap));
 
-        // The chain's three sessions granted the report 2; presence that names nobody bounds nothing.
+        // The chain's three sessions granted the report 2; presence that names nobody bounds nothing at the leaf, and the
+        // relay, whose room still names three sessions, forwards no more than one fewer than its own grant of 2.
         expect(readGapNack(report).payload.relayHopsLeft).toBe(2);
         expect(readGapNack(renewal).payload).toMatchObject({ gapRequestNumber: 2, relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT });
-        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', gapRequestNumber: 2, relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT - 1 });
+        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', gapRequestNumber: 2, relayHopsLeft: 1 });
     });
 
     it('repairs a sequence the relay forwarded and its child lost: the relay passes the parent\'s repair copy down again', async () => {

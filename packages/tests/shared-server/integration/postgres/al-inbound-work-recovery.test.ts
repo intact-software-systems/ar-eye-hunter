@@ -264,6 +264,7 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

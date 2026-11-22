@@ -97,29 +97,36 @@ export function isRtcRoutedPeerReady(observation: RtcOutboundObservation, peerId
     return edges.previous?.neighborPeerIds.includes(peerId) === true;
 }
 
+/** The parent a relay holding nothing of a message forwards a child's gap NACK to, and the relays it grants it. */
+export interface RtcRelayParent {
+    readonly peerId: string;
+    readonly relayHops: number;
+}
+
 /**
  * The parent a relay forwards a child's NACK to when it holds nothing of the message: its one connected upstream peer
- * toward `originPeerId` over the accepted layouts in which `childPeerId` is its neighbour below it; none when no layout,
- * or more than one parent, answers.
+ * toward `originPeerId` over the accepted layouts in which `childPeerId` is its child; none when no layout, or more than
+ * one parent, answers. It grants the NACK what a leaf of the largest such room grants, read from that room's sessions.
  */
-export function resolveRtcRelayParentPeerId(
+export function resolveRtcRelayParent(
     routes: RtcRelayRoutes,
     originPeerId: string,
     childPeerId: string
-): string | undefined {
-    const parentPeerIds = new Set(
-        routes.acceptedOverlays.readAllValues().flatMap((overlay) => {
-            const room = readRtcGroupSnapshotByRef(routes.rooms, overlay.groupRef);
-            const adjacency = room !== undefined && isAcceptedRoomLayoutOverlay(overlay, room.group)
-                ? toALOverlayAdjacency(routes.selfPeerId, overlay.nextHopsBySessionId)
-                : undefined;
-            const parentPeerId = resolveALUpstreamPeerId(adjacency, originPeerId, routes.connectedPeerIds);
-            const isChild = parentPeerId !== childPeerId &&
-                adjacency?.nextHopsBySessionId[routes.selfPeerId]?.includes(childPeerId) === true;
-            return parentPeerId !== undefined && isChild ? [parentPeerId] : [];
-        })
-    );
-    return parentPeerIds.size === 1 ? [...parentPeerIds][0] : undefined;
+): RtcRelayParent | undefined {
+    const parents = routes.acceptedOverlays.readAllValues().flatMap((overlay) => {
+        const room = readRtcGroupSnapshotByRef(routes.rooms, overlay.groupRef);
+        const adjacency = room !== undefined && isAcceptedRoomLayoutOverlay(overlay, room.group)
+            ? toALOverlayAdjacency(routes.selfPeerId, overlay.nextHopsBySessionId)
+            : undefined;
+        const peerId = resolveALUpstreamPeerId(adjacency, originPeerId, routes.connectedPeerIds);
+        return peerId !== undefined && isRtcLayoutChildPeer(adjacency, originPeerId, childPeerId)
+            ? [{ peerId, relayHops: resolveRtcGapNackRelayHops(room, routes.selfPeerId, originPeerId) }]
+            : [];
+    });
+    const parentPeerIds = new Set(parents.map((parent) => parent.peerId));
+    return parentPeerIds.size === 1
+        ? { peerId: parents[0].peerId, relayHops: Math.max(...parents.map((parent) => parent.relayHops)) }
+        : undefined;
 }
 
 /**
@@ -163,8 +170,10 @@ export function createRtcInboundRoutes(
                 selfPeerId,
                 connectedPeerIds: lane.connectionService.readyPeerIdsForLane()
             };
-            const parentPeerId = resolveRtcRelayParentPeerId(routes, nack.originPeerId, nack.fromPeerId);
-            return parentPeerId === undefined ? undefined : { kind: 'rtc-peer', peerId: parentPeerId };
+            const parent = resolveRtcRelayParent(routes, nack.originPeerId, nack.fromPeerId);
+            return parent === undefined
+                ? undefined
+                : { source: { kind: 'rtc-peer', peerId: parent.peerId }, relayHops: parent.relayHops };
         }
     };
 }

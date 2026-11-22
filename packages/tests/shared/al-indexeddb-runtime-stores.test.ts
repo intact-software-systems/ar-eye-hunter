@@ -227,6 +227,7 @@ describe('IndexedDB AL runtime stores', () => {
         const runtime = createDefaultALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -845,6 +846,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInb
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

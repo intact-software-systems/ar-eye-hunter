@@ -605,6 +605,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
     return {
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         admissionStore: stores.admissionStore,

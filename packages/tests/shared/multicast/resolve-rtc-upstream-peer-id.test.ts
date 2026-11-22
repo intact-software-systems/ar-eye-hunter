@@ -11,7 +11,7 @@ import {
     createRtcInboundRoutes,
     isRtcLayoutChildPeer,
     isRtcRoutedPeerReady,
-    resolveRtcRelayParentPeerId
+    resolveRtcRelayParent
 } from '@shared/multicast/resolve-rtc-upstream-peer-id.ts';
 
 import { toAcceptedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
@@ -54,22 +54,26 @@ describe('the parent a relay forwards a child\'s gap NACK to when it holds nothi
         { name: 'none for its own parent', origin: 'a', child: 'a', parent: undefined },
         { name: 'none for an origin the layout does not place', origin: 'g', child: 'c', parent: undefined }
     ])('$name', ({ origin, child, parent }) => {
-        expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), origin, child)).toBe(parent);
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), origin, child)?.peerId).toBe(parent);
     });
 
     it('one parent for one layout held under two keys', () => {
-        expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room', BELOW_B], ['scoped-room', BELOW_B]], ['a', 'c']), 'a', 'c'))
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B], ['scoped-room', BELOW_B]], ['a', 'c']), 'a', 'c')?.peerId)
             .toBe('a');
     });
 
     it('none when two rooms\' layouts name different parents', () => {
-        expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c')).toBe('x');
-        expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room', BELOW_B], ['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c'))
+        expect(resolveRtcRelayParent(toRelayRoutes([['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c')?.peerId).toBe('x');
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B], ['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c'))
             .toBeUndefined();
     });
 
     it('none when the parent is not connected', () => {
-        expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room', BELOW_B]], ['c']), 'a', 'c')).toBeUndefined();
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['c']), 'a', 'c')).toBeUndefined();
+    });
+
+    it('grants the NACK one relay fewer than the live sessions of the room whose layout names its sender: 5 in a room of 6', () => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), 'a', 'c')).toEqual({ peerId: 'a', relayHops: 5 });
     });
 });
 
@@ -99,7 +103,7 @@ describe('whether a peer is this relay\'s child in the accepted layout of the me
         );
         const nack = { originPeerId: 'a', fromPeerId: 'c' } as const;
 
-        expect(routes.readGapNackParent?.({ ...toTestNack(), ...nack })).toEqual({ kind: 'rtc-peer', peerId: 'x' });
+        expect(routes.readGapNackParent?.({ ...toTestNack(), ...nack })).toEqual({ source: { kind: 'rtc-peer', peerId: 'x' }, relayHops: 5 });
         expect(routes.isLayoutChildPeer?.(toRoomMessage(), 'c')).toBe(false);
     });
 });

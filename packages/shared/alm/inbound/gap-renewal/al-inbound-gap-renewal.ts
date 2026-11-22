@@ -45,7 +45,7 @@ export namespace ALInboundGapRenewal {
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
         readonly readGapNackRelayHops: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
-        readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
+        readonly isRoutedPeerReady: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
     }
 
     export interface Result {
@@ -120,7 +120,7 @@ export class ALInboundGapRenewal {
             return payload.toPeerId;
         }
         const upstreamPeerId = readUpstreamPeerId(revealing);
-        if (upstreamPeerId !== revealing.id.senderId && isRoutedPeerReady?.(revealing, payload.toPeerId) === true) {
+        if (upstreamPeerId !== revealing.id.senderId && isRoutedPeerReady(revealing, payload.toPeerId)) {
             return payload.toPeerId;
         }
         return upstreamPeerId ?? payload.toPeerId;

@@ -48,7 +48,10 @@ const ROW: ALPendingAckSnapshot = {
 };
 
 /** The relay's room: the sender is no layout child, and the relay's current upstream peer is `new-parent`. */
-const NEW_UPSTREAM: ALInboundGapNackRoute = { isLayoutChild: false, upstreamPeerId: 'new-parent' };
+const NEW_UPSTREAM: ALInboundGapNackRoute = { isLayoutChild: false, upstreamPeerId: 'new-parent', relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT };
+
+/** What a relay grants a gap NACK in a room of three sessions: one fewer. */
+const THREE_SESSION_GRANT = 2;
 
 const NO_RELAY_HOP_LEFT = { code: 'unauthorized', message: 'Inbound gap NACK has no relay hop left' } as const;
 
@@ -196,6 +199,16 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         expect(toUpwardControls(lastHop)[0]?.payload).toMatchObject({ relayHopsLeft: 0 });
         expect(validateALInboundNackAdmission(spent)).toEqual([NO_RELAY_HOP_LEFT]);
         expect(validateALInboundNackAdmission(ownReport)).toEqual([SPEAKS_FOR_RELAY]);
+    });
+
+    it('clamps a hostile child\'s 255 relay hops to its own grant in a room of three sessions', () => {
+        const route = { ...NEW_UPSTREAM, relayHops: THREE_SESSION_GRANT };
+        const candidate = computeALInboundNackAdmission(
+            { ...computeArrival({ reason: 'gap', relayHopsLeft: 255 }).read, gapRoute: route },
+            RETENTION
+        );
+
+        expect(toUpwardControls(candidate)[0]?.payload).toMatchObject({ toPeerId: 'new-parent', relayHopsLeft: 1 });
     });
 
     it('refuses a gap NACK for a recipient whose confirmation the relay already forwarded', () => {
@@ -361,7 +374,7 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
             msg,
             owner: { msgId: 'subject', senderId: 'origin', source: { kind: 'rtc-peer', peerId: 'parent' }, supersedenceKey: null, deliveredLocally: false },
             arrivalPeerId: 'parent',
-            route: { isLayoutChild: false, upstreamPeerId: undefined },
+            route: { isLayoutChild: false, upstreamPeerId: undefined, relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT },
             childPeerIds: ['child'],
             nowMs: NOW_MS,
             controlMsgId: 'forwarded',
@@ -407,6 +420,16 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
 
         expect(validateALInboundUnreceiptedGapNackAdmission(spent)).toEqual([NO_RELAY_HOP_LEFT]);
         expect(validateALInboundUnreceiptedGapNackAdmission(ownReport)).toEqual([SPEAKS_FOR_RELAY]);
+    });
+
+    it('clamps a hostile child\'s 255 relay hops to its own grant in a room of three sessions', () => {
+        const read = readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child', relayHopsLeft: 255 });
+        const candidate = computeALInboundUnreceiptedGapNackAdmission(
+            { ...read, route: { ...read.route, relayHops: THREE_SESSION_GRANT } },
+            RETENTION
+        );
+
+        expect(toUpwardControls(candidate)[0]?.payload).toMatchObject({ toPeerId: 'parent', relayHopsLeft: 1 });
     });
 
     it('forwards a child\'s gap NACK for a recipient of the frozen audience below it', () => {
@@ -467,6 +490,7 @@ describe('a child\'s gap NACK at a relay that holds nothing of the message (6d)'
         namespace: 'relay',
         nack: { ...toChildNack({ reason: 'gap', logicalRecipientPeerId: 'child', ...arrival }), reason: 'gap' as const },
         parent: { kind: 'rtc-peer' as const, peerId: 'parent' },
+        relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT,
         nowMs: NOW_MS,
         controlMsgId: 'forwarded',
         traceId: 'trace-relayed-nack'
@@ -489,6 +513,13 @@ describe('a child\'s gap NACK at a relay that holds nothing of the message (6d)'
         expect(validateALInboundUnheldGapNackAdmission(read)).toEqual([]);
         expect(toUpwardControls(computeALInboundUnheldGapNackAdmission(read, RETENTION)))
             .toEqual([{ type: 'nack', payload: toRelayedNack(read.nack, 'parent') }]);
+    });
+
+    it('clamps a hostile child\'s 255 relay hops to the grant of the room its layout names it in, of three sessions', () => {
+        const read = { ...unheldRead({ relayHopsLeft: 255 }), relayHops: THREE_SESSION_GRANT };
+
+        expect(toUpwardControls(computeALInboundUnheldGapNackAdmission(read, RETENTION))[0]?.payload)
+            .toMatchObject({ toPeerId: 'parent', relayHopsLeft: 1 });
     });
 
     it('refuses a NACK without its ordering hints, one with no relay hop left, and one that speaks for this relay', () => {

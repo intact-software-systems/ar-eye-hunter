@@ -249,7 +249,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         readUpstreamPeerId: input.readUpstreamPeerId ?? (() => undefined),
         readGapNackRelayHops: input.readGapNackRelayHops ?? (() => AL_GAP_NACK_RELAY_HOP_LIMIT),
         isLayoutChildPeer: () => false,
-        isRoutedPeerReady: input.isRoutedPeerReady,
+        isRoutedPeerReady: input.isRoutedPeerReady ?? (() => false),
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,
         dispatchInboxEntry: async (entry) => {

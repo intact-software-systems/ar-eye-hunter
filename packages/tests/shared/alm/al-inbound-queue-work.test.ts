@@ -63,6 +63,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -126,6 +127,7 @@ it('retries durable local delivery after restart with a single admission work ow
         new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -195,6 +197,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
             new ALInboundMessageRuntime({
                 readUpstreamPeerId: () => undefined,
                 readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+                isRoutedPeerReady: () => false,
                 isLayoutChildPeer: () => false,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
@@ -275,6 +278,7 @@ it.each([
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -334,6 +338,7 @@ it('retains predecessor completion through the longest admitted deadline across 
         new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -403,6 +408,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -477,6 +483,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
         readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -556,6 +563,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -655,6 +663,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
             readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
