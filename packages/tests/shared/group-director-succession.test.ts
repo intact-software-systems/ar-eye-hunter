@@ -101,6 +101,6 @@ it('revokes a demoted director immediately and clears a departed deputy’s excl
     expect(recoverRoomDirector(revoked, 'first', 'first', 49)).toBe(revoked);
     expect(recoverRoomDirector(revoked, 'first', 'first', 50)).toBe(revoked);
     const deputy = configured.members.find(member => member.principalId === 'deputy')!;
-    const cleared = observeRoomDirectorMembership(revoked, { ...deputy, status: 'removed', removed: deputy.updated }, 51);
+    const cleared = observeRoomDirectorMembership(revoked, { ...deputy, status: 'removed', joined: null, left: null, banned: null, removed: deputy.updated }, 51);
     expect(readRoomDirectorSuccession(cleared)).toMatchObject({ deputyPrincipalId: null, loss: { declined: true } });
 });
