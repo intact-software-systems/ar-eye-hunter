@@ -681,7 +681,7 @@ number; once nothing is missing, the track is gone or the row has expired it end
 request past 4. The last timer ends a bounded hold instead of asking a fourth time, on a track the entry rule below
 opened at `0` that has delivered nothing ("Entry, omission and witness"). Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
-with the message (a held start range's live until the schedule's last timer, "Entry, omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
+with the message (a held start range's live for the track's ordering TTL, "Entry, omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
 removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
 NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
 each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
@@ -767,8 +767,8 @@ a prior above `0`, ask a range the RTC origin cannot serve, and enter only when 
 **Bounded hold.** A track opened at `0` that has delivered nothing (its position still `0`) waits for its start at
 most until its renewal schedule ends. The admission that opens it arms the start range's timer (`1` to `p`,
 [`isALOrderingHeldStartRange`](./gap-renewal/compute-al-ordering-held-entry.ts)) to live at least as long as the
-schedule needs to reach its last timer at the most a stretch may be (`computeALGapRenewalScheduleMs`, 10.5 s), whatever
-the copy's own lifetime; every other gap timer still expires with its message. When that last timer comes due with
+track's ordering snapshot does from the reveal (`orderingTrackTtlMs`), whatever the copy's own lifetime, so the last
+timer runs however late the engine claims it; every other gap timer still expires with its message. When that last timer comes due with
 the range still missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth
 time and ends the hold instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the lane's stretch (1
 to 1.5) after the gap was revealed, so 7 to 10.5 s. One rule,
