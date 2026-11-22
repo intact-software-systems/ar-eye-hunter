@@ -154,6 +154,12 @@ const RELAY_NAMESPACE = 'relay-gap-repair';
 
 const CHAIN_STEP_MS = 250;
 
+/** Real event-loop turns in a row that change nothing before a drain calls the chain quiet. */
+const QUIET_TURNS = 5;
+
+/** The most real event-loop turns one drain runs: as many as `drainUntil` gives a condition. */
+const QUIET_MAX_TURNS = 200;
+
 describe('a gap below a publish-only RTC relay on a receipted ordered granted track (S4ii-R4)', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -298,13 +304,13 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         await acceptAtOrigin(gap, firstRequest);
 
         // The origin's repair copy and its receipt retry of seq 3 cross the relay; every forward of seq 2 to `c` is lost.
-        await advanceChainBy(2_000);
+        await advanceChainBy(gap, 2_000);
         await deliverEach(gap.chain.origin.channels.r!.sent.slice(links.originToRelay), gap.relay, 'a');
         await drainUntil(() => false, 20);
         const forwardedToLeaf = (await gap.relay.readSent('c')).slice(links.relayToLeaf);
         expect(forwardedToLeaf.map((copy) => copy.ordering?.seq)).toEqual(expect.arrayContaining([2, 3]));
         await deliverEach(forwardedToLeaf.filter((copy) => copy.ordering?.seq !== 2), gap.leaf, 'r');
-        await advanceChainBy(2_600);
+        await advanceChainBy(gap, 2_600);
         await deliverEach((await gap.leaf.readSent('r')).slice(links.leafToRelay), gap.relay, 'c');
         await drainUntil(() => false, 20);
         const upward = (await gap.relay.readSent('a')).slice(links.relayToOrigin);
@@ -529,7 +535,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         // The leaf's edge to `r` stays open and its replaced layout is still forwarded over: a direct link to the
         // origin still wins, since the origin, now the leaf's own neighbour, sends `r` no copy for it.
         promoteDirectLeafLayout(gap);
-        await advanceChainBy(2_000);
+        await advanceChainBy(gap, 2_000);
         const toNewParent = await gap.leaf.readSent('a');
         const renewal = toNewParent.find((control) => readGapRequestNumber(control, 'c') === 2);
         const outcomes = await acceptEachAtOrigin(gap, toNewParent);
@@ -553,7 +559,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         const links = await readChainLinks(gap);
 
         promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, gap.secondRelay!]);
-        await advanceChainBy(2_000);
+        await advanceChainBy(gap, 2_000);
         const toOldRelay = (await gap.leaf.readSent('r')).slice(links.leafToRelay);
         await deliverEach(toOldRelay, gap.relay, 'c');
         await drainUntil(async () => (await gap.relay.readSent('a')).length > links.relayToOrigin);
@@ -579,7 +585,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
             await gap.leaf.closeEdge('r');
             // The origin's edge to `b` opens only as the relayed NACK arrives: it has sent `b` nothing of the track.
             gap.chain.origin.ready.peerIds = ['r'];
-            await advanceChainBy(2_000);
+            await advanceChainBy(gap, 2_000);
             const toSecondRelay = await gap.leaf.readSent('b');
             await deliverEach(toSecondRelay, secondRelay, 'c');
             await drainUntil(async () => findGapNack(await secondRelay.readSent('a')) !== undefined);
@@ -601,7 +607,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
             expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
             if (ack === 'receiver') {
                 // The origin's receipt retries reach the leaf through `b` now, and the leaf confirms what it delivered.
-                await advanceChainBy(2_000);
+                await advanceChainBy(gap, 2_000);
                 await deliverEach(gap.chain.origin.channels.b!.sent.slice(1), secondRelay, 'a');
                 await drainUntil(async () => (await secondRelay.readSent('c')).length > 1);
                 await deliverEach((await secondRelay.readSent('c')).slice(1), gap.leaf, 'b');
@@ -644,7 +650,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         gap.chain.origin.ready.peerIds = ['r'];
         await gap.leaf.closeEdge('r');
 
-        await advanceChainBy(2_000);
+        await advanceChainBy(gap, 2_000);
         await deliverEach(await gap.leaf.readSent('b'), secondRelay, 'c');
         await drainUntil(async () => findGapNack(await secondRelay.readSent('a')) !== undefined);
         const outcomes = await acceptEachAtOrigin(gap, await secondRelay.readSent('a'));
@@ -663,7 +669,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         const links = await readChainLinks(gap);
 
         promoteLayout(gap, LEAF_BELOW_B, [gap.leaf, gap.relay, gap.secondRelay!]);
-        await advanceChainBy(4_600);
+        await advanceChainBy(gap, 4_600);
 
         expect(readGapRequests((await gap.leaf.readSent('r')).slice(links.leafToRelay))).toEqual([['nack', 2, 'r'], ['repair', 2, 'r']]);
         expect(readGapRequests(await gap.leaf.readSent('b'))).toEqual([['nack', 3, 'b'], ['repair', 3, 'b']]);
@@ -695,7 +701,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
 
         promoteLayout(gap, LEAF_BELOW_CARRYING_B, [gap.leaf, gap.relay, secondRelay]);
         await gap.leaf.closeEdge('r');
-        await advanceChainBy(2_000);
+        await advanceChainBy(gap, 2_000);
         const relayedBefore = (await secondRelay.readSent('a')).length;
         await deliverEach(await gap.leaf.readSent('b'), secondRelay, 'c');
         await drainUntil(async () => findGapNack((await secondRelay.readSent('a')).slice(relayedBefore)) !== undefined);
@@ -863,7 +869,7 @@ async function relayGapNackOfLeafAddedBelowB(ack: 'none' | 'receiver'): Promise<
     promoteLayout(gap, LEAF_BELOW_CARRYING_B_WITHOUT_R, [gap.leaf, secondRelay]);
     await gap.leaf.closeEdge('r');
     await secondRelay.closeEdge('r');
-    await advanceChainBy(2_000);
+    await advanceChainBy(gap, 2_000);
     const relayedBefore = (await secondRelay.readSent('a')).length;
     await deliverEach(await gap.leaf.readSent('b'), secondRelay, 'c');
     await drainUntil(async () => findGapNack((await secondRelay.readSent('a')).slice(relayedBefore)) !== undefined);
@@ -1125,12 +1131,40 @@ async function readChainLinks(gap: GapChain): Promise<ChainLinks> {
     };
 }
 
-/** Moves the clock `ms` forward in 250 ms steps, running each session's due work at every step. */
-async function advanceChainBy(ms: number): Promise<void> {
+/**
+ * Moves the clock `ms` forward in 250 ms steps, draining the chain at every step until it is quiet. A step does not jump
+ * to the next fake timer: a work engine re-arms one at no delay while a row it does not claim stays due, so the next
+ * timer is always 1 ms away.
+ */
+async function advanceChainBy(gap: GapChain, ms: number): Promise<void> {
     for (let advanced = 0; advanced < ms; advanced += CHAIN_STEP_MS) {
         await vi.advanceTimersByTimeAsync(Math.min(CHAIN_STEP_MS, ms - advanced));
-        await drainUntil(() => false, 20);
+        await drainChainUntilQuiet(gap);
     }
+}
+
+/** Runs the chain's due work, one real event-loop turn at a time, until `QUIET_TURNS` turns in a row change nothing. */
+async function drainChainUntilQuiet(gap: GapChain): Promise<void> {
+    let activity = readChainActivity(gap);
+    let quietTurns = 0;
+    for (let turn = 0; turn < QUIET_MAX_TURNS && quietTurns < QUIET_TURNS; turn++) {
+        await drainUntil(() => false, 1);
+        const next = readChainActivity(gap);
+        quietTurns = next === activity ? quietTurns + 1 : 0;
+        activity = next;
+    }
+}
+
+/** A count that grows with every step any session takes: its events, its deliveries and the origin's sends. */
+function readChainActivity(gap: GapChain): number {
+    const sessions = [gap.relay, gap.secondRelay, gap.thirdRelay, gap.leaf].filter((session) => session !== undefined);
+    const { origin } = gap.chain;
+    return origin.diagnostics.length + origin.settlements.length +
+        Object.values(origin.channels).reduce((sent, channel) => sent + channel.sent.length, 0) +
+        sessions.reduce(
+            (steps, session) => steps + session.diagnostics.length + session.outboundDiagnostics.length + session.delivered.length,
+            0
+        );
 }
 
 /** The leaf and the origin promote the layout that parents the leaf on the origin, and the origin's edge to it opens. */
@@ -1202,7 +1236,7 @@ async function confirmThroughRelays(gap: GapChain): Promise<void> {
         const relayPeerId = relay === gap.relay ? 'r' : 'b';
         const relayedBefore = (await relay.readSent('a')).length;
         await deliverEach(await gap.leaf.readSent(relayPeerId), relay, 'c');
-        await drainUntil(() => false, 20);
+        await drainChainUntilQuiet(gap);
         await acceptEachAtOrigin(gap, (await relay.readSent('a')).slice(relayedBefore));
     }
 }
@@ -1248,7 +1282,7 @@ async function acceptEachAtOrigin(
     const outcomes = new Map<ALMessage, ALOutboundControlAdmissionResult['kind']>();
     for (const control of controls) {
         outcomes.set(control, (await gap.chain.origin.manager.acceptControlMessage(control)).kind);
-        await drainUntil(() => false, 20);
+        await drainChainUntilQuiet(gap);
     }
     return outcomes;
 }
