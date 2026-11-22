@@ -108,19 +108,20 @@ const MISSING_SEQ_FIELDS: ALRepairPayload = {
 };
 
 describe('AL control message codec', () => {
-    it('names the v3 acknowledgement, the v4 NACK, the v3 repair and the v1 receipt as the four supported control ids', () => {
+    it('names the v3 acknowledgement, the v5 NACK, the v3 repair and the v1 receipt as the four supported control ids', () => {
         expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v3');
         expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
-        expect(['al.control.ack.v3', 'al.control.nack.v4', 'al.control.repair.v3', 'al.control.receipt.v1']
+        expect(['al.control.ack.v3', 'al.control.nack.v5', 'al.control.repair.v3', 'al.control.receipt.v1']
             .every(isALControlTypeId)).toBe(true);
         expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.ack.v2', 'al.control.nack.v2']
             .some(isALControlTypeId)).toBe(false);
     });
 
     it('refuses the control ids it replaced', () => {
-        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v4');
+        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v5');
         expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v3');
         expect(isALControlTypeId('al.control.nack.v3')).toBe(false);
+        expect(isALControlTypeId('al.control.nack.v4')).toBe(false);
         expect(isALControlTypeId('al.control.repair.v2')).toBe(false);
     });
 
@@ -236,13 +237,15 @@ describe('AL control message codec', () => {
     });
 
     it.each([
-        [
-            'al.control.nack.v3',
-            newALNackControlMessage(
-                controlId,
-                { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' }
-            )
-        ],
+        ...['al.control.nack.v3', 'al.control.nack.v4'].map((typeId) =>
+            [
+                typeId,
+                newALNackControlMessage(
+                    controlId,
+                    { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' }
+                )
+            ] as const
+        ),
         ['al.control.repair.v2', newALRepairControlMessage(controlId, { ...MISSING_SEQ_FIELDS, fromPeerId: 'sender' })]
     ])('refuses a whole %s control unsupported', (typeId, current) => {
         const retired = { ...current, payload: { ...current.payload, typeId } };

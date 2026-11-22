@@ -228,7 +228,7 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v4`
+An ACK is `al.control.ack.v3` and a NACK `al.control.nack.v5`
 ([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
 sender and receiver each names the message's origin (`originPeerId`, the
 message's `senderId`) and the recipient it speaks for
@@ -650,6 +650,15 @@ when the lane claims it (a hint names its number exactly when it names a missing
 requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
 symmetrically.
 
+**The relay-hop window.** A gap NACK carries `relayHopsLeft`, the relays it may still pass toward its origin
+("Ordering gaps and resynchronization" below). The NACK moved to `al.control.nack.v5`, refusing
+`al.control.nack.v4` `unsupported`. The proof tag stays `rallar-alm-nack-proof-v2`: the count lies outside the
+signed content, so the signing input is unchanged. A page still running the previous build has every NACK refused
+`unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's NACKs symmetrically. A
+retained `send-control` or `admit-control` row of the previous build that holds a NACK fails strict decoding and is
+dropped once as corrupt when the lane claims it. A `nacks` history row is untouched: it holds outside-audience NACKs
+only, and a gap NACK writes no row. Nothing is migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped.
+
 **The copy-carriers window.** The buffered slot's `copyCarriers` is required. No store resets for it, and
 `AL_ADMISSION_SCHEMA_ID` is not bumped: since #652 a different schema identity refuses a returning browser's durable
 store rather than resetting it, and the slot's `carrier` field (#588) gave no precedent for a bump, since #588 bumped
@@ -694,7 +703,7 @@ obligation short-circuits, because the remaining checks read that obligation.
 arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
 most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
 observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
-buffered set; the planner's NACK (`al.control.nack.v4`) and repair request
+buffered set; the planner's NACK (`al.control.nack.v5`) and repair request
 (`al.control.repair.v3`) carry them, and the sender retransmits them by range. A receiver asks again while a gap
 stands. The admission that reveals a newly missing range writes one `renew-gap` timer row for it
 ([`ALInboundGapRenewal`](./gap-renewal/al-inbound-gap-renewal.ts)), keyed by the track, the range, the next request

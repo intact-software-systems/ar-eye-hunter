@@ -64,7 +64,7 @@ snapshot names live registered no publication key, or a unicast names no room; a
 judged.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
-`al.control.nack.v4` and `al.control.repair.v3` payloads and the planner's NACK plan do;
+`al.control.nack.v5` and `al.control.repair.v3` payloads and the planner's NACK plan do;
 [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range decoder for the
 wire and the rows. A NACK and a repair request naming the same gap are one hint: the gap --
 requester, ordering track and ranges, the ranges joined as `from-to` with `,`, then the request number -- names the hint's

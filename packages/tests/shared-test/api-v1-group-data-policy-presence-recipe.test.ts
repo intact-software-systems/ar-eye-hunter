@@ -418,7 +418,7 @@ class PresenceRecipePorts {
                 id: { v: 4, msgId: 'test-nack', ts: 0, senderId: 'default-qbox-server', traceId: 'trace-api-v1-group-data-policy-presence-recipe' },
                 route: { topicId: 'al-control' },
                 targets: { mode: 'unicast', toPeerId: 'bob-session' },
-                payload: { typeId: 'al.control.nack.v4', resource: JSON.stringify({ msgId: frame.id.msgId, reason: 'unauthorized' }) }
+                payload: { typeId: 'al.control.nack.v5', resource: JSON.stringify({ msgId: frame.id.msgId, reason: 'unauthorized' }) }
             }));
             return;
         }
