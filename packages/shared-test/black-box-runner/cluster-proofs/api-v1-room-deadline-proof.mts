@@ -10,6 +10,7 @@ import {
     type ProofSession
 } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from './run-managed-cluster-proof.mts';
+import { proveDirectorSuccession } from './prove-director-succession.mts';
 
 async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [writer, editor, reader] = plans;
@@ -220,6 +221,7 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
         assert.deepEqual(deadlines(await requestJson(baseUrl, first, { method: 'GET', session: deputy })), expected);
         assert.deepEqual(deadlines(await requestJson(baseUrl, second, { method: 'GET', session: owner })), secondOccurrence);
     }
+    await proveDirectorSuccession({ api, owner, deputy, room: { ...room, groupId: 'succession', proofId: crypto.randomUUID() } });
 }
 
 async function putDeadline(input: { session: ProofSession; path: string; body: object }): Promise<Response> {
