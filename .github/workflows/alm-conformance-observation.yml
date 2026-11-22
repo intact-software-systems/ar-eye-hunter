@@ -38,10 +38,12 @@ jobs:
 
   # The full scope against the PostgreSQL API. Non-blocking: no job waits for it, so its minutes never
   # lengthen a verdict or a deployment; the required smoke scope runs in the Release Gate's alm-smoke
-  # lane. One matrix leg runs each carrier on a runner of its own, with a fresh database per run.
+  # lane. Each matrix leg runs on a runner of its own, with a fresh database per run: one leg per carrier, except that a
+  # carrier whose job took more than 30 minutes is split by family across two legs. rtc took 36.5 minutes as one job in
+  # run 45009025510, so it runs as two; an empty family list runs every family.
   # A failed detection leaves run_full_scope empty, which runs the full scope.
   alm-conformance-observation:
-    name: ALM conformance observation (${{ matrix.carrier }})
+    name: ALM conformance observation (${{ matrix.carrier }}${{ matrix.families && format(', {0}', matrix.families) || '' }})
     needs: alm-changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.alm-changes.outputs.run_full_scope != 'false')) }}
     runs-on: ubuntu-latest
@@ -50,7 +52,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        carrier: [ws, rtc, rtc-with-ws-fallback]
+        include:
+          - carrier: ws
+            families: ''
+          - carrier: rtc
+            families: two-agent,addressed,same-context
+          - carrier: rtc
+            families: three-agent,same-principal,four-role
+          - carrier: rtc-with-ws-fallback
+            families: ''
     services:
       postgres:
         image: postgres:16
@@ -89,6 +99,7 @@ jobs:
         with:
           carrier: ${{ matrix.carrier }}
           scope: full
+          families: ${{ matrix.families }}
 
       - name: Upload the ALM conformance lane results over ${{ matrix.carrier }}
         if: ${{ always() }}
@@ -96,3 +107,4 @@ jobs:
         with:
           carrier: ${{ matrix.carrier }}
           scope: full
+          families: ${{ matrix.families }}

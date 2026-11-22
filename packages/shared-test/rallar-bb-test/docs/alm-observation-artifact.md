@@ -14,15 +14,23 @@ through one action, `.github/actions/alm-conformance-lane/action.yml`:
   fails); and on dispatch on any branch. It checks out the event's own commit: on a pull request,
   the merge commit.
 
-Both run one matrix leg per carrier, with Playwright's global timeout below the job's time limit
-(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step. The
-job uploads the results through a second action,
-`.github/actions/alm-conformance-lane-results/action.yml`, as its next step with `always()`: a
-cancelled composite step skips its own remaining steps, so the uploads are a step of the job and
-also run for a cancelled job. Each leg uploads two artifacts, pass, fail or cancelled, each when it
+Both run matrix legs by carrier, with Playwright's global timeout below the job's time limit
+(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step. In the
+`full` scope, `rtc` runs as two legs split by family, `two-agent,addressed,same-context` and
+`three-agent,same-principal,four-role`, because it took 36.5 minutes as one job (run 45009025510)
+and a carrier whose job takes more than 30 minutes is split. A leg passes its family list to both
+actions as the `families` input, which sets `RALLAR_BLACK_BOX_ALM_FAMILIES`; a leg with an empty
+list runs every family. The lane job is named `ALM conformance observation (<carrier>)`, or
+`ALM conformance observation (<carrier>, <families>)` for a split leg. The job uploads the
+results through a second action, `.github/actions/alm-conformance-lane-results/action.yml`, as its
+next step with `always()`: a cancelled composite step skips its own remaining steps, so the
+uploads are a step of the job and also run for a cancelled job. Each leg uploads two artifacts, pass, fail or cancelled, each when it
 has files: the whole Playwright output root, `apps/rallar-black-box/test-results`, as
 `alm-conformance-lane-<carrier>-<scope>-<sha>` (kept seven days), and its `alm-lane-result/`
 directory alone as `alm-lane-result-<carrier>-<scope>-<sha>` (see "The lane result files" below).
+A split leg appends `-<families>` to both names, for example
+`alm-lane-result-rtc-full-<sha>-two-agent,addressed,same-context`, so the two legs of one carrier
+never upload under one name; the `smoke` lane passes no families and its names carry no suffix.
 `<sha>` is the workflow run's commit. On a Release Gate run of a pull request that is the merge
 commit, while the `alm-smoke` lane checked out the pull request's head.
 
@@ -118,15 +126,15 @@ temporary file and a rename, so a worker killed mid-write leaves the previous co
   plans is `not-run`.
 
 The commit, the event and the attempt are not in the files; the workflow run that uploaded the
-`alm-lane-result-<carrier>-<scope>-<sha>` artifact owns them.
+`alm-lane-result-<carrier>-<scope>-<sha>` artifact (with `-<families>` for a split leg) owns them.
 
 ## The ledger
 
 `npm run alm:lane:ledger` reads, through `gh`, the newest `main` push runs of
 `alm-conformance-observation.yml`, and beside them its newest pull-request runs and its newest
 dispatched runs, each kind read on its own so that pull-request traffic cannot crowd the push runs
-out of the window. It downloads each job's `alm-lane-result-<carrier>-full-<sha>` artifact and
-prints the ledger. It only reads GitHub. Options: `--limit <n>` (the `main` push runs to read, 1 to
+out of the window. It downloads each job's `alm-lane-result-<carrier>-full-<sha>` artifact (with
+`-<families>` for a split leg) and prints the ledger. It only reads GitHub. Options: `--limit <n>` (the `main` push runs to read, 1 to
 100, default 30; at most as many pull-request and as many dispatched runs are read beside them) and
 `--repository <owner/name>` (default: the repository `gh repo view` resolves for the working
 directory), for example `npm run alm:lane:ledger -- --limit 50`. An option given twice is refused.
@@ -143,8 +151,9 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
 
 ### How a run is read
 
-- Each lane job (`ALM conformance observation (<carrier>)`) is one run of its carrier; other jobs,
-  such as `Detect ALM lane changes`, are not read. The carrier comes from the job's name, and the job
+- Each lane job (`ALM conformance observation (<carrier>)`, or
+  `ALM conformance observation (<carrier>, <families>)` for a split leg) is one run of its carrier;
+  other jobs, such as `Detect ALM lane changes`, are not read. The carrier comes from the job's name, and the job
   reads only its carrier's artifact. A completed `main` push or dispatched run in which no job of a
   carrier could be read is red for that carrier (reason `no-job-read`) and named as an issue. A
   run that was skipped as a whole is not asked for its jobs or artifacts.

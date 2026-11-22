@@ -5,7 +5,12 @@ import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_LANE_FAMILIES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toEvaluatedWorkflowText } from './to-evaluated-workflow-text.ts';
 
 interface WorkflowStep {
     readonly name?: string;
@@ -15,6 +20,11 @@ interface WorkflowStep {
     readonly uses?: string;
     readonly env?: Readonly<Record<string, string>>;
     readonly with?: Readonly<Record<string, string | number>>;
+}
+
+interface MatrixEntry {
+    readonly carrier: AlmConformanceCarrier;
+    readonly families: string;
 }
 
 interface WorkflowService {
@@ -30,7 +40,9 @@ interface WorkflowJob {
     readonly outputs?: Readonly<Record<string, string>>;
     readonly services?: Readonly<Record<string, WorkflowService>>;
     readonly steps?: readonly WorkflowStep[];
-    readonly strategy?: Readonly<{ matrix: Readonly<{ carrier?: readonly string[]; }>; }>;
+    readonly strategy?: Readonly<{
+        matrix: Readonly<{ carrier?: readonly string[]; include?: readonly MatrixEntry[]; }>;
+    }>;
     readonly uses?: string;
     readonly with?: Readonly<Record<string, string>>;
 }
@@ -56,7 +68,14 @@ interface WorkflowDocument {
     readonly on: WorkflowTriggers;
 }
 
+interface ActionInput {
+    readonly description: string;
+    readonly required: boolean;
+    readonly default?: string;
+}
+
 interface ActionDocument {
+    readonly inputs: Readonly<Record<string, ActionInput>>;
     readonly runs: Readonly<{ steps: readonly WorkflowStep[]; }>;
 }
 
@@ -75,8 +94,12 @@ const UPLOAD_ARTIFACT = 'actions/upload-artifact@v7';
 const ALM_WORKFLOW = './.github/workflows/alm-conformance-observation.yml';
 const NAVIGATION_WORKFLOW = './.github/workflows/navigation-report-observation.yml';
 const observation = readWorkflow('.github/workflows/alm-conformance-observation.yml');
-const laneSteps = readAction('.github/actions/alm-conformance-lane/action.yml').runs.steps;
-const resultSteps = readAction('.github/actions/alm-conformance-lane-results/action.yml').runs.steps;
+const laneAction = readAction('.github/actions/alm-conformance-lane/action.yml');
+const laneSteps = laneAction.runs.steps;
+const resultsAction = readAction('.github/actions/alm-conformance-lane-results/action.yml');
+const resultSteps = resultsAction.runs.steps;
+const observationLane = observation.jobs['alm-conformance-observation'];
+const observationMatrix = observationLane.strategy?.matrix.include ?? [];
 
 describe('ALM conformance lane workflows', () => {
     it('runs the smoke scope as a required Release Gate lane within 20 minutes', () => {
@@ -85,7 +108,11 @@ describe('ALM conformance lane workflows', () => {
         expect(lane.strategy?.matrix.carrier).toEqual(ALM_CONFORMANCE_CARRIERS);
         expect(lane['continue-on-error']).toBeUndefined();
         expect(lane['timeout-minutes']).toBe(20);
-        expect(lane.steps?.find((step) => step.uses === ALM_LANE_ACTION)?.with?.scope).toBe('smoke');
+        // Passing no families keeps every family in one job and the artifact names without a family suffix.
+        expect(lane.steps?.find((step) => step.uses === ALM_LANE_ACTION)?.with).toEqual({
+            carrier: '${{ matrix.carrier }}',
+            scope: 'smoke'
+        });
     });
 
     it('starts itself on main pushes, ready pull requests and dispatch, beside no other workflow', () => {
@@ -115,7 +142,46 @@ describe('ALM conformance lane workflows', () => {
         expect(readCheckout(lane).with).not.toHaveProperty('ref');
         expect(migration).toBeGreaterThan(-1);
         expect(laneStep).toBeGreaterThan(migration);
-        expect(steps[laneStep].with?.scope).toBe('full');
+        expect(steps[laneStep].with).toEqual({
+            carrier: '${{ matrix.carrier }}',
+            scope: 'full',
+            families: '${{ matrix.families }}'
+        });
+    });
+
+    it('runs rtc, which took 36.5 minutes as one job, as two jobs by family and every other carrier as one', () => {
+        expect(observationLane.strategy?.matrix).toEqual({
+            include: [
+                { carrier: 'ws', families: '' },
+                { carrier: 'rtc', families: 'two-agent,addressed,same-context' },
+                { carrier: 'rtc', families: 'three-agent,same-principal,four-role' },
+                { carrier: 'rtc-with-ws-fallback', families: '' }
+            ]
+        });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('runs every family over %s exactly once across its jobs', (carrier) => {
+        const familyLists = observationMatrix.filter((entry) => entry.carrier === carrier).map((entry) => entry.families);
+        const namedFamilies = familyLists.flatMap((families) => families === '' ? [] : families.split(','));
+
+        expect(familyLists.length).toBeGreaterThan(0);
+        // One job runs every family with an empty list; split jobs each name theirs.
+        expect(familyLists.includes('')).toBe(familyLists.length === 1);
+        expect([...namedFamilies].sort()).toEqual(familyLists.length === 1 ? [] : [...ALM_CONFORMANCE_LANE_FAMILIES].sort());
+    });
+
+    it.each(
+        [
+            { entry: { carrier: 'ws', families: '' }, jobName: 'ALM conformance observation (ws)' },
+            {
+                entry: { carrier: 'rtc', families: 'two-agent,addressed,same-context' },
+                jobName: 'ALM conformance observation (rtc, two-agent,addressed,same-context)'
+            }
+        ] satisfies readonly { entry: MatrixEntry; jobName: string; }[]
+    )('names the job $jobName', ({ entry, jobName }) => {
+        const values = { 'matrix.carrier': entry.carrier, 'matrix.families': entry.families };
+
+        expect(toEvaluatedWorkflowText(observationLane.name ?? '', values)).toBe(jobName);
     });
 
     it('detects the pull request\'s ALM changes from its base and head with the selection command', () => {
@@ -196,6 +262,16 @@ describe('ALM conformance lane action', () => {
         expect(3_300_000).toBeLessThan((fullLimit ?? 0) * 60_000);
     });
 
+    it('selects the families of a run from its optional families input, every family when it is empty', () => {
+        const scripts = laneSteps.filter((step) => step.run?.startsWith('npm run ') === true);
+
+        expect(laneAction.inputs.families).toMatchObject({ required: false, default: '' });
+        expect(scripts).toHaveLength(2);
+        for (const script of scripts) {
+            expect(script.env?.RALLAR_BLACK_BOX_ALM_FAMILIES).toBe('${{ inputs.families }}');
+        }
+    });
+
     it('uploads nothing itself, since a cancelled composite step skips its remaining steps', () => {
         expect(laneSteps.filter((step) => step.uses === UPLOAD_ARTIFACT)).toEqual([]);
     });
@@ -211,13 +287,36 @@ describe('ALM conformance lane results action', () => {
         for (const upload of uploads) {
             // The calling job step carries `always()`; a nested condition would not survive a cancelled job anyway.
             expect(upload.if).toBeUndefined();
-            expect(upload.with?.name).toContain('${{ inputs.carrier }}-${{ inputs.scope }}');
             expect(upload.with?.['if-no-files-found']).toBe('ignore');
         }
         expect(outputRoot.with?.path).toBe('apps/rallar-black-box/test-results');
         expect(outputRoot.with?.['retention-days']).toBe(7);
         expect(laneResult.with?.path).toBe('apps/rallar-black-box/test-results/alm-lane-result');
         expect(laneResult.with).not.toHaveProperty('retention-days');
+    });
+
+    it.each([
+        {
+            families: '',
+            names: ['alm-conformance-lane-ws-smoke-abc123', 'alm-lane-result-ws-smoke-abc123']
+        },
+        {
+            families: 'two-agent,addressed',
+            names: [
+                'alm-conformance-lane-ws-full-abc123-two-agent,addressed',
+                'alm-lane-result-ws-full-abc123-two-agent,addressed'
+            ]
+        }
+    ])('names the artifacts $names, with the families appended only when there are any', ({ families, names }) => {
+        const values = {
+            'inputs.carrier': 'ws',
+            'inputs.scope': families === '' ? 'smoke' : 'full',
+            'inputs.families': families,
+            'github.sha': 'abc123'
+        };
+
+        expect(resultsAction.inputs.families).toMatchObject({ required: false, default: '' });
+        expect(resultSteps.map((step) => toEvaluatedWorkflowText(String(step.with?.name), values))).toEqual(names);
     });
 
     it.each([

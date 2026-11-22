@@ -3,15 +3,34 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_LANE_JOB_NAME_PATTERN,
-    ALM_LANE_LEDGER_IDENTITY,
     toAlmLaneResultArtifactPrefix
 } from '@shared-test/rallar-bb-test/conformance/alm/ledger/alm-lane-workflow-names.ts';
+import { toEvaluatedWorkflowText } from './to-evaluated-workflow-text.ts';
+
+interface MatrixEntry {
+    readonly carrier: AlmConformanceCarrier;
+    readonly families: string;
+}
+
+interface NamedStep {
+    readonly uses?: string;
+    readonly with?: Readonly<Record<string, string>>;
+}
 
 interface NamedWorkflow {
-    readonly jobs: Readonly<Record<string, Readonly<{ name?: string; }>>>;
+    readonly jobs: Readonly<
+        Record<
+            string,
+            Readonly<{
+                name?: string;
+                steps?: readonly NamedStep[];
+                strategy?: Readonly<{ matrix: Readonly<{ include?: readonly MatrixEntry[]; }>; }>;
+            }>
+        >
+    >;
 }
 
 interface UploadAction {
@@ -26,25 +45,51 @@ function readYaml(relativePath: string): string {
 
 const observation = load(readYaml('.github/workflows/alm-conformance-observation.yml')) as NamedWorkflow;
 const results = load(readYaml('.github/actions/alm-conformance-lane-results/action.yml')) as UploadAction;
+const lane = observation.jobs['alm-conformance-observation'];
+const entries = lane?.strategy?.matrix.include ?? [];
+
+function toMatrixValues(entry: MatrixEntry): Readonly<Record<string, string>> {
+    return { 'matrix.carrier': entry.carrier, 'matrix.families': entry.families };
+}
+
+/** The names the job's results step uploads under, from the step's own inputs evaluated for the entry. */
+function toUploadNames(entry: MatrixEntry): readonly string[] {
+    const resultsStep = lane?.steps?.find((step) => step.uses === './.github/actions/alm-conformance-lane-results');
+    const inputs = Object.entries(resultsStep?.with ?? {}).map(([input, text]) => [
+        `inputs.${input}`,
+        toEvaluatedWorkflowText(text, toMatrixValues(entry))
+    ]);
+    const values = { ...Object.fromEntries(inputs), 'github.sha': 'abc123' };
+    return results.runs.steps.map((step) => toEvaluatedWorkflowText(step.with?.name ?? '', values));
+}
 
 describe('the names the ALM lane ledger reads from GitHub', () => {
-    it.each(ALM_CONFORMANCE_CARRIERS)('reads the lane job over %s by its name in the workflow', (carrier) => {
-        const name = observation.jobs['alm-conformance-observation']?.name ?? '';
+    it.each(entries)('reads the lane job of %j by its name in the workflow', (entry) => {
+        const jobName = toEvaluatedWorkflowText(lane?.name ?? '', toMatrixValues(entry));
 
-        const jobName = name.replace('${{ matrix.carrier }}', carrier);
-
-        expect(ALM_LANE_JOB_NAME_PATTERN.exec(jobName)?.[1]).toBe(carrier);
+        expect(ALM_LANE_JOB_NAME_PATTERN.exec(jobName)?.[1]).toBe(entry.carrier);
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('finds the result artifact over %s by its name in the action', (carrier) => {
-        const uploads = results.runs.steps.map((step) => step.with?.name ?? '');
-        const resultName = uploads.find((name) => name.startsWith('alm-lane-result-')) ?? '';
+    it.each(entries)('finds the result artifact of %j by its name in the action', (entry) => {
+        const resultName = toUploadNames(entry).find((name) => name.startsWith('alm-lane-result-'));
 
-        const artifactName = resultName
-            .replace('${{ inputs.carrier }}', carrier)
-            .replace('${{ inputs.scope }}', ALM_LANE_LEDGER_IDENTITY.scope)
-            .replace('${{ github.sha }}', 'abc123');
+        expect(resultName?.startsWith(toAlmLaneResultArtifactPrefix(entry.carrier))).toBe(true);
+    });
 
-        expect(artifactName.startsWith(toAlmLaneResultArtifactPrefix(carrier))).toBe(true);
+    it('builds a distinct name for every artifact of every job in the matrix', () => {
+        const names = entries.flatMap(toUploadNames);
+
+        expect(entries).not.toEqual([]);
+        expect(new Set(names).size).toBe(names.length);
+    });
+
+    it.each([
+        { jobName: 'ALM conformance observation (rtc)', carrier: 'rtc' },
+        { jobName: 'ALM conformance observation (rtc, two-agent,addressed)', carrier: 'rtc' },
+        { jobName: 'ALM conformance observation (rtc-with-ws-fallback)', carrier: 'rtc-with-ws-fallback' },
+        { jobName: 'ALM conformance observation (rtc-with-ws-fallback, four-role)', carrier: 'rtc-with-ws-fallback' },
+        { jobName: 'Detect ALM lane changes', carrier: undefined }
+    ])('reads $jobName as the job of $carrier', ({ jobName, carrier }) => {
+        expect(ALM_LANE_JOB_NAME_PATTERN.exec(jobName)?.[1]).toBe(carrier);
     });
 });

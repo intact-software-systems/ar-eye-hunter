@@ -7,13 +7,17 @@ inputs:
   scope:
     description: 'Scope the lane ran: smoke or full.'
     required: true
+  families:
+    description: 'Comma-separated families the lane ran, appended to the artifact names; empty for every family.'
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
     - name: Upload ALM conformance lane results
       uses: actions/upload-artifact@v7
       with:
-        name: alm-conformance-lane-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
+        name: alm-conformance-lane-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}${{ inputs.families && format('-{0}', inputs.families) || '' }}
         path: apps/rallar-black-box/test-results
         if-no-files-found: ignore
         retention-days: 7
@@ -21,6 +25,6 @@ runs:
     - name: Upload ALM lane result records
       uses: actions/upload-artifact@v7
       with:
-        name: alm-lane-result-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
+        name: alm-lane-result-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}${{ inputs.families && format('-{0}', inputs.families) || '' }}
         path: apps/rallar-black-box/test-results/alm-lane-result
         if-no-files-found: ignore

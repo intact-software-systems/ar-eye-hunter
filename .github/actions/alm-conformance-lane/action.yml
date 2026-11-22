@@ -7,6 +7,10 @@ inputs:
   scope:
     description: 'Scope the lane runs: smoke against the in-memory API, or full against the PostgreSQL API.'
     required: true
+  families:
+    description: 'Comma-separated families the lane runs; empty runs every family.'
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -33,6 +37,7 @@ runs:
       env:
         RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ inputs.carrier }}
         RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.scope }}
+        RALLAR_BLACK_BOX_ALM_FAMILIES: ${{ inputs.families }}
       run: npm run test:rallar:full-stack:memory:alm -- --global-timeout=840000
 
     - name: Run the ALM conformance full scope over ${{ inputs.carrier }}
@@ -41,4 +46,5 @@ runs:
       env:
         RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ inputs.carrier }}
         RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.scope }}
+        RALLAR_BLACK_BOX_ALM_FAMILIES: ${{ inputs.families }}
       run: npm run test:rallar:full-stack:postgres:alm -- --global-timeout=3300000
