@@ -207,6 +207,12 @@ test('a returning participant recovers the paused program and the director can r
         const resumed = await resume();
         expect(await resume()).toEqual(resumed);
         expect(resumed.revision).toBe(3);
+        const pausedDurationMs = resumed.elapsedThroughEpochMs - paused.elapsedThroughEpochMs;
+        expect(pausedDurationMs).toBeGreaterThan(0);
+        const shiftedStart = paused.phases[1]!.startsAtEpochMs + pausedDurationMs;
+        await expect(guest.getByLabel('Court program')).toHaveText(
+            'play · Next: break at ' + new Date(shiftedStart).toISOString()
+        );
     } finally {
         await Promise.all([guest.close(), otherCourtOwner.close()]);
     }

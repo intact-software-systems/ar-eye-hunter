@@ -116,3 +116,25 @@ it('shortens a live offer when its invitation is shortened without moving the pl
     await invite(now + 2000);
     expect((await repository.findLobbyCommitmentEntry(SCOPE, 'bob'))?.value.seat).toMatchObject({ status: 'offered', deadlineEpochMs: now + 2000 });
 });
+
+it('issues a fresh offer when the player waits at the old claim deadline before expiry delivery', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    const repository = createTestGroupStateRepository(runtime);
+    let now = Date.now();
+    const service = createTestGroupStateService({ runtimeRepository: runtime, now: () => now, serviceId: 'offer-expiry', randomId: () => crypto.randomUUID() });
+    const groupId = 'expired-offer';
+    await service.createGroup(SCOPE, {
+        groupId, displayName: 'Court', createdByPrincipalId: 'owner', requestId: 'create', kind: 'room',
+        joinMode: 'open', maxMembers: 2, roomLobby: { returnWindowMs: 10000, claimWindowMs: 5000 }
+    });
+    const wait = (requestId: string) => service.updateGroup(SCOPE, groupId, {
+        actorPrincipalId: 'bob', requestId, roomLobby: { operation: 'wait' }
+    });
+    await wait('first');
+    expect((await repository.findLobbyCommitmentEntry(SCOPE, 'bob'))?.value.seat?.deadlineEpochMs).toBe(now + 5000);
+    now += 5000;
+    await wait('again');
+    expect((await repository.findLobbyCommitmentEntry(SCOPE, 'bob'))?.value.seat).toMatchObject({
+        status: 'offered', deadlineEpochMs: now + 5000
+    });
+});
