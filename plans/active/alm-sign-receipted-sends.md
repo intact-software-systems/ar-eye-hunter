@@ -1,6 +1,7 @@
 # Signing receipted ordinary RTC room sends
 
-Status: design, awaiting the maintainer's approval. No product code is written yet.
+Status: design approved by the maintainer on 2026-11-22; the publication side is being built, the downgrade rule
+waits for #869.
 
 ## Intent
 
@@ -122,17 +123,14 @@ The shape:
 - The inbound owner row gains the authenticated mark, and the duplicate decision admits an
   authenticated copy over an admission without it.
 
-## Open decisions for the maintainer
+## Rulings (2026-11-22)
 
-1. The downgrade: B, or C, or leave it open with a decision row.
-2. The mixed-build window. An older build drops a signed receipted frame silently, and a newer
-   build drops an older origin's unsigned one. The origin's receipt then runs out, after about
-   three 2 s timeouts, and `rtc-with-ws-fallback` hands the send to WS; a send on `rtc` alone fails
-   `receipt-exhausted`. D589 accepted the same window for receipt proofs with no migration code.
-3. The order of work. The classification, the signing and the verification live in
-   `multicast/publication/**`, which no open pull request touches. The duplicate rule and the owner
-   row live in `compute-al-inbound-duplicate-changes.ts` and `al-inbound-admission-store.ts`, which
-   #869 rewrites.
+1. The downgrade closes at the recipient (approach B): the owner row records an origin-authenticated
+   admission, and an authenticated copy is admitted over an admission without that mark.
+2. The mixed-build window is accepted with no migration code, as D589 accepted it for receipt proofs.
+3. The publication side is built now: the classification, the signing, the verification at every hop,
+   the relay's proof-preserving forward and the key-window fallback. The downgrade rule stays unbuilt,
+   its test red, until #869 lands; this pull request stays a draft until both halves are in.
 
 ## Lane proof
 
