@@ -336,7 +336,7 @@ interface AlmConformanceScenarioCore {
      * Absent when each role's recipe runs within the lane's ordinary recipe budget. Otherwise the time the cell's
      * longest step adds to it, which every role's recipe metadata states (`toAlmRecipeRunExtensionMetadata`).
      */
-    readonly recipeRunExtensionMs?: number;
+    readonly toRecipeRunExtensionMs?: (step: AlmConformanceStepInput) => number;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

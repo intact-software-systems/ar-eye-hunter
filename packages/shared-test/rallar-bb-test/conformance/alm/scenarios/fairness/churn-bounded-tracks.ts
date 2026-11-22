@@ -9,18 +9,11 @@ import type {
     RallarBlackBoxTestMessagesSendCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import {
-    ASSERT_TIMEOUT_MS,
-    CONNECT_READINESS_TIMEOUT_MS,
-    CONNECT_TIMEOUT_MS,
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    NON_EXPIRING_TTL_MS
-} from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import { ALM_STORAGE_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -28,28 +21,20 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../granted-topic/subscription-phase-budgets.ts';
-import { toCueStep } from '../receipted-audience.ts';
-import {
-    toCueListenCommands,
-    toCueSendCommands,
-    toCueWait
-} from '../topic-subscription/topic-subscription-publications.ts';
 import { toBoundReconnectCommands } from '../volatile-bound/volatile-bound-commands.ts';
+import {
+    computeCuedArrivalsWaitMs,
+    toCuedArrivalsReceiverCommands,
+    toCuedArrivalsSenderCommands,
+    type AlmCuedArrivals
+} from './alm-cued-arrivals.ts';
 import { computeSendLoopBudgetMs, toSendLoopCommand } from './to-send-loop-command.ts';
 
-/** More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), and a margin. */
-const CHURN_TRACK_COUNT = AL_INBOUND_MAX_ORDERING_TRACKS + 24;
 /**
- * The receiver's wait for the sender's cue opens with the sender's body, so it covers the sender's reconnect, its loop,
- * the last track's observation and assertion, and the cue's own send and observation. It is the cell's longest step,
- * so each role's recipe runs that much longer than an ordinary one.
+ * More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), and a
+ * margin.
  */
-const TRACKS_SENT_WAIT_MS = CONNECT_TIMEOUT_MS + CONNECT_READINESS_TIMEOUT_MS +
-    computeSendLoopBudgetMs(CHURN_TRACK_COUNT) + NON_EXPIRING_SEND_TIMEOUT_MS + ASSERT_TIMEOUT_MS +
-    2 * SUBSCRIPTION_COMMAND_TIMEOUT_MS;
-/** The sender's cue that its last track is sent. */
-const TRACKS_SENT_CUE = 'tracks-sent';
+const CHURN_TRACK_COUNT = AL_INBOUND_MAX_ORDERING_TRACKS + 24;
 /**
  * The sender's own ledger counts every live track of its own (64 by default, D179); each of these tracks lives as
  * long as its one send, so the sender reconnects with room for all of them.
@@ -65,11 +50,16 @@ const CHURN_SENDER_LIMITS = {
  */
 const RECEIVER_ORDERED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
 
+/** The receiver counts the 280 once the sender cued that its last track is sent. */
+const CHURN_ARRIVALS: AlmCuedArrivals = {
+    cue: 'tracks-sent',
+    count: CHURN_TRACK_COUNT,
+    toSends: toChurnSends
+};
+
 /**
  * D191: the sender opens 280 tracks with one send each and leaves. The receiver delivers the 280, and its inbound
  * stores then hold exactly the cap of ordering snapshots: each track past it evicted the least recently updated one.
- * The receiver counts once the sender cued that its last track is sent, however long the sender's loop took; its
- * count reads every arrival its page logged, those before the count started too.
  */
 export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
     scenarioId: 'churn-bounded-tracks',
@@ -78,18 +68,19 @@ export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
     carriers: RECEIVER_ORDERED_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
-    recipeRunExtensionMs: TRACKS_SENT_WAIT_MS,
-    toSenderCommands: toChurnSenderCommands,
+    toRecipeRunExtensionMs: (step) => computeCuedArrivalsWaitMs(step, CHURN_ARRIVALS),
+    toSenderCommands: (sender) => [
+        ...toCuedArrivalsSenderCommands(sender, CHURN_ARRIVALS),
+        { kind: 'close', commandId: toCommandId(sender, 'close-departs') }
+    ],
     toRecipientCommands: (receiver) => [
-        ...toCueListenCommands(toCueStep(receiver)),
-        { ...toCueWait(toCueStep(receiver), TRACKS_SENT_CUE), timeoutMs: TRACKS_SENT_WAIT_MS },
-        toReceivedCommand({ ...receiver, index: 1, count: CHURN_TRACK_COUNT, absent: false }),
+        ...toCuedArrivalsReceiverCommands(receiver, CHURN_ARRIVALS),
         toOrderingTracksCapStatedWait(receiver),
         ...toOrderingTracksCommands(receiver)
     ]
 };
 
-function toChurnSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+function toChurnSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toBoundReconnectCommands(sender, 'raised', CHURN_SENDER_LIMITS),
         {
@@ -113,9 +104,7 @@ function toChurnSenderCommands(sender: AlmConformanceStepInput): readonly Rallar
             field: 'state',
             operator: 'matches',
             expected: '^(transport-accepted|acknowledged)$'
-        }),
-        ...toCueSendCommands(toCueStep(sender), TRACKS_SENT_CUE),
-        { kind: 'close', commandId: toCommandId(sender, 'close-departs') }
+        })
     ];
 }
 

@@ -502,7 +502,7 @@ function toRoleCells(
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
             unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined,
-            recipeRunExtensionMs: definition.recipeRunExtensionMs
+            recipeRunExtensionMs: definition.toRecipeRunExtensionMs?.(step)
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });

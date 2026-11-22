@@ -1,11 +1,10 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_INBOUND_DIAGNOSTICS_TOPIC } from '../../alm-conformance-diagnostic-waits.ts';
+import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toVerdictTimeoutMs } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toOrderingKey, toSentCommands } from '../../alm-conformance-ordering-commands.ts';
-import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -13,22 +12,31 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
-import { FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
+import {
+    computeCommandsTimeoutMs,
+    computeCuedArrivalsWaitMs,
+    toArrivalsCueCommands,
+    toCuedArrivalsReceiverCommands,
+    toCuedArrivalsSenderCommands,
+    type AlmCuedArrivals
+} from './alm-cued-arrivals.ts';
+import { computeSendLoopBudgetMs, FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
 
 /**
  * Sequences 3 to 66, which arrive ahead of seq 2, so seq 2's arrival releases 64 buffered messages at once. A loop
  * cannot name them: its index counts from 0 with no offset, a sequence is a number a loop does not substitute, and an
- * outer loop fixes an inner loop's index before it runs. So each is a literal send with a pause after it.
+ * outer loop fixes an inner loop's index before it runs. So each is a literal send with a pause after it, and one
+ * iteration of a loop holds them all, so they share the budget of 64 loop sends.
  */
 const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 3);
 const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
-/**
- * The cell's own lifetime for the sends and the receive window. A slow runner may take longer than the default 30 s
- * to put 66 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
- * proven on the real runtime, and this cell proves the 66 arrivals and, over `rtc`, the promotion.
- */
-const BUFFERED_TRACK_TTL_MS = 90_000;
+/** The receiver counts the 66 once the sender cued that seq 2 is released and admitted. */
+const BUFFERED_ARRIVALS: AlmCuedArrivals = {
+    cue: `released-${HELD_SEQ}`,
+    count: TRACK_LENGTH,
+    toSends: toBufferedSends
+};
 /** A count above zero starts with a digit from 1 to 9, and `promoted` is the last key `effect-drain` emits. */
 const NONZERO_LEADING_DIGITS = 9;
 
@@ -52,22 +60,52 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
-    toSenderCommands: (sender) => [
+    toRecipeRunExtensionMs: (step) => computeCuedArrivalsWaitMs(step, BUFFERED_ARRIVALS),
+    toSenderCommands: (sender) => toCuedArrivalsSenderCommands(sender, BUFFERED_ARRIVALS),
+    toRecipientCommands: (receiver) => [
+        ...toCuedArrivalsReceiverCommands(receiver, BUFFERED_ARRIVALS),
+        ...(receiver.input.carrier === 'rtc' ? [toPromotionWait(receiver)] : [])
+    ]
+};
+
+function toBufferedSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
         toTrackSend(sender, 1),
         ...toSentCommands({ ...sender, index: 1 }),
         ...toHeldSendCommands({ ...sender, index: HELD_SEQ }, [toTrackSend(sender, HELD_SEQ)]),
-        ...BUFFERED_SEQS.flatMap((seq) => [
-            toTrackSend(sender, seq),
-            toPauseCommand(sender, `pause-${seq}`, FAIRNESS_SEND_INTERVAL_MS)
-        ]),
+        {
+            kind: 'loop',
+            commandId: toCommandId(sender, 'buffered-sends'),
+            count: 1,
+            timeoutMs: computeSendLoopBudgetMs(BUFFERED_SEQS.length),
+            commands: BUFFERED_SEQS.flatMap((seq) => [
+                toTrackSend(sender, seq),
+                toPauseCommand(sender, `pause-${seq}`, FAIRNESS_SEND_INTERVAL_MS)
+            ])
+        },
+        ...toReleaseCommands(sender)
+    ];
+}
+
+/** Seq 2 leaves once the buffered sends are done, and its admission is observed. */
+function toReleaseCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
         ...toHeldMessageFaultCommands({ ...sender, index: HELD_SEQ }, `release-message-${HELD_SEQ}`, 0),
         ...toAdmissionCommands({ ...sender, index: HELD_SEQ })
-    ],
-    toRecipientCommands: (receiver) =>
-        receiver.input.carrier === 'rtc'
-            ? [toTrackArrivalsCommand(receiver), toPromotionWait(receiver)]
-            : [toTrackArrivalsCommand(receiver)]
-};
+    ];
+}
+
+/**
+ * Every send's lifetime. The first buffered send must outlive the rest of the loop, seq 2's release and admission, the
+ * cue, and the receiver's count, which opens at the cue; the count's window is a verdict's.
+ */
+function computeBufferedTrackTtlMs(sender: AlmConformanceStepInput): number {
+    const afterLoopMs = computeCommandsTimeoutMs([
+        ...toReleaseCommands(sender),
+        ...toArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
+    ]);
+    return computeSendLoopBudgetMs(BUFFERED_SEQS.length) + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
+}
 
 function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackBoxTestCommand {
     return toSendCommand({
@@ -77,21 +115,12 @@ function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackB
         delivery: {
             reliability: 'at-least-once',
             ack: 'none',
-            ttlMs: BUFFERED_TRACK_TTL_MS,
+            ttlMs: computeBufferedTrackTtlMs(sender),
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
             orderingKey: toOrderingKey(sender),
             seq
         }
     });
-}
-
-/** Every message of the track within the cell's lifetime: the first buffered one expires at its end. */
-function toTrackArrivalsCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    return {
-        ...toReceivedCommand({ ...receiver, index: 1, count: TRACK_LENGTH, absent: false }),
-        windowMs: BUFFERED_TRACK_TTL_MS - RESPONSE_MARGIN_MS,
-        timeoutMs: BUFFERED_TRACK_TTL_MS
-    };
 }
 
 /**
