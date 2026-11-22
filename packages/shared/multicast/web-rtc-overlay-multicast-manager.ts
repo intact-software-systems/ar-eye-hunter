@@ -15,7 +15,6 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { resolveALUpstreamPeerId, toALOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -110,6 +109,7 @@ import {
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
 import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
+import { resolveRtcUpstreamPeerId, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
@@ -586,17 +586,9 @@ export class WebRtcOverlayMulticastManager {
             this.connectionService.readyPeerIdsForLane().includes(peerId);
     }
 
-    /** The one ready neighbour toward the origin of `msg` in the accepted layout; none when that layout places none. */
     readUpstreamPeerId(msg: ALMessage): string | undefined {
         const selfPeerId = this.connectionService.input.sessionId;
-        return resolveALUpstreamPeerId(
-            toALOverlayAdjacency(
-                selfPeerId,
-                toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
-            ),
-            msg.id.senderId,
-            this.connectionService.readyPeerIdsForLane()
-        );
+        return resolveRtcUpstreamPeerId(this.readOutboundObservation(msg), selfPeerId, msg.id.senderId);
     }
 
     private planForwarding(
@@ -1257,10 +1249,7 @@ export class WebRtcOverlayMulticastManager {
                 msg,
                 request,
                 selfPeerId,
-                adjacency: toALOverlayAdjacency(
-                    selfPeerId,
-                    toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
-                ),
+                adjacency: toRtcAcceptedOverlayAdjacency(this.readOutboundObservation(msg), selfPeerId),
                 planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan'),
                 isRepairTargetAdmitted
             });
