@@ -41,6 +41,10 @@ const STORAGES: readonly InboundTestStorage[] = ['memory', 'indexeddb'];
 const ENGINE_STEP_MS = 20;
 /** A message lifetime shorter than the renewal schedule's 7 s at the fixture's stretch of 1. */
 const SHORT_TTL_MS = 5_000;
+/** A draw that stretches every interval as far as a stretch may: 1.5 s, 3 s and 6 s, the last timer due at 10.5 s. */
+const MAXIMUM_STRETCH_DRAW = 0.999_999_9;
+/** How long after its due time the engine claims the last timer under load. */
+const LATE_CLAIM_MS = 100;
 /** Turns of the event loop each step gives the store, more than one engine pass needs. */
 const STORAGE_TURNS_PER_STEP = 100;
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
@@ -384,6 +388,17 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
 
         await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('ends the hold at the maximum stretch even when the last timer is claimed after its due time', async () => {
+        const fixture = createRenewalFixture('memory', { random: () => MAXIMUM_STRETCH_DRAW });
+        await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_500, 4_500, 10_500 + LATE_CLAIM_MS]);
 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);

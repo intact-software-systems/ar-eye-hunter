@@ -84,23 +84,10 @@ export function isALInboundGapNackIntent(intent: ALInboundEffectIntent): intent 
     return intent.payload.kind === 'send-nack' && intent.payload.reason === 'gap';
 }
 
-/** How long the renewal schedule takes to reach its last timer at the most a stretch may be. */
-export function computeALGapRenewalScheduleMs(): number {
-    return AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs.reduce(
-        (totalMs, _intervalMs, index) =>
-            totalMs +
-            (computeALGapRenewalDelayMs(
-                AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER + index,
-                AL_MESSAGE_RESOURCE_LIMITS.gapRenewalMaxStretch
-            ) ?? 0),
-        0
-    );
-}
-
 /**
  * One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. The
- * timer of a held start range lives at least until the schedule's last timer, whatever the copy's own lifetime, so the
- * bounded hold always ends.
+ * timer of a held start range lives at least as long as the track's ordering snapshot does from the reveal, whatever
+ * the copy's own lifetime, so its last timer runs however late it is claimed and the bounded hold always ends.
  */
 export function toALInboundGapRenewalEffects(
     input: ToALInboundGapRenewalEffectsInput
@@ -120,7 +107,7 @@ export function toALInboundGapRenewalEffects(
     });
     const heldStartExpireAtMs = Math.max(
         gapNack.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs,
-        read.nowMs + computeALGapRenewalScheduleMs()
+        read.nowMs + read.orderingTrackTtlMs
     );
     return computeALInboundNewlyMissingRanges(read.orderingSnapshot, read.plan.orderingRuntime).map((range) => {
         const payload: ALInboundGapRenewalEffect = {
