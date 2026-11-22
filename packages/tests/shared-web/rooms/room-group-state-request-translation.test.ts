@@ -369,14 +369,19 @@ describe('room request translation', () => {
         });
     });
 
-    it('keeps server-owned deadlines out of an ordinary metadata patch and rejects explicit changes', () => {
-        const currentMetadata = { rallarRoomDeadlines: [{ name: 'vote', atEpochMs: 5000, revision: 1 }], topic: 'old' };
+    it.each([
+        ['rallarRoomDeadlines', 'setDeadline'], ['rallarRoomClocks', 'changeClock'],
+        ['rallarRoomLobby', 'configure'],
+        ['rallarSessionSchedule', 'schedule'],
+        ['rallarRetention', 'retention'], ['rallarDirectoryListing', 'directoryListing'],
+        ['rallarSpectatorCapacity', 'maxSpectators']
+    ])('omits inherited %s from an app patch and rejects editing it directly', (key, operation) => {
+        const currentMetadata = { [key]: {}, topic: 'old' };
         expect(toRoomMetadataGroupStateRequest({ currentMetadata, patch: { topic: 'new' }, ...actor })).toEqual({
-            metadata: { topic: 'new' },
-            ...actor
+            metadata: { topic: 'new' }, ...actor
         });
-        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { rallarRoomDeadlines: null }, ...actor }))
-            .toThrow(/setDeadline/);
+        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { [key]: null }, ...actor }))
+            .toThrow(operation);
     });
 
     it('translates every invite and member-governance request', () => {
