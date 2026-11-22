@@ -2019,8 +2019,10 @@ reads its prior from the record, or `seq - 1` when the record lists it not:
   that copy and its contiguous live successors; with every held copy expired
   it passes them all and its next copy follows in order. The start range's
   renewal outlives a shorter message lifetime for this, so the bound holds
-  whatever the copies' lifetime. The start, arriving later, answers
-  `before-entry`. A track that delivered anything keeps waiting as before.
+  whatever the copies' lifetime, without retaining the message it names. The
+  entry is stated as an `entered` position event, as an admission's is. The
+  start, arriving later, answers `before-entry`. A track that delivered
+  anything keeps waiting as before.
 - **Prior equal to its position**: the sequences between were never meant for
   it, so the copy delivers in order (`omitted`), and a buffered copy whose own
   prior meets the position is released the same way.
@@ -2084,10 +2086,7 @@ the RTC origin cannot serve and enters only when its bounded hold ends; a
 recipient that forgot a track it delivered (one pushed off the evicted list by
 256 later evictions, a storage reset or a new connect that keeps the peer id)
 asks for its start again, receives once more the frames the origin still
-retains (at least once) and ends the hold on older ones; a track opened at
-its start retains the message of the copy that revealed its start for the
-ordering TTL, so its hold can end however late its last renewal runs (one
-message per such track, within the browser's 256-track cap); a live-only hand-over copy carries no record and is dropped silently
+retains (at least once) and ends the hold on older ones; a live-only hand-over copy carries no record and is dropped silently
 (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with
 no NACK and stays unconfirmed, repaired by nothing; under `rtc-with-ws-fallback`
 a server copy whose record meets the receiver's position can be read as an

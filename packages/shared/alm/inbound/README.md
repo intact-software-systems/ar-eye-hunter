@@ -681,7 +681,8 @@ number; once nothing is missing, the track is gone or the row has expired it end
 request past 4. The last timer ends a bounded hold instead of asking a fourth time, on a track the entry rule below
 opened at `0` that has delivered nothing ("Entry, omission and witness"). Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
-with the message (a held start range's live for the track's ordering TTL, "Entry, omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
+with the message (a held start range's live for the track's ordering TTL without retaining its message, "Entry,
+omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
 removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
 NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
 each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
@@ -738,8 +739,9 @@ pending delivery, so a session that witnessed while its own deliveries were pend
 resyncs its next delivered copy. A recorded frozen copy below a recipient's position is `stale` and answers a
 `before-entry` NACK (above, under the relay); an unrecorded stale copy is dropped with no NACK, as before recorded
 tracks, and so is a copy of a WS send, which carries no frozen audience: over `ws` the server skips a copy below a
-recorded position before it is sent. After each committed admission, replays included,
-[`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
+recorded position before it is sent. After each committed admission, replays included, and after a bounded hold's
+end that enters at a copy (below),
+[`recordALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
 carrier. Its bounded dimensions are `status` (four values) and `carrier` (`rtc`, `ws`); `workerId`, `trackKey` and the
@@ -768,22 +770,32 @@ a prior above `0`, ask a range the RTC origin cannot serve, and enter only when 
 most until its renewal schedule ends. The admission that opens it arms the start range's timer (`1` to `p`,
 [`isALOrderingHeldStartRange`](./gap-renewal/compute-al-ordering-held-entry.ts)) to live at least as long as the
 track's ordering snapshot does from the reveal (`orderingTrackTtlMs`), whatever the copy's own lifetime, so the last
-timer runs however late the engine claims it; every other gap timer still expires with its message. The timer names
-the copy that revealed the range, so that copy's message is retained as long as the timer, for the ordering TTL
-(**limit:** one message per rule-opened track, at most one per track of the 256-track cap). When that last timer comes due with
+timer runs however late the engine claims it; every other gap timer still expires with its message. The admission
+decides once that the timer holds the start and the timer carries it (`heldStart`, a required field of the
+`renew-gap` row). Such a timer names the copy that revealed the range without retaining it
+([`isALInboundMessageRetainingWork`](./gap-renewal/compute-al-inbound-gap-renewal.ts): the bundle neither extends
+the message's canonical and owner rows to the timer's expiry nor requires them to outlive it), so that message keeps
+its own lifetime. When that last timer comes due with
 the range still missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth
 time and ends the hold instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the lane's stretch (1
-to 1.5) after the gap was revealed, so 7 to 10.5 s. One rule,
-[`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts), read from the copy that revealed the
-range (whose record must still owe the start) and the track's live buffered copies, ends it: the track passes every
+to 1.5) after the gap was revealed, so 7 to 10.5 s. The last run reads the track by its key alone
+(`readOrderingTrack`: its snapshot, live buffered copies and delivery progress, guarded by the rows of the message the
+timer names, held or not). One rule,
+[`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts), over the timer's `heldStart` and the
+track's live buffered copies, ends it: the track passes every
 buffered sequence below its lowest live copy and enters at that copy; with no live copy (every held copy expired) it
-passes every buffered sequence and releases nothing, so its next copy follows in order.
+passes every buffered sequence and releases nothing, so its next copy follows in order. A buffered copy is live only
+while its message lives: its slot is written with the message's own expiry and every rewrite of it takes a release
+row's, which is that expiry too.
 [`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts) commits an entry as an entered
-admission of that copy would: the new position, the copy's slot recording it `entered` (so its delivery waits on
-nothing below it), and a release of the copy and of each contiguous live successor through the buffered-release path;
+admission of that copy would, from that copy's own admission surface: the new position, the copy's slot recording it
+`entered` (so its delivery waits on nothing below it), and a release of the copy and of each contiguous live successor
+through the buffered-release path; after its commit it states the copy's `entered` `ordering-position`, as an entered
+admission does, so `readUsage().ordering` counts the hold's entry;
 `computeALInboundPassedTrack` moves the position and the delivery progress past the buffered sequences, as a witness
-does. Both are guarded by the track as read, so an arrival that moved the track first wins and the timer runs again;
-an end that cannot commit because its copy expired meanwhile sends the fourth request as before. A copy below the new
+does, and states no position event: it judges no copy, and none of the four statuses describes passing expired copies.
+Both are guarded by the track as read, so an arrival that moved the track first wins and the timer runs again, as does
+an end that cannot commit because its copy expired meanwhile. A copy below the new
 position that arrives later is `stale` and answers `before-entry`, as at any entry. A track that delivered anything,
 or whose start range's revealing copy owes no start (an unrecorded track, the WS server's initial window included),
 keeps the mid-track behaviour: the fourth request goes out and the track waits.
