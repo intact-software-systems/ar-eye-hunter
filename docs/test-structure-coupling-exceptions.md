@@ -6141,6 +6141,66 @@ moved or changed test.
       "summary": "The shared-rtc-bench package's tsconfig includes its own source glob so the package typechecks its source, replacing the retired Deno-checked baseline catalog.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside the accepted baseline catalog and typechecked by the package",
       "coverageRelation": "The test reads the package tsconfig and asserts it includes the **/*.ts source glob, proving the package typechecks its own source tree."
+    },
+    {
+      "id": "alm-relay-statement-grouping-one-encode-per-control",
+      "domain": "ALM relay receipt statement grouping cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "A relay that groups 64 forwarded confirmations about one recipient under one reused proof encodes each control's signed content exactly once in the scan (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#groups 64 confirmations about one recipient under one proof with one encode each, keeping all in input order",
+      "coverageRelation": "The test runs toFirstOfEachALReceiptStatement over 64 same-proof confirmations with distinct contents and counts the encoder calls; the returned controls prove the grouping kept every distinct statement in input order.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "toClassifiedSigningInput, the encoder of a control's signed content (@shared/signature/to-classified-signing-input.ts), wrapped to count calls and keep behaviour",
+        "observableEffect": "Encoding a control's signed content is the scan's cost: pairwise encoding of 64 same-proof controls takes over two thousand encodes and the relay's grouping time grows quadratically.",
+        "requiredConstraint": "Exactly 64 encodes for 64 controls under one proof: one per control per scan.",
+        "failureRationale": "The grouped result is identical for a linear and a pairwise scan, so only the encode count shows that a reused proof no longer buys a quadratic cost. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
+      }
+    },
+    {
+      "id": "alm-relay-statement-grouping-one-encode-across-recipients",
+      "domain": "ALM relay receipt statement grouping cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "A relay that groups 64 same-proof controls spread over eight recipients still encodes each control's signed content exactly once in the scan (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#groups the same 64 spread over 8 recipients with one encode each",
+      "coverageRelation": "The test runs toFirstOfEachALReceiptStatement over 64 same-proof confirmations spread over eight recipients and counts the encoder calls; the returned controls prove nothing was dropped.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "toClassifiedSigningInput, the encoder of a control's signed content (@shared/signature/to-classified-signing-input.ts), wrapped to count calls and keep behaviour",
+        "observableEffect": "Per-recipient buckets must not re-encode a control once per comparison inside the bucket, or a reused proof over many recipients costs one encode per pair.",
+        "requiredConstraint": "Exactly 64 encodes for 64 controls across 8 recipients: one per control per scan.",
+        "failureRationale": "The grouped result cannot distinguish a scan that caches each control's encoding from one that re-encodes per comparison. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
+      }
+    },
+    {
+      "id": "alm-relay-statement-history-encodes-once-across-scans",
+      "domain": "ALM relay receipt statement grouping cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "A prepared statement history of 32 same-proof priors and the admitted control are each encoded at most once across the outside-statement and confirmed-statement scans (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes a prepared history of 32 same-proof priors and the control at most once across both scans",
+      "coverageRelation": "The test prepares the history with toALReceiptStatementHistory, runs hasALOutsideStatement and hasALConfirmedStatement over it, and bounds the encoder calls; the two false answers prove the scans compared every prior.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "toClassifiedSigningInput, the encoder of a control's signed content (@shared/signature/to-classified-signing-input.ts), wrapped to count calls and keep behaviour",
+        "observableEffect": "An admission scans one history twice; re-encoding the priors per scan doubles the admission's cost and per comparison makes it pairwise.",
+        "requiredConstraint": "At most 33 encodes for 32 priors plus the control across both scans.",
+        "failureRationale": "Both scans answer the same whether the history caches each prior's encoding or re-encodes it per scan and comparison. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
+      }
+    },
+    {
+      "id": "alm-relay-statement-honest-controls-encode-nothing",
+      "domain": "ALM relay receipt statement grouping cost",
+      "owner": "Rallar shared maintainers",
+      "summary": "Grouping honest controls, with absent proofs or pairwise different proofs, encodes no signed content: the proof identity decides first (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes nothing for honest controls: absent proofs, or pairwise different proofs",
+      "coverageRelation": "The test runs toFirstOfEachALReceiptStatement over 64 unsigned and 64 distinctly signed confirmations and asserts no encoder call; the returned controls prove the grouping answer for each.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "toClassifiedSigningInput, the encoder of a control's signed content (@shared/signature/to-classified-signing-input.ts), wrapped to count calls and keep behaviour",
+        "observableEffect": "Encoding signed content for controls whose proof identities already decide the answer adds a per-control cost to every honest relay forward.",
+        "requiredConstraint": "Zero encodes when no two controls share a non-null proof identity.",
+        "failureRationale": "The grouped result is the same whether or not the scan encodes content it never needs to compare, so only the absent encoder call shows honest traffic pays nothing. D606: a child that reuses one proof over up to 256 altered contents made a relay encode the signed content pairwise, about 90 ms per retried-copy grouping against about 1.2 ms; the encode count is the cost the scan owes and the only observable that tells a linear scan from a pairwise one."
+      }
     }
   ],
   "entries": [
@@ -13051,6 +13111,50 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "A failed raw-reference verification must not publish a success summary; the failure artifact is the only output.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reports a raw-reference mismatch as a failure without publishing a summary"
+    },
+    {
+      "id": "test-structure-coupling-cb2f6fd5905be370",
+      "path": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-relay-statement-grouping-one-encode-per-control",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The 64-call count is the requirement itself: one encode per control in one grouping scan, so a proof reused over 64 contents costs linear, not pairwise, encoding (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#groups 64 confirmations about one recipient under one proof with one encode each, keeping all in input order"
+    },
+    {
+      "id": "test-structure-coupling-fc99802f6b35783e",
+      "path": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-relay-statement-grouping-one-encode-across-recipients",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The 64-call count is the requirement itself across recipients: bucketing by recipient keeps one encode per control per scan (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#groups the same 64 spread over 8 recipients with one encode each"
+    },
+    {
+      "id": "test-structure-coupling-5cce66f2a1e11dde",
+      "path": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-relay-statement-history-encodes-once-across-scans",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The at-most-33 bound is the requirement itself: a prepared history encodes each prior and the control once however many scans compare them (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes a prepared history of 32 same-proof priors and the control at most once across both scans"
+    },
+    {
+      "id": "test-structure-coupling-9126af01585a729a",
+      "path": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-relay-statement-honest-controls-encode-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent encode is the requirement itself: content is encoded only for two controls under one non-null proof, so honest controls cost nothing (D606).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/control/is-al-same-receipt-statement-encode-count.test.ts#encodes nothing for honest controls: absent proofs, or pairwise different proofs"
     }
   ]
 }

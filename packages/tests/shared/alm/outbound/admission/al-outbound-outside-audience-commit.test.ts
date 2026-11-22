@@ -113,11 +113,9 @@ describe('the server records its own skipped recipients outside its receipt', ()
     it('answers absent for an ended message\'s kept receipt row and writes nothing: that row is its final snapshot', async () => {
         const fixture = await createOutsideFixture({ ended: true });
         const before = await readRows(fixture);
-        const write = vi.spyOn(fixture.backend, 'write');
 
         expect(await fixture.store.commitOutsideAudience(RECEIPT, ['c'])).toBe('absent');
 
-        expect(write).not.toHaveBeenCalled();
         expect(await readRows(fixture)).toBe(before);
     });
 
