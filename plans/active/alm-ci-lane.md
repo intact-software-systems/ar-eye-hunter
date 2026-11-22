@@ -202,7 +202,8 @@ Three were weighed with the maintainer, who picked the first.
   (a job step before Playwright, or the spec's first test) is the builder's, as long as there is one
   planning function. The plan names every family of the carrier, whichever families
   `RALLAR_BLACK_BOX_ALM_FAMILIES` lets the run execute: a carrier's two jobs write the same plan,
-  and a job that never ran leaves its families without a result, which reads red.
+  so a job that is missing from the run altogether leaves its families without a result, which
+  reads red.
 - The job uploads two artifacts in a step of its own that runs `if: always()`. The uploads are not
   nested in the action that runs the lane: a composite action is one step of the job, and when that
   step is cancelled its nested steps are skipped, whatever their `if` says (seen in the first ready
@@ -269,7 +270,11 @@ Three were weighed with the maintainer, who picked the first.
   all their artifacts, and one conclusion. That conclusion is in progress when any job is, else
   cancelled when any was, else a failure when any failed or when some were skipped and others not,
   else success when all succeeded, else skipped. Two jobs whose plans differ are reported as an
-  issue.
+  issue. The plan is read only when every job of the carrier has a result artifact that could be
+  read. When one is missing, expired or could not be downloaded, the run has no plan and reads red
+  with nothing to attribute, as a one-job carrier whose artifact is missing does. A dead runner or
+  a failed download is the run's fault, not a family's: a cause recorded against a family key would
+  answer for that family's later failures too.
 - **Which runs count.** The streak counts full-scope runs of `main` pushes only, on the PostgreSQL
   API. Runs of pull requests and dispatched runs are read and shown beside it, because a red
   pull-request run may be the pull request's own regression, caught as intended, and not a flake. A
