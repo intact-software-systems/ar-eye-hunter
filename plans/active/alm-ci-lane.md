@@ -90,7 +90,8 @@ The code uses "cell" for two things. This plan uses neither meaning without sayi
   (`AlmLanePlannedCell` in `lane/resolve-alm-lane-plan.ts`).
 - **family test**: one Playwright test, which runs every planned scenario of one family over one
   carrier (`ObservationCell` in the spec). Six families, three carriers, eighteen family tests.
-- **run**: one job of one workflow run, for one carrier.
+- **run**: a carrier's jobs in one workflow run, read together. A carrier is one job unless it is
+  split by family (section 2).
 
 ## Approaches
 
@@ -129,8 +130,8 @@ Three were weighed with the maintainer, who picked the first.
 
 - `alm-conformance-observation.yml` runs the `full` scope against the PostgreSQL API: a
   `postgres:16` service and `npm run db:migrate` as the `postgres-integration` lane does, then
-  `npm run test:rallar:full-stack:postgres:alm` with the carrier set. One runner per carrier, a fresh
-  database per run. It stays an observation: `continue-on-error: true`, and no job waits for it.
+  `npm run test:rallar:full-stack:postgres:alm` with the carrier set. One runner per job (a carrier
+  is one job, or two when it is split by family, below), a fresh database per job. It stays an observation: `continue-on-error: true`, and no job waits for it.
 - Its `alm_scope` input and the branch gate's `vars.RALLAR_BLACK_BOX_ALM_SCOPE` read are deleted;
   the workflow has one scope.
 - It gains a `workflow_dispatch` trigger, so the full scope can be started on a branch
@@ -270,8 +271,9 @@ Three were weighed with the maintainer, who picked the first.
   all their artifacts, and one conclusion. That conclusion is in progress when any job is, else
   cancelled when any was, else a failure when any failed or when some were skipped and others not,
   else success when all succeeded, else skipped. Two jobs whose plans differ are reported as an
-  issue. The plan is read only when every job of the carrier has a result artifact that could be
-  read. When one is missing, expired or could not be downloaded, the run has no plan and reads red
+  issue. A rerun job uploads again under its own artifact name and GitHub lists both; the ledger
+  reads each name once and says so. The plan is read only when every job of the carrier has a
+  result artifact that could be read, counted by name. When one is missing, expired or could not be downloaded, the run has no plan and reads red
   with nothing to attribute, as a one-job carrier whose artifact is missing does. A dead runner or
   a failed download is the run's fault, not a family's: a cause recorded against a family key would
   answer for that family's later failures too.
