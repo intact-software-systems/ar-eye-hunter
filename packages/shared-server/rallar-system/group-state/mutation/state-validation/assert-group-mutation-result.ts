@@ -147,8 +147,9 @@ function assertMutationReceiptDetails(
     ) {
         throw new TypeError(`${label} subscriptionOutcome differs from outcome`);
     }
-    // A subscription write records no event, so only an applied receipt without a subscription outcome names one.
-    if ((outcome === 'applied' && subscriptionOutcome === null) !== (receipt.eventId !== null)) {
+    // Private account writes publish to one or more private outbox records. They have no public room event.
+    const privatePublication = receipt.eventId === null && outboxIds.length > 0 && outboxIds.every(isHashedOutboxId);
+    if ((outcome === 'applied' && subscriptionOutcome === null && !privatePublication) !== (receipt.eventId !== null)) {
         throw new TypeError(`${label} event differs from outcome`);
     }
     if (receipt.joinCode !== null) {
@@ -233,11 +234,15 @@ function assertAppliedReceipt({
     if (
         outboxIds.slice(1).some((outboxId) =>
             !outboxId.startsWith('ft-') && !outboxId.startsWith('ct-') &&
-            !(outboxId.length === 36 && /^[0-9a-f]{22,34}-[0-9a-z]{1,13}$/.test(outboxId))
+            !isHashedOutboxId(outboxId)
         )
     ) {
         throw new TypeError(`${label} outboxIds differs from applied outcome`);
     }
+}
+
+function isHashedOutboxId(outboxId: string): boolean {
+    return outboxId.length === 36 && /^[0-9a-f]{22,34}-[0-9a-z]{1,13}$/.test(outboxId);
 }
 
 // Physical storage revisions and semantic group revisions are independent. Presence writes

@@ -13,6 +13,10 @@ export { configureRoomLobbyCapacityClaims } from './room-lobby-allocation.ts';
 export { changeRoomLobby, configureRoomLobby } from './room-lobby-roster.ts';
 
 export namespace RoomLobby {
+    export type Mutation = { readonly operation: 'configure'; readonly policy: Policy | null; }
+        | { readonly operation: 'wait'; readonly joinCode?: string; }
+        | { readonly operation: 'release'; };
+
     export interface Policy {
         readonly returnWindowMs: number;
         readonly claimWindowMs: number;
@@ -38,6 +42,7 @@ export namespace RoomLobby {
     }
     export type Command =
         | { readonly kind: 'reserve' | 'arrive' | 'away' | 'release'; readonly principalId: string; }
+        | { readonly kind: 'limit'; readonly principalId: string; readonly eligibleUntilEpochMs: number; }
         | { readonly kind: 'wait'; readonly principalId: string; readonly eligibleUntilEpochMs: number | null; }
         | ({ readonly kind: 'expire'; } & ReturnWindow);
     export interface Change {

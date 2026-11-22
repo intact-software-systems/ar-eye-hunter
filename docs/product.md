@@ -279,6 +279,14 @@ presence status, and current deadline. Scoped account WebSocket changes and retu
 wake a durable read. Use `release(roomRef)` for an explicit release, `retry()` for an uncertain command,
 and `stop()` when the application ends observation. Stopping observation preserves the commitment.
 
+Use `wait(roomRef)` to request the next available place without entering the room. For a room with
+a join code, supply `{ joinCode }` as the second argument. A waiting player can visit another room,
+disconnect, or cancel with `release(roomRef)`. When a place opens, the server offers it to the oldest
+eligible waiter and protects the place until the offer expires. The private seat changes from
+`waiting` to `offered` and includes the deadline. Enter the room through normal room admission
+to claim it. A decline, expired offer, or loss of access frees the place for the next eligible waiter.
+Scheduled reservations keep their places until withdrawal or the no-show deadline.
+
 ## Find players and start together
 
 AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and
