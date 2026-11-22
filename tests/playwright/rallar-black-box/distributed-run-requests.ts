@@ -4,6 +4,7 @@ import type { ControlDistributedRunSnapshot } from '../../../packages/shared-tes
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { FULL_STACK_CONTROL_BASE_URL } from './full-stack-helpers.ts';
+import { readDisposedResponse } from './read-disposed-response.ts';
 
 export async function createDistributedRun(
     request: APIRequestContext,
@@ -12,8 +13,11 @@ export async function createDistributedRun(
     const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
         data: { manifest }
     });
-    expect(response.status()).toBe(201);
-    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
+    const body = await readDisposedResponse(response, async (created) => {
+        expect(created.status()).toBe(201);
+        return await created.json();
+    });
+    return decodeControlDistributedRunSnapshot(body).fold(throwBoundaryError, (value) => value);
 }
 
 export async function mutateDistributedRun(
@@ -25,8 +29,11 @@ export async function mutateDistributedRun(
         `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
         action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
     );
-    expect(response.status()).toBe(202);
-    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
+    const body = await readDisposedResponse(response, async (accepted) => {
+        expect(accepted.status()).toBe(202);
+        return await accepted.json();
+    });
+    return decodeControlDistributedRunSnapshot(body).fold(throwBoundaryError, (value) => value);
 }
 
 export function throwBoundaryError(issue: string): never {

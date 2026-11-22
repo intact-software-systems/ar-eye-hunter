@@ -44,13 +44,12 @@ describe('Deploy workflow release gate', () => {
         expect(getJobBlock(workflow, 'release-gate')).toContain(releaseGateEnabledCondition);
     });
 
-    it('contains only the branch-control, release-gate, and observation jobs', async () => {
+    it('contains only the branch-control, release-gate, and navigation-report observation jobs', async () => {
         const workflow = load(
             await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8')
         ) as DeployWorkflow;
 
         expect(Object.keys(workflow.jobs).sort()).toEqual([
-            'alm-conformance-observation',
             'cloudflare-branch-controls',
             'navigation-report-observation',
             'release-gate'

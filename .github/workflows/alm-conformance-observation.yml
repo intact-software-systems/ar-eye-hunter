@@ -1,47 +1,78 @@
 name: ALM Conformance Observation
 
 on:
-  workflow_call:
-    inputs:
-      candidate_ref:
-        description: 'Exact Git revision to observe'
-        required: true
-        type: string
-      alm_scope:
-        description: 'ALM conformance scope the observation job runs: smoke or full'
-        required: false
-        default: 'smoke'
-        type: string
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'performance-observations/**'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+# A newer run of one pull request cancels the older one; a push or dispatched run has a group of its own, so every main
+# push the trigger admits (all but one that changes only performance-observations/**) is observed.
+concurrency:
+  group: alm-conformance-observation-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  # Non-blocking and beside the gates, not inside them: no caller waits for this job, so its minutes
-  # never lengthen a verdict or a deployment. One matrix leg runs each carrier on a runner of its own:
-  # the full three-carrier lane exhausted the hosted runner's memory, so the carriers are split. The
-  # hosted runner has not yet completed a typed ws send and a cold RTC handshake inside the recipe
-  # budgets; the uploaded run snapshots are the diagnostic.
+  # Only a pull request that is not a draft asks whether its diff can change the lane.
+  alm-changes:
+    name: Detect ALM lane changes
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_full_scope: ${{ steps.detect.outputs.run_full_scope }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect changes that can change the ALM lane
+        id: detect
+        run: node scripts/alm-lane-selection.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
+
+  # The full scope against the PostgreSQL API. Non-blocking: no job waits for it, so its minutes never
+  # lengthen a verdict or a deployment; the required smoke scope runs in the Release Gate's alm-smoke
+  # lane. One matrix leg runs each carrier on a runner of its own, with a fresh database per run.
+  # A failed detection leaves run_full_scope empty, which runs the full scope.
   alm-conformance-observation:
     name: ALM conformance observation (${{ matrix.carrier }})
+    needs: alm-changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.alm-changes.outputs.run_full_scope != 'false')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         carrier: [ws, rtc, rtc-with-ws-fallback]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
-      RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.alm_scope }}
-      RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ matrix.carrier }}
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
           fetch-depth: 0
 
       - name: Set up the lane
@@ -50,13 +81,18 @@ jobs:
           bun: 'true'
           playwright: 'true'
 
-      - name: Observe the ALM conformance lane over ${{ matrix.carrier }}
-        run: npm run test:rallar:full-stack:memory:alm
+      - name: Run Postgres migrations
+        run: npm run db:migrate
 
-      - name: Upload ALM conformance lane results
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Observe the ALM conformance lane over ${{ matrix.carrier }}
+        uses: ./.github/actions/alm-conformance-lane
         with:
-          name: alm-conformance-lane-${{ matrix.carrier }}-${{ github.sha }}
-          path: apps/rallar-black-box/test-results
-          if-no-files-found: ignore
+          carrier: ${{ matrix.carrier }}
+          scope: full
+
+      - name: Upload the ALM conformance lane results over ${{ matrix.carrier }}
+        if: ${{ always() }}
+        uses: ./.github/actions/alm-conformance-lane-results
+        with:
+          carrier: ${{ matrix.carrier }}
+          scope: full

@@ -7,6 +7,8 @@ import {
     it
 } from 'vitest';
 
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+
 import vitestConfig from '../../../vitest.config.ts';
 
 interface WorkflowStep {
@@ -24,6 +26,7 @@ interface MatrixShare {
 }
 
 interface WorkflowMatrix {
+    readonly carrier?: readonly string[];
     readonly shard?: readonly string[];
     readonly include?: readonly MatrixShare[];
 }
@@ -143,6 +146,14 @@ describe('Release Gate lanes', () => {
             expect(shares.map(([, shareCount]) => shareCount)).toEqual(shares.map(() => count));
             expect(shares.map(([index]) => index).toSorted()).toEqual(Array.from({ length: count }, (_, offset) => offset + 1));
         }
+    });
+
+    it('runs the ALM smoke lane once per carrier, not as shares of one run', () => {
+        const matrix = releaseGate.jobs['alm-smoke'].strategy?.matrix;
+
+        expect(matrix?.carrier).toEqual(ALM_CONFORMANCE_CARRIERS);
+        expect(matrix?.shard).toBeUndefined();
+        expect(matrix?.include).toBeUndefined();
     });
 
     it('runs the standard black-box shares and the cluster profile in separate lanes', () => {

@@ -33,7 +33,7 @@ export function readChangedPaths(repoRoot, base) {
 
 export function readChangedPathsBetweenRevisions(repoRoot, base, head) {
     validateGitRevision(repoRoot, base);
-    validateGitRevision(repoRoot, head);
+    validateGitRevision(repoRoot, head, 'head');
     return sortChanges(
         parseRawChanges(
             runGit(repoRoot, [
@@ -51,21 +51,33 @@ export function readChangedPathsBetweenRevisions(repoRoot, base, head) {
     );
 }
 
-export function validateGitRevision(repoRoot, revision) {
+export function readMergeBase(repoRoot, base, head) {
+    validateGitRevision(repoRoot, base);
+    validateGitRevision(repoRoot, head, 'head');
+    try {
+        return runGit(repoRoot, ['merge-base', '--end-of-options', base, head]).trim();
+    }
+    catch {
+        throw new Error(`Git revisions have no merge base: ${base} ${head}`);
+    }
+}
+
+/** @param {'base' | 'head'} [role] the revision's role in a comparison, named in every refusal */
+export function validateGitRevision(repoRoot, revision, role = 'base') {
     if (typeof revision !== 'string' || revision === '') {
-        throw new Error('Git base must be a non-empty revision');
+        throw new Error(`Git ${role} must be a non-empty revision`);
     }
     if (revision.startsWith('-')) {
-        throw new Error('Git base must not begin with an option prefix');
+        throw new Error(`Git ${role} must not begin with an option prefix`);
     }
     if (/[\0\r\n]/u.test(revision)) {
-        throw new Error('Git base contains forbidden control characters');
+        throw new Error(`Git ${role} contains forbidden control characters`);
     }
     try {
         runGit(repoRoot, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]);
     }
     catch {
-        throw new Error(`Git base is not a valid commit: ${revision}`);
+        throw new Error(`Git ${role} is not a valid commit: ${revision}`);
     }
 }
 
