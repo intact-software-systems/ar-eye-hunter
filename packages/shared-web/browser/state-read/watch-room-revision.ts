@@ -1,4 +1,5 @@
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
+import type { RallarStateEventMessage } from '../messages/rallar-message-contracts.ts';
 
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -61,6 +62,23 @@ function validateReadRevision<T extends { readonly revision: number; }>(
     if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
         throw new Error('Room read regressed.');
     }
+}
+
+function readServerDelta(
+    message: Pick<RallarStateEventMessage, 'transport' | 'topicId' | 'typeId' | 'raw'>,
+    room: GroupRef
+) {
+    if (
+        message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
+        message.typeId !== AppTopics.groupStateEvent
+    ) {
+        return;
+    }
+    const target = readALTargetGroupRef(message.raw);
+    if (!target || !isSameGroupRef(target, room)) {
+        return;
+    }
+    return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
 }
 
 /** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
@@ -170,17 +188,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
-        if (
-            message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
-            message.typeId !== AppTopics.groupStateEvent
-        ) {
-            return;
-        }
-        const target = readALTargetGroupRef(message.raw);
-        if (!target || !isSameGroupRef(target, room)) {
-            return;
-        }
-        const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
+        const delta = readServerDelta(message, room);
         if (!delta) {
             return;
         }
