@@ -8,7 +8,6 @@ import {
     type ALPeerControlMessage,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
-import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm/al-admission-backend.ts';
@@ -173,8 +172,8 @@ const B_BELOW_Y: SessionNextHops = { a: ['y'], y: ['a', 'b', 'c'], b: ['y', 'u']
 /** A layout `y` alone holds: `u` below the origin, `y` below `u`, and `b` and the leaf `c` below `y`. */
 const B_BELOW_Y_BELOW_U: SessionNextHops = { a: ['u'], u: ['a', 'y'], y: ['u', 'b', 'c'], b: ['y'], c: ['y'] };
 
-/** The relay hops a test grants a NACK where it starts round a cycle, so the cycle spends them in a few rounds. */
-const CYCLE_RELAY_HOPS = 4;
+/** The relay hops a leaf grants its gap NACK in a chain room of six live sessions: one fewer. */
+const SIX_SESSION_RELAY_HOPS = 5;
 
 const RELAY_NAMESPACE = 'relay-gap-repair';
 
@@ -594,7 +593,8 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         await deliverEach((await b.readSent('c')).slice(passedToC), gap.leaf, 'b');
         await drainUntil(() => gap.leaf.delivered.filter((message) => frames.includes(message)).length >= frames.length);
 
-        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', logicalRecipientPeerId: 'c', relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT - 2 });
+        // The room's four sessions grant 3, and `b` and `r` spend one each.
+        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', logicalRecipientPeerId: 'c', relayHopsLeft: 1 });
         expect([...outcomes.values()]).toEqual(['committed']);
         expect(gap.leaf.delivered.filter((message) => message.payload.typeId === frames[0]!.payload.typeId).map((message) => message.ordering?.seq))
             .toEqual([1, 2, 3]);
@@ -897,7 +897,8 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
             expect(readRelayedNacks(toPeerControls(passed.u))).toEqual([
                 { control: ['nack', 'c', 'gap'], orderingKey: readLeafTrackKey(gap), missingRanges: '2-2' }
             ]);
-            expect(readGapNack([atOrigin]).payload).toMatchObject({ fromPeerId: 'u', relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT - 2 });
+            // The room's five sessions grant 4, and `b` and `u` spend one each.
+            expect(readGapNack([atOrigin]).payload).toMatchObject({ fromPeerId: 'u', relayHopsLeft: 2 });
             expect(await verifyTestALReceiptControl(gap.chain.keys.c!, atOrigin)).toBe(true);
             expect(toOrigin.outcomes.get(atOrigin)).toBe('committed');
         }
@@ -939,12 +940,17 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
             relay.acceptOverlay(view.overlay);
         }
         await receiveAtLeaf(gap, [1, 3]);
-        await deliverEach((await readLeafControls(gap)).map((control) => withRelayHopsLeft(control, CYCLE_RELAY_HOPS)), gap.relay, 'c');
+        const leafControls = await readLeafControls(gap);
+        await deliverEach(leafControls, gap.relay, 'c');
 
-        await passBetweenRelays(relays, CYCLE_RELAY_HOPS + 2);
+        await passBetweenRelays(relays, SIX_SESSION_RELAY_HOPS + 2);
+        const passed = await readPassedGapNacks(relays, neighbourPeerIds);
 
-        // `r` passes it to `u` with 3 left, `u` to `b` with 2, `b` to `r` with 1, `r` to `u` with none, and `u` drops it.
-        expect(await readPassedGapNacks(relays, neighbourPeerIds)).toEqual({ r: ['u', 'u'], b: ['r'], u: ['b'] });
+        // The room's six sessions grant 5: `r` passes it to `u` with 4 left, `u` to `b` with 3, `b` to `r` with 2, `r` to
+        // `u` with 1, `u` to `b` with none, and `b` drops it.
+        expect(readGapNack(leafControls).payload.relayHopsLeft).toBe(SIX_SESSION_RELAY_HOPS);
+        expect(passed).toEqual({ r: ['u', 'u'], b: ['r'], u: ['b', 'b'] });
+        expect(countPassedGapNacks(passed)).toBeLessThanOrEqual(SIX_SESSION_RELAY_HOPS);
     });
 
     it('relays whose accepted layouts disagree once a relay\'s parent has left pass a gap NACK round only as far as its relay hops reach (ruling 20)', async () => {
@@ -954,13 +960,17 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         promoteLayout(gap, B_BELOW_Y, [relays.b, relays.y]);
         await relays.b.closeEdge('r');
         // `y` has no edge to the origin, so it passes the leaf's report to the peer the message arrived from.
-        const leafReport = (await readLeafGapReport(gap, relays.y)).map((control) => withRelayHopsLeft(control, CYCLE_RELAY_HOPS));
+        const leafReport = await readLeafGapReport(gap, relays.y);
         await deliverEach(leafReport, relays.y, 'c');
 
-        await passBetweenRelays(relays, CYCLE_RELAY_HOPS + 2);
+        await passBetweenRelays(relays, SIX_SESSION_RELAY_HOPS + 2);
+        const passed = await readPassedGapNacks(relays, neighbourPeerIds);
 
-        // `y` passes it to `u` with 3 left, `u` to `b` with 2, `b` to `y` with 1, `y` to `u` with none, and `u` drops it.
-        expect(await readPassedGapNacks(relays, neighbourPeerIds)).toEqual({ b: ['y'], u: ['b'], y: ['u', 'u'] });
+        // The room's six sessions grant 5: `y` passes it to `u` with 4 left, `u` to `b` with 3, `b` to `y` with 2, `y` to
+        // `u` with 1, `u` to `b` with none, and `b` drops it.
+        expect(readGapNack(leafReport).payload.relayHopsLeft).toBe(SIX_SESSION_RELAY_HOPS);
+        expect(passed).toEqual({ b: ['y'], u: ['b', 'b'], y: ['u', 'u'] });
+        expect(countPassedGapNacks(passed)).toBeLessThanOrEqual(SIX_SESSION_RELAY_HOPS);
     });
 
     it('a subscribing relay refuses its own gap NACK when disagreeing layouts bring it back to it (ruling 20)', async () => {
@@ -1010,7 +1020,7 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         await deliverEach((await relays.y.readSent('c')).filter((copy) => copy.ordering?.seq === 2), gap.leaf, 'y');
         await drainUntil(() => gap.leaf.delivered.length >= gap.frames.length);
 
-        expect(readGapNack(leafReport).payload.relayHopsLeft).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        expect(readGapNack(leafReport).payload.relayHopsLeft).toBe(SIX_SESSION_RELAY_HOPS);
         expect(readRelayedNacks(toPeerControls(toOrigin))).toEqual([
             { control: ['nack', 'c', 'gap'], orderingKey: readLeafTrackKey(gap), missingRanges: '2-2' }
         ]);
@@ -1244,12 +1254,9 @@ async function readPassedGapNacks<TPeerId extends string>(
     );
 }
 
-/** `control` as it arrives with `relayHopsLeft` relay hops left, when it is a gap NACK; outside its proof, which holds. */
-function withRelayHopsLeft(control: ALMessage, relayHopsLeft: number): ALMessage {
-    const parsed = decodeALControlMessage(control).right;
-    return parsed?.type === 'nack' && parsed.payload.reason === 'gap'
-        ? newALNackControlMessage(control.id, { ...parsed.payload, relayHopsLeft })
-        : control;
+/** How many times the relays passed a gap NACK on, in all. */
+function countPassedGapNacks(passed: Readonly<Record<string, readonly string[]>>): number {
+    return Object.values(passed).reduce((count, peerIds) => count + peerIds.length, 0);
 }
 
 /** For `rounds` rounds, each relay receives what each other relay has sent it since the last round. */

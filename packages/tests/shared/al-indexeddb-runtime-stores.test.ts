@@ -58,6 +58,7 @@ import '../setup-browser-indexeddb.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForALInboundWorkDueNowSettled, waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 const SCOPED_PEER_1_SOURCE = {
@@ -225,6 +226,7 @@ describe('IndexedDB AL runtime stores', () => {
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -842,6 +844,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInb
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

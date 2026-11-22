@@ -1,4 +1,5 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, computeALGapNackRelayHops } from '../al-contracts/al-message-resource-limits.ts';
 import {
     resolveALChildPeerIdsTowardRecipients,
     resolveALUpstreamPeerId,
@@ -18,7 +19,7 @@ import { resolveRtcRoomRoutingEdges } from './room-authority/resolve-rtc-room-ro
 /** The inbound runtime's route capabilities on an RTC lane (6d). */
 export type RtcInboundRoutes = Pick<
     ALInboundMessageRuntime.Dependencies,
-    'readUpstreamPeerId' | 'isRoutedPeerReady' | 'isLayoutChildPeer' | 'readGapNackParent'
+    'readUpstreamPeerId' | 'readGapNackRelayHops' | 'isRoutedPeerReady' | 'isLayoutChildPeer' | 'readGapNackParent'
 >;
 
 /** What the route capabilities read of an RTC lane: its rooms, its accepted layouts and its connected peers. */
@@ -129,6 +130,12 @@ export function createRtcInboundRoutes(
     const selfPeerId = lane.connectionService.input.sessionId;
     return {
         readUpstreamPeerId: (msg) => resolveRtcUpstreamPeerId(readObservation(msg), selfPeerId, msg.id.senderId),
+        readGapNackRelayHops: (msg) => {
+            const room = readObservation(msg).room;
+            return room === undefined
+                ? AL_GAP_NACK_RELAY_HOP_LIMIT
+                : computeALGapNackRelayHops(readGroupMemberSessionIds(room).length);
+        },
         isRoutedPeerReady: (msg, peerId) => isRtcRoutedPeerReady(readObservation(msg), peerId),
         isLayoutChildPeer: (msg, peerId) =>
             isRtcLayoutChildPeer(

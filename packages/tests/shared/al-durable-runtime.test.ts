@@ -41,6 +41,7 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForALInboundWorkDueNowSettled, waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 interface RetainedAdmissionState {
@@ -305,6 +306,7 @@ function createDefaultInboundRuntime(
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

@@ -25,6 +25,7 @@ import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/crea
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 import {
     createInboundTestAdmission,
@@ -428,6 +429,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
             });
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',

@@ -36,6 +36,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -1131,6 +1132,7 @@ function createSharedInboundCarriers(callbacks: {
     const [ws, rtc] = (['ws', 'rtc'] as const).map((carrier) => {
         const runtime = createDefaultALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',

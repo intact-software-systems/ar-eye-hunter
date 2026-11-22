@@ -26,6 +26,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 interface SnapshotObservation {
@@ -198,6 +199,7 @@ function createSnapshotAdmissionFixture(
     );
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

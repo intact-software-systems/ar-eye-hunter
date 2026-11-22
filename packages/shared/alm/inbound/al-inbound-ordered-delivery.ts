@@ -37,6 +37,7 @@ export namespace ALInboundOrderedDelivery {
             | 'verifyPublicationProof'
             | 'clock'
             | 'effectPreparation'
+            | 'readGapNackRelayHops'
             | 'onResyncRequired'
             | 'receiptProofs'
             | 'diagnostics'
@@ -100,7 +101,11 @@ export class ALInboundOrderedDelivery {
         if (plan.dropReason || !plan.localDelivery.enabled) {
             return await this.complete(read.snapshot.msg);
         }
-        const facts = readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation);
+        const facts = readALInboundEffectFacts(
+            read.nowMs,
+            this.dependencies.effectPreparation,
+            this.dependencies.readGapNackRelayHops(read.snapshot.msg)
+        );
         const computed = computeALInboundBufferedRelease({ read, plan, facts });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
@@ -160,7 +165,11 @@ export class ALInboundOrderedDelivery {
         };
         const computed = prepareALInboundCommitBundle({
             read,
-            facts: readALInboundEffectFacts(read.nowMs, this.dependencies.effectPreparation),
+            facts: readALInboundEffectFacts(
+                read.nowMs,
+                this.dependencies.effectPreparation,
+                this.dependencies.readGapNackRelayHops(msg)
+            ),
             mutations: [],
             effects: [toResyncRequiredNackEffect(msg, read, ordering)]
         });

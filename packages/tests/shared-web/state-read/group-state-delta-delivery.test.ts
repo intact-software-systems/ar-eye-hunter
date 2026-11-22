@@ -28,6 +28,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import {
     createDeltaEnvelopeFixture,
@@ -259,6 +260,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
         });
         this.inbound = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',

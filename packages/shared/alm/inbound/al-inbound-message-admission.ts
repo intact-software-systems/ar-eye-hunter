@@ -65,6 +65,7 @@ export namespace ALInboundMessageAdmission {
             | 'forwardRetriedCopy'
             | 'canForwardMessage'
             | 'isRoomPeerPresent'
+            | 'readGapNackRelayHops'
             | 'readPendingAdmissionAuthority'
             | 'readRelayedAckRejection'
             | 'readRelayedRepairRequestRejection'
@@ -133,7 +134,11 @@ export class ALInboundMessageAdmission {
             return Either.ofLeft(decoded.left);
         }
         await this.dependencies.verifyPublicationProof?.(admitted);
-        const facts = readALInboundEffectFacts(nowMs, effectPreparation);
+        const facts = readALInboundEffectFacts(
+            nowMs,
+            effectPreparation,
+            this.dependencies.readGapNackRelayHops(admitted)
+        );
         const read = await admissionStore.readIncomingMessage({
             msg: admitted,
             source,

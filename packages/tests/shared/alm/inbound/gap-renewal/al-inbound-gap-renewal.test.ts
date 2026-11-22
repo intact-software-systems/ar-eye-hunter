@@ -73,6 +73,8 @@ interface RenewalFixtureInput {
     readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
     /** Absent, the lane routes over no layout. */
     readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
+    /** Absent, every gap NACK is granted the wire limit, as on a runtime with no overlay. */
+    readonly readGapNackRelayHops?: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
 }
 
 /** How a timer run is composed outside its lane: which upstream peer resolves, and whether the revealing message is kept. */
@@ -298,17 +300,27 @@ describe('a receiver whose ordered track has a gap', () => {
         expect(await Promise.all(nacks.map(async (nack) => await verifyTestALReceiptControl(CRYPTO, nack.msg)))).toEqual([true, true]);
     });
 
-    it.each(['none', 'receiver'] as const)('a %s track\'s gap NACK and its renewal grant every relay hop a leaf may (ruling 20)', async (ack) => {
-        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: SIGNED });
-        await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack }), RTC_SOURCE);
-        await advanceTo(fixture, 1_000);
-        const relayHops = readSentControls(fixture).flatMap((msg) => {
-            const control = decodeALPeerControlMessage(msg).right;
-            return control?.type === 'nack' ? [[control.payload.gapRequestNumber, control.payload.relayHopsLeft]] : [];
-        });
+    it.each(['none', 'receiver'] as const)(
+        'a %s track\'s gap NACK and its renewal each grant the relay hops its room\'s live sessions allow then (ruling 20)',
+        async (ack) => {
+            // An 8-session room grants 7; a session leaves before the renewal, which grants 6.
+            const relayHopsBySession = [7, 6];
+            const fixture = createRenewalFixture('memory', {
+                carrier: 'rtc',
+                receiptProofs: SIGNED,
+                readGapNackRelayHops: () => relayHopsBySession[0]!
+            });
+            await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack }), RTC_SOURCE);
+            relayHopsBySession.shift();
+            await advanceTo(fixture, 1_000);
+            const relayHops = readSentControls(fixture).flatMap((msg) => {
+                const control = decodeALPeerControlMessage(msg).right;
+                return control?.type === 'nack' ? [[control.payload.gapRequestNumber, control.payload.relayHopsLeft]] : [];
+            });
 
-        expect(relayHops).toEqual([[1, AL_GAP_NACK_RELAY_HOP_LIMIT], [2, AL_GAP_NACK_RELAY_HOP_LIMIT]]);
-    });
+            expect(relayHops).toEqual([[1, 7], [2, 6]]);
+        }
+    );
 
     it('a page that cannot sign sends an unreceipted track\'s gap NACK and its renewal unsigned (ruling 19)', async () => {
         const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
@@ -344,7 +356,8 @@ describe('a receiver whose ordered track has a gap', () => {
             stretch: 1,
             receiptProofs: { kind: 'carrier-authenticated' },
             diagnostics: undefined,
-            readUpstreamPeerId: () => undefined
+            readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT
         });
         await renewal.renew(timer, timer.payload);
         const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
@@ -454,7 +467,8 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         receiptProofs: input.receiptProofs,
         random: input.random ?? (() => 0),
         readUpstreamPeerId: input.readUpstreamPeerId,
-        isRoutedPeerReady: input.isRoutedPeerReady
+        isRoutedPeerReady: input.isRoutedPeerReady,
+        readGapNackRelayHops: input.readGapNackRelayHops
     });
 }
 
@@ -614,6 +628,7 @@ function createDirectRenewal(fixture: InboundTestRuntime, input: DirectRenewalIn
         stretch: 1,
         receiptProofs: { kind: 'carrier-authenticated' },
         diagnostics: undefined,
-        readUpstreamPeerId: input.readUpstreamPeerId
+        readUpstreamPeerId: input.readUpstreamPeerId,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT
     });
 }

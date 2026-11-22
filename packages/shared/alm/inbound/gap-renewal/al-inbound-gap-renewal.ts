@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore, ALInboundGapRenewalEffect } from '../al-inbound-admission-store.ts';
@@ -43,6 +44,7 @@ export namespace ALInboundGapRenewal {
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
         readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+        readonly readGapNackRelayHops: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
         readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
     }
 
@@ -89,8 +91,8 @@ export class ALInboundGapRenewal {
         if (position === undefined || missingRanges.length === 0 || effect.expireAtTimestamp <= nowMs) {
             return NOTHING_RENEWED;
         }
-        const facts = readALInboundEffectFacts(nowMs, effectPreparation);
         const revealing = (await admissionStore.readDeliverySurface(payload.message, nowMs))?.msg;
+        const facts = readALInboundEffectFacts(nowMs, effectPreparation, this.readRelayHops(revealing));
         const toPeerId = this.resolveRenewalPeerId(payload, revealing);
         const rows = await signALInboundReceiptEffects(
             this.computeRenewalWrites({ effect, payload, position, missingRanges, facts, toPeerId }),
@@ -122,6 +124,13 @@ export class ALInboundGapRenewal {
             return payload.toPeerId;
         }
         return upstreamPeerId ?? payload.toPeerId;
+    }
+
+    /** Read again at every renewal, since the room's sessions change; with the revealing message gone, the wire limit. */
+    private readRelayHops(revealing: ALMessage | undefined): number {
+        return revealing === undefined
+            ? AL_GAP_NACK_RELAY_HOP_LIMIT
+            : this.dependencies.readGapNackRelayHops(revealing);
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */

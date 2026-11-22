@@ -53,6 +53,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
@@ -549,6 +550,7 @@ async function createReceiptLoopReceiver(
     });
     const rtc = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         // The room key every fixture session registers, so the origin verifies what this recipient signs.
         receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: ROOM_PUBLICATION_CRYPTO }) },

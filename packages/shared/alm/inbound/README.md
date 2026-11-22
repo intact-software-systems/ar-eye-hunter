@@ -741,10 +741,14 @@ relay that holds nothing of the message reads no room for it, so the parent it k
 layouts name ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)); one function,
 `resolveALInboundGapNackTarget`, picks the target on every path. Relays whose accepted layouts
 disagree during a reshape can pass one NACK round a cycle, so a gap NACK carries a hop limit (ruling 20):
-`relayHopsLeft`, required on a gap and outside the recipient's signature as `fromPeerId` and `toPeerId` are. The leaf
-grants `AL_GAP_NACK_RELAY_HOP_LIMIT` (255) on its report and on every renewal: the overlay planner bounds a layout's
-degree, not its depth, so the longest line in a room at the RTC room limit passes that many relays. Each relay forwards
-it one lower and refuses one with none left, so a cycle ends within that many forwards; it also refuses one that speaks
+`relayHopsLeft`, required on a gap and outside the recipient's signature as `fromPeerId` and `toPeerId` are. The
+decoder refuses a count above `AL_GAP_NACK_RELAY_HOP_LIMIT` (255), the wire ceiling: the overlay planner bounds a
+layout's degree, not its depth, so the longest line in a room at the RTC room limit passes that many relays. The leaf
+grants one fewer than the live sessions of the message's room, at most that ceiling (`computeALGapNackRelayHops`), read
+again on its report and at every renewal (`readGapNackRelayHops`; a WS runtime grants the ceiling): layouts that
+disagree route a NACK along no one layout, so only the room's size bounds its path. Each relay forwards it one lower
+and refuses one with none left, so a cycle ends within the grant's forwards of each copy; a duplicate delivery of a
+forward starts a copy of its own, since 6c and 6d record nothing. A relay also refuses a NACK that speaks
 for itself, its own report come back round a cycle, as its own reports leave from its gap run. Whom a relayed NACK
 speaks for the origin judges, by the recipient's signature or its receipt. The forwards of 6c and 6d record nothing, and
 a row is left as it was. The origin ignores the hop count. The origin admits a

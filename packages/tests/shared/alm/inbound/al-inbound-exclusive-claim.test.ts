@@ -27,6 +27,7 @@ import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inb
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
@@ -314,7 +315,7 @@ async function readClaimDecision(
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'server-1',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    });
+    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         plan,
         bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })

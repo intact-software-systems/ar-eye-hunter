@@ -7,7 +7,7 @@ import {
     type ALNackPayload,
     type ALParsedControlMessage
 } from '@shared/al-contracts/al-control.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -201,7 +201,7 @@ async function computeArrival(
         prePlan: peer.planner(msg, source, { nowMs })
     });
     const plan = peer.planner(msg, source, computeALInboundPlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundAdmission({
         read,
         plan,
@@ -251,7 +251,7 @@ async function computeBufferedRelease(
         throw new Error('The buffered copy must still be retained for its release');
     }
     const plan = peer.planner(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundBufferedRelease({ read, plan, facts });
 }
 

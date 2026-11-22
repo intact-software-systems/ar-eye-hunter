@@ -13,7 +13,7 @@ import { PSqlResourceInboxMaintenance } from '@shared-server/queuebox/postgres/r
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
-import { AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER, AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
@@ -131,6 +131,7 @@ function createStores(sql: PostgresSql, name: string): ALInboundRuntimeStores {
 function createRuntime(stores: ALInboundRuntimeStores, controls: ALMessage[]): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'every-track',

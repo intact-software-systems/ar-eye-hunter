@@ -1,6 +1,7 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOverlayAdjacency } from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -102,6 +103,38 @@ describe('whether a peer is this relay\'s child in the accepted layout of the me
         expect(routes.isLayoutChildPeer?.(toRoomMessage(), 'c')).toBe(false);
     });
 });
+
+describe('the relay hops a leaf grants its gap NACK about a message', () => {
+    it('one fewer than the live sessions of the message\'s room: 7 in a room of 8', () => {
+        const room = createOriginSnapshot(['a', 'r', 'b', 'c', 'd', 'x', 'y', 'z'], 3);
+
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage())).toBe(7);
+    });
+
+    it('the wire limit when the lane reads no room for the message', () => {
+        expect(createLeafRoutes(undefined).readGapNackRelayHops(toRoomMessage())).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
+});
+
+/** The leaf `c`'s route capabilities, over a lane that reads `room` for every message. */
+function createLeafRoutes(room: GroupSnapshot | undefined) {
+    const relayRoutes = toRelayRoutes([], []);
+    return createRtcInboundRoutes(
+        {
+            groupCache: relayRoutes.rooms,
+            overlayCache: relayRoutes.acceptedOverlays,
+            connectionService: { input: { sessionId: 'c' }, readyPeerIdsForLane: () => [] }
+        },
+        () => ({
+            overlayId: 'room',
+            room,
+            overlay: undefined,
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: OVERLAP_MS, planned: null },
+            connectedPeerIds: [],
+            nowMs: REPLACED_AT_MS
+        })
+    );
+}
 
 /** A message `a` sent in the room `room`. */
 function toRoomMessage() {

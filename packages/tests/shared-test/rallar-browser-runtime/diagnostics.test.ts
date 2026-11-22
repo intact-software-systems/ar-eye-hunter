@@ -48,6 +48,7 @@ import {
     topics
 } from './browser-rallar-runtime-test-harness.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 beforeEach(() => {
@@ -851,6 +852,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

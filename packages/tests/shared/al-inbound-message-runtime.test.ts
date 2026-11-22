@@ -39,6 +39,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../al-control-test-payloads.ts';
 
 afterEach(() => {
@@ -998,6 +999,7 @@ function createInboundHarness(
 
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

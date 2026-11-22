@@ -194,6 +194,12 @@ export namespace ALInboundMessageRuntime {
          */
         readonly readUpstreamPeerId: (msg: ALMessage) => string | undefined;
         /**
+         * The relays a gap NACK this peer sends about `msg` may pass, read from the live sessions of its room
+         * (`computeALGapNackRelayHops`) when it reports the gap and at every renewal. A runtime with no overlay (WS)
+         * passes `() => AL_GAP_NACK_RELAY_HOP_LIMIT` at its composition root.
+         */
+        readonly readGapNackRelayHops: (msg: ALMessage) => number;
+        /**
          * Whether `peerId`, the peer a gap was first reported to, is a connected neighbour of the layout this lane
          * replaced while it still forwards over that one, so a renewal keeps asking it unless the accepted layout links
          * this peer to the origin. Absence means this lane routes over no layout: a renewal asks the upstream peer.

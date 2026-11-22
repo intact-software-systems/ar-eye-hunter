@@ -22,6 +22,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
 
 interface ReadMessageWorkInput {
@@ -61,6 +62,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     const delivered: string[] = [];
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -123,6 +125,7 @@ it('retries durable local delivery after restart with a single admission work ow
     const createRuntime = () =>
         new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -191,6 +194,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         const createRuntime = () =>
             new ALInboundMessageRuntime({
                 readUpstreamPeerId: () => undefined,
+                readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
                 isLayoutChildPeer: () => false,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
@@ -270,6 +274,7 @@ it.each([
     const deliveries: string[] = [];
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -328,6 +333,7 @@ it('retains predecessor completion through the longest admitted deadline across 
     const createRuntime = () =>
         new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -396,6 +402,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const controls: ALMessage[] = [];
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -469,6 +476,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     let available = false;
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -547,6 +555,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         let available = false;
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
@@ -645,6 +654,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         onTestFinished(() => engine.stop());
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',

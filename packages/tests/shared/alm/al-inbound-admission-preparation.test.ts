@@ -11,7 +11,7 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     type ALMessageHandlingPlan,
@@ -291,7 +291,7 @@ describe('inbound admission preparation boundary', () => {
         const replay = computeALInboundBufferedRelease({
             read,
             plan: replayPlan,
-            facts: readALInboundEffectFacts(Date.now(), createPreparationDependencies())
+            facts: readALInboundEffectFacts(Date.now(), createPreparationDependencies(), AL_GAP_NACK_RELAY_HOP_LIMIT)
         });
         expect(replay.localDelivery?.message).toEqual({ senderId: message.id.senderId, msgId: message.id.msgId });
         const replayed = replay.mutations.find((mutation) => mutation.kind === 'set-inbound-message');
@@ -589,7 +589,7 @@ async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmissi
     return {
         read,
         plan,
-        facts: readALInboundEffectFacts(nowMs, createPreparationDependencies())
+        facts: readALInboundEffectFacts(nowMs, createPreparationDependencies(), AL_GAP_NACK_RELAY_HOP_LIMIT)
     };
 }
 
@@ -604,6 +604,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
 function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMessageRuntime.Dependencies {
     return {
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         admissionStore: stores.admissionStore,

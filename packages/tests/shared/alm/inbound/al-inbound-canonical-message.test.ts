@@ -8,6 +8,7 @@ import {
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
     type ALMessageHandlingPlan,
@@ -303,6 +304,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
@@ -346,7 +348,7 @@ async function admitMessage(
             selfPeerId: 'receiver',
             newControlId: crypto.randomUUID.bind(crypto),
             createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-        })
+        }, AL_GAP_NACK_RELAY_HOP_LIMIT)
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
     return bundle;

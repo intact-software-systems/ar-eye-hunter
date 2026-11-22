@@ -28,6 +28,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { ALWorkBatchTestObserver } from '../alm/work/al-work-batch-test-observer.ts';
 import { RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const CONTROL_RECOVERY_STARTED_AT_MS = 1791883286866;
@@ -228,6 +229,7 @@ function createControlRecoveryRuntime(
     });
     const runtime = new ALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
         isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',

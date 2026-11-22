@@ -27,7 +27,11 @@ import {
     type ALReceiptPayload,
     type ALRepairPayload
 } from '@shared/al-contracts/al-control.ts';
-import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import {
+    AL_GAP_NACK_RELAY_HOP_LIMIT,
+    AL_MESSAGE_RESOURCE_LIMITS,
+    computeALGapNackRelayHops
+} from '@shared/al-contracts/al-message-resource-limits.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
@@ -170,6 +174,13 @@ describe('AL control message codec', () => {
         expect(decodeALNackPayload(expiredUnbounded)).not.toHaveProperty('relayHopsLeft');
     });
 
+    it.each([[8, 7], [2, 1], [1, 0], [0, 0], [AL_GAP_NACK_RELAY_HOP_LIMIT + 1, AL_GAP_NACK_RELAY_HOP_LIMIT], [1_000, AL_GAP_NACK_RELAY_HOP_LIMIT]])(
+        'grants a gap NACK in a room of %i live sessions %i relay hops: one fewer, and never above the wire limit',
+        (liveSessionCount, relayHops) => {
+            expect(computeALGapNackRelayHops(liveSessionCount)).toBe(relayHops);
+        }
+    );
+
     it.each([-1, 1.5, AL_GAP_NACK_RELAY_HOP_LIMIT + 1, '1', null])('refuses a gap NACK with %s relay hops left as invalid', (relayHopsLeft) => {
         expect(() => decodeALNackPayload({ ...GAP_NACK_FIELDS, relayHopsLeft })).toThrow('NACK relay hop count is invalid');
     });
@@ -236,18 +247,13 @@ describe('AL control message codec', () => {
         expect(decodeALNackPayload({ ...expired, reason: 'expired' }).missingRanges).toEqual([{ from: 1, to: 1 }]);
     });
 
-    it.each([
-        ...['al.control.nack.v3', 'al.control.nack.v4'].map((typeId) =>
-            [
-                typeId,
-                newALNackControlMessage(
-                    controlId,
-                    { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' }
-                )
-            ] as const
-        ),
-        ['al.control.repair.v2', newALRepairControlMessage(controlId, { ...MISSING_SEQ_FIELDS, fromPeerId: 'sender' })]
-    ])('refuses a whole %s control unsupported', (typeId, current) => {
+    it.each(
+        [
+            ['al.control.nack.v3', newALNackControlMessage(controlId, { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' })],
+            ['al.control.nack.v4', newALNackControlMessage(controlId, { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' })],
+            ['al.control.repair.v2', newALRepairControlMessage(controlId, { ...MISSING_SEQ_FIELDS, fromPeerId: 'sender' })]
+        ] as const
+    )('refuses a whole %s control unsupported', (typeId, current) => {
         const retired = { ...current, payload: { ...current.payload, typeId } };
 
         expect(decodeALControlMessage(retired).left).toMatchObject({ code: 'unsupported' });

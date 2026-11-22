@@ -20,6 +20,7 @@ import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { InboundTestDecision } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
@@ -195,7 +196,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    });
+    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         read,
         plan,

@@ -54,6 +54,7 @@ import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts'
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     createOutboundCanonicalEntry,
@@ -459,7 +460,7 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    });
+    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         plan,
         bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })

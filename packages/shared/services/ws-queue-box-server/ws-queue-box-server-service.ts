@@ -13,7 +13,10 @@ import {
     decodePersistedALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
+import {
+    AL_GAP_NACK_RELAY_HOP_LIMIT,
+    AL_MESSAGE_RESOURCE_LIMITS
+} from '../../al-contracts/al-message-resource-limits.ts';
 import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
@@ -533,6 +536,7 @@ export class WsQueueBoxServerService {
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
             readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             isLayoutChildPeer: () => false,
             diagnostics: dependencies.inboundDiagnostics
         });
