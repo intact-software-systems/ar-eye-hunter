@@ -681,7 +681,7 @@ number; once nothing is missing, the track is gone or the row has expired it end
 request past 4. The last timer ends a bounded hold instead of asking a fourth time, on a track the entry rule below
 opened at `0` that has delivered nothing ("Entry, omission and witness"). Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
-with the message, and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
+with the message (a held start range's live until the schedule's last timer, "Entry, omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
 removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
 NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
 each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
@@ -723,7 +723,10 @@ below `seq`, within the repair window (`p` at most 256). It then treats the copy
 copy and asks the gap `1` to `p` through the gap NACK, renewal and release path above. The record speaks only for the
 copy's frozen audience, so a copy whose audience does not name the recipient enters as it always did: the WS server,
 ordering hop of every track, is never in an RTC copy's frozen audience, so the RTC admission's message a client hands
-over to it after admission enters there; a WS copy carries no frozen audience, and neither does a unicast copy. Any
+over to it after admission enters there. A copy of a client's own WS send carries no frozen audience (the server keeps
+the audience it freezes at ingress beside the message, not in it), and neither does a unicast copy, so a WS client
+enters at such a copy; but an RTC leg handed over to WS after its freeze keeps its frozen multicast verbatim, so a WS
+client that audience names takes the rule on the server's copy, with the server's own record for it. Any
 other recipient with no snapshot enters a recorded track at its copy (`entered`); one whose position `L` the copy's
 prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
 prior ahead of `L` is a gap that ends at the prior; a prior behind `L`, `0` on a held track, or a copy without a
@@ -734,8 +737,8 @@ position to the copy and buffers, asks and releases nothing; its progress passes
 pending delivery, so a session that witnessed while its own deliveries were pending, and is a recipient again,
 resyncs its next delivered copy. A recorded frozen copy below a recipient's position is `stale` and answers a
 `before-entry` NACK (above, under the relay); an unrecorded stale copy is dropped with no NACK, as before recorded
-tracks, and so is a WS copy, which carries no frozen audience: over `ws` the server skips a copy below a recorded
-position before it is sent. After each committed admission, replays included,
+tracks, and so is a copy of a WS send, which carries no frozen audience: over `ws` the server skips a copy below a
+recorded position before it is sent. After each committed admission, replays included,
 [`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
@@ -762,18 +765,26 @@ never sent the track to the room's WS-leg floor (outbound README, "Sent position
 a prior above `0`, ask a range the RTC origin cannot serve, and enter only when its bounded hold ends.
 
 **Bounded hold.** A track opened at `0` that has delivered nothing (its position still `0`) waits for its start at
-most until its renewal schedule ends. When the last `renew-gap` timer of the range comes due with the range still
-missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth time and the track
-enters at its lowest buffered copy instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the
-lane's stretch (1 to 1.5) after the gap was revealed, so 7 to 10.5 s.
-[`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts) decides it, for a lowest copy whose
-record still owes the start, and [`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts)
-commits it as an entered admission of that copy would: the new position, the copy's slot recording it `entered` (so its
-delivery waits on nothing below it), and a release of the copy and of each contiguous successor through the
-buffered-release path, guarded by the track as read, so an arrival that moved the track first wins and the timer runs
-again. A copy below the new position that arrives later is `stale` and answers `before-entry`, as at any entry. A track
-that delivered anything, or whose lowest copy's record owes no start (an unrecorded track, the WS server's initial
-window included), keeps the mid-track behaviour: the fourth request goes out and the track waits.
+most until its renewal schedule ends. The admission that opens it arms the start range's timer (`1` to `p`,
+[`isALOrderingHeldStartRange`](./gap-renewal/compute-al-ordering-held-entry.ts)) to live at least as long as the
+schedule needs to reach its last timer at the most a stretch may be (`computeALGapRenewalScheduleMs`, 10.5 s), whatever
+the copy's own lifetime; every other gap timer still expires with its message. When that last timer comes due with
+the range still missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth
+time and ends the hold instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the lane's stretch (1
+to 1.5) after the gap was revealed, so 7 to 10.5 s. One rule,
+[`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts), read from the copy that revealed the
+range (whose record must still owe the start) and the track's live buffered copies, ends it: the track passes every
+buffered sequence below its lowest live copy and enters at that copy; with no live copy (every held copy expired) it
+passes every buffered sequence and releases nothing, so its next copy follows in order.
+[`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts) commits an entry as an entered
+admission of that copy would: the new position, the copy's slot recording it `entered` (so its delivery waits on
+nothing below it), and a release of the copy and of each contiguous live successor through the buffered-release path;
+`computeALInboundPassedTrack` moves the position and the delivery progress past the buffered sequences, as a witness
+does. Both are guarded by the track as read, so an arrival that moved the track first wins and the timer runs again;
+an end that cannot commit because its copy expired meanwhile sends the fourth request as before. A copy below the new
+position that arrives later is `stale` and answers `before-entry`, as at any entry. A track that delivered anything,
+or whose start range's revealing copy owes no start (an unrecorded track, the WS server's initial window included),
+keeps the mid-track behaviour: the fourth request goes out and the track waits.
 
 **Limits:** a fresh recipient whose copy's prior is above 256 enters past the lost frames; a start the origin cannot
 serve (its retention ended, it left, or the path repairs nothing) holds the later copies until the bounded hold ends

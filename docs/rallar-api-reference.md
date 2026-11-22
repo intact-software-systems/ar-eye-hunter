@@ -2006,8 +2006,8 @@ reads its prior from the record, or `seq - 1` when the record lists it not:
   to `p` through the ordinary gap NACK. Otherwise it enters the track at that
   copy (`entered`) and asks for nothing below it: a late joiner (prior `0`), a
   recipient the copy's frozen audience does not name (the WS server, ordering
-  hop of every track, at a copy handed over after an RTC admission; a WS or
-  unicast copy, which carries no frozen audience), a copy whose plan repairs
+  hop of every track, at a copy handed over after an RTC admission; a copy of
+  a WS send or a unicast copy, which carries no frozen audience), a copy whose plan repairs
   no gap, a track its store evicted at the 256-track cap, a latest-wins copy
   and a prior past the window. The application's own state read supplies the
   past of an entered track.
@@ -2015,8 +2015,11 @@ reads its prior from the record, or `seq - 1` when the record lists it not:
   its start only until its gap renewals end. When the last renewal timer comes
   due with the start still missing, 7 to 10.5 s after the gap was revealed
   (the renewal intervals of 1 s, 2 s and 4 s, stretched by 1 to 1.5), it asks
-  no fourth time and enters at its lowest buffered copy, releasing that copy
-  and its contiguous successors; the start, arriving later, answers
+  no fourth time and enters at its lowest buffered copy still live, releasing
+  that copy and its contiguous live successors; with every held copy expired
+  it passes them all and its next copy follows in order. The start range's
+  renewal outlives a shorter message lifetime for this, so the bound holds
+  whatever the copies' lifetime. The start, arriving later, answers
   `before-entry`. A track that delivered anything keeps waiting as before.
 - **Prior equal to its position**: the sequences between were never meant for
   it, so the copy delivers in order (`omitted`), and a buffered copy whose own
@@ -2036,12 +2039,16 @@ records the recipient in `outsideAudienceRecipientPeerIds`, never failing the
 message. A stale copy no authority recorded is dropped with no NACK, as before
 recorded tracks.
 
-WS copies carry no frozen audience, so over plain `ws` the server answers for
-the recipient instead: it sends nothing to a recipient whose recorded position
-is past the copy's sequence (a later row of the track already reached it),
-records it outside on a relayed browser-origin row with a logical receipt, and
-on its own rows (its publications and the rows a producer writes straight to
-the outbox) in its own receipt, and resends a copy to one at that sequence. A
+Copies of a WS send carry no frozen audience (the server keeps the audience
+it freezes at ingress beside the message), so over plain `ws` the server
+answers for the recipient instead: it sends nothing to a recipient whose
+recorded position is past the copy's sequence (a later row of the track
+already reached it), records it outside on a relayed browser-origin row with a
+logical receipt, and on its own rows (its publications and the rows a producer
+writes straight to the outbox) in its own receipt, and resends a copy to one at
+that sequence. An RTC leg handed over to WS after its freeze keeps its frozen
+multicast verbatim (above), so a WS client that audience names takes the entry
+rule on the server's copy, with the server's own record for it. A
 row a server producer writes straight to the outbox (Relic's round
 transitions, client-state events) is indexed on its track in the producer's
 own transaction and records positions at its first dequeue, as a row the server
