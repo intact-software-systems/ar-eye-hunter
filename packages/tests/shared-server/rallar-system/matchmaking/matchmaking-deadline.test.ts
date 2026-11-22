@@ -1,3 +1,4 @@
+import { computeMatchmakingPublication } from '@shared-server/rallar-system/matchmaking/compute-matchmaking-publication.ts';
 import { computeMatchmaking } from '@shared-server/rallar-system/matchmaking/compute-matchmaking.ts';
 import { computeMatchmakingDeadlines, decodeMatchmakingDeadline } from '@shared-server/rallar-system/matchmaking/matchmaking-deadline.ts';
 import type { MatchmakingIntent } from '@shared-server/rallar-system/matchmaking/matchmaking-pool.ts';
@@ -45,6 +46,20 @@ describe('durable matchmaking deadlines', () => {
         expect(confirmation).toHaveLength(1);
         expect(confirmation[0]!.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(31000);
         expect(confirmation[0]!.entry.key.resourceId).not.toBe(first[0]!.entry.key.resourceId);
+    });
+
+    it('notifies the account when its search expires before ever entering the active pool', () => {
+        const before = { scope, searching: [], proposals: [] };
+        const transition = computeMatchmaking({
+            partySearches: [], pool: before, policy, nowEpochMs: 121000, command: start('alice')
+        });
+        const { outbox } = computeMatchmakingPublication({
+            before, previousRevision: 0, transition,
+            publication: { serviceId: 'api', traceId: 'late-search', createdAtEpochMs: 121000, retentionMs: 600000 }
+        });
+        expect(outbox.map(row => decodePersistedALMessage(row.entry.resource).targets)).toEqual([
+            { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'alice' } }
+        ]);
     });
 
     it('rejects unscoped or overposted deadline work', () => {
