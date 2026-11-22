@@ -1,8 +1,10 @@
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALOrderingObserver } from '../admission/resolve-al-ordering-observer-role.ts';
+import { recordALInboundOrderingPosition } from '../admission/to-al-inbound-ordering-position.ts';
 import type {
     ALInboundAdmissionStore,
+    ALInboundCommitBundle,
     ALInboundGapRenewalEffect,
     ALInboundPlanner
 } from '../al-inbound-admission-store.ts';
@@ -54,6 +56,8 @@ export namespace ALInboundGapRenewal {
         readonly stretch: number;
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        /** The lane's worker id, named on the position event a hold's end states. */
+        readonly effectWorkerId: string;
     }
 
     export interface Result {
@@ -74,6 +78,7 @@ interface ALInboundGapRenewalRun {
 
 const NOTHING_RENEWED: ALInboundGapRenewal.Result = { outcome: { status: 'completed' }, wroteWork: false };
 const HELD_ENTRY_RETRIED: ALInboundGapRenewal.Result = { outcome: { status: 'retry' }, wroteWork: false };
+const HELD_END_COMMITTED: ALInboundGapRenewal.Result = { outcome: { status: 'completed' }, wroteWork: true };
 
 /**
  * Runs one `renew-gap` timer. While some of its range is still missing it asks again, under the timer's number, for
@@ -120,7 +125,9 @@ export class ALInboundGapRenewal {
 
     /**
      * Reads the copy that revealed the range, planned as it was admitted, with the track's live copies, and commits the
-     * bounded hold's end there; a commit refused as a conflict or for an expired copy runs the timer again. `undefined`
+     * bounded hold's end there, stating the entered copy's `ordering-position` after the commit as an entered admission
+     * states its own (an end that passes every copy names no copy and states none); a commit refused as a conflict or
+     * for an expired copy runs the timer again. `undefined`
      * when the track keeps today's behaviour, so the last request goes out as before.
      */
     private async endHold(
@@ -149,16 +156,29 @@ export class ALInboundGapRenewal {
         if (entry === undefined) {
             return undefined;
         }
-        const status = await admissionStore.commitBundle(
-            entry.kind === 'passed' ? computeALInboundPassedTrack(read, entry) : computeALInboundHeldTrackEntry({
-                read,
-                entry,
-                plan: planIncomingMessage(entry.msg, read.source, { nowMs, orderingObservation: entry.observation }),
-                facts
-            })
-        );
-        // A copy that expired between the read and the commit is no longer live when the timer runs again.
-        return status === 'committed' ? { outcome: { status: 'completed' }, wroteWork: true } : HELD_ENTRY_RETRIED;
+        if (entry.kind === 'passed') {
+            return await this.commitHoldEnd(computeALInboundPassedTrack(read, entry));
+        }
+        const held = computeALInboundHeldTrackEntry({
+            read,
+            entry,
+            plan: planIncomingMessage(entry.msg, read.source, { nowMs, orderingObservation: entry.observation }),
+            facts
+        });
+        const ended = await this.commitHoldEnd(held.bundle);
+        if (ended === HELD_END_COMMITTED) {
+            recordALInboundOrderingPosition(this.dependencies.diagnostics, {
+                workerId: this.dependencies.effectWorkerId,
+                ...held.entered
+            });
+        }
+        return ended;
+    }
+
+    /** A copy that expired between the read and the commit is no longer live when the timer runs again. */
+    private async commitHoldEnd(bundle: ALInboundCommitBundle): Promise<ALInboundGapRenewal.Result> {
+        const status = await this.dependencies.admissionStore.commitBundle(bundle);
+        return status === 'committed' ? HELD_END_COMMITTED : HELD_ENTRY_RETRIED;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */

@@ -5,10 +5,12 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
-import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { resolveALInboundWorkDueAtMs } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
 import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
@@ -295,7 +297,8 @@ describe('a receiver whose ordered track has a gap', () => {
             effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
             stretch: 1,
             receiptProofs: { kind: 'carrier-authenticated' },
-            diagnostics: undefined
+            diagnostics: undefined,
+            effectWorkerId: 'al-inbound:gap-renewal-direct'
         });
         await renewal.renew(timer, timer.payload);
         const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
@@ -352,6 +355,42 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
         expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('states one entered position for the copy it enters at, after its commit, as an entered admission states its own', async () => {
+        const fixture = createRenewalFixture('memory');
+        const workerId = `al-inbound:gap-renewal-${fixtureCount}`;
+        const [second, third] = [recordedMessage(2), recordedMessage(3)];
+        for (const message of [second, third]) {
+            await fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 6_999]);
+        expect(readOrderingPositions(fixture)).toEqual([]);
+
+        await advanceTo(fixture, 7_000);
+
+        expect(readOrderingPositions(fixture)).toEqual([{
+            kind: 'ordering-position',
+            workerId,
+            trackKey: toALOrderingTrackKey(second),
+            seq: 2,
+            priorSeq: 1,
+            status: 'entered',
+            carrier: 'ws',
+            ...toALMessageTrace(second)
+        }]);
+    });
+
+    it('states no position when every held copy expired and its end passes them', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        }
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+        expect(readOrderingPositions(fixture)).toEqual([]);
     });
 
     it('refuses the late first copy as before its entry once the hold has ended', async () => {
@@ -433,7 +472,8 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
             effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
             stretch: 1,
             receiptProofs: { kind: 'carrier-authenticated' },
-            diagnostics: undefined
+            diagnostics: undefined,
+            effectWorkerId: 'al-inbound:gap-renewal-direct'
         });
 
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
@@ -566,6 +606,10 @@ function toGapControl(
         msgId: payload.msgId,
         expectedSeq: payload.expectedSeq
     };
+}
+
+function readOrderingPositions(fixture: InboundTestRuntime): readonly ALInboundRuntimeDiagnosticsEvent[] {
+    return fixture.diagnostics.filter((event) => event.kind === 'ordering-position');
 }
 
 /** The outcome of each claim of a timer row, in claim order. */

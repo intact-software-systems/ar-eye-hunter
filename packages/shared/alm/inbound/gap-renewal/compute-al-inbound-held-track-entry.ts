@@ -1,5 +1,6 @@
 import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 import { computeALInboundWitnessedCompletedThrough } from '../admission/al-inbound-delivery-progress.ts';
+import type { ALInboundOrderingPositionRecord } from '../admission/to-al-inbound-ordering-position.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundCommitBundle,
@@ -21,14 +22,24 @@ export interface ComputeALInboundHeldTrackEntryInput {
     readonly facts: ALInboundEffectFacts;
 }
 
+/** The bundle that ends a hold at a copy, and that copy as its committed entry names it. */
+export interface ALInboundHeldTrackEntry {
+    readonly bundle: ALInboundCommitBundle;
+    readonly entered: Omit<ALInboundOrderingPositionRecord, 'workerId'>;
+}
+
 /**
  * The bundle that ends a track's bounded hold at its lowest live copy, as an entered admission of that copy would write
  * it: the new position, and a release of that copy and of each contiguous live successor through the buffered-release
  * path. It is guarded by the track as read, so an arrival that moved the track first wins and the timer runs again.
  */
-export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackEntryInput): ALInboundCommitBundle {
+export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackEntryInput): ALInboundHeldTrackEntry {
     const { read, entry } = input;
     const plan = { ...input.plan, orderingRuntime: entry.observation };
+    const slot = read.bufferedSnapshots.find((buffered) => buffered.seq === entry.observation.seq);
+    if (slot === undefined) {
+        throw new Error('A held entry names a copy its track does not buffer');
+    }
     const entered: ALInboundMessageReadDto = {
         kind: 'incoming',
         orderingTrackTtlMs: read.orderingTrackTtlMs,
@@ -63,12 +74,15 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         retention: read.retention,
         durability: read.durability
     };
-    return prepareALInboundCommitBundle({
-        read: entered,
-        facts: input.facts,
-        mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }],
-        effects: toALInboundBufferedReleaseEffects(entered)
-    });
+    return {
+        bundle: prepareALInboundCommitBundle({
+            read: entered,
+            facts: input.facts,
+            mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }],
+            effects: toALInboundBufferedReleaseEffects(entered)
+        }),
+        entered: { msg: entry.msg, carrier: slot.carrier, plan }
+    };
 }
 
 /**
