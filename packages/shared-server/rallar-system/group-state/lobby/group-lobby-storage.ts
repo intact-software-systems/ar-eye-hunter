@@ -50,8 +50,11 @@ interface ReadGroupLobbyStateInput {
 }
 
 export async function readGroupLobbyState({ repository, roomRef, principalIds, mode = 'active' }: ReadGroupLobbyStateInput): Promise<GroupLobbyRead> {
-    const [commitments, sessions, admissions] = await Promise.all([
-        readGroupLobbyCommitments({ repository, roomRef, principalIds, mode }), repository.listPresenceSessions(roomRef), repository.listPresenceAdmissions(roomRef)
+    // An arrival commits its presence and roster together. A later arrival must invalidate this roster predecessor.
+    const commitments = await readGroupLobbyCommitments({ repository, roomRef, principalIds, mode });
+    const [sessions, admissions] = await Promise.all([
+        repository.listPresenceSessions(roomRef),
+        repository.listPresenceAdmissions(roomRef)
     ]);
     const principals = new Map(admissions.map(admission => [admission.principalId, admission]));
     return { ...commitments, sessions: sessions.filter(session => isExactlyAdmitted(principals.get(session.principalId), session)) };
