@@ -1393,7 +1393,8 @@ the sender's last read of it. The 6f count on the real fixtures: a direct
 counted relay the relay signs 2 and verifies none, the leaf signs 1 and the
 origin verifies 3; a `leader` send to a leaf director signs 1 and verifies 1.
 The Limit 2 sibling (an unsigned `not-subscribed` NACK under `hop` that names
-another next hop) is pinned by a `Limit:` test. The full-scope RTC lane, local
+another next hop) was pinned by a `Limit:` test; the relay statement rules made
+it the refusal (D706). The full-scope RTC lane, local
 and in-memory, ran the three cells green at `e4d5f3058` (the two cells red
 there, `repair-exhausted` and `granted-rtc-ordered-relay`, are red on `main`
 too), and `unsigned-ack-refused` green over `rtc-with-ws-fallback` at
@@ -1429,7 +1430,7 @@ full history, bounded by the histories and paced by the origin's retries
 grouping, `toFirstOfEachALReceiptStatement`, compares only within one
 recipient. In every case the origin counts only what verifies. Under `hop` and `subtree` only a hop's own word
 speaks for it: a next hop's hop-end that names another recipient moves nobody outside, and its `not-subscribed` or
-gap NACK that names another recipient is refused, so relayed gap recovery there stays closed (D582); a forger that is the recipient's
+gap NACK that names another recipient is refused, so relayed gap recovery there stays closed (D582, D706); a forger that is the recipient's
 own parent is on its path and can still withhold the copy or its control, which
 the origin's timeout, retry and fallback cover; and a recipient's redundant own
 NACK after its own hop-end is refused at a relay as the same statement, as
@@ -1573,8 +1574,8 @@ is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
 over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
-not recovered, renewal holds on direct links and not through an `rtc` relay,
-and a send can end `failed` although delivered when the server no longer holds
+not recovered, renewal held on direct links and not through an `rtc` relay
+until the relay statement rules (D725 to D730), and a send can end `failed` although delivered when the server no longer holds
 its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
 start over `rtc` is its own slice (D669). The held-send path is built (D696 to
 D700): a send the server keeps starts its receipt when the server admits it, at
@@ -1590,8 +1591,22 @@ at its deadline (D694); and a receipt does not survive its server's crash, which
 `api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
 commit race whose recipients all left by its replay expects the recipients
 captured at ingress, so its handle reads `expired` at its deadline (D701). The
-local baseline's alternating runs are pull request 851 (D672), which lands
-before the relay statement rules; they are the next outcome.
+local baseline's alternating runs are pull request 851 (D672). The relay
+statement rules are built (D703 to D709, D725 to D734): with no recorder left a
+relay forwards a control and the origin judges it; each control's signed content
+is encoded once per scan; under `hop` and `subtree` only a hop's own word speaks
+for it; the origin reads an honest repeat `duplicate`; the WS server refuses an
+ACK from a captured recipient it never sent the message; a recipient answers a
+copy it holds buffered behind a gap on no carrier until its release, which
+answers every carrier that brought one; a terminal end keeps the receipt row as
+its final snapshot; an `ack: 'none'` track over `rtc` is repaired, directly and
+through a relay; a renewal asks its current upstream peer once the peer it first
+asked no longer forwards to it; and a gap NACK carries a relay hop count
+(`al.control.nack.v5`), so every relay passes it upward to its current upstream
+peer and a cycle ends. The cells `relayed-gap-renewal` and
+`relayed-unreceipted-gap-renewal` state a renewal through a relay over `rtc`,
+three of three each. A member that ACKs before it delivers speaks only for
+itself, which the rules close as inherent (D709).
 With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world

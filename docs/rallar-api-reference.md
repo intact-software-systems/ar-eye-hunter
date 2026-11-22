@@ -2105,11 +2105,16 @@ each interval stretched by a random factor between 1 and 1.5 drawn per
 receiver, and numbers each request, so the sender answers a renewal with a new
 retransmission while the reports later arrivals make of the same gap draw
 nothing more. A frame that is only late, by well under a second, draws no
-renewal. Renewal holds on direct links (a WS client and its server, RTC peers
-that send to each other directly); over an RTC relay a renewal reaches the
-sender only while the relay still holds a receipted row that waits on that
-receiver, since a relay forwards a gap NACK only then and never forwards a
-repair request. Each receiver
+renewal. Renewal holds on direct links and through RTC relays alike, on a
+receipted track and on an `ack: 'none'` one: a renewal asks the peer the gap was
+first reported to while that peer still forwards to the receiver, and the
+receiver's current upstream peer once it does not (the sender itself once the
+two are linked directly), and every relay passes a gap NACK on toward the
+sender, one relay hop lower each time within the hops the receiver granted it
+(one fewer than its room's live sessions, at most 255). The gap NACK carries the
+repair, so a repair request needs no forward. Over RTC a relayed gap NACK for
+an `ack: 'none'` send must carry the receiver's signature, checked against the
+key its room registers for it now. Each receiver
 that misses a sequence may draw `maxRepairs` retransmits of it (4 by default:
 its first report and three renewals; `qos: { repair: { algo: 'retransmit',
 opts: { maxRepairs } } }` sets it); on a receipted WS send whose wait for its
@@ -2266,7 +2271,12 @@ A receiver judges a room send against the room snapshot it holds:
   a `receiver` receipt completes for it as for any send; one its room then
   refuses for another reason is answered with that refusal's NACK, when the
   refusal sends one; one still retained at the message's deadline is answered
-  nothing, and its handle reads `expired`.
+  nothing, and its handle reads `expired`. A send the server kept after losing a
+  commit race, whose captured recipients have all left the room by the time it
+  is admitted, still expects them: its `admitted` names them, none of them is
+  sent the message, an ACK from any of them is refused as one from a recipient
+  the server never sent it, and its handle reads `expired` at its deadline,
+  never `acknowledged`.
 - **At or beyond the stamps, with the sender's member absent or not `active`,**
   it refuses the send `membership-fenced` and NACKs its hop. From the WS
   server, before the sender holds a receipt row, the handle settles `rejected`

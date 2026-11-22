@@ -77,7 +77,7 @@ names no range carries none. A relay's gap NACK for a recipient below it also na
 (`logicalRecipientPeerId`, absent when the requester is the recipient): under a logical receipt the origin admits it
 from a next hop for a recipient the receipt still owes, and for a room send also from a relay the message never went
 through, a new parent after a reshape, once its repair authority planned a repair to that relay (6d); under `hop` and `subtree` it refuses it as one hop speaking for
-another, so relayed gap recovery stays closed there (D582). The responder admits the copy on that recipient while sending it to the
+another, so relayed gap recovery stays closed there (D582, D706). The responder admits the copy on that recipient while sending it to the
 relay, and the recipient joins the hint's identity, so each recipient a relay reports one gap for is its own
 hint and a hint without one keeps its identity. One execution of a hint retransmits at most
 `AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
