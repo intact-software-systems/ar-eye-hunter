@@ -16,11 +16,12 @@ through one action, `.github/actions/alm-conformance-lane/action.yml`:
 
 Both run matrix legs by carrier, with Playwright's global timeout below the job's time limit (14
 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step. In the
-`full` scope, `rtc` runs as two legs split by family, `two-agent,addressed,same-context` and
-`three-agent,same-principal,four-role`, because it took 36.5 minutes as one job (run 45009025510)
-and a carrier whose job takes more than 30 minutes is split. A leg passes its family list to both
-actions as the `families` input, which sets `RALLAR_BLACK_BOX_ALM_FAMILIES`; a leg with an empty
-list runs every family. The lane job is named `ALM conformance observation (<carrier>)`, or
+`full` scope, `ws` and `rtc` each run as two legs split by family,
+`two-agent,addressed,same-context` and `three-agent,same-principal,four-role`, because a carrier
+whose job takes more than 30 minutes is split: `rtc` took 36.5 minutes as one job (run 45009025510)
+and `ws` 31.6 minutes (run 45055329614). `rtc-with-ws-fallback` runs as one leg. A leg passes its
+family list to both actions as the `families` input, which sets `RALLAR_BLACK_BOX_ALM_FAMILIES`; a
+leg with an empty list runs every family. The lane job is named `ALM conformance observation (<carrier>)`, or
 `ALM conformance observation (<carrier>, <families>)` for a split leg. The job uploads the results
 through a second action, `.github/actions/alm-conformance-lane-results/action.yml`, as its next step
 with `always()`: a cancelled composite step skips its own remaining steps, so the uploads are a step

@@ -163,7 +163,11 @@ Three were weighed with the maintainer, who picked the first.
   29.4, `rtc` 36.5. The rule: a carrier whose job took more than 30 minutes is split across two
   runners by family. So `rtc` runs as two jobs, each with its own runner and database:
   `two-agent,addressed,same-context` (16.6 minutes of family time in that run) and
-  `three-agent,same-principal,four-role` (18.5). The other two carriers stay one job each.
+  `three-agent,same-principal,four-role` (18.5). `ws` took 29.4 and 25.7 minutes in the first two
+  measured runs and 31.6 in the third (run 45055329614, four failed scenarios waiting out their
+  timeouts), so `ws` runs as two jobs too, with the same two family lists (14.9 and 13.2 minutes of
+  `ws` family time in run 45009025510). `rtc-with-ws-fallback` (17.1 to 18.6 minutes in three runs)
+  stays one job. The full scope runs as five jobs on five runners.
   - The lane parameter `RALLAR_BLACK_BOX_ALM_FAMILIES` (a comma-separated list of family names;
     empty runs every family) selects the families a run executes. It is decoded with the other lane
     parameters in `lane/decode-alm-lane-parameters.ts`; a family test it does not select is skipped
@@ -268,7 +272,7 @@ Three were weighed with the maintainer, who picked the first.
   report the new attempt, so one rerun reddens all three carriers of that run; that is the rule's
   "no rerun".
 - **A carrier's jobs are read as one run.** A carrier may run as several jobs of one workflow run
-  (`rtc` runs as two). The ledger reads them together: the plan the jobs agree on, the results of
+  (`ws` and `rtc` run as two each). The ledger reads them together: the plan the jobs agree on, the results of
   all their artifacts, and one conclusion. That conclusion is in progress when any job is, else
   cancelled when any was, else a failure when any failed or when some were skipped and others not,
   else success when all succeeded, else skipped. Two jobs whose plans differ are reported as an
@@ -346,7 +350,8 @@ This goes into the roadmap as one decision row, with D639 named as amended.
 3. **The family split**, only if a carrier's full-scope job took more than 30 minutes in slice 1.
    It did: `rtc` took 36.5 minutes. Built as its own pull request, stacked on slice 2, because it
    changes what the ledger reads. Acceptance: a ready or dispatched run shows two `rtc` jobs, each
-   under 30 minutes, and the ledger reads them as one `rtc` run.
+   under 30 minutes, and the ledger reads them as one `rtc` run. `ws` later took 31.6 minutes
+   (run 45055329614) and is split the same way.
 
 After these, outside this plan: one slice per flake, most frequent first, each proven by repeated
 dispatched runs; then promotion of a carrier when the ledger shows its streak.
@@ -458,7 +463,21 @@ At the head `a5f1b9128` the full scope ran with `rtc` as two jobs on PostgreSQL 
 - The Release Gate of that run failed on one test: `tests-typecheck-maintained-project.test.ts`
   copies `scripts/check-tests-typecheck.mjs` into a temporary project, and slice 2 made that script
   import a module the test did not copy. Slice 2's focused test runs did not include that file. It
-  is fixed on the ledger branch. The Release Gate has not run on the fixed head.
+  is fixed on the ledger branch. The Release Gate passed on the fixed head (run 45055329709).
+
+At the head `b0a57d205` the Release Gate passed (run 45055329709: 32 jobs passed, 2 skipped), and
+the full scope ran again (run 45055329614):
+
+- `rtc`, two-agent, addressed and same-context: 37 of 38 scenarios passed in 15.3 minutes.
+- `rtc`, three-agent, same-principal and four-role: 28 of 31 passed in 21.9 minutes.
+- `rtc-with-ws-fallback`: 30 of 50 passed in 17.1 minutes. Two-agent `checkpoint-recovery` failed
+  and the 17 scenarios after it did not run; four-role `subscription-ordered-omission` and
+  `-reconnect` failed.
+- `ws`: 56 of 60 passed in 31.6 minutes. Four-role `subscription-ordered-entry`, `-omission` and
+  `-reconnect` failed, and two-agent `buffered-track-drains`.
+- `ws` passed the 30-minute rule, so it is split by family too, with the same two family lists as
+  `rtc` (the maintainer's ruling "Yes, split ws", 2026-11-22). The `ws` split has not run on GitHub
+  yet.
 
 ## What merging slice 1 does to open pull requests
 

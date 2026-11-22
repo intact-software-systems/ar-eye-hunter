@@ -25,11 +25,11 @@ completion record here.
   (`alm-observation/<carrier>-<scope>-snapshot.json`, such as
   `ws-smoke-snapshot.json`); each takes the snapshot path, as in
   `node playground/alm/tools/lifecycle-trace.mjs <snapshot.json>`. In the
-  `full` scope `rtc` runs as two jobs split by family, so its artifact names
-  end in the family list after the commit,
-  `alm-conformance-lane-rtc-full-<sha>-<families>`, and its six snapshots are
-  in two artifacts: two-agent, addressed and same-context in one, three-agent,
-  same-principal and four-role in the other.
+  `full` scope `ws` and `rtc` each run as two jobs split by family, so their
+  artifact names end in the family list after the commit,
+  `alm-conformance-lane-<carrier>-full-<sha>-<families>`, and each carrier's six
+  snapshots are in two artifacts: two-agent, addressed and same-context in one,
+  three-agent, same-principal and four-role in the other.
 
 ## When a plan is finished
 

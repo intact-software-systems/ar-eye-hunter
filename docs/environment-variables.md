@@ -607,8 +607,8 @@ The ALM conformance lane reads its parameters once, when the spec loads, and onl
 value takes the default: `test:rallar:full-stack:memory:alm` sets no scope and runs the `smoke`
 scope over every carrier, and `test:rallar:full-stack:postgres:alm` sets `full`. In CI the
 `.github/actions/alm-conformance-lane` action sets the scope and one carrier per runner, and for a
-carrier split by family (`rtc` in the `full` scope) `RALLAR_BLACK_BOX_ALM_FAMILIES` with the job's
-family list. A value outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and
+carrier split by family (`ws` and `rtc` in the `full` scope) `RALLAR_BLACK_BOX_ALM_FAMILIES` with
+the job's family list. A value outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and
 `RALLAR_BLACK_BOX_ALM_CARRIERS` included, a `RALLAR_BLACK_BOX_ALM_SEED` without
 `RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario
 ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key that no cell of the selected scope, carriers and families
