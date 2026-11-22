@@ -122,13 +122,17 @@ The commit, the event and the attempt are not in the files; the workflow run tha
 
 ## The ledger
 
-`npm run alm:lane:ledger` reads the newest runs of `alm-conformance-observation.yml` through `gh`,
-downloads each run's `alm-lane-result-<carrier>-full-<sha>` artifacts, and prints the ledger. It
-only reads GitHub. Options: `--limit <n>` (the newest `n` workflow runs, 1 to 100, default 30) and
+`npm run alm:lane:ledger` reads, through `gh`, the newest `main` push runs of
+`alm-conformance-observation.yml`, and beside them its newest pull-request runs and its newest
+dispatched runs, each kind read on its own so that pull-request traffic cannot crowd the push runs
+out of the window. It downloads each run's `alm-lane-result-<carrier>-full-<sha>` artifacts and
+prints the ledger. It only reads GitHub. Options: `--limit <n>` (the `main` push runs to read, 1 to
+100, default 30; at most as many pull-request and as many dispatched runs are read beside them) and
 `--repository <owner/name>` (default: the repository `gh repo view` resolves for the working
-directory), for example `npm run alm:lane:ledger -- --limit 50`. It exits 0 whenever it could read
-GitHub, red or green; it is a report, not a gate. It exits 1 only when it could not: no `gh`, no
-access, or a bad option.
+directory), for example `npm run alm:lane:ledger -- --limit 50`. An option given twice is refused.
+It exits 0 whenever it could read GitHub, red or green; it is a report, not a gate. A causes file
+that is not JSON or does not decode is printed as an issue. It exits 1 only when it could not read
+GitHub (no `gh`, no access) or an option is wrong.
 
 The logic is pure and lives in `packages/shared-test/rallar-bb-test/conformance/alm/ledger/`; the
 entry point, `alm-lane-ledger.mts`, only reads GitHub and files and prints.
@@ -150,7 +154,7 @@ entry point, `alm-lane-ledger.mts`, only reads GitHub and files and prints.
 The output, section by section:
 
 ```text
-ALM lane ledger: 30 workflow runs read, newest commit 1a2b3c4, oldest commit 9f8e7d6.
+ALM lane ledger: read 30 main push, 30 pull-request and 2 dispatched runs; newest commit 1a2b3c4, oldest commit 9f8e7d6.
 
 Streak of green main-push runs, per carrier:
 ws: streak 7/10
@@ -177,7 +181,7 @@ ws: streak 7/10
 - **Pull-request and dispatched runs**: run id, event, carrier, green or red.
 - **Jobs left out**: the jobs read but not counted, with why (`in-progress`, `skipped`, or a
   `cancelled` pull-request or dispatched job).
-- **Issues met while reading**: files that are not JSON or do not decode, files whose carrier or
+- **Issues met while reading** (ten at most, then `and <k> more`): files that are not JSON or do not decode, files whose carrier or
   scope disagrees with their job, a second plan or a second result for one family, an artifact that
   could not be downloaded. Such a file is read as absent, so a job whose plan is refused reads as a
   job with no plan.

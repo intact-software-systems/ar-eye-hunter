@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AlmLaneLedger } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-ledger.ts';
+import type { AlmLaneWorkflowRunCounts } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-workflow-runs.ts';
 import { toAlmLaneLedgerText } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-ledger-text.ts';
 
 const ledger: AlmLaneLedger = {
@@ -34,16 +35,22 @@ const ledger: AlmLaneLedger = {
     ]
 };
 
+const noRuns: AlmLaneWorkflowRunCounts = { push: 0, pullRequest: 0, dispatch: 0 };
+
+const onePush: AlmLaneWorkflowRunCounts = { push: 1, pullRequest: 0, dispatch: 0 };
+
 describe('toAlmLaneLedgerText', () => {
     it('prints the streaks, the scenario table, the unattributed and side runs, and the issues', () => {
         const text = toAlmLaneLedgerText({
             ledger,
+            runCounts: { push: 2, pullRequest: 1, dispatch: 0 },
             commitShas: ['9999999ccccccc', '5555555bbbbbbb', '1111111ddddddd'],
             issues: ['run 9 ws: ws-full-plan.json is not JSON.']
         });
 
         expect(text.split('\n')).toEqual([
-            'ALM lane ledger: 3 workflow runs read, newest commit 9999999, oldest commit 1111111.',
+            'ALM lane ledger: read 2 main push, 1 pull-request and 0 dispatched runs; newest commit 9999999, oldest commit' +
+            ' 1111111.',
             '',
             'Streak of green main-push runs, per carrier:',
             'ws: streak 1/10',
@@ -94,8 +101,8 @@ describe('toAlmLaneLedgerText', () => {
             leftOutRuns: []
         };
 
-        expect(toAlmLaneLedgerText({ ledger: empty, commitShas: [], issues: [] }).split('\n')).toEqual([
-            'ALM lane ledger: 0 workflow runs read.',
+        expect(toAlmLaneLedgerText({ ledger: empty, runCounts: noRuns, commitShas: [], issues: [] }).split('\n')).toEqual([
+            'ALM lane ledger: read 0 main push, 0 pull-request and 0 dispatched runs.',
             '',
             'Streak of green main-push runs, per carrier:',
             'ws: streak 0/10',
@@ -121,7 +128,7 @@ describe('toAlmLaneLedgerText', () => {
             carriers: [{ carrier: 'ws', streak: 0, lastRed: { runId: 3, commitSha: '3333333', failed, notRun: [] }, uncaused: failed }]
         };
 
-        const lines = toAlmLaneLedgerText({ ledger: red, commitShas: ['3333333'], issues: [] }).split('\n');
+        const lines = toAlmLaneLedgerText({ ledger: red, runCounts: onePush, commitShas: ['3333333'], issues: [] }).split('\n');
 
         expect(lines.slice(3, 19)).toEqual([
             'ws: streak 0/10',
@@ -131,6 +138,19 @@ describe('toAlmLaneLedgerText', () => {
             '      and 2 more',
             '    not run: none',
             '  failures without a cause: 12'
+        ]);
+    });
+
+    it('prints at most ten issues, then how many more there are', () => {
+        const issues = Array.from({ length: 13 }, (_, index) => `issue ${index}`);
+
+        const lines = toAlmLaneLedgerText({ ledger, runCounts: onePush, commitShas: ['3333333'], issues }).split('\n');
+
+        expect(lines.slice(lines.indexOf('Issues met while reading:'))).toEqual([
+            'Issues met while reading:',
+            ...issues.slice(0, 10).map((issue) => `  ${issue}`),
+            '  and 3 more',
+            ''
         ]);
     });
 });

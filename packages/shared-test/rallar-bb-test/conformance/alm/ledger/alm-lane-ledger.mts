@@ -10,7 +10,8 @@ import {
     type GithubWorkflowRun
 } from '../../../../../../scripts/github-actions/read-github-workflow-runs.mjs';
 import { computeAlmLaneLedger } from './compute-alm-lane-ledger.ts';
-import { decodeAlmLaneFlakeCauses } from './decode-alm-lane-flake-causes.ts';
+import { computeAlmLaneWorkflowRuns } from './compute-alm-lane-workflow-runs.ts';
+import { decodeAlmLaneFlakeCausesText } from './decode-alm-lane-flake-causes.ts';
 import { decodeAlmLaneLedgerArguments, type AlmLaneLedgerArguments } from './decode-alm-lane-ledger-arguments.ts';
 import { toAlmLaneLedgerText } from './to-alm-lane-ledger-text.ts';
 import {
@@ -38,16 +39,22 @@ decodeAlmLaneLedgerArguments(process.argv.slice(2)).fold(
 
 function readAlmLaneLedgerText(arguments_: AlmLaneLedgerArguments): string {
     const repository = arguments_.repository ?? readGithubRepository();
-    const workflowRuns = readGithubWorkflowRuns({ repository, workflowPath: WORKFLOW_PATH, limit: arguments_.limit });
-    const readings = workflowRuns.map((run) => readObservedRuns(repository, run));
-    const causes = decodeAlmLaneFlakeCauses(JSON.parse(readFileSync(CAUSES_PATH, 'utf8')));
+    const filter = { repository, workflowPath: WORKFLOW_PATH, limit: arguments_.limit };
+    const workflowRuns = computeAlmLaneWorkflowRuns({
+        push: readGithubWorkflowRuns({ ...filter, branch: 'main', event: 'push' }),
+        pullRequest: readGithubWorkflowRuns({ ...filter, event: 'pull_request' }),
+        dispatch: readGithubWorkflowRuns({ ...filter, event: 'workflow_dispatch' })
+    });
+    const readings = workflowRuns.runs.map((run) => readObservedRuns(repository, run));
+    const causes = decodeAlmLaneFlakeCausesText(readFileSync(CAUSES_PATH, 'utf8'));
     const ledger = computeAlmLaneLedger({
         runs: readings.flatMap((reading) => reading.runs),
         causes: causes.fold(() => [], (decoded) => decoded)
     });
     return toAlmLaneLedgerText({
         ledger,
-        commitShas: workflowRuns.map((run) => run.head_sha),
+        runCounts: workflowRuns.counts,
+        commitShas: workflowRuns.runs.map((run) => run.head_sha),
         issues: [
             ...causes.fold((issues) => issues.map((issue) => `${CAUSES_PATH}: ${issue}`), () => []),
             ...readings.flatMap((reading) => reading.issues)

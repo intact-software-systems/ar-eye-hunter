@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeAlmLaneLedgerArguments } from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-ledger-arguments.ts';
 
 describe('decodeAlmLaneLedgerArguments', () => {
-    it('reads the newest 30 runs of the repository gh resolves when given nothing', () => {
+    it('reads the newest 30 main push runs of the repository gh resolves when given nothing', () => {
         expect(decodeAlmLaneLedgerArguments([]).right).toEqual({ limit: 30, repository: null });
     });
 
@@ -20,7 +20,12 @@ describe('decodeAlmLaneLedgerArguments', () => {
         [['--limit', 'many'], '--limit must be a whole number from 1 to 100; received "many".'],
         [['--limit'], '--limit needs a value.'],
         [['--repository', 'name'], '--repository must be owner/name; received "name".'],
-        [['--branch', 'main'], 'unknown option --branch; the options are --limit <n> and --repository <owner/name>.']
+        [
+            ['--branch', 'main'],
+            'unknown option --branch; the options are --limit <n> (the main push runs to read, and the bound on' +
+            ' pull-request and dispatched runs) and --repository <owner/name>.'
+        ],
+        [['--limit', '5', '--limit', '6'], '--limit is given more than once.']
     ])('refuses %j', (arguments_, issue) => {
         expect(decodeAlmLaneLedgerArguments(arguments_).left).toEqual([issue]);
     });
