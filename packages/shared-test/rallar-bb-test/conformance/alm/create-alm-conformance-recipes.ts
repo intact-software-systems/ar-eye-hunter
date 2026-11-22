@@ -38,6 +38,7 @@ import {
     toRoomRef,
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
+import { toAlmRecipeRunExtensionMetadata } from './alm-recipe-run-extension.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 import { toAlmCellSettledBody } from './cell/to-alm-cell-settled-body.ts';
@@ -193,6 +194,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceCellPartsInput {
     readonly relayedReceiptOrigins: readonly AlmConformanceRole[] | undefined;
     /** Set only on the sender of a scenario none of whose receipts may confirm that role. */
     readonly unconfirmedReceiptRole: AlmConformanceRole | undefined;
+    /** Set on every role of a scenario whose longest step outlasts the lane's ordinary recipe budget. */
+    readonly recipeRunExtensionMs: number | undefined;
 }
 
 interface AlmConformanceRoleCell {
@@ -498,7 +501,8 @@ function toRoleCells(
             receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
-            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined
+            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined,
+            recipeRunExtensionMs: definition.recipeRunExtensionMs
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });
@@ -570,7 +574,8 @@ function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): Rall
             : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) }),
         ...(recipe.unconfirmedReceiptRole === undefined
             ? {}
-            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole })
+            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole }),
+        ...toAlmRecipeRunExtensionMetadata(recipe.recipeRunExtensionMs)
     };
 }
 

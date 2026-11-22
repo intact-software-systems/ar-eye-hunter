@@ -332,6 +332,11 @@ interface AlmConformanceScenarioCore {
     readonly unconfirmedReceiptRole?: AlmConformanceRole;
     /** Absent when every role runs one recipe; otherwise one role's later steps, which wait for another role. */
     readonly continuation?: AlmConformanceContinuationDefinition;
+    /**
+     * Absent when each role's recipe runs within the lane's ordinary recipe budget. Otherwise the time the cell's
+     * longest step adds to it, which every role's recipe metadata states (`toAlmRecipeRunExtensionMetadata`).
+     */
+    readonly recipeRunExtensionMs?: number;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

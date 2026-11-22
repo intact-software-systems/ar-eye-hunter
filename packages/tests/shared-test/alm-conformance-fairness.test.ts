@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { computeAlmRecipeRunTimeoutMs } from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { computeSendLoopBudgetMs } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/to-send-loop-command.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -313,6 +315,33 @@ describe('buffered-track-drains', () => {
     });
 });
 
+const CHURN_CUES = 'alm-rtc-churn-bounded-tracks-cues';
+const ORDINARY_RECIPE_RUN_TIMEOUT_MS = 180_000;
+
+describe('computeSendLoopBudgetMs', () => {
+    it('gives each iteration of a send loop 1,500 ms', () => {
+        expect(computeSendLoopBudgetMs(280)).toBe(420_000);
+        expect(computeSendLoopBudgetMs(1)).toBe(1_500);
+    });
+
+    it('grows with the count', () => {
+        const counts = [0, 1, 66, 256, 280, 281];
+        const budgets = counts.map(computeSendLoopBudgetMs);
+
+        expect(budgets).toEqual([...budgets].sort((left, right) => left - right));
+        expect(new Set(budgets).size).toBe(counts.length);
+    });
+});
+
+describe('computeAlmRecipeRunTimeoutMs', () => {
+    it('keeps the ordinary budget for a recipe whose metadata states no extension', () => {
+        const scenario = findScenario('rtc', 'buffered-track-drains');
+
+        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, ORDINARY_RECIPE_RUN_TIMEOUT_MS)).toBe(180_000);
+        expect(computeAlmRecipeRunTimeoutMs({ ...scenario.sender, metadata: undefined }, 5_000)).toBe(5_000);
+    });
+});
+
 describe('churn-bounded-tracks', () => {
     const atTheCap: RallarBlackBoxTestAlmUsage = {
         usage: { admissions: 300, bytes: 180_000, oldestAgeMs: 9_000, tracks: 0 },
@@ -339,6 +368,8 @@ describe('churn-bounded-tracks', () => {
             'open-tracks',
             'observe-last-track',
             'assert-last-track-sent',
+            `${CHURN_CUES}-sender-cue-tracks-sent`,
+            `${CHURN_CUES}-sender-cue-tracks-sent-sent`,
             'close-departs',
             'stats'
         ]);
@@ -374,6 +405,9 @@ describe('churn-bounded-tracks', () => {
 
         expect(toCommandNames(scenario.receiver)).toEqual([
             ...RECEIVER_PROLOGUE,
+            `${CHURN_CUES}-receiver-cue-listen`,
+            `${CHURN_CUES}-receiver-cue-listen-sent`,
+            `${CHURN_CUES}-receiver-cue-tracks-sent-received`,
             'received-1',
             'ordering-tracks-cap-stated',
             'stats-ordering-tracks',
@@ -381,7 +415,13 @@ describe('churn-bounded-tracks', () => {
             'assert-ordering-tracks-at-the-cap',
             'stats'
         ]);
-        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 280, absent: false, windowMs: 57_000 });
+        // The count opens once the sender cued that its last track is sent, so it owns one send's budget past the cue.
+        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({
+            count: 280,
+            absent: false,
+            windowMs: 27_000,
+            timeoutMs: 28_000
+        });
         // The memory store states its count at the end of a newly opened track's eviction pass, not at its delivery.
         expect(findCommand(scenario.receiver, 'ordering-tracks-cap-stated')).toEqual({
             kind: 'wait',
@@ -402,5 +442,38 @@ describe('churn-bounded-tracks', () => {
             results.push(await readLedgerTail(scenario.receiver, 'stats-ordering-tracks', { ...atTheCap, orderingTracks }));
         }
         expect(results).toEqual([false, false, false]);
+    });
+    it('counts the 280 arrivals only after the sender cued that its last track is sent', () => {
+        const scenario = findScenario('rtc', 'churn-bounded-tracks');
+        const cue = { marker: 'churn-bounded-tracks-cues', carrier: 'rtc', cue: 'tracks-sent' };
+        const senderIds = scenario.sender.commands.map((command) => command.commandId);
+        const receiverIds = scenario.receiver.commands.map((command) => command.commandId);
+        const cueSend = senderIds.indexOf(`${CHURN_CUES}-sender-cue-tracks-sent`);
+        const cueWait = receiverIds.indexOf(`${CHURN_CUES}-receiver-cue-tracks-sent-received`);
+
+        expect(scenario.sender.commands[cueSend]).toMatchObject({ kind: 'messages.send', carrier: 'ws', payload: cue });
+        expect(cueSend).toBeGreaterThan(senderIds.indexOf(`${scenario.sender.recipeId}-assert-last-track-sent`));
+        expect(cueSend).toBeLessThan(senderIds.indexOf(`${scenario.sender.recipeId}-close-departs`));
+        expect(scenario.receiver.commands[cueWait]).toMatchObject({
+            kind: 'wait',
+            match: { kind: 'message', connection: 'receiver', payloadPath: 'data.payload', equals: cue }
+        });
+        expect(cueWait).toBeLessThan(receiverIds.indexOf(`${scenario.receiver.recipeId}-received-1`));
+    });
+
+    it('gives the loop the shared budget for 280 tracks, and no timeout that wraps the loop is shorter', () => {
+        const scenario = findScenario('rtc', 'churn-bounded-tracks');
+        const loopBudgetMs = computeSendLoopBudgetMs(280);
+        const cueWait = scenario.receiver.commands.find((command) => command.commandId === `${CHURN_CUES}-receiver-cue-tracks-sent-received`);
+
+        expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({ kind: 'loop', timeoutMs: loopBudgetMs });
+        // The cue wait opens with the sender's body: its reconnect (45 s and 30 s of readiness), the loop, the last
+        // track's observation (10 s), its assertion (2 s) and the cue's send and observation (5 s each).
+        expect(cueWait?.timeoutMs).toBe(45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
+        for (const recipe of [scenario.sender, scenario.receiver]) {
+            const runTimeoutMs = computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RECIPE_RUN_TIMEOUT_MS);
+            expect(runTimeoutMs, recipe.recipeId).toBe(ORDINARY_RECIPE_RUN_TIMEOUT_MS + (cueWait?.timeoutMs ?? 0));
+            expect(runTimeoutMs, recipe.recipeId).toBeGreaterThanOrEqual(loopBudgetMs);
+        }
     });
 });
