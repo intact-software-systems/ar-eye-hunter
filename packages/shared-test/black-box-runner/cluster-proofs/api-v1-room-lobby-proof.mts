@@ -3,8 +3,9 @@ import postgres from 'postgres';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { decodeRoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
-import { ApiV1RtcTopologyProofApi, requestJson, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { ApiV1RtcTopologyProofApi, requestJson, requireRecord, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from './run-managed-cluster-proof.mts';
+import { proveProgramRegistrationBoundary } from './prove-program-registration-boundary.mts';
 
 async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [first, second, observer] = plans;
@@ -17,6 +18,8 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         principal, label: principal, apiBaseUrl: observer.baseUrl, wsBaseUrl: observer.baseUrl.replace(/^http/, 'ws')
     });
     const [alice, bob] = await Promise.all([login('alice'), login('bob')]);
+    await proveProgramRegistrationBoundary({ plans, controls, databaseUrl, users, owner: alice, player: bob });
+    console.log('Passed: program-bound registration survives pause, disconnection and duplicate delivery');
     const scope = { applicationId: 'lobby-proof', workspaceId: crypto.randomUUID() };
     const path = '/apps/' + scope.applicationId + '/workspaces/' + scope.workspaceId;
     const seat = async (session: ProofSession) => decodeRoomLobbyAccountView(await requestJson(observer.baseUrl,
@@ -51,7 +54,17 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         method: 'POST', session: bob, body: { actorPrincipalId: bob.clientId }
     });
     assert.equal((await seat(bob))?.status, 'arriving');
-    const publicEvents = () => requestJson(observer.baseUrl, groupPath + '/events/page', { method: 'GET', session: alice });
+    const publicEvents = async () => {
+        const page = await requestJson(observer.baseUrl, groupPath + '/events/page', { method: 'GET', session: alice });
+        assert.equal(page.hasMore, false, 'Compare the complete public history for this fresh room');
+        assert.ok(Array.isArray(page.events));
+        // The topology worker can publish the earlier join's layout between reads.
+        return page.events.filter(row => {
+            const event = requireRecord(row, 'room event');
+            const actor = requireRecord(event.actor, 'event actor');
+            return !(actor.kind === 'service' && typeof event.requestId === 'string' && event.requestId.startsWith('topology-publication:v1:apply:'));
+        });
+    };
     const beforeRelease = await publicEvents();
     const releaseAcknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(groupPath, crypto.randomUUID()), {
         method: 'PUT', session: bob, body: { actorPrincipalId: bob.clientId, roomLobby: { operation: 'release' } }

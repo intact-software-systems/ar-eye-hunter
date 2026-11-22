@@ -9,6 +9,7 @@ interface OpenApiSchema {
     readonly type?: string | readonly string[];
     readonly items?: { readonly $ref?: string; };
     readonly enum?: readonly string[];
+    readonly const?: string;
     readonly default?: string | number;
     readonly minimum?: number;
     readonly maximum?: number;
@@ -430,3 +431,13 @@ function assertOpenApiResponseSchema(
         );
     }
 }
+
+test('organizers can bind lobby registration to a phase in the published program revision', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
+    const lobby = document.components.schemas.UpdateGroupRequest.properties?.roomLobby;
+    const binding = lobby?.oneOf?.find(command => command.properties?.operation.const === 'set-registration-boundary');
+    assert.ok(binding);
+    assert.deepEqual(new Set(binding.required), new Set(['operation', 'expectedRevision', 'expectedProgramRevision', 'program', 'phase']));
+    assert.equal(binding.additionalProperties, false);
+});

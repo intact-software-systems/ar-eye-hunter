@@ -72,6 +72,7 @@ const TERMINAL_POLICY_BY_CODE = new Map<string, TerminalAppInboxErrorPolicy>([
     ['group-mutation-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
     ['group-already-exists', { status: 409, queueFailure: 'command-rejected' }],
     ['room-director-changed', { status: 409, queueFailure: 'command-rejected' }],
+    ['room-lobby-registration-revision-conflict', { status: 409, queueFailure: 'command-rejected' }],
     ['room-clock-revision-conflict', { status: 409, queueFailure: 'command-rejected' }],
     ['room-deadline-revision-conflict', { status: 409, queueFailure: 'command-rejected' }],
     ['group-retired', { status: 410, queueFailure: 'command-rejected' }],

@@ -9253,6 +9253,16 @@ components:
                   description: UTC cutoff, or null to cancel the current cutoff while registration is open.
                   type: [integer, 'null']
                   minimum: 0
+            - type: object
+              description: Close registration when the named phase starts. A pause suspends a future cutoff and resume shifts it. Previously issued offers keep their deadlines.
+              required: [operation, expectedRevision, expectedProgramRevision, program, phase]
+              additionalProperties: false
+              properties:
+                operation: { const: set-registration-boundary }
+                expectedRevision: { type: integer, minimum: 0 }
+                expectedProgramRevision: { type: integer, minimum: 1 }
+                program: { type: string, pattern: '^[A-Za-z0-9._-]{1,64}$' }
+                phase: { type: string, pattern: '^[A-Za-z0-9._-]{1,64}$', description: Must identify exactly one phase in the program. }
         roomClock:
           type: object
           additionalProperties: false

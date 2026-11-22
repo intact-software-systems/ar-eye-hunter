@@ -1,3 +1,4 @@
+import { assertRoomLobbyRegistrationBoundary } from '@shared/api/room-lobbies/room-lobby-registration-boundary.ts';
 import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
@@ -18,6 +19,10 @@ export function validateGroupLobbyInput(operation: 'createGroup' | 'updateGroup'
                 requireExactKeys(command, ['operation', 'expectedRevision', 'atEpochMs'], 'Lobby registration cutoff');
                 requireEpoch(command.expectedRevision, 'Expected registration revision');
                 if (command.atEpochMs !== null) requireEpoch(command.atEpochMs, 'Registration cutoff');
+            }
+            else if (command.operation === 'set-registration-boundary') {
+                requireExactKeys(command, ['operation', 'expectedRevision', 'expectedProgramRevision', 'program', 'phase'], 'Registration boundary');
+                assertRoomLobbyRegistrationBoundary(command);
             }
             else if (command.operation === 'wait') {
                 requireExactKeys(command, Object.hasOwn(command, 'joinCode') ? ['operation', 'joinCode'] : ['operation'], 'Lobby wait');

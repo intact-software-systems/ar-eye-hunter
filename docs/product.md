@@ -319,6 +319,16 @@ An offer issued before closure remains claimable
 until its displayed deadline. The SDK reports `uncertain` while the calibrated time window crosses
 the cutoff and `unavailable` when a scheduled cutoff cannot be compared with server time.
 
+To close registration when play begins, use `lobby.setRegistrationBoundary(roomRef,
+{ expectedRevision, expectedProgramRevision, program: 'match', phase: 'play' })`.
+Use the registration revision from the current room snapshot. Re-enabling a lobby starts a new revision, so a delayed command from its previous activation is rejected.
+The organizer chooses a phase that occurs exactly once in the published program. The cutoff
+moves with revisions to that phase. Pausing before it suspends the cutoff; resuming sets its
+new UTC instant. The registration view exposes the binding and its effective `atEpochMs`,
+which is null while the future boundary is paused. A running worker closes registration even
+when the room is empty. Seat offers issued before closure keep their original claim deadlines.
+To remove or rename a bound phase, clear or replace the cutoff while registration is open.
+
 ## Find players and start together
 
 AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and

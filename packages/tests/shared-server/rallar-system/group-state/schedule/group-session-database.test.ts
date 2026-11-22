@@ -296,3 +296,37 @@ it('admits the owner of a scheduled reservation after lobby registration closes'
         await fixture.storage.close();
     }
 });
+
+it.each(['open', 'closed'] as const)('evaluates a reservation after offer expiry with registration %s and delivery pending', async (registration) => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const wait = await prepareForAccount(fixture, 'alice', mutationDescriptor({
+            operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+            request: { requestId: 'offer', actorPrincipalId: 'alice', roomLobby: { operation: 'wait' } }
+        }));
+        await commitMutation(fixture, requireMutationWrite(wait.computed));
+        const expiry = fixture.nowEpochMs + 10000;
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'alice'))?.value.seat).toMatchObject({
+            status: 'offered', deadlineEpochMs: expiry
+        });
+        if (registration === 'closed') {
+            const cutoff = await prepareMutation(fixture, mutationDescriptor({
+                operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+                request: { requestId: 'cutoff', actorPrincipalId: 'owner', roomLobby: {
+                    operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: expiry + 1
+                } }
+            }));
+            await commitMutation(fixture, requireMutationWrite(cutoff.computed));
+        }
+        fixture.nowEpochMs = expiry + 1;
+        const attempt = await prepareForAccount(fixture, 'alice', reservation('alice', 'after-offer-expired'));
+        if (registration === 'closed') {
+            expect(attempt.computed).toMatchObject({ outcome: 'rejected', policyDenial: { code: 'group-admission-closed' } });
+        } else {
+            await commitMutation(fixture, requireMutationWrite(attempt.computed));
+            expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual(['alice']);
+        }
+    } finally {
+        await fixture.storage.close();
+    }
+});
