@@ -1200,8 +1200,9 @@ async function readChainLinks(gap: GapChain): Promise<ChainLinks> {
 
 /**
  * Moves the clock `ms` forward in 250 ms steps, draining the chain at every step until it is quiet. A step does not jump
- * to the next fake timer: a work engine re-arms one at no delay while a row it does not claim stays due, so the next
- * timer is always 1 ms away.
+ * to the next fake timer: the relay's durable and volatile inbound lanes share one engine, whose probes report ready
+ * now while the rotation has another status page to read, so it re-arms at no delay and the next timer is always 1 ms
+ * away. That busy poll is on `main` and is fixed on its own.
  */
 async function advanceChainBy(gap: GapChain, ms: number): Promise<void> {
     for (let advanced = 0; advanced < ms; advanced += CHAIN_STEP_MS) {
