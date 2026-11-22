@@ -113,6 +113,12 @@ room presence and the observed appointment epoch. An explicit admin appointment 
 Handover preserves running and paused programs, and invalidates delayed clock writes from the
 former director.
 
+After the reconnect window, a present player can send `claim-player` when the room has no
+eligible deputy or the deputy has declined or timed out. The first accepted claim establishes a new
+appointment epoch. Waiting and away lobby commitments do not confer director authority. Ordinary
+spectators remain ineligible for this fallback. A returning participant recovers the winning
+appointment alongside the room program.
+
 Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
 to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
 paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.

@@ -9432,7 +9432,7 @@ components:
               additionalProperties: false
               required: [operation, expectedDirectorEpoch]
               properties:
-                operation: { enum: [claim-deputy, decline-deputy] }
+                operation: { enum: [claim-deputy, decline-deputy, claim-player] }
                 expectedDirectorEpoch: { type: integer, minimum: 1 }
         heartbeatTtlMs:
           type: integer

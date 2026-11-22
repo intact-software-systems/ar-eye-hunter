@@ -19,7 +19,7 @@ export namespace RoomDirectorSuccession {
     export type Command = { readonly expectedDirectorEpoch: number } & (
         | ({ readonly operation: 'configure'; readonly expectedRevision: number } & Pick<Policy, 'deputyPrincipalId'> & Partial<Pick<Policy, 'reconnectWindowMs' | 'deputyWindowMs'>>)
         | { readonly operation: 'appoint'; readonly targetPrincipalId: string; readonly targetSessionId: string }
-        | { readonly operation: 'claim-deputy' | 'decline-deputy' }
+        | { readonly operation: 'claim-deputy' | 'decline-deputy' | 'claim-player' }
     );
 }
 
@@ -61,7 +61,7 @@ export function decodeRoomDirectorSuccessionCommand(value: unknown): RoomDirecto
         return { operation, expectedDirectorEpoch, targetPrincipalId: record.targetPrincipalId, targetSessionId: record.targetSessionId };
     }
     requireExactKeys(record, common, 'Director claim command');
-    if (operation !== 'claim-deputy' && operation !== 'decline-deputy') throw new TypeError('Unknown director succession command');
+    if (operation !== 'claim-deputy' && operation !== 'decline-deputy' && operation !== 'claim-player') throw new TypeError('Unknown director succession command');
     return { operation, expectedDirectorEpoch };
 }
 

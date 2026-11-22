@@ -122,8 +122,16 @@ export function changeRoomDirectorSuccession(input: DirectorChangeInput): Direct
         return appoint(input, state, command.targetPrincipalId, command.targetSessionId);
     }
     const { loss } = state;
-    if (!loss || loss.directorEpoch !== command.expectedDirectorEpoch || loss.declined ||
-        actor.principalId !== state.deputyPrincipalId || nowEpochMs < loss.reconnectUntilEpochMs || nowEpochMs >= loss.deputyUntilEpochMs) {
+    if (!loss || loss.directorEpoch !== command.expectedDirectorEpoch || nowEpochMs < loss.reconnectUntilEpochMs) {
+        return { rejectionCode: 'group-mutation-rejected', message: 'The director appointment is still reserved.' };
+    }
+    if (command.operation === 'claim-player') {
+        if (actorMember.role === 'spectator' || (state.deputyPrincipalId !== null && !loss.declined && nowEpochMs < loss.deputyUntilEpochMs)) {
+            return { rejectionCode: 'group-mutation-rejected', message: 'The player has no current claim.' };
+        }
+        return appoint(input, state, actor.principalId, actor.sessionId);
+    }
+    if (loss.declined || actor.principalId !== state.deputyPrincipalId || nowEpochMs >= loss.deputyUntilEpochMs) {
         return { rejectionCode: 'group-mutation-rejected', message: 'The designated deputy has no current claim.' };
     }
     if (command.operation === 'decline-deputy') {

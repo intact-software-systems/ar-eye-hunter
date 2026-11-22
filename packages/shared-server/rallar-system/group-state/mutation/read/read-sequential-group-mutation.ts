@@ -1,3 +1,4 @@
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 
@@ -127,21 +128,23 @@ async function readAuthorityPresenceEntries({
     authorityAdmission,
     directorAdmission
 }: ReadAuthorityPresenceEntriesInput): Promise<GroupMutationRead['authorityPresenceSessionEntries']> {
-    const admittedSessions = [
-        ...(authorityAdmission?.value.admittedSessions ?? []),
-        ...(directorAdmission?.value.admittedSessions ?? [])
-    ];
-    const sessions = await Promise.all(
-        admittedSessions.map((session) =>
-            repository.findPresenceEntry({
-                ...command.aggregateRef,
-                sessionId: session.sessionId
-            })
-        )
-    );
-    return sessions.filter(
-        (session): session is NonNullable<typeof session> => session !== undefined
-    );
+    const admissions = new Map([authorityAdmission, directorAdmission].filter(row => row != null)
+        .map(row => [row.value.principalId, row]));
+    const byPrincipal = await Promise.all([...admissions.values()].map(async admission => {
+        const expected = admission.value.admittedSessions;
+        const sessions = await Promise.all(expected.map(({ sessionId }) =>
+            repository.findPresenceEntry({ ...command.aggregateRef, sessionId })));
+        if (sessions.some((row, index) => !row || row.value.principalId !== admission.value.principalId ||
+            row.value.generationId !== expected[index].generationId || row.value.generationVersion !== expected[index].generationVersion)) {
+            // Admission and sessions use separate reads. A concurrent reconnect can replace both between them.
+            const current = await repository.findPresenceAdmissionEntry({ ...command.aggregateRef, principalId: admission.value.principalId });
+            if (current?.entry.revision !== admission.entry.revision || current.entry.value !== admission.entry.value) {
+                throw new RuntimeStateWriteConflictError();
+            }
+        }
+        return sessions.filter(row => row !== undefined);
+    }));
+    return byPrincipal.flat();
 }
 
 interface AssembleSequentialGroupMutationReadInput {
