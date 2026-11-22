@@ -1,3 +1,4 @@
+import { lobbyWindows } from '@shared/api/room-lobbies/room-lobby-windows.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -5,11 +6,11 @@ import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { computeAppOutboxSignal } from '../../app-outbox/compute-app-outbox-signal.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { computeViewInvalidationPublication, type ViewInvalidationPublication } from '../../websocket/outbox/compute-view-invalidation-publication.ts';
-import { roomLobbyDeadlineRoute, type RoomLobbyDeadline } from './room-lobby-deadline.ts';
+import { groupLobbyDeadlineRoute, type GroupLobbyDeadline } from './group-lobby-deadline.ts';
 
-import { projectRoomLobbyCommitments } from './project-room-lobby-commitments.ts';
+import { projectGroupLobbyCommitments } from './project-group-lobby-commitments.ts';
 
-interface RoomLobbyPublicationInput extends Pick<RoomLobbyDeadline, 'roomRef' | 'groupCreatedAtEpochMs'> {
+interface GroupLobbyPublicationInput extends Pick<GroupLobbyDeadline, 'roomRef' | 'groupCreatedAtEpochMs'> {
     readonly before: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
     readonly after: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
     readonly createdAtEpochMs: number;
@@ -19,10 +20,10 @@ interface RoomLobbyPublicationInput extends Pick<RoomLobbyDeadline, 'roomRef' | 
 }
 
 /** Only a changed private seat wakes its account; several seats can share a single durable window. */
-export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): ViewInvalidationPublication {
+export function computeGroupLobbyPublication(input: GroupLobbyPublicationInput): ViewInvalidationPublication {
     const { before, after, roomRef, groupCreatedAtEpochMs } = input;
-    const oldSeats = projectRoomLobbyCommitments(roomRef, before);
-    const newSeats = projectRoomLobbyCommitments(roomRef, after);
+    const oldSeats = projectGroupLobbyCommitments(roomRef, before);
+    const newSeats = projectGroupLobbyCommitments(roomRef, after);
     const accounts = new Set([...oldSeats.keys(), ...newSeats.keys()]);
     const { applicationId, workspaceId } = roomRef;
     const notices = computeViewInvalidationPublication({
@@ -36,7 +37,7 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
         traceId: input.traceId
     });
     const previous = before?.activationId === after?.activationId ? lobbyWindows(before) : new Map();
-    const deadlines: RoomLobbyDeadline[] = [];
+    const deadlines: GroupLobbyDeadline[] = [];
     if (after && after.expiresAtEpochMs !== null &&
         (after.activationId !== before?.activationId || after.expiresAtEpochMs !== before.expiresAtEpochMs)) {
         deadlines.push({ kind: 'room', generation: after.revision, roomRef, groupCreatedAtEpochMs, activationId: after.activationId, dueAtEpochMs: after.expiresAtEpochMs });
@@ -48,7 +49,7 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
     }
     for (const deadline of deadlines) {
         outbox.push(computeAppOutboxSignal({
-            ...roomLobbyDeadlineRoute(deadline),
+            ...groupLobbyDeadlineRoute(deadline),
             typeId: AppOutboxType.ROOM_LOBBY_DEADLINE,
             resource: JSON.stringify(deadline),
             createdAtEpochMs: input.createdAtEpochMs,
@@ -59,25 +60,4 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
         }));
     }
     return { outbox, provenance: notices.provenance };
-}
-
-function lobbyWindows(lobby: RoomLobbyPublicationInput['after']): Map<string, RoomLobby.ReturnWindow> {
-    const windows = new Map<string, RoomLobby.ReturnWindow>();
-    if (!lobby) return windows;
-    if (lobby.capacityClaims) {
-        const { generation, dueAtEpochMs } = lobby.capacityClaims;
-        windows.set(JSON.stringify([generation, dueAtEpochMs]), { generation, dueAtEpochMs });
-    }
-    for (const waiter of lobby.waiters) {
-        if (waiter.eligibleUntilEpochMs !== null) {
-            const window = { generation: waiter.generation, dueAtEpochMs: waiter.eligibleUntilEpochMs };
-            windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
-        }
-    }
-    for (const seat of lobby.seats) {
-        for (const window of [seat.admissionWindow, seat.returnWindow, seat.offerWindow]) {
-            if (window) windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
-        }
-    }
-    return windows;
 }

@@ -1,5 +1,5 @@
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
-import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby.ts';
+import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -77,7 +77,7 @@ export function computeUpdate(
     if (lobbyChange && lobbyChange.operation !== 'configure' && !command.input.actorPrincipalId) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
     }
-    if (lobbyChange?.operation === 'wait' && !read.roomLobby?.lobby) {
+    if (lobbyChange?.operation === 'wait' && !read.lobbyState?.lobby) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'This room has no lobby queue.' });
     }
     const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
@@ -120,7 +120,7 @@ export function computeUpdate(
         }
     }
     if (lobbyChange && lobbyChange.operation !== 'configure') {
-        const roster = read.roomLobby?.lobby?.value;
+        const roster = read.lobbyState?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
         const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
             roster?.waiters.some(waiter => waiter.principalId === principalId);

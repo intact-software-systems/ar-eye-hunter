@@ -44,6 +44,16 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
         timeout.throwIfAborted();
         await new Promise(resolve => setTimeout(resolve, 100));
     }
+    const groupPath = '/api/state' + path + '/groups/' + winner.groupId;
+    await requestJson(second.baseUrl, toApiMutationRequestPath(groupPath + '/join', crypto.randomUUID()), {
+        method: 'POST', session: bob, body: { actorPrincipalId: bob.clientId }
+    });
+    assert.equal((await seat(bob))?.status, 'arriving');
+    const releaseAcknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(groupPath, crypto.randomUUID()), {
+        method: 'PUT', session: bob, body: { actorPrincipalId: bob.clientId, roomLobby: { operation: 'release' } }
+    });
+    assert.deepEqual(releaseAcknowledgement, { roomRef: { ...scope, groupId: winner.groupId } });
+    assert.equal(await seat(bob), null);
     const outsider = await users.login({
         principal: 'admin', label: 'walk-in', apiBaseUrl: second.baseUrl, wsBaseUrl: second.baseUrl.replace(/^http/, 'ws')
     });

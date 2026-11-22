@@ -7,7 +7,7 @@ import type { MatchmakingCommand } from './matchmaking-command.ts';
 import type { MatchmakingProposal } from './matchmaking-pool.ts';
 
 export interface MatchmakingAdmissionReadInput {
-    readonly roomLobbyDefault?: RoomLobby.Policy;
+    readonly lobbyDefault?: RoomLobby.Policy;
     readonly groups: GroupStateRepository;
     readonly proposal: MatchmakingProposal;
     readonly command: MatchmakingCommand;
@@ -28,7 +28,7 @@ export async function readMatchmakingAdmission(
     const { roomRef } = input.proposal;
     return await readNewGroupCohortAdmission({
         groups: input.groups,
-        roomLobbyDefault: input.roomLobbyDefault,
+        lobbyDefault: input.lobbyDefault,
         roomRef,
         displayName: 'Matched room',
         maxSpectators: null,

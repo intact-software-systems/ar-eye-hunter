@@ -1,4 +1,5 @@
 import type { RallarJoinRoomOptions } from '../rallar-room-contracts.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
@@ -7,7 +8,8 @@ import { DEFAULT_ROOM_LOBBY_POLICY } from '@shared/api/room-lobbies/room-lobby-p
 import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { decodeRoomLobbyAccountView, decodeRoomLobbyPolicy, type RoomLobby, type RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
+import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { decodeRoomLobbyAccountView, type RoomLobby, type RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
@@ -96,7 +98,7 @@ async function writeLobbyCommand({ scope, session, request, signal, requestId }:
         acknowledged = snapshot.group;
     }
     else {
-        const result = await sendApiHttpRequest<typeof body, unknown>({
+        const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
             baseUrl: readApiBaseUrl(), method: 'PUT', body, options,
             path: toApiMutationRequestPath(toStateGroupHttpPath(scope, request.roomRef.groupId), requestId)
         });

@@ -1,3 +1,4 @@
+import { decodeCapacityClaims } from './room-lobby-capacity.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { isSameGroupScope } from '../api-type-utils.ts';
 import { requireEpoch, requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
@@ -6,11 +7,8 @@ import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 import { decodePositiveLobbyInteger, decodeRoomLobbyPolicy } from './room-lobby-policy.ts';
 
-export {
-    ROOM_LOBBY_METADATA_KEY, decodeRoomLobbyPolicy, readRoomLobbyPolicy, roomLobbyApplicationDefault
-} from './room-lobby-policy.ts';
-export { configureRoomLobbyCapacityClaims } from './room-lobby-allocation.ts';
-export { changeRoomLobby, configureRoomLobby } from './room-lobby-roster.ts';
+export { configureRoomLobby } from './room-lobby-capacity.ts';
+export { changeRoomLobby } from './change-room-lobby.ts';
 
 export namespace RoomLobby {
     export type Mutation = { readonly operation: 'configure'; readonly policy: Policy | null; }
@@ -73,7 +71,15 @@ export interface RoomLobbyAccountView {
     } | null;
 }
 
-export function createRoomLobby(roomRef: GroupRef, capacity: number, policy: RoomLobby.Policy, activationId: string, expiresAtEpochMs: number | null = null): RoomLobby {
+interface CreateRoomLobbyInput {
+    readonly roomRef: GroupRef;
+    readonly capacity: number;
+    readonly policy: RoomLobby.Policy;
+    readonly activationId: string;
+    readonly expiresAtEpochMs?: number | null;
+}
+
+export function createRoomLobby({ roomRef, capacity, policy, activationId, expiresAtEpochMs = null }: CreateRoomLobbyInput): RoomLobby {
     if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
     requireString(activationId, 'Room lobby activation');
     return {
@@ -90,23 +96,6 @@ function decodeWindow(value: unknown, revision: number): RoomLobby.ReturnWindow 
     if (generation > revision) throw new TypeError('Seat window is newer than lobby revision');
     requireEpoch(window.dueAtEpochMs, 'Seat deadline');
     return { generation, dueAtEpochMs: window.dueAtEpochMs };
-}
-
-function decodeCapacityClaims(value: unknown, revision: number, capacity: number): RoomLobby.CapacityClaims | null {
-    if (value === null) return null;
-    const claims = requireRecord(value, 'Capacity claims');
-    requireExactKeys(claims, ['generation', 'dueAtEpochMs', 'principalIds'], 'Capacity claims');
-    const generation = decodePositiveLobbyInteger(claims.generation, 'Capacity claim generation');
-    requireEpoch(claims.dueAtEpochMs, 'Capacity claim expiry');
-    if (generation > revision || !Array.isArray(claims.principalIds) || !claims.principalIds.length || claims.principalIds.length > capacity) {
-        throw new TypeError('Invalid lobby capacity claims');
-    }
-    const principalIds = claims.principalIds.map((id: unknown) => {
-        requireString(id, 'Capacity claim account');
-        return id;
-    });
-    if (principalIds.some((id, index) => index > 0 && principalIds[index - 1] >= id)) throw new TypeError('Invalid capacity claim order');
-    return { principalIds, generation, dueAtEpochMs: claims.dueAtEpochMs };
 }
 
 export function decodeRoomLobby(value: unknown): RoomLobby {

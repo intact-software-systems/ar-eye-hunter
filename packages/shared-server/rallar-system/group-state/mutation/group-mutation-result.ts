@@ -1,4 +1,4 @@
-import { computeRoomLobbyMutation } from '../lobby/compute-room-lobby-mutation.ts';
+import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
     GroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -154,7 +154,7 @@ export function computeGroupMutationWriteResult(
         });
     const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;
-    const lobby = computeRoomLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
+    const lobby = computeGroupLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
     const scheduled = computeScheduledMutationWrites(input, group, sessionReservationWrite);
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const outboxWrites = [...outboxEntries.map(computeAppOutboxInsert), ...scheduled.outboxWrites, ...lobby.outbox];
@@ -171,7 +171,7 @@ export function computeGroupMutationWriteResult(
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
         viewProvenance: [...scheduled.viewProvenance, ...lobby.provenance],
-        roomLobbyEffects: lobby.effects,
+        lobbyEffects: lobby.effects,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
         sessionReservationWrite,
         guard: input.guard,
