@@ -1,9 +1,11 @@
 import { MAX_ROOM_CLOCKS, readRoomTimeRecords, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
-import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
+import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-interface ClockRefusal {
+import { computeGroupProgramChange } from './compute-group-program-change.ts';
+
+export interface ClockRefusal {
     readonly rejectionCode: 'room-clock-revision-conflict' | 'group-mutation-rejected';
     readonly message: string;
 }
@@ -26,7 +28,7 @@ export function computeGroupClockChange(
         if (previous && !('phases' in previous)) {
             return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
         }
-        return changeProgram(previous, command, now);
+        return computeGroupProgramChange(previous, command, now);
     }
     if (previous && 'phases' in previous) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Use a program command to change this name.' };
@@ -81,49 +83,6 @@ export function computeGroupClockChange(
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock end exceeds the supported UTC range.' };
     }
     return { ...identity, ...occurrence, status: 'running', endsAtEpochMs };
-}
-
-function changeProgram(
-    previous: RoomSchedule | undefined,
-    command: RoomSchedule.Control | Extract<RoomClockMutation, { operation: 'publish-schedule' }>,
-    now: number
-): RoomSchedule | ClockRefusal {
-    const revision = command.expectedRevision + 1;
-    const effectiveNow = Math.max(now, previous?.elapsedThroughEpochMs ?? now);
-    if (!Number.isSafeInteger(effectiveNow) || effectiveNow > 8_640_000_000_000_000) {
-        return { rejectionCode: 'group-mutation-rejected', message: 'Program time exceeds the supported UTC range.' };
-    }
-    if (command.operation === 'publish-schedule') {
-        const elapsedThroughEpochMs = previous?.status === 'program-paused' ? previous.elapsedThroughEpochMs : effectiveNow;
-        const elapsed = (phase: RoomSchedule.Phase) => phase.startsAtEpochMs <= elapsedThroughEpochMs;
-        if (previous && !sameSchedulePhases(previous.phases.filter(elapsed), command.phases.filter(elapsed))) {
-            return { rejectionCode: 'group-mutation-rejected', message: 'Elapsed boundaries must be preserved.' };
-        }
-        return { name: command.name, revision, status: previous?.status ?? 'scheduled', elapsedThroughEpochMs, phases: command.phases };
-    }
-    if (command.operation === 'pause-program') {
-        if (previous?.status !== 'scheduled') {
-            return { rejectionCode: 'group-mutation-rejected', message: 'Only a scheduled program can pause.' };
-        }
-        return { ...previous, revision, status: 'program-paused', elapsedThroughEpochMs: effectiveNow };
-    }
-    if (previous?.status !== 'program-paused') {
-        return { rejectionCode: 'group-mutation-rejected', message: 'Only a paused program can resume.' };
-    }
-    const pausedDurationMs = effectiveNow - previous.elapsedThroughEpochMs;
-    const shifted: RoomSchedule.Phase[] = [];
-    for (const phase of previous.phases) {
-        if (phase.startsAtEpochMs <= previous.elapsedThroughEpochMs) {
-            shifted.push(phase);
-            continue;
-        }
-        const startsAtEpochMs = phase.startsAtEpochMs + pausedDurationMs;
-        if (startsAtEpochMs > 8_640_000_000_000_000) {
-            return { rejectionCode: 'group-mutation-rejected', message: 'Resumed phase exceeds the supported UTC range.' };
-        }
-        shifted.push({ ...phase, startsAtEpochMs });
-    }
-    return { ...previous, revision, status: 'scheduled', elapsedThroughEpochMs: effectiveNow, phases: shifted };
 }
 
 /** Publish phase identity and time together in the one authoritative group write. */

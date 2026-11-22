@@ -50,11 +50,12 @@ export function observeRoomDirectorPresence(
     requireEpoch(expiresAtEpochMs, 'Director lease end');
     const initial = readRoomDirectorSuccession(metadata);
     const director = readRallarGroupDirectorAppointment(metadata);
-    if (!initial || director?.principalId !== principalId || director.sessionId !== sessionId || expiresAtEpochMs <= atEpochMs) return metadata;
+    if (!initial || director?.principalId !== principalId || director.sessionId !== sessionId) return metadata;
     const afterGap = settleDirectorLeaseLoss(metadata, atEpochMs);
+    if (expiresAtEpochMs <= atEpochMs) return observeRoomDirectorLoss(afterGap, expiresAtEpochMs);
     const recovered = recoverRoomDirector(afterGap, principalId, sessionId, atEpochMs);
     const state = readRoomDirectorSuccession(recovered)!;
-    if (state.loss || (state.directorLeaseExpiresAtEpochMs !== null && state.directorLeaseExpiresAtEpochMs >= expiresAtEpochMs)) return recovered;
+    if (state.loss || state.directorLeaseExpiresAtEpochMs === expiresAtEpochMs) return recovered;
     return storeRoomDirectorSuccession(recovered, { ...state, directorLeaseExpiresAtEpochMs: expiresAtEpochMs }, true);
 }
 

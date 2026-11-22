@@ -1,6 +1,6 @@
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 import { RallarRoomLobby } from '@shared-web/browser/rooms/lobby/rallar-room-lobby.ts';
-import type { RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
+import type { RoomLobby, RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ViewPushBrowser } from '../../api/view-push-browser.ts';
 import { afterEach, expect, it, vi } from 'vitest';
 
@@ -136,7 +136,7 @@ it('sends a revision-bound cutoff update and validates the returned room snapsho
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
-    const writes: unknown[] = [];
+    const writes: RoomLobby.Mutation[] = [];
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
         if (init.method === 'PUT') {
             writes.push(JSON.parse(String(init.body)).roomLobby);

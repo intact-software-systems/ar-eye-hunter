@@ -5,7 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
-import { compareDirectoryPositions, matchesGroupDirectoryQuery, projectRoomLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
+import { compareDirectoryPositions, matchesGroupDirectoryQuery, projectGroupLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
 import { computeGroupStateInboxResult } from '../inbox/group-state-inbox-result.ts';
 import type { GroupMutationComputedWrite } from '../mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '../mutation/orchestration/compute-group-mutation.ts';
@@ -36,9 +36,9 @@ export function computeGroupQuickJoin(read: GroupQuickJoinRead): GroupQuickJoinC
         )
         .map(candidate => {
             const { currentSnapshot } = candidate;
-            const lobby = candidate.read.roomLobby?.lobby?.value;
+            const lobby = candidate.read.lobbyState?.lobby?.value;
             const onlineMemberCount = lobby
-                ? projectRoomLobbyOccupancy(currentSnapshot, lobby, read.facts.attemptAtEpochMs).onlinePlayerCount
+                ? projectGroupLobbyOccupancy(currentSnapshot, lobby, read.facts.attemptAtEpochMs).onlinePlayerCount
                 : countOnlineGroupPlayers(currentSnapshot);
             return { candidate, position: { order: 'online-members' as const, groupId: currentSnapshot.group.groupId,
                 onlineMemberCount, peerRttMs: null } };

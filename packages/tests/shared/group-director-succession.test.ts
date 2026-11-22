@@ -83,6 +83,14 @@ it('derives a missed absence from the last confirmed lease and refuses a return 
     expect(act(stillPresent, 'deputy', { operation: 'claim-deputy', expectedDirectorEpoch: 1 }, 60530)).toHaveProperty('metadata');
 });
 
+it('records a shortened accepted lease and loses the director immediately on an already-due renewal', () => {
+    const appointed = accept(players(), 'owner', appoint, 1);
+    const shorter = observeRoomDirectorPresence(appointed.group.metadata, 'first', 'first', 100, 500);
+    expect(readRoomDirectorSuccession(shorter)?.directorLeaseExpiresAtEpochMs).toBe(500);
+    const due = observeRoomDirectorPresence(shorter, 'first', 'first', 200, 200);
+    expect(readRoomDirectorSuccession(due)?.loss?.lostAtEpochMs).toBe(200);
+});
+
 it('revokes a demoted director immediately and clears a departed deputy’s exclusive claim', () => {
     const initial = accept(players(), 'owner', appoint, 1);
     const configured = accept(initial, 'owner', { operation: 'configure', expectedRevision: 1, expectedDirectorEpoch: 1,

@@ -1,7 +1,7 @@
 import { readRoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
 import { groupStateUpdatePresenceAdmissionDescriptor, groupStateUpdatePresenceDescriptor } from '../persistence/presence/group-presence-write-descriptors.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
-import { computeRoomLobbyMutation } from '../lobby/compute-room-lobby-mutation.ts';
+import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
     GroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -51,7 +51,7 @@ import {
     GroupConnectDeniedError,
     GroupRetiredError,
     GroupClockRevisionConflictError,
-    RoomLobbyRegistrationRevisionConflictError,
+    GroupLobbyRegistrationRevisionConflictError,
     GroupDeadlineRevisionConflictError,
     GroupDirectorChangedError,
     type GroupMutationRejectionCode
@@ -160,7 +160,7 @@ export function computeGroupMutationWriteResult(
         });
     const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;
-    const lobby = computeRoomLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
+    const lobby = computeGroupLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
     const scheduled = computeScheduledMutationWrites(input, group, sessionReservationWrite);
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const outboxWrites = [...outboxEntries.map(computeAppOutboxInsert), ...scheduled.outboxWrites, ...lobby.outbox];
@@ -181,7 +181,7 @@ export function computeGroupMutationWriteResult(
         ...((command.operation === 'appointDirector' && command.input.succession ||
             command.operation === 'updateGroup' && (command.input.roomClock || command.input.roomDeadline?.expectedDirectorEpoch !== undefined) &&
             readRoomDirectorSuccession(group.metadata)) ? { directorAuthorityFences: directorAuthorityFences(read) } : {}),
-        roomLobbyEffects: lobby.effects,
+        lobbyEffects: lobby.effects,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
         sessionReservationWrite,
         guard: input.guard,
@@ -315,7 +315,7 @@ export function toGroupMutationRejectionError(
 ):
     | GroupDirectorChangedError
     | GroupClockRevisionConflictError
-    | RoomLobbyRegistrationRevisionConflictError
+    | GroupLobbyRegistrationRevisionConflictError
     | GroupDeadlineRevisionConflictError
     | GroupRetiredError
     | GroupAlreadyExistsError
@@ -329,7 +329,7 @@ export function toGroupMutationRejectionError(
         case 'room-director-changed':
             return new GroupDirectorChangedError(message);
         case 'room-lobby-registration-revision-conflict':
-            return new RoomLobbyRegistrationRevisionConflictError(message);
+            return new GroupLobbyRegistrationRevisionConflictError(message);
         case 'room-clock-revision-conflict':
             return new GroupClockRevisionConflictError(message);
         case 'room-deadline-revision-conflict':

@@ -94,7 +94,7 @@ function computeGroupMutationGuardedBatch(
     if (computed.directorPresenceGroup && read.group) {
         effects.push({ effectId: 'director-presence', ...groupStateUpdateGroupDescriptor(computed.directorPresenceGroup, read.group.entry.revision) });
     }
-    effects.push(...computed.viewProvenance, ...computed.roomLobbyEffects);
+    effects.push(...computed.viewProvenance, ...computed.lobbyEffects);
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
     }

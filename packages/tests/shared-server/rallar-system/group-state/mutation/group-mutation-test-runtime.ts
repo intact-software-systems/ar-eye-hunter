@@ -160,7 +160,7 @@ export function createGroupAuthorityRead(
         })),
         activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
             (options.actorIsMember === false ? [] : [actorPrincipalId]),
-        roomLobby: null,
+        lobbyState: null,
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null

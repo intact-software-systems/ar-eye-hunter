@@ -293,6 +293,19 @@ test('group mutation routes hand the request trace to the AppInbox enqueue and r
     assert.equal(bodyTraced.status, 400);
     assert.deepEqual(enqueued.map((enqueue) => enqueue.traceId), ['trace-group-route']);
 });
+test('releasing a private seat acknowledges the target without returning its roster', async () => {
+    const snapshot = createGroupStateRouteSnapshot('room-1');
+    const runtime = createGroupStateRouteTestRuntime({
+        processGroupAppInbox: captureGroupStateRouteWrite([], snapshot)
+    });
+    const response = await runtime.app.request(API_BASE + '/room-1/requests/private-seat-release-request', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roomLobby: { operation: 'release' } })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { roomRef: { ...TEST_GROUP_SCOPE, groupId: 'room-1' } });
+});
+
 test('group aggregate routes retain their AppInbox envelopes', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');

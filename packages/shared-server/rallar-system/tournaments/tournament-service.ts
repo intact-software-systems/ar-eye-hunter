@@ -1,4 +1,5 @@
-import { roomLobbyApplicationDefault, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { roomLobbyApplicationDefault } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { TournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import type { TournamentRef } from '@shared/api/tournaments/tournament-types.ts';
@@ -51,7 +52,7 @@ export namespace TournamentService {
         readonly groups: GroupStateRepository;
     }
     export interface Config {
-        readonly roomLobbyPoliciesByApplication?: Readonly<Record<string, RoomLobby.Policy>>;
+        readonly lobbyPoliciesByApplication?: Readonly<Record<string, RoomLobby.Policy>>;
         readonly profiles: readonly TournamentGameProfile[];
         readonly nowEpochMs: () => number;
         readonly createId: () => string;
@@ -217,7 +218,7 @@ export class TournamentService {
             };
         });
         return await readNewGroupCohortAdmission({
-            roomLobbyDefault: roomLobbyApplicationDefault(this.config.roomLobbyPoliciesByApplication, binding.roomRef.applicationId),
+            lobbyDefault: roomLobbyApplicationDefault(this.config.lobbyPoliciesByApplication, binding.roomRef.applicationId),
             groups: this.dependencies.groups,
             roomRef: binding.roomRef,
             displayName: bracket.record.tournament.title,
