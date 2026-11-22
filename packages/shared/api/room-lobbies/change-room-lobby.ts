@@ -27,6 +27,7 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
     if (command.kind !== 'expire') {
         requireString(command.principalId, 'Lobby seat account');
         const existing = seats.find(seat => seat.principalId === command.principalId);
+        const reservedPlace = allocated.capacityClaims?.principalIds.includes(command.principalId);
         const prior = lobby.seats.find(seat => seat.principalId === command.principalId);
         const waiter = waiters.find(candidate => candidate.principalId === command.principalId);
         if (command.kind === 'wait' || command.kind === 'limit') {
@@ -38,13 +39,13 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
         else if (command.kind === 'release' && waiter) {
             waiters = waiters.filter(candidate => candidate !== waiter);
         }
-        else if (!existing && allocated.registration.closed && (command.kind === 'reserve' || command.kind === 'arrive')) {
+        else if (!existing && !reservedPlace && allocated.registration.closed && (command.kind === 'reserve' || command.kind === 'arrive')) {
             rejection = 'registration-closed';
         }
         else if ((command.kind === 'arrive' || (command.kind === 'reserve' && prior?.offerWindow)) && prior && !existing) {
             rejection = (prior.admissionWindow || prior.offerWindow) ? 'admission-expired' : 'return-expired';
         }
-        else if (!existing && (command.kind === 'arrive' || command.kind === 'reserve') && !allocated.capacityClaims?.principalIds.includes(command.principalId) && occupiedLobbyPlaces(seats, allocated.capacityClaims).size >= lobby.capacity) {
+        else if (!existing && (command.kind === 'arrive' || command.kind === 'reserve') && !reservedPlace && occupiedLobbyPlaces(seats, allocated.capacityClaims).size >= lobby.capacity) {
             rejection = 'full';
         }
         else if (command.kind === 'arrive' && !existing?.present) {
