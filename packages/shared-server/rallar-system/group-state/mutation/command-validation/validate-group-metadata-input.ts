@@ -1,5 +1,5 @@
-import { ROOM_LOBBY_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
-import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
+import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import { assertRoomClockMutation, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -20,7 +20,7 @@ export function validateGroupMetadataInput(
             kind: 'enum',
             allowed: ['listed', 'unlisted']
         }], 'Group metadata'));
-        if (Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY)) {
+        if (Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY) || Object.hasOwn(metadata, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) {
             issues.push(new TypeError('Room lobby metadata is server-owned; use roomLobby.'));
         }
         if (Object.hasOwn(metadata, ROOM_CLOCKS_METADATA_KEY)) {
@@ -64,6 +64,11 @@ export function validateRoomLobbyInput(operation: 'createGroup' | 'updateGroup',
             if (command.operation === 'configure') {
                 requireExactKeys(command, ['operation', 'policy'], 'Lobby configuration');
                 if (command.policy !== null) decodeRoomLobbyPolicy(command.policy);
+            }
+            else if (command.operation === 'set-registration-cutoff') {
+                requireExactKeys(command, ['operation', 'expectedRevision', 'atEpochMs'], 'Lobby registration cutoff');
+                requireEpoch(command.expectedRevision, 'Expected registration revision');
+                if (command.atEpochMs !== null) requireEpoch(command.atEpochMs, 'Registration cutoff');
             }
             else if (command.operation === 'wait') {
                 requireExactKeys(command, Object.hasOwn(command, 'joinCode') ? ['operation', 'joinCode'] : ['operation'], 'Lobby wait');

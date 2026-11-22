@@ -29,7 +29,7 @@ it('processes a persisted return window after restart; only the winner releases 
         await groups.putGroup(group);
         const due = { generation: 3, dueAtEpochMs: clock + 1000 };
         const seat = { principalId: 'alice', present: false, offerWindow: null, returnWindow: due, admissionWindow: null };
-        const lobby: RoomLobby = { capacityClaims: null, roomRef, expiresAtEpochMs: null, activationId: 'current', capacity: 1, policy: { returnWindowMs: 1000, claimWindowMs: 1000 }, revision: 3, waiters: [], seats: [seat] };
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, roomRef, expiresAtEpochMs: null, activationId: 'current', capacity: 1, policy: { returnWindowMs: 1000, claimWindowMs: 1000 }, revision: 3, waiters: [], seats: [seat] };
         await runtime.upsert({ namespace: ROOM_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef), value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         await runtime.upsert({ namespace: ROOM_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(roomRef, 'alice'), value: JSON.stringify({ scope: { applicationId: 'game', workspaceId: 'default' }, principalId: 'alice', seat: { roomRef, status: 'away', deadlineEpochMs: due.dueAtEpochMs } }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const publication = computeRoomLobbyPublication({ before: null, after: lobby, roomRef, groupCreatedAtEpochMs: group.created.atEpochMs,
@@ -75,7 +75,7 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
         const runtime = new PSqlRuntimeStateRepository(storage.sql);
         const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(storage.sql));
         const seat = { principalId: 'alice', present: false, offerWindow: null, returnWindow: null, admissionWindow: null };
-        const lobby: RoomLobby = { capacityClaims: null, activationId: 'current', expiresAtEpochMs: now - 200, roomRef,
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, activationId: 'current', expiresAtEpochMs: now - 200, roomRef,
             policy: { claimWindowMs: 5000, returnWindowMs: 120000 }, capacity: 4, revision: 3, waiters: [], seats: [seat] };
         await runtime.upsert({ namespace: ROOM_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef),
             value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
@@ -120,7 +120,7 @@ it('promotes the next eligible waiter when an unattended offer expires and priva
         await groups.putGroup(group);
         const due = { generation: 2, dueAtEpochMs: now - 1000 };
         const capacityClaims = { principalIds: ['alice'], generation: 1, dueAtEpochMs: now + 2000 };
-        const lobby: RoomLobby = { capacityClaims,
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims,
             roomRef, capacity: 1, activationId: 'lobby', expiresAtEpochMs: null, revision: 4,
             policy: { returnWindowMs: 5000, claimWindowMs: 1000 },
             seats: [{ principalId: 'alice', present: false, admissionWindow: null, returnWindow: null, offerWindow: due }],

@@ -287,6 +287,13 @@ eligible waiter and protects the place until the offer expires. The private seat
 to claim it. A decline, expired offer, or loss of access frees the place for the next eligible waiter.
 Scheduled reservations keep their places until withdrawal or the no-show deadline.
 
+An organizer can set a UTC cutoff with `setRegistrationCutoff(roomRef, { expectedRevision, atEpochMs })`.
+Read the current revision and status with `RallarRoomLobby.registration(snapshot.group.metadata, rallar)`.
+Before the cutoff, pass a new time to reschedule or null to cancel. At the cutoff the server clears
+the waiting list and stops admitting new players. An offer issued before closure remains claimable
+until its displayed deadline. The SDK reports `uncertain` while the calibrated time window crosses
+the cutoff and `unavailable` when a scheduled cutoff cannot be compared with server time.
+
 ## Find players and start together
 
 AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and

@@ -15,8 +15,8 @@ const present = { offerWindow: null, principalId: 'bob', present: true, admissio
 const alice = { ...present, principalId: 'alice', present: false };
 
 it('publishes the changed private seat across rooms and persists one wake per newly opened window', () => {
-    const before = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 4, seats: [alice, present] };
-    const after = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, present] };
+    const before = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 4, seats: [alice, present] };
+    const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, present] };
     const result = computeRoomLobbyPublication({ ...facts, before, after });
     const entries = result.outbox.map(row => ({ row, message: decodePersistedALMessage(row.entry.resource) }));
     const notices = entries.filter(({ message }) => message.payload.typeId === AppTopics.viewInvalidated);
@@ -33,7 +33,7 @@ it('publishes the changed private seat across rooms and persists one wake per ne
 
 it('coalesces simultaneous return deadlines and notifies former holders when the lobby closes', () => {
     const away = { ...alice, principalId: 'chris', returnWindow: window };
-    const after = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, away] };
+    const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, away] };
     const opened = computeRoomLobbyPublication({ ...facts, before: null, after });
     expect(opened.outbox.map(row => decodePersistedALMessage(row.entry.resource).payload.typeId).sort())
         .toEqual([AppOutboxType.ROOM_LOBBY_DEADLINE, AppTopics.viewInvalidated, AppTopics.viewInvalidated].sort());
@@ -43,15 +43,15 @@ it('coalesces simultaneous return deadlines and notifies former holders when the
 });
 
 it('schedules a replacement generation without notifying a participant whose visible deadline is unchanged', () => {
-    const before = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
-    const after = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 6, seats: [{ ...alice, returnWindow: { ...window, generation: 6 } }] };
+    const before = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
+    const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 6, seats: [{ ...alice, returnWindow: { ...window, generation: 6 } }] };
     const publication = computeRoomLobbyPublication({ ...facts, before, after });
     expect(publication.outbox.map(row => decodePersistedALMessage(row.entry.resource).payload.typeId))
         .toEqual([AppOutboxType.ROOM_LOBBY_DEADLINE]);
 });
 
 it('fences reenabled holds even when the same revision and deadline recur', () => {
-    const occupied = { capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
+    const occupied = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
     const first = computeRoomLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'first' } });
     const reopened = computeRoomLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'second' } });
     const oldIds = first.outbox.map(row => row.entry.key.resourceId);
@@ -59,7 +59,7 @@ it('fences reenabled holds even when the same revision and deadline recur', () =
 });
 
 it('persists a room closure without a seat timer, and schedules its new boundary on renewal', () => {
-    const initial = { capacityClaims: null, waiters: [], revision: 1, activationId: 'lobby', expiresAtEpochMs: 2100, seats: [present] };
+    const initial = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], revision: 1, activationId: 'lobby', expiresAtEpochMs: 2100, seats: [present] };
     const renewed = { ...initial, expiresAtEpochMs: 3100, revision: 2 };
     const restored = { ...initial, revision: 3 };
     const ids = [];
@@ -76,7 +76,7 @@ it('persists a room closure without a seat timer, and schedules its new boundary
 });
 
 it('notifies only the two affected holders and schedules a durable wake for an offered seat', () => {
-    const before = { expiresAtEpochMs: null, activationId: 'lobby', revision: 4, seats: [present], capacityClaims: null, waiters: [{ principalId: 'alice', generation: 3, eligibleUntilEpochMs: null }, { principalId: 'chris', generation: 4, eligibleUntilEpochMs: null }] };
+    const before = { registration: { revision: 0, atEpochMs: null, closed: false }, expiresAtEpochMs: null, activationId: 'lobby', revision: 4, seats: [present], capacityClaims: null, waiters: [{ principalId: 'alice', generation: 3, eligibleUntilEpochMs: null }, { principalId: 'chris', generation: 4, eligibleUntilEpochMs: null }] };
     const after = { ...before, revision: 5, seats: [{ ...alice, offerWindow: window }], waiters: before.waiters.slice(1) };
     const messages = computeRoomLobbyPublication({ ...facts, before, after }).outbox
         .map(row => decodePersistedALMessage(row.entry.resource));
@@ -110,7 +110,7 @@ it('arms one durable registration cutoff and gives a rescheduled cutoff a distin
 });
 
 it('persists independent wakes for an expiring access grant and scheduled no-show capacity', () => {
-    const before = { expiresAtEpochMs: null, activationId: 'lobby', revision: 1, seats: [], waiters: [], capacityClaims: null };
+    const before = { registration: { revision: 0, atEpochMs: null, closed: false }, expiresAtEpochMs: null, activationId: 'lobby', revision: 1, seats: [], waiters: [], capacityClaims: null };
     const after = { ...before, revision: 3,
         waiters: [{ principalId: 'alice', generation: 3, eligibleUntilEpochMs: 5000 }],
         capacityClaims: { generation: 2, dueAtEpochMs: 7000, principalIds: ['reserved'] }

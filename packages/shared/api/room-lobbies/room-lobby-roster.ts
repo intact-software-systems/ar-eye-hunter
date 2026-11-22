@@ -1,3 +1,4 @@
+import { changeRegistration } from './room-lobby-registration.ts';
 import { allocateLobbyPlaces, occupiedLobbyPlaces } from './room-lobby-allocation.ts';
 import { requireEpoch, requireString } from '../exact-object-decoding.ts';
 import { decodeRoomLobbyPolicy } from './room-lobby-policy.ts';
@@ -13,6 +14,9 @@ function updateSeat(seats: readonly RoomLobby.Seat[], seat: RoomLobby.Seat): rea
 
 export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, nowEpochMs: number): RoomLobby.Change {
     requireEpoch(nowEpochMs, 'Lobby time');
+    if (command.kind === 'set-registration-cutoff' || command.kind === 'close-registration') {
+        return changeRegistration(lobby, command, nowEpochMs);
+    }
     if (command.kind === 'expire' && (command.dueAtEpochMs > nowEpochMs || !lobby.seats.some(seat => {
         const window = seat.admissionWindow ?? seat.returnWindow ?? seat.offerWindow;
         return window?.generation === command.generation && window.dueAtEpochMs === command.dueAtEpochMs;
@@ -29,7 +33,11 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
         const existing = seats.find(seat => seat.principalId === command.principalId);
         const prior = lobby.seats.find(seat => seat.principalId === command.principalId);
         const waiter = waiters.find(candidate => candidate.principalId === command.principalId);
-        if (command.kind === 'limit') {
+        if (allocated.registration.closed && !existing &&
+            (command.kind === 'wait' || command.kind === 'reserve' || command.kind === 'arrive')) {
+            rejection = 'registration-closed';
+        }
+        else if (command.kind === 'limit') {
             const until = command.eligibleUntilEpochMs;
             requireEpoch(until, 'Lobby eligibility deadline');
             if (waiter && (waiter.eligibleUntilEpochMs === null || until < waiter.eligibleUntilEpochMs)) {
@@ -86,7 +94,7 @@ export function configureRoomLobby(
     const unchanged = lobby.capacity === capacity && lobby.policy.returnWindowMs === selected.returnWindowMs &&
         lobby.policy.claimWindowMs === selected.claimWindowMs;
     const settled = allocateLobbyPlaces({ ...lobby, seats, capacity: full ? lobby.capacity : capacity, policy: full ? lobby.policy : selected }, nowEpochMs, lobby.revision + 1);
-    if (settled.seats === lobby.seats && settled.waiters === lobby.waiters && settled.capacityClaims === lobby.capacityClaims && (full || unchanged)) return { lobby, rejection: full ? 'full' : null };
+    if (settled.seats === lobby.seats && settled.waiters === lobby.waiters && settled.registration === lobby.registration && settled.capacityClaims === lobby.capacityClaims && (full || unchanged)) return { lobby, rejection: full ? 'full' : null };
     const revision = lobby.revision + 1;
     requireEpoch(revision, 'Lobby revision');
     return { lobby: reconcileReturnWindows({ ...settled, revision }, nowEpochMs), rejection: full ? 'full' : null };

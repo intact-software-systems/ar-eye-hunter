@@ -10,8 +10,8 @@ import { roomLobbyDeadlineRoute, type RoomLobbyDeadline } from './room-lobby-dea
 import { projectRoomLobbyCommitments } from './project-room-lobby-commitments.ts';
 
 interface RoomLobbyPublicationInput extends Pick<RoomLobbyDeadline, 'roomRef' | 'groupCreatedAtEpochMs'> {
-    readonly before: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
-    readonly after: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
+    readonly before: Pick<RoomLobby, 'registration' | 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
+    readonly after: Pick<RoomLobby, 'registration' | 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
     readonly createdAtEpochMs: number;
     readonly serviceId: string;
     readonly traceId: string;
@@ -37,6 +37,11 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
     });
     const previous = before?.activationId === after?.activationId ? lobbyWindows(before) : new Map();
     const deadlines: RoomLobbyDeadline[] = [];
+    if (after && !after.registration.closed && after.registration.atEpochMs !== null &&
+        (before?.activationId !== after.activationId || before.registration.revision !== after.registration.revision)) {
+        deadlines.push({ kind: 'registration', generation: after.registration.revision, roomRef, groupCreatedAtEpochMs,
+            activationId: after.activationId, dueAtEpochMs: after.registration.atEpochMs });
+    }
     if (after && after.expiresAtEpochMs !== null &&
         (after.activationId !== before?.activationId || after.expiresAtEpochMs !== before.expiresAtEpochMs)) {
         deadlines.push({ kind: 'room', generation: after.revision, roomRef, groupCreatedAtEpochMs, activationId: after.activationId, dueAtEpochMs: after.expiresAtEpochMs });

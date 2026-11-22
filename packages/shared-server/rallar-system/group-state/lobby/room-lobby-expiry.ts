@@ -103,9 +103,10 @@ function computeExpiry(read: ExpiryRead) {
     const before = state.lobby?.value;
     if (!before || before.activationId !== command.activationId || group && group.value.created.atEpochMs !== command.groupCreatedAtEpochMs) return null;
     if (command.kind === 'room' && before.expiresAtEpochMs !== command.dueAtEpochMs) return null;
-    if (command.kind === 'seat' && (group?.value.status !== 'active' || before.expiresAtEpochMs !== null && before.expiresAtEpochMs <= nowEpochMs)) return null;
+    if (command.kind !== 'room' && (group?.value.status !== 'active' || before.expiresAtEpochMs !== null && before.expiresAtEpochMs <= nowEpochMs)) return null;
     const lobby = command.kind === 'room' ? null : changeRoomLobby(before, {
-        kind: 'expire', generation: command.generation, dueAtEpochMs: command.dueAtEpochMs
+        kind: command.kind === 'registration' ? 'close-registration' : 'expire',
+        generation: command.generation, dueAtEpochMs: command.dueAtEpochMs
     }, nowEpochMs).lobby;
     if (before === lobby) return null;
     const [first, ...effects] = computeRoomLobbyEffects(state, lobby, command.roomRef, command.kind === 'room' ? 'expired' : 'active');

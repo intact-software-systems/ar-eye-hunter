@@ -63,7 +63,7 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
         throw new TypeError('Managed rooms require player capacity');
     }
 
-    let lobby = state.lobby?.value;
+    let lobby = input.revisedLobby ?? state.lobby?.value;
     if (
         !lobby && command.operation !== 'createGroup' &&
         !(command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure' && read.group &&

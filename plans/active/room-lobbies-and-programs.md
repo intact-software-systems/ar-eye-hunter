@@ -34,11 +34,16 @@ The held-seat implementation exposes two places to extend. The room roster seria
 2. At closure release waiting commitments, reject new registrations and walk-ins, and stop making offers. Honor existing seats and unexpired offers. A reservation, decline or expiry cannot promote someone after closure. Use the same allocation decision for inline commands and the unattended wake. Include account updates and private notifications in the transaction.
 3. With the organizer offline, stop the worker across the cutoff and exercise claim and decline independently on another API process. Verify that a promised offer keeps its displayed deadline and that a waiting account can commit elsewhere after closure. Expose registration status through the room's authoritative state so an observing app can recover after a missed notice.
 
+## Fourth implementation slice — pause and resume a whole program
+
+1. Extend the named room schedule with revision- and director-fenced pause and resume commands. On pause, use the authoritative time and the greatest already-observed elapsed boundary. Freeze the current phase and distance to the next start. Before the first start, freeze the delay to that start. Preserve phases whose starts have passed.
+2. Resume by shifting future phase starts by the paused duration in one authoritative write. Cover a backward-adjusted writer clock, a phase boundary at the pause instant, repeated delivery, stale director epochs and overflow. Existing independent room deadlines, including venue cutoffs, keep their UTC values.
+3. Recover the complete schedule through the SDK's existing WebSocket-backed room observation. Show that a participant in another room can return after a ten-minute pause, recover the original phase balance, and observe exactly one shift after resume. Verify director disconnect alone has no effect on either running or paused schedules.
+
 ## Subsequent outcomes
 
 | Order | Outcome | End-to-end evidence |
 | --- | --- | --- |
-| 4 | Whole-program pause and resume | Pause during a phase, resume ten minutes later, retry resume, and recover from another room. Assert one shift, the same phase balance and an unchanged independent venue cutoff. |
 | 5 | Admin appointment and deputy succession | The former director reconnects as the deputy claims. Exactly one appointment controls the clock. An explicit admin appointment supersedes it. Run with running and paused programs. |
 | 6 | Present-player succession | Race two eligible players after fallback opens. Verify a single winner and reject an away holder, ordinary spectator and commands from a replaced director. |
 

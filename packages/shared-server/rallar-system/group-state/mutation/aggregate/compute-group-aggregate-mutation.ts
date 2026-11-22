@@ -1,5 +1,5 @@
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
-import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby.ts';
+import { changeRoomLobby, readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -61,6 +61,7 @@ interface GroupWriteInput {
     readonly facts: GroupMutationFacts;
     readonly group: Group;
     readonly eventType: GroupEventType | null;
+    readonly revisedLobby?: RoomLobby;
 }
 
 export function computeUpdate(
@@ -70,11 +71,12 @@ export function computeUpdate(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const lobbyChange = command.input.roomLobby;
+    const privateParticipation = lobbyChange?.operation === 'release' || lobbyChange?.operation === 'wait';
     if (lobbyChange && Object.entries(command.input).some(([key, value]) =>
         !['roomLobby', 'actorPrincipalId', 'actorSessionId', 'reason'].includes(key) && value != null)) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'A room lobby change must be a separate update.' });
     }
-    if (lobbyChange && lobbyChange.operation !== 'configure' && !command.input.actorPrincipalId) {
+    if (privateParticipation && !command.input.actorPrincipalId) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
     }
     if (lobbyChange?.operation === 'wait' && !read.roomLobby?.lobby) {
@@ -93,7 +95,7 @@ export function computeUpdate(
             return rejected({ command, read, facts, ...refusal });
         }
     }
-    else if (!lobbyChange || lobbyChange.operation === 'configure') {
+    else if (!privateParticipation) {
         const authorityDenial = toUpdateAuthorityDenial(command, read);
         if (authorityDenial) {
             return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
@@ -119,7 +121,7 @@ export function computeUpdate(
             return rejectedByGroupPolicy({ command, read, facts, denial: active });
         }
     }
-    if (lobbyChange && lobbyChange.operation !== 'configure') {
+    if (privateParticipation) {
         const roster = read.roomLobby?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
         const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
@@ -133,9 +135,29 @@ export function computeUpdate(
     let next = computeUpdatedGroup(command, current, audit);
     if (lobbyChange?.operation === 'configure') {
         const metadata = { ...next.metadata };
-        if (lobbyChange.policy) metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
-        else delete metadata[ROOM_LOBBY_METADATA_KEY];
+        if (lobbyChange.policy) {
+            metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
+            if (!Object.hasOwn(current.metadata, ROOM_LOBBY_METADATA_KEY)) {
+                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: 0, atEpochMs: null };
+            }
+        } else {
+            delete metadata[ROOM_LOBBY_METADATA_KEY];
+            delete metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
+        }
         next = { ...next, metadata };
+    }
+    if (lobbyChange?.operation === 'set-registration-cutoff') {
+        const observed = read.roomLobby?.lobby?.value;
+        if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
+        const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
+        if (updated.rejection) {
+            const rejectionCode = updated.rejection === 'revision-conflict' ? 'room-lobby-registration-revision-conflict' : 'group-mutation-rejected';
+            return rejected({command, read, facts, rejectionCode, message:'The registration cutoff has changed or closed.'});
+        }
+        if (updated.lobby === observed) return noOp(command, read, facts);
+        const {revision, atEpochMs} = updated.lobby.registration;
+        next = {...next, metadata:{...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]:{revision, atEpochMs}}};
+        return groupWrite({ command, read, facts, group: next, eventType:'group-updated', revisedLobby: updated.lobby });
     }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
@@ -322,6 +344,7 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
+        ...(input.revisedLobby ? {revisedLobby:input.revisedLobby} : {}),
         presenceSummaryWork: eventType === null ? 'none' : 'enqueue'
     });
 }
@@ -437,6 +460,7 @@ function computeUpdatedGroupMetadata(
         metadata[GROUP_SPECTATOR_CAPACITY_METADATA_KEY] = spectatorCapacity;
     }
     if (Object.hasOwn(current, ROOM_LOBBY_METADATA_KEY)) metadata[ROOM_LOBBY_METADATA_KEY] = current[ROOM_LOBBY_METADATA_KEY];
+    if (Object.hasOwn(current, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = current[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
     delete metadata[GROUP_RETENTION_METADATA_KEY];
     const retention = readGroupRetentionState(current);
     if (retention !== null) {

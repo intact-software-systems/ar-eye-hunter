@@ -1,3 +1,4 @@
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 import { RallarRoomLobby } from '@shared-web/browser/rooms/lobby/rallar-room-lobby.ts';
 import type { RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ViewPushBrowser } from '../../api/view-push-browser.ts';
@@ -108,6 +109,50 @@ it('waits from another room and receives an exclusive offer without entering', a
         push.reopen();
         await expect.poll(() => owner.getState().view?.seat).toEqual(view.seat);
         expect(writes).toBe(1);
+    }
+    finally { owner.stop(); }
+});
+
+
+it('reads a public registration revision using the calibrated uncertainty window', () => {
+    const registration = { revision: 2, atEpochMs: 500 };
+    const metadata = { rallarRoomLobbyRegistration: registration };
+    const clock = { compareDeadline: vi.fn<() => 'before' | 'overlaps' | 'at-or-after' | 'unavailable'>() };
+    const authority = { maxAuthorityOffsetMs: 12 };
+    for (const [comparison, status] of [
+        ['before', 'open'], ['overlaps', 'uncertain'], ['at-or-after', 'closed'], ['unavailable', 'unavailable']
+    ] as const) {
+        clock.compareDeadline.mockReturnValue(comparison);
+        expect(RallarRoomLobby.registration(metadata, clock, authority)).toEqual({ ...registration, status });
+        expect(clock.compareDeadline).toHaveBeenLastCalledWith(500, authority);
+    }
+    clock.compareDeadline.mockClear();
+    expect(RallarRoomLobby.registration({}, clock)).toBeNull();
+    expect(RallarRoomLobby.registration({ rallarRoomLobbyRegistration: { revision: 3, atEpochMs: null } }, clock)?.status).toBe('open');
+    expect(clock.compareDeadline).not.toHaveBeenCalled();
+});
+
+it('sends a revision-bound cutoff update and validates the returned room snapshot', async () => {
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    const writes: unknown[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+        if (init.method === 'PUT') {
+            writes.push(JSON.parse(String(init.body)).roomLobby);
+            return Response.json(createGroupSnapshotFixture({ ...roomRef, sessionIds: [] }));
+        }
+        return Response.json({ scope, principalId: session.clientId, seat: null });
+    });
+    const push = new ViewPushBrowser(() => session);
+    const owner = new RallarRoomLobby({
+        session: () => session, ws: push.ws, messages: push.messages, auth: { onChange: () => () => {} }
+    }, scope);
+    try {
+        await owner.start();
+        await owner.setRegistrationCutoff(roomRef, { expectedRevision: 1, atEpochMs: 1200 });
+        expect(writes).toEqual([{ operation: 'set-registration-cutoff', expectedRevision: 1, atEpochMs: 1200 }]);
+        expect(owner.getState().error).toBeNull();
     }
     finally { owner.stop(); }
 });

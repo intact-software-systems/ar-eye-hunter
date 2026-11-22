@@ -9243,6 +9243,16 @@ components:
               properties:
                 operation: { const: wait }
                 joinCode: { type: string, minLength: 1 }
+            - type: object
+              required: [operation, expectedRevision, atEpochMs]
+              additionalProperties: false
+              properties:
+                operation: { const: set-registration-cutoff }
+                expectedRevision: { type: integer, minimum: 0 }
+                atEpochMs:
+                  description: UTC cutoff, or null to cancel the current cutoff while registration is open.
+                  type: [integer, 'null']
+                  minimum: 0
         roomClock:
           type: object
           additionalProperties: false

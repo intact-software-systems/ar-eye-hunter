@@ -255,3 +255,20 @@ it('reserves the scheduled player’s place ahead of a waiting player and offers
         expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'bob'))?.value.seat?.status).toBe('offered');
     } finally { await fixture.storage.close(); }
 });
+
+it('refuses a new scheduled reservation after registration closes and still allows withdrawal', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const alice = await prepareForAccount(fixture,'alice',reservation('alice','before-cutoff'));
+        await commitMutation(fixture,requireMutationWrite(alice.computed));
+        const close = await prepareMutation(fixture, mutationDescriptor({operation:'updateGroup',scope:ref,groupId:ref.groupId,
+            request:{requestId:'close',actorPrincipalId:'owner',roomLobby:{operation:'set-registration-cutoff',expectedRevision:0,atEpochMs:fixture.nowEpochMs}}}));
+        await commitMutation(fixture,requireMutationWrite(close.computed));
+        const withdraw = await prepareForAccount(fixture,'alice',mutationDescriptor({operation:'changeGroupSession',scope:ref,groupId:ref.groupId,
+            request:{requestId:'withdraw',actorPrincipalId:'alice',action:'withdraw',expectedScheduleRevision:1,startsAtEpochMs:null}}));
+        await commitMutation(fixture,requireMutationWrite(withdraw.computed));
+        const bob = await prepareForAccount(fixture,'bob',reservation('bob','after-cutoff'));
+        expect(bob.computed.outcome).toBe('rejected');
+        expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual([]);
+    } finally { await fixture.storage.close(); }
+});

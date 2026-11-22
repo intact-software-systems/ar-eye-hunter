@@ -1,5 +1,8 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { readRoomLobbyRegistration } from '@shared/api/room-lobbies/room-lobby-registration.ts';
+import type { RallarConnectionOperations, RallarDeadlineAuthority } from '../../rallar-connection-facade.ts';
 import type { RallarJoinRoomOptions } from '../rallar-room-contracts.ts';
-import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
 import { toStateGroupHttpPath } from '../../api/state-http-path.ts';
@@ -21,6 +24,9 @@ import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 
 export namespace RallarRoomLobby {
+    export interface Registration extends RoomLobby.RegistrationDefinition {
+        readonly status: 'open' | 'closed' | 'uncertain' | 'unavailable';
+    }
     export interface Browser extends SubscribeViewRecovery.Browser {
         readonly auth: Pick<RallarAuthFacade, 'onChange'>;
     }
@@ -32,6 +38,17 @@ export namespace RallarRoomLobby {
 
 /** The account owns this observation across room changes. Explicit release and room entry remain independent. */
 export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView, RallarRoomLobby.Command> {
+    static registration(
+        metadata: ApiJsonObject, clock: Pick<RallarConnectionOperations, 'compareDeadline'>, authority?: RallarDeadlineAuthority
+    ): RallarRoomLobby.Registration | null {
+        const definition = readRoomLobbyRegistration(metadata);
+        if (!definition) return null;
+        if (definition.atEpochMs === null) return { ...definition, status: 'open' };
+        const comparison = clock.compareDeadline(definition.atEpochMs, authority);
+        const status = { before: 'open', 'at-or-after': 'closed', overlaps: 'uncertain', unavailable: 'unavailable' } as const;
+        return { ...definition, status: status[comparison] };
+    }
+
     private readonly scope: StateScope;
 
     constructor(browser: RallarRoomLobby.Browser, scope: StateScope) {
@@ -53,6 +70,14 @@ export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView,
         return this.act({
             roomRef: this.roomInScope(roomRef), roomLobby: { operation: 'configure', policy: policy === null ? null : decodeRoomLobbyPolicy(policy) }
         });
+    }
+
+    setRegistrationCutoff(roomRef: GroupRef, cutoff: RoomLobby.RegistrationCutoff): Promise<void> {
+        requireEpoch(cutoff.expectedRevision, 'Expected registration revision');
+        if (cutoff.atEpochMs !== null) requireEpoch(cutoff.atEpochMs, 'Registration cutoff');
+        return this.act({ roomRef: this.roomInScope(roomRef), roomLobby: {
+            operation: 'set-registration-cutoff', expectedRevision: cutoff.expectedRevision, atEpochMs: cutoff.atEpochMs
+        } });
     }
 
     wait(roomRef: GroupRef, options: Pick<RallarJoinRoomOptions, 'joinCode'> = {}): Promise<void> {
@@ -90,7 +115,7 @@ async function writeLobbyCommand({ scope, session, request, signal, requestId }:
     const body = { actorPrincipalId: session.clientId, actorSessionId: session.sessionId, roomLobby: request.roomLobby };
     const options = { authSession: session, requestId, signal };
     let acknowledged: GroupRef;
-    if (request.roomLobby.operation === 'configure') {
+    if (request.roomLobby.operation === 'configure' || request.roomLobby.operation === 'set-registration-cutoff') {
         const snapshot = await roomGroupStateHttpApi.updateGroup({ groupId: request.roomRef.groupId, scope, request: { ...body, roomLobby: request.roomLobby }, options });
         validateAuthoritativeGroupSnapshot(snapshot, scope);
         acknowledged = snapshot.group;
