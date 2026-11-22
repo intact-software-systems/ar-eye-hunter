@@ -16,6 +16,7 @@ import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
 import { toFirstOfEachALReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
+import { toALInboundCopyCarrierMutations } from './al-inbound-buffered-copy-carriers.ts';
 import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ALInboundDuplicateChanges {
@@ -63,7 +64,7 @@ export function computeALInboundDuplicateChanges(
         return NO_DUPLICATE_CHANGES;
     }
     if (isHeldBuffered(read) && (!isAddressedToSelf(read.msg, input.selfPeerId) || pendingAck === undefined)) {
-        return { mutations: toCopyCarrierMutations(read, toPeerId), effects: [] };
+        return { mutations: toALInboundCopyCarrierMutations(read, toPeerId), effects: [] };
     }
     if (!isAddressedToSelf(read.msg, input.selfPeerId)) {
         return isCrossCarrierCopy(read)
@@ -128,34 +129,6 @@ function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
 function isHeldBuffered(read: ALInboundMessageReadDto): boolean {
     const seq = read.msg.ordering?.seq;
     return seq !== undefined && read.orderingSnapshot?.bufferedSeqs.includes(seq) === true;
-}
-
-/**
- * A copy of a held message on a carrier its slot does not record yet adds that carrier, so the release answers it
- * there too: the sender handed the message over and holds its receipt on that carrier now.
- */
-function toCopyCarrierMutations(
-    read: ALInboundMessageReadDto,
-    toPeerId: string
-): readonly ALInboundAdmissionMutation[] {
-    const carrier = toALDeliveryCarrier(read.source);
-    const slot = read.bufferedSnapshots.find((snapshot) => snapshot.seq === read.msg.ordering?.seq);
-    if (slot === undefined || slot.copyCarriers.some((copy) => copy.carrier === carrier)) {
-        return [];
-    }
-    const { ownerRetainUntilMs, ...snapshot } = slot;
-    return [{
-        kind: 'set-buffered',
-        snapshot: { ...snapshot, copyCarriers: [...slot.copyCarriers, { carrier, ackToPeerId: toPeerId }] },
-        expireAtTimestamp: Math.min(
-            resolveExpireAtTimestampWithFallback(
-                resolveALMessageExpireAtMs(slot.msg, slot.plan.effective),
-                read.retention.bufferedMessageTtlMs,
-                read.nowMs
-            ),
-            ownerRetainUntilMs
-        )
-    }];
 }
 
 /** A retried hop copy names this peer as its one next hop (D25). */

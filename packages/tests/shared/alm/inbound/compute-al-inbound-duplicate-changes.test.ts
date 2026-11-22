@@ -24,6 +24,7 @@ import type {
     ALInboundPlanner
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundBufferedCopyCarrier } from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPlanningObservations
@@ -256,7 +257,7 @@ function createRelayedUnicast(msgId: string, toPeerId: string): ALMessage {
 }
 
 /** The carriers each buffered-slot write of the bundle records. */
-function toBufferedCopyCarriers(bundle: ALInboundCommitBundle): readonly (readonly unknown[])[] {
+function toBufferedCopyCarriers(bundle: ALInboundCommitBundle): readonly (readonly ALInboundBufferedCopyCarrier[])[] {
     return bundle.mutations.flatMap((mutation) => mutation.kind === 'set-buffered' ? [mutation.snapshot.copyCarriers] : []);
 }
 
