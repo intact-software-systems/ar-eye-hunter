@@ -13,13 +13,23 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../../setup-browser-indexeddb.ts';
 import {
+    createOriginReceiverMulticast,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    enqueueAndDrain
+} from '../../multicast/rtc-origin-overlay-fixture.ts';
+import {
     createDefaultOutboundTestRuntime,
     createIndexedDbOutboundTestStores,
     createOutboundMessage,
+    createServerReceipt,
+    createWsClientCarrierStores,
+    createWsClientSender,
     drainOutboundWorkDueNow,
     holdOutboundClaims,
     OUTBOUND_TEST_SEND_PLANNER,
@@ -98,7 +108,16 @@ function readSettlementKinds(page: PageOwner, msgId: string): readonly string[] 
     return page.settlements.filter((settlement) => settlement.msgId === msgId).map((settlement) => settlement.kind);
 }
 
-function createEmptyAudienceMulticast(resourceId: string): ALMessage {
+/**
+ * What a reloaded owner states for a message that ended before the reload. A queued copy states `attempt-started`
+ * before it meets the stored end at its send guards, as after every end, and then states nothing more.
+ */
+function readSettlementKindsPastTheGuard(page: PageOwner, msgId: string): readonly string[] {
+    return readSettlementKinds(page, msgId).filter((kind) => kind !== 'attempt-started');
+}
+
+/** A `receiver` room multicast frozen to these recipients. */
+function createFrozenMulticast(resourceId: string, recipientPeerIds: readonly string[]): ALMessage {
     const message = newALMulticastMessage({
         createdAtEpochMs: Date.now(),
         senderId: 'self',
@@ -108,7 +127,7 @@ function createEmptyAudienceMulticast(resourceId: string): ALMessage {
         resource: { text: resourceId },
         options: { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
     });
-    return toALFrozenMulticastMessage(message, { recipientPeerIds: [], snapshotVersion: 4 });
+    return toALFrozenMulticastMessage(message, { recipientPeerIds, snapshotVersion: 4 });
 }
 
 beforeEach(() =>
@@ -132,7 +151,7 @@ describe('a cancelled durable message stays cancelled across a reload', () => {
 
         expect(readSettlementKinds(page, message.id.msgId).filter((kind) => kind === 'cancelled')).toHaveLength(1);
         expect(page.sent).toEqual([]);
-        expect.soft(readSettlementKinds(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
+        expect.soft(readSettlementKindsPastTheGuard(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
             .toEqual([]);
         expect(reloaded.sent, 'the reloaded owner sends the cancelled message').toEqual([]);
     });
@@ -150,7 +169,7 @@ describe('a cancelled durable message stays cancelled across a reload', () => {
         await runPastReceiptWindows(reloaded);
 
         expect.soft(reloaded.sent, 'the reloaded owner retransmits the cancelled message').toEqual([]);
-        expect(readSettlementKinds(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
+        expect(readSettlementKindsPastTheGuard(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
             .toEqual([]);
     });
 
@@ -171,7 +190,7 @@ describe('a cancelled durable message stays cancelled across a reload', () => {
         expect(page.sent).toEqual([]);
         expect.soft(await reloaded.stores.admissionStore.hasSentMessageAdmission(message.id.msgId), 'admitted after reload')
             .toBe(false);
-        expect.soft(readSettlementKinds(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
+        expect.soft(readSettlementKindsPastTheGuard(reloaded, message.id.msgId), 'the reloaded owner settles the cancelled message')
             .toEqual([]);
         expect(reloaded.sent, 'the reloaded owner admits and sends the cancelled message').toEqual([]);
     });
@@ -183,18 +202,17 @@ describe('a handed-over durable message stays handed over across a reload', () =
         const page = openPageOwner(`ended-hand-over-${crypto.randomUUID()}`, RECEIPT_PLANNER);
         const claims = holdOutboundClaims(page.stores);
         const message = createOutboundMessage('durable-hand-over');
-        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
         expect((await page.runtime.enqueueIfAbsent(message)).verdict).toMatchObject({ kind: 'admitted', durable: true });
 
         await page.runtime.handOver(message.id.msgId);
-        expect(await page.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
+        expect(await page.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
         await claims.release(page.runtime);
         const reloaded = await reloadPage(page);
         await runPastReceiptWindows(reloaded);
 
         expect(page.sent).toEqual([]);
         expect.soft(reloaded.sent, 'the reloaded owner sends the handed-over message').toEqual([]);
-        expect(readSettlementKinds(reloaded, message.id.msgId), 'the reloaded owner settles the handed-over message')
+        expect(readSettlementKindsPastTheGuard(reloaded, message.id.msgId), 'the reloaded owner settles the handed-over message')
             .toEqual([]);
     });
 });
@@ -202,7 +220,7 @@ describe('a handed-over durable message stays handed over across a reload', () =
 describe('a receipt an empty frozen audience completes at admission ends its message', () => {
     it('marks the stored message ended in the admission commit', async () => {
         const page = openPageOwner(`ended-empty-audience-${crypto.randomUUID()}`, EMPTY_AUDIENCE_PLANNER);
-        const message = createEmptyAudienceMulticast('empty-audience-marker');
+        const message = createFrozenMulticast('empty-audience-marker', []);
 
         expect((await page.runtime.enqueueIfAbsent(message)).verdict).toMatchObject({ kind: 'admitted', durable: true });
         await drainOutboundWorkDueNow(page.runtime, page.stores);
@@ -215,7 +233,7 @@ describe('a receipt an empty frozen audience completes at admission ends its mes
 
     it('skips a later retransmission as ended, before and after a reload, and sends nothing for it', async () => {
         const page = openPageOwner(`ended-empty-audience-repair-${crypto.randomUUID()}`, EMPTY_AUDIENCE_PLANNER);
-        const message = createEmptyAudienceMulticast('empty-audience-repair');
+        const message = createFrozenMulticast('empty-audience-repair', []);
         const retransmission = (attemptIdentity: string) => ({
             msg: message,
             plan: OUTBOUND_TEST_SEND_PLANNER(message, undefined),
@@ -233,5 +251,75 @@ describe('a receipt an empty frozen audience completes at admission ends its mes
         expect.soft(beforeReload.verdict, 'before the reload').toMatchObject({ kind: 'skipped', reason: 'message-ended' });
         expect.soft(afterReload.verdict, 'after the reload').toMatchObject({ kind: 'skipped', reason: 'message-ended' });
         expect([...page.sent, ...reloaded.sent], 'frames sent for a message whose receipt completed').toEqual([]);
+    });
+
+    it('leaves an RTC origin alone in its room no queued row for a later dequeue of its durable send', async () => {
+        vi.useFakeTimers();
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a'], 4), nextHopPeerIds: [] });
+        const original = createOriginReceiverMulticast('alone-durable');
+        const message = { ...original, qos: { durability: { algo: 'local-outbox' as const } } };
+
+        const admitted = await enqueueAndDrain(fixture.manager, message);
+        await vi.advanceTimersByTimeAsync(RECEIPT_TIMEOUT_MS * 10);
+
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        const dequeueCommits = fixture.diagnostics.filter((event) =>
+            event.kind === 'commit-phases' && event.msgId === message.id.msgId && event.origin === 'drain'
+        );
+        expect(dequeueCommits, 'a later dequeue that plans the ended message again').toEqual([]);
+        expect(await fixture.resources.workQueue.getItem(admitted.entries[0]!.key), 'the canonical row a dequeue claims')
+            .toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(await fixture.resources.admissionStore.readSendGuards(admitted.message)).toEqual({ kind: 'ended' });
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
+            expect.objectContaining({ msgId: message.id.msgId, mode: 'receiver', complete: true })
+        ]);
+    });
+
+    it('states the acknowledgement once on a WS client, sends the server no copy, and refuses a late server receipt', async () => {
+        const settlements: ALDeliverySettlement[] = [];
+        const frames: string[] = [];
+        const stores = createWsClientCarrierStores('self', 'memory');
+        const sender = createWsClientSender({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            diagnostics: undefined,
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                frames.push(lifecycle.canonicalMessage.id.msgId);
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const message = createFrozenMulticast('ws-empty-audience', []);
+
+        expect((await sender.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
+        await drainOutboundWorkDueNow(sender, stores);
+        await sender.acceptReceipt(createServerReceipt(message, 'admitted', []));
+        await drainOutboundWorkDueNow(sender, stores);
+
+        expect(settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
+            expect.objectContaining({ msgId: message.id.msgId, mode: 'receiver', complete: true })
+        ]);
+        expect(frames, 'copies written for a message nobody is left to confirm').toEqual([]);
+    });
+
+    it.each(
+        [
+            { label: 'a receiver send whose frozen audience names a recipient', recipients: ['b'], mode: 'receiver' },
+            { label: 'a hop send whose frozen audience is empty', recipients: [], mode: 'hop' }
+        ] as const
+    )('leaves $label open at its admission', async ({ recipients, mode }) => {
+        const planner: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ peer: 'b' }],
+            ackTracking: { ...trackOutboundTestAcks(['b']), mode, timeoutMs: RECEIPT_TIMEOUT_MS }
+        });
+        const page = openPageOwner(`ended-open-receipt-${crypto.randomUUID()}`, planner);
+        const message = createFrozenMulticast(`open-receipt-${mode}`, recipients);
+
+        expect((await page.runtime.enqueueIfAbsent(message)).verdict).toMatchObject({ kind: 'admitted', durable: true });
+
+        expect(await page.stores.admissionStore.readSendGuards(message)).toMatchObject({ kind: 'current' });
+        expect(page.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([]);
     });
 });

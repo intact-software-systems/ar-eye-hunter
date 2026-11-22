@@ -8,6 +8,9 @@ export type ALOutboundCancelOutcome = 'cancelled' | 'already-cancelled';
 /** What a `handOver` call decided: only the first call for a message not already ended hands it over. */
 export type ALOutboundHandOverOutcome = 'handed-over' | 'already-ended';
 
+/** Why the page ended a message: every later effect of it completes without sending. */
+export type ALOutboundEndedReason = 'cancelled' | 'handed-over';
+
 /** One message's live transport controller, shared by its concurrent attempts, and how many hold it open. */
 interface ALOutboundLiveSendControl {
     readonly controller: AbortController;
@@ -29,10 +32,10 @@ export class ALOutboundSendControls {
     private readonly input: ALOutboundSendControls.Input;
     private readonly sendAbortController = new AbortController();
     /**
-     * Held for the durable lane's row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`), in memory, never persisted (D181):
-     * the controls span every lane, so a durable row first claimed within the retention still completes without
-     * sending; one the next owner drains sends. A read forgets the id it finds expired; an accept sweeps every
-     * expired id, as often as the repository's eviction rate allows.
+     * Held for the durable lane's row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`): the page's own guard, which spans
+     * every lane and covers the time until the lane's end commit lands, and after a conflict tells the next claimed
+     * effect of the message to store that end. A read forgets the id it finds expired; an accept sweeps every expired
+     * id, as often as the repository's eviction rate allows.
      */
     private readonly cancelledMsgIds = new LatestRepository<string, true>({ ttlMs: DEFAULT_AL_REPOSITORY_TTL_MS });
     /** Held as cancellations are: another carrier's owner took these messages (D56). */
@@ -78,7 +81,7 @@ export class ALOutboundSendControls {
     }
 
     /** Names why later work is skipped without changing the retained control state. */
-    readEndedReason(msgId: string): 'cancelled' | 'handed-over' | undefined {
+    readEndedReason(msgId: string): ALOutboundEndedReason | undefined {
         const nowMs = this.input.nowMs();
         if (this.cancelledMsgIds.readAt(msgId, nowMs) !== undefined) {
             return 'cancelled';

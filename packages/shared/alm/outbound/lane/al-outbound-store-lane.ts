@@ -4,6 +4,8 @@ import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { ExclusionKeyedAdmission } from '../../../resilience/exclusion-keyed-admission.ts';
+import { RetryableConflictError } from '../../../resilience/try-with-policy.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
@@ -65,10 +67,14 @@ import {
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/read-al-outbound-recipient-proof.ts';
 import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
+import {
+    writeALOutboundMessageEnd,
+    type ALOutboundMessageEndOutcome
+} from '../message-end/write-al-outbound-message-end.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import type { ALOutboundEndedReason, ALOutboundSendControls } from './al-outbound-send-controls.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-settled-committed-rows.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
@@ -126,6 +132,11 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly removeStorageResetListener: (() => void) | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private readonly takeOverSubscription: Unsubscribe | undefined;
+    /** Orders the page's own ends of one message, so they never conflict with each other; only the key orders. */
+    private readonly messageEndWrites = new ExclusionKeyedAdmission({
+        maxConcurrent: Number.MAX_SAFE_INTEGER,
+        keyedChainsFirst: false
+    });
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
     /** The running batch's settled claims; its selection empties it, so a batch that never ended leaves nothing here. */
@@ -333,11 +344,20 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     /**
-     * A hand-over ends this lane's receipt of the message and states nothing. A receipt its store
-     * cannot end stays until it expires.
+     * Ends a cancelled or handed-over message in this lane's store and states nothing. A conflict, and a store that
+     * cannot end it, leave the end to the next effect of the message this page claims.
      */
-    async endReceipt(msgId: string): Promise<void> {
-        await this.readiness.runStoreOperation(() => this.repairAdmission.endReceipt(msgId), () => undefined);
+    async endMessage(msgId: string): Promise<void> {
+        await this.readiness.runStoreOperation(async () => {
+            await this.writeMessageEnd(msgId);
+        }, () => undefined);
+    }
+
+    private async writeMessageEnd(msgId: string): Promise<ALOutboundMessageEndOutcome> {
+        return await this.messageEndWrites.admit(
+            msgId,
+            () => writeALOutboundMessageEnd(this.input.stores.admissionStore, msgId)
+        );
     }
 
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */
@@ -455,7 +475,7 @@ export class ALOutboundStoreLane<TPrepared> {
             timing: this.input.runtime.dequeueTiming,
             hasReachedDeadline: (claim) => this.hasReachedDeadline(claim.entry),
             createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),
-            readSettledBeforeEffect: (work, observed) => this.readSettledBeforeEffect(work, observed),
+            startSettledBeforeEffect: (work, observed) => this.startSettledBeforeEffect(work, observed),
             admit: (members) => this.dequeuedAdmission.admitDequeuedMessages(members),
             settle: (settlement) => this.settleOutboundClaim(settlement)
         });
@@ -526,9 +546,9 @@ export class ALOutboundStoreLane<TPrepared> {
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        const settled = this.readSettledBeforeEffect(effect, observed);
+        const settled = this.startSettledBeforeEffect(effect, observed);
         if (settled !== undefined) {
-            return settled;
+            return await settled;
         }
         switch (effect.payload.kind) {
             case 'admit-message':
@@ -563,24 +583,40 @@ export class ALOutboundStoreLane<TPrepared> {
         }
     }
 
-    private readSettledBeforeEffect(
+    /** The attempt of an effect that must not run, settled without it; undefined for an effect that runs. */
+    private startSettledBeforeEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>,
         observed: ALOutboundClaimObservation
-    ): ALWorkAttemptResult | undefined {
+    ): Promise<ALWorkAttemptResult> | undefined {
         const msgId = resolveALOutboundEffectMsgId(effect);
         const endedReason = msgId === undefined ? undefined : this.input.sendControls.readEndedReason(msgId);
-        if (endedReason !== undefined) {
-            recordALOutboundClaimTerminalReason(observed, endedReason);
-            observed.evidence?.recordStage('ended');
-            return { status: 'completed' };
+        if (msgId !== undefined && endedReason !== undefined) {
+            return this.completeEndedEffect(msgId, endedReason, observed);
         }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
             recordALOutboundClaimTerminalReason(observed, 'expired');
             observed.evidence?.recordStage('expired');
             this.emitWorkExpiry(effect);
-            return { status: 'completed' };
+            return Promise.resolve({ status: 'completed' });
         }
         return undefined;
+    }
+
+    /**
+     * An effect of a message this page ended stores that end before it completes, so a reload and every other tab of
+     * the session find the message ended; a conflict redelivers the effect, whose next claim tries again.
+     */
+    private async completeEndedEffect(
+        msgId: string,
+        endedReason: ALOutboundEndedReason,
+        observed: ALOutboundClaimObservation
+    ): Promise<ALWorkAttemptResult> {
+        if (await this.writeMessageEnd(msgId) === 'conflict') {
+            throw new RetryableConflictError('Outbound message end commit conflict');
+        }
+        recordALOutboundClaimTerminalReason(observed, endedReason);
+        observed.evidence?.recordStage('ended');
+        return { status: 'completed' };
     }
 
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */

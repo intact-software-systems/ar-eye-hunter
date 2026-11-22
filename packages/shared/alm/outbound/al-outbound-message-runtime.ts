@@ -536,6 +536,12 @@ type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDelivery
     never;
 
 /** The lane one admission goes to and the planner its admission reads the plan through. */
+/** A message an admission committed, in the lane that holds it. */
+interface ALOutboundAdmittedMessage<TPrepared> {
+    readonly lane: ALOutboundStoreLane<TPrepared>;
+    readonly msg: ALMessage;
+}
+
 interface ALOutboundPlannedAdmission<TPrepared> {
     readonly lane: ALOutboundStoreLane<TPrepared>;
     readonly planner: ALOutboundPlanner<TPrepared>;
@@ -715,6 +721,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
     private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
     private disposed = false;
+    /** The message ends a cancel or hand-over started, which dispose joins before it disposes the lanes. */
+    private readonly messageEnds = new Set<Promise<void>>();
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
@@ -763,16 +771,21 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return durable;
     }
 
-    /** Aborts transports and every lane synchronously, then joins their owned work and releases. */
+    /**
+     * Aborts transports and every lane synchronously, then joins their owned work and releases. A message end a cancel
+     * or hand-over started is joined first, and the lanes are disposed after it.
+     */
     async dispose(): Promise<void> {
         this.disposed = true;
         this.sendControls.dispose();
+        // The lanes abort synchronously unless an end is still on its way to its lane's store.
+        const ended = this.messageEnds.size === 0 ? [] : await Promise.allSettled(this.messageEnds);
         const disposed = await Promise.allSettled([
             this.durable.dispose(),
             this.volatile?.dispose(),
             this.checkpoint?.dispose()
         ]);
-        for (const outcome of disposed) {
+        for (const outcome of [...ended, ...disposed]) {
             if (outcome.status === 'rejected') {
                 throw outcome.reason;
             }
@@ -789,33 +802,31 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`). A message the owner never
-     * admitted is still remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
+     * Cancels one message: a message with a live attempt has that attempt's transport signal aborted, and the lane
+     * that holds the message ends it in a commit of its own, started here and joined by `dispose`. Until that commit
+     * lands, and for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`), the page remembers the cancel, so a
+     * row claimed for the message completes without sending. Idempotent within the retention: only the first call
      * states the `cancelled` settlement.
      */
     cancel(msgId: string, traceId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
             this.emitSettlement({ kind: 'cancelled', msgId, traceId }, undefined);
+            void this.startMessageEnd(msgId);
         }
         return outcome;
     }
 
     /**
-     * Hands one message to another carrier's owner: aborts its live attempt, completes every later
-     * effect of it silently and ends its receipt row, and states no settlement -- the message is not
+     * Hands one message to another carrier's owner: aborts its live attempt, completes every later effect of it
+     * silently and ends the message in the lane that holds it, and states no settlement -- the message is not
      * cancelled. Idempotent; a message already cancelled or handed over is left as it is.
      */
     async handOver(msgId: string): Promise<void> {
         if (this.disposed || this.sendControls.handOver(msgId) === 'already-ended') {
             return;
         }
-        await this.ready();
-        if (this.disposed) {
-            return;
-        }
-        await (await this.readLaneForMessage(msgId)).endReceipt(msgId);
+        await this.startMessageEnd(msgId);
     }
 
     /**
@@ -839,6 +850,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const computed = await admission.lane.commit(
             this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
         );
+        const ending = this.startCancelledAdmissionEnds([{ lane: admission.lane, msg }]);
+        if (ending !== undefined) {
+            await ending;
+        }
         return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
     }
 
@@ -891,6 +906,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 throw outcome.reason;
             }
             members[index]!.forEach((dispatch, position) => computed.set(dispatch, outcome.value[position]!));
+        }
+        const ending = this.startCancelledAdmissionEnds(
+            planned.map(({ lane, dispatch }) => ({ lane, msg: dispatch.msg }))
+        );
+        if (ending !== undefined) {
+            await ending;
         }
         return planned.map(({ dispatch }) =>
             ALOutboundMessageRuntime.toEnqueueResult(computed.get(dispatch)!, dispatch.msg)
@@ -974,6 +995,42 @@ export class ALOutboundMessageRuntime<TPrepared> {
             case 'durable':
                 return this.durable;
         }
+    }
+
+    /**
+     * Ends the message in the lane that holds it, tracked until it settles so `dispose` joins it. A rejection stays
+     * in the set for `dispose` to rethrow, and is handled here so it is never unhandled before then.
+     */
+    private startMessageEnd(msgId: string): Promise<void> {
+        const ending = this.writeMessageEnd(msgId);
+        this.messageEnds.add(ending);
+        ending.then(() => this.messageEnds.delete(ending), () => undefined);
+        return ending;
+    }
+
+    /** An end started before `dispose` runs to its commit: `dispose` disposes the lanes only after joining it. */
+    private async writeMessageEnd(msgId: string): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
+        await this.ready();
+        await (await this.readLaneForMessage(msgId)).endMessage(msgId);
+    }
+
+    /**
+     * A cancel that landed while the message's admission was in flight found no row to end; the admission committed
+     * one since, so it is ended here, in this tab, before the admission returns. Undefined when no admitted message
+     * was cancelled: such an admission returns without a read and without a turn of its own.
+     */
+    private startCancelledAdmissionEnds(
+        admitted: readonly ALOutboundAdmittedMessage<TPrepared>[]
+    ): Promise<unknown> | undefined {
+        const cancelled = this.disposed
+            ? []
+            : admitted.filter(({ msg }) => this.sendControls.isEnded(msg.id.msgId));
+        return cancelled.length === 0
+            ? undefined
+            : Promise.all(cancelled.map(({ lane, msg }) => lane.endMessage(msg.id.msgId)));
     }
 
     /** Memory reads, so a control about a message in memory never reaches IndexedDB. */

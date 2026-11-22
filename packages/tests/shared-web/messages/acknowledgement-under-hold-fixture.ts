@@ -759,7 +759,10 @@ async function runHoldEscalation(
         case 'ack-timeout':
             return await runAckTimeoutClaim(sender, msgId);
         case 'cancel-held':
-            return sender.cancel(sent.held.id.msgId, sent.held.id.traceId);
+            // The cancel ends the held message in a commit of its own under the sender's fence; the ACK arrives after it.
+            sender.cancel(sent.held.id.msgId, sent.held.id.traceId);
+            await sender.drain();
+            return await sender.settle();
         case 'expired-row-evicted':
             return await setNextAcksReadEvictionRaced(sender.outboundAdmissionNamespace, msgId);
         case 'ack-inside-retry-schedule':

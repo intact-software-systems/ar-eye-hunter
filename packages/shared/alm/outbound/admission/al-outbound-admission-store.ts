@@ -60,6 +60,7 @@ import type {
     ALOrderingIndexedSequence,
     ALOrderingStoredPredecessors
 } from '../lane/compute-al-outbound-group-sent-positions.ts';
+import type { ALOutboundMessageEndRead } from '../message-end/to-al-outbound-message-end-bundle.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -82,6 +83,7 @@ import {
 } from './al-outbound-canonical-fact-writes.ts';
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
+import { readALOutboundMessageEnd } from './read-al-outbound-message-end.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
     ALOutboundRoomSentFloorChange,
@@ -460,6 +462,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         planner: ALOutboundPlanner<TPrepared>
     ) => Promise<ALOutboundRepairReadDto<TPrepared>>;
 
+    /** What the end of one message marks and deletes, read in one session without planning the message. */
+    readonly readMessageEnd: (msgId: string) => Promise<ALOutboundMessageEndRead>;
+
     /**
      * The supersedence of every message, read in one session: a backend that batches one turn's reads answers the
      * group in one round, and no message opens no session. Each message settles alone, so a corrupt row fails only
@@ -706,6 +711,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
         return await this.backend.readWithin((session) => this.reads.readRepairMessage(session, msgId, planner));
+    }
+
+    async readMessageEnd(msgId: string): Promise<ALOutboundMessageEndRead> {
+        return await this.backend.readWithin((session) => readALOutboundMessageEnd(this.reads, session, msgId));
     }
 
     async readMessageSupersedence(messages: readonly ALMessage[]): Promise<readonly PromiseSettledResult<boolean>[]> {

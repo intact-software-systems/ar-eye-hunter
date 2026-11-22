@@ -7,12 +7,15 @@ import { createCheckpointALOutboundRuntimeStores, createDefaultIndexedDbALOutbou
 import type {
     ALCheckpointOutboundRuntimeStores,
     ALOutboundMessageRuntime,
-    ALOutboundRuntimeDiagnosticsEvent
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
-import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
+import type { ALDurableWorkCommit, ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
+import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
+import { ObservableLatestValue } from '@shared/cache/observable/observable-latest-value.ts';
 import {
     createCountingIndexedDbOperationObserver,
     type CountingIndexedDbOperationObserver
@@ -43,6 +46,8 @@ export interface SessionOutboundTestRuntime<TOwnership extends ALDurableWorkOwne
     readonly engine: InboxOutboxEngine;
     readonly ownership: TOwnership;
     readonly checkpointStores: ALCheckpointOutboundRuntimeStores<OutboundTestPayload>;
+    /** The session's IndexedDB pair as this runtime opened it. */
+    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
     /** The resource id of every message this runtime's carrier sent, in send order. */
     readonly sent: readonly string[];
     /** The admission namespace whose work type the session's runtimes share. */
@@ -117,9 +122,42 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
         engine,
         ownership,
         checkpointStores,
+        stores,
         sent,
         namespace: stores.admissionStore.namespace,
         readDurableProbes: () => diagnostics.filter((event) => event.kind === 'readiness-probe' && event.lane === 'durable')
+    };
+}
+
+/** A session's work ownership a test hands over and whose announced commits it relays itself. */
+export interface TestDurableWorkOwnership extends ALDurableWorkOwnership {
+    readonly owned: ObservableLatestValue<boolean>;
+    readonly announced: readonly ALDurableWorkCommit[];
+    take(): void;
+    /** Hands an announced commit to the lanes listening for its work type, as the session channel does for an owner. */
+    deliver(commit: ALDurableWorkCommit): void;
+}
+
+export function createTestDurableWorkOwnership(owned: boolean): TestDurableWorkOwnership {
+    const value = new ObservableLatestValue<boolean>().set(owned);
+    const announced: ALDurableWorkCommit[] = [];
+    const listeners = new Map<string, Set<(rows: ALWorkCommittedRows) => void>>();
+    return {
+        owned: value,
+        announced,
+        isOwned: () => value.peek() === true,
+        take: () => value.accept(true),
+        announceCommit: (commit) => announced.push(commit),
+        onForeignCommit: (workType, listener) => {
+            const forType = listeners.get(workType) ?? new Set();
+            listeners.set(workType, forType.add(listener));
+            return () => forType.delete(listener);
+        },
+        deliver: (commit) => {
+            if (value.peek() === true) {
+                listeners.get(commit.workType)?.forEach((listener) => listener(commit.rows));
+            }
+        }
     };
 }
 
