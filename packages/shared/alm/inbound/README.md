@@ -768,7 +768,9 @@ a prior above `0`, ask a range the RTC origin cannot serve, and enter only when 
 most until its renewal schedule ends. The admission that opens it arms the start range's timer (`1` to `p`,
 [`isALOrderingHeldStartRange`](./gap-renewal/compute-al-ordering-held-entry.ts)) to live at least as long as the
 track's ordering snapshot does from the reveal (`orderingTrackTtlMs`), whatever the copy's own lifetime, so the last
-timer runs however late the engine claims it; every other gap timer still expires with its message. When that last timer comes due with
+timer runs however late the engine claims it; every other gap timer still expires with its message. The timer names
+the copy that revealed the range, so that copy's message is retained as long as the timer, for the ordering TTL
+(**limit:** one message per rule-opened track, at most one per track of the 256-track cap). When that last timer comes due with
 the range still missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth
 time and ends the hold instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the lane's stretch (1
 to 1.5) after the gap was revealed, so 7 to 10.5 s. One rule,

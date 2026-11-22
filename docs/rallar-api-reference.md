@@ -2084,7 +2084,10 @@ the RTC origin cannot serve and enters only when its bounded hold ends; a
 recipient that forgot a track it delivered (one pushed off the evicted list by
 256 later evictions, a storage reset or a new connect that keeps the peer id)
 asks for its start again, receives once more the frames the origin still
-retains (at least once) and ends the hold on older ones; a live-only hand-over copy carries no record and is dropped silently
+retains (at least once) and ends the hold on older ones; a track opened at
+its start retains the message of the copy that revealed its start for the
+ordering TTL, so its hold can end however late its last renewal runs (one
+message per such track, within the browser's 256-track cap); a live-only hand-over copy carries no record and is dropped silently
 (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with
 no NACK and stays unconfirmed, repaired by nothing; under `rtc-with-ws-fallback`
 a server copy whose record meets the receiver's position can be read as an
