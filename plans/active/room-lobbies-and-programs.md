@@ -40,11 +40,16 @@ The held-seat implementation exposes two places to extend. The room roster seria
 2. Resume by shifting future phase starts by the paused duration in one authoritative write. Cover a backward-adjusted writer clock, a phase boundary at the pause instant, repeated delivery, stale director epochs and overflow. Existing independent room deadlines, including venue cutoffs, keep their UTC values.
 3. Recover the complete schedule through the SDK's existing WebSocket-backed room observation. Show that a participant in another room can return after a ten-minute pause, recover the original phase balance, and observe exactly one shift after resume. Verify director disconnect alone has no effect on either running or paused schedules.
 
+## Fifth implementation slice — appoint a director and designate a deputy
+
+1. Extend the existing room director authority. An active owner or admin can appoint a specific present session, including a spectator, and designate or clear a deputy. Persist the succession policy and deputy with the room. Bind each replacement to the observed appointment epoch. Existing clock and program commands must consult the same current appointment and reject a replaced session.
+2. Use authoritative loss of admitted presence to start the director's configurable reconnect window (30 seconds by default). A timely return by the director keeps control. After that window the designated deputy has an exclusive configurable window (30 seconds by default) to claim as a present session or decline. Use server time across restart and room changes. An explicit admin appointment supersedes either window. A role or membership revocation must take effect immediately.
+3. Expose policy, appointment and claim through the SDK, and recover succession state through push and authoritative room reads. Race the deputy with a late director return and two admin appointments on different API processes. Exercise paused and running programs. Both must preserve their program state through the handover, and a delayed command from the old director must fail.
+
 ## Subsequent outcomes
 
 | Order | Outcome | End-to-end evidence |
 | --- | --- | --- |
-| 5 | Admin appointment and deputy succession | The former director reconnects as the deputy claims. Exactly one appointment controls the clock. An explicit admin appointment supersedes it. Run with running and paused programs. |
 | 6 | Present-player succession | Race two eligible players after fallback opens. Verify a single winner and reject an away holder, ordinary spectator and commands from a replaced director. |
 
 Qualify server timing on independently hosted directly routed nodes under a maintained offset budget and representative load. Exercise seat claim on one node and expiry on another. Report clock uncertainty separately from durable admission correctness. Local multi-process tests cover consistency and tooling. An operational accuracy claim requires actual independent-node measurements.

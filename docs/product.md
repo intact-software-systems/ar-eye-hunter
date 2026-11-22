@@ -139,6 +139,12 @@ At a start the new phase applies inclusively, and the final phase continues. A w
 `uncertain`; loss of calibration returns `unavailable`. The app displays recovery while a watch is stale.
 A boundary crossing requires no server write or network read and triggers no gameplay side effects.
 
+The appointed director can freeze a published program with `rooms.pauseProgram` and restart it with
+`rooms.resumeProgram`. Both accept the program name, expected revision, director epoch and request ID.
+During a pause, a returning participant can read the frozen phase and milliseconds until the next
+start even before clock calibration finishes. Resume shifts future program starts once. Independent
+UTC deadlines retain their published times. A director disconnect preserves the program's state.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only

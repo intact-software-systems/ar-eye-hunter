@@ -27,7 +27,7 @@ import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import { captureRoomSession } from '../room-session-fence.ts';
-import { acknowledgedTimeline, acknowledgedSchedule, acknowledgedClock, acknowledgedDeadline } from './room-time-acknowledgements.ts';
+import { acknowledgedProgram, acknowledgedTimeline, acknowledgedSchedule, acknowledgedClock, acknowledgedDeadline } from './room-time-acknowledgements.ts';
 import { watchRoomTime } from './watch-room-time.ts';
 
 export interface RoomDeadlineObservation {
@@ -45,6 +45,10 @@ export interface RoomTimelineObservation {
 }
 
 export interface RoomTimeOperations {
+    pauseProgram(room: GroupRef, control: Omit<RoomSchedule.Control, 'operation'>, requestId: string,
+        options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule>;
+    resumeProgram(room: GroupRef, control: Omit<RoomSchedule.Control, 'operation'>, requestId: string,
+        options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule>;
     publishSchedule(room: GroupRef, publication: RoomSchedule.Publication, requestId: string,
         options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule>;
     readSchedule(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule | null>;
@@ -100,6 +104,10 @@ interface WriteRoomTime {
     readonly change: { roomDeadline: RoomDeadlineChange; } | { roomClock: RoomClockMutation; };
     readonly requestId: string;
     readonly signal?: AbortSignal;
+}
+
+interface WriteRoomProgram extends WriteRoomTime {
+    readonly change: { readonly roomClock: RoomSchedule.Control; };
 }
 
 interface WriteRoomTimeline extends WriteRoomTime {
@@ -194,7 +202,19 @@ export function createRoomTimeOperations(
         const metadata = await write(request);
         return acknowledgedTimeline(metadata, roomClock);
     }
+    async function changeProgram(request: WriteRoomProgram) {
+        const { roomClock } = request.change;
+        assertRoomClockMutation(roomClock);
+        const metadata = await write(request);
+        return acknowledgedProgram(metadata, roomClock);
+    }
     return {
+        pauseProgram(room, control, requestId, { signal } = {}) {
+            return changeProgram({ roomRef: room, change: { roomClock: { ...control, operation: 'pause-program' } }, requestId, signal });
+        },
+        resumeProgram(room, control, requestId, { signal } = {}) {
+            return changeProgram({ roomRef: room, change: { roomClock: { ...control, operation: 'resume-program' } }, requestId, signal });
+        },
         async publishSchedule(roomRef, publication, requestId, { signal } = {}) {
             const roomClock = { ...structuredClone(publication), operation: 'publish-schedule' as const };
             assertRoomClockMutation(roomClock);
@@ -206,7 +226,9 @@ export function createRoomTimeOperations(
         },
         watchSchedule(room, name, listener, { signal } = {}) {
             return watch(room, name, readRoomSchedule, ({ status, value }) => listener({ status, schedule: value }),
-                (a, b) => a.revision === b.revision && !sameSchedulePhases(a.phases, b.phases), signal);
+                (a, b) => b.elapsedThroughEpochMs < a.elapsedThroughEpochMs ||
+                    (a.revision === b.revision && (a.status !== b.status || a.elapsedThroughEpochMs !== b.elapsedThroughEpochMs ||
+                        !sameSchedulePhases(a.phases, b.phases))), signal);
         },
         advanceTimeline(room, advance, requestId, { signal } = {}) {
             const roomClock = { ...advance, operation: 'advance-phase' as const };
