@@ -10,6 +10,7 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALReceiptProofRefusal } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
@@ -312,9 +313,10 @@ function computePendingAckWrite(
 }
 
 /**
- * The receipt row an ACK leaves. One that moves neither a peer between the receipt's classes nor the hop view, a true
- * repeat, leaves the row as it was, so its commit states nothing; one that completes a hop states the hop lists as they
- * now stand, though no class moved.
+ * The receipt row an ACK leaves. One whose fact would repeat the last one stated leaves the row as it was, so its commit
+ * states nothing: it moves no peer between the receipt's classes and changes no hop list the fact carries. Under
+ * `receiver` and `leader` those lists are the hop view, so an ACK that completes a hop states them as they now stand;
+ * under `hop` and `subtree` they are the classes, so a hop's completion alone states nothing.
  */
 function computeAcknowledgedPendingAckWrite(read: ALControlAdmissionRead, ack: ALAckPayload): ALPendingAckWrite {
     const current = read.pending;
@@ -326,7 +328,8 @@ function computeAcknowledgedPendingAckWrite(read: ALControlAdmissionRead, ack: A
     const next = isALOutboundImpliedNotSubscribedAck(accepted.mode, ack, owedPeerIds)
         ? acceptALOutboundOutsideAudienceNack(accepted, ack.logicalRecipientPeerId)
         : accepted;
-    return isSameALOutboundReceiptClasses(current, next) && !completesHop(read.acknowledgements, ack)
+    const movesHopLists = isALLogicalReceiptMode(current.mode) && completesHop(read.acknowledgements, ack);
+    return isSameALOutboundReceiptClasses(current, next) && !movesHopLists
         ? { kind: 'unchanged' }
         : { kind: 'set', value: next };
 }

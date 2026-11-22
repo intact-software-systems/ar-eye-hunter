@@ -1100,8 +1100,11 @@ lists are the local hop view (`OverlayTree`): the next hops the captured ack pla
 (`nextHopPeerIds`), of which those whose own completion ACK is in the ACK history are confirmed. A relay
 in front of a recipient is therefore a confirmed hop while the recipient is a confirmed recipient. A next hop's own
 terminal ACK that confirms no expected peer, a relay's own `subtree-complete` when it is no recipient, is admitted
-for the hop view. A control states a settlement only when it moves a receipt class or the hop view, so a hop-end
-after the receipt completed states the hop confirmed, and a true repeat, refused `duplicate`, states nothing. A WS
+for the hop view. A control states a settlement only when the fact it would state differs from the last one: a
+receipt class moves, or, under `receiver` and `leader`, whose hop lists are the hop view, a hop completes. Under `hop`
+and `subtree` the hop lists are the classes, so a hop's completion alone states nothing. So under `receiver` and
+`leader` a hop-end after the receipt completed states the hop confirmed, and in every mode a true repeat, refused
+`duplicate`, states nothing. A WS
 client names no hop; at the WS server each recipient session is its own hop, complete once confirmed.
 
 An RTT heartbeat is not one of these entries.

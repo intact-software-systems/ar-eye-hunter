@@ -342,6 +342,26 @@ describe('a relay\'s own hop-end at the origin, from a relay outside the audienc
     });
 });
 
+describe('a next hop\'s own hop-end at the origin under `hop`, after its counted ACK', () => {
+    const HOP_TRACKING: ALOutboundAckTrackingPlan = {
+        ...RECEIVER_TRACKING,
+        expectedPeerIds: ['n1', 'n2'],
+        nextHopPeerIds: ['n1', 'n2'],
+        mode: 'hop'
+    };
+
+    it('admits it for the hop view and states no fact, since the hop lists it would state are the classes, which did not move', async () => {
+        const origin = await createOriginFixture('hop-end-after-counted-ack', HOP_TRACKING);
+        expect(await origin.accept(toRelayedAck(origin.msg, 'n1', { fromPeerId: 'n1', status: 'accepted' }))).toBe('committed');
+        const stated = origin.facts.length;
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'n1', { fromPeerId: 'n1', status: 'subtree-complete' }))).toBe('committed');
+
+        expect(stated).toBe(1);
+        expect(origin.facts).toHaveLength(stated);
+    });
+});
+
 describe('a before-entry NACK at the origin', () => {
     it('records the recipient outside the audience as a not-subscribed NACK does, without ending the receipt', async () => {
         const origin = await createOriginFixture('before-entry-recorded');
