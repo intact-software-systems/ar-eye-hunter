@@ -44,10 +44,12 @@ export function subscribeViewRecovery(input: SubscribeViewRecovery.Input): () =>
         }
         input.changed();
     }));
-    if (input.browser.ws) subscriptions.add(input.browser.ws.onLifecycle((event) => {
-        if ((event.kind === 'open' || event.kind === 'connected') && input.browser.session() !== undefined) {
-            input.changed();
-        }
-    }, { emitCurrent: false }));
+    if (input.browser.ws) {
+        subscriptions.add(input.browser.ws.onLifecycle((event) => {
+            if ((event.kind === 'open' || event.kind === 'connected') && input.browser.session() !== undefined) {
+                input.changed();
+            }
+        }, { emitCurrent: false }));
+    }
     return () => subscriptions.unsubscribe();
 }

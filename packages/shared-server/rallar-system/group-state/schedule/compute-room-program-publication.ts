@@ -21,20 +21,23 @@ export function computeRoomProgramPublication(
     if (!changed && !readRoomTimeRecords(group.metadata).some(record => 'phases' in record)) {
         return { outbox: [], provenance: [] };
     }
-    if ((changed || deleted) && read.activeMembers === null) {
-        throw new TypeError('Room program publication requires its captured membership');
+    let principalIds: string[];
+    if (changed || deleted) {
+        if (read.activeMembers === null) {
+            throw new TypeError('Room program publication requires its captured membership');
+        }
+        principalIds = read.activeMembers.map(member => member.principalId);
     }
-    const principalIds = changed || deleted
-        ? read.activeMembers!.map(member => member.principalId)
-        : members.filter(member => {
-            const previouslyActive = read.activeMembers?.some(previous => previous.principalId === member.principalId) ??
-                [read.targetMember, read.actorMember, read.authorityMember, read.directorMember]
-                    .some(previous => previous?.principalId === member.principalId && previous.status === 'active');
+    else {
+        const previous = read.activeMembers ?? [read.targetMember, read.actorMember, read.authorityMember, read.directorMember];
+        principalIds = members.filter(member => {
+            const previouslyActive = previous.some(row => row?.principalId === member.principalId && row.status === 'active');
             return previouslyActive !== (member.status === 'active');
         }).map(member => member.principalId);
+    }
     return computeViewInvalidationPublication({
         resource: 'room-program',
-        reason: changed ? 'program-changed' : 'access-changed',
+        reason: changed && !deleted ? 'program-changed' : 'access-changed',
         groupId: group.groupId,
         scope: { applicationId: group.applicationId, workspaceId: group.workspaceId },
         principalIds,
