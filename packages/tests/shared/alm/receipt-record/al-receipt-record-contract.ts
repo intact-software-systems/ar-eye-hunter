@@ -32,6 +32,10 @@ export interface ALReceiptRecordContractInstance {
     readonly clock: { nowMs: number; };
 }
 
+/**
+ * One store as the cases see it. Each `createScope` call returns a namespace of its own, holding no other scope's
+ * rows: a case may create several scopes, and one claims every due work row of the record's type in its namespace.
+ */
 export interface ALReceiptRecordContractScope {
     readonly namespace: string;
     /** Three server instances over one store, each on its own clock. */

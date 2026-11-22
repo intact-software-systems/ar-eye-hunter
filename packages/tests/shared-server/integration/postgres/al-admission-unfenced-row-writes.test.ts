@@ -16,6 +16,7 @@ import {
 } from './test-support/delete-postgres-run-rows.ts';
 import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
+import { racePastHeldCommit } from './test-support/race-past-held-commit.ts';
 import { recordPostgresStatements, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -48,19 +49,13 @@ describe('Postgres unfenced admission row writes', () => {
         await withProbe(async ({ namespace, backends, heldBackend, hold, expireAtMs }) => {
             const keyA = toProbeKey(namespace, 0);
             const keyB = toProbeKey(namespace, 1);
-            const first = heldBackend.write(async (write) => await write.set(keyA, keyA, expireAtMs));
-            try {
-                await hold.arrived; // the first insert has run and its transaction is open
-                const second = await Promise.race([
-                    backends[1]!.write(async (write) => await write.set(keyB, keyB, expireAtMs)).then(() => 'committed'),
-                    new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), BLOCKED_AFTER_MS))
-                ]);
-                expect(second).toBe('committed');
-            }
-            finally {
-                hold.release();
-                await first;
-            }
+            const { raced } = await racePastHeldCommit({
+                hold,
+                startHeld: () => heldBackend.write(async (write) => await write.set(keyA, keyA, expireAtMs)),
+                startRaced: () => backends[1]!.write(async (write) => await write.set(keyB, keyB, expireAtMs)),
+                blockedAfterMs: BLOCKED_AFTER_MS
+            });
+            expect(raced).toBe('finished');
             expect(await backends[2]!.read(keyA, decodeALAdmissionString)).toBe(keyA);
         });
     }, 60_000);
