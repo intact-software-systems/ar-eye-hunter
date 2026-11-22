@@ -53,6 +53,15 @@ export interface AlmLaneRunReading {
     readonly unattributedReason: AlmLaneUnattributedReason | null;
 }
 
+interface ComputeFamilyReadingInput {
+    readonly carrier: AlmConformanceCarrier;
+    readonly planned: AlmLanePlannedFamily;
+    /** The family's first result for the run's carrier. */
+    readonly result: AlmLaneFamilyResult | undefined;
+    /** True when a result for the family was refused: a second one, or one for another carrier. */
+    readonly refused: boolean;
+}
+
 interface AlmLaneFamilyReading {
     readonly familyKey: string;
     readonly green: boolean;
@@ -124,7 +133,12 @@ function computeFamilyReadings(
     );
     const refusedFamilies = new Set(refused.map((result) => result.family));
     const planned = plan.families.map((family) =>
-        computeFamilyReading(carrier, family, resolveFirstResult(family.family), refusedFamilies.has(family.family))
+        computeFamilyReading({
+            carrier,
+            planned: family,
+            result: resolveFirstResult(family.family),
+            refused: refusedFamilies.has(family.family)
+        })
     );
     const unplanned = [...refusedFamilies].filter((family) => !plan.families.some((entry) => entry.family === family))
         .map((family): AlmLaneFamilyReading => {
@@ -138,12 +152,8 @@ function computeFamilyReadings(
  * A family that failed outside its scenarios, whose result names a scenario its plan does not, or whose result was
  * refused, is keyed by its carrier and family when no planned scenario of it failed or went unrun.
  */
-function computeFamilyReading(
-    carrier: AlmConformanceCarrier,
-    planned: AlmLanePlannedFamily,
-    result: AlmLaneFamilyResult | undefined,
-    refused: boolean
-): AlmLaneFamilyReading {
+function computeFamilyReading(input: ComputeFamilyReadingInput): AlmLaneFamilyReading {
+    const { carrier, planned, result, refused } = input;
     const familyKey = toFamilyKey(carrier, planned.family);
     const outcomes = new Map(result?.scenarios.map((scenario) => [scenario.scenarioKey, scenario.outcome]));
     const failed = planned.scenarioKeys.filter((key) => outcomes.get(key) === 'failed')
