@@ -270,6 +270,11 @@ Nobody enters until all players confirm and the server admits the whole group to
 temporary room. Each player then chooses Enter matched room and uses the normal game lobby;
 the director or Keeper starts gameplay explicitly.
 
+A player can switch rooms while searching and confirm from the room they are visiting. Confirmation
+leaves that room selected. The SDK listens for private WebSocket updates scoped to the account,
+application and workspace. It reads the current search on notification, reconnect or foreground
+return, including restoration from the browser's back/forward cache. Idle searches require no HTTP polling.
+
 Cancel, decline and timeout end the whole pending group. They never automatically requeue players.
 A new search is always an explicit choice, including after a successful match. Reload recovers the
 account's current search or result. An uncertain write offers Retry with the same request identity.
