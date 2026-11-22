@@ -56,8 +56,7 @@ import {
     PeerId
 } from '../api/api-config.ts';
 import { isSessionInGroup, readGroupMemberSessionIds } from '../api/group-client-views.ts';
-import { resolvePublicationKey } from '../api/group-presence/resolve-publication-key.ts';
-import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '../api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
@@ -105,6 +104,7 @@ import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscri
 import {
     readRtcGroupSnapshotByRef,
     readRtcOutboundObservation,
+    readRtcRoomPublicationKey,
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
@@ -293,7 +293,8 @@ export class WebRtcOverlayMulticastManager {
                         crypto: dependencies.publicationCrypto,
                         nowEpochMs: () => this.clock.nowMs()
                     }),
-                    readRecipientKey: (msg, peerId) => this.readRecipientPublicationKey(msg, peerId)
+                    readRecipientKey: (msg, peerId) =>
+                        readRtcRoomPublicationKey(this.groupCache, msg, peerId, this.clock.nowMs())
                 },
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
@@ -729,13 +730,6 @@ export class WebRtcOverlayMulticastManager {
             observation: this.readOutboundObservation(msg),
             selfPeerId: this.connectionService.input.sessionId
         });
-    }
-
-    /** The key the message's room registers for `peerId` while it is a live session; none once it has left. */
-    private readRecipientPublicationKey(msg: ALMessage, peerId: string): GroupPresencePublicationKey | undefined {
-        const groupRef = readALTargetGroupRef(msg);
-        const room = groupRef === undefined ? undefined : this.readGroupSnapshotByRef(groupRef);
-        return (room === undefined ? null : resolvePublicationKey(room, peerId, this.clock.nowMs())) ?? undefined;
     }
 
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {

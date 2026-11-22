@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 
 import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodeALPeerControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
@@ -483,7 +483,9 @@ function readSentControls(fixture: InboundTestRuntime): readonly ALMessage[] {
 }
 
 /** Each gap NACK this receiver sent, as sent: its number, its proof and the message that carried it. */
-function readGapNacks(fixture: InboundTestRuntime): readonly Readonly<{ gapRequestNumber: number | undefined; proof: unknown; msg: ALMessage; }>[] {
+function readGapNacks(
+    fixture: InboundTestRuntime
+): readonly Readonly<{ gapRequestNumber: number | undefined; proof: ALNackPayload['proof']; msg: ALMessage; }>[] {
     return readSentControls(fixture).flatMap((msg) => {
         const control = decodeALPeerControlMessage(msg).right;
         return control?.type === 'nack' && control.payload.reason === 'gap'
