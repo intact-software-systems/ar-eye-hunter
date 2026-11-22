@@ -4,7 +4,7 @@ import path from 'node:path';
 import {
     readGithubArtifactDirectory,
     readGithubRepository,
-    readGithubWorkflowRunArtifactNames,
+    readGithubWorkflowRunArtifacts,
     readGithubWorkflowRunJobs,
     readGithubWorkflowRuns,
     type GithubWorkflowRun
@@ -13,12 +13,12 @@ import { computeAlmLaneLedger } from './compute-alm-lane-ledger.ts';
 import { computeAlmLaneWorkflowRuns } from './compute-alm-lane-workflow-runs.ts';
 import { decodeAlmLaneFlakeCausesText } from './decode-alm-lane-flake-causes.ts';
 import { decodeAlmLaneLedgerArguments, type AlmLaneLedgerArguments } from './decode-alm-lane-ledger-arguments.ts';
+import type { AlmLaneResultFile } from './decode-alm-lane-result-file.ts';
 import { toAlmLaneLedgerText } from './to-alm-lane-ledger-text.ts';
 import {
-    resolveAlmLaneResultArtifactNames,
+    resolveAlmLaneResultArtifacts,
     toAlmLaneObservedRuns,
-    type AlmLaneObservedRunsReading,
-    type AlmLaneResultFile
+    type AlmLaneObservedRunsReading
 } from './to-alm-lane-observed-runs.ts';
 
 const WORKFLOW_PATH = '.github/workflows/alm-conformance-observation.yml';
@@ -45,16 +45,15 @@ function readAlmLaneLedgerText(arguments_: AlmLaneLedgerArguments): string {
         pullRequest: readGithubWorkflowRuns({ ...filter, event: 'pull_request' }),
         dispatch: readGithubWorkflowRuns({ ...filter, event: 'workflow_dispatch' })
     });
-    const readings = workflowRuns.runs.map((run) => readObservedRuns(repository, run));
-    const causes = decodeAlmLaneFlakeCausesText(readFileSync(CAUSES_PATH, 'utf8'));
+    const readings = workflowRuns.runsToRead.map((run) => readObservedRuns(repository, run));
+    const causes = decodeAlmLaneFlakeCausesText(readCausesText());
     const ledger = computeAlmLaneLedger({
         runs: readings.flatMap((reading) => reading.runs),
         causes: causes.fold(() => [], (decoded) => decoded)
     });
     return toAlmLaneLedgerText({
         ledger,
-        runCounts: workflowRuns.counts,
-        commitShas: workflowRuns.runs.map((run) => run.head_sha),
+        window: workflowRuns.window,
         issues: [
             ...causes.fold((issues) => issues.map((issue) => `${CAUSES_PATH}: ${issue}`), () => []),
             ...readings.flatMap((reading) => reading.issues)
@@ -64,17 +63,25 @@ function readAlmLaneLedgerText(arguments_: AlmLaneLedgerArguments): string {
 
 function readObservedRuns(repository: string, run: GithubWorkflowRun): AlmLaneObservedRunsReading {
     const runId = run.id;
-    const artifactNames = resolveAlmLaneResultArtifactNames(readGithubWorkflowRunArtifactNames({ repository, runId }));
+    const artifacts = resolveAlmLaneResultArtifacts(readGithubWorkflowRunArtifacts({ repository, runId }));
     return toAlmLaneObservedRuns({
         runId,
         commitSha: run.head_sha,
         event: run.event,
         attempt: run.run_attempt,
+        status: run.status,
+        conclusion: run.conclusion,
         jobs: readGithubWorkflowRunJobs({ repository, runId }),
-        artifacts: artifactNames.map((artifactName) => ({
-            name: artifactName,
-            files: readGithubArtifactDirectory({ repository, runId, artifactName, readDirectory: readResultFiles }) ??
-                null
+        artifacts: artifacts.map((artifact) => ({
+            ...artifact,
+            files: artifact.expired
+                ? null
+                : readGithubArtifactDirectory({
+                    repository,
+                    runId,
+                    artifactName: artifact.name,
+                    readDirectory: readResultFiles
+                }) ?? null
         }))
     });
 }
@@ -83,6 +90,16 @@ function readResultFiles(artifactDirectory: string): readonly AlmLaneResultFile[
     return readdirSync(artifactDirectory, { recursive: true, encoding: 'utf8' })
         .filter((fileName) => fileName.endsWith('.json'))
         .map((fileName) => ({ fileName, text: readFileSync(path.join(artifactDirectory, fileName), 'utf8') }));
+}
+
+/** Null when the file cannot be read; the ledger prints that as an issue. */
+function readCausesText(): string | null {
+    try {
+        return readFileSync(CAUSES_PATH, 'utf8');
+    }
+    catch {
+        return null;
+    }
 }
 
 function writeFailure(message: string): void {

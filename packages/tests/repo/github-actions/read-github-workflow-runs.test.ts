@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     readWorkflowRunsEnvelope,
-    toGithubArtifactNames,
+    toGithubArtifacts,
     toGithubWorkflowRunJobs,
     toGithubWorkflowRunsEndpoint
 } from '../../../../scripts/github-actions/read-github-workflow-runs.mjs';
@@ -51,14 +51,17 @@ describe('GitHub workflow run reading', () => {
         expect(() => toGithubWorkflowRunJobs('[{}]')).toThrow('workflow run jobs response must contain jobs pages');
     });
 
-    it('reads the names of the artifacts that have not expired', () => {
+    it('reads the name of every artifact and whether it has expired', () => {
         const pages = [{
             artifacts: [
-                { name: 'alm-lane-result-ws-full-abc', expired: false },
-                { name: 'alm-lane-result-rtc-full-abc', expired: true }
+                { id: 1, name: 'alm-lane-result-ws-full-abc', expired: false },
+                { id: 2, name: 'alm-lane-result-rtc-full-abc', expired: true }
             ]
         }];
 
-        expect(toGithubArtifactNames(JSON.stringify(pages))).toEqual(['alm-lane-result-ws-full-abc']);
+        expect(toGithubArtifacts(JSON.stringify(pages))).toEqual([
+            { name: 'alm-lane-result-ws-full-abc', expired: false },
+            { name: 'alm-lane-result-rtc-full-abc', expired: true }
+        ]);
     });
 });

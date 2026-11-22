@@ -8,6 +8,16 @@ export interface AlmLaneFileField {
 
 export type AlmLaneFieldValidation = (field: AlmLaneFileField) => readonly string[];
 
+/** A file's text as JSON; undefined when it is not JSON. Only the parse is guarded, so no decoder error reads as such. */
+export function decodeJsonText(text: string): ApiJsonValue | undefined {
+    try {
+        return JSON.parse(text);
+    }
+    catch {
+        return undefined;
+    }
+}
+
 export function toField(record: ApiJsonObject, key: string, parentPath = ''): AlmLaneFileField {
     return { path: parentPath === '' ? key : `${parentPath}.${key}`, value: record[key] };
 }

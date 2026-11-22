@@ -6,12 +6,12 @@ import {
     type AlmLaneFamilyResult,
     type AlmLanePlanRecord
 } from '@shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
+import type { AlmLaneResultFile } from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-result-file.ts';
 import type { AlmLaneReportedJob } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-job-conclusion.ts';
 import {
-    resolveAlmLaneResultArtifactNames,
+    resolveAlmLaneResultArtifacts,
     toAlmLaneObservedRuns,
     type AlmLaneResultArtifact,
-    type AlmLaneResultFile,
     type ToAlmLaneObservedRunsInput
 } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-observed-runs.ts';
 
@@ -38,7 +38,7 @@ function toLaneJob(carrier: string, conclusion: string | null = 'success'): AlmL
 }
 
 function toArtifact(carrier: AlmConformanceCarrier, files: readonly AlmLaneResultFile[]): AlmLaneResultArtifact {
-    return { name: `alm-lane-result-${carrier}-full-merge-sha`, files };
+    return { name: `alm-lane-result-${carrier}-full-merge-sha`, expired: false, files };
 }
 
 const wsArtifact = toArtifact('ws', [
@@ -50,8 +50,10 @@ function toInput(overrides: Partial<ToAlmLaneObservedRunsInput>): ToAlmLaneObser
     return {
         runId: 7,
         commitSha: 'abcdef1234567',
-        event: 'push',
+        event: 'pull_request',
         attempt: 1,
+        status: 'completed',
+        conclusion: 'success',
         jobs: [toLaneJob('ws')],
         artifacts: [wsArtifact],
         ...overrides
@@ -64,7 +66,7 @@ describe('toAlmLaneObservedRuns', () => {
             runs: [{
                 runId: 7,
                 commitSha: 'abcdef1234567',
-                event: 'push',
+                event: 'pull_request',
                 attempt: 1,
                 carrier: 'ws',
                 jobConclusion: 'success',
@@ -120,8 +122,10 @@ describe('toAlmLaneObservedRuns', () => {
         expect(reading.runs[0]?.plan).toBeNull();
         expect(reading.runs[0]?.familyResults).toEqual([]);
         expect(reading.issues).toEqual([
-            'run 7 ws: ws-full-plan.json is for carrier rtc and scope full; the job is for carrier ws and scope full.',
-            'run 7 ws: ws-full-two-agent.json is for carrier ws and scope smoke; the job is for carrier ws and scope full.'
+            'run 7 ws: ws-full-plan.json is for carrier rtc, scope full and backend postgres; the job is for carrier ws,' +
+            ' scope full and backend postgres.',
+            'run 7 ws: ws-full-two-agent.json is for carrier ws, scope smoke and backend postgres; the job is for carrier' +
+            ' ws, scope full and backend postgres.'
         ]);
     });
 
@@ -184,6 +188,56 @@ describe('toAlmLaneObservedRuns', () => {
         expect(reading.issues).toEqual(['run 7 ws: artifact alm-lane-result-ws-full-merge-sha could not be downloaded.']);
     });
 
+    it('names an expired artifact and reads the job as having no plan', () => {
+        const reading = toAlmLaneObservedRuns(toInput({ artifacts: [{ ...wsArtifact, expired: true, files: null }] }));
+
+        expect(reading.runs[0]?.plan).toBeNull();
+        expect(reading.issues).toEqual([
+            'run 7 ws: artifact alm-lane-result-ws-full-merge-sha has expired; history ends at artifact retention.'
+        ]);
+    });
+
+    it('refuses a file whose backend is not postgres', () => {
+        const reading = toAlmLaneObservedRuns(toInput({
+            artifacts: [toArtifact('ws', [toFile('ws-full-plan.json', { ...toPlan('ws'), backend: 'memory' })])]
+        }));
+
+        expect(reading.runs[0]?.plan).toBeNull();
+        expect(reading.issues).toEqual([
+            'run 7 ws: ws-full-plan.json is for carrier ws, scope full and backend memory; the job is for carrier ws,' +
+            ' scope full and backend postgres.'
+        ]);
+    });
+
+    it.each(['push', 'workflow_dispatch'])(
+        'reads each carrier of a completed %s run with no job of its own as not read, and names it',
+        (event) => {
+            const reading = toAlmLaneObservedRuns(toInput({ event }));
+
+            expect(reading.runs.map(({ carrier, jobConclusion, plan }) => ({ carrier, jobConclusion, plan }))).toEqual([
+                { carrier: 'ws', jobConclusion: 'success', plan: toPlan('ws') },
+                { carrier: 'rtc', jobConclusion: 'not-read', plan: null },
+                { carrier: 'rtc-with-ws-fallback', jobConclusion: 'not-read', plan: null }
+            ]);
+            expect(reading.issues).toEqual([
+                'run 7 rtc: no job of this carrier was read.',
+                'run 7 rtc-with-ws-fallback: no job of this carrier was read.'
+            ]);
+        }
+    );
+
+    it('reads nothing missing of a pull-request run, or of a push run still in progress', () => {
+        expect(toAlmLaneObservedRuns(toInput({ jobs: [] }))).toEqual({ runs: [], issues: [] });
+        expect(toAlmLaneObservedRuns(toInput({ event: 'push', status: 'in_progress', conclusion: null, jobs: [] })))
+            .toEqual({ runs: [], issues: [] });
+    });
+
+    it('reads nothing of a run that was skipped', () => {
+        const skipped = toInput({ event: 'push', conclusion: 'skipped', jobs: [toLaneJob('ws', 'skipped')], artifacts: [] });
+
+        expect(toAlmLaneObservedRuns(skipped)).toEqual({ runs: [], issues: [] });
+    });
+
     it('reads no run for an event the ledger does not read', () => {
         const reading = toAlmLaneObservedRuns(toInput({ event: 'schedule' }));
 
@@ -191,14 +245,19 @@ describe('toAlmLaneObservedRuns', () => {
     });
 });
 
-describe('resolveAlmLaneResultArtifactNames', () => {
-    it('selects the full-scope lane result artifacts of every carrier', () => {
-        expect(resolveAlmLaneResultArtifactNames([
-            'alm-lane-result-ws-full-abc',
-            'alm-lane-result-rtc-with-ws-fallback-full-abc',
-            'alm-lane-result-rtc-smoke-abc',
-            'alm-conformance-lane-ws-full-abc',
-            'validation-evidence-v2'
-        ])).toEqual(['alm-lane-result-ws-full-abc', 'alm-lane-result-rtc-with-ws-fallback-full-abc']);
+describe('resolveAlmLaneResultArtifacts', () => {
+    it('selects the full-scope lane result artifacts of every carrier, expired ones included', () => {
+        const toListed = (name: string, expired = false) => ({ name, expired });
+
+        expect(resolveAlmLaneResultArtifacts([
+            toListed('alm-lane-result-ws-full-abc'),
+            toListed('alm-lane-result-rtc-with-ws-fallback-full-abc', true),
+            toListed('alm-lane-result-rtc-smoke-abc'),
+            toListed('alm-conformance-lane-ws-full-abc'),
+            toListed('validation-evidence-v2')
+        ])).toEqual([
+            toListed('alm-lane-result-ws-full-abc'),
+            toListed('alm-lane-result-rtc-with-ws-fallback-full-abc', true)
+        ]);
     });
 });

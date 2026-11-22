@@ -14,6 +14,8 @@ import { commandOutputMaxBuffer } from '../command-output-max-buffer.mjs';
  * @property {number} run_attempt
  * @property {string} head_sha
  * @property {string} event
+ * @property {string} status
+ * @property {string | null} conclusion Null while the run is in progress.
  */
 
 /**
@@ -31,6 +33,13 @@ import { commandOutputMaxBuffer } from '../command-output-max-buffer.mjs';
  * @property {string} name
  * @property {string} status
  * @property {string | null} conclusion Null while the job runs.
+ */
+
+/**
+ * An artifact as GitHub lists it; an expired one can no longer be downloaded.
+ * @typedef {object} GithubArtifact
+ * @property {string} name
+ * @property {boolean} expired
  */
 
 /**
@@ -106,21 +115,20 @@ export function toGithubWorkflowRunJobs(source) {
 
 /**
  * @param {GithubWorkflowRunIdentity} run
- * @returns {readonly string[]}
+ * @returns {readonly GithubArtifact[]}
  */
-export function readGithubWorkflowRunArtifactNames({ repository, runId }) {
+export function readGithubWorkflowRunArtifacts({ repository, runId }) {
     const endpoint = `/repos/${repository}/actions/runs/${runId}/artifacts?per_page=${githubPageSize}`;
-    return toGithubArtifactNames(readGithubApi(['--paginate', '--slurp', endpoint]));
+    return toGithubArtifacts(readGithubApi(['--paginate', '--slurp', endpoint]));
 }
 
 /**
  * @param {string} source
- * @returns {readonly string[]}
+ * @returns {readonly GithubArtifact[]}
  */
-export function toGithubArtifactNames(source) {
+export function toGithubArtifacts(source) {
     return readGithubListPages(source, { response: 'workflow run artifacts', listKey: 'artifacts' })
-        .filter((artifact) => !artifact.expired)
-        .map((artifact) => artifact.name);
+        .map(({ name, expired }) => ({ name, expired }));
 }
 
 /**

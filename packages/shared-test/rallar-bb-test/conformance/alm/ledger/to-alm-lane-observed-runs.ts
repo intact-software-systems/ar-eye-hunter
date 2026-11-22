@@ -1,26 +1,24 @@
 import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import type { AlmLaneFamilyResult, AlmLanePlanRecord, AlmLaneRunIdentity } from '../lane-result/alm-lane-result.ts';
-import { decodeAlmLaneFamilyResult, decodeAlmLanePlanRecord } from '../lane-result/decode-alm-lane-result.ts';
-import type { AlmLaneObservedRun, AlmLaneRunEvent } from './compute-alm-lane-ledger.ts';
+import { ALM_LANE_JOB_NAME_PATTERN, toAlmLaneResultArtifactPrefix } from './alm-lane-workflow-names.ts';
+import type { AlmLaneObservedRun, AlmLaneRunEvent } from './compute-alm-lane-run-reading.ts';
+import { decodeAlmLaneResultFile, type AlmLaneResultFile } from './decode-alm-lane-result-file.ts';
 import { toAlmLaneJobConclusion, type AlmLaneReportedJob } from './to-alm-lane-job-conclusion.ts';
-
-const ALM_LANE_JOB_NAME_PATTERN = /^ALM conformance observation \((.*)\)$/;
 
 const ALM_LANE_RUN_EVENTS: readonly AlmLaneRunEvent[] = ['push', 'pull_request', 'workflow_dispatch'];
 
-/** The scope whose runs the ledger reads. */
-const ALM_LANE_LEDGER_SCOPE = 'full';
+/** The events whose completed runs must yield a job per carrier: a pull request's lane jobs may be skipped by design. */
+const ALM_LANE_EVENTS_WITH_EVERY_CARRIER: readonly AlmLaneRunEvent[] = ['push', 'workflow_dispatch'];
 
-export interface AlmLaneResultFile {
-    readonly fileName: string;
-    readonly text: string;
+/** An artifact as GitHub lists it. */
+export interface AlmLaneListedArtifact {
+    readonly name: string;
+    readonly expired: boolean;
 }
 
-export interface AlmLaneResultArtifact {
-    readonly name: string;
-    /** Null when the artifact could not be downloaded. */
+export interface AlmLaneResultArtifact extends AlmLaneListedArtifact {
+    /** Null when the artifact has expired or could not be downloaded. */
     readonly files: readonly AlmLaneResultFile[] | null;
 }
 
@@ -30,46 +28,87 @@ export interface ToAlmLaneObservedRunsInput {
     readonly commitSha: string;
     readonly event: string;
     readonly attempt: number;
+    readonly status: string;
+    /** Null while the run is in progress. */
+    readonly conclusion: string | null;
     readonly jobs: readonly AlmLaneReportedJob[];
     readonly artifacts: readonly AlmLaneResultArtifact[];
 }
 
 export interface AlmLaneObservedRunsReading {
     readonly runs: readonly AlmLaneObservedRun[];
-    /** What could not be read: an unknown event or carrier, and files refused or that did not decode. */
+    /** What could not be read: an unknown event or carrier, a carrier with no job, and files refused or undecodable. */
     readonly issues: readonly string[];
 }
-
-/** A decoded file before its identity is checked against the job. */
-type AlmLaneDecodedFile =
-    | { readonly kind: 'plan'; readonly fileName: string; readonly record: AlmLanePlanRecord; }
-    | { readonly kind: 'result'; readonly fileName: string; readonly record: AlmLaneFamilyResult; };
 
 interface AlmLaneJobRead {
     readonly carrier: AlmConformanceCarrier;
     readonly job: AlmLaneReportedJob;
 }
 
-/** The artifacts the ledger downloads: each carrier's full-scope lane result. */
-export function resolveAlmLaneResultArtifactNames(artifactNames: readonly string[]): readonly string[] {
-    return artifactNames.filter((name) =>
-        ALM_CONFORMANCE_CARRIERS.some((carrier) => name.startsWith(toArtifactPrefix(carrier)))
+/** The artifacts the ledger reads: each carrier's full-scope lane result, expired or not. */
+export function resolveAlmLaneResultArtifacts<T extends AlmLaneListedArtifact>(artifacts: readonly T[]): readonly T[] {
+    return artifacts.filter((artifact) =>
+        ALM_CONFORMANCE_CARRIERS.some((carrier) => artifact.name.startsWith(toAlmLaneResultArtifactPrefix(carrier)))
     );
 }
 
-/** One observed run per lane job; the carrier comes from the job's name, and each job reads its own artifact. */
+/**
+ * One observed run per lane job; the carrier comes from the job's name, and each job reads its own artifact. A run
+ * that was skipped yields nothing; a completed push or dispatched run yields a `not-read` run for each carrier with no
+ * job.
+ */
 export function toAlmLaneObservedRuns(input: ToAlmLaneObservedRunsInput): AlmLaneObservedRunsReading {
     const event = ALM_LANE_RUN_EVENTS.find((known) => known === input.event);
     if (event === undefined) {
         return { runs: [], issues: [`run ${input.runId}: event ${input.event} is not one the ledger reads.`] };
     }
-    const readings = input.jobs.flatMap((job) => toJobRead(input.runId, job)).map((read) =>
-        read.fold(
-            (issue): AlmLaneObservedRunsReading => ({ runs: [], issues: [issue] }),
-            (jobRead) => toObservedRun(input, event, jobRead)
-        )
-    );
+    if (input.conclusion === 'skipped') {
+        return { runs: [], issues: [] };
+    }
+    const jobReads = input.jobs.flatMap((job) => toJobRead(input.runId, job));
+    const readings = [
+        ...jobReads.map((read) =>
+            read.fold(
+                (issue): AlmLaneObservedRunsReading => ({ runs: [], issues: [issue] }),
+                (jobRead) => toObservedRun(input, event, jobRead)
+            )
+        ),
+        ...resolveCarriersWithoutJob(input, event, EitherCollectors.toListFoldRights(jobReads))
+            .map((carrier) => toNotReadRun(input, event, carrier))
+    ];
     return { runs: readings.flatMap((reading) => reading.runs), issues: readings.flatMap((reading) => reading.issues) };
+}
+
+function resolveCarriersWithoutJob(
+    input: ToAlmLaneObservedRunsInput,
+    event: AlmLaneRunEvent,
+    jobReads: readonly AlmLaneJobRead[]
+): readonly AlmConformanceCarrier[] {
+    if (input.status !== 'completed' || !ALM_LANE_EVENTS_WITH_EVERY_CARRIER.includes(event)) {
+        return [];
+    }
+    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => !jobReads.some((read) => read.carrier === carrier));
+}
+
+function toNotReadRun(
+    input: ToAlmLaneObservedRunsInput,
+    event: AlmLaneRunEvent,
+    carrier: AlmConformanceCarrier
+): AlmLaneObservedRunsReading {
+    return {
+        runs: [{
+            runId: input.runId,
+            commitSha: input.commitSha,
+            event,
+            attempt: input.attempt,
+            carrier,
+            jobConclusion: 'not-read',
+            plan: null,
+            familyResults: []
+        }],
+        issues: [`run ${input.runId} ${carrier}: no job of this carrier was read.`]
+    };
 }
 
 /** No reading for a job that is not a lane job, or a skipped one whose matrix name GitHub never expanded. */
@@ -93,15 +132,17 @@ function toObservedRun(
     read: AlmLaneJobRead
 ): AlmLaneObservedRunsReading {
     const toIssue = (issue: string) => `run ${input.runId} ${read.carrier}: ${issue}`;
-    const artifacts = input.artifacts.filter((artifact) => artifact.name.startsWith(toArtifactPrefix(read.carrier)));
+    const artifacts = input.artifacts.filter((artifact) =>
+        artifact.name.startsWith(toAlmLaneResultArtifactPrefix(read.carrier))
+    );
     const artifact = artifacts[0];
-    const decoded = (artifact?.files ?? []).map((file) => toDecodedFile(file, read.carrier));
+    const decoded = (artifact?.files ?? []).map((file) => decodeAlmLaneResultFile(file, read.carrier));
     const accepted = EitherCollectors.toListFoldRights(decoded);
     const plans = accepted.flatMap((file) => file.kind === 'plan' ? [file] : []);
     const results = accepted.flatMap((file) => file.kind === 'result' ? [file] : []);
     const issues = [
         ...(artifacts.length > 1 ? [toArtifactsIssue(artifacts)] : []),
-        ...(artifact?.files === null ? [`artifact ${artifact.name} could not be downloaded.`] : []),
+        ...(artifact === undefined ? [] : toArtifactIssues(artifact)),
         ...EitherCollectors.toListFoldLefts(decoded).flat(),
         ...plans.slice(1).map((plan) => `${plan.fileName} is a second plan.`),
         ...results.filter((result, index) =>
@@ -124,65 +165,15 @@ function toObservedRun(
     };
 }
 
-/** A file whose name ends in `-plan.json` is a plan; every other file is a family result. */
-function toDecodedFile(
-    file: AlmLaneResultFile,
-    carrier: AlmConformanceCarrier
-): Either<readonly string[], AlmLaneDecodedFile> {
-    return decodeAlmLaneFile(file).fold(
-        (issues) => Either.ofLeft(issues.map((issue) => `${file.fileName}${issue}`)),
-        (accepted) => validateIdentity(accepted, carrier)
-    );
-}
-
-/** Each issue reads after the file's name. */
-function decodeAlmLaneFile(file: AlmLaneResultFile): Either<readonly string[], AlmLaneDecodedFile> {
-    try {
-        return decodeAlmLaneFileValue(file.fileName, JSON.parse(file.text));
+function toArtifactIssues(artifact: AlmLaneResultArtifact): readonly string[] {
+    if (artifact.expired) {
+        return [`artifact ${artifact.name} has expired; history ends at artifact retention.`];
     }
-    catch {
-        return Either.ofLeft([' is not JSON.']);
-    }
-}
-
-/** A parsed file, read as a plan or a family result by its name. */
-function decodeAlmLaneFileValue(fileName: string, value: unknown): Either<readonly string[], AlmLaneDecodedFile> {
-    const toIssues = (issues: readonly string[]) => issues.map((issue) => `: ${issue}`);
-    if (fileName.endsWith('-plan.json')) {
-        return decodeAlmLanePlanRecord(value).mapBoth(
-            toIssues,
-            (record): AlmLaneDecodedFile => ({ kind: 'plan', fileName, record })
-        );
-    }
-    return decodeAlmLaneFamilyResult(value).mapBoth(
-        toIssues,
-        (record): AlmLaneDecodedFile => ({ kind: 'result', fileName, record })
-    );
-}
-
-function validateIdentity(
-    file: AlmLaneDecodedFile,
-    carrier: AlmConformanceCarrier
-): Either<readonly string[], AlmLaneDecodedFile> {
-    if (file.record.carrier === carrier && file.record.scope === ALM_LANE_LEDGER_SCOPE) {
-        return Either.ofRight(file);
-    }
-    const expected: Pick<AlmLaneRunIdentity, 'carrier' | 'scope'> = { carrier, scope: ALM_LANE_LEDGER_SCOPE };
-    return Either.ofLeft([
-        `${file.fileName} is for ${toIdentityText(file.record)}; the job is for ${toIdentityText(expected)}.`
-    ]);
-}
-
-function toIdentityText(identity: Pick<AlmLaneRunIdentity, 'carrier' | 'scope'>): string {
-    return `carrier ${identity.carrier} and scope ${identity.scope}`;
+    return artifact.files === null ? [`artifact ${artifact.name} could not be downloaded.`] : [];
 }
 
 function toArtifactsIssue(artifacts: readonly AlmLaneResultArtifact[]): string {
     return `${artifacts.length} result artifacts (${
         artifacts.map((artifact) => artifact.name).join(', ')
     }); read the first.`;
-}
-
-function toArtifactPrefix(carrier: AlmConformanceCarrier): string {
-    return `alm-lane-result-${carrier}-${ALM_LANE_LEDGER_SCOPE}-`;
 }

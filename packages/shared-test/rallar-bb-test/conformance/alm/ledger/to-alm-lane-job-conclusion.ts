@@ -1,4 +1,4 @@
-import type { AlmLaneJobConclusion } from './compute-alm-lane-ledger.ts';
+import type { AlmLaneJobConclusion } from './compute-alm-lane-run-reading.ts';
 
 /** A job as the GitHub jobs API reports it. */
 export interface AlmLaneReportedJob {

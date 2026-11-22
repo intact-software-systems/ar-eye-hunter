@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AlmLaneLedger } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-ledger.ts';
-import type { AlmLaneWorkflowRunCounts } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-workflow-runs.ts';
+import type { AlmLaneWorkflowRunWindow } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-workflow-runs.ts';
 import { toAlmLaneLedgerText } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-ledger-text.ts';
 
 const ledger: AlmLaneLedger = {
@@ -9,22 +9,54 @@ const ledger: AlmLaneLedger = {
         {
             carrier: 'ws',
             streak: 1,
+            runsRead: 3,
             lastRed: {
                 runId: 2,
                 commitSha: '2222222aaaaaaa',
+                attempt: 1,
+                jobConclusion: 'failure',
+                planRead: true,
+                reason: null,
                 failed: ['ws/two-agent/a'],
                 notRun: ['ws/three-agent/c']
             },
-            uncaused: ['ws/three-agent/c']
+            unattributed: [],
+            uncaused: ['ws/three-agent']
         },
-        { carrier: 'rtc', streak: 0, lastRed: { runId: 5, commitSha: '5555555bbbbbbb', failed: [], notRun: [] }, uncaused: [] },
-        { carrier: 'rtc-with-ws-fallback', streak: 0, lastRed: null, uncaused: [] }
+        {
+            carrier: 'rtc',
+            streak: 0,
+            runsRead: 1,
+            lastRed: {
+                runId: 5,
+                commitSha: '5555555bbbbbbb',
+                attempt: 2,
+                jobConclusion: 'success',
+                planRead: false,
+                reason: 'rerun',
+                failed: [],
+                notRun: []
+            },
+            unattributed: [{ runId: 5, commitSha: '5555555bbbbbbb', reason: 'rerun' }],
+            uncaused: ['rtc/run/5']
+        },
+        { carrier: 'rtc-with-ws-fallback', streak: 0, runsRead: 0, lastRed: null, unattributed: [], uncaused: [] }
     ],
-    scenarios: [
-        { scenario: 'ws/three-agent/c', failedRunIds: [], notRunRunIds: [2], hasCause: false },
-        { scenario: 'ws/two-agent/a', failedRunIds: [2, 1], notRunRunIds: [], hasCause: true }
+    keys: [
+        { key: 'ws/three-agent/c', failedRunIds: [], notRunRunIds: [2], cause: null },
+        {
+            key: 'ws/two-agent/a',
+            failedRunIds: [2, 1],
+            notRunRunIds: [],
+            cause: { key: 'ws/two-agent/a', cause: 'Known.', fixedByPullRequest: 851 }
+        },
+        {
+            key: 'ws/two-agent/b',
+            failedRunIds: [1],
+            notRunRunIds: [],
+            cause: { key: 'ws/two-agent/b', cause: 'Open.', fixedByPullRequest: null }
+        }
     ],
-    unattributedRedRunIds: [5],
     sideRuns: [
         { runId: 9, event: 'pull_request', carrier: 'ws', green: false },
         { runId: 10, event: 'workflow_dispatch', carrier: 'rtc-with-ws-fallback', green: true }
@@ -35,53 +67,58 @@ const ledger: AlmLaneLedger = {
     ]
 };
 
-const noRuns: AlmLaneWorkflowRunCounts = { push: 0, pullRequest: 0, dispatch: 0 };
+const window: AlmLaneWorkflowRunWindow = {
+    counts: { push: 2, pullRequest: 1, dispatch: 0 },
+    newestPushCommitSha: '9999999ccccccc',
+    oldestPushCommitSha: '1111111ddddddd'
+};
 
-const onePush: AlmLaneWorkflowRunCounts = { push: 1, pullRequest: 0, dispatch: 0 };
+const noRuns: AlmLaneWorkflowRunWindow = {
+    counts: { push: 0, pullRequest: 0, dispatch: 0 },
+    newestPushCommitSha: null,
+    oldestPushCommitSha: null
+};
 
 describe('toAlmLaneLedgerText', () => {
-    it('prints the streaks, the scenario table, the unattributed and side runs, and the issues', () => {
-        const text = toAlmLaneLedgerText({
-            ledger,
-            runCounts: { push: 2, pullRequest: 1, dispatch: 0 },
-            commitShas: ['9999999ccccccc', '5555555bbbbbbb', '1111111ddddddd'],
-            issues: ['run 9 ws: ws-full-plan.json is not JSON.']
-        });
+    it('prints the window, each carrier, the key table, the side and left-out runs, and the issues', () => {
+        const text = toAlmLaneLedgerText({ ledger, window, issues: ['run 9 ws: ws-full-plan.json is not JSON.'] });
 
         expect(text.split('\n')).toEqual([
-            'ALM lane ledger: read 2 main push, 1 pull-request and 0 dispatched runs; newest commit 9999999, oldest commit' +
-            ' 1111111.',
+            'ALM lane ledger: read 2 main push, 1 pull-request and 0 dispatched runs; main push runs from 9999999' +
+            ' (newest) to 1111111 (oldest).',
             '',
             'Streak of green main-push runs, per carrier:',
-            'ws: streak 1/10',
-            '  last red: run 2 at 2222222',
+            'ws: streak 1/10 of 3 runs read',
+            '  last red: run 2 at 2222222, attempt 1, job failure, plan read',
             '    failed:',
             '      ws/two-agent/a',
             '    not run:',
             '      ws/three-agent/c',
+            '  red runs with nothing to attribute: none',
             '  failures without a cause: 1',
-            'rtc: streak 0/10',
-            '  last red: run 5 at 5555555',
+            'rtc: streak 0/10 of 1 run read',
+            '  last red: run 5 at 5555555, attempt 2, job success, no plan read, nothing to attribute: rerun',
             '    failed: none',
             '    not run: none',
-            '  failures without a cause: 0',
-            'rtc-with-ws-fallback: streak 0/10',
+            '  red runs with nothing to attribute:',
+            '    run 5 at 5555555: rerun',
+            '  failures without a cause: 1',
+            'rtc-with-ws-fallback: streak 0/10 of 0 runs read',
+            '  red runs with nothing to attribute: none',
             '  failures without a cause: 0',
             '',
-            'Scenarios failed or not run in main-push runs:',
-            '  scenario          failed in  not run in  cause',
-            '  ws/three-agent/c  -          2           no',
-            '  ws/two-agent/a    2, 1       -           yes',
-            '',
-            'Red main-push runs with nothing to attribute:',
-            '  run 5',
+            'Keys failed or not run in main-push runs:',
+            '  key               failed in  not run in  cause',
+            '  ws/three-agent/c  -          2           none',
+            '  ws/two-agent/a    2, 1       -           #851',
+            '  ws/two-agent/b    1          -           open',
             '',
             'Pull-request and dispatched runs:',
             '  run  event              carrier               result',
             '  9    pull_request       ws                    red',
             '  10   workflow_dispatch  rtc-with-ws-fallback  green',
             '',
-            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job):',
+            'Jobs left out (running, skipped, or a cancelled pull-request job):',
             '  run  event         carrier  job',
             '  11   pull_request  rtc      in-progress',
             '  11   pull_request  ws       cancelled',
@@ -92,29 +129,27 @@ describe('toAlmLaneLedgerText', () => {
         ]);
     });
 
-    it('prints one line for each empty section', () => {
+    it('prints one line for each empty section, and a header with no main push run', () => {
         const empty: AlmLaneLedger = {
-            carriers: [{ carrier: 'ws', streak: 0, lastRed: null, uncaused: [] }],
-            scenarios: [],
-            unattributedRedRunIds: [],
+            carriers: [{ carrier: 'ws', streak: 0, runsRead: 0, lastRed: null, unattributed: [], uncaused: [] }],
+            keys: [],
             sideRuns: [],
             leftOutRuns: []
         };
 
-        expect(toAlmLaneLedgerText({ ledger: empty, runCounts: noRuns, commitShas: [], issues: [] }).split('\n')).toEqual([
-            'ALM lane ledger: read 0 main push, 0 pull-request and 0 dispatched runs.',
+        expect(toAlmLaneLedgerText({ ledger: empty, window: noRuns, issues: [] }).split('\n')).toEqual([
+            'ALM lane ledger: read 0 main push, 0 pull-request and 0 dispatched runs; no main push run read.',
             '',
             'Streak of green main-push runs, per carrier:',
-            'ws: streak 0/10',
+            'ws: streak 0/10 of 0 runs read',
+            '  red runs with nothing to attribute: none',
             '  failures without a cause: 0',
             '',
-            'Scenarios failed or not run in main-push runs: none.',
-            '',
-            'Red main-push runs with nothing to attribute: none.',
+            'Keys failed or not run in main-push runs: none.',
             '',
             'Pull-request and dispatched runs: none.',
             '',
-            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job): none.',
+            'Jobs left out (running, skipped, or a cancelled pull-request job): none.',
             '',
             'Issues met while reading: none.',
             ''
@@ -125,18 +160,35 @@ describe('toAlmLaneLedgerText', () => {
         const failed = Array.from({ length: 12 }, (_, index) => `ws/two-agent/s${String(index).padStart(2, '0')}`);
         const red: AlmLaneLedger = {
             ...ledger,
-            carriers: [{ carrier: 'ws', streak: 0, lastRed: { runId: 3, commitSha: '3333333', failed, notRun: [] }, uncaused: failed }]
+            carriers: [{
+                carrier: 'ws',
+                streak: 0,
+                runsRead: 1,
+                lastRed: {
+                    runId: 3,
+                    commitSha: '3333333',
+                    attempt: 1,
+                    jobConclusion: 'failure',
+                    planRead: true,
+                    reason: null,
+                    failed,
+                    notRun: []
+                },
+                unattributed: [],
+                uncaused: failed
+            }]
         };
 
-        const lines = toAlmLaneLedgerText({ ledger: red, runCounts: onePush, commitShas: ['3333333'], issues: [] }).split('\n');
+        const lines = toAlmLaneLedgerText({ ledger: red, window, issues: [] }).split('\n');
 
-        expect(lines.slice(3, 19)).toEqual([
-            'ws: streak 0/10',
-            '  last red: run 3 at 3333333',
+        expect(lines.slice(3, 20)).toEqual([
+            'ws: streak 0/10 of 1 run read',
+            '  last red: run 3 at 3333333, attempt 1, job failure, plan read',
             '    failed:',
             ...failed.slice(0, 10).map((key) => `      ${key}`),
             '      and 2 more',
             '    not run: none',
+            '  red runs with nothing to attribute: none',
             '  failures without a cause: 12'
         ]);
     });
@@ -144,7 +196,7 @@ describe('toAlmLaneLedgerText', () => {
     it('prints at most ten issues, then how many more there are', () => {
         const issues = Array.from({ length: 13 }, (_, index) => `issue ${index}`);
 
-        const lines = toAlmLaneLedgerText({ ledger, runCounts: onePush, commitShas: ['3333333'], issues }).split('\n');
+        const lines = toAlmLaneLedgerText({ ledger, window, issues }).split('\n');
 
         expect(lines.slice(lines.indexOf('Issues met while reading:'))).toEqual([
             'Issues met while reading:',

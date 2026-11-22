@@ -1,27 +1,26 @@
 import type {
     AlmLaneCarrierStreak,
+    AlmLaneFlakeCause,
+    AlmLaneKeyFailures,
     AlmLaneLedger,
     AlmLaneLeftOutRun,
     AlmLaneRedRun,
-    AlmLaneScenarioFailures,
     AlmLaneSideRun
 } from './compute-alm-lane-ledger.ts';
-import type { AlmLaneWorkflowRunCounts } from './compute-alm-lane-workflow-runs.ts';
+import type { AlmLaneWorkflowRunWindow } from './compute-alm-lane-workflow-runs.ts';
 
 /** The streak a carrier needs before its lane may become required. */
 const ALM_LANE_PROMOTION_STREAK = 10;
 
-/** How many entries of one list (a red run's keys, the issues) the text prints before it counts the rest. */
+/** How many entries of one list (a red run's keys, the unattributed runs, the issues) print before the rest count. */
 const ALM_LANE_PRINTED_LINES = 10;
 
 const SHORT_COMMIT_LENGTH = 7;
 
 export interface ToAlmLaneLedgerTextInput {
     readonly ledger: AlmLaneLedger;
-    readonly runCounts: AlmLaneWorkflowRunCounts;
-    /** The commit of each workflow run read, newest first. */
-    readonly commitShas: readonly string[];
-    /** What could not be read: undecodable files, mismatched identities. */
+    readonly window: AlmLaneWorkflowRunWindow;
+    /** What could not be read: undecodable files, mismatched identities, carriers with no job, expired artifacts. */
     readonly issues: readonly string[];
 }
 
@@ -29,16 +28,12 @@ export interface ToAlmLaneLedgerTextInput {
 export function toAlmLaneLedgerText(input: ToAlmLaneLedgerTextInput): string {
     const { ledger } = input;
     const sections = [
-        [toHeaderLine(input.runCounts, input.commitShas)],
+        [toHeaderLine(input.window)],
         ['Streak of green main-push runs, per carrier:', ...ledger.carriers.flatMap(toCarrierLines)],
-        toSection('Scenarios failed or not run in main-push runs', toScenarioLines(ledger.scenarios)),
-        toSection(
-            'Red main-push runs with nothing to attribute',
-            ledger.unattributedRedRunIds.map((runId) => `  run ${runId}`)
-        ),
+        toSection('Keys failed or not run in main-push runs', toKeyLines(ledger.keys)),
         toSection('Pull-request and dispatched runs', toSideRunLines(ledger.sideRuns)),
         toSection(
-            'Jobs left out (running, skipped, or a cancelled pull-request or dispatched job)',
+            'Jobs left out (running, skipped, or a cancelled pull-request job)',
             toLeftOutRunLines(ledger.leftOutRuns)
         ),
         toSection('Issues met while reading', toCappedLines(input.issues, '  '))
@@ -46,28 +41,42 @@ export function toAlmLaneLedgerText(input: ToAlmLaneLedgerTextInput): string {
     return `${sections.map((lines) => lines.join('\n')).join('\n\n')}\n`;
 }
 
-function toHeaderLine(counts: AlmLaneWorkflowRunCounts, commitShas: readonly string[]): string {
-    const newest = commitShas[0];
-    const oldest = commitShas.at(-1);
+function toHeaderLine(window: AlmLaneWorkflowRunWindow): string {
+    const { counts, newestPushCommitSha, oldestPushCommitSha } = window;
     const runs =
         `read ${counts.push} main push, ${counts.pullRequest} pull-request and ${counts.dispatch} dispatched runs`;
-    if (newest === undefined || oldest === undefined) {
-        return `ALM lane ledger: ${runs}.`;
+    if (newestPushCommitSha === null || oldestPushCommitSha === null) {
+        return `ALM lane ledger: ${runs}; no main push run read.`;
     }
-    return `ALM lane ledger: ${runs}; newest commit ${toShortCommit(newest)}, oldest commit ${toShortCommit(oldest)}.`;
+    const newest = toShortCommit(newestPushCommitSha);
+    const oldest = toShortCommit(oldestPushCommitSha);
+    return `ALM lane ledger: ${runs}; main push runs from ${newest} (newest) to ${oldest} (oldest).`;
 }
 
 function toCarrierLines(streak: AlmLaneCarrierStreak): readonly string[] {
+    const runsRead = `${streak.runsRead} run${streak.runsRead === 1 ? '' : 's'} read`;
+    const unattributed = streak.unattributed.map((run) =>
+        `run ${run.runId} at ${toShortCommit(run.commitSha)}: ${run.reason}`
+    );
     return [
-        `${streak.carrier}: streak ${streak.streak}/${ALM_LANE_PROMOTION_STREAK}`,
+        `${streak.carrier}: streak ${streak.streak}/${ALM_LANE_PROMOTION_STREAK} of ${runsRead}`,
         ...(streak.lastRed === null ? [] : toRedRunLines(streak.lastRed)),
+        ...(unattributed.length === 0
+            ? ['  red runs with nothing to attribute: none']
+            : ['  red runs with nothing to attribute:', ...toCappedLines(unattributed, '    ')]),
         `  failures without a cause: ${streak.uncaused.length}`
     ];
 }
 
 function toRedRunLines(red: AlmLaneRedRun): readonly string[] {
+    const facts = [
+        `attempt ${red.attempt}`,
+        `job ${red.jobConclusion}`,
+        red.planRead ? 'plan read' : 'no plan read',
+        ...(red.reason === null ? [] : [`nothing to attribute: ${red.reason}`])
+    ];
     return [
-        `  last red: run ${red.runId} at ${toShortCommit(red.commitSha)}`,
+        `  last red: run ${red.runId} at ${toShortCommit(red.commitSha)}, ${facts.join(', ')}`,
         ...toKeyListLines('failed', red.failed),
         ...toKeyListLines('not run', red.notRun)
     ];
@@ -89,16 +98,24 @@ function toCappedLines(entries: readonly string[], indent: string): readonly str
     ];
 }
 
-function toScenarioLines(scenarios: readonly AlmLaneScenarioFailures[]): readonly string[] {
+function toKeyLines(keys: readonly AlmLaneKeyFailures[]): readonly string[] {
     return toColumnLines([
-        ['scenario', 'failed in', 'not run in', 'cause'],
-        ...scenarios.map((failures) => [
-            failures.scenario,
+        ['key', 'failed in', 'not run in', 'cause'],
+        ...keys.map((failures) => [
+            failures.key,
             toRunIdsText(failures.failedRunIds),
             toRunIdsText(failures.notRunRunIds),
-            failures.hasCause ? 'yes' : 'no'
+            toCauseText(failures.cause)
         ])
     ]);
+}
+
+/** `none` without an entry, `open` while unfixed, and the fixing pull request's number once fixed. */
+function toCauseText(cause: AlmLaneFlakeCause | null): string {
+    if (cause === null) {
+        return 'none';
+    }
+    return cause.fixedByPullRequest === null ? 'open' : `#${cause.fixedByPullRequest}`;
 }
 
 function toSideRunLines(sideRuns: readonly AlmLaneSideRun[]): readonly string[] {
