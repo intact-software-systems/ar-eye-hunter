@@ -48,3 +48,17 @@ it('keeps the seat through other room membership and releases only the caller’
     await service.joinGroup(SCOPE, 'court', { actorPrincipalId: 'carol', requestId: 'carol-gets-free-seat' });
     expect((await groups.findRoomLobbyEntry(groupRef('court')))?.value.seats.map(seat => seat.principalId)).toEqual(['alice', 'carol']);
 });
+
+it('bounds and renews every private account row with a finite room lifetime', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    const groups = createTestGroupStateRepository(runtime);
+    const now = Date.now();
+    const service = createTestGroupStateService({ runtimeRepository: runtime, now: () => now, serviceId: 'test', randomId: () => crypto.randomUUID() });
+    await service.createGroup(SCOPE, { groupId: 'court', requestId: 'create', displayName: 'Court', kind: 'room', joinMode: 'open',
+        maxMembers: 3, expiresAtEpochMs: now + 60000, roomLobby: { returnWindowMs: 5000, claimWindowMs: 1000 }, createdByPrincipalId: 'alice' });
+    await service.joinGroup(SCOPE, 'court', { actorPrincipalId: 'bob', requestId: 'join-bob' });
+    expect((await groups.findLobbyCommitmentEntry(SCOPE, 'bob'))?.entry.expireAtTimestamp).toBe(now + 60000);
+    await service.updateGroup(SCOPE, 'court', { actorPrincipalId: 'alice', requestId: 'renew', expiresAtEpochMs: now + 120000 });
+    expect((await groups.findLobbyCommitmentEntry(SCOPE, 'bob'))?.entry.expireAtTimestamp).toBe(now + 120000);
+    expect((await groups.findRoomLobbyEntry(groupRef('court')))?.value.expiresAtEpochMs).toBe(now + 120000);
+});

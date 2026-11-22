@@ -1,4 +1,3 @@
-import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
 import { readRoomLobbyState } from '../../lobby/room-lobby-storage.ts';
 import { resolveGroupMutationTargetPrincipalId } from '../orchestration/resolve-group-mutation-target-identity.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
@@ -8,7 +7,7 @@ import type {
     GroupMutationRead,
     GroupMutationSnapshotRead
 } from '../group-mutation-contracts.ts';
-import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy, requiresRoomLobbyRead } from './group-mutation-read-scope.ts';
 import { readExactGroupMutation } from './read-exact-group-mutation.ts';
 import { readSequentialGroupMutation } from './read-sequential-group-mutation.ts';
 
@@ -84,20 +83,10 @@ async function readSequentialGroupMutationWithPolicy(
 }
 
 async function readLobbyForMutation(repository: GroupStateRepository, command: GroupMutationCommand, read: GroupMutationRead, lobbyDefault: boolean): Promise<GroupMutationRead> {
-    if (read.idempotency) return read;
+    if (!requiresRoomLobbyRead(command, read, lobbyDefault)) return read;
     const configures = command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure';
-    const creates = command.operation === 'createGroup' && (command.input.roomLobby !== undefined ? command.input.roomLobby !== null : lobbyDefault);
-    const relevant = creates || configures || (read.group && readRoomLobbyPolicy(read.group.value.metadata) && (
-        readsLobbyChange(command) || command.operation === 'updateGroup'
-    ));
-    if (!relevant) return read;
     const principalId = resolveGroupMutationTargetPrincipalId(command);
     const targets = configures ? read.activeMembers?.map(member => member.principalId) ?? [] : [];
-    const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets);
+    const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets, command.operation === 'createGroup' ? 'expired' : 'active');
     return { ...read, roomLobby };
-}
-
-function readsLobbyChange(command: GroupMutationCommand): boolean {
-    return 'targetPrincipalId' in command || command.operation === 'connectPresence' ||
-        command.operation === 'disconnectPresence';
 }

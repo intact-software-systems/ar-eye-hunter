@@ -36,6 +36,8 @@ export namespace RoomLobby {
 }
 
 export interface RoomLobby {
+    readonly activationId: string;
+    readonly expiresAtEpochMs: number | null;
     readonly roomRef: GroupRef;
     readonly capacity: number;
     readonly policy: RoomLobby.Policy;
@@ -53,9 +55,11 @@ export interface RoomLobbyAccountView {
     } | null;
 }
 
-export function createRoomLobby(roomRef: GroupRef, capacity: number, policy: RoomLobby.Policy): RoomLobby {
+export function createRoomLobby(roomRef: GroupRef, capacity: number, policy: RoomLobby.Policy, activationId: string, expiresAtEpochMs: number | null = null): RoomLobby {
+    if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
+    requireString(activationId, 'Room lobby activation');
     return {
-        roomRef: decodeExactGroupRef(roomRef, 'Room lobby'), capacity: decodePositiveLobbyInteger(capacity, 'Lobby capacity'),
+        activationId, expiresAtEpochMs, roomRef: decodeExactGroupRef(roomRef, 'Room lobby'), capacity: decodePositiveLobbyInteger(capacity, 'Lobby capacity'),
         policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: []
     };
 }
@@ -72,7 +76,10 @@ function decodeWindow(value: unknown, revision: number): RoomLobby.ReturnWindow 
 
 export function decodeRoomLobby(value: unknown): RoomLobby {
     const record = requireRecord(value, 'Room lobby');
-    requireExactKeys(record, ['roomRef', 'capacity', 'policy', 'revision', 'seats'], 'Room lobby');
+    requireExactKeys(record, ['activationId', 'expiresAtEpochMs', 'roomRef', 'capacity', 'policy', 'revision', 'seats'], 'Room lobby');
+    const expiresAtEpochMs = record.expiresAtEpochMs;
+    if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
+    requireString(record.activationId, 'Room lobby activation');
     const roomRef = decodeExactGroupRef(record.roomRef, 'Room lobby');
     const capacity = decodePositiveLobbyInteger(record.capacity, 'Lobby capacity');
     const policy = decodeRoomLobbyPolicy(record.policy);
@@ -99,7 +106,7 @@ export function decodeRoomLobby(value: unknown): RoomLobby {
     if (seats.some(seat => (seat.returnWindow !== null) !== (full && !seat.present))) {
         throw new TypeError('Return windows require a full roster');
     }
-    return { roomRef, capacity, policy, revision, seats };
+    return { activationId: record.activationId, expiresAtEpochMs, roomRef, capacity, policy, revision, seats };
 }
 
 export function projectRoomLobbySeat(roomRef: GroupRef, seat: RoomLobby.Seat | undefined): RoomLobbyAccountView['seat'] {

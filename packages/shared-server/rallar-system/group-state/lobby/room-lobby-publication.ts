@@ -8,8 +8,8 @@ import { computeViewInvalidationPublication, type ViewInvalidationPublication } 
 import { roomLobbyDeadlineRoute, type RoomLobbyDeadline } from './room-lobby-deadline.ts';
 
 interface RoomLobbyPublicationInput extends Pick<RoomLobbyDeadline, 'roomRef' | 'groupCreatedAtEpochMs'> {
-    readonly before: Pick<RoomLobby, 'seats' | 'revision'> | null;
-    readonly after: Pick<RoomLobby, 'seats' | 'revision'> | null;
+    readonly before: Pick<RoomLobby, 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
+    readonly after: Pick<RoomLobby, 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
     readonly createdAtEpochMs: number;
     readonly serviceId: string;
     readonly traceId: string;
@@ -29,17 +29,24 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
         principalIds: [...accounts].filter(id => !jsonEquals(
             projectRoomLobbySeat(roomRef, oldSeats.get(id)), projectRoomLobbySeat(roomRef, newSeats.get(id))
         )),
-        changeId: computeSha256CanonicalJson({ roomRef, groupCreatedAtEpochMs, before: before?.revision ?? null, after: after?.revision ?? null }),
+        changeId: computeSha256CanonicalJson({ roomRef, groupCreatedAtEpochMs, before: before && [before.activationId, before.revision], after: after && [after.activationId, after.revision] }),
         createdAtEpochMs: input.createdAtEpochMs,
         retentionMs: input.retentionMs,
         serviceId: input.serviceId,
         traceId: input.traceId
     });
-    const previous = new Set(lobbyWindows(before).keys());
+    const previous = before?.activationId === after?.activationId ? lobbyWindows(before) : new Map();
+    const deadlines: RoomLobbyDeadline[] = [];
+    if (after && after.expiresAtEpochMs !== null &&
+        (after.activationId !== before?.activationId || after.expiresAtEpochMs !== before.expiresAtEpochMs)) {
+        deadlines.push({ kind: 'room', roomRef, groupCreatedAtEpochMs, activationId: after.activationId, dueAtEpochMs: after.expiresAtEpochMs });
+    }
     const outbox = [...notices.outbox];
     for (const [key, window] of lobbyWindows(after)) {
-        if (previous.has(key)) continue;
-        const deadline: RoomLobbyDeadline = { roomRef, groupCreatedAtEpochMs, ...window };
+        if (!after || previous.has(key)) continue;
+        deadlines.push({ kind: 'seat', roomRef, groupCreatedAtEpochMs, activationId: after.activationId, ...window });
+    }
+    for (const deadline of deadlines) {
         outbox.push(computeAppOutboxSignal({
             ...roomLobbyDeadlineRoute(deadline),
             typeId: AppOutboxType.ROOM_LOBBY_DEADLINE,

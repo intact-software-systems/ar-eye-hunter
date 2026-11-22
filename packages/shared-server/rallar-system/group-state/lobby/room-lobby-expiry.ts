@@ -18,7 +18,7 @@ import type { GroupStateRepository } from '../persistence/group-state-repository
 import { GROUPS_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
 import { decodeRoomLobbyDeadline, installRoomLobbyDeadline, roomLobbyDeadlineRoute, type RoomLobbyDeadline } from './room-lobby-deadline.ts';
 import { computeRoomLobbyPublication } from './room-lobby-publication.ts';
-import { computeRoomLobbyEffects, readRoomLobbyState, type RoomLobbyRead } from './room-lobby-storage.ts';
+import { computeRoomLobbyEffects, readRoomLobbyCommitments, type RoomLobbyRead } from './room-lobby-storage.ts';
 
 export namespace RoomLobbyExpiry {
     export interface Dependencies {
@@ -33,7 +33,7 @@ export namespace RoomLobbyExpiry {
 
 interface ExpiryRead {
     readonly group: RuntimeStateEntryValue<Group> | null;
-    readonly state: RoomLobbyRead;
+    readonly state: Pick<RoomLobbyRead, 'accounts' | 'lobby'>;
     readonly command: RoomLobbyDeadline;
     readonly nowEpochMs: number;
     readonly traceId: string;
@@ -83,7 +83,7 @@ export class RoomLobbyExpiry {
         const nowEpochMs = this.dependencies.nowEpochMs();
         if (nowEpochMs < command.dueAtEpochMs) throw new Error('Lobby deadline is not due');
         const [group, state] = await Promise.all([
-            groups.findGroupEntry(command.roomRef), readRoomLobbyState(groups, command.roomRef, [])
+            groups.findGroupEntry(command.roomRef), readRoomLobbyCommitments(groups, command.roomRef, [], 'expired')
         ]);
         const read = { group: group ?? null, state, command, nowEpochMs, traceId: context.message.id.traceId, serviceId, retentionMs };
         const computed = computeExpiry(read);
@@ -101,19 +101,30 @@ export class RoomLobbyExpiry {
 function computeExpiry(read: ExpiryRead) {
     const { command, group, state, nowEpochMs } = read;
     const before = state.lobby?.value;
-    if (!before || group?.value.status !== 'active' || group.value.created.atEpochMs !== command.groupCreatedAtEpochMs) return null;
-    const { lobby } = changeRoomLobby(before, { kind: 'expire', generation: command.generation, dueAtEpochMs: command.dueAtEpochMs }, nowEpochMs);
+    if (!before || before.activationId !== command.activationId || group && group.value.created.atEpochMs !== command.groupCreatedAtEpochMs) return null;
+    if (command.kind === 'room' && before.expiresAtEpochMs !== command.dueAtEpochMs) return null;
+    if (command.kind === 'seat' && (group?.value.status !== 'active' || before.expiresAtEpochMs !== null && before.expiresAtEpochMs <= nowEpochMs)) return null;
+    const lobby = command.kind === 'room' ? null : changeRoomLobby(before, {
+        kind: 'expire', generation: command.generation, dueAtEpochMs: command.dueAtEpochMs
+    }, nowEpochMs).lobby;
     if (before === lobby) return null;
-    const [first, ...effects] = computeRoomLobbyEffects(state, lobby, command.roomRef);
-    if (first?.operation !== 'update-exact') throw new TypeError('Lobby expiry requires the observed lobby predecessor');
+    const [first, ...effects] = computeRoomLobbyEffects(state, lobby, command.roomRef, command.kind === 'room' ? 'expired' : 'active');
+    if (!state.lobby || !first || (first.operation !== 'update-exact' && first.operation !== 'delete')) {
+        throw new TypeError('Lobby expiry requires the observed lobby predecessor');
+    }
     const publication = computeRoomLobbyPublication({
         roomRef: command.roomRef, groupCreatedAtEpochMs: command.groupCreatedAtEpochMs,
         before, after: lobby, createdAtEpochMs: nowEpochMs, retentionMs: read.retentionMs, serviceId: read.serviceId, traceId: read.traceId
     });
-    const { effectId: _effectId, ...guard } = first;
+    const { effectId: _effectId, ...predecessor } = first;
+    // A raw TTL can evict the group. Fence the exact activation when expiring its durable lobby.
+    const guard = predecessor.operation === 'delete' ? {
+        ...predecessor, operation: 'update-exact' as const, expectedValue: state.lobby.entry.value,
+        value: state.lobby.entry.value, expireAtTimestamp: 0
+    } : predecessor;
     return {
         storage: { creation: null, inserts: [], batch: computeRuntimeStateGuardedBatchWrite({ guard, effects: [...effects, ...publication.provenance] }) },
-        group: computeRuntimeStateObservations([{ namespace: GROUPS_NAMESPACE, key: group.entry.key, entry: group.entry }]),
+        group: computeRuntimeStateObservations(group ? [{ namespace: GROUPS_NAMESPACE, key: group.entry.key, entry: group.entry }] : []),
         outbox: publication.outbox
     };
 }

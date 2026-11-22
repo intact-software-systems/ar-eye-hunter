@@ -264,7 +264,7 @@ function denyGroupParticipationCapacity(
     if (spectator && (member?.role === 'owner' || member?.role === 'admin')) {
         return denyGroupPolicy('forbidden-role', 'Transfer ownership or demote before watching.');
     }
-    if (!spectator && readRoomLobbyPolicy(snapshot.group.metadata) && !readGroupSessionSchedule(snapshot.group.metadata)) {
+    if (!spectator && readRoomLobbyPolicy(snapshot.group.metadata)) {
         return undefined; // The private lobby seats are checked in the admitting transaction.
     }
     const cap = spectator

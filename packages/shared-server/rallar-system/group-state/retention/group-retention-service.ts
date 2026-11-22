@@ -1,3 +1,5 @@
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
+import { readRoomLobbyCommitments, type RoomLobbyRead } from '../lobby/room-lobby-storage.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -56,6 +58,7 @@ export namespace GroupRetentionService {
         readonly idempotency: GroupMutationIdempotencyRecord | null;
         readonly retirementEntries: readonly GroupRetirementEntry[];
         readonly ownedAppData: readonly RoomOwnedAppData.Read[];
+        readonly lobby: Pick<RoomLobbyRead, 'accounts' | 'lobby'> | null;
         readonly sessionViewAudience: GroupSessionViewAudience | null;
         readonly publicationRetentionMs: number;
     }
@@ -82,7 +85,7 @@ export namespace GroupRetentionService {
         readonly groupOwnedAppData: Pick<RoomOwnedAppData, 'read'>;
         readonly repository: Pick<
             GroupStateRepository,
-            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt' | 'readRetirementEntries'
+            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt' | 'readRetirementEntries' | 'findRoomLobbyEntry' | 'findLobbyCommitmentEntry'
         >;
     }
 
@@ -128,7 +131,7 @@ export class GroupRetentionService {
         // Observe the surviving authority fence before inventories that can miss a concurrent insertion.
         // Missing-summary repairs and owned-save insertions advance it, forcing a fresh deletion attempt.
         const authority = await this.dependencies.repository.readPresenceSummaryEntries(ingress.command.groupRef);
-        const [idempotency, retirementEntries, ownedAppData, sessionViewAudience] = await Promise.all([
+        const [idempotency, retirementEntries, ownedAppData, sessionViewAudience, lobby] = await Promise.all([
             this.dependencies.repository.findIdempotentGroupMutationReceipt(
                 ingress.command.groupRef,
                 ingress.commandId
@@ -137,7 +140,10 @@ export class GroupRetentionService {
             this.dependencies.groupOwnedAppData.read(ingress.command.groupRef),
             authority.group === undefined || readGroupSessionSchedule(authority.group.value.metadata) === null
                 ? null
-                : readGroupSessionViewAudience(this.dependencies.runtime, ingress.command.groupRef, attemptAtEpochMs)
+                : readGroupSessionViewAudience(this.dependencies.runtime, ingress.command.groupRef, attemptAtEpochMs),
+            authority.group && readRoomLobbyPolicy(authority.group.value.metadata)
+                ? readRoomLobbyCommitments(this.dependencies.repository, ingress.command.groupRef, [])
+                : null
         ]);
         if (idempotency !== undefined && idempotency.commandHash !== ingress.commandHash) {
             throw new AppInboxIdempotencyConflictError(ingress.commandId, idempotency.commandHash, ingress.commandHash);
@@ -152,6 +158,7 @@ export class GroupRetentionService {
             retirementEntries,
             ownedAppData,
             sessionViewAudience,
+            lobby,
             publicationRetentionMs: this.config.finishedRetentionMs
         };
     }

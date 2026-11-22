@@ -1,4 +1,5 @@
-import type { GroupMutationCommand, GroupTopicSubscriptionOperation } from '../group-mutation-contracts.ts';
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import type { GroupMutationCommand, GroupMutationRead, GroupTopicSubscriptionOperation } from '../group-mutation-contracts.ts';
 import {
     isGroupAdmissionDecisionOperation,
     isGroupAdmissionPolicyReadOperation,
@@ -143,4 +144,33 @@ export function readsTargetPrincipalSubscriptions(command: GroupMutationCommand)
         command.operation === 'joinGroup' ||
         command.operation === 'acceptGroupInvite' ||
         command.operation === 'upsertMember';
+}
+
+/** Player admission, accepted presence, and lifetime/capacity changes share the private room authority. */
+export function requiresRoomLobbyRead(command: GroupMutationCommand, read: GroupMutationRead, lobbyDefault: boolean): boolean {
+    if (read.idempotency) return false;
+    if (command.operation === 'createGroup') {
+        return read.expiredGroupEntry !== null || (command.input.roomLobby === undefined ? lobbyDefault : command.input.roomLobby !== null);
+    }
+    if (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure') return true;
+    if (!read.group || !readRoomLobbyPolicy(read.group.value.metadata)) return false;
+    switch (command.operation) {
+        case 'updateGroup':
+            return command.input.roomLobby !== undefined || command.input.status !== null || command.input.kind !== null ||
+                command.input.maxMembers !== null || command.input.expiresAtEpochMs !== null || command.input.purgeAfterEpochMs !== null;
+        case 'connectPresence':
+        case 'disconnectPresence':
+        case 'changeGroupSession':
+        case 'joinGroup':
+        case 'acceptGroupInvite':
+        case 'upsertMember':
+        case 'grantGroupAdmission':
+        case 'setGroupMemberRole':
+        case 'transferGroupOwnership':
+        case 'banGroupMember':
+        case 'removeGroupMember':
+            return true;
+        default:
+            return false;
+    }
 }

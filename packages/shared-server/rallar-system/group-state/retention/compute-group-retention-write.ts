@@ -1,3 +1,5 @@
+import { computeRoomLobbyEffects } from '../lobby/room-lobby-storage.ts';
+import { computeRoomLobbyPublication } from '../lobby/room-lobby-publication.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     Group,
@@ -49,9 +51,15 @@ export function computeGroupRetentionWrite(
     }
     const event = toRetentionEvent(read, group);
     const publication = computeRetentionViewPublication(read, group);
+    const closedLobby = group.status !== 'active' ? read.lobby : null;
+    const lobbyPublication = computeRoomLobbyPublication({
+        roomRef: read.ingress.command.groupRef, groupCreatedAtEpochMs: group.created.atEpochMs,
+        before: closedLobby?.lobby?.value ?? null, after: null, createdAtEpochMs: read.attemptAtEpochMs,
+        serviceId: read.ingress.serviceId, traceId: read.traceId, retentionMs: read.publicationRetentionMs
+    });
     const outboxWrites = [
         ...computeRetentionPresenceOutbox(read, event),
-        ...publication.outbox
+        ...publication.outbox, ...lobbyPublication.outbox
     ];
     const receipt = toGroupRetentionReceipt(read, {
         group,
@@ -63,7 +71,8 @@ export function computeGroupRetentionWrite(
         : group.status === 'archived'
         ? computeArchivePresenceFences(read)
         : [];
-    effects.push(computeRetentionReceiptEffect(read, receipt), ...publication.provenance);
+    if (closedLobby) effects.push(...computeRoomLobbyEffects(closedLobby, null, read.ingress.command.groupRef));
+    effects.push(computeRetentionReceiptEffect(read, receipt), ...publication.provenance, ...lobbyPublication.provenance);
     return {
         outcome: 'write',
         group,

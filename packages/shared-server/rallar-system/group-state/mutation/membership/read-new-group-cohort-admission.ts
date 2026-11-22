@@ -44,7 +44,7 @@ export async function readNewGroupCohortAdmission(
     }
     const create = toCohortCreateCommand(input, leader);
     const groupRead = (await readGroupMutation(input.groups, create, leader.sessionId)).read;
-    const roomLobby = input.roomLobbyDefault ? await readRoomLobbyState(input.groups, input.roomRef, input.participants.map(actor => actor.principalId)) : null;
+    const roomLobby = input.roomLobbyDefault ? await readRoomLobbyState(input.groups, input.roomRef, input.participants.map(actor => actor.principalId), 'expired') : null;
     const creation = {
         command: create,
         facts: admissionFacts(input, create),

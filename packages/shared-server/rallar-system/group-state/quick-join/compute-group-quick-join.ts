@@ -1,10 +1,11 @@
+import { countOnlineGroupPlayers } from '@shared/api/group-spectating.ts';
 import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
-import { compareGroupDirectoryOrder, matchesGroupDirectoryQuery } from '../directory/compute-group-directory-page.ts';
+import { compareDirectoryPositions, matchesGroupDirectoryQuery, projectRoomLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
 import { computeGroupStateInboxResult } from '../inbox/group-state-inbox-result.ts';
 import type { GroupMutationComputedWrite } from '../mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '../mutation/orchestration/compute-group-mutation.ts';
@@ -33,8 +34,17 @@ export function computeGroupQuickJoin(read: GroupQuickJoinRead): GroupQuickJoinC
             candidate.currentSnapshot !== undefined &&
             matchesGroupQuickJoin(candidate.currentSnapshot, read.command)
         )
-        .toSorted((left, right) => compareGroupDirectoryOrder(left.currentSnapshot, right.currentSnapshot));
-    for (const candidate of candidates) {
+        .map(candidate => {
+            const { currentSnapshot } = candidate;
+            const lobby = candidate.read.roomLobby?.lobby?.value;
+            const onlineMemberCount = lobby
+                ? projectRoomLobbyOccupancy(currentSnapshot, lobby, read.facts.attemptAtEpochMs).onlinePlayerCount
+                : countOnlineGroupPlayers(currentSnapshot);
+            return { candidate, position: { order: 'online-members' as const, groupId: currentSnapshot.group.groupId,
+                onlineMemberCount, peerRttMs: null } };
+        })
+        .toSorted((left, right) => compareDirectoryPositions(left.position, right.position));
+    for (const { candidate } of candidates) {
         const mutation = computeImmediatelyAdmittedJoin(candidate, read);
         if (mutation !== null) {
             return {

@@ -4,7 +4,7 @@ import { ResourceInboxHandlerFinalizedSuccess } from '@shared/queuebox/resource-
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { writeResourceInboxRetainedReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { assertValidRallarGroupRef } from '@shared/api/rallar-validation.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -14,28 +14,36 @@ import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface RoomLobbyDeadline {
+export interface RoomLobbyDeadlineIdentity {
     readonly roomRef: GroupRef;
+    readonly activationId: string;
     readonly groupCreatedAtEpochMs: number;
-    readonly generation: number;
     readonly dueAtEpochMs: number;
 }
 
+export type RoomLobbyDeadline = RoomLobbyDeadlineIdentity & (
+    { readonly kind: 'seat'; readonly generation: number } | { readonly kind: 'room' }
+);
+
 export function decodeRoomLobbyDeadline(value: unknown): RoomLobbyDeadline {
     const row = requireRecord(value, 'Room lobby deadline');
-    requireExactKeys(row, ['roomRef', 'groupCreatedAtEpochMs', 'generation', 'dueAtEpochMs'], 'Room lobby deadline');
+    const keys = ['kind', 'roomRef', 'activationId', 'groupCreatedAtEpochMs', 'dueAtEpochMs'];
+    requireExactKeys(row, row.kind === 'seat' ? [...keys, 'generation'] : keys, 'Room lobby deadline');
     const ref = requireRecord(row.roomRef, 'Room lobby deadline room');
     requireExactKeys(ref, ['applicationId', 'workspaceId', 'groupId'], 'Room lobby deadline room');
     const roomRef = assertValidRallarGroupRef(ref);
+    requireString(row.activationId, 'Lobby activation');
     requireEpoch(row.groupCreatedAtEpochMs, 'Room creation time');
-    requirePositiveInteger(row.generation, 'Lobby window generation');
     requireEpoch(row.dueAtEpochMs, 'Lobby window deadline');
-    return {
-        roomRef,
+    const identity = {
+        roomRef, activationId: row.activationId,
         groupCreatedAtEpochMs: row.groupCreatedAtEpochMs,
-        generation: Number(row.generation),
         dueAtEpochMs: row.dueAtEpochMs
     };
+    if (row.kind === 'room') return { ...identity, kind: 'room' };
+    if (row.kind !== 'seat') throw new TypeError('Unexpected lobby deadline kind');
+    requirePositiveInteger(row.generation, 'Lobby window generation');
+    return { ...identity, kind: 'seat', generation: Number(row.generation) };
 }
 
 export function roomLobbyDeadlineRoute(deadline: RoomLobbyDeadline) {
@@ -59,7 +67,7 @@ export function installRoomLobbyDeadline(input: {
             const route = roomLobbyDeadlineRoute(deadline);
             if (!jsonEquals(message.route, route) || message.id.msgId !== route.resourceId ||
                 message.payload.typeId !== AppOutboxType.ROOM_LOBBY_DEADLINE || message.targets !== undefined ||
-                deadline.dueAtEpochMs <= message.id.ts || message.constraints?.expiresAtMs !== NEVER_EXPIRE_AT_TIMESTAMP) {
+                message.constraints?.expiresAtMs !== NEVER_EXPIRE_AT_TIMESTAMP) {
                 throw new TypeError('Lobby deadline envelope differs from its window');
             }
             if (input.nowEpochMs() < deadline.dueAtEpochMs) throw new Error('Lobby window is still open');

@@ -86,7 +86,7 @@ export interface ApiV1RouteInstallerTopology {
     readonly topologyQuery: graphTopologyRoutes.GraphTopologyRouteQuery;
     readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
-    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry'> & Readonly<{
+    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry' | 'readLobbyOccupancy'> & Readonly<{
         readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     }>;
     readonly readPlannedLayoutFingerprint:
@@ -214,6 +214,7 @@ function createApiV1RouteConstruction<
     const requireSession = (request: ApiV1RouteAuthRequest) =>
         operations.requireApiAuthSession(request, runtime.authSessionRepository);
     const snapshots = createStateSnapshotReadRouteRegistrars(runtime, {
+        readLobbyOccupancy: (rooms, now) => input.topology.groupStateRepository.readLobbyOccupancy(rooms, now),
         requireApiAuthSession: operations.requireApiAuthSession
     }, {
         groupAdmission: input.groupAdmission,

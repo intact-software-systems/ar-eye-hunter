@@ -17,7 +17,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 
 import type { ApiV1Runtime } from '../../composition/api-v1-runtime.ts';
 import type { ApiV1GroupAdmissionConfiguration } from '../../configuration/api-v1-configuration.ts';
-import type { GroupStateRouteAuthSession } from '../../group-state/group-state-route-contracts.ts';
+import type { GroupStateRouteAuthSession, GroupStateRouteDependencies } from '../../group-state/group-state-route-contracts.ts';
 import * as groupStateRoutes from '../../group-state/register-group-state-routes.ts';
 import { createGroupAdmissionQuota } from '../../services/group-admission-rate-limit.ts';
 import { toApiMutationRouteFailure } from '../api-mutation-route-failure.ts';
@@ -73,6 +73,7 @@ export interface ApiV1StateSnapshotAuthRequest {
 }
 
 export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSnapshotRouteRuntime> {
+    readonly readLobbyOccupancy: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly requireApiAuthSession: (
         request: ApiV1StateSnapshotAuthRequest,
         repository: Runtime['authSessionRepository']
@@ -111,6 +112,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                readLobbyOccupancy: operations.readLobbyOccupancy,
                 sessionDirectory: runtime.groupStateService.sessionDirectory,
                 rtcRttRepository: runtime.topologyServices.rttRepository,
                 strictReadAuthorization: policy.strictReadAuthorization,

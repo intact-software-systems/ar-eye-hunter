@@ -22,7 +22,7 @@ describe('named room lobby seats', () => {
     });
 
     it('starts a return window on actual fill, cancels it on release, and ignores its obsolete wake after refill', () => {
-        const initial = createRoomLobby(roomRef, 2, policy);
+        const initial = createRoomLobby(roomRef, 2, policy, 'lobby-activation');
         const held = apply(initial, { kind: 'arrive', principalId: 'alice' }, 0);
         const away = apply(held, { kind: 'away', principalId: 'alice' }, 1);
         const pending = apply(away, { kind: 'reserve', principalId: 'bob' }, 2);
@@ -43,7 +43,7 @@ describe('named room lobby seats', () => {
     });
 
     it('releases all equally due seats, cancels later return windows on vacancy, and preserves other accounts', () => {
-        const initial = createRoomLobby(roomRef, 4, policy);
+        const initial = createRoomLobby(roomRef, 4, policy, 'lobby-activation');
         let lobby = initial;
         for (const principalId of ['alice', 'bob', 'claire', 'dan']) {
             lobby = apply(lobby, { kind: 'arrive', principalId }, 0);
@@ -57,7 +57,7 @@ describe('named room lobby seats', () => {
     });
 
     it('fences late arrivals at the inclusive deadline before a maintenance wake runs', () => {
-        const initial = createRoomLobby(roomRef, 1, policy);
+        const initial = createRoomLobby(roomRef, 1, policy, 'lobby-activation');
         const admitted = apply(initial, { kind: 'reserve', principalId: 'alice' }, 0);
         const late = changeRoomLobby(admitted, { kind: 'arrive', principalId: 'alice' }, 60_000);
         expect(late.rejection).toBe('admission-expired');
@@ -68,7 +68,7 @@ describe('named room lobby seats', () => {
     });
 
     it('reconciles actual occupancy on reconfiguration and preserves already displayed deadlines', () => {
-        const initial = createRoomLobby(roomRef, 3, policy);
+        const initial = createRoomLobby(roomRef, 3, policy, 'lobby-activation');
         const first = apply(initial, { kind: 'arrive', principalId: 'alice' }, 0);
         const two = apply(first, { kind: 'arrive', principalId: 'bob' }, 1);
         const away = apply(two, { kind: 'away', principalId: 'alice' }, 2);
@@ -84,8 +84,13 @@ describe('named room lobby seats', () => {
     });
 
     it('round trips a durable lobby and exposes only the requesting account in its own workspace', () => {
-        const initial = createRoomLobby(roomRef, 2, policy);
+        const initial = createRoomLobby(roomRef, 2, policy, 'lobby-activation');
         const reserved = apply(initial, { kind: 'reserve', principalId: 'alice' }, 10);
+        expect(reserved.expiresAtEpochMs).toBeNull();
+        const temporary = createRoomLobby(roomRef, 2, policy, 'temporary', 200);
+        expect(decodeRoomLobby(temporary).expiresAtEpochMs).toBe(200);
+        expect(reserved.activationId).toBe('lobby-activation');
+        expect(() => decodeRoomLobby({ ...reserved, activationId: '' })).toThrow();
         expect(decodeRoomLobby(JSON.parse(JSON.stringify(reserved)))).toEqual(reserved);
         expect(() => decodeRoomLobby({ ...reserved, seats: [...reserved.seats, ...reserved.seats] })).toThrow();
         const view = projectRoomLobbyAccount(scope, 'alice', reserved);

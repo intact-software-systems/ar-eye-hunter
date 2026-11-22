@@ -1,3 +1,4 @@
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import assert from 'node:assert/strict';
 
@@ -53,7 +54,7 @@ export async function createRetentionDatabaseFixture(): Promise<RetentionDatabas
     return Object.assign(clock, { storage, runtime, repository, mutations, retention, owner });
 }
 
-export async function seedRetentionRoom(fixture: RetentionDatabaseFixture, ref: GroupRef = RETENTION_REF): Promise<void> {
+export async function seedRetentionRoom(fixture: RetentionDatabaseFixture, ref: GroupRef = RETENTION_REF, lobbyPolicy?: RoomLobby.Policy): Promise<void> {
     const { computed } = await prepareMutation(
         fixture,
         mutationDescriptor({
@@ -68,6 +69,7 @@ export async function seedRetentionRoom(fixture: RetentionDatabaseFixture, ref: 
                 joinMode: 'open',
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
+                ...(lobbyPolicy && { maxMembers: 4, roomLobby: lobbyPolicy }),
                 retention: { mode: 'temporary', reconnectGraceMs: 1_000 }
             }
         })

@@ -170,7 +170,7 @@ function toGroupCapacityRefusal(next: Group, read: GroupMutationRead, nowEpochMs
         return 'Scheduled rooms require a player capacity of 1 to 64.';
     }
     const snapshot = toPolicySnapshot(read, next, nowEpochMs);
-    const occupiedSeats = lobby && !schedule ? 0 : schedule === null
+    const occupiedSeats = lobby ? 0 : schedule === null
         ? countGroupPlayers(snapshot)
         : countGroupSessionOccupiedSeats({
             schedule,

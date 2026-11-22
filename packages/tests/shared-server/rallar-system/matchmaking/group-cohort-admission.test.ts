@@ -110,3 +110,25 @@ it('carries the application lobby default and all three private seats through th
         }
     } finally { await fixture.storage.close(); }
 });
+
+it('rolls back the losing room when two writers reserve the same account from an empty predecessor', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const create = async (groupId: string) => {
+            const prepared = await fixture.prepare(mutationDescriptor({
+                operation: 'createGroup', scope: DESTINATION, groupId, request: {
+                    groupId, displayName: groupId, requestId: groupId, createdByPrincipalId: 'participant',
+                    joinMode: 'open', kind: 'room', maxMembers: 2, roomLobby: { returnWindowMs: 5000, claimWindowMs: 1000 }
+                }
+            }), 'participant');
+            return computeNewGroupCohortAdmission({ creation: prepared, participants: [] });
+        };
+        const one = await create('first-court');
+        const two = await create('second-court');
+        if (one.status !== 'admitted' || two.status !== 'admitted') throw new Error('Expected both candidates');
+        await fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, one.mutations[0]));
+        await expect(fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, two.mutations[0]))).rejects.toThrow();
+        expect(await fixture.repository.readSnapshot({ ...DESTINATION, groupId: 'second-court' })).toBeUndefined();
+        expect((await fixture.repository.findLobbyCommitmentEntry(DESTINATION, 'participant'))?.value.seat?.roomRef.groupId).toBe('first-court');
+    } finally { await fixture.storage.close(); }
+});
