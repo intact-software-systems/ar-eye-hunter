@@ -1,14 +1,11 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
-import {
-    toALGapRequestNumberField,
-    toALGrantedRelayHopsField,
-    type ALDeliveryCarrier
-} from '../../al-contracts/al-control-value-codec.ts';
+import { toALGapRequestNumberField, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -236,7 +233,7 @@ export function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffe
                     msgId: payload.msgId,
                     reason: payload.reason,
                     ...toALGapRequestNumberField(payload.gapRequestNumber),
-                    ...toALGrantedRelayHopsField(payload.reason),
+                    ...(payload.reason === 'gap' ? { relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT } : {}),
                     observedAtEpochMs: facts.observedAtEpochMs,
                     proof: null
                 })
