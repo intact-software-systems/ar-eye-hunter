@@ -1,4 +1,4 @@
-import { decodeRoomDirectorSuccessionCommand } from '@shared/api/group-director-succession.ts';
+import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
@@ -119,42 +119,32 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
 export function validateGroupMutationOperationInput(
     { operation, input }: GroupMutationOperationInput
 ): readonly TypeError[] {
+    const writesGroup = operation === 'createGroup' || operation === 'updateGroup';
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
-        ...(operation === 'createGroup' || operation === 'updateGroup'
+        ...(writesGroup
             ? [...validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock), ...validateGroupLobbyInput(operation, input.roomLobby)]
             : [])
     ];
     if (
-        (operation === 'createGroup' || operation === 'updateGroup') && typeof input.maxSpectators === 'number' &&
+        writesGroup && typeof input.maxSpectators === 'number' &&
         input.maxSpectators > 64
     ) {
         issues.push(new TypeError('Group maxSpectators must be at most 64'));
     }
     if (
-        (operation === 'createGroup' || operation === 'updateGroup') &&
+        writesGroup &&
         isGroupInputRecord(input.metadata) && Object.hasOwn(input.metadata, GROUP_SESSION_SCHEDULE_METADATA_KEY)
     ) {
         issues.push(new TypeError('Group session schedule metadata is server-owned; use the scheduling commands'));
     }
-    if (operation === 'appointDirector' && input.succession !== undefined) {
-        try {
-            decodeRoomDirectorSuccessionCommand(input.succession);
-        } catch (error) {
-            if (!(error instanceof TypeError)) throw error;
-            issues.push(error);
-        }
+    try {
+        if (operation === 'appointDirector' && input.succession !== undefined) decodeRoomDirectorSuccessionCommand(input.succession);
+        if (operation === 'changeGroupSession') assertGroupSessionChange(input);
     }
-    if (operation === 'changeGroupSession') {
-        try {
-            assertGroupSessionChange(input);
-        }
-        catch (error) {
-            if (!(error instanceof TypeError)) {
-                throw error;
-            }
-            issues.push(error);
-        }
+    catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        issues.push(error);
     }
     if (operation === 'connectGroup') {
         return [...issues, ...validateExpectedLayout(input.expectedLayout)];

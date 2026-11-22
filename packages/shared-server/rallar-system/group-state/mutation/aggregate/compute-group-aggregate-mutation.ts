@@ -1,4 +1,4 @@
-import { changeRoomDirectorSuccession, readRoomDirectorSuccession, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/group-director-succession.ts';
+import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
@@ -7,13 +7,9 @@ import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/r
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
-    createRallarGroupDirectorAppointment,
     isRallarGroupDirectorForSession,
-    mergeRallarGroupDirectorMetadata,
     RALLAR_GROUP_DIRECTOR_METADATA_KEY,
-    readRallarGroupDirectorAppointment,
-    readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility
+    readRallarGroupDirectorAppointment
 } from '@shared/api/group-director.ts';
 import {
     GROUP_DIRECTORY_LISTING_METADATA_KEY,
@@ -198,73 +194,6 @@ export function computeUpdate(
     });
 }
 
-export function computeDirector(
-    command: Extract<GroupMutationCommand, { operation: 'appointDirector'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.attemptAtEpochMs });
-    if (!active.allowed) {
-        return rejectedByGroupPolicy({ command, read, facts, denial: active });
-    }
-    const principalId = command.input.actorPrincipalId;
-    const sessionId = command.input.actorSessionId;
-    if (!principalId || !sessionId) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Forbidden: Cannot appoint a director without a local session.'
-        });
-    }
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
-    if (command.input.succession) {
-        const result = changeRoomDirectorSuccession({
-            snapshot, actor: { principalId, sessionId }, command: command.input.succession, nowEpochMs: facts.attemptAtEpochMs
-        });
-        if ('rejectionCode' in result) return rejected({ command, read, facts, ...result });
-        const group: Group = {
-            ...stored.value, metadata: result.metadata, snapshotVersion: stored.value.snapshotVersion + 1,
-            metadataVersion: stored.value.metadataVersion + 1, updated: auditStamp(command, facts, principalId)
-        };
-        return groupWrite({ command, read, facts, group, eventType: 'group-updated' });
-    }
-    if (readRoomDirectorSuccession(stored.value.metadata)) {
-        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected',
-            message: 'This room requires an epoch-fenced director succession command.' });
-    }
-    const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
-        snapshot,
-        principalId,
-        sessionId
-    });
-    if (!eligibility.allowed) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`
-        });
-    }
-    const appointment = createRallarGroupDirectorAppointment({
-        session: { clientId: principalId, sessionId },
-        previous: readRallarGroupDirectorFromSnapshot(snapshot),
-        now: facts.attemptAtEpochMs,
-        heartbeatTtlMs: command.input.heartbeatTtlMs
-    });
-    const next: Group = {
-        ...stored.value,
-        metadata: mergeRallarGroupDirectorMetadata(stored.value.metadata, appointment),
-        snapshotVersion: stored.value.snapshotVersion + 1,
-        metadataVersion: stored.value.metadataVersion + 1,
-        updated: auditStamp(command, facts, principalId)
-    };
-    return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
-}
-
 export function computeRotateJoinCode(
     command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode'; }>,
     read: GroupMutationRead,
@@ -313,7 +242,7 @@ export function computeRotateJoinCode(
     return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
 }
 
-function groupWrite(input: GroupWriteInput): GroupMutationComputed {
+export function groupWrite(input: GroupWriteInput): GroupMutationComputed {
     const { command, eventType, facts, group, read } = input;
     const stored = requireGroup(read, command.aggregateRef);
     return computeGroupMutationWriteResult({

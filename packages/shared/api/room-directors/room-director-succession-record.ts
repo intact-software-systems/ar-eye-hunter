@@ -1,5 +1,5 @@
-import type { ApiJsonObject } from './api-json-value.ts';
-import { requireEpoch, requireExactKeys, requireExactOptionalKeys, requireRecord, requireString } from './exact-object-decoding.ts';
+import type { ApiJsonObject } from '../api-json-value.ts';
+import { requireEpoch, requireExactKeys, requireExactOptionalKeys, requireRecord, requireString } from '../exact-object-decoding.ts';
 
 export const ROOM_DIRECTOR_SUCCESSION_METADATA_KEY = 'rallarDirectorSuccession';
 
@@ -28,14 +28,6 @@ export interface RoomDirectorSuccession extends RoomDirectorSuccession.Policy {
     readonly directorLeaseExpiresAtEpochMs: number | null;
     readonly spectatorDirectorEpoch: number | null;
     readonly loss: RoomDirectorSuccession.Loss | null;
-}
-
-function readPolicy(record: Record<string, unknown>): RoomDirectorSuccession.Policy {
-    const { reconnectWindowMs, deputyWindowMs, deputyPrincipalId } = record;
-    requireEpoch(reconnectWindowMs, 'Reconnect window');
-    requireEpoch(deputyWindowMs, 'Deputy window');
-    if (deputyPrincipalId !== null) requireString(deputyPrincipalId, 'Designated deputy');
-    return { reconnectWindowMs, deputyWindowMs, deputyPrincipalId };
 }
 
 export function decodeRoomDirectorSuccessionCommand(value: unknown): RoomDirectorSuccession.Command {
@@ -92,7 +84,11 @@ export function readRoomDirectorSuccession(metadata: ApiJsonObject | undefined):
         requireEpoch(spectatorDirectorEpoch, 'Appointed spectator epoch');
         if (!spectatorDirectorEpoch) throw new TypeError('Invalid spectator epoch');
     }
-    return { revision: record.revision, ...readPolicy(record), directorLeaseExpiresAtEpochMs, spectatorDirectorEpoch, loss: decodeDirectorLoss(record.loss) };
+    const { reconnectWindowMs, deputyWindowMs, deputyPrincipalId } = record;
+    requireEpoch(reconnectWindowMs, 'Reconnect window');
+    requireEpoch(deputyWindowMs, 'Deputy window');
+    if (deputyPrincipalId !== null) requireString(deputyPrincipalId, 'Designated deputy');
+    return { revision: record.revision, reconnectWindowMs, deputyWindowMs, deputyPrincipalId, directorLeaseExpiresAtEpochMs, spectatorDirectorEpoch, loss: decodeDirectorLoss(record.loss) };
 }
 
 export function storeRoomDirectorSuccession(metadata: ApiJsonObject, state: RoomDirectorSuccession, leaseRenewal = false): ApiJsonObject {

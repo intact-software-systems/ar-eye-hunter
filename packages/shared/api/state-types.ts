@@ -1,4 +1,4 @@
-import type { RoomDirectorSuccession } from './group-director-succession.ts';
+import type { RoomDirectorSuccession } from './room-directors/room-director-succession-record.ts';
 import type { RoomLobby } from './room-lobbies/room-lobby.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 import type {

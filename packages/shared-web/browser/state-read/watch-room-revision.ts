@@ -1,19 +1,25 @@
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import type { Group, GroupEventType, GroupRef } from '@shared/api/group-types.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import type { RallarRoomEventOptions } from '../rooms/rallar-room-contracts.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { parseGroupStateDeltaEnvelope } from '../state-cache/group-state-delta-application.ts';
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
-import type { CreateBrowserRallarRoomsInput } from './browser-rallar-rooms.ts';
-import { captureRoomSession } from './room-session-fence.ts';
+import { readStateGroupSnapshot } from './point-read.ts';
+import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
+import { captureRoomSession } from '../rooms/room-session-fence.ts';
 
-interface WatchRoomRevisionInput<T> {
+export interface ObservedRoomMetadata {
+    readonly snapshotVersion: number;
+    readonly metadata: ApiJsonObject;
+}
+
+interface WatchRoomRevisionInput<T> extends Pick<RallarRoomEventOptions, 'eventTypes'> {
     readonly room: GroupRef;
     readonly services: Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'ws' | 'auth' | 'roomEvents'>;
     readonly signal?: AbortSignal;
-    readonly eventTypes?: readonly GroupEventType[];
-    project(group: Group): T | null;
+    project(group: ObservedRoomMetadata): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
     regresses(previous: T, next: T): boolean;
     meaningful?(previous: T, next: T): boolean;
@@ -25,7 +31,7 @@ export function explicitRoomRef(room: GroupRef): GroupRef {
     return { ...room };
 }
 
-export async function readObservedRoom(roomRef: GroupRef, requireSession: CreateBrowserRallarRoomsInput['requireSession'], signal?: AbortSignal): Promise<Group> {
+export async function readObservedRoom(roomRef: GroupRef, requireSession: CreateBrowserRallarRoomsInput['requireSession'], signal?: AbortSignal): Promise<ObservedRoomMetadata> {
     const room = explicitRoomRef(roomRef);
     const fence = captureRoomSession(requireSession, signal);
     fence.assertCurrent();

@@ -1,5 +1,6 @@
+import type { RoomDirectorOperations } from '@shared-web/browser/director/room-director-operations.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import type { RoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
+import type { RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -48,7 +49,7 @@ it('recovers durable director policy on foreground without issuing idle reads or
     let stored = state;
     const fetch = vi.fn(async () => response({ rallarDirectorSuccession: stored }, stored.revision));
     vi.stubGlobal('fetch', fetch);
-    const observed: unknown[] = [];
+    const observed: RoomDirectorOperations.Observation[] = [];
     const stop = rooms.watchDirector(room, observation => observed.push(observation));
     try {
         await vi.waitFor(() => expect(observed.at(-1)).toMatchObject({ status: 'current', value: { succession: state } }));

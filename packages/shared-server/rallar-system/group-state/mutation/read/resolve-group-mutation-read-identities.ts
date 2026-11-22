@@ -26,3 +26,9 @@ export function resolveGroupMutationReadIdentities(
         targetSessionId: resolveGroupMutationTargetSessionId(command)
     };
 }
+
+/** A managed appointment reads the acting session's admission; ordinary appointments test owner presence. */
+export function directorAuthorityAdmissionPrincipal(command: GroupMutationCommand, ownerPrincipalId: string | null | undefined): string | null {
+    if (command.operation !== 'appointDirector') return null;
+    return command.input.succession ? command.input.actorPrincipalId : (ownerPrincipalId ?? null);
+}

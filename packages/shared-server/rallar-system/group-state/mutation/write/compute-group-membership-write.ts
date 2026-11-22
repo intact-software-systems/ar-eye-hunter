@@ -1,4 +1,4 @@
-import { observeRoomDirectorMembership } from '@shared/api/group-director-succession.ts';
+import { observeRoomDirectorMembership } from '@shared/api/room-directors/room-director-succession-presence.ts';
 import type { Group, GroupEventType, GroupMember } from '@shared/api/group-types.ts';
 
 import type {

@@ -1,5 +1,7 @@
 import { isRallarGroupDirectorSessionActive, readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
-import { changeRoomDirectorSuccession, observeRoomDirectorLoss, observeRoomDirectorPresence, observeRoomDirectorMembership, readRoomDirectorSuccession, recoverRoomDirector, type RoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
+import { observeRoomDirectorLoss, observeRoomDirectorPresence, observeRoomDirectorMembership, recoverRoomDirector } from '@shared/api/room-directors/room-director-succession-presence.ts';
+import { readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
+import { changeRoomDirectorSuccession } from '@shared/api/room-directors/change-room-director-succession.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { expect, it } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -42,14 +44,15 @@ it('orders director recovery, exclusive deputy claim and organizer override by t
     const lost = { ...configured, group: { ...configured.group, metadata } };
     const claim = { operation: 'claim-deputy', expectedDirectorEpoch: 1 } as const;
     expect(isRallarGroupDirectorSessionActive(lost, readRallarGroupDirectorFromSnapshot(lost), 51)).toBe(false);
-    expect(readRoomDirectorSuccession(recoverRoomDirector(metadata, 'first', 'first', 79))?.loss).toBeNull();
-    expect(recoverRoomDirector(metadata, 'first', 'first', 80)).toBe(metadata);
+    expect(readRoomDirectorSuccession(recoverRoomDirector(metadata, { principalId: 'first', sessionId: 'first' }, 79))?.loss).toBeNull();
+    expect(recoverRoomDirector(metadata, { principalId: 'first', sessionId: 'first' }, 80)).toBe(metadata);
     expect(act(lost, 'deputy', claim, 79)).toHaveProperty('rejectionCode');
     expect(act(lost, 'other', claim, 80)).toHaveProperty('rejectionCode');
     expect(act(lost, 'deputy', claim, 100)).toHaveProperty('rejectionCode');
     const replacement = accept(lost, 'deputy', claim, 80);
     expect(readRallarGroupDirectorFromSnapshot(replacement)).toMatchObject({ principalId: 'deputy', epoch: 2 });
     expect(isRallarGroupDirectorSessionActive(replacement, readRallarGroupDirectorFromSnapshot(replacement), 81)).toBe(true);
+    expect(isRallarGroupDirectorSessionActive(replacement, readRallarGroupDirectorFromSnapshot(appointed), 81)).toBe(false);
     expect(act(replacement, 'deputy', claim, 81)).toHaveProperty('rejectionCode', 'room-director-changed');
     const declined = accept(lost, 'deputy', { operation: 'decline-deputy', expectedDirectorEpoch: 1 }, 81);
     expect(act(declined, 'deputy', claim, 82)).toHaveProperty('rejectionCode');
@@ -72,11 +75,11 @@ it('derives a missed absence from the last confirmed lease and refuses a return 
     const initial = accept(players(), 'owner', appoint, 1);
     const configured = accept(initial, 'owner', { operation: 'configure', expectedRevision: 1, expectedDirectorEpoch: 1,
         deputyPrincipalId: 'deputy', reconnectWindowMs: 30, deputyWindowMs: 20 }, 2);
-    const healthy = observeRoomDirectorPresence(configured.group.metadata, 'first', 'first', 20, 60500);
+    const healthy = observeRoomDirectorPresence(configured.group.metadata, { principalId: 'first', sessionId: 'first', expiresAtEpochMs: 60500 }, 20);
     const health = readRoomDirectorSuccession(healthy)!;
     expect(health.directorLeaseExpiresAtEpochMs).toBe(60500);
     expect(health.revision).toBe(2);
-    const expired = observeRoomDirectorPresence(healthy, 'first', 'first', 60530, 61000);
+    const expired = observeRoomDirectorPresence(healthy, { principalId: 'first', sessionId: 'first', expiresAtEpochMs: 61000 }, 60530);
     expect(readRoomDirectorSuccession(expired)?.loss).toMatchObject({ lostAtEpochMs: 60500, reconnectUntilEpochMs: 60530 });
     const stillPresent = { ...configured, group: { ...configured.group, metadata: healthy },
         activeSessions: configured.activeSessions.map(session => ({ ...session, expiresAtEpochMs: 61000 })) };
@@ -85,9 +88,9 @@ it('derives a missed absence from the last confirmed lease and refuses a return 
 
 it('records a shortened accepted lease and loses the director immediately on an already-due renewal', () => {
     const appointed = accept(players(), 'owner', appoint, 1);
-    const shorter = observeRoomDirectorPresence(appointed.group.metadata, 'first', 'first', 100, 500);
+    const shorter = observeRoomDirectorPresence(appointed.group.metadata, { principalId: 'first', sessionId: 'first', expiresAtEpochMs: 500 }, 100);
     expect(readRoomDirectorSuccession(shorter)?.directorLeaseExpiresAtEpochMs).toBe(500);
-    const due = observeRoomDirectorPresence(shorter, 'first', 'first', 200, 200);
+    const due = observeRoomDirectorPresence(shorter, { principalId: 'first', sessionId: 'first', expiresAtEpochMs: 200 }, 200);
     expect(readRoomDirectorSuccession(due)?.loss?.lostAtEpochMs).toBe(200);
 });
 
@@ -98,8 +101,8 @@ it('revokes a demoted director immediately and clears a departed deputy’s excl
     const member = configured.members.find(member => member.principalId === 'first')!;
     const revoked = observeRoomDirectorMembership(configured.group.metadata, { ...member, role: 'spectator' }, 50);
     expect(readRoomDirectorSuccession(revoked)?.loss).toMatchObject({ lostAtEpochMs: 50, reconnectUntilEpochMs: 50 });
-    expect(recoverRoomDirector(revoked, 'first', 'first', 49)).toBe(revoked);
-    expect(recoverRoomDirector(revoked, 'first', 'first', 50)).toBe(revoked);
+    expect(recoverRoomDirector(revoked, { principalId: 'first', sessionId: 'first' }, 49)).toBe(revoked);
+    expect(recoverRoomDirector(revoked, { principalId: 'first', sessionId: 'first' }, 50)).toBe(revoked);
     const deputy = configured.members.find(member => member.principalId === 'deputy')!;
     const cleared = observeRoomDirectorMembership(revoked, { ...deputy, status: 'removed', joined: null, left: null, banned: null, removed: deputy.updated }, 51);
     expect(readRoomDirectorSuccession(cleared)).toMatchObject({ deputyPrincipalId: null, loss: { declined: true } });

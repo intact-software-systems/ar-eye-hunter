@@ -46,7 +46,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
-import { createRoomDirectorOperations, type RoomDirectorOperations } from './room-director-operations.ts';
+import { createRoomDirectorOperations, type RoomDirectorOperations } from '../director/room-director-operations.ts';
 import { createRoomTimeOperations, type RoomTimeOperations } from './time/room-time-operations.ts';
 import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
 import { createRoomFormation } from './formation/create-room-formation.ts';
