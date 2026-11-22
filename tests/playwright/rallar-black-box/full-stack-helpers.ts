@@ -41,6 +41,7 @@ import type {
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { closeParticipantContext } from './close-participant-context.ts';
+import { readControlGetResponse } from './read-control-get-response.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
 import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
@@ -554,8 +555,8 @@ export async function readControlRun(
     request: APIRequestContext,
     runId: string
 ): Promise<ControlRunSnapshot> {
-    const response = await request.get(
-        `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
+    const response = await readControlGetResponse(async () =>
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`)
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);
@@ -599,8 +600,8 @@ export async function exportControlRunArtifacts(
     request: APIRequestContext,
     runId: string
 ): Promise<ControlRunArtifactBundle> {
-    const response = await request.get(
-        `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
+    const response = await readControlGetResponse(async () =>
+        await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`)
     );
     const body = await readDisposedResponse(response, async (read) => {
         expect(read.ok()).toBe(true);
