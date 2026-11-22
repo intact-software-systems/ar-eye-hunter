@@ -1068,13 +1068,6 @@ and it has no status list.
   for a fresh receiver ruled "latest-wins tracks enter"). Options: the record
   names the earlier prior for a superseded unsent sequence, or the repair
   answer is read as an omission.
-- Mixed lifetimes on one held track (#868 final re-review): an expired buffered
-  copy next to a sequence that never arrived still becomes a mid-track gap when
-  the hold ends (buffered 3 live, 4 expired, 6 live, 5 missing: the track
-  enters at 3 and 4 then reads missing). Moving the position past 4 alone is
-  not enough: when 5 then arrives, its delivery waits on 4, which no delivery
-  completes, and 5 and 6 are refused `resync-required`; the delivery progress
-  has no way to pass an expired copy after the released run.
 - A buffered copy is acknowledged at admission, and a retried duplicate of one
   is acknowledged `delivered` while still buffered (#868 lane and fix wave), so
   a receipt can read `acknowledged` for a stream start the app has not received.

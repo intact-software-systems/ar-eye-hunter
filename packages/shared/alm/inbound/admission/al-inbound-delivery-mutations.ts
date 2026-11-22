@@ -131,7 +131,8 @@ export function toALInboundDeliveryMutations(
             seq: plan.orderingRuntime.seq,
             msg: read.msg,
             plan,
-            carrier: toALDeliveryCarrier(read.source)
+            carrier: toALDeliveryCarrier(read.source),
+            completesThrough: plan.orderingRuntime.seq
         },
         expireAtTimestamp: resolveExpireAtTimestampWithFallback(
             resolveALMessageExpireAtMs(read.msg, plan.effective),

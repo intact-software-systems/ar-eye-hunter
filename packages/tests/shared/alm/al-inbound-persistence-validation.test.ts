@@ -128,7 +128,8 @@ function createBufferedSnapshot(): ALStoredInboundBufferedSnapshot {
         seq: 2,
         message: toMessageReference(message),
         plan: planMessage(message),
-        carrier: 'ws' as const
+        carrier: 'ws' as const,
+        completesThrough: 2
     };
 }
 
@@ -536,6 +537,22 @@ describe('inbound admission persisted values', () => {
 
         await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 3, nowMs: Date.now() })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it.each<[string, Readonly<{ completesThrough?: number; }>]>([
+        ['names no reach for its completion', {}],
+        ['completes through a sequence below its own', { completesThrough: 1 }]
+    ])('rejects a buffered snapshot that %s, at its own slot', async (_name, reach) => {
+        const { backend, store } = createFixture();
+        const { completesThrough: _completesThrough, ...unsaid } = createBufferedSnapshot();
+        const key = `inbound:buffered:${unsaid.trackKey}:2`;
+        await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
+            await transaction.set(key, { ...unsaid, ...reach });
+        });
+
+        await expect(store.readBufferedRelease({ trackKey: unsaid.trackKey, seq: 2, nowMs: Date.now() }))
+            .rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key });
     });
 
     it('rejects a buffered snapshot whose canonical message belongs to another ordering track', async () => {

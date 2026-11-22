@@ -53,13 +53,18 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         orderingSnapshot: read.orderingSnapshot,
         orderingAcceptance: entry,
         bufferedSnapshots: read.bufferedSnapshots.map((buffered) => {
+            // The run's last copy completes the track past the expired copies the position passed after it.
+            const reached = {
+                ...buffered,
+                completesThrough: entry.completesThrough[buffered.seq] ?? buffered.completesThrough
+            };
             if (buffered.seq === entry.observation.seq) {
-                return { ...buffered, plan };
+                return { ...reached, plan };
             }
             const priorSeq = entry.passedPriorSeqs[buffered.seq];
             // A copy released past expired ones waits on the released copy before it, as an omission waits on its prior.
-            return priorSeq === undefined ? buffered : {
-                ...buffered,
+            return priorSeq === undefined ? reached : {
+                ...reached,
                 plan: {
                     ...buffered.plan,
                     orderingRuntime: { ...buffered.plan.orderingRuntime, status: 'omitted', priorSeq }

@@ -28,7 +28,8 @@ export interface ComputeALOrderingHeldEntryInput {
 
 /**
  * Where a bounded hold ends its track: `entered` at the lowest live buffered copy, which is released with every live
- * successor the run reaches past only expired copies, or `passed` when every buffered copy expired, releasing nothing.
+ * successor the run reaches past only expired copies, the position also passing the expired copies after the run, or
+ * `passed` when every buffered copy expired, releasing nothing.
  */
 export type ALOrderingHeldEntry =
     | Readonly<{
@@ -40,6 +41,8 @@ export type ALOrderingHeldEntry =
         nextSnapshot: ALOrderingTrackSnapshot;
         /** Each released copy reached past expired ones, by its sequence: the released copy it now follows. */
         passedPriorSeqs: Readonly<Record<number, number>>;
+        /** The run's last copy, by its sequence, where expired copies follow it: the sequence its completion reaches. */
+        completesThrough: Readonly<Record<number, number>>;
     }>
     | Readonly<{ kind: 'passed'; trackKey: string; nextSnapshot: ALOrderingTrackSnapshot; }>;
 
@@ -94,16 +97,41 @@ export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInpu
         apply: true,
         role: 'recipient'
     });
-    return nextSnapshot === undefined || observation.seq === undefined ? undefined : {
+    if (nextSnapshot === undefined || observation.seq === undefined) {
+        return undefined;
+    }
+    const releasedThrough = nextSnapshot.lastContiguousSeq;
+    const lastContiguousSeq = computeExpiredRunEnd(releasedThrough, snapshot.bufferedSeqs, liveSeqs);
+    return {
         kind: 'entered',
         trackKey,
         msg: lowest,
-        observation: { ...observation, releasableSeqs: [observation.seq, ...observation.releasableSeqs] },
-        nextSnapshot,
+        observation: {
+            ...observation,
+            expectedSeq: lastContiguousSeq + 1,
+            lastContiguousSeq,
+            releasableSeqs: [observation.seq, ...observation.releasableSeqs]
+        },
+        nextSnapshot: { ...nextSnapshot, lastContiguousSeq },
         passedPriorSeqs: Object.fromEntries(
             Object.entries(passed).filter(([seq]) => observation.releasableSeqs.includes(Number(seq)))
-        )
+        ),
+        completesThrough: lastContiguousSeq > releasedThrough ? { [releasedThrough]: lastContiguousSeq } : {}
     };
+}
+
+/** The released run's end moved past each expired buffered copy that follows it: none of them will be delivered. */
+function computeExpiredRunEnd(
+    releasedThrough: number,
+    bufferedSeqs: readonly number[],
+    liveSeqs: readonly number[]
+): number {
+    const expired = new Set(bufferedSeqs.filter((seq) => !liveSeqs.includes(seq)));
+    let passedThrough = releasedThrough;
+    while (expired.has(passedThrough + 1)) {
+        passedThrough += 1;
+    }
+    return passedThrough;
 }
 
 /** Each live copy's own prior for this receiver, by its sequence; a copy without a record has none. */

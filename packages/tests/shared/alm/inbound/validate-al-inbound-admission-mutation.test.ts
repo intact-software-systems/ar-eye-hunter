@@ -194,11 +194,52 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
         const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
         const slot: ALInboundAdmissionMutation = {
             kind: 'set-buffered',
-            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc' },
+            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc', completesThrough: 9 },
             expireAtTimestamp: 1_000
         };
 
         expect(validateALInboundAdmissionMutation(progress, toMovingBundle([moved, slot, progress])))
             .toEqual(['Inbound admission candidate writes outside its original observations']);
+    });
+
+    describe('a completed delivery whose slot reaches past expired copies the bounded hold passed', () => {
+        /** The completion of entered copy 3, whose slot completes the track through 4, from progress at 0. */
+        function toCompletionBundle(completedThrough: number): readonly [ALInboundAdmissionMutation, ALInboundCommitBundle] {
+            const msg = newALMulticastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', contextId: 'room', resourceId: 'copy-3' },
+                groupRef: ROOM,
+                typeId: 'chat.v1',
+                resource: {},
+                options: { orderingKey: 'chat', seq: 3 }
+            });
+            const planned = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
+            const plan = { ...planned, orderingRuntime: { ...planned.orderingRuntime, status: 'entered' as const, trackKey, seq: 3 } };
+            const completion: ALInboundAdmissionMutation = {
+                kind: 'set-delivery-progress',
+                trackKey,
+                value: { completedThrough, expireAtTimestamp: 1_000 }
+            };
+            const bundle = toBundle();
+            return [completion, {
+                ...bundle,
+                mutations: [completion, { kind: 'delete-buffered', trackKey, seq: 3 }],
+                observations: {
+                    ...bundle.observations,
+                    buffered: { trackKey, seq: 3, msg, plan, carrier: 'rtc', completesThrough: 4, ownerRetainUntilMs: 1_000 },
+                    deliveryProgress: { trackKey, value: { completedThrough: 0, expireAtTimestamp: 1_000 } }
+                }
+            }];
+        }
+
+        it('moves the progress through the reach its slot names', () => {
+            expect(validateALInboundAdmissionMutation(...toCompletionBundle(4))).toEqual([]);
+        });
+
+        it('refuses a completion that stops at its own sequence', () => {
+            expect(validateALInboundAdmissionMutation(...toCompletionBundle(3)))
+                .toEqual(['Inbound admission candidate writes outside its original observations']);
+        });
     });
 });

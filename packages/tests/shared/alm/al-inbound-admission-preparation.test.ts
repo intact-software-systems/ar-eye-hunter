@@ -188,6 +188,7 @@ describe('inbound admission preparation boundary', () => {
                 msg: message,
                 plan: prepared.plan,
                 carrier: 'ws' as const,
+                completesThrough: 1,
                 ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
             },
             supersedence: {},
@@ -730,6 +731,7 @@ function toBufferedReleaseRead(
             msg: message,
             plan: prepared.plan,
             carrier: 'ws',
+            completesThrough: 1,
             ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
         },
         supersedence: {},

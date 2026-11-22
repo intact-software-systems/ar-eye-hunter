@@ -520,6 +520,24 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(await readPendingInboundWork(fixture)).toEqual([]);
     });
 
+    it('passes an expired copy after the released run, so only the sequence never received stays missing, and delivers it and its successor when it arrives', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        const askedBefore = gapControls(fixture).length;
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);

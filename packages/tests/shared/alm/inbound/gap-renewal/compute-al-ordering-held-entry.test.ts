@@ -29,7 +29,8 @@ describe('the bounded hold: a track opened at its start whose last gap renewal w
                 priorSeq: 1
             },
             nextSnapshot: { lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 },
-            passedPriorSeqs: {}
+            passedPriorSeqs: {},
+            completesThrough: {}
         });
     });
 
@@ -71,6 +72,20 @@ describe('the bounded hold: a track opened at its start whose last gap renewal w
             passedPriorSeqs: { 5: 3 }
         });
         expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 5, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
+    it('passes an expired copy after the released run, and the run\'s last copy completes the track through it', () => {
+        const result = endHold({
+            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [3, 4, 6], updatedAtMs: 1_000 },
+            live: [recordedMessage(3, {}), recordedMessage(6, {})]
+        });
+
+        expect(result).toMatchObject({
+            kind: 'entered',
+            observation: { seq: 3, lastContiguousSeq: 4, expectedSeq: 5, releasableSeqs: [3] },
+            completesThrough: { 3: 4 }
+        });
+        expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 4, bufferedSeqs: [6], updatedAtMs: 1_001 });
     });
 
     it('passes every buffered sequence and releases nothing when every held copy expired', () => {

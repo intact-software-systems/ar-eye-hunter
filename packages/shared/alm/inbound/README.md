@@ -783,8 +783,15 @@ to 1.5) after the gap was revealed, so 7 to 10.5 s. The last run reads the track
 timer names, held or not). One rule,
 [`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts), over the timer's `heldStart` and the
 track's live buffered copies, ends it: the track passes every
-buffered sequence below its lowest live copy and enters at that copy; with no live copy (every held copy expired) it
-passes every buffered sequence and releases nothing, so its next copy follows in order. A buffered copy is live only
+buffered sequence below its lowest live copy and enters at that copy, releasing it and each live successor the run
+reaches across nothing but expired copies, and its position also passes the expired copies right after that run (none
+will be delivered), so only a sequence never received stays a gap; with no live copy (every held copy expired) it
+passes every buffered sequence and releases nothing, so its next copy follows in order. A buffered slot records the
+sequence its completed delivery moves the progress through (`completesThrough`, a required slot field: its own
+`seq`, and for the run's last copy the end of the expired copies passed after it), so completing that copy completes
+the passed ones too and the next copy, in order after them, is delivered; one rule,
+[`computeALInboundDeliveryCompletion`](./admission/al-inbound-delivery-progress.ts), beside the omission's jump to its
+prior, reads it for every completion and for the bundle validator. A buffered copy is live only
 while its message lives: its slot is written with the message's own expiry and every rewrite of it takes a release
 row's, which is that expiry too.
 [`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts) commits an entry as an entered

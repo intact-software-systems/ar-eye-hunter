@@ -939,7 +939,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observations: read.observations,
             mutations: [{
                 kind: 'set-buffered',
-                snapshot: { trackKey, seq: 2, msg: buffered, plan: read.prePlan, carrier: 'ws' },
+                snapshot: { trackKey, seq: 2, msg: buffered, plan: read.prePlan, carrier: 'ws', completesThrough: 2 },
                 expireAtTimestamp: Date.now() + 60_000
             }],
             durableEffects: [work]
