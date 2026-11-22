@@ -344,8 +344,9 @@ relay forwards a child's gap NACK about such a stored message without one, each 
 nothing (6c). It sends it one relay hop lower to its current upstream peer, or to the peer the message arrived from
 when none resolves. It admits one from a child (one it forwards the message to, or one the accepted layout of the
 message's room names), never that peer, naming
-a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's own track; the
-origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and its child lost is
+a recipient of the message's frozen audience, when one is frozen, and the message's own track; whom a NACK about a
+message that froze no audience speaks for the origin judges, by the recipient's signature. The origin answers a repeat
+of a numbered request `duplicate`. A sequence the relay already forwarded and its child lost is
 repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
 naming this relay a next hop, is passed down again as a retried forward to the next hops it would go to were it new,
 and a child that holds it reads a duplicate and answers nothing. Nothing tells a repair copy from another copy of the

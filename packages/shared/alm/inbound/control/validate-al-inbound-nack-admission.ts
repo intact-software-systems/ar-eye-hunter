@@ -102,9 +102,10 @@ export function isALInboundRelayChild(
 /**
  * Every reason a child's gap NACK about a message that asked for no receipt may not be forwarded without a row (6c): it
  * comes from a child of this relay (one it forwards the message to, or one its accepted layout names), never the peer
- * the message arrived from; it names a recipient of the message's frozen audience, or, with none frozen, only the child
- * itself; it names the message's track with the hints the origin repairs by; and it has a relay hop to spend and
- * speaks for another recipient than this relay.
+ * the message arrived from; it names a recipient of the message's frozen audience, when one is frozen; it names the
+ * message's track with the hints the origin repairs by; and it has a relay hop to spend and speaks for another
+ * recipient than this relay. Whom a NACK about a message that froze no audience speaks for the origin judges, by the
+ * recipient's signature.
  */
 export function validateALInboundUnreceiptedGapNackAdmission(
     read: ALInboundUnreceiptedGapNackAdmissionRead
@@ -120,9 +121,6 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     }
     if (frozenPeerIds !== undefined && !frozenPeerIds.includes(nack.logicalRecipientPeerId)) {
         issues.push(OUTSIDE_FROZEN_AUDIENCE);
-    }
-    if (frozenPeerIds === undefined && nack.logicalRecipientPeerId !== nack.fromPeerId) {
-        issues.push(rejectInboundNack('Inbound NACK speaks for another recipient of a message that froze no audience'));
     }
     if (!hasGapOrderingHints(nack)) {
         issues.push(MISSING_GAP_ORDERING_HINTS);

@@ -142,6 +142,9 @@ const LEAF_BELOW_CARRYING_B_WITHOUT_R: SessionNextHops = { a: ['b'], b: ['a', 'c
 /** `r` carries the track to `b`, which relays it to the leaf `c` and to a second subscriber `d`. */
 const LEAF_BELOW_B_BELOW_R: SessionNextHops = { a: ['r'], r: ['a', 'b'], b: ['r', 'c', 'd'], c: ['b'], d: ['b'] };
 
+/** The leaf `c` below the relay `b`, itself below the relay `r`, with no other session. */
+const LEAF_BELOW_B_BELOW_R_ALONE: SessionNextHops = { a: ['r'], r: ['a', 'b'], b: ['r', 'c'], c: ['b'] };
+
 /** `r` carries the track to `b`, which relays it to the leaf `c`; `u`, beside `r` below the origin, carries nothing. */
 const B_BELOW_R_BESIDE_U: SessionNextHops = { a: ['r', 'u'], r: ['a', 'b'], u: ['a'], b: ['r', 'c'], c: ['b'] };
 
@@ -553,6 +556,48 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
 
         expect([unsigned, signed, departed]).toEqual([['rejected', 'missing-proof'], ['committed'], ['rejected', 'unknown-key']]);
         expect(await readRepairRequesters(origin, missing)).toEqual(['c']);
+    });
+
+    it('repairs a leaf two relays below the origin on a room broadcast that froze no audience: each relay passes the gap NACK on (ruling 20)', async () => {
+        const tree = LEAF_BELOW_B_BELOW_R_ALONE;
+        const gap = await createGapChain({
+            ack: 'none',
+            originLayout: tree,
+            relayChildPeerIds: ['b'],
+            relayLayout: createOriginOverlay(tree.r!, tree),
+            secondRelay: { neighbourPeerIds: ['r', 'c'], initialOverlay: createOriginOverlay(tree.b!, tree) },
+            leaf: { neighbourPeerIds: ['b'], initialOverlay: createOriginOverlay(tree.c!, tree) }
+        });
+        const b = gap.secondRelay!;
+        const frames = await publishUnfrozenTrack(gap.chain.origin, [1, 2, 3]);
+        await deliverEach(frames, gap.relay, 'a');
+        await passDown(gap.relay, 'b', b, 'r', frames.length);
+        await drainUntil(async () => (await b.readSent('c')).length >= frames.length);
+        await deliverEach((await b.readSent('c')).filter((copy) => copy.ordering?.seq !== 2), gap.leaf, 'b');
+        await drainUntil(async () => findGapNack(await gap.leaf.readSent('b')) !== undefined);
+
+        await deliverEach(await gap.leaf.readSent('b'), b, 'c');
+        await drainUntil(async () => findGapNack(await b.readSent('r')) !== undefined);
+        await deliverEach(await b.readSent('r'), gap.relay, 'b');
+        await drainUntil(async () => findGapNack(await gap.relay.readSent('a')) !== undefined, 40);
+        const relayed = readGapNackMessage(await gap.relay.readSent('a'));
+        const outcomes = await acceptEachAtOrigin(gap, [relayed]);
+        const toRelay = gap.chain.origin.channels.r!.sent;
+        const sentToRelay = toRelay.indexOf(frames[2]!) + 1;
+        await drainUntil(() => toRelay.length > sentToRelay);
+        const passedToB = (await gap.relay.readSent('b')).length;
+        await deliverEach(toRelay.slice(sentToRelay), gap.relay, 'a');
+        await drainUntil(async () => (await gap.relay.readSent('b')).length > passedToB);
+        const passedToC = (await b.readSent('c')).length;
+        await deliverEach((await gap.relay.readSent('b')).slice(passedToB), b, 'r');
+        await drainUntil(async () => (await b.readSent('c')).length > passedToC);
+        await deliverEach((await b.readSent('c')).slice(passedToC), gap.leaf, 'b');
+        await drainUntil(() => gap.leaf.delivered.filter((message) => frames.includes(message)).length >= frames.length);
+
+        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', logicalRecipientPeerId: 'c', relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT - 2 });
+        expect([...outcomes.values()]).toEqual(['committed']);
+        expect(gap.leaf.delivered.filter((message) => message.payload.typeId === frames[0]!.payload.typeId).map((message) => message.ordering?.seq))
+            .toEqual([1, 2, 3]);
     });
 
     it('refuses at the relay a gap NACK from the neighbour the message arrived from', async () => {
@@ -1307,29 +1352,42 @@ async function toSigningRefusedCrypto(crypto: AvailablePublicationCrypto): Promi
 
 /** The origin's seq 2 and 3 of a room broadcast that asks for no receipt and froze no audience, each sent `r`. */
 async function publishUnfrozenFrames(origin: RtcOriginOverlayFixture): Promise<readonly [ALMessage, ALMessage]> {
-    const toUnfrozenFrame = (seq: number): ALMessage =>
-        newALBroadcastMessage({
-            scope: 'room',
-            createdAtEpochMs: Date.now(),
-            senderId: 'a',
-            route: { topicId: 'room.chat', resourceId: `unfrozen-${seq}`, contextId: ORIGIN_ROOM.groupId },
-            typeId: 'room.chat.v1',
-            resource: { text: `unfrozen ${seq}` },
-            options: {
-                groupRef: ORIGIN_ROOM,
-                ack: 'none',
-                reliability: 'at-least-once',
-                ttlMs: 30_000,
-                ordering: { orderingKey: 'chat', epoch: 1, seq }
-            }
-        });
     const frames = [toUnfrozenFrame(2), toUnfrozenFrame(3)] as const;
+    await publishEachToRelay(origin, frames);
+    return frames;
+}
+
+/** The origin's `seqs` of a room broadcast that asks for no receipt and froze no audience, each sent `r`, as sent. */
+async function publishUnfrozenTrack(origin: RtcOriginOverlayFixture, seqs: readonly number[]): Promise<readonly ALMessage[]> {
+    const sentBefore = origin.channels.r!.sent.length;
+    await publishEachToRelay(origin, seqs.map(toUnfrozenFrame));
+    return origin.channels.r!.sent.slice(sentBefore);
+}
+
+async function publishEachToRelay(origin: RtcOriginOverlayFixture, frames: readonly ALMessage[]): Promise<void> {
     for (const frame of frames) {
         const sentBeforeFrame = origin.channels.r!.sent.length;
         expect((await origin.manager.enqueueLegIfAbsent(frame, 'hold')).verdict.kind).toBe('admitted');
         await drainUntil(() => origin.channels.r!.sent.length > sentBeforeFrame);
     }
-    return frames;
+}
+
+function toUnfrozenFrame(seq: number): ALMessage {
+    return newALBroadcastMessage({
+        scope: 'room',
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: { topicId: 'room.chat', resourceId: `unfrozen-${seq}`, contextId: ORIGIN_ROOM.groupId },
+        typeId: 'room.chat.v1',
+        resource: { text: `unfrozen ${seq}` },
+        options: {
+            groupRef: ORIGIN_ROOM,
+            ack: 'none',
+            reliability: 'at-least-once',
+            ttlMs: 30_000,
+            ordering: { orderingKey: 'chat', epoch: 1, seq }
+        }
+    });
 }
 
 /** The relay receives the origin's copies of `seqs`; any other is lost on `a→r`. */

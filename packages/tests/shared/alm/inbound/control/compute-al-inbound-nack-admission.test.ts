@@ -438,12 +438,11 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
             .toEqual([{ code: 'unauthorized', message: 'Inbound NACK comes from no child this relay forwards the message to' }]);
     });
 
-    it('forwards only a child\'s own word for a message that froze no audience', () => {
+    it('forwards a child\'s own gap NACK and one it relayed for a recipient below it, for a message that froze no audience', () => {
         const broadcast = { mode: 'broadcast', scope: 'room', groupRef: ROOM } as const;
 
         expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' }, broadcast))).toEqual([]);
-        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }, broadcast)))
-            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK speaks for another recipient of a message that froze no audience' }]);
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }, broadcast))).toEqual([]);
     });
 
     it('refuses a gap NACK naming another track than the message\'s', () => {
