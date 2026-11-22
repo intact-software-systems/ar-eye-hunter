@@ -32,24 +32,25 @@ export function changeRoomDirectorSuccession(input: DirectorChangeInput): Direct
     if (snapshot.group.kind !== 'room' || snapshot.group.status !== 'active' || !actorMember) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Director succession requires active room membership.' };
     }
-    if (command.operation === 'configure' || command.operation === 'appoint') {
-        if (actorMember.role !== 'owner' && actorMember.role !== 'admin') {
-            return { rejectionCode: 'group-mutation-rejected', message: 'Only a room owner or admin can appoint or configure.' };
+    const organizerCommand = command.operation === 'configure' || command.operation === 'appoint';
+    if (organizerCommand && actorMember.role !== 'owner' && actorMember.role !== 'admin') {
+        return { rejectionCode: 'group-mutation-rejected', message: 'Only a room owner or admin can appoint or configure.' };
+    }
+    if (command.operation === 'configure') {
+        if (command.expectedRevision !== (readRoomDirectorSuccession(snapshot.group.metadata)?.revision ?? 0)) return { rejectionCode: 'room-director-changed', message: 'The succession policy has changed.' };
+        if (command.deputyPrincipalId !== null && command.deputyPrincipalId === previous?.principalId) return { rejectionCode: 'group-mutation-rejected', message: 'Designate someone other than the director as deputy.' };
+        if (command.deputyPrincipalId !== null && !snapshot.members.some(member =>
+            member.principalId === command.deputyPrincipalId && member.status === 'active')) {
+            return { rejectionCode: 'group-mutation-rejected', message: 'The deputy must be an active room member.' };
         }
-        if (command.operation === 'configure') {
-            if (command.expectedRevision !== (readRoomDirectorSuccession(snapshot.group.metadata)?.revision ?? 0)) return { rejectionCode: 'room-director-changed', message: 'The succession policy has changed.' };
-            if (command.deputyPrincipalId !== null && command.deputyPrincipalId === previous?.principalId) return { rejectionCode: 'group-mutation-rejected', message: 'Designate someone other than the director as deputy.' };
-            if (command.deputyPrincipalId !== null && !snapshot.members.some(member =>
-                member.principalId === command.deputyPrincipalId && member.status === 'active')) {
-                return { rejectionCode: 'group-mutation-rejected', message: 'The deputy must be an active room member.' };
-            }
-            const currentSession = previous && snapshot.activeSessions.find(session => session.principalId === previous.principalId &&
-                session.sessionId === previous.sessionId && session.status === 'active' && session.expiresAtEpochMs > nowEpochMs);
-            const configured = storeRoomDirectorSuccession(metadata, { ...state, deputyPrincipalId: command.deputyPrincipalId,
-                directorLeaseExpiresAtEpochMs: state.directorLeaseExpiresAtEpochMs ?? currentSession?.expiresAtEpochMs ?? null,
-                reconnectWindowMs: command.reconnectWindowMs ?? state.reconnectWindowMs, deputyWindowMs: command.deputyWindowMs ?? state.deputyWindowMs });
-            return { metadata: previous && !currentSession && !state.loss ? observeRoomDirectorLoss(configured, nowEpochMs) : configured };
-        }
+        const currentSession = previous && snapshot.activeSessions.find(session => session.principalId === previous.principalId &&
+            session.sessionId === previous.sessionId && session.status === 'active' && session.expiresAtEpochMs > nowEpochMs);
+        const configured = storeRoomDirectorSuccession(metadata, { ...state, deputyPrincipalId: command.deputyPrincipalId,
+            directorLeaseExpiresAtEpochMs: state.directorLeaseExpiresAtEpochMs ?? currentSession?.expiresAtEpochMs ?? null,
+            reconnectWindowMs: command.reconnectWindowMs ?? state.reconnectWindowMs, deputyWindowMs: command.deputyWindowMs ?? state.deputyWindowMs });
+        return { metadata: previous && !currentSession && !state.loss ? observeRoomDirectorLoss(configured, nowEpochMs) : configured };
+    }
+    if (command.operation === 'appoint') {
         return appoint(input, state, { principalId: command.targetPrincipalId, sessionId: command.targetSessionId });
     }
     const { loss } = state;
