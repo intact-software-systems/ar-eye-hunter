@@ -1,8 +1,3 @@
-import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
-import { mergeJoinCode } from '../../policy/group-join-code.ts';
-import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
-import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
-import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -26,7 +21,12 @@ import {
 } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
+import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
+import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
+import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { mergeJoinCode } from '../../policy/group-join-code.ts';
 
 import { toGroupCapacityRefusal } from './to-group-capacity-refusal.ts';
 
@@ -70,17 +70,40 @@ export function computeUpdate(
     const stored = requireGroup(read, command.aggregateRef);
     const lobbyChange = command.input.roomLobby;
     const privateParticipation = lobbyChange?.operation === 'release' || lobbyChange?.operation === 'wait';
-    if (lobbyChange && Object.entries(command.input).some(([key, value]) =>
-        !['roomLobby', 'actorPrincipalId', 'actorSessionId', 'reason'].includes(key) && value != null)) {
-        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'A room lobby change must be a separate update.' });
+    if (
+        lobbyChange &&
+        Object.entries(command.input).some(([key, value]) =>
+            !['roomLobby', 'actorPrincipalId', 'actorSessionId', 'reason'].includes(key) && value != null
+        )
+    ) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'A room lobby change must be a separate update.'
+        });
     }
     if (privateParticipation && !command.input.actorPrincipalId) {
-        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Releasing a seat requires its account.'
+        });
     }
     if (lobbyChange?.operation === 'wait' && !read.lobbyState?.lobby) {
-        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'This room has no lobby queue.' });
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'This room has no lobby queue.'
+        });
     }
-    const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
+    const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ??
+        command.input.roomDeadline?.expectedDirectorEpoch;
     if (directorEpoch !== undefined) {
         const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
         const refusal = refuseDirectorTimeChange({
@@ -120,25 +143,13 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        const roster = read.lobbyState?.lobby?.value;
-        const principalId = command.input.actorPrincipalId;
-        // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.
-        const places = roster && lobbyChange.operation === 'wait'
-            ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
-            : roster;
-        const committed = places?.seats.some(seat => seat.principalId === principalId) ||
-            places?.waiters.some(waiter => waiter.principalId === principalId);
-        if (lobbyChange.operation === 'wait' ? committed : !committed) {
-            return noOp(command, read, facts);
-        }
-        if (lobbyChange.operation === 'wait' && places?.registration.closed) {
-            return rejectedByGroupPolicy({
-                command, read, facts,
-                denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
-            });
-        }
-        // Serialize with room access changes while keeping the account, trace and request out of public room events.
-        return groupWrite({ command, read, facts, group: stored.value, eventType: null });
+        return computePrivateLobbyUpdate({
+            command,
+            read,
+            facts,
+            group: stored.value,
+            operation: lobbyChange.operation
+        });
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -150,7 +161,8 @@ export function computeUpdate(
             if (!Object.hasOwn(current.metadata, ROOM_LOBBY_METADATA_KEY)) {
                 metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: 0, atEpochMs: null };
             }
-        } else {
+        }
+        else {
             delete metadata[ROOM_LOBBY_METADATA_KEY];
             delete metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
         }
@@ -158,16 +170,48 @@ export function computeUpdate(
     }
     if (lobbyChange?.operation === 'set-registration-cutoff') {
         const observed = read.lobbyState?.lobby?.value;
-        if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
-        const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
-        if (updated.rejection) {
-            const rejectionCode = updated.rejection === 'revision-conflict' ? 'room-lobby-registration-revision-conflict' : 'group-mutation-rejected';
-            return rejected({command, read, facts, rejectionCode, message:'The registration cutoff has changed or closed.'});
+        if (!observed) {
+            return rejected({
+                command,
+                read,
+                facts,
+                rejectionCode: 'group-mutation-rejected',
+                message: 'Registration requires a managed room.'
+            });
         }
-        if (updated.lobby === observed) return noOp(command, read, facts);
-        const {revision, atEpochMs} = updated.lobby.registration;
-        next = {...next, metadata:{...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]:{revision, atEpochMs}}};
-        return groupWrite({ command, read, facts, group: next, eventType:'group-updated', revisedLobby: updated.lobby });
+        const updated = changeRoomLobby(observed, {
+            kind: 'set-registration-cutoff',
+            expectedRevision: lobbyChange.expectedRevision,
+            atEpochMs: lobbyChange.atEpochMs
+        }, facts.attemptAtEpochMs);
+        if (updated.rejection) {
+            const rejectionCode = updated.rejection === 'revision-conflict'
+                ? 'room-lobby-registration-revision-conflict'
+                : 'group-mutation-rejected';
+            return rejected({
+                command,
+                read,
+                facts,
+                rejectionCode,
+                message: 'The registration cutoff has changed or closed.'
+            });
+        }
+        if (updated.lobby === observed) {
+            return noOp(command, read, facts);
+        }
+        const { revision, atEpochMs } = updated.lobby.registration;
+        next = {
+            ...next,
+            metadata: { ...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]: { revision, atEpochMs } }
+        };
+        return groupWrite({
+            command,
+            read,
+            facts,
+            group: next,
+            eventType: 'group-updated',
+            revisedLobby: updated.lobby
+        });
     }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
@@ -203,6 +247,37 @@ export function computeUpdate(
             ? 'group-deleted'
             : 'group-updated'
     });
+}
+
+interface PrivateLobbyUpdate extends Pick<GroupWriteInput, 'read' | 'facts' | 'group'> {
+    readonly command: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>;
+    readonly operation: 'wait' | 'release';
+}
+
+function computePrivateLobbyUpdate(
+    { command, read, facts, group, operation }: PrivateLobbyUpdate
+): GroupMutationComputed {
+    const roster = read.lobbyState?.lobby?.value;
+    const principalId = command.input.actorPrincipalId;
+    // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.
+    const places = roster && operation === 'wait'
+        ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
+        : roster;
+    const committed = places?.seats.some((seat) => seat.principalId === principalId) ||
+        places?.waiters.some((waiter) => waiter.principalId === principalId);
+    if (operation === 'wait' ? committed : !committed) {
+        return noOp(command, read, facts);
+    }
+    if (operation === 'wait' && places?.registration.closed) {
+        return rejectedByGroupPolicy({
+            command,
+            read,
+            facts,
+            denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
+        });
+    }
+    // Serialize with room access changes while keeping the account, trace and request out of public room events.
+    return groupWrite({ command, read, facts, group, eventType: null });
 }
 
 export function computeDirector(
@@ -325,7 +400,7 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
-        ...(input.revisedLobby ? {revisedLobby:input.revisedLobby} : {}),
+        ...(input.revisedLobby ? { revisedLobby: input.revisedLobby } : {}),
         presenceSummaryWork: eventType === null ? 'none' : 'enqueue'
     });
 }
@@ -440,8 +515,12 @@ function computeUpdatedGroupMetadata(
     if (spectatorCapacity !== undefined) {
         metadata[GROUP_SPECTATOR_CAPACITY_METADATA_KEY] = spectatorCapacity;
     }
-    if (Object.hasOwn(current, ROOM_LOBBY_METADATA_KEY)) metadata[ROOM_LOBBY_METADATA_KEY] = current[ROOM_LOBBY_METADATA_KEY];
-    if (Object.hasOwn(current, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = current[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
+    if (Object.hasOwn(current, ROOM_LOBBY_METADATA_KEY)) {
+        metadata[ROOM_LOBBY_METADATA_KEY] = current[ROOM_LOBBY_METADATA_KEY];
+    }
+    if (Object.hasOwn(current, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) {
+        metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = current[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
+    }
     delete metadata[GROUP_RETENTION_METADATA_KEY];
     const retention = readGroupRetentionState(current);
     if (retention !== null) {
