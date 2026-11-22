@@ -7,9 +7,12 @@ import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
+import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundCommitBundle, ALInboundGapRenewalEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { resolveALInboundWorkDueAtMs, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
@@ -24,6 +27,7 @@ import { verifyTestALReceiptControl } from '../../../../al-control-test-payloads
 import { createAvailablePublicationCryptoFixture } from '../../../signature/publication-crypto-fixtures.ts';
 import { readInboundTestWorkDueAtMs } from '../../../wait-for-al-inbound-work.ts';
 import {
+    createInboundTestBackendStores,
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_EFFECT_PREPARATION,
@@ -52,6 +56,7 @@ const LATE_CLAIM_MS = 100;
 const COPY_EXPIRING_AT_END_TTL_MS = 7_050;
 /** Turns of the event loop each step gives the store, more than one engine pass needs. */
 const STORAGE_TURNS_PER_STEP = 100;
+const RENEWAL_NAMESPACE = 'gap-renewal';
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
 const RTC_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const CRYPTO = await createAvailablePublicationCryptoFixture();
@@ -72,6 +77,8 @@ interface RenewalFixtureInput {
     readonly carrier?: 'ws' | 'rtc';
     readonly receiptProofs?: ALInboundReceiptProofs;
     readonly retention?: ALRuntimeStoreRetentionConfig;
+    /** Absent, the fixture opens its own stores over `storage`. */
+    readonly stores?: ALInboundRuntimeStores;
 }
 
 interface OrderedMessageInput {
@@ -414,6 +421,25 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
     });
 
+    it('retains the copy that revealed the start range for its own lifetime only, and its timer still ends the hold', async () => {
+        const { backend, stores } = createInboundTestBackendStores({
+            namespace: RENEWAL_NAMESPACE,
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const fixture = createRenewalFixture('memory', { stores });
+        const second = recordedMessage(2, { ttlMs: SHORT_TTL_MS });
+        await fixture.runtime.admitIncomingMessage(second, INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        const reference = toALInboundMessageReference(second);
+
+        expect(readRowExpiry(backend, toALInboundMessageKey(RENEWAL_NAMESPACE, reference))).toBe(second.constraints?.expiresAtMs);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
     it('enters at the lowest held copy still live when the copy that revealed the gap has expired', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
@@ -509,8 +535,8 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
 function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixtureInput = {}): InboundTestRuntime {
     fixtureCount += 1;
     return createInboundTestRuntime({
-        stores: createInboundTestStores({
-            namespace: 'gap-renewal',
+        stores: input.stores ?? createInboundTestStores({
+            namespace: RENEWAL_NAMESPACE,
             storage,
             observer: createPassThroughIndexedDbOperationObserver(),
             dbName: input.dbName,
@@ -636,6 +662,11 @@ function createDirectRenewal(
         diagnostics: undefined,
         effectWorkerId: 'al-inbound:gap-renewal-direct'
     });
+}
+
+/** When the memory backend drops a row, read without expiring it. */
+function readRowExpiry(backend: ALAdmissionWorkBackend, key: string): number | undefined {
+    return backend instanceof InMemoryAdmissionBackend ? backend.peek(key)?.expireAtTimestamp : undefined;
 }
 
 function readOrderingPositions(fixture: InboundTestRuntime): readonly ALInboundRuntimeDiagnosticsEvent[] {

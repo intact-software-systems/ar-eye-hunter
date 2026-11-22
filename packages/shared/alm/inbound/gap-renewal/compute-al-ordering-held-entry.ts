@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
-import { isALOrderingSnapshotLive, toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { isALOrderingSnapshotLive, resolveALOrderingPriorSeq } from '../../../al-contracts/al-runtime.ts';
 import { computeALOrderingEntry } from '../../compute-al-ordering-observation.ts';
 import {
     isALOrderingTrackStartOwed,
@@ -13,15 +13,17 @@ export interface ALOrderingHeldStartRangeInput {
     readonly start: ALOrderingTrackStartInput;
 }
 
-export interface ComputeALOrderingHeldEntryInput extends ALOrderingHeldStartRangeInput {
+export interface ComputeALOrderingHeldEntryInput {
+    readonly trackKey: string;
+    /** Whether the timer holds the track's start, as the admission that armed it decided. */
+    readonly heldStart: boolean;
+    readonly selfPeerId: string;
     /** The track as the store holds it. */
     readonly snapshot: ALOrderingTrackSnapshot | undefined;
     /** The track's buffered copies whose slots are still live, in sequence order. */
     readonly live: readonly ALMessage[];
     readonly nowMs: number;
     readonly trackTtlMs: number;
-    /** Each buffered copy's own prior for this receiver, by its sequence; a copy without a record has none. */
-    readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
 }
 
 /**
@@ -43,8 +45,8 @@ export type ALOrderingHeldEntry =
 
 /**
  * Whether a gap timer holds a track's start: the range `1..p` the first copy of a track revealed where its record owed
- * the recipient the start. That timer lives for the track's ordering TTL, whatever its copy's lifetime, so the hold
- * always ends.
+ * the recipient the start. The admission that arms the timer decides it once and the timer carries it; that timer lives
+ * for the track's ordering TTL, whatever its copy's lifetime, so the hold always ends, and it retains no message.
  */
 export function isALOrderingHeldStartRange(input: ALOrderingHeldStartRangeInput): boolean {
     return input.range.from === 1 && isALOrderingTrackStartOwed(input.start);
@@ -54,19 +56,18 @@ export function isALOrderingHeldStartRange(input: ALOrderingHeldStartRangeInput)
  * The bounded hold. When the start range's last renewal falls due unanswered on a track that has delivered nothing
  * (position `0`), the track passes every buffered sequence whose copy expired and enters at its lowest live copy,
  * releasing it and each live successor the run reaches across nothing but expired copies; with no live copy it passes
- * every buffered sequence and releases nothing, so its next copy follows in order. A copy below the new position that arrives later is stale, as at any
- * entry. `undefined`, keeping today's behaviour, for a track that delivered something or a timer that holds no start.
+ * every buffered sequence and releases nothing, so its next copy follows in order. A copy below the new position that
+ * arrives later is stale, as at any entry. `undefined`, keeping today's behaviour, for a track that delivered something
+ * or a timer that holds no start. The track alone decides it: the admission that armed the timer decided the start was
+ * owed, so the copy that revealed it need not be held any more.
  */
 export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInput): ALOrderingHeldEntry | undefined {
-    const trackKey = toALOrderingTrackKey(input.start.msg);
+    const { trackKey } = input;
     const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
         ? input.snapshot
         : undefined;
     const passedSeq = snapshot?.bufferedSeqs.at(-1);
-    if (
-        trackKey === undefined || snapshot?.lastContiguousSeq !== 0 || passedSeq === undefined ||
-        !isALOrderingHeldStartRange(input)
-    ) {
+    if (!input.heldStart || snapshot?.lastContiguousSeq !== 0 || passedSeq === undefined) {
         return undefined;
     }
     const [lowest, ...successors] = input.live;
@@ -79,13 +80,17 @@ export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInpu
     }
     const liveSeqs = input.live.flatMap((copy) => copy.ordering?.seq ?? []);
     const passed = computePassedPriorSeqs(liveSeqs, snapshot.bufferedSeqs);
+    // An owed start held only where the copy's plan repairs gaps, is not latest-wins and its track was not evicted.
     const { observation, nextSnapshot } = computeALOrderingEntry({
-        ...input.start,
         msg: lowest,
+        selfPeerId: input.selfPeerId,
+        evictedTrack: false,
+        latestWins: false,
+        repairsGaps: true,
         snapshot: { ...snapshot, bufferedSeqs: successors.flatMap((copy) => copy.ordering?.seq ?? []) },
         nowMs: input.nowMs,
         trackTtlMs: input.trackTtlMs,
-        bufferedPriorSeqs: { ...input.bufferedPriorSeqs, ...passed },
+        bufferedPriorSeqs: { ...toBufferedPriorSeqs(input.live, input.selfPeerId), ...passed },
         apply: true,
         role: 'recipient'
     });
@@ -99,6 +104,15 @@ export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInpu
             Object.entries(passed).filter(([seq]) => observation.releasableSeqs.includes(Number(seq)))
         )
     };
+}
+
+/** Each live copy's own prior for this receiver, by its sequence; a copy without a record has none. */
+function toBufferedPriorSeqs(live: readonly ALMessage[], selfPeerId: string): Readonly<Record<number, number>> {
+    return Object.fromEntries(live.flatMap((copy) => {
+        const seq = copy.ordering?.seq;
+        const priorSeq = resolveALOrderingPriorSeq(copy, selfPeerId);
+        return seq === undefined || priorSeq === undefined ? [] : [[seq, priorSeq]];
+    }));
 }
 
 /** Each live copy whose every sequence back to the previous live copy is buffered and expired, by that copy's prior. */

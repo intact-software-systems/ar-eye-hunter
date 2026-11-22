@@ -4,8 +4,7 @@ import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../..
 import {
     resolveALOrderingPriorSeq,
     type ALOrderingObservationStatus,
-    type ALOrderingTrackSnapshot,
-    type ALSeqRange
+    type ALOrderingTrackSnapshot
 } from '../../al-contracts/al-runtime.ts';
 import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
@@ -27,7 +26,6 @@ import type {
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
-import { computeALOrderingHeldEntry, type ALOrderingHeldEntry } from './gap-renewal/compute-al-ordering-held-entry.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;
@@ -175,31 +173,6 @@ export function computeALInboundOrderingAcceptance(
     return {
         observation: { ...ordering.observation, status: 'resync-required', missingRanges: [], releasableSeqs: [] }
     };
-}
-
-/**
- * The bounded hold's end on the track of `read` at the last timer of `range`: `read` is the admission surface of the
- * copy that revealed the range, planned as it was admitted, and its buffered snapshots are the track's live copies.
- * `undefined` when the track keeps today's behaviour.
- */
-export function computeALInboundHeldOrderingEntry(
-    read: ALInboundPlannerSnapshot,
-    range: ALSeqRange
-): ALOrderingHeldEntry | undefined {
-    return computeALOrderingHeldEntry({
-        range,
-        start: toALOrderingTrackStartInput({
-            msg: read.msg,
-            plan: read.prePlan,
-            selfPeerId: read.selfPeerId,
-            evictedTrack: false
-        }),
-        snapshot: read.orderingSnapshot,
-        live: read.bufferedSnapshots.map((buffered) => buffered.msg),
-        nowMs: read.nowMs,
-        trackTtlMs: read.orderingTrackTtlMs,
-        bufferedPriorSeqs: toBufferedPriorSeqs(read)
-    });
 }
 
 /** The statuses that retain the copy in a buffered slot until its delivery: delivered now, or held for a gap. */

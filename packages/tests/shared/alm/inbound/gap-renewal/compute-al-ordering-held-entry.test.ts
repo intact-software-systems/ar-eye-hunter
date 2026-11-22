@@ -4,6 +4,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOrderingTrackSnapshot, ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import {
     computeALOrderingHeldEntry,
+    isALOrderingHeldStartRange,
     type ALOrderingHeldEntry
 } from '@shared/alm/inbound/gap-renewal/compute-al-ordering-held-entry.ts';
 
@@ -45,8 +46,7 @@ describe('the bounded hold: a track opened at its start whose last gap renewal w
     it('releases a live successor whose own record names the lowest copy as its prior', () => {
         const result = endHold({
             snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 },
-            live: [recordedMessage(2, {}), recordedMessage(5, {})],
-            bufferedPriorSeqs: { 2: 1, 5: 2 }
+            live: [recordedMessage(2, {}), recordedMessage(5, { receiver: 2 })]
         });
 
         expect(result).toMatchObject({ kind: 'entered', observation: { lastContiguousSeq: 5, releasableSeqs: [2, 5] } });
@@ -61,8 +61,6 @@ describe('the bounded hold: a track opened at its start whose last gap renewal w
 
     it('passes an expired copy between live ones, so the released run continues past it', () => {
         const result = endHold({
-            revealing: recordedMessage(3, {}),
-            range: { from: 1, to: 2 },
             snapshot: { lastContiguousSeq: 0, bufferedSeqs: [3, 4, 5], updatedAtMs: 1_000 },
             live: [recordedMessage(3, {}), recordedMessage(5, {})]
         });
@@ -85,32 +83,41 @@ describe('the bounded hold: a track opened at its start whose last gap renewal w
 
     it.each<[string, Partial<EndHoldInput>]>([
         ['a track that delivered something', { snapshot: { lastContiguousSeq: 1, bufferedSeqs: [3], updatedAtMs: 1_000 } }],
-        ['a range above the track\'s start', { range: { from: 3, to: 4 } }],
+        ['a timer that holds no start', { heldStart: false }],
         ['a track past its TTL', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: -60_000 } }],
-        ['a track with nothing buffered', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [], updatedAtMs: 1_000 } }],
-        ['a revealing copy no authority recorded', { revealing: orderedMessage(2) }],
-        ['a revealing copy frozen to another audience', { revealing: recordedMessage(2, {}, ['other']) }],
-        ['a plan that repairs no gap', { repairsGaps: false }],
-        ['a latest-wins plan', { latestWins: true }]
+        ['a track with nothing buffered', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [], updatedAtMs: 1_000 } }]
     ])('holds no start for %s, which keeps today\'s behaviour', (_name, overrides) => {
         expect(endHold(overrides)).toBeUndefined();
     });
 });
 
-interface EndHoldInput {
+describe('the timer of a held start range, as the admission that arms it decides', () => {
+    it('holds the range 1..p the first recorded copy revealed', () => {
+        expect(isHeldStartRange({})).toBe(true);
+    });
+
+    it.each<[string, Partial<HeldStartRangeInput>]>([
+        ['a range above the track\'s start', { range: { from: 3, to: 4 } }],
+        ['a revealing copy no authority recorded', { revealing: orderedMessage(2) }],
+        ['a revealing copy frozen to another audience', { revealing: recordedMessage(2, {}, ['other']) }],
+        ['a plan that repairs no gap', { repairsGaps: false }],
+        ['a latest-wins plan', { latestWins: true }]
+    ])('holds no start for %s', (_name, overrides) => {
+        expect(isHeldStartRange(overrides)).toBe(false);
+    });
+});
+
+interface HeldStartRangeInput {
     readonly range: ALSeqRange;
     /** The copy that revealed the range. */
     readonly revealing: ALMessage;
-    readonly snapshot: ALOrderingTrackSnapshot | undefined;
-    readonly live: readonly ALMessage[];
-    readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
     readonly latestWins: boolean;
     readonly repairsGaps: boolean;
 }
 
-/** Absent fields: the start range `1..1` copy 2 revealed, copies 2 and 3 held and live, a gap-repairing plan. */
-function endHold(input: Partial<EndHoldInput>): ALOrderingHeldEntry | undefined {
-    return computeALOrderingHeldEntry({
+/** Absent fields: the start range `1..1` recorded copy 2 revealed, under a gap-repairing plan. */
+function isHeldStartRange(input: Partial<HeldStartRangeInput>): boolean {
+    return isALOrderingHeldStartRange({
         range: input.range ?? { from: 1, to: 1 },
         start: {
             msg: input.revealing ?? recordedMessage(2, {}),
@@ -118,12 +125,26 @@ function endHold(input: Partial<EndHoldInput>): ALOrderingHeldEntry | undefined 
             evictedTrack: false,
             latestWins: input.latestWins ?? false,
             repairsGaps: input.repairsGaps ?? true
-        },
+        }
+    });
+}
+
+interface EndHoldInput {
+    readonly heldStart: boolean;
+    readonly snapshot: ALOrderingTrackSnapshot | undefined;
+    readonly live: readonly ALMessage[];
+}
+
+/** Absent fields: a timer holding the start, copies 2 and 3 held and live. */
+function endHold(input: Partial<EndHoldInput>): ALOrderingHeldEntry | undefined {
+    return computeALOrderingHeldEntry({
+        trackKey: 'conversation:sender:0',
+        heldStart: input.heldStart ?? true,
+        selfPeerId: 'receiver',
         snapshot: 'snapshot' in input ? input.snapshot : { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 },
         live: input.live ?? [recordedMessage(2, {}), recordedMessage(3, {})],
         nowMs: 1_001,
-        trackTtlMs: 60_000,
-        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {}
+        trackTtlMs: 60_000
     });
 }
 

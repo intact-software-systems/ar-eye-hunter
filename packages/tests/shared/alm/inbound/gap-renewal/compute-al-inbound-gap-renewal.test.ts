@@ -87,20 +87,21 @@ describe('computeALGapRenewalStretch', () => {
 
 describe('a stored gap renewal', () => {
     const NAMESPACE = 'gap-renewal-decoding';
-    const toStoredRenewal = (requestNumber: number | string) =>
+    const RENEWAL = {
+        kind: 'renew-gap',
+        trackKey: 'chat:sender:1',
+        range: { from: 1, to: 1 },
+        toPeerId: 'sender',
+        message: { senderId: 'sender', msgId: '2' },
+        traceId: 'trace-gap-renewal-decoding',
+        signsForRecipient: false,
+        heldStart: true
+    } as const;
+    const toStoredRenewal = (requestNumber: number | string, payload: Partial<ALInboundGapRenewalEffect> = RENEWAL) =>
         computeALInboundWorkEntry({
             namespace: NAMESPACE,
             effectId: 'renew-gap:stored',
-            payload: {
-                kind: 'renew-gap',
-                trackKey: 'chat:sender:1',
-                range: { from: 1, to: 1 },
-                requestNumber,
-                toPeerId: 'sender',
-                message: { senderId: 'sender', msgId: '2' },
-                traceId: 'trace-gap-renewal-decoding',
-                signsForRecipient: false
-            } as ALInboundGapRenewalEffect,
+            payload: { ...payload, requestNumber } as ALInboundGapRenewalEffect,
             observedAtMs: 0,
             expireAtTimestamp: 60_000,
             carrier: 'ws',
@@ -113,5 +114,12 @@ describe('a stored gap renewal', () => {
 
     it.each([1, 5, 2.5, '2'])('refuses renewal number %j', (requestNumber) => {
         expect(() => decodeALInboundWorkEntry(toStoredRenewal(requestNumber), NAMESPACE)).toThrow();
+    });
+
+    it('decodes whether the timer holds the track\'s start, and refuses a renewal that does not say', () => {
+        const { heldStart: _heldStart, ...unsaid } = RENEWAL;
+
+        expect(decodeALInboundWorkEntry(toStoredRenewal(2), NAMESPACE).payload).toMatchObject({ heldStart: true });
+        expect(() => decodeALInboundWorkEntry(toStoredRenewal(2, unsaid), NAMESPACE)).toThrow();
     });
 });

@@ -215,6 +215,20 @@ export interface ReadALInboundBufferedReleaseInput {
     readonly nowMs: number;
 }
 
+export interface ReadALInboundOrderingTrackInput {
+    readonly trackKey: string;
+    /** The message a commit from this read concerns, whose rows its guard reads: it need not be held any more. */
+    readonly message: ALInboundMessageReference;
+    readonly nowMs: number;
+}
+
+/** A track as the store holds it, read without its message, and the observations a commit about it is guarded by. */
+export interface ALInboundOrderingTrackRead {
+    readonly observations: ALInboundAdmissionObservations;
+    readonly nowMs: number;
+    readonly orderingTrackTtlMs: number;
+}
+
 export interface ALInboundStoredPlanningRead {
     readonly msg: ALMessage;
     readonly source: ALInboundMessageRuntime.Source;
@@ -379,6 +393,12 @@ export type ALInboundGapRenewalEffect = Readonly<{
     traceId: string;
     /** Whether the renewal's NACK is a counted recipient's own, which its writer signs, as the arrival's was. */
     signsForRecipient: boolean;
+    /**
+     * Whether the timer holds the track's start (`isALOrderingHeldStartRange`, decided by the admission that armed it):
+     * it then lives for the ordering TTL, its last run ends the bounded hold from the track alone, and it never extends
+     * the retention of the message it names.
+     */
+    heldStart: boolean;
 }>;
 
 export interface ALInboundCommitBundle {
@@ -429,6 +449,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
 
     /** The track's live ordering snapshot; absent for a track never opened or past its TTL. */
     readOrderingSnapshot(trackKey: string, nowMs: number): Promise<ALOrderingTrackSnapshot | undefined>;
+
+    /** The track's snapshot, its live buffered copies and its delivery progress, read by its key alone. */
+    readOrderingTrack(input: ReadALInboundOrderingTrackInput): Promise<ALInboundOrderingTrackRead>;
 
     /**
      * The retained message and the planning state it is planned against, from one read session.
@@ -584,6 +607,30 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 durability: this.durability
             });
         });
+    }
+
+    async readOrderingTrack(input: ReadALInboundOrderingTrackInput): Promise<ALInboundOrderingTrackRead> {
+        const { trackKey, message, nowMs } = input;
+        const named: ALInboundAdmissionObservations = {
+            msgId: message.msgId,
+            senderId: message.senderId,
+            messageOwner: undefined,
+            dedup: undefined,
+            claim: undefined,
+            ordering: { trackKey, snapshot: undefined, buffered: [], evicted: false },
+            buffered: undefined,
+            deliveryProgress: { trackKey, value: undefined },
+            supersedence: {},
+            pendingAck: undefined,
+            acks: [],
+            nacks: [],
+            controlOwners: undefined
+        };
+        return await this.backend.readWithin(async (session) => ({
+            observations: await this.readCurrentObservations(session, named, nowMs),
+            nowMs,
+            orderingTrackTtlMs: this.orderingTrackTtlMs
+        }));
     }
 
     private async readOrderingState(
@@ -857,50 +904,40 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         transaction: ALAdmissionWriteContext,
         observed: ALInboundAdmissionObservations
     ): Promise<void> {
-        const messageOwner = await readALInboundMessageOwner({
-            database: transaction,
-            namespace: this.namespace,
-            msgId: observed.msgId,
-            senderId: observed.senderId
-        });
-        const { pendingAck, acks, nacks } = await readStoredAcknowledgements({
-            database: transaction,
-            namespace: this.namespace,
-            msgId: observed.msgId,
-            senderId: observed.senderId
-        });
-        const controlOwners = await readStoredControlOwnerIndex(transaction, this.namespace, observed.msgId);
-        const supersedence = await this.readSupersedenceState(transaction, observed.supersedence.key, observed.msgId);
-        const dedup = observed.dedup === undefined ? undefined : {
-            key: observed.dedup.key,
-            expiresAtTimestamp: await transaction.read(this.toDedupKey(observed.dedup.key), decodeALAdmissionNumber)
-        };
-        const claim = await this.readClaim(transaction, observed.claim?.key);
-        const ordering = observed.ordering === undefined
-            ? undefined
-            : await this.readOrderingState(transaction, observed.ordering.trackKey, this.nowMs());
-        const deliveryProgress = await this.readDeliveryProgress(transaction, observed.deliveryProgress?.trackKey);
-        const buffered = observed.buffered === undefined
-            ? undefined
-            : await this.readBufferedMessage(transaction, observed.buffered.trackKey, observed.buffered.seq);
-        if (
-            !jsonEquals(observed, {
-                ...observed,
-                messageOwner,
-                pendingAck,
-                acks,
-                nacks,
-                controlOwners,
-                supersedence,
-                dedup,
-                claim,
-                ordering,
-                buffered,
-                deliveryProgress
-            })
-        ) {
+        if (!jsonEquals(observed, await this.readCurrentObservations(transaction, observed, this.nowMs()))) {
             throw new ALAdmissionBackendConflictError('Inbound admission observations changed');
         }
+    }
+
+    /** What the store holds now for each row `observed` names, in the same shape. */
+    private async readCurrentObservations(
+        database: Pick<ALAdmissionBackend, 'read' | 'list'>,
+        observed: ALInboundAdmissionObservations,
+        nowMs: number
+    ): Promise<ALInboundAdmissionObservations> {
+        const { msgId, senderId } = observed;
+        const reference = { database, namespace: this.namespace, msgId, senderId };
+        const dedup = observed.dedup === undefined ? undefined : {
+            key: observed.dedup.key,
+            expiresAtTimestamp: await database.read(this.toDedupKey(observed.dedup.key), decodeALAdmissionNumber)
+        };
+        return {
+            ...observed,
+            messageOwner: await readALInboundMessageOwner(reference),
+            ...await readStoredAcknowledgements(reference),
+            controlOwners: await readStoredControlOwnerIndex(database, this.namespace, msgId),
+            supersedence: await this.readSupersedenceState(database, observed.supersedence.key, msgId),
+            dedup,
+            claim: await this.readClaim(database, observed.claim?.key),
+            ordering: observed.ordering === undefined ? undefined : {
+                ...await this.readOrderingState(database, observed.ordering.trackKey, nowMs),
+                trackKey: observed.ordering.trackKey
+            },
+            buffered: observed.buffered === undefined
+                ? undefined
+                : await this.readBufferedMessage(database, observed.buffered.trackKey, observed.buffered.seq),
+            deliveryProgress: await this.readDeliveryProgress(database, observed.deliveryProgress?.trackKey)
+        };
     }
 
     private async readSupersedenceState(

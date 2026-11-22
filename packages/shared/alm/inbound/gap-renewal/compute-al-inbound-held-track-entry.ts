@@ -4,14 +4,15 @@ import type { ALInboundOrderingPositionRecord } from '../admission/to-al-inbound
 import type {
     ALInboundAdmissionRead,
     ALInboundCommitBundle,
-    ALInboundMessageReadDto
+    ALInboundMessageReadDto,
+    ALInboundOrderingTrackRead
 } from '../al-inbound-admission-store.ts';
 import { toALInboundBufferedReleaseEffects } from '../al-inbound-effect-intent.ts';
 import { prepareALInboundCommitBundle, type ALInboundEffectFacts } from '../prepare-al-inbound-commit-bundle.ts';
 import type { ALOrderingHeldEntry } from './compute-al-ordering-held-entry.ts';
 
 export interface ComputeALInboundHeldTrackEntryInput {
-    /** The admission surface of the copy that revealed the start range, planned as it was admitted. */
+    /** The admission surface of the track's lowest live copy, planned as it was admitted. */
     readonly read: ALInboundAdmissionRead;
     readonly entry: Extract<ALOrderingHeldEntry, { readonly kind: 'entered'; }>;
     /**
@@ -91,14 +92,15 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
  * copies, so it names no admission deadline; it is guarded by the track as read, as the entry is.
  */
 export function computeALInboundPassedTrack(
-    read: ALInboundAdmissionRead,
+    track: ALInboundOrderingTrackRead,
     entry: Extract<ALOrderingHeldEntry, { readonly kind: 'passed'; }>
 ): ALInboundCommitBundle {
-    const progress = read.observations.deliveryProgress?.value;
+    const { observations } = track;
+    const progress = observations.deliveryProgress?.value;
     return {
         admissionExpiresAtMs: null,
-        senderId: read.msg.id.senderId,
-        observations: read.observations,
+        senderId: observations.senderId,
+        observations,
         mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }, {
             kind: 'set-delivery-progress',
             trackKey: entry.trackKey,
@@ -108,7 +110,7 @@ export function computeALInboundPassedTrack(
                     previousPosition: 0,
                     witnessedPosition: entry.nextSnapshot.lastContiguousSeq
                 }),
-                expireAtTimestamp: Math.max(progress?.expireAtTimestamp ?? 0, read.nowMs + read.orderingTrackTtlMs)
+                expireAtTimestamp: Math.max(progress?.expireAtTimestamp ?? 0, track.nowMs + track.orderingTrackTtlMs)
             }
         }],
         durableEffects: []
