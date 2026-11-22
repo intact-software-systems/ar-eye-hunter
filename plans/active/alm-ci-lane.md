@@ -131,7 +131,8 @@ Three were weighed with the maintainer, who picked the first.
 - `alm-conformance-observation.yml` runs the `full` scope against the PostgreSQL API: a
   `postgres:16` service and `npm run db:migrate` as the `postgres-integration` lane does, then
   `npm run test:rallar:full-stack:postgres:alm` with the carrier set. One runner per job (a carrier
-  is one job, or two when it is split by family, below), a fresh database per job. It stays an observation: `continue-on-error: true`, and no job waits for it.
+  is one job, or two when it is split by family, below), a fresh database per job. It stays an
+  observation: `continue-on-error: true`, and no job waits for it.
 - Its `alm_scope` input and the branch gate's `vars.RALLAR_BLACK_BOX_ALM_SCOPE` read are deleted;
   the workflow has one scope.
 - It gains a `workflow_dispatch` trigger, so the full scope can be started on a branch
@@ -272,11 +273,11 @@ Three were weighed with the maintainer, who picked the first.
   cancelled when any was, else a failure when any failed or when some were skipped and others not,
   else success when all succeeded, else skipped. Two jobs whose plans differ are reported as an
   issue. A rerun job uploads again under its own artifact name and GitHub lists both; the ledger
-  reads each name once and says so. The plan is read only when every job of the carrier has a
-  result artifact that could be read, counted by name. When one is missing, expired or could not be downloaded, the run has no plan and reads red
-  with nothing to attribute, as a one-job carrier whose artifact is missing does. A dead runner or
-  a failed download is the run's fault, not a family's: a cause recorded against a family key would
-  answer for that family's later failures too.
+  reads each name once and says so. The plan is read only when every job of the carrier has a result
+  artifact that could be read, counted by name. When one is missing, expired or could not be
+  downloaded, the run has no plan and reads red with nothing to attribute, as a one-job carrier
+  whose artifact is missing does. A dead runner or a failed download is the run's fault, not a
+  family's: a cause recorded against a family key would answer for that family's later failures too.
 - **Which runs count.** The streak counts full-scope runs of `main` pushes only, on the PostgreSQL
   API. Runs of pull requests and dispatched runs are read and shown beside it, because a red
   pull-request run may be the pull request's own regression, caught as intended, and not a flake. A

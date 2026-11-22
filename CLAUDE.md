@@ -378,8 +378,8 @@ fails if a lane drops a suite or a Vitest project.
 
 The ALM conformance lane's `full` scope is an observation, not a lane of `release-gate.yml`. It
 lives in `alm-conformance-observation.yml`, which runs it on the PostgreSQL API, one runner per
-carrier, at the event's own commit (on a pull request, the merge commit). The workflow starts
-itself: on every `main` push except one that changes only `performance-observations/**`, on a ready
+carrier (`rtc` on two, split by family), at the event's own commit (on a pull request, the merge
+commit). The workflow starts itself: on every `main` push except one that changes only `performance-observations/**`, on a ready
 pull request whose changed paths since the merge base can change the lane (its own `alm-changes`
 job, `scripts/alm-lane-selection.mjs`; a failed detection runs the scope), and on dispatch on any
 branch. It is not a job of `branch-release-gate.yml` or `deploy.yml`, so neither

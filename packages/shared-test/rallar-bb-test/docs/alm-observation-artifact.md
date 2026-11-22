@@ -160,16 +160,17 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
   that was skipped as a whole is not asked for its jobs or artifacts.
 - **A carrier's jobs are read as one run.** Every job of a carrier in a workflow run makes one run
   of that carrier, read from every artifact whose name starts with
-  `alm-lane-result-<carrier>-full-`: the plan the jobs agree on, the results of all the artifacts,
+  `alm-lane-result-<carrier>-full-`, each name once (see the rerun rule below): the plan the jobs agree on, the results of all the artifacts,
   and one conclusion. Each job writes the whole carrier's plan, so the plans are equal; jobs whose
   plans differ (other families, or other scenario keys or order) are named as an issue,
   `the plans of this carrier's jobs differ; read the first.`, and the first is read. A second plan
   inside one artifact, and a second result for one family across all of them, are issues too. An
   expired or undownloadable artifact is named on its own. The plan is read only when every job of
-  the carrier has a result artifact that could be read: when one is missing, expired or could not be
-  downloaded, the run has no plan and reads red with nothing to attribute (`no-plan`), as a one-job
-  carrier whose artifact is missing does, so a dead runner or a failed download is the run's fault,
-  not a family's. A job missing from the run altogether leaves its families without a result, so the
+  the carrier has a result artifact that could be read, counted by name: when one is missing,
+  expired or could not be downloaded, the run has no plan and reads red with nothing to attribute
+  (`no-plan`), as a one-job carrier whose artifact is missing does, so a dead runner or a failed
+  download is the run's fault, not a family's. For a split carrier this is named as an issue,
+  `<k> of <n> jobs has a readable result artifact; the plan is not read.` (`have` when k is not 1). A job missing from the run altogether leaves its families without a result, so the
   carrier reads red with those families' keys.
 - The jobs' one conclusion is `in-progress` when any job is still running; else `cancelled` when
   any was cancelled; else `failure` when any failed, or when some were skipped and others were not;
@@ -196,7 +197,12 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
   cancels them.
 - **A rerun reddens every carrier of its run.** After "re-run failed jobs" every job of the run,
   including the ones carried over unchanged, reports the new `run_attempt` (seen on run
-  44941158105 of this repository), and a run read at attempt 2 or later is never green.
+  44941158105 of this repository), and a run read at attempt 2 or later is never green. A job that
+  runs again uploads again under its own artifact name, and GitHub lists the name twice, while a
+  download by name returns one copy, the newer. The ledger downloads and reads each name once, keeps
+  the first listing's expiry, and names it as an issue,
+  `artifact <name> is listed <n> times (a rerun uploads again under its job's name); read once.`;
+  a job carried over unchanged uploads nothing new.
 - **History ends at artifact retention.** An old run whose artifact has expired is named as an issue
   and reads red, never green: with the reason `no-plan` for a first-attempt job that was not
   cancelled. A `main` push that changes only
@@ -209,14 +215,14 @@ the first that applies: `no-job-read`, `rerun`, `cancelled`, `no-plan`, `plan-pl
 `job-not-success`. So a rerun whose artifact has expired reads `rerun`, and a cancelled job with
 no plan reads `cancelled`.
 
-| Reason               | The run                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `rerun`              | was read at attempt 2 or later.                                                          |
-| `job-not-success`    | has a job that did not succeed although every recorded scenario passed.                  |
-| `no-plan`            | has no plan: the job died before planning, or its artifact expired or could not be read. |
-| `cancelled`          | has a cancelled job (a `main` push or dispatched run).                                   |
-| `no-job-read`        | completed with no job of the carrier that could be read.                                 |
-| `plan-plans-nothing` | has a plan that plans no scenario at all.                                                |
+| Reason               | The run                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rerun`              | was read at attempt 2 or later.                                                                                                                   |
+| `job-not-success`    | has a job that did not succeed although every recorded scenario passed.                                                                           |
+| `no-plan`            | has no plan: a job died before planning, or a job of the carrier has no result artifact that could be read (missing, expired, or not downloaded). |
+| `cancelled`          | has a cancelled job (a `main` push or dispatched run).                                                                                            |
+| `no-job-read`        | completed with no job of the carrier that could be read.                                                                                          |
+| `plan-plans-nothing` | has a plan that plans no scenario at all.                                                                                                         |
 
 ### Failures without a cause
 
