@@ -118,6 +118,7 @@ const CARRIER_SCENARIO_IDS = {
         'repair-exhausted',
         'seeded-loss-stream',
         'lost-stream-start',
+        'lost-stream-start-bounded',
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',

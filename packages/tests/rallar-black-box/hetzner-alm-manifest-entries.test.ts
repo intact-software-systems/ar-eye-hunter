@@ -200,6 +200,7 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-seeded-loss-stream`),
             'alm-ws-seeded-loss-unreceipted-stream',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-lost-stream-start`),
+            'alm-rtc-lost-stream-start-bounded',
             'alm-ws-seeded-jitter-stream',
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
