@@ -1,3 +1,4 @@
+import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
@@ -122,8 +123,12 @@ export function computeUpdate(
     if (lobbyChange && lobbyChange.operation !== 'configure') {
         const roster = read.lobbyState?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
-        const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
-            roster?.waiters.some(waiter => waiter.principalId === principalId);
+        // Settle old offers at the command time even if their expiry delivery is delayed.
+        const places = roster && lobbyChange.operation === 'wait'
+            ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
+            : roster;
+        const committed = places?.seats.some(seat => seat.principalId === principalId) ||
+            places?.waiters.some(waiter => waiter.principalId === principalId);
         if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
         // Serialize with room access changes while keeping the account, trace and request out of public room events.
         return groupWrite({ command, read, facts, group: stored.value, eventType: null });
