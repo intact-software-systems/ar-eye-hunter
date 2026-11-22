@@ -15,7 +15,7 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { toALOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import { resolveALUpstreamPeerId, toALOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -584,6 +584,19 @@ export class WebRtcOverlayMulticastManager {
         const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
         return snapshot !== undefined && isSessionInGroup(snapshot, peerId) &&
             this.connectionService.readyPeerIdsForLane().includes(peerId);
+    }
+
+    /** The one ready neighbour toward the origin of `msg` in the accepted layout; none when that layout places none. */
+    readUpstreamPeerId(msg: ALMessage): string | undefined {
+        const selfPeerId = this.connectionService.input.sessionId;
+        return resolveALUpstreamPeerId(
+            toALOverlayAdjacency(
+                selfPeerId,
+                toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
+            ),
+            msg.id.senderId,
+            this.connectionService.readyPeerIdsForLane()
+        );
     }
 
     private planForwarding(

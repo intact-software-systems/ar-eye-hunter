@@ -261,6 +261,7 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
 
 function createRuntime(stores: ALInboundRuntimeStores, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

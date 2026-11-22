@@ -532,6 +532,7 @@ export class WsQueueBoxServerService {
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
+            readUpstreamPeerId: () => undefined,
             diagnostics: dependencies.inboundDiagnostics
         });
     }

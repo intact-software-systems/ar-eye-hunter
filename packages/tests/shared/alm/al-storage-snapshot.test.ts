@@ -323,6 +323,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         namespace: INBOUND_NAMESPACE
     });
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

@@ -304,6 +304,7 @@ function createDefaultInboundRuntime(
     controlMessages: ALMessage[] = []
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

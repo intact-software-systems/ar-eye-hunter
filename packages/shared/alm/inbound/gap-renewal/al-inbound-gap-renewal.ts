@@ -29,7 +29,10 @@ import {
 
 export namespace ALInboundGapRenewal {
     export interface Dependencies {
-        readonly admissionStore: Pick<ALInboundAdmissionStore, 'namespace' | 'readOrderingSnapshot'>;
+        readonly admissionStore: Pick<
+            ALInboundAdmissionStore,
+            'namespace' | 'readOrderingSnapshot' | 'readDeliverySurface'
+        >;
         readonly workPort: Pick<ALWorkQueuePort, 'retainIfAbsent'>;
         readonly clock: ALInboundMessageRuntime.Clock;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
@@ -37,6 +40,7 @@ export namespace ALInboundGapRenewal {
         readonly stretch: number;
         readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
     }
 
     export interface Result {
@@ -53,6 +57,8 @@ interface ALInboundGapRenewalRun {
     readonly position: ALOrderingTrackSnapshot;
     readonly missingRanges: readonly ALSeqRange[];
     readonly facts: ALInboundEffectFacts;
+    /** The peer this run asks: the track's upstream peer now, else the one the timer records. */
+    readonly toPeerId: string;
 }
 
 const NOTHING_RENEWED: ALInboundGapRenewal.Result = { outcome: { status: 'completed' }, wroteWork: false };
@@ -81,14 +87,21 @@ export class ALInboundGapRenewal {
             return NOTHING_RENEWED;
         }
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
+        const toPeerId = await this.resolveRenewalPeerId(payload, nowMs);
         const rows = await signALInboundReceiptEffects(
-            this.computeRenewalWrites({ effect, payload, position, missingRanges, facts }),
+            this.computeRenewalWrites({ effect, payload, position, missingRanges, facts, toPeerId }),
             { namespace: admissionStore.namespace, receiptProofs, diagnostics }
         );
         for (const row of rows) {
             await workPort.retainIfAbsent(row.entry);
         }
         return { outcome: { status: 'completed' }, wroteWork: rows.length > 0 };
+    }
+
+    private async resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, nowMs: number): Promise<string> {
+        const surface = await this.dependencies.admissionStore.readDeliverySurface(payload.message, nowMs);
+        return (surface === undefined ? undefined : this.dependencies.readUpstreamPeerId(surface.msg)) ??
+            payload.toPeerId;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */
@@ -113,8 +126,8 @@ export class ALInboundGapRenewal {
         type: 'nack' | 'repair',
         index: number
     ): ALInboundDurableEffectWrite {
-        const { effect, payload, facts } = run;
-        const { message, toPeerId, range, requestNumber } = payload;
+        const { effect, payload, facts, toPeerId } = run;
+        const { message, range, requestNumber } = payload;
         const control = prepareALInboundDurableEffect({
             payload: toRenewalIntent(run, type),
             facts,
@@ -156,7 +169,7 @@ export class ALInboundGapRenewal {
 
 /** A renewal names the arrival the timer records, the track's next expected sequence and only what is missing. */
 function toRenewalIntent(run: ALInboundGapRenewalRun, type: 'nack' | 'repair'): ALInboundEffectIntent['payload'] {
-    const { payload, position, missingRanges } = run;
+    const { payload, position, missingRanges, toPeerId } = run;
     const ordering: ALOrderingObservation = {
         status: 'gap',
         trackKey: payload.trackKey,
@@ -166,7 +179,7 @@ function toRenewalIntent(run: ALInboundGapRenewalRun, type: 'nack' | 'repair'): 
         releasableSeqs: []
     };
     const request = {
-        toPeerId: payload.toPeerId,
+        toPeerId,
         msgId: payload.message.msgId,
         ordering,
         gapRequestNumber: payload.requestNumber

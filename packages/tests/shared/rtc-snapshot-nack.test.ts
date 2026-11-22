@@ -197,6 +197,7 @@ function createSnapshotAdmissionFixture(
         { recipientPeerIds: ['receiver'], snapshotVersion: 5 }
     );
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'rtc',

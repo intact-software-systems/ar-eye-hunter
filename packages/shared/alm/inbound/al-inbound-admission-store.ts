@@ -361,8 +361,9 @@ export type ALInboundDurableEffect =
     | ALInboundGapRenewalEffect;
 
 /**
- * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks `toPeerId`
- * again, under `requestNumber`, for what of `range` is still missing. `message` is that arrival, which the renewal
+ * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks the track's
+ * upstream peer again, under `requestNumber`, for what of `range` is still missing. `toPeerId` is the peer the gap was
+ * first reported to, which the renewal asks when no upstream peer resolves. `message` is that arrival, which the renewal
  * names; the row holds no time, so the same arrival planned again computes the same row.
  */
 export type ALInboundGapRenewalEffect = Readonly<{

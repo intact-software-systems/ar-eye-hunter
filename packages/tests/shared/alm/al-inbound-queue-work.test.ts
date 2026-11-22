@@ -60,6 +60,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     let available = false;
     const delivered: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
@@ -120,6 +121,7 @@ it('retries durable local delivery after restart with a single admission work ow
     const attempts: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'rtc',
@@ -186,6 +188,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         const deliveries: string[] = [];
         const createRuntime = () =>
             new ALInboundMessageRuntime({
+                readUpstreamPeerId: () => undefined,
                 receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 carrier: 'ws',
@@ -263,6 +266,7 @@ it.each([
     });
     const deliveries: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
@@ -319,6 +323,7 @@ it('retains predecessor completion through the longest admitted deadline across 
     const delivered: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'rtc',
@@ -385,6 +390,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
@@ -456,6 +462,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     });
     let available = false;
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'rtc',
@@ -532,6 +539,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         const delivered: string[] = [];
         let available = false;
         const runtime = new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'rtc',
@@ -628,6 +636,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         const engine = new InboxOutboxEngine();
         onTestFinished(() => engine.stop());
         const runtime = new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'rtc',

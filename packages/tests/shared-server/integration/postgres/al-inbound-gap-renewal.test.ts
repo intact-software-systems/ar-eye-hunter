@@ -130,6 +130,7 @@ function createStores(sql: PostgresSql, name: string): ALInboundRuntimeStores {
 /** The server's inbound owner: it orders every track it admits, and its renewal stretch is drawn as 1. */
 function createRuntime(stores: ALInboundRuntimeStores, controls: ALMessage[]): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'every-track',
         carrier: 'ws',

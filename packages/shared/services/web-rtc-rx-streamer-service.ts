@@ -184,6 +184,7 @@ export class WebRtcRxStreamerService {
                     await this.multicast.forwardRetriedCopy(copy);
                 },
                 isRoomPeerPresent: (msg, peerId) => this.multicast.isRoomPeerPresent(msg, peerId),
+                readUpstreamPeerId: (msg) => this.multicast.readUpstreamPeerId(msg),
                 onResyncRequired: dependencies.onResyncRequired,
                 diagnostics: dependencies.inboundDiagnostics
             }

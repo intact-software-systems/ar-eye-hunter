@@ -703,9 +703,12 @@ number; once nothing is missing, the track is gone or the row has expired it end
 request past 4. Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
 with the message, and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
-removes it. A durable lane renews after a reload, a volatile lane does not. The renewal goes where the arrival's gap
-NACK goes, so it holds on direct links: a WS client and its server in both directions, and `rtc` peers that send to
-each other directly. A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
+removes it. A durable lane renews after a reload, a volatile lane does not. A run asks the track's upstream peer as
+it is when the run fires: on `rtc`, the one ready neighbour the accepted layout routes toward the origin
+([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)), so a renewal after a reshape
+reaches the new parent. When none resolves (a WS runtime, a layout without an adjacency, the revealing message no
+longer kept) it asks the peer the gap was first reported to, which the row records, and still arms the next number.
+A relay forwards a child's gap NACK only while it holds a pending row that waits on that child
 and never forwards a repair request, so a renewal over a relayed `rtc` path reaches the sender only while the relay
 still holds such a row. A sequence past the
 window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the

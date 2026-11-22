@@ -206,6 +206,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly orderingObserver?: ALOrderingObserver;
     /** Absent leaves the runtime's own default random source. */
     readonly random?: () => number;
+    /** Absent, no upstream peer resolves, as on a runtime with no overlay. */
+    readonly readUpstreamPeerId?: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -239,6 +241,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         },
         canDispatchMessage: input.canDispatchMessage,
         forwardMessage: input.forwardMessage,
+        readUpstreamPeerId: input.readUpstreamPeerId ?? (() => undefined),
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,
         dispatchInboxEntry: async (entry) => {

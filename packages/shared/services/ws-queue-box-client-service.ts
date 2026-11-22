@@ -291,6 +291,7 @@ export class WsQueueBoxClientService {
                     return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
                 onResyncRequired: this.dependencies.onResyncRequired,
+                readUpstreamPeerId: () => undefined,
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );

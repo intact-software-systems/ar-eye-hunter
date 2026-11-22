@@ -258,6 +258,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
             options: { scope: SCOPE }
         });
         this.inbound = new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',

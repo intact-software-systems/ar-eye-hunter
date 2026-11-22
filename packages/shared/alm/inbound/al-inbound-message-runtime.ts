@@ -185,6 +185,11 @@ export namespace ALInboundMessageRuntime {
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
         /** Absence means no relay here ever loses its recorded parent, so only the origin re-parents a row. */
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
+        /**
+         * `undefined`: no upstream peer resolves now, so the renewal goes to the peer its gap was first reported to.
+         * A runtime with no overlay (WS) passes `() => undefined` at its composition root.
+         */
+        readonly readUpstreamPeerId: (msg: ALMessage) => string | undefined;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         /** Absence means this runtime relays no session's NACK or repair to the origin it names. */

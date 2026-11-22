@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
-import { resolveALOwnedChildPeerIds } from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
+import {
+    resolveALOwnedChildPeerIds,
+    resolveALUpstreamPeerId,
+    toALOverlayAdjacency
+} from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -238,6 +242,21 @@ describe('the child a peer owns for a unicast', () => {
         });
 
         expect(resolveALOwnedChildPeerIds(unicast, { nowMs: 0, selfPeerId: 'r', overlayNeighborPeerIds: TREE.r })).toEqual(['b']);
+    });
+});
+
+describe('the upstream peer toward an origin', () => {
+    /** The path `a`, `r`, `c`. */
+    const PATH: Readonly<Record<string, readonly string[]>> = { a: ['r'], r: ['a', 'c'], c: ['r'] };
+
+    it.each([
+        { name: 'a leaf answers its relay', self: 'c', origin: 'a', ready: ['r'], layout: PATH, upstream: 'r' },
+        { name: 'a relay with a direct link answers the origin', self: 'r', origin: 'a', ready: ['a', 'c'], layout: PATH, upstream: 'a' },
+        { name: 'a leaf whose relay is not ready answers none', self: 'c', origin: 'a', ready: [], layout: PATH, upstream: undefined },
+        { name: 'a layout without an adjacency answers none', self: 'c', origin: 'a', ready: ['r'], layout: undefined, upstream: undefined },
+        { name: 'an origin the layout does not place answers none', self: 'c', origin: 'x', ready: ['r'], layout: PATH, upstream: undefined }
+    ])('$name', ({ self, origin, ready, layout, upstream }) => {
+        expect(resolveALUpstreamPeerId(toALOverlayAdjacency(self, layout), origin, ready)).toBe(upstream);
     });
 });
 

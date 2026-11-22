@@ -224,6 +224,7 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -839,6 +840,7 @@ interface IndexedDbInboundFixtureInput {
 function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInboundMessageRuntime {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

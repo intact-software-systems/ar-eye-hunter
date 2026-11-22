@@ -3,6 +3,7 @@ import { expect, vi } from 'vitest';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -42,6 +43,8 @@ export interface ChainHopInput {
     readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
     /** Absent, the chain's key for the hop. */
     readonly publicationCrypto?: PublicationCrypto;
+    /** The layout the hop holds accepted from the start; absent, every neighbour as a next hop and no adjacency. */
+    readonly initialOverlay?: OverlayInfo;
 }
 
 export interface OrderedReceiptedPublicationInput {
@@ -119,7 +122,8 @@ export function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRela
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: input.publicationCrypto ?? chain.keys[input.selfPeerId],
         topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
-        inboundVolatileStores: input.inboundVolatileStores
+        inboundVolatileStores: input.inboundVolatileStores,
+        initialOverlay: input.initialOverlay
     });
 }
 

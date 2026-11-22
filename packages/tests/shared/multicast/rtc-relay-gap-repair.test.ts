@@ -15,7 +15,8 @@ import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/cont
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 
-import { ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
+import { toAcceptedLayout, toPromotedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
+import { createOriginOverlay, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 import { PUBLICATION_TOPIC_ID, PUBLISH_AND_SUBSCRIBE, PUBLISH_ONLY, SUBSCRIBE_ONLY } from './rtc-publication-proof-fixtures.ts';
 import {
     createChainHop,
@@ -26,6 +27,7 @@ import {
     readOrderingPositions,
     toControlTuples,
     toGrantsSnapshot,
+    type ChainHopInput,
     type OriginRelayChain
 } from './rtc-relay-chain-test-support.ts';
 import { createObservedVolatileInboundPair, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -54,6 +56,8 @@ interface GapChainInput {
     readonly relayChildPeerIds?: readonly string[];
     /** The grants the origin's room holds as it freezes a sequence; absent, the chain's own for every sequence. */
     readonly grantsBySeq?: Readonly<Record<number, ChainGrants>>;
+    /** The leaf's open edges and the layout it holds accepted from the start; absent, its edge to the relay alone. */
+    readonly leaf?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
 }
 
 /** The frames each link had carried when they were read. */
@@ -81,6 +85,12 @@ const SEQ_2_WITHOUT_LEAF: Readonly<Record<number, ChainGrants>> = {
     2: { a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_AND_SUBSCRIBE, c: PUBLISH_ONLY },
     3: GRANTS
 };
+
+/** The chain's layout: the leaf `c` hangs below the relay `r`. */
+const RELAYED_LEAF: SessionNextHops = { a: ['r'], r: ['a', 'c'], c: ['r'] };
+
+/** The layout a reshape promotes: the leaf `c` hangs directly below the origin `a`. */
+const DIRECT_LEAF: SessionNextHops = { a: ['r', 'c'], r: ['a'], c: ['a'] };
 
 const RELAY_NAMESPACE = 'relay-gap-repair';
 
@@ -437,6 +447,45 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
     });
 });
 
+describe('a renewal of a gap below a relay after a reshape (6d)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('after a reshape, a renewal reaches the new parent and is served', async () => {
+        // The leaf's edge to `a` is already open, as early dial leaves an edge the next layout adds.
+        const gap = await createGapChain({
+            ack: 'none',
+            leaf: { neighbourPeerIds: ['r', 'a'], initialOverlay: createOriginOverlay(RELAYED_LEAF.c!, RELAYED_LEAF) }
+        });
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        const firstReport = await readLeafControls(gap);
+
+        promoteDirectLeafLayout(gap);
+        await advanceChainBy(2_000);
+        const toNewParent = await gap.leaf.readSent('a');
+        const renewal = toNewParent.find((control) => readGapRequestNumber(control, 'c') === 2);
+        const outcomes = await acceptEachAtOrigin(gap, toNewParent);
+        const servedToLeaf = gap.chain.origin.channels.c!.sent;
+        await deliverEach(servedToLeaf, gap.leaf, 'a');
+        await drainUntil(() => gap.leaf.delivered.length >= gap.frames.length);
+
+        expect(readGapRequests(firstReport)).toEqual([['nack', 1, 'r'], ['repair', 1, 'r']]);
+        expect(readGapRequests(await gap.leaf.readSent('r'))).toEqual([['nack', 1, 'r'], ['repair', 1, 'r']]);
+        expect(readGapRequests(toNewParent)).toEqual([['nack', 2, 'a'], ['repair', 2, 'a']]);
+        expect(renewal === undefined ? undefined : outcomes.get(renewal)).toBe('committed');
+        expect(servedToLeaf.map((copy) => copy.ordering?.seq)).toEqual([2]);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+});
+
 async function createGapChain(input: GapChainInput): Promise<GapChain> {
     const chain = await createOriginRelayChain(GRANTS);
     const pair = createObservedVolatileInboundPair(RELAY_NAMESPACE);
@@ -447,7 +496,8 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     });
     const leaf = createChainHop(chain, {
         selfPeerId: 'c',
-        neighbourPeerIds: ['r'],
+        neighbourPeerIds: input.leaf?.neighbourPeerIds ?? ['r'],
+        initialOverlay: input.leaf?.initialOverlay,
         topicSubscriptions: createRtcTopicSubscriptionsFixture([PUBLICATION_TOPIC_ID])
     });
     const frames: ALMessage[] = [];
@@ -547,6 +597,28 @@ async function advanceChainBy(ms: number): Promise<void> {
         await vi.advanceTimersByTimeAsync(Math.min(CHAIN_STEP_MS, ms - advanced));
         await drainUntil(() => false, 20);
     }
+}
+
+/** The leaf and the origin promote the layout that parents the leaf on the origin, and the origin's edge to it opens. */
+function promoteDirectLeafLayout(gap: GapChain): void {
+    const layout = toPromotedLayout(DIRECT_LEAF);
+    const atLeaf = toAcceptedLayout(gap.chain.snapshot, layout, 'c');
+    gap.leaf.acceptSnapshot(atLeaf.snapshot);
+    gap.leaf.acceptOverlay(atLeaf.overlay);
+    const atOrigin = toAcceptedLayout(gap.chain.snapshot, layout, 'a');
+    gap.chain.origin.groups.accept('room', atOrigin.snapshot);
+    gap.chain.origin.acceptOverlay(atOrigin.overlay);
+    gap.chain.origin.ready.peerIds = DIRECT_LEAF.a!;
+}
+
+/** Each gap NACK and repair request among `controls`, as its type, its request number and the peer it is addressed to. */
+function readGapRequests(controls: readonly ALMessage[]): readonly (readonly [string, number | undefined, string])[] {
+    return controls.flatMap((control): (readonly [string, number | undefined, string])[] => {
+        const parsed = decodeALControlMessage(control).right;
+        return (parsed?.type === 'nack' && parsed.payload.reason === 'gap') || parsed?.type === 'repair'
+            ? [[parsed.type, parsed.payload.gapRequestNumber, parsed.payload.toPeerId]]
+            : [];
+    });
 }
 
 /** The number of the gap request `control` makes for `recipientPeerId`; undefined for any other control. */
