@@ -84,6 +84,7 @@ function labelProofPlan(
         env: {
             ...plan.env,
             DATABASE_URL: toManagedApiDatabaseUrl(plan.env.DATABASE_URL!, `${applicationNamePrefix}-${plan.port}`),
+            RALLAR_SERVER_CLOCK_PEER_ID: `${applicationNamePrefix}-${plan.port}`,
             RALLAR_API_QUEUE_WORKERS: index === 0 ? 'enabled' : 'disabled'
         }
     };

@@ -1,5 +1,9 @@
 {
   "variables": {
+    "clockPeerId": {
+      "env": "RALLAR_SERVER_CLOCK_PEER_ID",
+      "default": "default-qbox-server"
+    },
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
       "default": "http://127.0.0.1:18080"
@@ -20,8 +24,7 @@
       "connection": "api",
       "request": {
         "method": "GET",
-        "path": "/api/config",
-        "outputs": { "serverPeerId": "body.serverPeerId" }
+        "path": "/api/config"
       },
       "expect": {
         "status": 200,
@@ -37,7 +40,7 @@
         "status": 200,
         "headers": { "cache-control": "no-store" },
         "body": {
-          "serverPeerId": "{serverPeerId}",
+          "serverPeerId": "{clockPeerId}",
           "serverNowEpochMs": "integer"
         }
       }

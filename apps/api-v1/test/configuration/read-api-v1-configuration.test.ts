@@ -11,6 +11,7 @@ import {
     toApiV1ConfigurationStartupSummary,
     type ReadApiV1ConfigurationInput
 } from '../../src/configuration/read-api-v1-configuration.ts';
+import { toApiV1PublicConfiguration } from '../../src/configuration/to-api-v1-public-configuration.ts';
 import { toApiAppInboxServiceOptions } from '../../src/services/timing-service.ts';
 import {
     CONFIGURATION_SECRET_SENTINELS,
@@ -32,6 +33,17 @@ const PROD_IN_MEMORY_URL = new URL(
     import.meta.url
 );
 const STATIC_CLIENTS_URL = new URL('../../resources/authorised-clients.json', import.meta.url);
+
+test('the configured node clock reaches public configuration only when explicitly named', async () => {
+    const environment = validConfigurationEnvironment();
+    const ordinary = await readApiV1Configuration(readerInput(environment));
+    assert.equal(Object.hasOwn(toApiV1PublicConfiguration(ordinary.publicApi), 'clockPeerId'), false);
+
+    const named = await readApiV1Configuration(readerInput({ ...environment, RALLAR_SERVER_CLOCK_PEER_ID: 'node-a' }));
+    assert.equal(toApiV1PublicConfiguration(named.publicApi).clockPeerId, 'node-a');
+    const error = await captureConfigurationError(readerInput({ ...environment, RALLAR_SERVER_CLOCK_PEER_ID: ' ' }));
+    assert.ok(error.issues.some((issue) => issue.path === 'publicApi.clockPeerId'));
+});
 
 test('configuration reader carries selected phase timing through AppInbox service options', async () => {
     for (const selection of [{ raw: 'false', expectedPhase: false }, { raw: 'true', expectedPhase: true }]) {

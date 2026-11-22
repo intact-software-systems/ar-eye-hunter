@@ -59,7 +59,7 @@ export function registerConfigRoutes(
 
     app.get('/api/time', (context) => {
         const observation: ServerTimeResponse = {
-            serverPeerId: dependencies.publicConfiguration.serverPeerId,
+            serverPeerId: dependencies.publicConfiguration.clockPeerId ?? dependencies.publicConfiguration.serverPeerId,
             serverNowEpochMs: dependencies.now()
         };
         context.header('cache-control', 'no-store');
