@@ -1025,6 +1025,33 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         expect(readAdmissionOutcomes(relays.u, readGapNackMessage(await relays.y.readSent('u')).id.msgId)).toEqual([['not-handled', 'control']]);
     });
 
+    it('a relay whose presence lags behind its child grants the wire limit, so the relays above it pass the leaf\'s gap NACK to the origin', async () => {
+        const { gap, relays } = await createLineBelowR({ yLinksOrigin: false });
+        await passTrackDownToY(gap, relays);
+        // `u`'s presence names the origin, the leaf and itself, but neither its child `y` nor the relays above it.
+        const snapshot = gap.chain.snapshot;
+        relays.u.acceptSnapshot({
+            ...snapshot,
+            group: { ...snapshot.group, snapshotVersion: snapshot.group.snapshotVersion + 10 },
+            activeSessions: snapshot.activeSessions.filter((session) => ['a', 'u', 'c'].includes(session.sessionId))
+        });
+        const leafReport = await readLeafGapReport(gap, relays.y);
+        await deliverEach(leafReport, relays.y, 'c');
+        const passedUp = [[relays.y, 'y', relays.u, 'u'], [relays.u, 'u', relays.b, 'b'], [relays.b, 'b', gap.relay, 'r']] as const;
+        for (const [from, fromPeerId, to, toPeerId] of passedUp) {
+            await drainUntil(async () => findGapNack(await from.readSent(toPeerId)) !== undefined);
+            await deliverEach(await from.readSent(toPeerId), to, fromPeerId);
+        }
+        await drainUntil(async () => findGapNack(await gap.relay.readSent('a')) !== undefined);
+        const toOrigin = await gap.relay.readSent('a');
+        const outcomes = await acceptEachAtOrigin(gap, toOrigin);
+
+        // The room's six sessions grant 5; `y` passes it on with 4 left, `u`, which bounds nothing, with 3, `b` with 2 and `r` with 1.
+        expect(readGapNack(await relays.u.readSent('b')).payload.relayHopsLeft).toBe(3);
+        expect(readGapNack(toOrigin).payload).toMatchObject({ fromPeerId: 'r', logicalRecipientPeerId: 'c', relayHopsLeft: 1 });
+        expect([...outcomes.values()]).toContain('committed');
+    });
+
     it('after a reshape that stalled the leaf\'s gap NACK, a relay linked to the origin passes it there and the leaf recovers before any resync (ruling 20)', async () => {
         const { gap, relays } = await createLineBelowR({ yLinksOrigin: true });
         await deliverEach(gap.frames, gap.relay, 'a');

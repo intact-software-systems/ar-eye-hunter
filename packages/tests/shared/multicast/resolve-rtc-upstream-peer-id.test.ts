@@ -75,6 +75,16 @@ describe('the parent a relay forwards a child\'s gap NACK to when it holds nothi
     it('grants the NACK one relay fewer than the live sessions of the room whose layout names its sender: 5 in a room of 6', () => {
         expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), 'a', 'c')).toEqual({ peerId: 'a', relayHops: 5 });
     });
+
+    it.each([
+        ['its child', 'c'],
+        ['the parent it forwards to', 'x']
+    ])('grants the wire limit when that room\'s presence lags behind %s, so its size bounds nothing', (_name, laggingPeerId) => {
+        const sessionIds = SESSION_IDS.filter((peerId) => peerId !== laggingPeerId);
+
+        expect(resolveRtcRelayParent(toRelayRoutes([['room-2', BELOW_X]], ['a', 'c', 'x'], sessionIds), 'a', 'c'))
+            .toEqual({ peerId: 'x', relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT });
+    });
 });
 
 describe('whether a peer is this relay\'s child in the accepted layout of the message\'s room', () => {
@@ -112,11 +122,11 @@ describe('the relay hops a leaf grants its gap NACK about a message', () => {
     it('one fewer than the live sessions of the message\'s room: 7 in a room of 8', () => {
         const room = createOriginSnapshot(['a', 'r', 'b', 'c', 'd', 'x', 'y', 'z'], 3);
 
-        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage())).toBe(7);
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage(), [])).toBe(7);
     });
 
     it('the wire limit when the lane reads no room for the message', () => {
-        expect(createLeafRoutes(undefined).readGapNackRelayHops(toRoomMessage())).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        expect(createLeafRoutes(undefined).readGapNackRelayHops(toRoomMessage(), [])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
     });
 
     it.each(
@@ -128,18 +138,42 @@ describe('the relay hops a leaf grants its gap NACK about a message', () => {
     )('the wire limit when the room\'s presence is %s, so its size bounds nothing', (_name, sessionIds) => {
         const room = createOriginSnapshot(sessionIds, 3);
 
-        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage())).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage(), [])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
+});
+
+describe('the relay hops a relay grants a child\'s gap NACK it forwards about a message', () => {
+    const ROOM_OF_EIGHT = ['a', 'r', 'b', 'c', 'd', 'x', 'y', 'z'];
+
+    it('one fewer than the live sessions once presence names its child and the peer it forwards to: 7 in a room of 8', () => {
+        const room = createOriginSnapshot(ROOM_OF_EIGHT, 3);
+
+        expect(createRoomRoutes(room, 'b').readGapNackRelayHops(toRoomMessage(), ['c', 'r'])).toBe(7);
+    });
+
+    it.each([
+        ['its child', ROOM_OF_EIGHT.filter((peerId) => peerId !== 'c')],
+        ['the peer it forwards to', ROOM_OF_EIGHT.filter((peerId) => peerId !== 'r')]
+    ])('the wire limit when the room\'s presence lags behind %s, though it names the relay and the origin', (_name, sessionIds) => {
+        const room = createOriginSnapshot(sessionIds, 3);
+
+        expect(createRoomRoutes(room, 'b').readGapNackRelayHops(toRoomMessage(), ['c', 'r'])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
     });
 });
 
 /** The leaf `c`'s route capabilities, over a lane that reads `room` for every message. */
 function createLeafRoutes(room: GroupSnapshot | undefined) {
+    return createRoomRoutes(room, 'c');
+}
+
+/** The route capabilities of the session `selfPeerId`, over a lane that reads `room` for every message. */
+function createRoomRoutes(room: GroupSnapshot | undefined, selfPeerId: string) {
     const relayRoutes = toRelayRoutes([], []);
     return createRtcInboundRoutes(
         {
             groupCache: relayRoutes.rooms,
             overlayCache: relayRoutes.acceptedOverlays,
-            connectionService: { input: { sessionId: 'c' }, readyPeerIdsForLane: () => [] }
+            connectionService: { input: { sessionId: selfPeerId }, readyPeerIdsForLane: () => [] }
         },
         () => ({
             overlayId: 'room',
@@ -212,8 +246,12 @@ function toLeafObservation(connectedPeerIds: readonly string[], elapsedMs: numbe
     };
 }
 
-/** The relay `b` holding each `[key, layout]` accepted, each layout in its own room named after its key. */
-function toRelayRoutes(layouts: readonly (readonly [string, SessionNextHops])[], connectedPeerIds: readonly string[]) {
+/** The relay `b` holding each `[key, layout]` accepted, each layout in its own room named after its key, whose presence is `sessionIds`. */
+function toRelayRoutes(
+    layouts: readonly (readonly [string, SessionNextHops])[],
+    connectedPeerIds: readonly string[],
+    sessionIds: readonly string[] = SESSION_IDS
+) {
     const rooms = new LatestRepository<string, GroupSnapshot>();
     const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
     onTestFinished(() => {
@@ -222,7 +260,7 @@ function toRelayRoutes(layouts: readonly (readonly [string, SessionNextHops])[],
     });
     for (const [key, tree] of layouts) {
         const groupId = key === 'scoped-room' ? 'room' : key;
-        const snapshot = createOriginSnapshot(SESSION_IDS, 3);
+        const snapshot = createOriginSnapshot(sessionIds, 3);
         const accepted = toAcceptedLayout(
             { ...snapshot, group: { ...snapshot.group, groupId } },
             { tree, version: 2 },

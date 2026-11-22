@@ -36,6 +36,7 @@ import {
     computeALInboundNackAdmission,
     computeALInboundUnheldGapNackAdmission,
     computeALInboundUnreceiptedGapNackAdmission,
+    resolveALInboundGapNackTarget,
     toALInboundNackCommitBundle,
     type ALInboundGapNackRoute,
     type ALInboundNackAdmissionCandidate,
@@ -297,7 +298,10 @@ export class ALInboundControlAdmission {
             })
             : undefined);
         if (surface !== undefined) {
-            const gapRoute = stored === undefined ? undefined : this.readGapNackRoute(stored, nack);
+            const parentPeerId = surface.pendingAck?.toPeerId;
+            const gapRoute = stored === undefined || parentPeerId === undefined
+                ? undefined
+                : this.readGapNackRoute(stored, nack, parentPeerId);
             return await this.admitRowNack(arrival, { nack, surface, gapRoute, nowMs }, evidence);
         }
         const unreceipted = stored === undefined
@@ -397,13 +401,22 @@ export class ALInboundControlAdmission {
             : { msg: stored.msg, isLayoutChild: this.isLayoutChildPeer(stored.msg, nack.fromPeerId) };
     }
 
-    /** What the message's room says of a child's gap NACK (6d). */
-    private readGapNackRoute(stored: ALInboundStoredGapNackMessage, nack: ALInboundGapNack): ALInboundGapNackRoute {
-        const upstreamPeerId = this.readUpstreamPeerId(stored.msg);
+    /**
+     * What the message's room says of a child's gap NACK this relay knows the parent `knownParentPeerId` of (6d): its
+     * grant reads the room's presence for the child and the peer the NACK goes to.
+     */
+    private readGapNackRoute(
+        stored: ALInboundStoredGapNackMessage,
+        nack: ALInboundGapNack,
+        knownParentPeerId: string
+    ): ALInboundGapNackRoute {
+        const readUpstreamPeerId = this.readUpstreamPeerId(stored.msg);
+        const upstreamPeerId = readUpstreamPeerId === nack.fromPeerId ? undefined : readUpstreamPeerId;
+        const targetPeerId = resolveALInboundGapNackTarget(knownParentPeerId, { upstreamPeerId });
         return {
             isLayoutChild: stored.isLayoutChild,
-            upstreamPeerId: upstreamPeerId === nack.fromPeerId ? undefined : upstreamPeerId,
-            relayHops: this.readGapNackRelayHops(stored.msg)
+            upstreamPeerId,
+            relayHops: this.readGapNackRelayHops(stored.msg, [nack.fromPeerId, targetPeerId])
         };
     }
 
@@ -434,7 +447,7 @@ export class ALInboundControlAdmission {
             msg: stored.msg,
             owner,
             arrivalPeerId: owner.source.peerId,
-            route: this.readGapNackRoute(stored, nack),
+            route: this.readGapNackRoute(stored, nack, owner.source.peerId),
             childPeerIds: this.planRetriedCopyNextHops(stored.msg, owner.source),
             nowMs,
             controlMsgId: this.newControlId(),

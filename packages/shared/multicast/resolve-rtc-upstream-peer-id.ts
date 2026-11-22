@@ -106,7 +106,8 @@ export interface RtcRelayParent {
 /**
  * The parent a relay forwards a child's NACK to when it holds nothing of the message: its one connected upstream peer
  * toward `originPeerId` over the accepted layouts in which `childPeerId` is its child; none when no layout, or more than
- * one parent, answers. It grants the NACK what a leaf of the largest such room grants, read from that room's sessions.
+ * one parent, answers. It grants the NACK the largest grant among those rooms, each read from the room's sessions once
+ * its presence names the relay, the origin, the child and that parent.
  */
 export function resolveRtcRelayParent(
     routes: RtcRelayRoutes,
@@ -120,7 +121,10 @@ export function resolveRtcRelayParent(
             : undefined;
         const peerId = resolveALUpstreamPeerId(adjacency, originPeerId, routes.connectedPeerIds);
         return peerId !== undefined && isRtcLayoutChildPeer(adjacency, originPeerId, childPeerId)
-            ? [{ peerId, relayHops: resolveRtcGapNackRelayHops(room, routes.selfPeerId, originPeerId) }]
+            ? [{
+                peerId,
+                relayHops: resolveRtcGapNackRelayHops(room, [routes.selfPeerId, originPeerId, childPeerId, peerId])
+            }]
             : [];
     });
     const parentPeerIds = new Set(parents.map((parent) => parent.peerId));
@@ -130,18 +134,15 @@ export function resolveRtcRelayParent(
 }
 
 /**
- * The relays this leaf grants its gap NACK about a message from `originPeerId`: one fewer than the room's live sessions,
- * once the room's presence names both this leaf and the origin. A room the lane has not read, or presence that is
- * empty or lags behind either of them, bounds nothing, so the leaf grants the wire ceiling rather than a grant its
- * first relay would refuse.
+ * The relays a session grants a gap NACK whose path is known to pass `pathPeerIds`: one fewer than the room's live
+ * sessions, once the room's presence names every one of them. A leaf names itself and the origin; a relay also the
+ * child the NACK came from and the peer it forwards it to. A room the lane has not read, or presence that is empty or
+ * lags behind any of them, bounds nothing, so the session grants the wire ceiling rather than a grant a relay above it
+ * would refuse.
  */
-export function resolveRtcGapNackRelayHops(
-    room: GroupSnapshot | undefined,
-    selfPeerId: string,
-    originPeerId: string
-): number {
+export function resolveRtcGapNackRelayHops(room: GroupSnapshot | undefined, pathPeerIds: readonly string[]): number {
     const sessionIds = room === undefined ? [] : readGroupMemberSessionIds(room);
-    return sessionIds.includes(selfPeerId) && sessionIds.includes(originPeerId)
+    return pathPeerIds.every((peerId) => sessionIds.includes(peerId))
         ? computeALGapNackRelayHops(sessionIds.length)
         : AL_GAP_NACK_RELAY_HOP_LIMIT;
 }
@@ -154,8 +155,8 @@ export function createRtcInboundRoutes(
     const selfPeerId = lane.connectionService.input.sessionId;
     return {
         readUpstreamPeerId: (msg) => resolveRtcUpstreamPeerId(readObservation(msg), selfPeerId, msg.id.senderId),
-        readGapNackRelayHops: (msg) =>
-            resolveRtcGapNackRelayHops(readObservation(msg).room, selfPeerId, msg.id.senderId),
+        readGapNackRelayHops: (msg, pathPeerIds) =>
+            resolveRtcGapNackRelayHops(readObservation(msg).room, [selfPeerId, msg.id.senderId, ...pathPeerIds]),
         isRoutedPeerReady: (msg, peerId) => isRtcRoutedPeerReady(readObservation(msg), peerId),
         isLayoutChildPeer: (msg, peerId) =>
             isRtcLayoutChildPeer(

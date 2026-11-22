@@ -758,10 +758,14 @@ only when it builds its report or a renewal (`readGapNackRelayHops`, passed to t
 admission or release that builds no gap NACK reads no room; a WS runtime grants the ceiling): layouts that
 disagree route a NACK along no one layout, so only the room's size bounds its path. Each relay forwards it one lower,
 and never higher than one fewer than its own grant, read by the same rule from the message's room, or, holding nothing
-of the message, from the room whose layout names the sender its child (`computeALRelayedGapNackHops`); with no room to
-read, as on WS, its grant is the ceiling. So the room bound holds at every relay that reads a room, whatever count a
-child claims, and
-a cycle ends within the grant's forwards of each copy; a relay refuses a NACK with none left, and a duplicate delivery
+of the message, from the room whose layout names the sender its child (`computeALRelayedGapNackHops`). A relay's room
+bounds the grant only once its presence also names the child the NACK came from and the peer it forwards it to; with
+no room to read, as on WS, or presence that lags behind any of them, its grant is the ceiling. Presence that names
+them but lags behind relays further up can still grant too few, which costs a request until the next renewal reads
+again. So the room bound holds at every relay whose presence names the NACK's neighbours, whatever count a child
+claims, and
+a cycle ends within the grant's forwards of each copy; a relay refuses a NACK its grant leaves no hop to forward,
+validation alone deciding it, and a duplicate delivery
 of a forward starts a copy of its own, since 6c and 6d record nothing. A relay also refuses a NACK that speaks
 for itself, its own report come back round a cycle, as its own reports leave from its gap run. Whom a relayed NACK
 speaks for the origin judges, by the recipient's signature or its receipt. The forwards of 6c and 6d record nothing, and

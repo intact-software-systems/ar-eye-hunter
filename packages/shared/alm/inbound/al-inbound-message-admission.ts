@@ -137,7 +137,7 @@ export class ALInboundMessageAdmission {
         const facts = readALInboundEffectFacts(
             nowMs,
             effectPreparation,
-            () => this.dependencies.readGapNackRelayHops(admitted)
+            () => this.dependencies.readGapNackRelayHops(admitted, [])
         );
         const read = await admissionStore.readIncomingMessage({
             msg: admitted,

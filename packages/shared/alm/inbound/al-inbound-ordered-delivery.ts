@@ -104,7 +104,7 @@ export class ALInboundOrderedDelivery {
         const facts = readALInboundEffectFacts(
             read.nowMs,
             this.dependencies.effectPreparation,
-            () => this.dependencies.readGapNackRelayHops(read.snapshot.msg)
+            () => this.dependencies.readGapNackRelayHops(read.snapshot.msg, [])
         );
         const computed = computeALInboundBufferedRelease({ read, plan, facts });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
@@ -168,7 +168,7 @@ export class ALInboundOrderedDelivery {
             facts: readALInboundEffectFacts(
                 read.nowMs,
                 this.dependencies.effectPreparation,
-                () => this.dependencies.readGapNackRelayHops(msg)
+                () => this.dependencies.readGapNackRelayHops(msg, [])
             ),
             mutations: [],
             effects: [toResyncRequiredNackEffect(msg, read, ordering)]

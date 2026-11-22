@@ -130,7 +130,7 @@ export class ALInboundGapRenewal {
     private readRelayHops(revealing: ALMessage | undefined): number {
         return revealing === undefined
             ? AL_GAP_NACK_RELAY_HOP_LIMIT
-            : this.dependencies.readGapNackRelayHops(revealing);
+            : this.dependencies.readGapNackRelayHops(revealing, []);
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */

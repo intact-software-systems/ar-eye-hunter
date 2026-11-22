@@ -130,7 +130,10 @@ export function computeALInboundNackAdmission(
  * one NACK round a cycle: each forward spends one of its relay hops and carries no more than its relay grants, so the
  * cycle ends within the room's size whatever hop count the child claimed.
  */
-function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInboundGapNackRoute | undefined): string {
+export function resolveALInboundGapNackTarget(
+    knownParentPeerId: string,
+    route: Pick<ALInboundGapNackRoute, 'upstreamPeerId'> | undefined
+): string {
     return route?.upstreamPeerId ?? knownParentPeerId;
 }
 
