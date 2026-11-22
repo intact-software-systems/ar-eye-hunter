@@ -51,6 +51,7 @@ import {
     type AlmLanePlanRecord,
     type AlmLaneRunIdentity
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
+import { ALM_LANE_FAMILY_TIMEOUT_MS } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/alm-lane-family-timeout-ms.ts';
 import {
     ALM_LANE_DEFAULT_SELECTION,
     decodeAlmLaneParameters,
@@ -205,10 +206,6 @@ const { scope, carriers } = laneParameters ?? ALM_LANE_DEFAULT_SELECTION;
  * only by an enabled lane, as its parameters are.
  */
 const backend = config.enabled ? readFullStackApiServerMode() : undefined;
-// Each family test's own limit, covering its conformance recipes and connection readiness. On a GitHub runner against
-// PostgreSQL (run 45009025510) the full scope's two-agent family took 14.1 minutes over rtc and 11.1 over ws; the limit
-// leaves room for a slow runner, and the run's global timeout still ends a hang.
-const CARRIER_TEST_TIMEOUT_MS = 1_500_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -245,7 +242,7 @@ test.describe('ALM conformance lane', () => {
                     plan.cells.length === 0,
                     toFamilyEmptyPlanReason(familyPlan, `no ${scope} ${title} ALM scenario runs over ${carrier}`)
                 );
-                test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+                test.setTimeout(ALM_LANE_FAMILY_TIMEOUT_MS);
                 announcePlan(carrier, family, plan);
                 const recorder = await startFamilyRecorder({ testInfo, carrier, family, plan });
 
@@ -298,7 +295,7 @@ test.describe('ALM conformance lane', () => {
                         } roles`
                     )
                 );
-                test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+                test.setTimeout(ALM_LANE_FAMILY_TIMEOUT_MS);
                 announcePlan(carrier, family, plan);
                 const recorder = await startFamilyRecorder({ testInfo, carrier, family, plan });
 
@@ -343,7 +340,7 @@ test.describe('ALM conformance lane', () => {
                     `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
                 )
             );
-            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+            test.setTimeout(ALM_LANE_FAMILY_TIMEOUT_MS);
             announcePlan(carrier, 'same-context', plan);
             const recorder = await startFamilyRecorder({ testInfo, carrier, family: 'same-context', plan });
 

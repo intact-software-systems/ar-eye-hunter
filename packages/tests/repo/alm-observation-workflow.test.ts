@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_LANE_FAMILIES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { ALM_LANE_FAMILY_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/lane/alm-lane-family-timeout-ms.ts';
 import type { AlmObservationMatrixEntry } from './alm-observation-matrix-entry.ts';
 import {
     toEvaluatedActionInputs,
@@ -257,6 +258,13 @@ describe('ALM conformance lane action', () => {
         expect(full?.run).toBe('npm run test:rallar:full-stack:postgres:alm -- --global-timeout=3300000');
         expect(840_000).toBeLessThan((smokeLimit ?? 0) * 60_000);
         expect(3_300_000).toBeLessThan((fullLimit ?? 0) * 60_000);
+    });
+
+    it('ends a hung family test by its own time limit before the full scope\'s global timeout ends the run', () => {
+        const full = laneSteps.find((step) => step.if === '${{ inputs.scope == \'full\' }}');
+        const fullGlobalTimeoutMs = Number(/--global-timeout=(\d+)/u.exec(full?.run ?? '')?.[1]);
+
+        expect(ALM_LANE_FAMILY_TIMEOUT_MS).toBeLessThan(fullGlobalTimeoutMs);
     });
 
     it('selects the families of a run from its optional families input, every family when it is empty', () => {
