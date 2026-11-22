@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { decodeRoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
-import { requestJson, requireRecord, type ApiV1RtcTopologyProofApi, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { requestJson, requireRecord, type ApiV1RtcTopologyProofApi, type ProofJsonObject, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import type { ManagedClusterProof } from './run-managed-cluster-proof.mts';
 
 interface ProgramRegistrationProofInput extends Pick<ManagedClusterProof.ScenarioInput, 'plans' | 'controls' | 'databaseUrl'> {
@@ -32,6 +32,24 @@ export async function proveProgramRegistrationBoundary({ plans, controls, databa
         toApiMutationRequestPath(group, id), { method: 'PUT', session, body });
     const seat = async (session = player) => decodeRoomLobbyAccountView(await requestJson(observer.baseUrl,
         '/api/room-lobbies' + scope, { method: 'GET', session })).seat;
+    const clock = { name: 'match', expectedDirectorEpoch: 1 };
+    const published = await update(owner, { roomClock: { ...clock, operation: 'publish-schedule', expectedRevision: 0,
+        phases: [{ phase: 'registration', startsAtEpochMs: 0 }, { phase: 'play', startsAtEpochMs: Date.now() + 120000 }] } });
+    const registration = (snapshot: ProofJsonObject) => {
+        const metadata = requireRecord(requireRecord(snapshot.group, 'group').metadata, 'metadata');
+        return requireRecord(metadata.rallarRoomLobbyRegistration, 'registration');
+    };
+    const delayed = { operation: 'set-registration-boundary', expectedRevision: registration(published).revision,
+        expectedProgramRevision: 1, program: 'match', phase: 'play' };
+    const policy = { returnWindowMs: 120000, claimWindowMs: 120000 };
+    await update(owner, { roomLobby: { operation: 'configure', policy: null } });
+    const reopened = registration(await update(owner, { roomLobby: { operation: 'configure', policy } }));
+    const conflict = await requestJson(observer.baseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), {
+        method: 'PUT', session: owner, expectedStatus: 409, body: { roomLobby: delayed }
+    });
+    assert.equal(conflict.code, 'room-lobby-registration-revision-conflict');
+    assert.deepEqual(reopened, { revision: reopened.revision, atEpochMs: null });
+    assert.deepEqual(registration(await requestJson(observer.baseUrl, group, { method: 'GET', session: owner })), reopened);
     await update(player, { roomLobby: { operation: 'wait' } });
     const offer = await seat();
     assert.ok(offer?.status === 'offered' && offer.deadlineEpochMs !== null);
@@ -39,12 +57,11 @@ export async function proveProgramRegistrationBoundary({ plans, controls, databa
         principal: 'admin', label: 'waiter', apiBaseUrl: observer.baseUrl, wsBaseUrl: observer.baseUrl.replace(/^http/, 'ws')
     });
     const oldBoundary = Date.now() + 6000;
-    const clock = { name: 'match', expectedDirectorEpoch: 1 };
-    await update(owner, { roomClock: { ...clock, operation: 'publish-schedule', expectedRevision: 0,
+    await update(owner, { roomClock: { ...clock, operation: 'publish-schedule', expectedRevision: 1,
         phases: [{ phase: 'registration', startsAtEpochMs: 0 }, { phase: 'play', startsAtEpochMs: oldBoundary }] } });
-    await update(owner, { roomLobby: { operation: 'set-registration-boundary', expectedRevision: 0,
-        expectedProgramRevision: 1, program: 'match', phase: 'play' } });
-    await update(owner, { roomClock: { ...clock, operation: 'pause-program', expectedRevision: 1 } });
+    await update(owner, { roomLobby: { operation: 'set-registration-boundary', expectedRevision: reopened.revision,
+        expectedProgramRevision: 2, program: 'match', phase: 'play' } });
+    await update(owner, { roomClock: { ...clock, operation: 'pause-program', expectedRevision: 2 } });
     const sql = postgres(databaseUrl, { max: 1 });
     // Inspect committed rows without triggering a lobby read or issuing a mutation that could settle an overdue cutoff.
     const storedLobby = async () => {
@@ -64,7 +81,7 @@ export async function proveProgramRegistrationBoundary({ plans, controls, databa
         await update(waiting, { roomLobby: { operation: 'wait' } });
         assert.equal((await seat(waiting))?.status, 'waiting');
         const resumeId = crypto.randomUUID();
-        const resume = { roomClock: { ...clock, operation: 'resume-program', expectedRevision: 2 } };
+        const resume = { roomClock: { ...clock, operation: 'resume-program', expectedRevision: 3 } };
         const resumed = await update(owner, resume, resumeId);
         const metadata = requireRecord(requireRecord(resumed.group, 'group').metadata, 'metadata');
         const clocks = metadata.rallarRoomClocks;

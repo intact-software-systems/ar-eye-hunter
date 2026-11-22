@@ -128,7 +128,8 @@ export function computeUpdate(
         if (lobbyChange.policy) {
             metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
             if (!Object.hasOwn(current.metadata, ROOM_LOBBY_METADATA_KEY)) {
-                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: 0, atEpochMs: null };
+                // Every registration edit advances the room metadata version. Seed a new activation above all earlier registration revisions.
+                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: next.metadataVersion, atEpochMs: null };
             }
         } else {
             delete metadata[ROOM_LOBBY_METADATA_KEY];

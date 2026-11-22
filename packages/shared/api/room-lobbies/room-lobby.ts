@@ -103,14 +103,16 @@ interface CreateRoomLobbyInput {
     readonly policy: RoomLobby.Policy;
     readonly activationId: string;
     readonly expiresAtEpochMs?: number | null;
+    readonly registrationRevision?: number;
 }
 
-export function createRoomLobby({ roomRef, capacity, policy, activationId, expiresAtEpochMs = null }: CreateRoomLobbyInput): RoomLobby {
+export function createRoomLobby({ roomRef, capacity, policy, activationId, registrationRevision = 0, expiresAtEpochMs = null }: CreateRoomLobbyInput): RoomLobby {
     if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
+    requireEpoch(registrationRevision, 'Initial registration revision');
     requireString(activationId, 'Room lobby activation');
     return {
         activationId, expiresAtEpochMs, roomRef: decodeExactGroupRef(roomRef, 'Room lobby'), capacity: decodePositiveLobbyInteger(capacity, 'Lobby capacity'),
-        registration: { revision: 0, atEpochMs: null, closed: false }, policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: [], waiters: [], capacityClaims: null
+        registration: { revision: registrationRevision, atEpochMs: null, closed: false }, policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: [], waiters: [], capacityClaims: null
     };
 }
 

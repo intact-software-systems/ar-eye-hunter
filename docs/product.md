@@ -321,6 +321,7 @@ the cutoff and `unavailable` when a scheduled cutoff cannot be compared with ser
 
 To close registration when play begins, use `lobby.setRegistrationBoundary(roomRef,
 { expectedRevision, expectedProgramRevision, program: 'match', phase: 'play' })`.
+Use the registration revision from the current room snapshot. Re-enabling a lobby starts a new revision, so a delayed command from its previous activation is rejected.
 The organizer chooses a phase that occurs exactly once in the published program. The cutoff
 moves with revisions to that phase. Pausing before it suspends the cutoff; resuming sets its
 new UTC instant. The registration view exposes the binding and its effective `atEpochMs`,
