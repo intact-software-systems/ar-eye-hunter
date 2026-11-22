@@ -1,8 +1,11 @@
+import { AppTopics } from '@shared/api/api-config.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
+import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
 
 const room = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const program = { name: 'court', elapsedThroughEpochMs: 1500, phases: [{ phase: 'first', startsAtEpochMs: 1000 }, { phase: 'second', startsAtEpochMs: 4000 }] };
@@ -94,5 +97,43 @@ it('recovers a missed resume on foreground without accepting a different state a
     }
     finally {
         stop();
+    }
+});
+
+it('repairs a missed resume and ban on server resync while the browser socket stays open', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    await facade.connect();
+    const { rooms, ws } = facade;
+    vi.spyOn(ws, 'status').mockReturnValue({ ...ws.status(), isOpen: true });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    let stored: RoomSchedule | null = paused;
+    vi.stubGlobal('fetch', async () => stored ? response(stored) : Response.json({ error: 'Forbidden' }, { status: 403 }));
+    const observed: RoomSchedule.Observation[] = [];
+    const stop = rooms.watchSchedule(room, 'court', value => observed.push(value));
+    async function resync() {
+        const topic = AppTopics.viewResync;
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, crypto.randomUUID(), 'all'),
+            scope: 'all', typeId: topic, resource: { version: 1 }
+        });
+        const { webSocketQueueBox } = getRoomWorkflowMocks().context.middleware;
+        const inbox = vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mock.calls.at(-1)![1];
+        await inbox.onMessage(message, toResourceEntry(topic, message));
+    }
+    try {
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: paused }));
+        stored = resumed;
+        await resync();
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: resumed }));
+        stored = null;
+        await resync();
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'stale', schedule: null }));
+    }
+    finally {
+        stop();
+        await facade.disconnect();
     }
 });

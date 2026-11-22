@@ -1,3 +1,4 @@
+import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import {
@@ -114,7 +115,7 @@ interface WriteRoomTimeline extends WriteRoomTime {
 export function createRoomTimeOperations(
     services: Pick<
         CreateBrowserRallarRoomsInput,
-        'requireSession' | 'roomEvents' | 'ws' | 'auth'
+        'requireSession' | 'roomEvents' | 'ws' | 'auth' | 'messages' | 'readSession'
     >
 ): RoomTimeOperations {
     const { requireSession } = services;
@@ -127,10 +128,11 @@ export function createRoomTimeOperations(
         decode: (metadata: ApiJsonObject, name: string) => T | null,
         listener: (observation: { status: 'current' | 'stale'; value: T | null; }) => void,
         regresses: (previous: T, next: T) => boolean,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        subscribeInvalidation?: Parameters<typeof watchRoomRevision<T>>[0]['subscribeInvalidation']
     ) {
         assertRoomDeadlineName(name);
-        return watchRoomRevision<T>({ room: roomRef, services, regresses, listener, signal, eventTypes: ['group-updated'],
+        return watchRoomRevision<T>({ room: roomRef, services, regresses, listener, signal, subscribeInvalidation, eventTypes: ['group-updated'],
             project: group => decode(group.metadata, name) });
     }
     async function write({ roomRef, change, requestId, signal }: WriteRoomTime) {
@@ -186,7 +188,20 @@ export function createRoomTimeOperations(
             return watch(room, name, readRoomSchedule, ({ status, value }) => listener({ status, schedule: value }),
                 (a, b) => b.elapsedThroughEpochMs < a.elapsedThroughEpochMs ||
                     (a.revision === b.revision && (a.status !== b.status || a.elapsedThroughEpochMs !== b.elapsedThroughEpochMs ||
-                        !sameSchedulePhases(a.phases, b.phases))), signal);
+                        !sameSchedulePhases(a.phases, b.phases))), signal,
+                (watchedRoom, invalidate) => subscribeViewInvalidations({
+                    browser: { messages: services.messages, session: services.readSession },
+                    scope: watchedRoom,
+                    resource: 'room-program',
+                    changed(notice) {
+                        if (!notice) {
+                            invalidate('program-changed');
+                        }
+                        else if (notice.resource === 'room-program' && notice.groupId === watchedRoom.groupId) {
+                            invalidate(notice.reason);
+                        }
+                    }
+                }));
         },
         advanceTimeline(room, advance, requestId, { signal } = {}) {
             const roomClock = { ...advance, operation: 'advance-phase' as const };

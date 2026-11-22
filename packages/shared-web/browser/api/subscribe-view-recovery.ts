@@ -20,7 +20,8 @@ export namespace SubscribeViewRecovery {
         session(): AuthSession | undefined;
     }
     export interface Input {
-        readonly browser: Browser;
+        /** Supply the socket when this subscriber owns connection recovery. */
+        readonly browser: Pick<Browser, 'messages' | 'session'> & Partial<Pick<Browser, 'ws'>>;
         readonly changed: () => void;
     }
 }
@@ -43,7 +44,7 @@ export function subscribeViewRecovery(input: SubscribeViewRecovery.Input): () =>
         }
         input.changed();
     }));
-    subscriptions.add(input.browser.ws.onLifecycle((event) => {
+    if (input.browser.ws) subscriptions.add(input.browser.ws.onLifecycle((event) => {
         if ((event.kind === 'open' || event.kind === 'connected') && input.browser.session() !== undefined) {
             input.changed();
         }

@@ -1,3 +1,4 @@
+import { ApiHttpError } from '../api/http-error.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 import type { RallarStateEventMessage } from '../messages/rallar-message-contracts.ts';
 
@@ -21,6 +22,7 @@ export interface ObservedRoomMetadata {
 interface WatchRoomRevisionInput<T> extends Pick<RallarRoomEventOptions, 'eventTypes'> {
     readonly room: GroupRef;
     readonly services: Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'ws' | 'auth' | 'roomEvents'>;
+    subscribeInvalidation?(room: GroupRef, invalidate: (reason: 'program-changed' | 'access-changed') => void): () => void;
     readonly signal?: AbortSignal;
     project(group: ObservedRoomMetadata): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
@@ -144,11 +146,17 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
             );
             validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
-        catch {
+        catch (error) {
             if (request !== attempt) {
                 return;
             }
             request = undefined;
+            if (error instanceof ApiHttpError && [401, 403, 404].includes(error.status)) {
+                queued = false;
+                announcedRevision = 0;
+                publish('stale', null);
+                return;
+            }
             publish('stale');
             // One bounded retry burst per external wakeup, including when the server stays unavailable.
             if (!signal.aborted && retries < 3) {
@@ -187,7 +195,19 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
     document.addEventListener('visibilitychange', wake, options);
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
-    const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
+    const unsubscribeRoom = input.subscribeInvalidation?.(room, (reason) => {
+        request?.abort();
+        request = undefined;
+        queued = false;
+        if (reason === 'access-changed') {
+            announcedRevision = 0;
+            publish('stale', null);
+        }
+        else {
+            publish('stale');
+        }
+        wake();
+    }) ?? roomEvents.onEvent((_event, message) => {
         const delta = readServerDelta(message, room);
         if (!delta) {
             return;
