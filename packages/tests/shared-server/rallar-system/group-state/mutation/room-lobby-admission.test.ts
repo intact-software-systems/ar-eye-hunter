@@ -20,7 +20,7 @@ it('reserves the created room and prevents a second lobby commitment in the same
     expect((await groups.findLobbyCommitmentEntry(SCOPE, 'alice'))?.value.seat?.roomRef).toEqual(groupRef('court-a'));
     await expect(service.createGroup(SCOPE, { ...create, groupId: 'court-b', requestId: 'second' })).rejects.toThrow();
     expect(await groups.readSnapshot(groupRef('court-b'))).toBeUndefined();
-    expect((await groups.findRoomLobbyEntry(groupRef('court-a')))?.value.seats.map((seat) => seat.principalId)).toEqual(['alice']);
+    expect((await groups.findGroupLobbyEntry(groupRef('court-a')))?.value.seats.map((seat) => seat.principalId)).toEqual(['alice']);
 });
 
 it('requires a fresh admission when a provisional seat has expired before the connect', async () => {
@@ -66,11 +66,11 @@ it('keeps the seat through other room membership and releases only the caller’
     await expect(
         service.updateGroup(SCOPE, 'court', { requestId: 'mixed', actorPrincipalId: 'bob', roomLobby: { operation: 'release' }, displayName: 'renamed' })
     ).rejects.toThrow();
-    expect((await groups.findRoomLobbyEntry(groupRef('court')))?.value.seats).toHaveLength(2);
+    expect((await groups.findGroupLobbyEntry(groupRef('court')))?.value.seats).toHaveLength(2);
     await service.updateGroup(SCOPE, 'court', { requestId: 'release', actorPrincipalId: 'bob', roomLobby: { operation: 'release' } });
     expect(await groups.findLobbyCommitmentEntry(SCOPE, 'bob')).toBeUndefined();
     await service.joinGroup(SCOPE, 'court', { actorPrincipalId: 'carol', requestId: 'carol-gets-free-seat' });
-    expect((await groups.findRoomLobbyEntry(groupRef('court')))?.value.seats.map((seat) => seat.principalId)).toEqual(['alice', 'carol']);
+    expect((await groups.findGroupLobbyEntry(groupRef('court')))?.value.seats.map((seat) => seat.principalId)).toEqual(['alice', 'carol']);
 });
 
 it('bounds and renews every private account row with a finite room lifetime', async () => {
@@ -93,5 +93,5 @@ it('bounds and renews every private account row with a finite room lifetime', as
     expect((await groups.findLobbyCommitmentEntry(SCOPE, 'bob'))?.entry.expireAtTimestamp).toBe(now + 60000);
     await service.updateGroup(SCOPE, 'court', { actorPrincipalId: 'alice', requestId: 'renew', expiresAtEpochMs: now + 120000 });
     expect((await groups.findLobbyCommitmentEntry(SCOPE, 'bob'))?.entry.expireAtTimestamp).toBe(now + 120000);
-    expect((await groups.findRoomLobbyEntry(groupRef('court')))?.value.expiresAtEpochMs).toBe(now + 120000);
+    expect((await groups.findGroupLobbyEntry(groupRef('court')))?.value.expiresAtEpochMs).toBe(now + 120000);
 });

@@ -97,7 +97,7 @@ it('carries the application lobby default and all three private seats through th
         const roomRef = { ...DESTINATION, groupId: 'managed-match' };
         const participants = ['alice', 'bob', 'carol'].map(principalId => ({ principalId, sessionId: 's-' + principalId, requestId: 'r-' + principalId }));
         const input = await readNewGroupCohortAdmission({
-            groups: fixture.repository, roomRef, participants, roomLobbyDefault: { returnWindowMs: 5000, claimWindowMs: 1000 },
+            groups: fixture.repository, roomRef, participants, lobbyDefault: { returnWindowMs: 5000, claimWindowMs: 1000 },
             displayName: 'Managed match', maxSpectators: null, reconnectGraceMs: 60000, capturedAtEpochMs: fixture.nowEpochMs,
             serviceId: 'cohort-test', nowEpochMs: fixture.nowEpochMs, attemptCount: 1, traceId: 'cohort-test', finishedRetentionMs: 60000
         });
@@ -106,7 +106,7 @@ it('carries the application lobby default and all three private seats through th
         await fixture.storage.sql.begin(async transaction => {
             for (const mutation of computed.mutations) await writeGroupMutation(transaction, mutation);
         });
-        expect((await fixture.repository.findRoomLobbyEntry(roomRef))?.value.seats.map(seat => seat.principalId)).toEqual(['alice', 'bob', 'carol']);
+        expect((await fixture.repository.findGroupLobbyEntry(roomRef))?.value.seats.map(seat => seat.principalId)).toEqual(['alice', 'bob', 'carol']);
         for (const { principalId } of participants) {
             expect((await fixture.repository.findLobbyCommitmentEntry(roomRef, principalId))?.value.seat?.roomRef).toEqual(roomRef);
         }
@@ -148,8 +148,8 @@ it('retries a mixed room and lobby read instead of recreating a disabled lobby d
         if (updated.outcome !== 'write') throw new Error('Expected managed room');
         await fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, updated));
         const before = await fixture.join('bob');
-        if (!before.read.roomLobby) throw new Error('Expected lobby read');
-        const afterDisable = { ...before.read.roomLobby, lobby: null };
-        expect(() => computeGroupMutation({ ...before, read: { ...before.read, roomLobby: afterDisable } })).toThrow(RuntimeStateWriteConflictError);
+        if (!before.read.lobbyState) throw new Error('Expected lobby read');
+        const afterDisable = { ...before.read.lobbyState, lobby: null };
+        expect(() => computeGroupMutation({ ...before, read: { ...before.read, lobbyState: afterDisable } })).toThrow(RuntimeStateWriteConflictError);
     } finally { await fixture.storage.close(); }
 });

@@ -1265,14 +1265,20 @@ paths:
               $ref: '#/components/schemas/UpdateGroupRequest'
       responses:
         '200':
-          description: Updated group snapshot.
+          description: Self-service lobby commands acknowledge the target room. Other updates return the group snapshot.
           headers:
             x-request-id:
               $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupSnapshot'
+                oneOf:
+                  - { $ref: '#/components/schemas/GroupSnapshot' }
+                  - type: object
+                    required: [roomRef]
+                    additionalProperties: false
+                    properties:
+                      roomRef: { $ref: '#/components/schemas/GroupRef' }
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':

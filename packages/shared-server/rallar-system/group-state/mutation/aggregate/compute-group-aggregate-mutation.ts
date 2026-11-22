@@ -1,4 +1,4 @@
-import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby.ts';
+import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -145,7 +145,7 @@ export function computeUpdate(
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
     }
-    if (sameGroupIgnoringVersions(current, next) && !(lobbyChange?.operation === 'release' && read.roomLobby?.lobby?.value.seats.some(seat => seat.principalId === command.input.actorPrincipalId))) {
+    if (sameGroupIgnoringVersions(current, next) && !(lobbyChange?.operation === 'release' && read.lobbyState?.lobby?.value.seats.some(seat => seat.principalId === command.input.actorPrincipalId))) {
         return noOp(command, read, facts);
     }
     return groupWrite({

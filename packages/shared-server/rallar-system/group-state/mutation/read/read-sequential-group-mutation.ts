@@ -188,7 +188,7 @@ function assembleSequentialGroupMutationRead({
         activeMembers,
         // The layout rows are attached by the service for the commands that
         // consult them; the read layer itself never does.
-        roomLobby: null,
+        lobbyState: null,
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null

@@ -6,12 +6,12 @@ import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 import { decodePositiveLobbyInteger, decodeRoomLobbyPolicy } from './room-lobby-policy.ts';
 
-export {
-    ROOM_LOBBY_METADATA_KEY, decodeRoomLobbyPolicy, readRoomLobbyPolicy, roomLobbyApplicationDefault
-} from './room-lobby-policy.ts';
 export { changeRoomLobby, configureRoomLobby } from './room-lobby-roster.ts';
 
 export namespace RoomLobby {
+    export type Mutation = { readonly operation: 'configure'; readonly policy: Policy | null; }
+        | { readonly operation: 'release'; };
+
     export interface Policy {
         readonly returnWindowMs: number;
         readonly claimWindowMs: number;
@@ -55,7 +55,15 @@ export interface RoomLobbyAccountView {
     } | null;
 }
 
-export function createRoomLobby(roomRef: GroupRef, capacity: number, policy: RoomLobby.Policy, activationId: string, expiresAtEpochMs: number | null = null): RoomLobby {
+interface CreateRoomLobbyInput {
+    readonly roomRef: GroupRef;
+    readonly capacity: number;
+    readonly policy: RoomLobby.Policy;
+    readonly activationId: string;
+    readonly expiresAtEpochMs?: number | null;
+}
+
+export function createRoomLobby({ roomRef, capacity, policy, activationId, expiresAtEpochMs = null }: CreateRoomLobbyInput): RoomLobby {
     if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
     requireString(activationId, 'Room lobby activation');
     return {

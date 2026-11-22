@@ -1,38 +1,40 @@
+import type { ViewInvalidationPublication } from '../../websocket/outbox/compute-view-invalidation-publication.ts';
+import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
-import {
-    changeRoomLobby,
-    configureRoomLobby,
-    createRoomLobby,
-    readRoomLobbyPolicy,
-    type RoomLobby
-} from '@shared/api/room-lobbies/room-lobby.ts';
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { changeRoomLobby, configureRoomLobby, createRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 import { countGroupSessionOccupiedSeats } from '../schedule/group-session-reservations.ts';
-import { computeRoomLobbyPublication } from './room-lobby-publication.ts';
-import { computeRoomLobbyEffects, type RoomLobbyRead } from './room-lobby-storage.ts';
+import { computeGroupLobbyParticipation } from './compute-group-lobby-participation.ts';
+import { computeGroupLobbyPublication } from './compute-group-lobby-publication.ts';
+import { computeGroupLobbyEffects, type GroupLobbyRead } from './group-lobby-storage.ts';
 
-export function computeRoomLobbyMutation(input: GroupMutationWriteInput, group: Group) {
+interface GroupLobbyMutation extends ViewInvalidationPublication {
+    readonly effects: readonly RuntimeStateGuardedBatchEffect[];
+}
+
+export function computeGroupLobbyMutation(input: GroupMutationWriteInput, group: Group): GroupLobbyMutation {
     const { command, read, facts } = input;
-    const state = read.roomLobby;
+    const state = read.lobbyState;
     if (!state) {
         return { effects: [], outbox: [], provenance: [] };
     }
     const before = state.lobby?.value ?? null;
-    let after = computeRoomLobbyRoster(input, group, state);
+    let after = computeGroupLobbyRoster(input, group, state);
     if (after && before === after && input.guard.kind === 'presence') {
         // Connecting a second session can leave the account present. Its write must still observe this lobby activation.
         after = { ...after };
     }
     const expired = before?.expiresAtEpochMs != null && before.expiresAtEpochMs <= facts.attemptAtEpochMs;
-    const effects = computeRoomLobbyEffects(state, after, command.aggregateRef, expired ? 'expired' : 'active');
+    const effects = computeGroupLobbyEffects({ read: state, after, roomRef: command.aggregateRef, mode: expired ? 'expired' : 'active' });
     if (!effects.length) {
         return { effects, outbox: [], provenance: [] };
     }
-    const publication = computeRoomLobbyPublication({
+    const publication = computeGroupLobbyPublication({
         roomRef: command.aggregateRef,
         groupCreatedAtEpochMs: group.created.atEpochMs,
         before,
@@ -45,7 +47,7 @@ export function computeRoomLobbyMutation(input: GroupMutationWriteInput, group: 
     return { effects, ...publication };
 }
 
-function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, state: RoomLobbyRead): RoomLobby | null {
+function computeGroupLobbyRoster(input: GroupMutationWriteInput, group: Group, state: GroupLobbyRead): RoomLobby | null {
     const { command, facts, read } = input;
     const policy = readRoomLobbyPolicy(group.metadata);
     const now = facts.attemptAtEpochMs;
@@ -68,7 +70,13 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
         throw new RuntimeStateWriteConflictError();
     }
     if (!lobby || command.operation === 'createGroup') {
-        lobby = createRoomLobby(command.aggregateRef, group.maxMembers, policy, facts.eventId, expiresAtEpochMs);
+        lobby = createRoomLobby({
+            roomRef: command.aggregateRef,
+            capacity: group.maxMembers,
+            policy,
+            activationId: facts.eventId,
+            expiresAtEpochMs
+        });
     }
     else if (
         group.maxMembers !== lobby.capacity || policy.returnWindowMs !== lobby.policy.returnWindowMs ||
@@ -87,7 +95,7 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
     }
 
     const accounts = new Map(state.accounts.map((account) => [account.principalId, account.stored?.value.seat]));
-    for (const change of lobbyParticipationChanges(input, state, lobby)) {
+    for (const change of computeGroupLobbyParticipation(input, state, lobby)) {
         if (change.kind === 'arrive' || change.kind === 'reserve') {
             const commitment = accounts.get(change.principalId);
             if (commitment && !isSameGroupRef(commitment.roomRef, group)) {
@@ -120,69 +128,4 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
         );
     }
     return lobby;
-}
-
-function lobbyParticipationChanges(
-    input: GroupMutationWriteInput,
-    state: RoomLobbyRead,
-    lobby: RoomLobby
-): RoomLobby.Command[] {
-    const { command, read, guard } = input;
-    const changes: RoomLobby.Command[] = [];
-    const livePrincipals = new Set(
-        state.sessions.filter((session) =>
-            session.status === 'active' && session.expiresAtEpochMs > input.facts.attemptAtEpochMs &&
-            !(command.operation === 'disconnectPresence' && session.sessionId === command.sessionId)
-        ).map((session) => session.principalId)
-    );
-    if (command.operation === 'updateGroup') {
-        if (command.input.roomLobby?.operation === 'release' && command.input.actorPrincipalId) {
-            changes.push({ kind: 'release', principalId: command.input.actorPrincipalId });
-        }
-        if (!state.lobby) {
-            for (const member of read.activeMembers ?? []) {
-                if (member.role !== 'spectator' && livePrincipals.has(member.principalId)) {
-                    changes.push({ kind: 'arrive', principalId: member.principalId });
-                }
-            }
-        }
-    }
-    for (const member of input.members) {
-        const principalId = member.principalId;
-        if (member.status === 'active' && member.role !== 'spectator') {
-            const predecessor = principalId === read.targetMember?.principalId ? read.targetMember : read.actorMember;
-            if (
-                command.operation === 'createGroup' || command.operation === 'joinGroup' ||
-                command.operation === 'acceptGroupInvite' ||
-                predecessor?.status !== 'active' || predecessor.role === 'spectator'
-            ) {
-                changes.push({ kind: 'reserve', principalId });
-            }
-        }
-        else if (member.status === 'left' && principalId === command.input.actorPrincipalId) {
-            changes.push({ kind: 'away', principalId });
-        }
-        else {
-            changes.push({ kind: 'release', principalId });
-        }
-    }
-    if (
-        guard.kind === 'presence' && read.targetMember?.role !== 'spectator' && command.operation === 'connectPresence'
-    ) {
-        const principalId = guard.value.principalId;
-        if (!lobby.seats.some((seat) => seat.principalId === principalId)) {
-            throw new GroupPolicyDeniedError(
-                denyGroupPolicy('group-admission-closed', 'Join the lobby before confirming a seat.')
-            );
-        }
-        changes.push({ kind: 'arrive', principalId });
-        livePrincipals.add(principalId);
-    }
-    // The final socket may lose its lease before the cleanup worker runs. Resolve that at the fill boundary too.
-    for (const seat of lobby.seats) {
-        if (seat.present && !livePrincipals.has(seat.principalId)) {
-            changes.push({ kind: 'away', principalId: seat.principalId });
-        }
-    }
-    return changes;
 }

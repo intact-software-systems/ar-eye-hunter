@@ -1,4 +1,4 @@
-import { computeRoomLobbyMutation } from '../lobby/compute-room-lobby-mutation.ts';
+import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
     GroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -139,7 +139,7 @@ export function computeGroupMutationWriteResult(
     const { command, eventGroup, facts, guard, read } = input;
     const group = eventGroup ??
         (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
-    const lobby = computeRoomLobbyMutation(input, group);
+    const lobby = computeGroupLobbyMutation(input, group);
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
     const event = input.eventType === null
@@ -171,7 +171,7 @@ export function computeGroupMutationWriteResult(
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
         viewProvenance: [...scheduled.viewProvenance, ...lobby.provenance],
-        roomLobbyEffects: lobby.effects,
+        lobbyEffects: lobby.effects,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
         sessionReservationWrite,
         guard: input.guard,

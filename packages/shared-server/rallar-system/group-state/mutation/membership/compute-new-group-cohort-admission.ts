@@ -1,4 +1,4 @@
-import { stageRoomLobbyRead } from '../../lobby/stage-room-lobby-read.ts';
+import { stageGroupLobbyRead } from '../../lobby/stage-group-lobby-read.ts';
 import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { groupStateInsertGroupDescriptor } from '../../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import type { GroupMutationRead } from '../group-mutation-contracts.ts';
@@ -47,7 +47,7 @@ export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInp
         }
     };
     if (input.participants.length === 0) return { status: 'admitted', mutations: [created] };
-    const roomLobby = stageRoomLobbyRead(input.creation.read.roomLobby, created.roomLobbyEffects, input.creation.facts.nowEpochMs);
+    const lobbyState = stageGroupLobbyRead(input.creation.read.lobbyState, created.lobbyEffects, input.creation.facts.nowEpochMs);
     const policy = created.lifecyclePolicy;
     const participants = input.participants.map((participant): GroupCohortAdmissionParticipant => {
         if (participant.command.targetPrincipalId === group.value.ownerPrincipalId) {
@@ -58,7 +58,7 @@ export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInp
             read: {
                 ...participant.read,
                 group,
-                roomLobby,
+                lobbyState,
                 activeMembers: created.members,
                 lifecyclePolicy: { status: 'present', policy }
             }

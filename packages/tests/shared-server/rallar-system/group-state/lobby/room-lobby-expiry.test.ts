@@ -1,8 +1,8 @@
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { RoomLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/room-lobby-expiry.ts';
-import { computeRoomLobbyPublication } from '@shared-server/rallar-system/group-state/lobby/room-lobby-publication.ts';
-import { ROOM_LOBBIES_NAMESPACE, ROOM_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey } from '@shared-server/rallar-system/group-state/lobby/room-lobby-storage.ts';
+import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
+import { computeGroupLobbyPublication } from '@shared-server/rallar-system/group-state/lobby/compute-group-lobby-publication.ts';
+import { GROUP_LOBBIES_NAMESPACE, GROUP_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey } from '@shared-server/rallar-system/group-state/lobby/group-lobby-storage.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
@@ -30,15 +30,15 @@ it('processes a persisted return window after restart; only the winner releases 
         const due = { generation: 3, dueAtEpochMs: clock + 1000 };
         const seat = { principalId: 'alice', present: false, returnWindow: due, admissionWindow: null };
         const lobby: RoomLobby = { roomRef, expiresAtEpochMs: null, activationId: 'current', capacity: 1, policy: { returnWindowMs: 1000, claimWindowMs: 1000 }, revision: 3, seats: [seat] };
-        await runtime.upsert({ namespace: ROOM_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef), value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
-        await runtime.upsert({ namespace: ROOM_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(roomRef, 'alice'), value: JSON.stringify({ scope: { applicationId: 'game', workspaceId: 'default' }, principalId: 'alice', seat: { roomRef, status: 'away', deadlineEpochMs: due.dueAtEpochMs } }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
-        const publication = computeRoomLobbyPublication({ before: null, after: lobby, roomRef, groupCreatedAtEpochMs: group.created.atEpochMs,
+        await runtime.upsert({ namespace: GROUP_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef), value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        await runtime.upsert({ namespace: GROUP_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(roomRef, 'alice'), value: JSON.stringify({ scope: { applicationId: 'game', workspaceId: 'default' }, principalId: 'alice', seat: { roomRef, status: 'away', deadlineEpochMs: due.dueAtEpochMs } }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        const publication = computeGroupLobbyPublication({ before: null, after: lobby, roomRef, groupCreatedAtEpochMs: group.created.atEpochMs,
             createdAtEpochMs: clock, retentionMs: 60000, serviceId: 'api', traceId: 'fill' });
         await storage.sql.begin(transaction => writeAppOutboxInserts(transaction,
             publication.outbox.filter(row => decodePersistedALMessage(row.entry.resource).payload.typeId === AppOutboxType.ROOM_LOBBY_DEADLINE)));
         const nowEpochMs = Date.now;
         const queue = createSqlServerAppInbox({ database: storage.sql, nowEpochMs });
-        const service = new RoomLobbyExpiry({ database: storage.sql, appInbox: queue.inbox, groups, nowEpochMs, serviceId: 'api', retentionMs: 60000 });
+        const service = new GroupLobbyExpiry({ database: storage.sql, appInbox: queue.inbox, groups, nowEpochMs, serviceId: 'api', retentionMs: 60000 });
         service.listen(queue.outbox);
         queue.inbox.start();
         const delivery = createAppInboxTestResilience(0);
@@ -47,15 +47,15 @@ it('processes a persisted return window after restart; only the winner releases 
             const admission = await service.expire.enqueue({ command: stale, traceId: 'obsolete' });
             expect(admission.right).toBeDefined();
             await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, delivery);
-            expect((await groups.findRoomLobbyEntry(roomRef))?.value).toEqual(lobby);
+            expect((await groups.findGroupLobbyEntry(roomRef))?.value).toEqual(lobby);
         }
         await queue.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, delivery);
         await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, delivery);
-        expect((await groups.findRoomLobbyEntry(roomRef))?.value).toMatchObject({ revision: 4, seats: [] });
+        expect((await groups.findGroupLobbyEntry(roomRef))?.value).toMatchObject({ revision: 4, seats: [] });
         expect(await groups.findLobbyCommitmentEntry(roomRef, 'alice')).toBeUndefined();
         const replay = await service.expire.submit({ command: deadline, traceId: 'replay' });
         expect(replay.right).toMatchObject(due);
-        expect((await groups.findRoomLobbyEntry(roomRef))?.value.revision).toBe(4);
+        expect((await groups.findGroupLobbyEntry(roomRef))?.value.revision).toBe(4);
         const notices = await storage.sql<readonly { notices: number }[]>`select count(*)::int as notices from resource_inbox where ri_topic_id = 'view.invalidated'`;
         expect(notices[0]?.notices).toBe(1);
         const retained = await storage.sql`select ri_status as status, expire_ts < now() + interval '2 minutes' as bounded
@@ -77,14 +77,14 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
         const seat = { principalId: 'alice', present: false, returnWindow: null, admissionWindow: null };
         const lobby: RoomLobby = { activationId: 'current', expiresAtEpochMs: now - 200, roomRef,
             policy: { claimWindowMs: 5000, returnWindowMs: 120000 }, capacity: 4, revision: 3, seats: [seat] };
-        await runtime.upsert({ namespace: ROOM_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef),
+        await runtime.upsert({ namespace: GROUP_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef),
             value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const scope = { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId };
         const newSeat = { roomRef: { ...roomRef, groupId: 'other' }, status: 'present', deadlineEpochMs: null };
-        await runtime.upsert({ namespace: ROOM_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(scope, 'alice'),
+        await runtime.upsert({ namespace: GROUP_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(scope, 'alice'),
             value: JSON.stringify({ scope, principalId: 'alice', seat: newSeat }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const queue = createSqlServerAppInbox({ database: storage.sql, nowEpochMs: Date.now });
-        const service = new RoomLobbyExpiry({ database: storage.sql, appInbox: queue.inbox, groups, nowEpochMs: Date.now,
+        const service = new GroupLobbyExpiry({ database: storage.sql, appInbox: queue.inbox, groups, nowEpochMs: Date.now,
             serviceId: 'api', retentionMs: 60000 });
         service.listen(queue.outbox);
         queue.inbox.start();
@@ -93,11 +93,11 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
         for (const stale of [{ ...due, dueAtEpochMs: now - 300 }, { ...due, activationId: 'old' }]) {
             expect((await service.expire.enqueue({ command: stale, traceId: 'superseded' })).right).toBeDefined();
             await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
-            expect((await groups.findRoomLobbyEntry(roomRef))?.value).toEqual(lobby);
+            expect((await groups.findGroupLobbyEntry(roomRef))?.value).toEqual(lobby);
         }
         expect((await service.expire.enqueue({ command: due, traceId: 'expire' })).right).toBeDefined();
         await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
-        expect(await groups.findRoomLobbyEntry(roomRef)).toBeUndefined();
+        expect(await groups.findGroupLobbyEntry(roomRef)).toBeUndefined();
         expect((await groups.findLobbyCommitmentEntry(scope, 'alice'))?.value.seat).toEqual(newSeat);
         const notices = await storage.sql<readonly { notices: number }[]>`select count(*)::int as notices from resource_inbox where ri_topic_id = 'view.invalidated'`;
         expect(notices[0]?.notices).toBe(1);

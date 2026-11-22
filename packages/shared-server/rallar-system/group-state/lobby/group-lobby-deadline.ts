@@ -14,7 +14,7 @@ import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface RoomLobbyDeadline {
+export interface GroupLobbyDeadline {
     readonly kind: 'seat' | 'room';
     readonly generation: number;
     readonly roomRef: GroupRef;
@@ -23,7 +23,7 @@ export interface RoomLobbyDeadline {
     readonly dueAtEpochMs: number;
 }
 
-export function decodeRoomLobbyDeadline(value: unknown): RoomLobbyDeadline {
+export function decodeGroupLobbyDeadline(value: unknown): GroupLobbyDeadline {
     const row = requireRecord(value, 'Room lobby deadline');
     requireExactKeys(row, ['kind', 'generation', 'roomRef', 'activationId', 'groupCreatedAtEpochMs', 'dueAtEpochMs'], 'Room lobby deadline');
     const ref = requireRecord(row.roomRef, 'Room lobby deadline room');
@@ -43,7 +43,7 @@ export function decodeRoomLobbyDeadline(value: unknown): RoomLobbyDeadline {
 
 }
 
-export function roomLobbyDeadlineRoute(deadline: RoomLobbyDeadline) {
+export function groupLobbyDeadlineRoute(deadline: GroupLobbyDeadline) {
     return toAppQueueKey({
         topicId: 'room-lobby.deadline',
         resourceId: computeSha256CanonicalJson(deadline),
@@ -51,17 +51,17 @@ export function roomLobbyDeadlineRoute(deadline: RoomLobbyDeadline) {
     });
 }
 
-export function installRoomLobbyDeadline(input: {
+export function installGroupLobbyDeadline(input: {
     readonly outboxQueueReader: OutboxQueueReader;
     readonly database: PSqlSql;
     readonly retentionMs: number;
     readonly nowEpochMs: () => number;
-    readonly enqueue: (command: RoomLobbyDeadline, traceId: string) => Promise<void>;
+    readonly enqueue: (command: GroupLobbyDeadline, traceId: string) => Promise<void>;
 }): void {
     input.outboxQueueReader.onOutboxMessageDo(AppOutboxType.ROOM_LOBBY_DEADLINE, {
         onMessage: async (message, entry) => {
-            const deadline = decodeRoomLobbyDeadline(JSON.parse(message.payload.resource));
-            const route = roomLobbyDeadlineRoute(deadline);
+            const deadline = decodeGroupLobbyDeadline(JSON.parse(message.payload.resource));
+            const route = groupLobbyDeadlineRoute(deadline);
             if (!jsonEquals(message.route, route) || message.id.msgId !== route.resourceId ||
                 message.payload.typeId !== AppOutboxType.ROOM_LOBBY_DEADLINE || message.targets !== undefined ||
                 message.constraints?.expiresAtMs !== NEVER_EXPIRE_AT_TIMESTAMP) {

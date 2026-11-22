@@ -122,8 +122,7 @@ export interface CreateGroupRequest extends MutationActorInput {
 }
 
 export interface UpdateGroupRequest extends MutationActorInput {
-    readonly roomLobby?: { readonly operation: 'configure'; readonly policy: RoomLobby.Policy | null; }
-        | { readonly operation: 'release'; };
+    readonly roomLobby?: RoomLobby.Mutation;
     readonly roomClock?: RoomClockMutation;
     readonly roomDeadline?: RoomDeadlineChange;
     readonly slug?: string;
