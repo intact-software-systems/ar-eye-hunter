@@ -324,7 +324,8 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
             nack: { ...nack, reason: 'gap' },
             msg,
             owner: { msgId: 'subject', senderId: 'origin', source: { kind: 'rtc-peer', peerId: 'parent' }, supersedenceKey: null, deliveredLocally: false },
-            parentPeerId: 'parent',
+            arrivalPeerId: 'parent',
+            layoutParentPeerId: undefined,
             childPeerIds: ['child'],
             nowMs: NOW_MS,
             controlMsgId: 'forwarded',
@@ -339,6 +340,14 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
         expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);
         expect(toALInboundNackCommitBundle(candidate).mutations).toEqual([]);
         expect(toUpwardControls(candidate)).toEqual([{ type: 'nack', payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'parent' } }]);
+    });
+
+    it('forwards the child\'s gap NACK to the relay\'s current upstream peer, not the peer the message arrived from (6d)', () => {
+        const read = { ...readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' }), layoutParentPeerId: 'new-parent' };
+        const candidate = computeALInboundUnreceiptedGapNackAdmission(read, RETENTION);
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{ type: 'nack', payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'new-parent' } }]);
     });
 
     it('forwards a child\'s gap NACK for a recipient of the frozen audience below it', () => {

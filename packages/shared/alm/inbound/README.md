@@ -340,8 +340,9 @@ recipient, since the list gains a recipient only when it is absent. A `gap` NACK
 to its parent as the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). A send
 that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
 `forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
-relay forwards a child's gap NACK about such a stored message without one, toward the peer the message arrived from,
-each time it admits it, and records nothing (6c). It admits one from a child it forwards the message to, never that
+relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
+nothing (6c). It sends it to its current upstream peer when its accepted layout names the child its own, as a 6d new
+parent does, since a reshape may have removed the peer the message arrived from, and otherwise toward that peer. It admits one from a child it forwards the message to, never that
 peer, naming a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's
 own track; the origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and
 its child lost is repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
@@ -714,7 +715,7 @@ is gone the run asks the track's current upstream peer, the one connected neighb
 a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again. Every run arms
 the next number. A relay never forwards a repair request. It forwards a child's gap NACK toward the origin while it
 holds a pending row that waits on that child; about a stored message that asked for no receipt, while the child is
-one it passes the copy down to (6c); and, as a new parent after a reshape does, while the NACK is the child's own word
+one it passes the copy down to (6c), to its current upstream peer when one resolves; and, as a new parent after a reshape does, while the NACK is the child's own word
 and the child is its child in its accepted layout (6d): about a message it holds nothing of, to its own upstream peer
 ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), and about one its receipt row
 holds for other children, to that same upstream peer, not the row's parent a reshape may have removed, with the row

@@ -91,7 +91,7 @@ export function computeALInboundNackAdmission(
                 msgId: read.nack.msgId,
                 owner: read.owner,
                 relayPeerId: read.nack.toPeerId,
-                pending: { ...row, toPeerId: read.layoutParentPeerId ?? row.toPeerId },
+                pending: { ...row, toPeerId: resolveALInboundGapNackTarget(read.layoutParentPeerId, row.toPeerId) },
                 nowMs: read.nowMs,
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
@@ -109,6 +109,14 @@ export function computeALInboundNackAdmission(
     };
 }
 
+/**
+ * A child's gap NACK goes to this relay's current upstream peer when its accepted layout names one, since a reshape may
+ * have removed the parent the relay knows (its row's, or the peer the message arrived from); to that parent otherwise.
+ */
+function resolveALInboundGapNackTarget(layoutParentPeerId: string | undefined, knownParentPeerId: string): string {
+    return layoutParentPeerId ?? knownParentPeerId;
+}
+
 /** A child's gap NACK about a stored message that asked for no receipt, for which the relay keeps no row (6c). */
 export interface ALInboundUnreceiptedGapNackAdmissionRead {
     readonly namespace: string;
@@ -116,8 +124,13 @@ export interface ALInboundUnreceiptedGapNackAdmissionRead {
     /** The stored message the NACK names. */
     readonly msg: ALMessage;
     readonly owner: ALInboundMessageOwner;
-    /** The peer the message arrived from, toward which the relay forwards the NACK. */
-    readonly parentPeerId: string;
+    /** The peer the message arrived from: never a child, and the NACK's target when no upstream peer resolves. */
+    readonly arrivalPeerId: string;
+    /**
+     * This relay's current upstream peer toward the origin in an accepted layout that names the sender its child, read as
+     * for a receipt row's layout child (6d); absent when none resolves.
+     */
+    readonly layoutParentPeerId: string | undefined;
     /** The next hops the relay passes a copy of the message down to: the children whose gap NACK it relays. */
     readonly childPeerIds: readonly string[];
     readonly nowMs: number;
@@ -137,7 +150,7 @@ export function computeALInboundUnreceiptedGapNackAdmission(
         read,
         observedMessageOwner: read.owner,
         upward: {
-            toPeerId: read.parentPeerId,
+            toPeerId: resolveALInboundGapNackTarget(read.layoutParentPeerId, read.arrivalPeerId),
             expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
             upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
         }

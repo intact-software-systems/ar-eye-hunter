@@ -95,7 +95,7 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     const { nack, msg } = read;
     const frozenPeerIds = resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds;
     const issues: ALMessageRejection[] = [];
-    if (nack.fromPeerId === read.parentPeerId) {
+    if (nack.fromPeerId === read.arrivalPeerId) {
         issues.push(rejectInboundNack('Inbound NACK comes from the peer the message arrived from'));
     }
     if (!read.childPeerIds.includes(nack.fromPeerId)) {

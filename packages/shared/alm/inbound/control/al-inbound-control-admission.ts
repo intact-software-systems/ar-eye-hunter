@@ -326,8 +326,8 @@ export class ALInboundControlAdmission {
     }
 
     /**
-     * Its parent is the peer the message arrived from, its children the next hops the lane passes a copy down to; absent
-     * for a message that asked for a receipt, or on a lane that passes no copy down.
+     * Its parent is this relay's current upstream peer, else the peer the message arrived from; its children the next hops
+     * the lane passes a copy down to; absent for a message that asked for a receipt, or on a lane that passes no copy down.
      */
     private async readUnreceiptedGapNack(
         arrival: ALInboundControlArrival,
@@ -348,7 +348,8 @@ export class ALInboundControlAdmission {
             nack,
             msg: stored.msg,
             owner,
-            parentPeerId: owner.source.peerId,
+            arrivalPeerId: owner.source.peerId,
+            layoutParentPeerId: this.readLayoutParentPeerId(nack),
             childPeerIds: this.planRetriedCopyNextHops(stored.msg, owner.source),
             nowMs,
             controlMsgId: this.newControlId(),
