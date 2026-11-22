@@ -196,7 +196,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         read,
         plan,

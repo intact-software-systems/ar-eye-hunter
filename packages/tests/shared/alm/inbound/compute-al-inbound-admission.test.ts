@@ -110,7 +110,7 @@ async function computeArrival(
     return computeALInboundAdmission({
         read,
         plan: peer.planner(msg, RTC_SOURCE, computeALInboundPlanningObservations(read)),
-        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT),
+        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: peer.canForward,
         recordedParentPresent: true,
         retriedCopyNextHopPeerIds: []

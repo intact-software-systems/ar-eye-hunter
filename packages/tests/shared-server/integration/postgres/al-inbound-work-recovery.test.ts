@@ -320,7 +320,7 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
-    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     expect(
         await store.commitBundle(
             computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })

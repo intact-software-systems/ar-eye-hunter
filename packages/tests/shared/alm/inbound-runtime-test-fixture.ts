@@ -379,7 +379,7 @@ export async function readInboundTestAdmission(
     const nowMs = Date.now();
     const read = await readInboundTestDecisionSurface(admissionStore, msg, nowMs);
     const plan = planInboundTestMessage(msg, INBOUND_TEST_SOURCE, computeALInboundPlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] });
 }
 

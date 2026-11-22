@@ -35,8 +35,11 @@ export interface ALInboundEffectFacts {
     readonly selfPeerId: string;
     readonly observedAtEpochMs: number;
     readonly controlIdPrefix: string;
-    /** The relays a gap NACK about the message may pass, which its room's live sessions allowed when it was read. */
-    readonly gapNackRelayHops: number;
+    /**
+     * Reads the relays a gap NACK about the message may pass from its room's live sessions; called only when a gap NACK
+     * is built, so an admission or release that builds none reads no room.
+     */
+    readonly readGapNackRelayHops: () => number;
 }
 
 export interface PrepareALInboundCommitBundleInput {
@@ -62,17 +65,17 @@ export interface PrepareALInboundDurableEffectInput {
     readonly carrier: ALDeliveryCarrier;
 }
 
-/** Captures shell-owned identity, and the room's relay hop grant the shell read, before the pure admission computation. */
+/** Captures shell-owned identity, and the reader of the room's relay hop grant, before the pure admission computation. */
 export function readALInboundEffectFacts(
     nowMs: number,
     dependencies: ALInboundEffectPreparationDependencies,
-    gapNackRelayHops: number
+    readGapNackRelayHops: () => number
 ): ALInboundEffectFacts {
     return {
         selfPeerId: dependencies.selfPeerId,
         observedAtEpochMs: nowMs,
         controlIdPrefix: dependencies.newControlId(),
-        gapNackRelayHops
+        readGapNackRelayHops
     };
 }
 
@@ -236,7 +239,7 @@ export function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffe
                     msgId: payload.msgId,
                     reason: payload.reason,
                     ...toALGapRequestNumberField(payload.gapRequestNumber),
-                    ...(payload.reason === 'gap' ? { relayHopsLeft: facts.gapNackRelayHops } : {}),
+                    ...(payload.reason === 'gap' ? { relayHopsLeft: facts.readGapNackRelayHops() } : {}),
                     observedAtEpochMs: facts.observedAtEpochMs,
                     proof: null
                 })

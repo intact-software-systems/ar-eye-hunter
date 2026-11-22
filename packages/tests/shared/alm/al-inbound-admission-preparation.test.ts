@@ -291,7 +291,7 @@ describe('inbound admission preparation boundary', () => {
         const replay = computeALInboundBufferedRelease({
             read,
             plan: replayPlan,
-            facts: readALInboundEffectFacts(Date.now(), createPreparationDependencies(), AL_GAP_NACK_RELAY_HOP_LIMIT)
+            facts: readALInboundEffectFacts(Date.now(), createPreparationDependencies(), () => AL_GAP_NACK_RELAY_HOP_LIMIT)
         });
         expect(replay.localDelivery?.message).toEqual({ senderId: message.id.senderId, msgId: message.id.msgId });
         const replayed = replay.mutations.find((mutation) => mutation.kind === 'set-inbound-message');
@@ -589,7 +589,7 @@ async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmissi
     return {
         read,
         plan,
-        facts: readALInboundEffectFacts(nowMs, createPreparationDependencies(), AL_GAP_NACK_RELAY_HOP_LIMIT)
+        facts: readALInboundEffectFacts(nowMs, createPreparationDependencies(), () => AL_GAP_NACK_RELAY_HOP_LIMIT)
     };
 }
 

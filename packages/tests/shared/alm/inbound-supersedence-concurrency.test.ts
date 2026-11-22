@@ -277,7 +277,7 @@ function readEffectFacts(nowMs: number): ALInboundEffectFacts {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
 }
 
 async function completeEffects(stores: ALInboundRuntimeStores): Promise<string[]> {

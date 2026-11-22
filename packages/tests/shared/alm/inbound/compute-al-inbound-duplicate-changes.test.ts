@@ -201,7 +201,7 @@ async function computeArrival(
         prePlan: peer.planner(msg, source, { nowMs })
     });
     const plan = peer.planner(msg, source, computeALInboundPlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundAdmission({
         read,
         plan,
@@ -251,7 +251,7 @@ async function computeBufferedRelease(
         throw new Error('The buffered copy must still be retained for its release');
     }
     const plan = peer.planner(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read));
-    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundBufferedRelease({ read, plan, facts });
 }
 

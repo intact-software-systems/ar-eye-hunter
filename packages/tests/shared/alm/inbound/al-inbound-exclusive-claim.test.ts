@@ -315,7 +315,7 @@ async function readClaimDecision(
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'server-1',
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-    }, AL_GAP_NACK_RELAY_HOP_LIMIT);
+    }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         plan,
         bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })

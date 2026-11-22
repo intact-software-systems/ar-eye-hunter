@@ -72,7 +72,7 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
     const bundle = computeALInboundAdmission({
         read,
         plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read)),
-        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, AL_GAP_NACK_RELAY_HOP_LIMIT),
+        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: true,
         recordedParentPresent: true,
         retriedCopyNextHopPeerIds: []

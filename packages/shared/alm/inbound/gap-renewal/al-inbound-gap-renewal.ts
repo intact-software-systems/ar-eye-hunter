@@ -92,7 +92,7 @@ export class ALInboundGapRenewal {
             return NOTHING_RENEWED;
         }
         const revealing = (await admissionStore.readDeliverySurface(payload.message, nowMs))?.msg;
-        const facts = readALInboundEffectFacts(nowMs, effectPreparation, this.readRelayHops(revealing));
+        const facts = readALInboundEffectFacts(nowMs, effectPreparation, () => this.readRelayHops(revealing));
         const toPeerId = this.resolveRenewalPeerId(payload, revealing);
         const rows = await signALInboundReceiptEffects(
             this.computeRenewalWrites({ effect, payload, position, missingRanges, facts, toPeerId }),

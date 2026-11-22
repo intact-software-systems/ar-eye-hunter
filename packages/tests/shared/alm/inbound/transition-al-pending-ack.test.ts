@@ -237,7 +237,7 @@ async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, m
     return computeALInboundAdmission({
         read,
         plan: planAsDirector(msg, DIRECTOR_SOURCE, computeALInboundPlanningObservations(read)),
-        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, AL_GAP_NACK_RELAY_HOP_LIMIT),
+        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: true,
         recordedParentPresent: true,
         retriedCopyNextHopPeerIds: []
@@ -257,7 +257,7 @@ async function computeDirectorRelease(
     return computeALInboundBufferedRelease({
         read,
         plan: planAsDirector(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read)),
-        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, AL_GAP_NACK_RELAY_HOP_LIMIT)
+        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, () => AL_GAP_NACK_RELAY_HOP_LIMIT)
     });
 }
 

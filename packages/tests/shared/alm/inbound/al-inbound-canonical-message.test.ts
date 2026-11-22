@@ -348,7 +348,7 @@ async function admitMessage(
             selfPeerId: 'receiver',
             newControlId: crypto.randomUUID.bind(crypto),
             createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
-        }, AL_GAP_NACK_RELAY_HOP_LIMIT)
+        }, () => AL_GAP_NACK_RELAY_HOP_LIMIT)
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
     return bundle;

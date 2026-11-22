@@ -322,6 +322,28 @@ describe('a receiver whose ordered track has a gap', () => {
         }
     );
 
+    it('reads the room\'s sessions only to build a gap NACK: never for an admission or an ordered release with no gap (ruling 20)', async () => {
+        let sessionReads = 0;
+        const fixture = createRenewalFixture('memory', {
+            readGapNackRelayHops: () => {
+                sessionReads += 1;
+                return 7;
+            }
+        });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(1), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 100);
+        const afterInOrderAdmission = sessionReads;
+        await fixture.runtime.admitIncomingMessage(orderedMessage(3), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 200);
+        const afterGap = sessionReads;
+        // Seq 2 closes the gap before the first renewal is due, and releases the buffered seq 3 in order.
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 300);
+
+        expect(fixture.deliveredMessages.map((message) => message.id.msgId)).toEqual(['1', '2', '3']);
+        expect([afterInOrderAdmission, afterGap, sessionReads]).toEqual([0, 1, 1]);
+    });
+
     it('a page that cannot sign sends an unreceipted track\'s gap NACK and its renewal unsigned (ruling 19)', async () => {
         const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), RTC_SOURCE);
