@@ -104,11 +104,10 @@ import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscri
 import {
     readRtcGroupSnapshotByRef,
     readRtcOutboundObservation,
-    readRtcRoomPublicationKey,
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
-import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
+import { createRtcRecipientAuthentication } from './receipt-proof/create-rtc-recipient-authentication.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { createRtcInboundRoutes, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
 import {
@@ -287,15 +286,11 @@ export class WebRtcOverlayMulticastManager {
             {
                 ...dependencies.outboundRuntime,
                 carrier: 'rtc',
-                recipientAuthentication: {
-                    kind: 'signature',
-                    verifier: new RtcReceiptProofVerifier({
-                        crypto: dependencies.publicationCrypto,
-                        nowEpochMs: () => this.clock.nowMs()
-                    }),
-                    readRecipientKey: (msg, peerId) =>
-                        readRtcRoomPublicationKey(this.groupCache, msg, peerId, this.clock.nowMs())
-                },
+                recipientAuthentication: createRtcRecipientAuthentication({
+                    crypto: dependencies.publicationCrypto,
+                    groupCache: dependencies.groupCache,
+                    nowEpochMs: () => this.clock.nowMs()
+                }),
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,

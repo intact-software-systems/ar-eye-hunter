@@ -1,8 +1,7 @@
 import { readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
 import type { OverlayId, OverlayInfo, PeerId } from '../api/api-config.ts';
 import { isSameGroupRef, toScopedOverlayId } from '../api/api-type-utils.ts';
-import { resolvePublicationKey } from '../api/group-presence/resolve-publication-key.ts';
-import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '../api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import type { OverlayLayoutTransition } from '../repository/overlay-layout-transition.ts';
 import type { RtcRoomLayoutChanges } from './room-authority/resolve-rtc-room-routing-edges.ts';
@@ -60,18 +59,6 @@ export function readRtcGroupSnapshotByRef(
     ref: GroupRef
 ): GroupSnapshot | undefined {
     return groupCache.readAllValues().find((group) => isSameGroupRef(group.group, ref));
-}
-
-/** The key the message's room registers for `peerId` while it is a live session; none once it has left the room. */
-export function readRtcRoomPublicationKey(
-    groupCache: ReadableKeyedValues<string, GroupSnapshot>,
-    msg: ALMessage,
-    peerId: string,
-    nowMs: number
-): GroupPresencePublicationKey | undefined {
-    const groupRef = readALTargetGroupRef(msg);
-    const room = groupRef === undefined ? undefined : readRtcGroupSnapshotByRef(groupCache, groupRef);
-    return (room === undefined ? null : resolvePublicationKey(room, peerId, nowMs)) ?? undefined;
 }
 
 interface RtcSelectedOverlay {
