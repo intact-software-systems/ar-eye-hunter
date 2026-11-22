@@ -36,6 +36,7 @@ import {
 import type { OutboundTestPayload } from '../../outbound-test-payload.ts';
 import {
     advanceOutboundClockTo,
+    advanceOutboundClockToNextDue,
     createOutboundTimelineRuntime,
     createReopenableOutboundTestStores,
     OUTBOUND_TIMELINE_STEP_MS,
@@ -470,7 +471,8 @@ async function exhaustSeqTwo(fixture: EndedMessageFixture): Promise<ALOutboundPe
 }
 
 /**
- * Steps the clock until `message` has ended, at most to 30 s; the receipt row as it stood at the step before the end.
+ * Moves the clock from one due instant to the next until `message` has ended, at most to 30 s; the receipt row as it
+ * stood just before the work that ended it ran.
  */
 async function advanceUntilEnded(
     fixture: EndedMessageFixture,
@@ -479,7 +481,7 @@ async function advanceUntilEnded(
     let beforeTheEnd = await readReceiptRow(fixture, message);
     while (toOutboundTerminalFacts(fixture.settlements, message.id.msgId).length === 0 && Date.now() - START_MS < 30_000) {
         beforeTheEnd = await readReceiptRow(fixture, message);
-        await advanceTo(fixture, Date.now() - START_MS + OUTBOUND_TIMELINE_STEP_MS);
+        await advanceOutboundClockToNextDue(fixture, START_MS + 30_000);
     }
     return beforeTheEnd;
 }
