@@ -1366,33 +1366,23 @@ the waits are tied to the cell, not to a store: they cannot show which store tur
 healthy. And the healthy wait proves only that some store recovered after the release: a release of an earlier cell's
 leftover rows can read it healthy, so the third send's own commit is proven by `assert-enqueued-3`, not by the wait.
 
-`delivery-reload` runs over every carrier as a paired reload. Under a native hold of its carrier until cleared the
-sender sends one durable original (`local-outbox`, `ack: 'receiver'`) and proves it admitted, enqueued, retained and
-unsubmitted; under the same hold it sends a second durable message with the marker `delivery-reload-cancelled`,
-proves it retained and cancels it, asserting `cancelled`. It then reloads, reconnects with the restored session, reads
-the old handle `unobservable` and waits for the `restored` recoveries described in the runtime diagnostic contract.
-The receiver proves the original absent before the reload and receives it after; then an absence wait on the cancelled
-marker, which also reads the arrivals retained before it starts, proves the cancelled message never arrives. That wait
-is a regression check, not the proof that a cancel's stored end survives a reload: the reload follows the receiver's
-17 s pre-reload absence window, and by then the old page's in-memory cancel has completed every work row of the
-cancelled message as it was claimed (its send at once, its 2 s receipt or first-hop timer when due), so the reloaded
-page has nothing of it to resume whether or not the end was stored; its recovery reads `claimed` 1 either way, the
-original's row. The unit tests of the outbound runtime carry the proof (`al-outbound-ended-across-reload.test.ts`).
-Over `rtc-with-ws-fallback` the hold may hand the cancelled message to WS before the cancel lands, and the cell cannot
-tell which leg held it: it asserts the `cancelled` state and the absence on the receiver, not which store ended it.
-
 `durable-takeover` runs over every carrier in the same-context family. The sender's page holds its carrier with the
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 16.6 s recovery bound and a whole successor connect), and proves
 it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until a WS
-attempt follows the hand-over to WS, so the WS row is committed before the page ends. The lane then closes that
-page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
+attempt follows the hand-over to WS, so the WS row is committed before the page ends. Its last commands send a
+second durable message under the same hold, with the marker `durable-takeover-cancelled`, prove it retained and cancel
+it, asserting `cancelled`. The lane then closes that page, a few hundred milliseconds after the cancel and before the
+cancelled message's 2 s receipt timer (`first-hop-timeout` over WS, `ack-timeout` over RTC) is due, so the timer row
+outlives the page unless the cancel stored the message's end. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
 lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
 claims the row rather than finding it leased. The successor connects with the restored session, waits for the one
 `recovery` of the store that held the original (`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise)
 reading `restored`, the store id embedding the session its own connect restored, and asserts that outcome's
 `claimed` above 0. The receiver waits for the carrier-tagged original over the sender's connect plus the original's
-lifetime, then proves for an absence window that no second copy arrives. A takeover while the owner's lease still
+lifetime. An absence wait on the cancelled marker follows; it also reads arrivals retained before it, and fails
+when the successor's restored timer, finding the cancelled send's row gone, charges the attempt and sends the
+message again. A last absence window proves no second copy of the scenario's type arrives. A takeover while the owner's lease still
 stands, recovered by a later batch at the lease end plus at most 16.6 s, is not run by the lane: that path claims in a
 batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
 the owner's page is gone.

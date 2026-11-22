@@ -3,7 +3,6 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '../../../alm/is-rallar-
 import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestTransportFaultInjectCommand,
     RallarBlackBoxTestWaitCommand
@@ -13,7 +12,6 @@ import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
 import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from '../alm-reload-pair.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
-import { assessAlmReloadCancellations } from './assess-alm-reload-cancellations.ts';
 import { assessAlmReloadStorage } from './assess-alm-reload-storage.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
@@ -30,8 +28,6 @@ interface ReloadEvidence {
     readonly reload: RallarBlackBoxTestAgentReloadCommand;
     readonly absence: RallarBlackBoxTestWaitCommand;
     readonly send: RallarBlackBoxTestMessagesSendCommand;
-    /** The prefix's other sends: each is cancelled before the reload and must never arrive. */
-    readonly cancelled: readonly RallarBlackBoxTestMessagesSendCommand[];
     readonly senderNextIndex: number;
     readonly receiverNextIndex: number;
 }
@@ -77,7 +73,6 @@ export function assessAlmReloadIdentity(
             continue;
         }
         issues.push(...assessReloadCommands(evidence));
-        issues.push(...assessAlmReloadCancellations({ ...evidence, receive: resolveRecoveredReceives(evidence)[0] }));
         issues.push(...assessReloadTrace(evidence));
         issues.push(...assessReloadDocuments(evidence));
         issues.push(...assessReloadRetention(evidence));
@@ -118,9 +113,10 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
         return undefined;
     }
     const prefix = senderCommands.slice(senderStart, prefixEnd + 1);
-    const [send, ...cancelled] = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
+    const sends = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
+    const send = sends[0];
     if (
-        !send || !read.reloadSends.includes(send) || cancelled.some((other) => read.reloadSends.includes(other)) ||
+        sends.length !== 1 || !send || !read.reloadSends.includes(send) ||
         !nonemptyString(send.handleId)
     ) {
         return undefined;
@@ -131,7 +127,6 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
         checkpoint,
         prefix,
         send,
-        cancelled,
         reload,
         absence,
         senderNextIndex: suffixEnd + 1,
@@ -152,7 +147,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         !['recipe.run', 'recipe.load', 'loop', 'parallel'].includes(command.kind)
     );
     const originals = allCommands.filter((command) =>
-        isRallarBlackBoxTestMessagesSendCommand(command) && !evidence.cancelled.includes(command) &&
+        isRallarBlackBoxTestMessagesSendCommand(command) &&
         (command.typeId === send.typeId ||
             isSameJsonValue(decodeJsonValue(command.payload), decodeJsonValue(send.payload)))
     );
@@ -167,7 +162,6 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         'fault.inject',
         'messages.send',
         'messages.observe',
-        'messages.cancel',
         'assert',
         'barrier'
     ];
@@ -279,9 +273,7 @@ function assessReloadDocuments(evidence: ReloadEvidence): readonly string[] {
 function assessReloadRetention(evidence: ReloadEvidence): readonly string[] {
     const { prefix, suffix, send, sender, checkpoint } = evidence;
     const sendValue = toRecordedAlmResultValue(sender, send);
-    const retained = prefix.filter((command): command is RallarBlackBoxTestMessagesObserveCommand =>
-        command.kind === 'messages.observe' && command.handleId === send.handleId
-    );
+    const retained = prefix.filter((command) => command.kind === 'messages.observe');
     const lost = suffix.filter((command) => command.kind === 'messages.observe');
     const retainedValue = toRecordedAlmResultValue(sender, retained[0]);
     const lostValue = toRecordedAlmResultValue(sender, lost[0]);

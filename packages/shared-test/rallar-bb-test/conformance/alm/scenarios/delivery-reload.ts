@@ -9,7 +9,6 @@ import {
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
-    toCancelCommand,
     toObserveCommand,
     toResultAssertion,
     toRetainedEvidenceCommands,
@@ -33,11 +32,6 @@ import {
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../alm-reload-pair.ts';
 import { toAlmCellCommandPrefix } from '../cell/to-alm-cell-command-prefix.ts';
-
-const ORIGINAL_MARKER = 'delivery-reload';
-const CANCELLED_MARKER = 'delivery-reload-cancelled';
-
-type ReloadMarker = typeof ORIGINAL_MARKER | typeof CANCELLED_MARKER;
 
 export const deliveryReload: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-reload',
@@ -71,10 +65,27 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
     return [
         toReloadHealthCommand(sender, 'health-before'),
         ...toHeldFaultCommands(sender, 'reload-hold', 'until-cleared'),
-        toReloadDurableSend(sender, 1, ORIGINAL_MARKER),
+        toReloadOriginalSend(sender),
         ...toRetainedEvidenceCommands({ ...sender, index: 1 }, true),
-        ...toCancelledBeforeReloadCommands(sender),
-        ...toHeldStorageCommands(sender),
+        toStorageCountersCommand(sender, 'storage-counters-held', false),
+        ...(['al-admission', 'al-work'] as const).map((owner) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-storage-${owner}`,
+                resultName: 'storage-counters-held',
+                field: `byOwner.${owner}`,
+                operator: 'gt',
+                expected: 0
+            })
+        ),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-storage-write',
+            resultName: 'storage-counters-held',
+            field: 'byKind.write',
+            operator: 'gt',
+            expected: 0
+        }),
         {
             kind: 'agent.reload',
             commandId: toCommandId(sender, 'reload'),
@@ -129,40 +140,11 @@ function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly Rallar
     ];
 }
 
-/** The original document's storage advanced while its sends were held: they were admitted, queued and written. */
-function toHeldStorageCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toStorageCountersCommand(sender, 'storage-counters-held', false),
-        ...(['al-admission', 'al-work'] as const).map((owner) =>
-            toResultAssertion({
-                step: sender,
-                name: `assert-storage-${owner}`,
-                resultName: 'storage-counters-held',
-                field: `byOwner.${owner}`,
-                operator: 'gt',
-                expected: 0
-            })
-        ),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-storage-write',
-            resultName: 'storage-counters-held',
-            field: 'byKind.write',
-            operator: 'gt',
-            expected: 0
-        })
-    ];
-}
-
-function toReloadDurableSend(
-    sender: AlmConformanceStepInput,
-    index: number,
-    marker: ReloadMarker
-): RallarBlackBoxTestCommand {
+function toReloadOriginalSend(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return toSendCommand({
         ...sender,
-        index,
-        payload: toReloadPayload(sender, marker),
+        index: 1,
+        payload: { marker: 'delivery-reload', carrier: sender.input.carrier },
         delivery: {
             ack: 'receiver',
             durability: 'local-outbox',
@@ -172,48 +154,12 @@ function toReloadDurableSend(
     });
 }
 
-/**
- * A second durable message, held like the original, is cancelled before the reload. Over `rtc-with-ws-fallback` the
- * hold may hand it to WS before the cancel lands; either leg holds it, so the cancel reads `cancelled` on both.
- * This is a regression check, not the proof that a cancel survives a reload: the receiver's absence window before the
- * reload lasts about 17 s, and the old page's in-memory cancel completes each of the message's work rows as it is
- * claimed (its send at once, its 2 s receipt or first-hop timer when due), so none is left for the reloaded page
- * whether or not the cancel stored its end. The unit tests in `al-outbound-ended-across-reload.test.ts` carry that proof.
- */
-function toCancelledBeforeReloadCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toReloadDurableSend(sender, 2, CANCELLED_MARKER),
-        ...toRetainedEvidenceCommands({ ...sender, index: 2 }, true),
-        toCancelCommand({ ...sender, index: 2 }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-cancelled-2',
-            resultName: 'cancel-2',
-            field: 'state',
-            operator: 'equals',
-            expected: 'cancelled'
-        })
-    ];
-}
-
-/** The cancelled message has its own marker, so neither the original's waits nor the reload identity read it. */
-function toReloadPayload(step: AlmConformanceStepInput, marker: ReloadMarker): Readonly<Record<string, string>> {
-    return { marker, carrier: step.input.carrier };
-}
-
-/** The cancelled message's absence follows the original's arrival and also reads arrivals retained before it. */
 function toDeliveryReloadReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const payload = toReloadPayload(receiver, ORIGINAL_MARKER);
+    const payload = { marker: 'delivery-reload', carrier: receiver.input.carrier };
     return [
         toReloadHealthCommand(receiver, 'health-before'),
         toPayloadWait({ step: receiver, name: 'absent-before-reload', payload, absent: true }),
         toPayloadWait({ step: receiver, name: 'receive-original', payload, absent: false }),
-        toPayloadWait({
-            step: receiver,
-            name: 'absent-cancelled',
-            payload: toReloadPayload(receiver, CANCELLED_MARKER),
-            absent: true
-        }),
         toReloadHealthCommand(receiver, 'health-after')
     ];
 }

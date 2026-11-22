@@ -60,7 +60,7 @@ describe('hosted ALM reload composition', () => {
             const carrier = ['ws', 'rtc', 'rtc-with-ws-fallback'][index];
             const prefix = sender.commands.slice(senderStart, prefixEnd + 1);
             expect(prefix.filter(isRallarBlackBoxTestMessagesSendCommand).map((command) => command.payload))
-                .toEqual([{ marker: 'delivery-reload', carrier }, { marker: 'delivery-reload-cancelled', carrier }]);
+                .toEqual([{ marker: 'delivery-reload', carrier }]);
             const sendIndex = prefix.findIndex((command) => command.kind === 'messages.send');
             const baselineIndex = prefix.findIndex((command) => command.commandId?.endsWith('storage-counters-connected'));
             const heldIndex = prefix.findIndex((command) => command.commandId?.endsWith('storage-counters-held'));
@@ -91,15 +91,7 @@ describe('hosted ALM reload composition', () => {
             expect(receiver.commands.slice(readyEnd + 1, absenceEnd + 1)).toEqual([
                 expect.objectContaining({ kind: 'wait', absent: true, match: expect.objectContaining({ equals: { marker: 'delivery-reload', carrier } }) })
             ]);
-            expect(receiver.commands.slice(absenceEnd + 1, recoveryEnd + 1)).toEqual([
-                expect.objectContaining({ kind: 'wait', match: expect.objectContaining({ equals: { marker: 'delivery-reload', carrier } }) }),
-                expect.objectContaining({
-                    kind: 'wait',
-                    absent: true,
-                    match: expect.objectContaining({ equals: { marker: 'delivery-reload-cancelled', carrier } })
-                }),
-                expect.objectContaining({ kind: 'health' })
-            ]);
+            expect(receiver.commands.slice(absenceEnd + 1, recoveryEnd + 1).map((command) => command.kind)).toEqual(['wait', 'health']);
             senderStart = suffixEnd + 1;
             receiverStart = recoveryEnd + 1;
         }

@@ -1690,23 +1690,19 @@ describe('alm-conformance recipe family', () => {
         });
     });
 
-    it('opts the reload original and its cancelled companion into local-outbox and reads the lifecycle specimens as volatile', () => {
+    it('opts the reload original into local-outbox and reads the lifecycle specimens as volatile', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             const reload = scenarios.find((scenario) => scenario.scenarioId === 'delivery-reload')!;
             const lifecycle = scenarios.find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
-            const reloadSends = reload.sender.commands.filter((command) => command.kind === 'messages.send');
+            const reloadSend = reload.sender.commands.find((command) => command.kind === 'messages.send');
             const enqueuedAsserts = (recipe: RallarBlackBoxTestRecipe) =>
                 recipe.commands.filter((command): command is RallarBlackBoxTestAssertCommand =>
                     command.kind === 'assert' && command.source.endsWith('.value.enqueued')
                 );
 
-            expect(reloadSends, carrier).toEqual([
-                expect.objectContaining({ durability: 'local-outbox' }),
-                expect.objectContaining({ durability: 'local-outbox' })
-            ]);
+            expect(reloadSend, carrier).toMatchObject({ durability: 'local-outbox' });
             expect(enqueuedAsserts(reload.sender).map((command) => command.expected), carrier).toEqual([
-                true,
                 true
             ]);
             expect(enqueuedAsserts(lifecycle.sender).map((command) => command.expected), carrier)
