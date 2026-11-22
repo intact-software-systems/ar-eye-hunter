@@ -336,8 +336,9 @@ that recorded the recipient outside, no recorder is left: the relay forwards the
 refusing one for a recipient it holds outside. A non-gap NACK is
 refused as past the persistence limits when the row's outside list is full (256) and does not already name its
 recipient, since the list gains a recipient only when it is absent. A `gap` NACK must carry its `orderingKey`,
-`expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it
-to its parent as the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). A send
+`expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it,
+one relay hop lower and otherwise as the recipient signed it, to its current upstream peer, or to the row's parent when
+none resolves, so the origin repairs that recipient through the relay (S4ii-R3). A send
 that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
 `forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
 relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
@@ -657,8 +658,11 @@ symmetrically.
 signed content, so the signing input is unchanged. A page still running the previous build has every NACK refused
 `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's NACKs symmetrically. A
 retained `send-control` or `admit-control` row of the previous build that holds a NACK fails strict decoding and is
-dropped once as corrupt when the lane claims it. A `nacks` history row is untouched: it holds outside-audience NACKs
-only, and a gap NACK writes no row. Nothing is migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped.
+dropped once as corrupt when the lane claims it. A relay writes no `nacks` row for a gap NACK, but an origin keeps
+every NACK it admits in its `nacks` history, so a stored `nacks` history row of the previous build that holds a gap
+NACK fails strict decoding until it expires (`controlHistoryTtlMs`, 30 minutes by default, in a browser's IndexedDB
+pair and in the server's PostgreSQL store; the deadline plus the receipt grace in the volatile lane). Nothing is
+migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped.
 
 **The copy-carriers window.** The buffered slot's `copyCarriers` is required. No store resets for it, and
 `AL_ADMISSION_SCHEMA_ID` is not bumped: since #652 a different schema identity refuses a returning browser's durable

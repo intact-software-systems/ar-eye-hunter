@@ -65,7 +65,10 @@ export interface PrepareALInboundDurableEffectInput {
     readonly carrier: ALDeliveryCarrier;
 }
 
-/** Captures shell-owned identity, and the reader of the room's relay hop grant, before the pure admission computation. */
+/**
+ * Captures shell-owned identity before the admission computation, and the reader of the room's relay hop grant, which
+ * that computation calls, reading the room's live session count, only when it builds a gap NACK.
+ */
 export function readALInboundEffectFacts(
     nowMs: number,
     dependencies: ALInboundEffectPreparationDependencies,

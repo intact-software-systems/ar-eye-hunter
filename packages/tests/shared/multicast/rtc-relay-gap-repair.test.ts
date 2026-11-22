@@ -8,6 +8,7 @@ import {
     type ALPeerControlMessage,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm/al-admission-backend.ts';
@@ -395,6 +396,25 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         expect(readRelayRow(gap, nack.payload.msgId)).toBeUndefined();
         expect(admissions.get('gap')).toBe('committed');
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
+    it('a leaf whose room presence went empty grants its renewal the wire limit, so the relay passes it on (ruling 20)', async () => {
+        const gap = await createGapChain({ ack: 'none' });
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        const report = await readLeafControls(gap);
+        const snapshot = gap.chain.snapshot;
+        gap.leaf.acceptSnapshot({ ...snapshot, group: { ...snapshot.group, snapshotVersion: snapshot.group.snapshotVersion + 10 }, activeSessions: [] });
+        await advanceChainBy(gap, 1_500);
+        const renewal = (await gap.leaf.readSent('r')).slice(report.length);
+
+        await deliverEach(renewal, gap.relay, 'c');
+        const relayed = readGapNackMessage(await readRelayUpwardControls(gap));
+
+        // The chain's three sessions granted the report 2; presence that names nobody bounds nothing.
+        expect(readGapNack(report).payload.relayHopsLeft).toBe(2);
+        expect(readGapNack(renewal).payload).toMatchObject({ gapRequestNumber: 2, relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT });
+        expect(readGapNack([relayed]).payload).toMatchObject({ fromPeerId: 'r', gapRequestNumber: 2, relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT - 1 });
     });
 
     it('repairs a sequence the relay forwarded and its child lost: the relay passes the parent\'s repair copy down again', async () => {

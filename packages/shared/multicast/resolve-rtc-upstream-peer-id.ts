@@ -122,6 +122,23 @@ export function resolveRtcRelayParentPeerId(
     return parentPeerIds.size === 1 ? [...parentPeerIds][0] : undefined;
 }
 
+/**
+ * The relays this leaf grants its gap NACK about a message from `originPeerId`: one fewer than the room's live sessions,
+ * once the room's presence names both this leaf and the origin. A room the lane has not read, or presence that is
+ * empty or lags behind either of them, bounds nothing, so the leaf grants the wire ceiling rather than a grant its
+ * first relay would refuse.
+ */
+export function resolveRtcGapNackRelayHops(
+    room: GroupSnapshot | undefined,
+    selfPeerId: string,
+    originPeerId: string
+): number {
+    const sessionIds = room === undefined ? [] : readGroupMemberSessionIds(room);
+    return sessionIds.includes(selfPeerId) && sessionIds.includes(originPeerId)
+        ? computeALGapNackRelayHops(sessionIds.length)
+        : AL_GAP_NACK_RELAY_HOP_LIMIT;
+}
+
 /** The route capabilities of an RTC lane, each a pure read over the lane's observation of a message's room. */
 export function createRtcInboundRoutes(
     lane: RtcInboundRouteLane,
@@ -130,12 +147,8 @@ export function createRtcInboundRoutes(
     const selfPeerId = lane.connectionService.input.sessionId;
     return {
         readUpstreamPeerId: (msg) => resolveRtcUpstreamPeerId(readObservation(msg), selfPeerId, msg.id.senderId),
-        readGapNackRelayHops: (msg) => {
-            const room = readObservation(msg).room;
-            return room === undefined
-                ? AL_GAP_NACK_RELAY_HOP_LIMIT
-                : computeALGapNackRelayHops(readGroupMemberSessionIds(room).length);
-        },
+        readGapNackRelayHops: (msg) =>
+            resolveRtcGapNackRelayHops(readObservation(msg).room, selfPeerId, msg.id.senderId),
         isRoutedPeerReady: (msg, peerId) => isRtcRoutedPeerReady(readObservation(msg), peerId),
         isLayoutChildPeer: (msg, peerId) =>
             isRtcLayoutChildPeer(

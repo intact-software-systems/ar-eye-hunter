@@ -114,6 +114,18 @@ describe('the relay hops a leaf grants its gap NACK about a message', () => {
     it('the wire limit when the lane reads no room for the message', () => {
         expect(createLeafRoutes(undefined).readGapNackRelayHops(toRoomMessage())).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
     });
+
+    it.each(
+        [
+            ['empty', []],
+            ['lagging behind the leaf', ['a', 'r', 'b']],
+            ['lagging behind the origin', ['r', 'b', 'c']]
+        ] as const
+    )('the wire limit when the room\'s presence is %s, so its size bounds nothing', (_name, sessionIds) => {
+        const room = createOriginSnapshot(sessionIds, 3);
+
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage())).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
 });
 
 /** The leaf `c`'s route capabilities, over a lane that reads `room` for every message. */
