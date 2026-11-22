@@ -106,6 +106,8 @@ it('keeps the cutoff through ordinary metadata edits and starts a fresh activati
     await service.updateGroup(SCOPE, ref.groupId, { ...owner, requestId: 'off', roomLobby: { operation: 'configure', policy: null } });
     expect((await repository.readSnapshot(ref))?.group.metadata.rallarRoomLobbyRegistration).toBeUndefined();
     await service.updateGroup(SCOPE, ref.groupId, { ...owner, requestId: 'on', roomLobby: { operation: 'configure', policy } });
-    expect((await repository.findGroupLobbyEntry(ref))?.value.activationId).not.toBe(initial);
-    expect((await repository.readSnapshot(ref))?.group.metadata.rallarRoomLobbyRegistration).toEqual({ revision: 0, atEpochMs: null });
+    const reopened = (await repository.findGroupLobbyEntry(ref))!.value;
+    expect(reopened.activationId).not.toBe(initial);
+    expect(reopened.registration.revision).toBeGreaterThan(1);
+    expect((await repository.readSnapshot(ref))?.group.metadata.rallarRoomLobbyRegistration).toEqual({ revision: reopened.registration.revision, atEpochMs: null });
 });

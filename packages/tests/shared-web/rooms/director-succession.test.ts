@@ -65,3 +65,20 @@ it('recovers durable director policy on foreground without issuing idle reads or
     }
     finally { vi.useRealTimers(); stop(); }
 });
+
+it('submits a player claim for the captured epoch and verifies the winning session', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const rooms = createRallarFacade().rooms;
+    const claim = { operation: 'claim-player', expectedDirectorEpoch: 7 } as const;
+    const requestId = 'player-claim-00000001';
+    const appointment = { version: 1, mode: 'appointed-spa', epoch: 8, sessionId: 'session-1',
+        principalId: 'principal-1', appointedAtEpochMs: 123, heartbeatTtlMs: 5000 };
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+        expect(JSON.parse(String(init.body))).toEqual({ actorPrincipalId: 'principal-1', actorSessionId: 'session-1', succession: claim });
+        return response({ rallarDirector: appointment, rallarDirectorSuccession: state });
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(rooms.changeDirector(room, claim, requestId)).resolves.toMatchObject({ appointment: { epoch: 8, sessionId: 'session-1' } });
+    fetch.mockImplementationOnce(async () => response({ rallarDirector: { ...appointment, sessionId: 'other' }, rallarDirectorSuccession: state }));
+    await expect(rooms.changeDirector(room, claim, requestId)).rejects.toThrow(/acknowledge/i);
+});

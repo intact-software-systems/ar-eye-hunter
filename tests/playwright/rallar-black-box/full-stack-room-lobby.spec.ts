@@ -23,6 +23,84 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
     }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
+for (const feature of ['lobby', 'director succession'] as const) {
+    test(`an owner updates ordinary room metadata with ${feature} enabled`, async ({ page }) => {
+        test.skip(!config.enabled, config.skipReason);
+        const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+        const room = { ...scope, groupId: 'court' };
+        const host = await signIn(page, config.userA, scope);
+        const result = await host.evaluate(async ({ rooms }, { room, feature }) => {
+            await rooms.createAndSwitch({
+                ...room, displayName: 'Court', joinMode: 'open', maxMembers: 2,
+                ...(feature === 'lobby' && { roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } })
+            });
+            if (feature === 'director succession') {
+                const director = await rooms.readDirector(room);
+                await rooms.changeDirector(room, {
+                    operation: 'configure', expectedDirectorEpoch: director.appointment?.epoch ?? 0,
+                    expectedRevision: 0, deputyPrincipalId: null
+                }, crypto.randomUUID());
+            }
+            const updated = await rooms.updateMetadata(room, { courtLabel: 'Final' });
+            return updated.group.metadata;
+        }, { room, feature });
+        expect(result.courtLabel).toBe('Final');
+        if (feature === 'lobby') {
+            expect(result.rallarRoomLobby).toMatchObject({ returnWindowMs: 120000, claimWindowMs: 60000 });
+        } else {
+            expect(result.rallarDirectorSuccession).toMatchObject({ deputyPrincipalId: null });
+        }
+    });
+}
+
+test('a returning participant recovers a registration cutoff shifted with the room program', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+    const court = { ...scope, groupId: 'court' };
+    const lounge = { ...scope, groupId: 'lounge' };
+    const guestPage = await browser.newPage({ baseURL });
+    try {
+        const host = await signIn(page, config.userA, scope);
+        const guest = await signIn(guestPage, config.userB, scope);
+        await host.evaluate(({ rooms }, room) => rooms.createAndSwitch({
+            ...room, displayName: 'Court', joinMode: 'open', maxMembers: 3,
+            roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 }
+        }), court);
+        await guest.evaluate(async ({ rooms }, { court, lounge }) => {
+            await rooms.enter(court);
+            await rooms.createAndSwitch({ ...lounge, displayName: 'Lounge', joinMode: 'open' });
+        }, { court, lounge });
+        const start = await page.waitForFunction(async url => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(url);
+            return rallar.deadlineAfter(120000) ?? 0;
+        }, sdkUrl);
+        const shifted = await host.evaluate(async ({ lobby, rooms }, { room, sdkUrl, startsAtEpochMs }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const director = await rallar.director.appoint(room);
+            const control = { name: 'match', expectedDirectorEpoch: director.appointment!.epoch };
+            const program = await rooms.publishSchedule(room, { ...control, expectedRevision: 0,
+                phases: [{ phase: 'warmup', startsAtEpochMs: 0 }, { phase: 'play', startsAtEpochMs }]
+            }, crypto.randomUUID());
+            await lobby.setRegistrationBoundary(room, { expectedRevision: 0, expectedProgramRevision: program.revision,
+                program: 'match', phase: 'play' });
+            const paused = await rooms.pauseProgram(room, { ...control, expectedRevision: program.revision }, crypto.randomUUID());
+            const resumed = await rooms.resumeProgram(room, { ...control, expectedRevision: paused.revision }, crypto.randomUUID());
+            return resumed.phases[1]!.startsAtEpochMs;
+        }, { room: court, sdkUrl, startsAtEpochMs: await start.jsonValue() });
+        expect(shifted).toBeGreaterThan(await start.jsonValue());
+        const registration = await guest.evaluate(async ({ rooms }, { room, sdkUrl, observerUrl }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const { RallarRoomLobby }: typeof import('@shared-web/browser/rooms/lobby/rallar-room-lobby.ts') = await import(observerUrl);
+            const current = await rooms.enter(room, { preserveCurrentMembership: true });
+            const snapshot = (await current.refresh()).snapshot()!;
+            return RallarRoomLobby.registration(snapshot.group.metadata, rallar);
+        }, { room: court, sdkUrl, observerUrl });
+        expect(registration).toMatchObject({ boundary: { program: 'match', phase: 'play' }, atEpochMs: shifted });
+    } finally {
+        await guestPage.close();
+    }
+});
+
 test('waiting players receive exclusive offers in order while visiting another room', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const bobPage = await browser.newPage({ baseURL });

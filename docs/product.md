@@ -113,6 +113,12 @@ room presence and the observed appointment epoch. An explicit admin appointment 
 Handover preserves running and paused programs, and invalidates delayed clock writes from the
 former director.
 
+After the reconnect window, a present player can send `claim-player` when the room has no
+eligible deputy or the deputy has declined or timed out. The first accepted claim establishes a new
+appointment epoch. Waiting and away lobby commitments do not confer director authority. Ordinary
+spectators remain ineligible for this fallback. A returning participant recovers the winning
+appointment alongside the room program.
+
 Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
 to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
 paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.
@@ -312,6 +318,16 @@ If the timer worker is recovering, a waiting player can claim another managed ro
 An offer issued before closure remains claimable
 until its displayed deadline. The SDK reports `uncertain` while the calibrated time window crosses
 the cutoff and `unavailable` when a scheduled cutoff cannot be compared with server time.
+
+To close registration when play begins, use `lobby.setRegistrationBoundary(roomRef,
+{ expectedRevision, expectedProgramRevision, program: 'match', phase: 'play' })`.
+Use the registration revision from the current room snapshot. Re-enabling a lobby starts a new revision, so a delayed command from its previous activation is rejected.
+The organizer chooses a phase that occurs exactly once in the published program. The cutoff
+moves with revisions to that phase. Pausing before it suspends the cutoff; resuming sets its
+new UTC instant. The registration view exposes the binding and its effective `atEpochMs`,
+which is null while the future boundary is paused. A running worker closes registration even
+when the room is empty. Seat offers issued before closure keep their original claim deadlines.
+To remove or rename a bound phase, clear or replace the cutoff while registration is open.
 
 ## Find players and start together
 

@@ -143,6 +143,51 @@ test('an owner appoints a present participant and both browsers recover the same
     }
 });
 
+test('a director returning from another court recovers the player who claimed and the preserved period', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const otherCourtOwner = await browser.newPage({ baseURL });
+    const court = 'court-' + crypto.randomUUID();
+    const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    try {
+        await enterCourts({ page, guest, otherCourtOwner, court });
+        await page.getByRole('button', { name: 'Take clock control' }).click();
+        await page.getByRole('button', { name: 'Start 10 minutes' }).click();
+        await page.getByRole('button', { name: 'Pause', exact: true }).click();
+        await expect(guest.locator('#phase')).toHaveText('Paused');
+        const frozen = await guest.getByLabel('Period clock').innerText();
+        const load = (screen: Page) => screen.evaluateHandle(async path => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(path);
+            return rallar;
+        }, sdkUrl);
+        const [organizer, player] = await Promise.all([load(page), load(guest)]);
+        const epoch = await organizer.evaluate(async (sdk, room) => {
+            const expectedDirectorEpoch = sdk.director.status(room).appointment!.epoch;
+            await sdk.rooms.changeDirector(room, { operation: 'configure', expectedDirectorEpoch, expectedRevision: 0,
+                reconnectWindowMs: 200, deputyWindowMs: 30000, deputyPrincipalId: null }, crypto.randomUUID());
+            await sdk.rooms.enter({ ...room, groupId: room.groupId + '-other' }, { preserveCurrentMembership: true });
+            return expectedDirectorEpoch;
+        }, room);
+        const until = await player.evaluate(async (sdk, ref) => (await sdk.rooms.readDirector(ref)).succession?.loss?.reconnectUntilEpochMs, room);
+        expect(typeof until).toBe('number');
+        await guest.waitForFunction(cutoff => Date.now() >= cutoff, until!);
+        const claimed = await player.evaluate(async (sdk, { room, epoch }) =>
+            sdk.rooms.changeDirector(room, { operation: 'claim-player', expectedDirectorEpoch: epoch }, crypto.randomUUID()), { room, epoch });
+        expect(claimed.appointment?.epoch).toBe(epoch + 1);
+        const recovered = await organizer.evaluate(async (sdk, ref) => {
+            await sdk.rooms.enter(ref, { preserveCurrentMembership: true });
+            return sdk.rooms.readDirector(ref);
+        }, room);
+        expect(recovered.appointment).toEqual(claimed.appointment);
+        await expect(guest.getByLabel('Period clock')).toHaveText(frozen);
+        await guest.getByRole('button', { name: 'Resume', exact: true }).click();
+        await expect(guest.locator('#phase')).toHaveText('Running');
+    } finally {
+        await Promise.all([guest.close(), otherCourtOwner.close()]);
+    }
+});
+
 test('a returning participant recovers halftime and its paused clock together after visiting another court', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });

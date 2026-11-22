@@ -108,6 +108,30 @@ it('revokes a demoted director immediately and clears a departed deputy’s excl
     expect(readRoomDirectorSuccession(cleared)).toMatchObject({ deputyPrincipalId: null, loss: { declined: true } });
 });
 
+it('opens the player claim after grace and deputy priority, including an explicit decline', () => {
+    const appointed = accept(players(), 'owner', appoint, 1);
+    const policy = { operation: 'configure', expectedRevision: 1, expectedDirectorEpoch: 1,
+        reconnectWindowMs: 30, deputyWindowMs: 20 } as const;
+    const claim = { operation: 'claim-player', expectedDirectorEpoch: 1 } as const;
+    function lose(deputyPrincipalId: string | null) {
+        const snapshot = accept(appointed, 'owner', { ...policy, deputyPrincipalId }, 2);
+        return { ...snapshot, group: { ...snapshot.group, metadata: observeRoomDirectorLoss(snapshot.group.metadata, 50) } };
+    }
+    const noDeputy = lose(null);
+    expect(act(appointed, 'other', claim, 100)).toHaveProperty('rejectionCode');
+    expect(act(noDeputy, 'other', claim, 79)).toHaveProperty('rejectionCode');
+    expect(act(noDeputy, 'deputy', claim, 80)).toHaveProperty('rejectionCode');
+    expect(act({ ...noDeputy, activeSessions: [] }, 'other', claim, 80)).toHaveProperty('rejectionCode');
+    expect(act(noDeputy, 'other', claim, 80)).toHaveProperty('metadata');
+    const protectedRoom = lose('deputy');
+    expect(act(protectedRoom, 'other', claim, 99)).toHaveProperty('rejectionCode');
+    const declined = accept(protectedRoom, 'deputy', { operation: 'decline-deputy', expectedDirectorEpoch: 1 }, 81);
+    expect(act(declined, 'other', claim, 81)).toHaveProperty('metadata');
+    const won = accept(protectedRoom, 'other', claim, 100);
+    expect(readRallarGroupDirectorFromSnapshot(won)).toMatchObject({ principalId: 'other', sessionId: 'other', epoch: 2 });
+    expect(act(won, 'owner', claim, 100)).toHaveProperty('rejectionCode', 'room-director-changed');
+});
+
 it('rejects unrepresentable windows while accepting zero and ordinary windows', () => {
     const configure = { operation: 'configure', expectedRevision: 0, expectedDirectorEpoch: 0, deputyPrincipalId: null };
     for (const field of ['reconnectWindowMs', 'deputyWindowMs']) {

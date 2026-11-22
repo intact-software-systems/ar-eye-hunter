@@ -2,7 +2,7 @@ import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-director
 import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
-import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -25,6 +25,7 @@ import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectat
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { computeGroupRegistrationUpdate } from '../../lobby/compute-group-registration-update.ts';
 import { toGroupCapacityRefusal } from './to-group-capacity-refusal.ts';
 
 import { canGovernGroupMember } from '../../policy/group-governance-policy.ts';
@@ -117,25 +118,7 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        const roster = read.lobbyState?.lobby?.value;
-        const principalId = command.input.actorPrincipalId;
-        // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.
-        const places = roster && lobbyChange.operation === 'wait'
-            ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
-            : roster;
-        const committed = places?.seats.some(seat => seat.principalId === principalId) ||
-            places?.waiters.some(waiter => waiter.principalId === principalId);
-        if (lobbyChange.operation === 'wait' ? committed : !committed) {
-            return noOp(command, read, facts);
-        }
-        if (lobbyChange.operation === 'wait' && places?.registration.closed) {
-            return rejectedByGroupPolicy({
-                command, read, facts,
-                denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
-            });
-        }
-        // Serialize with room access changes while keeping the account, trace and request out of public room events.
-        return groupWrite({ command, read, facts, group: stored.value, eventType: null });
+        return computePrivateLobbyUpdate({ command, read, facts, group: stored.value, operation: lobbyChange.operation });
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -145,26 +128,14 @@ export function computeUpdate(
         if (lobbyChange.policy) {
             metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
             if (!Object.hasOwn(current.metadata, ROOM_LOBBY_METADATA_KEY)) {
-                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: 0, atEpochMs: null };
+                // Every registration edit advances the room metadata version. Seed a new activation above all earlier registration revisions.
+                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: next.metadataVersion, atEpochMs: null };
             }
         } else {
             delete metadata[ROOM_LOBBY_METADATA_KEY];
             delete metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
         }
         next = { ...next, metadata };
-    }
-    if (lobbyChange?.operation === 'set-registration-cutoff') {
-        const observed = read.lobbyState?.lobby?.value;
-        if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
-        const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
-        if (updated.rejection) {
-            const rejectionCode = updated.rejection === 'revision-conflict' ? 'room-lobby-registration-revision-conflict' : 'group-mutation-rejected';
-            return rejected({command, read, facts, rejectionCode, message:'The registration cutoff has changed or closed.'});
-        }
-        if (updated.lobby === observed) return noOp(command, read, facts);
-        const {revision, atEpochMs} = updated.lobby.registration;
-        next = {...next, metadata:{...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]:{revision, atEpochMs}}};
-        return groupWrite({ command, read, facts, group: next, eventType:'group-updated', revisedLobby: updated.lobby });
     }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
@@ -182,6 +153,17 @@ export function computeUpdate(
         }
         next = updated;
     }
+    const registration = computeGroupRegistrationUpdate({
+        group: next,
+        lobby: read.lobbyState?.lobby?.value,
+        change: lobbyChange,
+        clockName: clockCommand?.name,
+        nowEpochMs: facts.attemptAtEpochMs
+    });
+    if (registration && 'rejectionCode' in registration) {
+        return rejected({ command, read, facts, ...registration });
+    }
+    if (registration) next = registration.group;
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
@@ -194,12 +176,40 @@ export function computeUpdate(
         read,
         facts,
         group: next,
+        revisedLobby: registration?.lobby,
         eventType: next.status === 'archived'
             ? 'group-archived'
             : next.status === 'deleted'
             ? 'group-deleted'
             : 'group-updated'
     });
+}
+
+interface PrivateLobbyUpdate extends Pick<GroupWriteInput, 'read' | 'facts' | 'group'> {
+    readonly command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>;
+    readonly operation: 'wait' | 'release';
+}
+
+function computePrivateLobbyUpdate({ command, read, facts, group, operation }: PrivateLobbyUpdate): GroupMutationComputed {
+    const roster = read.lobbyState?.lobby?.value;
+    const principalId = command.input.actorPrincipalId;
+    // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.
+    const places = roster && operation === 'wait'
+        ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
+        : roster;
+    const committed = places?.seats.some(seat => seat.principalId === principalId) ||
+        places?.waiters.some(waiter => waiter.principalId === principalId);
+    if (operation === 'wait' ? committed : !committed) {
+        return noOp(command, read, facts);
+    }
+    if (operation === 'wait' && places?.registration.closed) {
+        return rejectedByGroupPolicy({
+            command, read, facts,
+            denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
+        });
+    }
+    // Serialize with room access changes while keeping the account, trace and request out of public room events.
+    return groupWrite({ command, read, facts, group, eventType: null });
 }
 
 export function computeRotateJoinCode(
