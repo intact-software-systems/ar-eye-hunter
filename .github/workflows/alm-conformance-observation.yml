@@ -40,7 +40,7 @@ jobs:
   # lengthen a verdict or a deployment; the required smoke scope runs in the Release Gate's alm-smoke
   # lane. Each matrix leg runs on a runner of its own, with a fresh database per run: one leg per carrier, except that a
   # carrier whose job took more than 30 minutes is split by family across two legs. rtc took 36.5 minutes as one job in
-  # run 45009025510, so it runs as two; an empty family list runs every family.
+  # run 45009025510 and ws 31.6 minutes in run 45055329614, so each runs as two; an empty family list runs every family.
   # A failed detection leaves run_full_scope empty, which runs the full scope.
   alm-conformance-observation:
     name: ALM conformance observation (${{ matrix.carrier }}${{ matrix.families && format(', {0}', matrix.families) || '' }})
@@ -54,7 +54,9 @@ jobs:
       matrix:
         include:
           - carrier: ws
-            families: ''
+            families: two-agent,addressed,same-context
+          - carrier: ws
+            families: three-agent,same-principal,four-role
           - carrier: rtc
             families: two-agent,addressed,same-context
           - carrier: rtc

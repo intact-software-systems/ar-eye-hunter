@@ -159,10 +159,11 @@ describe('ALM conformance lane workflows', () => {
         });
     });
 
-    it('runs rtc, which took 36.5 minutes as one job, as two jobs by family and every other carrier as one', () => {
+    it('runs ws and rtc, which took over 30 minutes as one job, as two jobs by family and rtc-with-ws-fallback as one', () => {
         expect(observationLane.strategy?.matrix).toEqual({
             include: [
-                { carrier: 'ws', families: '' },
+                { carrier: 'ws', families: 'two-agent,addressed,same-context' },
+                { carrier: 'ws', families: 'three-agent,same-principal,four-role' },
                 { carrier: 'rtc', families: 'two-agent,addressed,same-context' },
                 { carrier: 'rtc', families: 'three-agent,same-principal,four-role' },
                 { carrier: 'rtc-with-ws-fallback', families: '' }
