@@ -3,26 +3,30 @@ import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admi
 import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from '../control/read-al-outbound-recipient-proof.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 
+type ALOutboundEndedMessageControlRead = Pick<ALControlAdmissionRead, 'parsed' | 'sent' | 'pending'>;
+
 /**
- * A control for a message that has ended is refused, except a gap report and an outside-audience NACK, and an ACK on a
- * kept complete receipt row: a gap NACK names the message whose arrival revealed the gap, not the missing one, and the
- * missing sequence's repair finds its own end. An ACK on a kept incomplete row would complete a receipt whose terminal
- * settlement was already stated, so the row stays the final snapshot it was.
+ * A control for a message that has ended is refused, except a gap report and a repair request, which name the message
+ * whose arrival revealed the gap, not the missing one, so the missing sequence's repair finds its own end. A kept
+ * incomplete receipt row is the final snapshot of the terminal settlement: an ACK or an outside-audience NACK would
+ * rewrite it and state a settlement after that one, so both are refused while it stands. A kept complete row still
+ * admits them as before.
  */
 export function validateALOutboundEndedMessageControl(
-    read: Pick<ALControlAdmissionRead, 'parsed' | 'sent' | 'pending'>
+    read: ALOutboundEndedMessageControlRead
 ): readonly ALOutboundControlIssue[] {
-    return read.sent?.ended === true && (isRefusedEndedNack(read) || isRefusedEndedAck(read))
+    return read.sent?.ended === true && isRefusedOnEndedMessage(read)
         ? [toALOutboundRefusalIssue('AL control names a message that has ended')]
         : [];
 }
 
-function isRefusedEndedNack(read: Pick<ALControlAdmissionRead, 'parsed'>): boolean {
+function isRefusedOnEndedMessage(read: ALOutboundEndedMessageControlRead): boolean {
     const { parsed } = read;
-    return parsed.type === 'nack' && parsed.payload.reason !== 'gap' &&
-        !isALOutsideAudienceNackReason(parsed.payload.reason);
-}
-
-function isRefusedEndedAck(read: Pick<ALControlAdmissionRead, 'parsed' | 'pending'>): boolean {
-    return read.parsed.type === 'ack' && read.pending !== undefined && !isALOutboundReceiptComplete(read.pending);
+    if (parsed.type === 'repair' || (parsed.type === 'nack' && parsed.payload.reason === 'gap')) {
+        return false;
+    }
+    if (parsed.type === 'ack' || isALOutsideAudienceNackReason(parsed.payload.reason)) {
+        return read.pending !== undefined && !isALOutboundReceiptComplete(read.pending);
+    }
+    return true;
 }

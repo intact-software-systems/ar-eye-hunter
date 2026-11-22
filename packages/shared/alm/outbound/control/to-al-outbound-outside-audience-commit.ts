@@ -19,7 +19,10 @@ export interface ALOutboundOutsideAudienceCommitInput extends ALOutboundOutsideA
     readonly recipientPeerIds: readonly string[];
 }
 
-/** No receipt to record in, every recipient already outside, or the receipt row to write under the origin's fence. */
+/**
+ * No receipt to record in (none, or an ended message's kept final snapshot), every recipient already outside, or the
+ * receipt row to write under the origin's fence.
+ */
 export type ALOutboundOutsideAudienceCommit<TPrepared> =
     | Readonly<{ status: 'absent' | 'committed'; }>
     | Readonly<{ status: 'write'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
@@ -29,7 +32,7 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
     input: ALOutboundOutsideAudienceCommitInput
 ): ALOutboundOutsideAudienceCommit<TPrepared> {
     const { pending, stored, receipt } = input;
-    if (pending === undefined || stored === undefined) {
+    if (pending === undefined || stored === undefined || stored.ended) {
         return { status: 'absent' };
     }
     const snapshot = input.recipientPeerIds

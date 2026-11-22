@@ -351,6 +351,26 @@ describe('a terminal end keeps its incomplete receipt row as a final snapshot', 
     );
 
     it.each(STORES)(
+        'on %s, a late outside-audience NACK after receipt-exhausted, from the one recipient still owed, changes no row and states no fact',
+        async (store) => {
+            const fixture = await createEndedMessageFixture(store, { maxRepairs: 4, acknowledgedSeqs: [1, 2, 4, 5] });
+            const third = fixture.messages[2]!;
+            expect(await fixture.runtime.acceptControlMessage(toAck(third, 'peer-1'), 'peer')).toEqual({ kind: 'committed' });
+            const kept = await advanceUntilEnded(fixture, third);
+            expect(terminalFactsOf(fixture, 3)).toEqual([['receipt-exhausted', 'budget']]);
+            expect(kept === undefined ? undefined : toALOutboundReceiptClasses(kept).unconfirmedPeerIds).toEqual(['peer-2']);
+            const factsBefore = fixture.settlements.filter((settlement) => settlement.msgId === third.id.msgId);
+
+            expect(await fixture.runtime.acceptControlMessage(toOutsideNack(third, 'peer-2', 'before-entry'), 'peer'))
+                .toEqual({ kind: 'rejected', reason: 'AL control names a message that has ended' });
+            await advanceTo(fixture, Date.now() - START_MS + 100);
+
+            expect(await readReceiptRow(fixture, third)).toEqual(kept);
+            expect(fixture.settlements.filter((settlement) => settlement.msgId === third.id.msgId)).toEqual(factsBefore);
+        }
+    );
+
+    it.each(STORES)(
         'on %s, one track\'s kept row leaves another track\'s repair alone, refuses a late confirmation of its message, and a complete row still takes a late hop end',
         async (store) => {
             const fixture = await createEndedMessageFixture(store, { maxRepairs: 4, acknowledgedSeqs: [1, 2, 4, 5] });
@@ -374,6 +394,12 @@ describe('a terminal end keeps its incomplete receipt row as a final snapshot', 
             // (b) a late `delivered` for the ended message is refused, and the kept row and its facts stay as they were.
             const factsBefore = fixture.settlements.filter((settlement) => settlement.msgId === third.id.msgId);
             expect(await fixture.runtime.acceptControlMessage(toAck(third, 'peer-1'), 'peer'))
+                .toEqual({ kind: 'rejected', reason: 'AL control names a message that has ended' });
+            await advanceTo(fixture, Date.now() - START_MS + 100);
+            expect(await readReceiptRow(fixture, third)).toEqual(kept);
+            expect(fixture.settlements.filter((settlement) => settlement.msgId === third.id.msgId)).toEqual(factsBefore);
+            // (b') a late outside-audience NACK for it rewrites nothing and states nothing either.
+            expect(await fixture.runtime.acceptControlMessage(toOutsideNack(third, 'peer-1', 'not-subscribed'), 'peer'))
                 .toEqual({ kind: 'rejected', reason: 'AL control names a message that has ended' });
             await advanceTo(fixture, Date.now() - START_MS + 100);
             expect(await readReceiptRow(fixture, third)).toEqual(kept);
@@ -614,6 +640,14 @@ function toAck(message: ALMessage, peer: string, status: ALAckStatus = 'delivere
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${peer}-${status}-${message.id.msgId}`, ts: Date.now(), senderId: peer, traceId: 'trace-message-end' },
         toTestALAckPayload({ ackedMsgId: message.id.msgId, fromPeerId: peer, toPeerId: 'self', status })
+    );
+}
+
+/** A NACK `peer` sends for itself placing it outside `message`'s audience, for `reason`. */
+function toOutsideNack(message: ALMessage, peer: string, reason: 'before-entry' | 'not-subscribed'): ALMessage {
+    return newALNackControlMessage(
+        { v: 4, msgId: `${reason}-${peer}-${message.id.msgId}`, ts: Date.now(), senderId: peer, traceId: 'trace-message-end' },
+        toTestALNackPayload({ msgId: message.id.msgId, fromPeerId: peer, toPeerId: 'self', reason })
     );
 }
 

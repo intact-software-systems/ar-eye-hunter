@@ -1528,21 +1528,21 @@ sender holds for the message, and from then on the sender writes no frame and st
 receipt completed, `receipt-exhausted` (its budget spent or a hop's refusal), a server's `timed-out` receipt, a
 first-hop wait spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. The commit is
 [`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts): the repair-attempt row's
-delete, the first-hop wait's delete, the completion of both timers, and the marker; the receipt row stays, whatever
-the carrier, as the final snapshot of who confirmed: the field `ended` of the stored message row every message already has
-(`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write per message end. It is fenced on the sender version, so a commit decided on
+delete, the first-hop wait's delete, the completion of both timers, and the marker: the field `ended` of the stored
+message row every message already has (`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write
+per message end. The receipt row stays, whatever the carrier, as the final snapshot of who confirmed. It is fenced on the sender version, so a commit decided on
 an older read conflicts and decides again on a read that holds the marker. A message this sender only dequeues from an
-external source holds no row and gets no marker; every later path stops at the missing row. Every receipt row is kept
-as a final snapshot to its expiry -- an open receipt the end settles, a complete one and a server's terminal one --
-since a gap request, own-word or relayed, is admitted by reading its revealing message's row, so the renewals of a gap
+external source holds no row and gets no marker; every later path stops at the missing row. Every end through this
+bundle keeps the receipt row as a final snapshot to its expiry -- an open receipt the end settles, a complete one and a
+server's terminal one (a terminal NACK's removal and a hand-over still delete it) -- since a gap request, own-word or relayed, is admitted by reading its revealing message's row, so the renewals of a gap
 revealed by a message whose receipt ended still reach the origin. The marker lives as long as the row, past the deadline, so a
 terminal fact is stated once per message across reloads. Afterwards a dispatch of the message answers
 `skipped`/`message-ended`, which is never stated on the settlements port, so no handle ever reads it; a queued copy
-meets the marker at `readSendGuards` and completes without a frame; a receipt is refused; an ACK on a kept incomplete
-row is refused, so no settlement follows the terminal one, while a kept complete row still takes a next hop's late
-terminal ACK; a NACK is refused
-([`validateALOutboundEndedMessageControl`](./message-end/validate-al-outbound-ended-message-control.ts)) unless it
-reports a gap or an outside audience; a gap NACK or repair request, which names the message whose arrival revealed the
+meets the marker at `readSendGuards` and completes without a frame; a receipt is refused; a kept incomplete receipt row is the final snapshot, so
+[`validateALOutboundEndedMessageControl`](./message-end/validate-al-outbound-ended-message-control.ts) refuses an ACK
+or an outside-audience NACK while it stands and no settlement follows the terminal one (a kept complete row still admits
+them, a next hop's late terminal ACK included), and the server's own `commitOutsideAudience` answers `absent` for it;
+any other NACK but a gap is refused; a gap NACK or repair request, which names the message whose arrival revealed the
 gap, is admitted and served for every sequence it names that has not ended, the ended one served nothing and charged
 nothing; and a timer that meets an ended message's kept incomplete row writes nothing. A control commit decides its
 own end in [`toALOutboundControlMessageEnd`](./message-end/to-al-outbound-control-message-end.ts). Not terminal: a

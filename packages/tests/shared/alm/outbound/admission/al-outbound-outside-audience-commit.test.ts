@@ -20,7 +20,7 @@ interface OutsideFixture {
     readonly store: ALOutboundAdmissionStore<string>;
 }
 
-async function createOutsideFixture(): Promise<OutsideFixture> {
+async function createOutsideFixture(stored: { readonly ended: boolean; } = { ended: false }): Promise<OutsideFixture> {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => NOW_MS);
     const store = createALOutboundAdmissionStore<string>({
         nowMs: () => NOW_MS,
@@ -31,7 +31,7 @@ async function createOutsideFixture(): Promise<OutsideFixture> {
         retention: normalizeALRuntimeStoreRetention(),
         decodePrepared: (value) => String(value)
     });
-    await writeStoredRow(backend);
+    await writeStoredRow(backend, stored.ended);
     expect(
         await store.commitBundle({
             senderId: ORIGIN,
@@ -57,7 +57,7 @@ function toPending(msgId: string): ALOutboundPendingAckSnapshot {
     };
 }
 
-async function writeStoredRow(backend: InMemoryAdmissionBackend): Promise<void> {
+async function writeStoredRow(backend: InMemoryAdmissionBackend, ended: boolean): Promise<void> {
     await backend.write((tx) =>
         tx.set(toALOutboundSentMessageKey(NAMESPACE, MSG_ID), {
             msgId: MSG_ID,
@@ -75,7 +75,8 @@ async function writeStoredRow(backend: InMemoryAdmissionBackend): Promise<void> 
             orderingSeq: null,
             sentPositions: null,
             policy: { persist: true, ackTracking: null, retryTracking: null, repairTracking: null, supersedenceTracking: null, admittedAudience: ['b', 'c'] },
-            creationExpiry: 'creation-expiry'
+            creationExpiry: 'creation-expiry',
+            ...(ended ? { ended: true } : {})
         }, LIVE_UNTIL_MS)
     );
 }
@@ -104,6 +105,17 @@ describe('the server records its own skipped recipients outside its receipt', ()
         const write = vi.spyOn(fixture.backend, 'write');
 
         expect(await fixture.store.commitOutsideAudience(RECEIPT, ['c'])).toBe('committed');
+
+        expect(write).not.toHaveBeenCalled();
+        expect(await readRows(fixture)).toBe(before);
+    });
+
+    it('answers absent for an ended message\'s kept receipt row and writes nothing: that row is its final snapshot', async () => {
+        const fixture = await createOutsideFixture({ ended: true });
+        const before = await readRows(fixture);
+        const write = vi.spyOn(fixture.backend, 'write');
+
+        expect(await fixture.store.commitOutsideAudience(RECEIPT, ['c'])).toBe('absent');
 
         expect(write).not.toHaveBeenCalled();
         expect(await readRows(fixture)).toBe(before);
