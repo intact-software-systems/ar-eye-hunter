@@ -1,6 +1,6 @@
 # A cancel and a hand-over that survive a reload
 
-Status: design, awaiting the maintainer's approval. No product code is written yet.
+Status: design approved by the maintainer on 2026-11-22; being built.
 
 ## Intent
 
@@ -111,14 +111,15 @@ What stays true and is said plainly in the README: a cancel is durable once its 
 page that dies in the few milliseconds between `cancel()` returning and that commit loses it, as
 any storage write would be lost.
 
-## Open decisions for the maintainer
+## Rulings (2026-11-22)
 
-1. The approach: A, B or C.
-2. The retained admission. Under A, a message that exists only as an `admit-message` row has no
-   stored row to mark. The cancelling page completes that row at its next claim, as today. A reload
-   or another owning tab inside that window (one work batch) admits and sends it. Either the cancel
-   also deletes the retained row, which needs the lane to remember which admissions this page
-   retained, or the window is closed as an inherent limit with one decision row.
+1. The approach is A: a cancel and a hand-over end the message in a commit of their own.
+2. A cancel that finds no stored row deletes the retained `admit-message` row. The durable lane
+   remembers, in memory, the admissions this page retained; only the page that enqueued a message
+   can cancel it, so that memory is complete. A replay already running on the row conflicts on its
+   own guard and admits nothing.
+3. The design is approved with both changes to what D686 listed as not terminal: a hand-over marks
+   the message ended on the carrier it left, and an empty-audience admission writes the marker.
 
 ## Lane proof
 
