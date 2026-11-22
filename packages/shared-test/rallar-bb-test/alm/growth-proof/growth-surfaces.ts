@@ -1,3 +1,6 @@
+import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
+
 import type { GrowthClassification, GrowthReader, GrowthSurface } from './growth-surface.ts';
 
 /** The growth survey's rows: every one of them needs a classified surface below. */
@@ -12,6 +15,8 @@ const DAY_MS = 24 * HOUR_MS;
 const RUNTIME_STATE_SWEEP_MS = MINUTE_MS;
 const AL_REPOSITORY_TTL_MS = HOUR_MS;
 const AL_VOLATILE_INBOUND_COUNTED_LIFETIME_MS = 30_000;
+/** A head ended one grace after a deadline one window out keeps its row one grace past the ending. */
+const AL_RECEIPT_RECORD_ROW_LIFETIME_MS = AL_RECEIPT_RECORD_WINDOW_MS + 2 * AL_RECEIPT_DEADLINE_GRACE_MS;
 const AL_ORDERING_TRACKS_PER_STORE = 256;
 const AL_DELIVERED_MARKERS_PER_STORE = 256;
 const BROWSER_INBOUND_STORES = 2;
@@ -692,5 +697,16 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
             missingBound: 'one wait per awaitReply call; each ends by its required timeoutMs and no count caps them'
         },
         readers: [toBrowserReading('rallar', 'alm', 'replyWaitsOpen')]
+    },
+    {
+        id: 85,
+        name: 'runtime_state_store server AL receipt record heads and confirmations (not in the survey)',
+        owner: 'packages/shared/alm/receipt-record/al-receipt-record.ts',
+        classification: {
+            growthClass: 'ttl-within-run',
+            ttlMs: AL_RECEIPT_RECORD_ROW_LIFETIME_MS,
+            sweepMs: RUNTIME_STATE_SWEEP_MS
+        },
+        readers: [toNamespaceCount('server-ws-qbox:*:receipt:record')]
     }
 ];
