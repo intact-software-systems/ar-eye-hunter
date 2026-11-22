@@ -129,6 +129,7 @@ export interface RoomCreateGroupStateFields extends
         | 'joinMode'
         | 'directoryListing'
         | 'retention'
+        | 'roomLobby'
         | 'maxMembers'
         | 'maxSpectators'
         | 'maxSessionsPerMember'
@@ -235,6 +236,7 @@ export function toCreateGroupStateRequest(
         joinMode: room.joinMode ?? 'invite-only',
         ...(room.directoryListing === undefined ? {} : { directoryListing: room.directoryListing }),
         ...(room.retention === undefined ? {} : { retention: room.retention }),
+        ...(room.roomLobby === undefined ? {} : { roomLobby: room.roomLobby }),
         ...(room.maxMembers === undefined ? {} : { maxMembers: room.maxMembers }),
         ...(room.maxSpectators === undefined ? {} : { maxSpectators: room.maxSpectators }),
         ...(room.maxSessionsPerMember === undefined
@@ -544,6 +546,7 @@ function toRoomUpdateFields(request: UpdateStateGroupBody): UpdateStateGroupBody
         maxSessionsPerMember: request.maxSessionsPerMember,
         metadata: request.metadata,
         roomDeadline: request.roomDeadline,
+        roomLobby: request.roomLobby,
         expiresAtEpochMs: request.expiresAtEpochMs,
         emptySinceEpochMs: request.emptySinceEpochMs,
         purgeAfterEpochMs: request.purgeAfterEpochMs,

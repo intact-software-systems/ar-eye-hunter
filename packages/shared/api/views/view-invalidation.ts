@@ -10,6 +10,7 @@ export namespace ViewInvalidation {
         readonly resource:
             | 'party'
             | 'matchmaking'
+            | 'room-lobby'
             | 'friends'
             | 'sessions'
             | 'tournament-catalog'
@@ -78,6 +79,7 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
         resource: requireOneOf(record.resource, [
             'party',
             'matchmaking',
+            'room-lobby',
             'friends',
             'sessions',
             'tournament-catalog',

@@ -1,3 +1,4 @@
+import { ROOM_LOBBIES_NAMESPACE, ROOM_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey, decodeStoredLobby, decodeStoredCommitment } from '../lobby/room-lobby-storage.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
@@ -363,6 +364,16 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             groupSessionIntentKey(ref, principalId)
         );
         return stored ? canonicalStoredGroupSessionIntent(stored, ref) : undefined;
+    }
+
+    async findRoomLobbyEntry(ref: GroupRef) {
+        const stored = await this.getJsonEntryValue(ROOM_LOBBIES_NAMESPACE, groupStateGroupStorageKey(ref));
+        return stored ? decodeStoredLobby(stored, ref) : undefined;
+    }
+
+    async findLobbyCommitmentEntry(scope: GroupScope, principalId: string) {
+        const stored = await this.getJsonEntryValue(ROOM_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey(scope, principalId));
+        return stored ? decodeStoredCommitment(stored, scope, principalId) : undefined;
     }
 
     async findSessionReservationsEntry(

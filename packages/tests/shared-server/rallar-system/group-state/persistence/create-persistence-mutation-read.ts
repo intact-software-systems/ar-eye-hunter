@@ -57,6 +57,7 @@ export function createPersistenceMutationRead(): GroupMutationRead {
         activeMemberPrincipalIds: null,
         activeMembers: null,
         plannedLayoutRow: null,
+        roomLobby: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     };

@@ -103,6 +103,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
     },
     group: {
         roomOwnedAppDataBindings: [],
+        roomLobbyPoliciesByApplication: {},
         defaultMaxMembers: 256,
         currentSnapshotCacheMaxEntries: 512,
         admission: {

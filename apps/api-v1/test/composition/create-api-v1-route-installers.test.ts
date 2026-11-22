@@ -275,6 +275,7 @@ function createTopology(): ApiV1RouteInstallerTopology {
         adminClientIds: ['admin'],
         readPlannedLayoutFingerprint: () => Promise.resolve(null),
         groupStateRepository: {
+            findLobbyCommitmentEntry: async () => undefined,
             readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const })
         }
     };

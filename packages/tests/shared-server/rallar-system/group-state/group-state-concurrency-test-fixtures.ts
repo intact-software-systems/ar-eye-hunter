@@ -161,6 +161,7 @@ export function createMutationRead(): GroupMutationRead {
         activeMemberPrincipalIds: null,
         activeMembers: [actor.member],
         plannedLayoutRow: null,
+        roomLobby: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     };

@@ -33,6 +33,7 @@ import { assertGroupMutationOperationReads } from './assert-group-mutation-opera
 import { assertGroupMutationIdempotencyRecord } from './assert-group-mutation-result.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
+    'roomLobby',
     'sessionViewAudience',
     'sessionIntent',
     'sessionReservations',

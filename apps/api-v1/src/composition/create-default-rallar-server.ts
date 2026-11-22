@@ -248,6 +248,7 @@ function createConfiguredApiV1Runtime(
         disconnectedSessionRetentionMs: configuration.clientSessions.disconnectedRetentionMs,
         roomOwnedAppDataBindings: configuration.group.roomOwnedAppDataBindings,
         groupCapacity: {
+            roomLobbyPoliciesByApplication: configuration.group.roomLobbyPoliciesByApplication,
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
         groupCurrentSnapshotCacheMaxEntries: configuration.group.currentSnapshotCacheMaxEntries,

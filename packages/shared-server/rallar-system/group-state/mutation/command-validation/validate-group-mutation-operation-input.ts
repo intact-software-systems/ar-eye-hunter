@@ -17,7 +17,7 @@ import {
     validateGroupInputKeys,
     type GroupInputFieldRule
 } from './group-input-validation-issues.ts';
-import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
+import { validateGroupMetadataInput, validateRoomLobbyInput } from './validate-group-metadata-input.ts';
 import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecycle-policy-input-shape.ts';
 
 interface GroupMutationOperationInput {
@@ -120,7 +120,7 @@ export function validateGroupMutationOperationInput(
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),
         ...(operation === 'createGroup' || operation === 'updateGroup'
-            ? validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock)
+            ? [...validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock), ...validateRoomLobbyInput(operation, input.roomLobby)]
             : [])
     ];
     if (

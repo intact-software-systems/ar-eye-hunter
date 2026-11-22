@@ -1,3 +1,4 @@
+import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import {
@@ -41,10 +42,12 @@ export function assertGroupMutationIngressFacts(facts: GroupMutationIngressFacts
             'joinCodeVerifier',
             'internalAuthority',
             'capacity',
+            'roomLobbyDefault',
             'authenticatedAuthority'
         ],
         'Group mutation facts'
     );
+    if (Object.hasOwn(facts, 'roomLobbyDefault')) decodeRoomLobbyPolicy(facts.roomLobbyDefault);
     if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
         throw new TypeError('Group mutation timestamp is invalid');
     }

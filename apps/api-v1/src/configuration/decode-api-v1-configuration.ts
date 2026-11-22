@@ -1,3 +1,6 @@
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
+import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import {
@@ -423,11 +426,25 @@ function decodeCircuitBreaker(
     };
 }
 
+function decodeRoomLobbyPolicies(decoder: ApiV1ConfigurationValueDecoder): ApiV1GroupConfiguration['roomLobbyPoliciesByApplication'] {
+    const path = 'group.roomLobbyPoliciesByApplication';
+    try {
+        const policies = requireRecord(decoder.sourceValue(path), 'Room lobby application policies');
+        return Object.fromEntries(Object.entries(policies).map(([app, policy]) =>
+            [assertValidRallarRouteId(app), decodeRoomLobbyPolicy(policy)]));
+    }
+    catch {
+        decoder.sourceIssue(path, 'invalid-room-lobby-policies', 'Each application needs a valid ID and complete lobby policy.');
+        return {};
+    }
+}
+
 function decodeGroup(
     decoder: ApiV1ConfigurationValueDecoder
 ): ApiV1GroupConfiguration {
     const defaultMaxMembers = decoder.integer('group.defaultMaxMembers', 0);
     return {
+        roomLobbyPoliciesByApplication: decodeRoomLobbyPolicies(decoder),
         defaultMaxMembers: defaultMaxMembers === 0 ? null : defaultMaxMembers,
         currentSnapshotCacheMaxEntries: decoder.integer('group.currentSnapshotCacheMaxEntries', 1),
         roomOwnedAppDataBindings: decodeRoomOwnedBindings(decoder),

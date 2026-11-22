@@ -1,5 +1,5 @@
 import {
-    changeRoomLobby, createRoomLobby, decodeRoomLobby, decodeRoomLobbyAccountView, projectRoomLobbyAccount, roomLobbyApplicationDefault,
+    changeRoomLobby, configureRoomLobby, createRoomLobby, decodeRoomLobby, decodeRoomLobbyAccountView, projectRoomLobbyAccount, roomLobbyApplicationDefault,
     type RoomLobby
 } from '@shared/api/room-lobbies/room-lobby.ts';
 import { describe, expect, it } from 'vitest';
@@ -65,6 +65,22 @@ describe('named room lobby seats', () => {
         const present = apply(initial, { kind: 'arrive', principalId: 'alice' }, 0);
         const away = apply(present, { kind: 'away', principalId: 'alice' }, 10);
         expect(changeRoomLobby(away, { kind: 'arrive', principalId: 'alice' }, 120_010).rejection).toBe('return-expired');
+    });
+
+    it('reconciles actual occupancy on reconfiguration and preserves already displayed deadlines', () => {
+        const initial = createRoomLobby(roomRef, 3, policy);
+        const first = apply(initial, { kind: 'arrive', principalId: 'alice' }, 0);
+        const two = apply(first, { kind: 'arrive', principalId: 'bob' }, 1);
+        const away = apply(two, { kind: 'away', principalId: 'alice' }, 2);
+        expect(configureRoomLobby(away, { capacity: 1, policy }, 3).rejection).toBe('full');
+        const full = configureRoomLobby(away, { capacity: 2, policy }, 3).lobby;
+        const policyEdit = configureRoomLobby(full, { capacity: 2, policy: { ...policy, returnWindowMs: 5000 } }, 4).lobby;
+        expect(policyEdit.seats[0]?.returnWindow).toEqual({ generation: full.revision, dueAtEpochMs: 120003 });
+        const expanded = configureRoomLobby(policyEdit, { capacity: 3, policy }, 5).lobby;
+        expect(expanded.seats[0]?.returnWindow).toBeNull();
+        const expired = configureRoomLobby(policyEdit, { capacity: 1, policy }, 150000);
+        expect(expired.rejection).toBeNull();
+        expect(expired.lobby.seats.map(seat => seat.principalId)).toEqual(['bob']);
     });
 
     it('round trips a durable lobby and exposes only the requesting account in its own workspace', () => {

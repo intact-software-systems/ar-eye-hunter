@@ -34,6 +34,16 @@ function withLegacyRequestId<Body extends object>(body: Body) {
 }
 
 describe('room request translation', () => {
+    it('preserves explicit lobby opt-out, held seat policy, and the self-release command', () => {
+        const roomLobby = { returnWindowMs: 120000, claimWindowMs: 60000 };
+        for (const policy of [null, roomLobby]) {
+            expect(toCreateGroupStateRequest({ groupId: 'court', room: { displayName: 'Court', roomLobby: policy }, ...actor }))
+                .toHaveProperty('roomLobby', policy);
+        }
+        expect(toUpdateGroupStateRequest({ request: { roomLobby: { operation: 'release' } }, ...actor }))
+            .toEqual({ ...actor, roomLobby: { operation: 'release' } });
+    });
+
     it('carries explicit listing intent separately from metadata and omits absent intent', () => {
         expect(toCreateGroupStateRequest({
             groupId: 'hidden-room',

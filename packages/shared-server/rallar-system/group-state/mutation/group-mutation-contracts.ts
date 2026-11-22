@@ -1,3 +1,5 @@
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import type { RoomLobbyRead } from '../lobby/room-lobby-storage.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
@@ -104,6 +106,7 @@ export type GroupMutationCommand =
                     expiresAtEpochMs: number | null;
                     purgeAfterEpochMs: number | null;
                     lifecyclePolicy?: GroupLifecyclePolicy;
+                    roomLobby?: RoomLobby.Policy | null;
                     /** The creator's declared initial grant; `{}` declares none. */
                     publicationGrants: GroupPublicationTopicGrants;
                 }>;
@@ -115,7 +118,7 @@ export type GroupMutationCommand =
             operation: 'updateGroup';
             input:
                 & NullableActorInput
-                & Pick<UpdateGroupRequest, 'roomDeadline' | 'roomClock'>
+                & Pick<UpdateGroupRequest, 'roomDeadline' | 'roomClock' | 'roomLobby'>
                 & Readonly<{
                     slug: string | null;
                     displayName: string | null;
@@ -532,6 +535,7 @@ export interface GroupMutationRead {
      * indistinguishable here and both fence layout-bound commands closed as
      * no-planned-layout.
      */
+    readonly roomLobby: RoomLobbyRead | null;
     readonly connectTriggerLatch: GroupConnectTriggerLatchRow | null;
     readonly plannedLayoutRow: GroupPlannedLayoutRow | null;
     /** The accepted slot, read only by the promotion-capable operations. */
@@ -581,6 +585,7 @@ export interface GroupMutationIngressFacts {
     readonly joinCodeVerifier: string | null;
     readonly internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
     /** Operational capacity defaults captured completely at ingress time. */
+    readonly roomLobbyDefault?: RoomLobby.Policy;
     readonly capacity: GroupPolicyCapacityConfig;
     readonly authenticatedAuthority:
         | Readonly<{
@@ -674,6 +679,7 @@ export type GroupTopicSubscriptionDeleteEffect = Readonly<{
 
 export interface GroupMutationDomainWrite {
     readonly viewProvenance: readonly RuntimeStateGuardedBatchEffect[];
+    readonly roomLobbyEffects: readonly RuntimeStateGuardedBatchEffect[];
     readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
     readonly sessionReservationWrite: GroupSessionReservationWrite | null;
     readonly outcome: 'write';

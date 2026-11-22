@@ -188,7 +188,7 @@ function createInternalMutationIngressCapture(
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority,
-            capacity: dependencies.capacity ?? { defaultMaxMembers: null },
+            capacity: { defaultMaxMembers: dependencies.capacity?.defaultMaxMembers ?? null },
             authenticatedAuthority: null
         };
         // Run the capability matrix during ingress capture: a command a mode cannot
@@ -333,7 +333,8 @@ async function readGroupMutationAttempt(
     const { read, authSession } = await readGroupMutation(
         owners.repositoryFor(owners.dependencies.runtimeRepository),
         ingress.command,
-        resolveGroupMutationAuthSessionId(ingress)
+        resolveGroupMutationAuthSessionId(ingress),
+        ingress.facts.roomLobbyDefault !== undefined
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return await readGroupMutationFences(owners, ingress, read);
@@ -346,7 +347,8 @@ async function readGroupMutationAttemptWithSnapshot(
     const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
         owners.repositoryFor(owners.dependencies.runtimeRepository),
         ingress.command,
-        resolveGroupMutationAuthSessionId(ingress)
+        resolveGroupMutationAuthSessionId(ingress),
+        ingress.facts.roomLobbyDefault !== undefined
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };

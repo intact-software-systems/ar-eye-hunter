@@ -1,3 +1,4 @@
+import { readNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/read-new-group-cohort-admission.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { computeGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
 import { computeNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-new-group-cohort-admission.ts';
@@ -86,4 +87,26 @@ describe('shared cohort admission', () => {
             await fixture.storage.close();
         }
     });
+});
+
+it('carries the application lobby default and all three private seats through the atomic room creation', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const roomRef = { ...DESTINATION, groupId: 'managed-match' };
+        const participants = ['alice', 'bob', 'carol'].map(principalId => ({ principalId, sessionId: 's-' + principalId, requestId: 'r-' + principalId }));
+        const input = await readNewGroupCohortAdmission({
+            groups: fixture.repository, roomRef, participants, roomLobbyDefault: { returnWindowMs: 5000, claimWindowMs: 1000 },
+            displayName: 'Managed match', maxSpectators: null, reconnectGraceMs: 60000, capturedAtEpochMs: fixture.nowEpochMs,
+            serviceId: 'cohort-test', nowEpochMs: fixture.nowEpochMs, attemptCount: 1, traceId: 'cohort-test', finishedRetentionMs: 60000
+        });
+        const computed = computeNewGroupCohortAdmission(input);
+        if (computed.status !== 'admitted') throw new Error('Expected ready cohort');
+        await fixture.storage.sql.begin(async transaction => {
+            for (const mutation of computed.mutations) await writeGroupMutation(transaction, mutation);
+        });
+        expect((await fixture.repository.findRoomLobbyEntry(roomRef))?.value.seats.map(seat => seat.principalId)).toEqual(['alice', 'bob', 'carol']);
+        for (const { principalId } of participants) {
+            expect((await fixture.repository.findLobbyCommitmentEntry(roomRef, principalId))?.value.seat?.roomRef).toEqual(roomRef);
+        }
+    } finally { await fixture.storage.close(); }
 });

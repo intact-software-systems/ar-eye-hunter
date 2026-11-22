@@ -1,3 +1,4 @@
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { FriendsConfig } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
@@ -127,6 +128,7 @@ export interface ApiV1GroupAdmissionConfiguration {
 }
 
 export interface ApiV1GroupConfiguration {
+    readonly roomLobbyPoliciesByApplication: Readonly<Record<string, RoomLobby.Policy>>;
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly defaultMaxMembers: number | null;
     /**

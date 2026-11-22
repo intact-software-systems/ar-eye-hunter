@@ -1,3 +1,5 @@
+import { stageRoomLobbyRead } from '../../lobby/stage-room-lobby-read.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { groupStateInsertGroupDescriptor } from '../../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import type { GroupMutationRead } from '../group-mutation-contracts.ts';
 import { computeGroupMutation, type GroupMutationInput } from '../orchestration/compute-group-mutation.ts';
@@ -17,7 +19,13 @@ export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInp
     if (input.creation.command.operation !== 'createGroup') {
         throw new TypeError('A new cohort requires an ordinary group creation command');
     }
-    const created = computeGroupMutation(input.creation);
+    let created;
+    try {
+        created = computeGroupMutation(input.creation);
+    } catch (error) {
+        if (!(error instanceof GroupPolicyDeniedError)) throw error;
+        return { status: 'denied', principalId: input.creation.command.input.createdByPrincipalId, code: error.denial.code, message: error.denial.message };
+    }
     if (
         created.outcome !== 'write' || created.guard.kind !== 'group' || created.guard.operation !== 'insert' ||
         created.lifecyclePolicy === null || input.creation.read.expiredGroupEntry !== null
@@ -38,6 +46,8 @@ export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInp
             updatedTimestamp: new Date(input.creation.facts.nowEpochMs).toISOString()
         }
     };
+    if (input.participants.length === 0) return { status: 'admitted', mutations: [created] };
+    const roomLobby = stageRoomLobbyRead(input.creation.read.roomLobby, created.roomLobbyEffects, input.creation.facts.nowEpochMs);
     const policy = created.lifecyclePolicy;
     const participants = input.participants.map((participant): GroupCohortAdmissionParticipant => {
         if (participant.command.targetPrincipalId === group.value.ownerPrincipalId) {
@@ -48,6 +58,7 @@ export function computeNewGroupCohortAdmission(input: NewGroupCohortAdmissionInp
             read: {
                 ...participant.read,
                 group,
+                roomLobby,
                 activeMembers: created.members,
                 lifecyclePolicy: { status: 'present', policy }
             }

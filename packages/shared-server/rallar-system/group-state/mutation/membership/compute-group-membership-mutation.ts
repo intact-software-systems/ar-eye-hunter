@@ -75,7 +75,7 @@ export function computeJoin(
         : existing?.status === 'active'
         ? existing.role
         : 'member';
-    if (existing?.status === 'active' && existing.role === role) {
+    if (existing?.status === 'active' && existing.role === role && (role === 'spectator' || !read.roomLobby?.lobby || read.roomLobby.lobby.value.seats.some(seat => seat.principalId === existing.principalId))) {
         return noOp(command, read, facts);
     }
     const status = role === 'spectator' ? 'active' : resolveAdmittedMemberStatus({ read, facts, existing });

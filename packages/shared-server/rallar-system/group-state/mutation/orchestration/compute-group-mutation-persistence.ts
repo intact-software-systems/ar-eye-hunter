@@ -91,7 +91,7 @@ function computeGroupMutationGuardedBatch(
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
     effects.push(...computeSessionEffects(computed));
-    effects.push(...computed.viewProvenance);
+    effects.push(...computed.viewProvenance, ...computed.roomLobbyEffects);
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
     }

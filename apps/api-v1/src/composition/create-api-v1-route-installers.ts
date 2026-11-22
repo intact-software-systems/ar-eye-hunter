@@ -1,3 +1,4 @@
+import { registerRoomLobbyReadRoute } from '../room-lobbies/register-room-lobby-read-route.ts';
 import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'hono';
@@ -85,7 +86,7 @@ export interface ApiV1RouteInstallerTopology {
     readonly topologyQuery: graphTopologyRoutes.GraphTopologyRouteQuery;
     readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
-    readonly groupStateRepository: Readonly<{
+    readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'findLobbyCommitmentEntry'> & Readonly<{
         readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     }>;
     readonly readPlannedLayoutFingerprint:
@@ -184,6 +185,13 @@ export function constructApiV1RouteInstallers<
             requireSession: construction.requireSession
         });
         registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
+        registerRoomLobbyReadRoute(app, {
+            requireSession: construction.requireSession,
+            read: async (scope, principalId) => {
+                const entry = await input.topology.groupStateRepository.findLobbyCommitmentEntry(scope, principalId);
+                return entry?.value ?? { scope, principalId, seat: null };
+            }
+        });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
         registerTournamentRoutes(app, { ...input.tournaments, requireSession: construction.requireSession });
         registerPartyRoutes(app, { ...input.parties, requireSession: construction.requireSession });
