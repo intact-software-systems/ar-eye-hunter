@@ -26,11 +26,12 @@ export function computeGroupClockChange(
         if (previous && previous.status !== 'scheduled') {
             return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
         }
-        if (previous && !sameSchedulePhases(previous.phases.filter(phase => phase.startsAtEpochMs <= now),
-            command.phases.filter(phase => phase.startsAtEpochMs <= now))) {
+        const elapsedThroughEpochMs = Math.max(now, previous?.elapsedThroughEpochMs ?? now);
+        if (previous && !sameSchedulePhases(previous.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs),
+            command.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs))) {
             return { rejectionCode: 'group-mutation-rejected', message: 'Elapsed boundaries must be preserved.' };
         }
-        return { ...identity, status: 'scheduled', phases: command.phases };
+        return { ...identity, status: 'scheduled', elapsedThroughEpochMs, phases: command.phases };
     }
     if (previous?.status === 'scheduled') {
         return { rejectionCode: 'group-mutation-rejected', message: 'Use a schedule revision to change this name.' };

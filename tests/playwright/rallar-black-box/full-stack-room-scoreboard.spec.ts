@@ -134,14 +134,19 @@ test('a guest returning after the old boundary recovers the revised schedule and
         await enterCourts({ page, guest, otherCourtOwner, court });
         await page.getByRole('button', { name: 'Take clock control' }).click();
         await expect(page.getByRole('button', { name: 'Start 10 minutes' })).toBeEnabled();
-        const original = await page.evaluate(async ({ court, sdkUrl }) => {
+        const sdk = await page.evaluateHandle(async sdkUrl => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            return rallar;
+        }, sdkUrl);
+        const calibratedStart = await page.waitForFunction(rallar => rallar.deadlineAfter(12_000) ?? 0, sdk);
+        const original = await page.evaluate(async ({ court, sdkUrl, startsAtEpochMs }) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
             const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
             const phases = [{ phase: 'halftime', startsAtEpochMs: 0 },
-                { phase: 'second-half', startsAtEpochMs: rallar.deadlineAfter(12_000)! }];
+                { phase: 'second-half', startsAtEpochMs }];
             return rallar.rooms.publishSchedule(room, { name: 'program', expectedRevision: 0, phases,
                 expectedDirectorEpoch: rallar.director.status(room).appointment!.epoch }, crypto.randomUUID());
-        }, { court, sdkUrl });
+        }, { court, sdkUrl, startsAtEpochMs: await calibratedStart.jsonValue() });
         await expect(guest.getByLabel('Court program')).toContainText('halftime');
         await guest.getByRole('button', { name: 'Switch court' }).click();
         await guest.getByLabel('Room', { exact: true }).fill(court + '-other');

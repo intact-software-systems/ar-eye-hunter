@@ -72,12 +72,29 @@ it('adds the requested duration to the existing phase end and preserves the occu
 it('revises future schedule boundaries while protecting elapsed phases and manual clocks', () => {
     const phases = [{ phase: 'halftime', startsAtEpochMs: 100 }, { phase: 'second', startsAtEpochMs: 500 }];
     const publish = { operation: 'publish-schedule' as const, name: 'court', expectedDirectorEpoch: 1, expectedRevision: 0, phases };
-    const first = { name: 'court', status: 'scheduled' as const, revision: 1, phases };
+    const first = { name: 'court', status: 'scheduled' as const, revision: 1, elapsedThroughEpochMs: 200, phases };
     expect(computeGroupClockChange([], publish, 200)).toEqual(first);
     const later = [phases[0], { ...phases[1], startsAtEpochMs: 700 }];
     const revise = { ...publish, expectedRevision: 1, phases: later };
-    expect(computeGroupClockChange([first], revise, 499)).toEqual({ ...first, revision: 2, phases: later });
+    expect(computeGroupClockChange([first], revise, 499)).toEqual({ ...first, revision: 2, elapsedThroughEpochMs: 499, phases: later });
     expect(computeGroupClockChange([first], revise, 500)).toHaveProperty('rejectionCode');
     expect(computeGroupClockChange([first], { ...publish, expectedRevision: 1, phases: [{ phase: 'new', startsAtEpochMs: 99 }, ...phases] }, 200)).toHaveProperty('rejectionCode');
     expect(computeGroupClockChange([first], { name: 'court', operation: 'start', durationMs: 1000, expectedDirectorEpoch: 1, expectedRevision: 1 }, 200)).toHaveProperty('rejectionCode');
+});
+
+it('preserves elapsed boundaries across accepted writes from slower clocks', async () => {
+    const repository = new GroupBarrierRepository();
+    await seedOpenGroup(repository, 'court');
+    const { group } = await requireSnapshot(repository, 'court');
+    const phases = [{ phase: 'first', startsAtEpochMs: 0 }, { phase: 'second', startsAtEpochMs: 995 }];
+    const publish = { name: 'court', operation: 'publish-schedule' as const, expectedDirectorEpoch: 1, expectedRevision: 0, phases };
+    const first = computeGroupClockUpdate({ ...group, kind: 'room' }, publish, 1000);
+    if ('rejectionCode' in first) throw new Error(first.message);
+    const slower = { ...publish, expectedRevision: 1 };
+    expect(computeGroupClockUpdate(first, { ...slower, phases: [phases[0], { ...phases[1], startsAtEpochMs: 1200 }] }, 990))
+        .toHaveProperty('rejectionCode');
+    const next = computeGroupClockUpdate(first, { ...slower, phases: [...phases, { phase: 'third', startsAtEpochMs: 1100 }] }, 990);
+    if ('rejectionCode' in next) throw new Error(next.message);
+    expect(computeGroupClockUpdate(next, { ...publish, expectedRevision: 2, phases: [...phases, { phase: 'third', startsAtEpochMs: 1000 }] }, 980))
+        .toHaveProperty('rejectionCode');
 });

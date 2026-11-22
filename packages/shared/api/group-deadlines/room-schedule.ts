@@ -24,6 +24,7 @@ export interface RoomSchedule {
     readonly name: string;
     readonly revision: number;
     readonly status: 'scheduled';
+    readonly elapsedThroughEpochMs: number;
     readonly phases: readonly RoomSchedule.Phase[];
 }
 

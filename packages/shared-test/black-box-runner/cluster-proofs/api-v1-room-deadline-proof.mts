@@ -189,7 +189,10 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     assert.equal((await clockWrite(deputy, revision, 409)).code, 'room-clock-revision-conflict');
     const records = clock(await requestJson(editor.baseUrl, first, { method: 'GET', session: deputy }));
     assert.ok(Array.isArray(records));
-    assert.deepEqual(records.find(record => requireRecord(record, 'time record').name === 'program'),
+    const schedule = requireRecord(records.find(record => requireRecord(record, 'time record').name === 'program'), 'schedule');
+    const { elapsedThroughEpochMs, ...programRecord } = schedule;
+    assert.ok(Number.isSafeInteger(elapsedThroughEpochMs) && Number(elapsedThroughEpochMs) > 0);
+    assert.deepEqual(programRecord,
         { name: 'program', revision: 2, status: 'scheduled', phases: revision.phases });
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);

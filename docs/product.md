@@ -129,7 +129,7 @@ An appointed director publishes a named sequence of 1–32 strictly increasing U
 Use `rooms.publishSchedule(room, { name, expectedDirectorEpoch, expectedRevision, phases }, requestId)`,
 where each phase contains `phase` and `startsAtEpochMs`. Revision zero creates the schedule; retry the same
 publication with its original request ID. A later revision may edit future boundaries. Boundaries already reached
-at the server must match the previous revision, including their labels. A schedule and a manually controlled clock
+at the server, including those reached at any earlier accepted publication, must match the previous revision, including their labels. A schedule and a manually controlled clock
 have separate names and share the room's existing capacity. Upgrade room clock readers and writers before publishing schedules.
 
 `rooms.readSchedule` reads the durable revision. `rooms.watchSchedule` recovers it on entry and WebSocket invalidation.

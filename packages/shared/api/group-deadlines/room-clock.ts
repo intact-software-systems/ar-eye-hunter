@@ -81,9 +81,10 @@ export function readRoomTimeRecords(metadata: ApiJsonObject): (RoomClock | RoomT
         names.add(record.name);
         const identity = { name: record.name, revision: record.revision };
         if (record.status === 'scheduled') {
-            requireExactKeys(record, ['name', 'revision', 'status', 'phases'], 'Room schedule');
+            requireExactKeys(record, ['name', 'revision', 'status', 'elapsedThroughEpochMs', 'phases'], 'Room schedule');
+            requireEpoch(record.elapsedThroughEpochMs, 'Elapsed schedule boundary');
             assertSchedulePhases(record.phases);
-            return { ...identity, status: 'scheduled', phases: record.phases };
+            return { ...identity, status: 'scheduled', elapsedThroughEpochMs: record.elapsedThroughEpochMs, phases: record.phases };
         }
         let occurrence: { phase: string; startedAtRevision: number; } | undefined;
         const keys = ['name', 'revision', 'status'];

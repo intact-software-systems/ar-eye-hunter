@@ -108,7 +108,7 @@ it('rejects invalid authority bounds before reading the live connection clock', 
 it('projects a schedule from one calibrated window and withholds the phase across an uncertain boundary', async () => {
     const facade = createRallarFacade();
     const phases = [{ phase: 'halftime', startsAtEpochMs: 100 }, { phase: 'second', startsAtEpochMs: 200 }];
-    const schedule = { name: 'court', status: 'scheduled' as const, revision: 2, phases };
+    const schedule = { name: 'court', status: 'scheduled' as const, revision: 2, elapsedThroughEpochMs: 0, phases };
     expect(facade.schedulePosition(schedule)).toEqual({ status: 'unavailable' });
     const clock = createDefaultBrowserServerClockFixture(() => 200);
     const middleware = vi.spyOn(BrowserTransportRuntime.prototype, 'readMiddleware');
