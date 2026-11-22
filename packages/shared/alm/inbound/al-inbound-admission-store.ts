@@ -436,6 +436,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     /** The audience a WS client's message was frozen to at ingress; absent for any other message or a missing row. */
     readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined>;
 
+    /** The provenance the message's admission recorded; absent when the store holds none. */
+    readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined>;
+
     commitMutations(
         request: ALInboundWriteRequest
     ): Promise<'committed' | 'conflict' | 'expired'>;
@@ -1017,12 +1020,16 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined> {
-        const owner = await this.backend.readWithin((session) =>
-            readALInboundMessageOwner({ database: session, namespace: this.namespace, msgId, senderId: originPeerId })
-        );
+        const owner = await this.readMessageProvenance({ msgId, senderId: originPeerId });
         return owner?.source.kind === 'ws-client' && owner.source.peerId === originPeerId
             ? owner.source.groupRecipientPeerIds
             : undefined;
+    }
+
+    async readMessageProvenance(reference: ALInboundMessageReference): Promise<ALInboundMessageOwner | undefined> {
+        return await this.backend.readWithin((session) =>
+            readALInboundMessageOwner({ database: session, namespace: this.namespace, ...reference })
+        );
     }
 
     private toDedupKey(dedupKey: string): string {

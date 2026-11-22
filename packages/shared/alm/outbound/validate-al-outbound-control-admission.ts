@@ -11,7 +11,9 @@ import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import {
     isALOutboundExpectedRepairPeer,
-    isALOutboundRecipientControlSender
+    isALOutboundRecipientControlSender,
+    isALOutboundRepairAuthorityControl,
+    isALOutboundUnreceiptedRepairRecipient
 } from './control/is-al-outbound-expected-repair-peer.ts';
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
@@ -85,9 +87,10 @@ function validateAcknowledgement(
 }
 
 /**
- * Any other NACK, and a repair request, comes from a peer a repair may come from; a gap NACK a relay re-sends for a
- * recipient below it comes from a next hop and names a recipient the receipt still owes, as an outside-audience NACK
- * does, and is refused under `hop` and `subtree` (S4ii-R3, D582). Its ordering hints name the retained message's track.
+ * Any other NACK, and a repair request, comes from a peer a repair may come from, or, when the repair authority judged
+ * it, from one a send that tracks no receipt may be repaired for (6c); a gap NACK a relay re-sends for a recipient below
+ * it comes from a next hop and names a recipient the receipt still owes, as an outside-audience NACK does, and is
+ * refused under `hop` and `subtree` (S4ii-R3, D582). Its ordering hints name the retained message's track.
  */
 function validateRepairRequest(
     read: ALControlAdmissionRead,
@@ -98,7 +101,11 @@ function validateRepairRequest(
     if (isALOutboundRelayedGapNack(control)) {
         issues.push(...validateALOutboundRelayedNack(read, control.payload));
     }
-    else if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.payload.fromPeerId)) {
+    else if (
+        !isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.payload.fromPeerId) &&
+        !(isALOutboundRepairAuthorityControl(control) &&
+            isALOutboundUnreceiptedRepairRecipient(read, control.payload.fromPeerId))
+    ) {
         issues.push(toALOutboundRefusalIssue('AL repair sender has no retained outbound obligation'));
     }
     if (!hasValidOrderingHints(sent, control.payload)) {

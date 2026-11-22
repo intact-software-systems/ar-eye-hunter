@@ -2067,14 +2067,16 @@ resync or the track expires, instead of a silent loss, in three cases the
 receipt does not cover: the server's dequeue dropped the session after the route
 captured the audience the receipt names, the send asked no logical receipt (its
 sequence stays a floor for every recipient until the track's row expires), or
-the `admitted` receipt arrived after the `complete` one; a relay forwards a gap
-NACK only for a receipted send, so an `ack: 'none'` ordered track behind a
-relay stalls until resync or expiry, and two recipients reporting one gap
-through one relay are two repair requests at the origin; a predecessor whose
-dequeue keeps answering deferred or pending keeps its index row, so if it never
-returns the rows after it on its track wait for its deadline, as they do when
-the write that clears an ended predecessor's index row fails. A server record
-that counts the RTC origin's sends is a later outcome.
+the `admitted` receipt arrived after the `complete` one; an `ack: 'none'`
+ordered track behind a relay is repaired when its sequence was lost before the
+relay, but stalls until resync or expiry when the relay forwarded it and its
+child lost it, since the relay keeps no row to retry its forward, and two
+recipients reporting one gap through one relay are two repair requests at the
+origin; a predecessor whose dequeue keeps answering deferred or pending keeps
+its index row, so if it never returns the rows after it on its track wait for
+its deadline, as they do when the write that clears an ended predecessor's
+index row fails. A server record that counts the RTC origin's sends is a later
+outcome.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the

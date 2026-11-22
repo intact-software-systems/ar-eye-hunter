@@ -127,6 +127,7 @@ describe('outbound control version candidate', () => {
             owner: 'self',
             ownerVersion: { senderId: 'self', version: 1 },
             sent,
+            unreceiptedRepairAudience: undefined,
             pending: {
                 msgId: message.id.msgId,
                 mode: 'hop',

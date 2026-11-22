@@ -1,10 +1,13 @@
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALControlAcceptance,
     ALNackPayload,
     ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
@@ -25,7 +28,8 @@ export interface ALInboundNackAdmissionRead {
     readonly namespace: string;
     /** A child's relayed NACK, for itself or for a recipient below it. */
     readonly nack: ALNackPayload & Readonly<{ reason: ALRelayedNackReason; }>;
-    readonly controlOwners: ALInboundControlOwnerIndex;
+    /** Absent for a message no child acknowledges, which keeps no control-owner index. */
+    readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly owner: ALInboundMessageOwner;
     readonly pending: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
@@ -89,6 +93,71 @@ export function computeALInboundNackAdmission(
             retention.controlPendingTtlMs,
             read.nowMs
         )
+    };
+}
+
+/** A child's gap NACK about a stored message that asked for no receipt, for which the relay keeps no row (6c). */
+export interface ALInboundUnreceiptedGapNackAdmissionRead {
+    readonly namespace: string;
+    readonly nack: ALNackPayload & Readonly<{ reason: 'gap'; }>;
+    /** The stored message the NACK names. */
+    readonly msg: ALMessage;
+    readonly owner: ALInboundMessageOwner;
+    /** The peer the message arrived from, toward which the relay forwards the NACK. */
+    readonly parentPeerId: string;
+    /** The control rows the commit observes unchanged. */
+    readonly controlOwners: ALInboundControlOwnerIndex | undefined;
+    readonly acks: readonly ALAckPayload[];
+    readonly nowMs: number;
+    readonly controlMsgId: string;
+    readonly traceId: string;
+}
+
+/**
+ * A relay forwards a child's gap NACK about a message that asked for no receipt each time it admits one, and records
+ * nothing: the origin answers a repeat of a numbered request `duplicate` and charges nothing for it.
+ */
+export function computeALInboundUnreceiptedGapNackAdmission(
+    read: ALInboundUnreceiptedGapNackAdmissionRead,
+    retention: NormalizedALRuntimeStoreRetentionConfig
+): ALInboundNackAdmissionCandidate {
+    const { namespace, nack, owner, controlOwners, acks, nowMs, controlMsgId, traceId } = read;
+    return {
+        read: {
+            namespace,
+            nack,
+            controlOwners,
+            owner,
+            pending: undefined,
+            acks,
+            nacks: [],
+            nowMs,
+            controlMsgId,
+            traceId
+        },
+        pending: undefined,
+        nacks: undefined,
+        upwardEffects: toALInboundUpwardControlWork(
+            {
+                namespace,
+                msgId: nack.msgId,
+                owner,
+                relayPeerId: nack.toPeerId,
+                pending: {
+                    toPeerId: read.parentPeerId,
+                    expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
+                    upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
+                },
+                nowMs,
+                controlMsgId,
+                traceId
+            },
+            [{ kind: 'forwarded', control: { type: 'nack', payload: nack } }],
+            retention
+        ),
+        acceptance: { handled: true, completedPendingAcks: [] },
+        controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, nowMs),
+        pendingExpireAtTimestamp: resolveExpireAtTimestampWithFallback(undefined, retention.controlPendingTtlMs, nowMs)
     };
 }
 

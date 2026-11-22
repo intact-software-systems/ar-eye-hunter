@@ -60,6 +60,7 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
+import { toALOutboundUnreceiptedRepairAudience } from './is-al-outbound-expected-repair-peer.ts';
 import {
     readALOutboundRecipientProof,
     toALOutboundRefusedControlAdmission,
@@ -345,6 +346,12 @@ export class ALOutboundControlAdmission<TPrepared> {
                 toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
                 decodeALAdmissionString
             );
+            // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
+            const ownerSurface = await this.reads.readControlOwnerSurface(session, {
+                owner,
+                msgId: targetMsgId,
+                readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
+            });
             return {
                 parsed,
                 source,
@@ -353,16 +360,29 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                // A first-hop wait waits on the composition's own hop: a composition that declares none holds no wait.
-                ...await this.reads.readControlOwnerSurface(session, {
-                    owner,
-                    msgId: targetMsgId,
-                    readsFirstHopWait: this.hopPeerIds !== undefined && mayALOutboundControlEndSend(parsed)
-                }),
-                sent: await this.reads.readStoredMessage(session, targetMsgId),
+                ...ownerSurface,
+                ...await this.readSentMessage(session, targetMsgId, ownerSurface.pending),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
+    }
+
+    /**
+     * The retained send, and, for one that tracks no receipt and holds no receipt row, who may ask for its repair, read
+     * from its canonical copy.
+     */
+    private async readSentMessage(
+        session: ALAdmissionReadSession,
+        msgId: string,
+        pending: ALControlAdmissionRead['pending']
+    ): Promise<Pick<ALControlAdmissionRead, 'sent' | 'unreceiptedRepairAudience'>> {
+        const sent = await this.reads.readStoredMessage(session, msgId);
+        return {
+            sent,
+            unreceiptedRepairAudience: sent?.policy.ackTracking === null && pending === undefined
+                ? toALOutboundUnreceiptedRepairAudience((await this.reads.readSentMessage(session, msgId))?.msg)
+                : undefined
+        };
     }
 
     /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */

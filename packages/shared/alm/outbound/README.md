@@ -541,11 +541,15 @@ with its source (`ALOutboundControlSource`), and trust follows the source, never
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
 without an expected peer (every other check stands), and stated as a server relay that is never named.
 Every other control, the WS server's own included, arrives as `peer` and must come from an expected
-receipt peer or the unicast addressee. Over RTC, under `receiver` and `leader`, a control that speaks for a
-counted recipient confirms, excludes or ends nothing until its proof is verified against the key the sent row froze
-for that recipient (above), whichever hop forwarded it: a relay forwards its child's signed control and cannot speak
-for the recipients below it (see the inbound README). A retained control keeps its source for its replay, and its
-replay verifies it again.
+receipt peer or the unicast addressee. A gap NACK, a `not-yet-in-sync` NACK or a repair request for a send that asks
+for no receipt and keeps no receipt row may also come from a recipient its frozen audience names, or, for a room send
+to no single addressee that froze none, from any requester the repair authority planned a repair to, which needs a
+ready room neighbour; a relayed gap NACK for such a send needs only that planned repair of its sender and a logical
+recipient of the frozen audience (6c). The per-requester repair budget bounds it as it bounds a receipted send's.
+Over RTC, under `receiver` and `leader`, a control that speaks for a counted recipient confirms, excludes or ends
+nothing until its proof is verified against the key the sent row froze for that recipient (above), whichever hop
+forwarded it: a relay forwards its child's signed control and cannot speak for the recipients below it (see the
+inbound README). A retained control keeps its source for its replay, and its replay verifies it again.
 
 A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one

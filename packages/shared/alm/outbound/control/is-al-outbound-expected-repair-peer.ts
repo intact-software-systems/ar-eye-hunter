@@ -1,4 +1,10 @@
-import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
+import { isRoomScopedALMessage, type ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALPeerRepairControlMessage } from '../../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
+import type {
+    ALControlAdmissionRead,
+    ALOutboundUnreceiptedRepairAudience
+} from '../compute-al-outbound-control-admission.ts';
 
 /**
  * A repair or NACK comes from a unicast's addressee, from any peer its receipt expects, from a session a server
@@ -18,4 +24,37 @@ export function isALOutboundExpectedRepairPeer(read: ALControlAdmissionRead, pee
 export function isALOutboundRecipientControlSender(read: ALControlAdmissionRead, peerId: string): boolean {
     return isALOutboundExpectedRepairPeer(read, peerId) ||
         read.sent?.policy.ackTracking?.nextHopPeerIds.includes(peerId) === true;
+}
+
+/** The controls the repair authority judges before their admission: a gap or not-yet-in-sync NACK, or a repair request. */
+export function isALOutboundRepairAuthorityControl(control: ALPeerRepairControlMessage): boolean {
+    return control.type === 'repair' ||
+        (control.type === 'nack' && (control.payload.reason === 'gap' || control.payload.reason === 'not-yet-in-sync'));
+}
+
+/**
+ * Who may ask for the repair of a retained send that tracks no receipt (6c); a unicast names its one recipient, whom
+ * the expected-peer rule already admits.
+ */
+export function toALOutboundUnreceiptedRepairAudience(
+    msg: ALMessage | undefined
+): ALOutboundUnreceiptedRepairAudience | undefined {
+    const frozen = resolveALFrozenMulticastAudience(msg?.targets);
+    if (frozen !== undefined) {
+        return { kind: 'frozen', recipientPeerIds: frozen.recipientPeerIds };
+    }
+    return msg !== undefined && isRoomScopedALMessage(msg) && msg.targets?.mode !== 'unicast'
+        ? { kind: 'planned' }
+        : undefined;
+}
+
+/**
+ * A recipient a repair of a send that tracks no receipt may be asked for: one its frozen audience names, or, with none
+ * frozen, any requester. That rests on `acceptControlMessage`, which admits a repair authority control only after
+ * `readRepairAuthority` planned a repair to its sender, and a planned repair needs a ready room neighbour
+ * (`planTargetedRepairDispatch`).
+ */
+export function isALOutboundUnreceiptedRepairRecipient(read: ALControlAdmissionRead, peerId: string): boolean {
+    const audience = read.unreceiptedRepairAudience;
+    return audience?.kind === 'planned' || audience?.recipientPeerIds.includes(peerId) === true;
 }

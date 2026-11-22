@@ -7,6 +7,7 @@ import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreReten
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import { isALRelayedNackReason } from '../../delivery/is-al-relayed-nack-reason.ts';
+import { resolveALDeliveryReceiptAlgo } from '../../delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
@@ -33,12 +34,17 @@ import {
 } from './compute-al-inbound-control-admission.ts';
 import {
     computeALInboundNackAdmission,
+    computeALInboundUnreceiptedGapNackAdmission,
     toALInboundNackCommitBundle,
     type ALInboundNackAdmissionCandidate,
-    type ALInboundNackAdmissionRead
+    type ALInboundNackAdmissionRead,
+    type ALInboundUnreceiptedGapNackAdmissionRead
 } from './compute-al-inbound-nack-admission.ts';
 import { validateALInboundControlAdmission } from './validate-al-inbound-control-admission.ts';
-import { validateALInboundNackAdmission } from './validate-al-inbound-nack-admission.ts';
+import {
+    validateALInboundNackAdmission,
+    validateALInboundUnreceiptedGapNackAdmission
+} from './validate-al-inbound-nack-admission.ts';
 
 export interface ALInboundControlAdmissionDependencies {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -182,6 +188,12 @@ export class ALInboundControlAdmission {
     ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
         const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
+        const unreceipted = surface?.pendingAck === undefined && nack.reason === 'gap'
+            ? await this.readUnreceiptedGapNack(arrival, { ...nack, reason: 'gap' }, surface, nowMs)
+            : undefined;
+        if (unreceipted !== undefined) {
+            return await this.admitUnreceiptedGapNack(arrival, unreceipted, evidence);
+        }
         if (surface === undefined) {
             return { kind: 'not-handled' };
         }
@@ -207,6 +219,57 @@ export class ALInboundControlAdmission {
             acceptance: candidate.acceptance,
             nowMs
         }, evidence);
+    }
+
+    private async admitUnreceiptedGapNack(
+        arrival: ALInboundControlArrival,
+        read: ALInboundUnreceiptedGapNackAdmissionRead,
+        evidence: ALInboundAcknowledgementEvidence | undefined
+    ): Promise<ALInboundControlAdmissionResult> {
+        const candidate = computeALInboundUnreceiptedGapNackAdmission(read, this.retention);
+        const issues = validateALInboundUnreceiptedGapNackAdmission(read);
+        evidence?.candidate(candidate, issues.length === 0);
+        if (issues.length > 0) {
+            return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
+        }
+        return await this.commitControlAdmission(arrival, {
+            bundle: toALInboundNackCommitBundle(this.toStoreCandidate(candidate)),
+            acceptance: candidate.acceptance,
+            nowMs: read.nowMs
+        }, evidence);
+    }
+
+    /**
+     * A gap NACK about a stored message that asked for no receipt, which the relay keeps no row for; absent for any
+     * other, which the row's rules decide as before. Its parent is the peer the message arrived from.
+     */
+    private async readUnreceiptedGapNack(
+        arrival: ALInboundControlArrival,
+        nack: ALInboundUnreceiptedGapNackAdmissionRead['nack'],
+        surface: ALInboundControlDecisionSurface | undefined,
+        nowMs: number
+    ): Promise<ALInboundUnreceiptedGapNackAdmissionRead | undefined> {
+        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
+        const stored = await this.admissionStore.readDeliverySurface(reference, nowMs);
+        if (stored === undefined || resolveALDeliveryReceiptAlgo(stored.msg) !== 'none') {
+            return undefined;
+        }
+        const owner = surface?.messageOwner ?? await this.admissionStore.readMessageProvenance(reference);
+        if (owner === undefined || owner.source.kind === 'trusted-server') {
+            return undefined;
+        }
+        return {
+            namespace: this.admissionStore.namespace,
+            nack,
+            msg: stored.msg,
+            owner,
+            parentPeerId: owner.source.peerId,
+            controlOwners: surface?.controlOwners,
+            acks: surface?.acks ?? [],
+            nowMs,
+            controlMsgId: this.newControlId(),
+            traceId: arrival.msg.id.traceId
+        };
     }
 
     private async commitControlAdmission(

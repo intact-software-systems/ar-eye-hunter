@@ -67,6 +67,8 @@ export interface OrderedOriginPublicationInput {
     readonly seq: number;
     /** The receipt the send asks for, `at-least-once` under `receiver`; absent, none, so the send is best-effort. */
     readonly ack?: 'none' | 'receiver';
+    /** Absent, the reliability the receipt implies; `at-least-once` repairs a send that asks for no receipt. */
+    readonly reliability?: 'best-effort' | 'at-least-once';
 }
 
 export const GRANTED_TYPE_ID = 'room.granted-feed.v1';
@@ -178,7 +180,7 @@ export async function publishOrderedFromOrigin(input: OrderedOriginPublicationIn
                 resource: { text: `feed ${seq}` },
                 options: {
                     ack,
-                    reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                    reliability: input.reliability ?? (ack === 'none' ? 'best-effort' : 'at-least-once'),
                     ttlMs: 30_000,
                     traceId: `trace-feed-${seq}`,
                     orderingKey: ORDERED_TRACK_KEY,

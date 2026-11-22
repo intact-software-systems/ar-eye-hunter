@@ -25,7 +25,8 @@ export interface ALInboundUpwardControlContext {
     readonly owner: ALInboundMessageOwner;
     /** This relay: the peer the child's control was addressed to. */
     readonly relayPeerId: string;
-    readonly pending: ALPendingAckSnapshot;
+    /** The parent the controls go to, how long they live, and whom the origin counts: a row's, or a row-less forward's. */
+    readonly pending: Pick<ALPendingAckSnapshot, 'toPeerId' | 'expireAtTimestamp' | 'upwardAudiencePeerIds'>;
     readonly nowMs: number;
     readonly controlMsgId: string;
     /** The trace of the control being relayed, which names the controlled message's trace. */

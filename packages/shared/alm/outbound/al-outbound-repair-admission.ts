@@ -29,6 +29,7 @@ import type {
     ALOutboundControlAdmissionResult,
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
+import { isALOutboundRepairAuthorityControl } from './control/is-al-outbound-expected-repair-peer.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';
@@ -140,11 +141,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     private async readRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
-        if (
-            control.type === 'ack' ||
-            (control.type === 'nack' && control.payload.reason !== 'gap' &&
-                control.payload.reason !== 'not-yet-in-sync')
-        ) {
+        if (control.type === 'ack' || !isALOutboundRepairAuthorityControl(control)) {
             return true;
         }
         const read = await this.admissionStore.readRepairMessage(

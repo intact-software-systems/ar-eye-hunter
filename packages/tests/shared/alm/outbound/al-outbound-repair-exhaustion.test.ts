@@ -63,6 +63,16 @@ async function planRepairMessage(msg: ALMessage): Promise<ALOutboundDispatchPlan
     };
 }
 
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } as const;
+
+/** A frame of the same track sent with no receipt to the room's frozen audience `peer-3`, neither addressee nor hop. */
+function createFrozenOrderedMessage(seq: number): ALMessage {
+    return {
+        ...createOrderedMessage(seq),
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['peer-3'], snapshotVersion: 1 }
+    };
+}
+
 function createOrderedMessage(seq: number): ALMessage {
     return {
         ...createOutboundMessage(`msg-seq-${seq}`),
@@ -145,7 +155,11 @@ function createRepairRetransmission(
     });
 }
 
-async function readRepairAttempts(stores: OutboundTestStores, messages: readonly ALMessage[]): Promise<readonly number[]> {
+async function readRepairAttempts(
+    stores: OutboundTestStores,
+    messages: readonly ALMessage[],
+    requester = 'peer-1'
+): Promise<readonly number[]> {
     return await Promise.all(
         messages.map(async (message) =>
             (await stores.admissionStore.readOutgoingMessage({
@@ -154,7 +168,7 @@ async function readRepairAttempts(stores: OutboundTestStores, messages: readonly
                 observedCanonicalEntry: undefined,
                 intent: 'enqueue'
             }))
-                .repairAttempt?.attemptsByRequester['peer-1'] ?? 0
+                .repairAttempt?.attemptsByRequester[requester] ?? 0
         )
     );
 }
@@ -284,6 +298,53 @@ describe('the repair budget runs out', () => {
                 }
             });
         expect(warnings.filter((message) => message.includes('budget'))).toEqual([]);
+    });
+
+    it('ends an unreceipted send\'s repairs for a frozen recipient at the same request as the addressee\'s, and charges a stranger nothing', async () => {
+        const settlements: ALDeliverySettlement[] = [];
+        const repairs: string[] = [];
+        const stores = createDefaultOutboundTestStores();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage,
+            planRepairMessage,
+            sendPreparedMessage: async (prepared) => {
+                if (prepared.kind === 'repair') {
+                    repairs.push(prepared.msgId!);
+                }
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const [first, second, third, fourth] = [1, 2, 3, 4].map(createFrozenOrderedMessage) as [
+            ALMessage,
+            ALMessage,
+            ALMessage,
+            ALMessage
+        ];
+        for (const message of [first, second, third, fourth]) {
+            await enqueueOutboundOrThrow(runtime, message);
+        }
+        const trackKey = toALOrderingTrackKey(first)!;
+        const report = (requester: string) => toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }], requester });
+
+        const stranger = await runtime.acceptControlMessage(toGapNack('control-gap-stranger', report('stranger')), 'peer');
+        await runtime.acceptControlMessage(toGapNack('control-gap-peer-3', report('peer-3')), 'peer');
+        await waitForOutboundWorkDrained(stores);
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
+        expect(toSkippedRepairs(settlements)).toEqual([]);
+        expect(await readRepairAttempts(stores, [first, second], 'peer-3')).toEqual([1, 1]);
+        expect(await readRepairAttempts(stores, [first, second], 'stranger')).toEqual([0, 0]);
+
+        await runtime.acceptControlMessage(toGapNack('control-renewal-peer-3', { ...report('peer-3'), gapRequestNumber: 2 }), 'peer');
+        await waitForOutboundWorkDrained(stores);
+
+        expect(stranger).toEqual({ kind: 'rejected', reason: 'AL repair sender has no retained outbound obligation' });
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
+        expect(toSkippedRepairs(settlements)).toEqual([
+            { msgId: first.id.msgId, reason: 'repair-exhausted' },
+            { msgId: second.id.msgId, reason: 'repair-exhausted' }
+        ]);
     });
 
     it('charges one attempt per gap: a re-executed hint and a later frame\'s report of the same gap neither charge again nor exhaust, and write no new row', async () => {

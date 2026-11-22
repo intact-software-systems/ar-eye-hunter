@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     parseALControlMessage,
     type ALAckPayload,
@@ -7,14 +8,20 @@ import {
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALRelayedNackReason } from '@shared/alm/delivery/is-al-relayed-nack-reason.ts';
 import {
     computeALInboundNackAdmission,
+    computeALInboundUnreceiptedGapNackAdmission,
     toALInboundNackCommitBundle,
-    type ALInboundNackAdmissionCandidate
+    type ALInboundNackAdmissionCandidate,
+    type ALInboundUnreceiptedGapNackAdmissionRead
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
-import { validateALInboundNackAdmission } from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
+import {
+    validateALInboundNackAdmission,
+    validateALInboundUnreceiptedGapNackAdmission
+} from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
 import type { SignatureProof } from '@shared/signature/signature-proof.ts';
 
 import { toTestALAckPayload, toTestALNackPayload, toTestSignatureProof } from '../../../../al-control-test-payloads.ts';
@@ -266,5 +273,92 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
             code: 'unauthorized',
             message: 'Inbound NACK candidate exceeds persistence limits'
         }]);
+    });
+});
+
+describe('a child\'s gap NACK at a relay that keeps no row for a message asking for no receipt (6c)', () => {
+    const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } as const;
+
+    /** The message `origin` sent with no receipt on the track `feed` at seq 3, frozen to `targets`' audience. */
+    function toUnreceiptedMessage(targets: ALMessage['targets']): ALMessage {
+        const message = newALMulticastMessage({
+            createdAtEpochMs: NOW_MS,
+            senderId: 'origin',
+            route: { topicId: 'room.feed', resourceId: 'subject', contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'room.feed.v1',
+            resource: {},
+            options: { ttlMs: 60_000, reliability: 'at-least-once', ack: 'none' }
+        });
+        return { ...message, id: { ...message.id, msgId: 'subject' }, targets, ordering: { orderingKey: 'feed', epoch: 1, seq: 3 } };
+    }
+
+    const FROZEN = { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['child', 'leaf'], snapshotVersion: 1 } as const;
+
+    function readUnreceipted(
+        arrival: NackArrival,
+        targets: ALMessage['targets'] = FROZEN
+    ): ALInboundUnreceiptedGapNackAdmissionRead {
+        const msg = toUnreceiptedMessage(targets);
+        const nack = toChildNack({ ...arrival, ordering: arrival.ordering ?? { ...GAP_ORDERING, orderingKey: toALOrderingTrackKey(msg) } });
+        return {
+            namespace: 'relay',
+            nack: { ...nack, reason: 'gap' },
+            msg,
+            owner: { msgId: 'subject', senderId: 'origin', source: { kind: 'rtc-peer', peerId: 'parent' }, supersedenceKey: null, deliveredLocally: false },
+            parentPeerId: 'parent',
+            controlOwners: undefined,
+            acks: [],
+            nowMs: NOW_MS,
+            controlMsgId: 'forwarded',
+            traceId: 'trace-relayed-nack'
+        };
+    }
+
+    it('forwards the child\'s own gap NACK toward the parent, writing no row', () => {
+        const read = readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' });
+        const candidate = computeALInboundUnreceiptedGapNackAdmission(read, RETENTION);
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);
+        expect(toALInboundNackCommitBundle(candidate).mutations).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{ type: 'nack', payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'parent' } }]);
+    });
+
+    it('forwards a child\'s gap NACK for a recipient of the frozen audience below it', () => {
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }))).toEqual([]);
+    });
+
+    it('refuses a gap NACK naming a recipient outside the frozen audience', () => {
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', fromPeerId: 'stranger', logicalRecipientPeerId: 'stranger' })))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK names no recipient of the frozen audience' }]);
+    });
+
+    it('refuses a gap NACK from the peer the message arrived from', () => {
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', fromPeerId: 'parent', logicalRecipientPeerId: 'leaf' })))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK comes from the peer the message arrived from' }]);
+    });
+
+    it('forwards only a child\'s own word for a message that froze no audience', () => {
+        const broadcast = { mode: 'broadcast', scope: 'room', groupRef: ROOM } as const;
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' }, broadcast))).toEqual([]);
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }, broadcast)))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK speaks for another recipient of a message that froze no audience' }]);
+    });
+
+    it('refuses a gap NACK naming another track than the message\'s', () => {
+        expect(
+            validateALInboundUnreceiptedGapNackAdmission(
+                readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child', ordering: { ...GAP_ORDERING, orderingKey: 'other:origin:1' } })
+            )
+        )
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK names a track the message is not on' }]);
+    });
+
+    it('refuses a gap NACK without its ordering hints as malformed', () => {
+        const read = readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child' });
+
+        expect(validateALInboundUnreceiptedGapNackAdmission({ ...read, nack: { ...read.nack, expectedSeq: undefined } }))
+            .toEqual([{ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to forward' }]);
     });
 });

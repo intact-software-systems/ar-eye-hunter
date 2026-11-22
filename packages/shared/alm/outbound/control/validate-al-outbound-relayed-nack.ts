@@ -1,23 +1,31 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { isALReceiptModeOwnWord } from '../../delivery/is-al-receipt-mode-own-word.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import { isALOutboundRecipientControlSender } from './is-al-outbound-expected-repair-peer.ts';
+import {
+    isALOutboundRecipientControlSender,
+    isALOutboundUnreceiptedRepairRecipient
+} from './is-al-outbound-expected-repair-peer.ts';
 import { toALOutboundRefusalIssue, type ALOutboundControlIssue } from './read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
 /**
  * A NACK that speaks for its logical recipient: it comes from a peer a repair may come from, or from a next hop of the
  * message, the relay that re-sends a recipient's NACK, and names a recipient the receipt still owes (PL9, PL16,
- * S4ii-R3). A next hop is known only from a receipted send's tracking. Under `hop` and `subtree` only the recipient's
- * own NACK speaks for it, so one hop cannot speak for another.
+ * S4ii-R3). A next hop is known only from a receipted send's tracking. A send that tracks no receipt has no receipt to
+ * owe and no next hop to know: its relay is the requester the repair authority planned a repair to, and the NACK names
+ * a recipient the send may be repaired for (6c). Under `hop` and `subtree` only the recipient's own NACK speaks for it,
+ * so one hop cannot speak for another.
  */
 export function validateALOutboundRelayedNack(
     read: ALControlAdmissionRead,
     nack: ALNackPayload
 ): readonly ALOutboundControlIssue[] {
-    const owed = read.pending !== undefined &&
-        toALOutboundReceiptClasses(read.pending).unconfirmedPeerIds.includes(nack.logicalRecipientPeerId);
-    const fromExpectedPeer = isALOutboundRecipientControlSender(read, nack.fromPeerId);
+    const unreceipted = read.unreceiptedRepairAudience !== undefined;
+    const owed = unreceipted
+        ? isALOutboundUnreceiptedRepairRecipient(read, nack.logicalRecipientPeerId)
+        : read.pending !== undefined &&
+            toALOutboundReceiptClasses(read.pending).unconfirmedPeerIds.includes(nack.logicalRecipientPeerId);
+    const fromExpectedPeer = unreceipted || isALOutboundRecipientControlSender(read, nack.fromPeerId);
     const ownWord = read.pending === undefined || isALReceiptModeOwnWord(read.pending.mode, nack);
     return [
         ...(fromExpectedPeer
@@ -25,7 +33,11 @@ export function validateALOutboundRelayedNack(
             : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK comes from no hop or recipient of this message`)]),
         ...(owed
             ? []
-            : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK names no recipient the receipt still owes`)]),
+            : [toALOutboundRefusalIssue(
+                unreceipted
+                    ? `AL ${nack.reason} NACK names no recipient of the frozen audience`
+                    : `AL ${nack.reason} NACK names no recipient the receipt still owes`
+            )]),
         ...(ownWord
             ? []
             : [toALOutboundRefusalIssue(`AL ${nack.reason} NACK speaks for another recipient under a hop receipt`)])

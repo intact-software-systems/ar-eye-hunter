@@ -53,6 +53,14 @@ export type ALControlHistory =
  */
 export type ALOutboundControlSource = 'trusted-server' | 'peer';
 
+/**
+ * Who may ask for the repair of a send that tracks no receipt: a recipient its frozen audience names, or, for a room send
+ * to no one addressee that froze none, any requester the repair authority planned a repair to.
+ */
+export type ALOutboundUnreceiptedRepairAudience =
+    | Readonly<{ kind: 'frozen'; recipientPeerIds: readonly string[]; }>
+    | Readonly<{ kind: 'planned'; }>;
+
 export interface ALControlAdmissionRead {
     readonly parsed: ALPeerControlMessage;
     readonly source: ALOutboundControlSource;
@@ -66,6 +74,11 @@ export interface ALControlAdmissionRead {
     readonly ownerVersion?: ALOutboundVersionedClientRecord;
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
+    /**
+     * Read only for a send that tracks no receipt and holds no receipt row; `undefined` for any other, for one outside a
+     * room, or one gone.
+     */
+    readonly unreceiptedRepairAudience: ALOutboundUnreceiptedRepairAudience | undefined;
     /** The sender's wait for its own hop to first answer for the message; absent when it waits on none. */
     readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly history: ALControlHistory;

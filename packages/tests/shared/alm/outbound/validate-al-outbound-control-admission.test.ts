@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -424,5 +424,113 @@ describe('a control for a message that has ended', () => {
 
         expect(await origin.accept(toNack(origin.msg, reason, fromPeerId), source))
             .toBe('AL control names a message that has ended');
+    });
+});
+
+describe('a gap request for a send that tracks no receipt (6c)', () => {
+    const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } as const;
+
+    /** Sequence 3 of the origin's track, sent with no receipt to `targets`; every repair request plans a repair. */
+    async function createUnreceiptedOrigin(id: string, targets: ALMessage['targets']): Promise<OriginFixture> {
+        const stores = createDefaultOutboundTestStores();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
+            }),
+            planRepairMessage: async (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
+            })
+        });
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId: id, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: { text: id },
+            options: { ttlMs: 30_000 }
+        });
+        const msg: ALMessage = { ...message, targets, ordering: { orderingKey: 'game-1', epoch: 1, seq: 3 } };
+        await enqueueOutboundOrThrow(runtime, msg);
+        return {
+            msg,
+            stores,
+            accept: async (control, source = 'peer') => {
+                const result = await runtime.acceptControlMessage(control, source);
+                return result.kind === 'rejected' ? result.reason : result.kind;
+            },
+            admit: async (control) => await runtime.acceptControlMessage(control, 'peer')
+        };
+    }
+
+    const FROZEN = { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['r1', 'r2'], snapshotVersion: 1 } as const;
+
+    it('admits a frozen recipient\'s own gap NACK, requests 1 to 4, each raising its repair hint', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-own-gap', FROZEN);
+        const outcomes: string[] = [];
+        for (const gapRequestNumber of [1, 2, 3, 4]) {
+            const gap = { fromPeerId: 'r2', logicalRecipientPeerId: 'r2', controlMsgId: `gap-${gapRequestNumber}`, gapRequestNumber };
+            outcomes.push(await origin.accept(toGapNack(origin.msg, gap)));
+        }
+
+        expect(outcomes).toEqual(['committed', 'committed', 'committed', 'committed']);
+        expect(await readRepairHintRows(origin.stores)).toHaveLength(4);
+    });
+
+    it('admits a frozen recipient\'s own repair request', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-own-repair', FROZEN);
+
+        expect(await origin.accept(toMissingSeqRequest(origin.msg, 'repair-1', 1))).toBe('committed');
+    });
+
+    it('refuses a gap NACK from a peer outside the frozen audience, raising no repair hint', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-stranger-gap', FROZEN);
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'stranger', logicalRecipientPeerId: 'stranger' })))
+            .toBe('AL repair sender has no retained outbound obligation');
+        expect(await readRepairHintRows(origin.stores)).toEqual([]);
+    });
+
+    it('admits a relay\'s gap NACK for a frozen recipient, and refuses one naming a recipient outside the frozen audience', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-relayed-gap', FROZEN);
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' })),
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'stranger' }))
+        ]).toEqual(['committed', 'AL gap NACK names no recipient of the frozen audience']);
+        expect(await readRepairHintRows(origin.stores)).toHaveLength(1);
+    });
+
+    it('refuses a frozen recipient\'s terminal NACK as before: only a repair request is widened', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-terminal', FROZEN);
+        const expired = newALNackControlMessage(
+            { v: 4, msgId: 'expired-r1', ts: Date.now(), senderId: 'r1', traceId: 'trace-unreceipted' },
+            toTestALNackPayload({ msgId: origin.msg.id.msgId, fromPeerId: 'r1', toPeerId: 'self', reason: 'expired', observedAtEpochMs: Date.now() })
+        );
+
+        expect(await origin.accept(expired)).toBe('AL repair sender has no retained outbound obligation');
+    });
+
+    it('admits the gap NACK of a requester the repair authority planned for a room send that froze no audience', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-unfrozen', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'neighbour', logicalRecipientPeerId: 'neighbour' })))
+            .toBe('committed');
+    });
+
+    it('refuses a stranger\'s gap NACK for a room unicast, which names its one recipient', async () => {
+        const origin = await createUnreceiptedOrigin('unreceipted-room-unicast', { mode: 'unicast', toPeerId: 'r1', groupRef: ROOM });
+
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'stranger', logicalRecipientPeerId: 'stranger' })))
+            .toBe('AL repair sender has no retained outbound obligation');
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r1', logicalRecipientPeerId: 'r1' }))).toBe('committed');
     });
 });
