@@ -73,6 +73,27 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
     await requestJson(second.baseUrl, releasePath, release);
     assert.deepEqual(await seat(bob), offer);
     assert.equal(await seat(outsider), null);
+    const guarded = 'code-court';
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId: guarded, displayName: 'Code court', createdByPrincipalId: alice.clientId, kind: 'room',
+            joinMode: 'code', maxMembers: 1, roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } }
+    });
+    const guardedRoom = groups + '/' + guarded;
+    const rotate = () => requestJson(second.baseUrl, toApiMutationRequestPath(guardedRoom + '/join-code/rotate', crypto.randomUUID()),
+        { method: 'POST', session: alice, body: {} });
+    const { joinCode } = await rotate();
+    assert.equal(typeof joinCode, 'string');
+    await requestJson(first.baseUrl, toApiMutationRequestPath(guardedRoom, crypto.randomUUID()), {
+        method: 'PUT', session: outsider, body: { roomLobby: { operation: 'wait' } }, expectedStatus: 403
+    });
+    const acknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(guardedRoom, crypto.randomUUID()), {
+        method: 'PUT', session: outsider, body: { roomLobby: { operation: 'wait', joinCode } }
+    });
+    assert.deepEqual(acknowledgement, { roomRef: { ...scope, groupId: guarded } });
+    assert.equal((await seat(outsider))?.status, 'waiting');
+    await rotate();
+    assert.equal(await seat(outsider), null);
 }
 
 if (import.meta.main) {
