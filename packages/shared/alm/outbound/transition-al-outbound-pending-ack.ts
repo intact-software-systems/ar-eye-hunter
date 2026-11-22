@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     isALHopCompletionAck,
     type ALAckPayload
@@ -212,18 +213,18 @@ export function isALOutboundReceiptComplete(
 
 /**
  * A `receiver` multicast frozen to an empty audience has nobody left to confirm it: its receipt is
- * complete at admission, with no row, as the WS server answers an empty audience.
+ * complete with no row, as the WS server answers an empty audience.
  */
-export function toALOutboundEmptyAudienceReceipt<TPrepared>(
-    plan: ALOutboundDispatchPlan<TPrepared>
-): ALOutboundSettlementFact | undefined {
-    const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
-    if (plan.dropReason || plan.ackTracking?.mode !== 'receiver' || frozen?.recipientPeerIds.length !== 0) {
-        return undefined;
-    }
+export function isALOutboundEmptyAudienceReceipt<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): boolean {
+    return plan.ackTracking?.mode === 'receiver' &&
+        resolveALFrozenMulticastAudience(plan.msg.targets)?.recipientPeerIds.length === 0;
+}
+
+/** The acknowledgement of a receipt an empty frozen audience completed: nobody expected, nobody confirmed. */
+export function toALOutboundEmptyAudienceReceipt(msg: ALMessage): ALOutboundSettlementFact {
     return toALOutboundAcknowledgementFact({
         receipt: {
-            msgId: plan.msg.id.msgId,
+            msgId: msg.id.msgId,
             mode: 'receiver',
             expectedPeerIds: [],
             ackedPeerIds: [],
@@ -231,6 +232,6 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
         },
         hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
         complete: true,
-        traceId: plan.msg.id.traceId
+        traceId: msg.id.traceId
     });
 }
