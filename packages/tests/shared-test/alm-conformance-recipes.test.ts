@@ -217,7 +217,8 @@ function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: Al
     const fields = Object.entries(match.payloadFields ?? {});
     const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
     const authoredSuffixes = ALM_CONFORMANCE_ROLES.map((role) => `-${carrier}-${key}-${role}-`);
-    return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
+    const markers = [key, `${key}-cues`, `${key}-cancelled`];
+    return (isJsonRecordValue(equals) && markers.includes(String(equals.marker)) && equals.carrier === carrier) ||
         fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
         fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id))) ||
@@ -1689,19 +1690,23 @@ describe('alm-conformance recipe family', () => {
         });
     });
 
-    it('opts the reload original into local-outbox and reads the lifecycle specimens as volatile', () => {
+    it('opts the reload original and its cancelled companion into local-outbox and reads the lifecycle specimens as volatile', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             const reload = scenarios.find((scenario) => scenario.scenarioId === 'delivery-reload')!;
             const lifecycle = scenarios.find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
-            const reloadSend = reload.sender.commands.find((command) => command.kind === 'messages.send');
+            const reloadSends = reload.sender.commands.filter((command) => command.kind === 'messages.send');
             const enqueuedAsserts = (recipe: RallarBlackBoxTestRecipe) =>
                 recipe.commands.filter((command): command is RallarBlackBoxTestAssertCommand =>
                     command.kind === 'assert' && command.source.endsWith('.value.enqueued')
                 );
 
-            expect(reloadSend, carrier).toMatchObject({ durability: 'local-outbox' });
+            expect(reloadSends, carrier).toEqual([
+                expect.objectContaining({ durability: 'local-outbox' }),
+                expect.objectContaining({ durability: 'local-outbox' })
+            ]);
             expect(enqueuedAsserts(reload.sender).map((command) => command.expected), carrier).toEqual([
+                true,
                 true
             ]);
             expect(enqueuedAsserts(lifecycle.sender).map((command) => command.expected), carrier)

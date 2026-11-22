@@ -106,8 +106,9 @@ for (const scheduled of [false, true]) {
             const reloadIndex = commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const prefix = commands.slice(prefixStart, prefixEnd + 1);
-            const originals = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
-            expect(originals.map((command) => command.carrier)).toEqual([carriers[index]]);
+            // The original, then the durable send it cancels before the reload, both on the checkpoint's carrier.
+            const sends = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
+            expect(sends.map((command) => command.carrier)).toEqual([carriers[index], carriers[index]]);
             expect(reloadIndex).toEqual(prefixEnd + 1);
             expect(commands[reloadIndex]?.kind).toEqual('agent.reload');
             const suffix = commands.slice(reloadIndex + 1, suffixEnd + 1);

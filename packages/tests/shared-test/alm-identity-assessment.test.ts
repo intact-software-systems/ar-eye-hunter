@@ -298,7 +298,8 @@ describe('ALM recipe identity assessment', () => {
 
     it.each(['state', 'handleId', 'authored-handle'] as const)('rejects missing original handle loss via %s', (defect) => {
         const transcript = new IdentityTranscript('reload');
-        const observe = transcript.sender.command('messages.observe', 1);
+        // The reloaded page's observe, after those of the original and the cancelled send.
+        const observe = transcript.sender.command('messages.observe', 2);
         if (defect === 'authored-handle') {
             transcript.sender.replaceCommand({ ...observe, handleId: 'unrelated' });
         }
@@ -422,6 +423,29 @@ describe('ALM recipe identity assessment', () => {
                 transcript.sender.replaceCommand({ ...transcript.sender.command('storage.counters'), reset: true });
             }
             expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
+        }
+    );
+
+    it.each(['not-cancelled', 'arrived', 'absence-dropped'] as const)(
+        'rejects reload evidence whose cancelled send is %s',
+        (defect) => {
+            const transcript = new IdentityTranscript('reload');
+            const absence = transcript.receiver.commands.find((command) => command.commandId?.endsWith('-absent-cancelled'));
+            if (!absence) {
+                throw new Error('The reload receiver proves no cancelled absence.');
+            }
+            if (defect === 'not-cancelled') {
+                recordAt(transcript.sender.result(transcript.sender.command('messages.cancel')).value).state = 'acknowledged';
+            }
+            if (defect === 'arrived') {
+                recordAt(transcript.receiver.result(absence).value).matched = true;
+            }
+            if (defect === 'absence-dropped') {
+                transcript.receiver.removeCommand(absence);
+            }
+            expect(assessAlmConformanceIdentity(transcript.input())).toContainEqual(
+                expect.stringContaining('a cancelled send must read cancelled before the reload and never arrive')
+            );
         }
     );
 
@@ -940,6 +964,9 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
     }
     if (command.kind === 'messages.receipts') {
         return toTranscriptReceiptValue(command.handleId, sender);
+    }
+    if (command.kind === 'messages.cancel') {
+        return { handleId: command.handleId, state: 'cancelled', submitted: false };
     }
     if (command.kind === 'messages.received') {
         return {

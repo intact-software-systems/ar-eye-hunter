@@ -1366,6 +1366,17 @@ the waits are tied to the cell, not to a store: they cannot show which store tur
 healthy. And the healthy wait proves only that some store recovered after the release: a release of an earlier cell's
 leftover rows can read it healthy, so the third send's own commit is proven by `assert-enqueued-3`, not by the wait.
 
+`delivery-reload` runs over every carrier as a paired reload. Under a native hold of its carrier until cleared the
+sender sends one durable original (`local-outbox`, `ack: 'receiver'`) and proves it admitted, enqueued, retained and
+unsubmitted; under the same hold it sends a second durable message with the marker `delivery-reload-cancelled`,
+proves it retained and cancels it, asserting `cancelled`. It then reloads, reconnects with the restored session, reads
+the old handle `unobservable` and waits for the `restored` recoveries described in the runtime diagnostic contract.
+The receiver proves the original absent before the reload and receives it after; then an absence wait on the cancelled
+marker, which also reads the arrivals retained before it starts, proves the restored page never sends the cancelled
+message.
+Over `rtc-with-ws-fallback` the hold may hand the cancelled message to WS before the cancel lands, and the cell cannot
+tell which leg held it: it asserts the `cancelled` state and the absence on the receiver, not which store ended it.
+
 `durable-takeover` runs over every carrier in the same-context family. The sender's page holds its carrier with the
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 16.6 s recovery bound and a whole successor connect), and proves

@@ -3,6 +3,7 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '../../../alm/is-rallar-
 import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestTransportFaultInjectCommand,
     RallarBlackBoxTestWaitCommand
@@ -28,6 +29,8 @@ interface ReloadEvidence {
     readonly reload: RallarBlackBoxTestAgentReloadCommand;
     readonly absence: RallarBlackBoxTestWaitCommand;
     readonly send: RallarBlackBoxTestMessagesSendCommand;
+    /** The prefix's other sends: each is cancelled before the reload and must never arrive. */
+    readonly cancelled: readonly RallarBlackBoxTestMessagesSendCommand[];
     readonly senderNextIndex: number;
     readonly receiverNextIndex: number;
 }
@@ -73,6 +76,7 @@ export function assessAlmReloadIdentity(
             continue;
         }
         issues.push(...assessReloadCommands(evidence));
+        issues.push(...assessReloadCancellations(evidence));
         issues.push(...assessReloadTrace(evidence));
         issues.push(...assessReloadDocuments(evidence));
         issues.push(...assessReloadRetention(evidence));
@@ -113,10 +117,9 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
         return undefined;
     }
     const prefix = senderCommands.slice(senderStart, prefixEnd + 1);
-    const sends = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
-    const send = sends[0];
+    const [send, ...cancelled] = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
     if (
-        sends.length !== 1 || !send || !read.reloadSends.includes(send) ||
+        !send || !read.reloadSends.includes(send) || cancelled.some((other) => read.reloadSends.includes(other)) ||
         !nonemptyString(send.handleId)
     ) {
         return undefined;
@@ -127,6 +130,7 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
         checkpoint,
         prefix,
         send,
+        cancelled,
         reload,
         absence,
         senderNextIndex: suffixEnd + 1,
@@ -147,7 +151,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         !['recipe.run', 'recipe.load', 'loop', 'parallel'].includes(command.kind)
     );
     const originals = allCommands.filter((command) =>
-        isRallarBlackBoxTestMessagesSendCommand(command) &&
+        isRallarBlackBoxTestMessagesSendCommand(command) && !evidence.cancelled.includes(command) &&
         (command.typeId === send.typeId ||
             isSameJsonValue(decodeJsonValue(command.payload), decodeJsonValue(send.payload)))
     );
@@ -162,6 +166,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         'fault.inject',
         'messages.send',
         'messages.observe',
+        'messages.cancel',
         'assert',
         'barrier'
     ];
@@ -190,6 +195,36 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             reloadValue.readyTimeoutMs === evidence.reload.readyTimeoutMs
         ? []
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
+}
+
+/**
+ * Each cancelled send is cancelled before the reload, reads `cancelled`, and is proven absent after the original
+ * arrives: the restored page resumes the original and not the cancelled message.
+ */
+function assessReloadCancellations(evidence: ReloadEvidence): readonly string[] {
+    const { prefix, recovery, sender, receiver, send, checkpoint } = evidence;
+    const [receive] = resolveRecoveredReceives(evidence);
+    const unresumed = evidence.cancelled.every((cancelled) => {
+        const cancel = prefix.find((command) =>
+            command.kind === 'messages.cancel' && command.handleId === cancelled.handleId
+        );
+        const absence = recovery.find((command): command is RallarBlackBoxTestWaitCommand =>
+            command.kind === 'wait' && command.absent === true && command.match.kind === 'message' &&
+            command.match.payloadPath === 'data.payload' &&
+            isSameJsonValue(command.match.equals, decodeJsonValue(cancelled.payload))
+        );
+        const cancelValue = toRecordedAlmResultValue(sender, cancel);
+        const absenceValue = toRecordedAlmResultValue(receiver, absence);
+        return nonemptyString(cancelled.handleId) && cancelled.handleId !== send.handleId &&
+            !isSameJsonValue(decodeJsonValue(cancelled.payload), decodeJsonValue(send.payload)) &&
+            cancel !== undefined && prefix.indexOf(cancel) > prefix.indexOf(cancelled) &&
+            isJsonRecordValue(cancelValue) && cancelValue.state === 'cancelled' &&
+            absence !== undefined && receive !== undefined && recovery.indexOf(absence) > recovery.indexOf(receive) &&
+            isJsonRecordValue(absenceValue) && absenceValue.absent === true && absenceValue.matched === false;
+    });
+    return unresumed
+        ? []
+        : [`${checkpoint.key}: a cancelled send must read cancelled before the reload and never arrive.`];
 }
 
 /** The recovered original keeps its generated identity, so it carries the trace its pre-reload send returned. */
@@ -273,7 +308,9 @@ function assessReloadDocuments(evidence: ReloadEvidence): readonly string[] {
 function assessReloadRetention(evidence: ReloadEvidence): readonly string[] {
     const { prefix, suffix, send, sender, checkpoint } = evidence;
     const sendValue = toRecordedAlmResultValue(sender, send);
-    const retained = prefix.filter((command) => command.kind === 'messages.observe');
+    const retained = prefix.filter((command): command is RallarBlackBoxTestMessagesObserveCommand =>
+        command.kind === 'messages.observe' && command.handleId === send.handleId
+    );
     const lost = suffix.filter((command) => command.kind === 'messages.observe');
     const retainedValue = toRecordedAlmResultValue(sender, retained[0]);
     const lostValue = toRecordedAlmResultValue(sender, lost[0]);
