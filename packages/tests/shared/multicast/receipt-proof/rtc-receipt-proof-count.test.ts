@@ -23,7 +23,9 @@ interface CountedOrigin {
 
 // The origin's replayed admission of a retained control spends a digest and no verify; `a retained control's replay
 // verifies again from the cache` in rtc-receipt-forgery.test.ts pins it.
-describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
+// D756 adds the publication proof beside the receipt proofs: the origin signs its receipted send once, and every hop
+// that admits a copy verifies it once.
+describe('the receipt and publication signatures a receipted RTC send costs (S8-R10, D756)', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
@@ -34,7 +36,7 @@ describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
         vi.useRealTimers();
     });
 
-    it('a direct receiver room of two signs two receipts, and the origin verifies two', async () => {
+    it('a direct receiver room of two: the origin signs one publication and verifies two receipts, each recipient verifies the publication and signs a receipt', async () => {
         const chain = await createRelayChain(['a', 'b', 'c'], {});
         const { origin, counting } = createCountedOrigin(chain, ['b', 'c']);
         const recipients = createCountingSubtleCrypto();
@@ -51,11 +53,11 @@ describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
             confirmedRecipientPeerIds: ['b', 'c'],
             complete: true
         });
-        expect({ sign: recipients.counts.sign, verify: recipients.counts.verify }).toEqual({ sign: 2, verify: 0 });
-        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 0, verify: 2 });
+        expect({ sign: recipients.counts.sign, verify: recipients.counts.verify }).toEqual({ sign: 2, verify: 2 });
+        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 1, verify: 2 });
     });
 
-    it('a chain whose relay is also counted signs three receipts, the relay verifies none, and the origin verifies three', async () => {
+    it('a chain whose relay is also counted signs three receipts and one publication, which the relay and the leaf each verify once', async () => {
         const chain = await createRelayChain(['a', 'r', 'c'], {});
         const { origin, counting } = createCountedOrigin(chain, ['r']);
         const relayCounting = createCountingSubtleCrypto();
@@ -74,13 +76,14 @@ describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
             confirmedRecipientPeerIds: ['r', 'c'],
             complete: true
         });
-        // `r` signs its own `accepted` and its terminal ACK; it forwards `c`'s ACK with `c`'s proof and verifies nothing.
-        expect({ sign: relayCounting.counts.sign, verify: relayCounting.counts.verify }).toEqual({ sign: 2, verify: 0 });
-        expect({ sign: leafCounting.counts.sign, verify: leafCounting.counts.verify }).toEqual({ sign: 1, verify: 0 });
-        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 0, verify: 3 });
+        // `r` verifies the publication, signs its own `accepted` and its terminal ACK, and forwards `c`'s ACK with `c`'s
+        // proof, verifying no receipt.
+        expect({ sign: relayCounting.counts.sign, verify: relayCounting.counts.verify }).toEqual({ sign: 2, verify: 1 });
+        expect({ sign: leafCounting.counts.sign, verify: leafCounting.counts.verify }).toEqual({ sign: 1, verify: 1 });
+        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 1, verify: 3 });
     });
 
-    it('a leader send to a leaf director signs one receipt, and the origin verifies one', async () => {
+    it('a leader send to a leaf director signs one publication and one receipt, and each side verifies the other\'s', async () => {
         const chain = await createRelayChain(['a', 'b', 'd'], {});
         const directed = toOriginDirectedSnapshot(chain.snapshot, 'd', Date.now());
         const counting = createCountingSubtleCrypto();
@@ -115,8 +118,8 @@ describe('the receipt signatures a receipted RTC send costs (S8-R10)', () => {
 
         expect(origin.channels.b!.sent).toEqual([]);
         expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId })).toBeUndefined();
-        expect({ sign: directorCounting.counts.sign, verify: directorCounting.counts.verify }).toEqual({ sign: 1, verify: 0 });
-        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 0, verify: 1 });
+        expect({ sign: directorCounting.counts.sign, verify: directorCounting.counts.verify }).toEqual({ sign: 1, verify: 1 });
+        expect({ sign: counting.counts.sign, verify: counting.counts.verify }).toEqual({ sign: 1, verify: 1 });
     });
 });
 

@@ -79,7 +79,22 @@ export function computeRtcGrantedPublicationRefusal(
     input: RtcGrantedPublicationRefusalInput
 ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
     const { carried, original } = input;
-    const refusal = resolveRtcGrantedPublicationShapeRefusal(original) ?? resolveRtcSignedSendRefusal(input);
+    return toRtcOriginShapeRefusal(
+        carried,
+        original,
+        resolveRtcGrantedPublicationShapeRefusal(original) ?? resolveRtcSignedSendRefusal(input)
+    );
+}
+
+/**
+ * An origin's `unsupported` refusal of a shape RTC cannot carry, named by the targets its sender gave so a fallback
+ * carrier takes the send as it was asked; with no refusal, the carried message passes.
+ */
+export function toRtcOriginShapeRefusal(
+    carried: ALMessage,
+    original: ALMessage,
+    refusal: string | undefined
+): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
     return refusal === undefined
         ? Either.ofRight(carried)
         : Either.ofLeft({

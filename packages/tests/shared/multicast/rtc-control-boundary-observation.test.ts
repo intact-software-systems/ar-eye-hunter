@@ -52,7 +52,7 @@ import {
     ORIGIN_ROOM,
     toOriginDirectedSnapshot
 } from './rtc-origin-overlay-fixture.ts';
-import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { createRoomPublicationVerifier } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 describe('exact RTC ACK boundary observations', () => {
@@ -238,7 +238,7 @@ describe('exact RTC ACK boundary observations', () => {
                         dequeueResilience: createDefaultALOutboundDequeueResilience(),
                         grantedTopics: NO_RTC_GRANTED_TOPICS,
                         publicationCrypto: ROOM_PUBLICATION_CRYPTO,
-                        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                        publicationVerifier: createRoomPublicationVerifier(groupCache),
                         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
                         selfPrincipalId: connection.service.input.sessionId
                     });

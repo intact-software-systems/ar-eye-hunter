@@ -32,6 +32,8 @@ import {
     toOriginFrozenTargets
 } from '../rtc-origin-overlay-fixture.ts';
 
+import { drainUntil } from '../rtc-relay-chain-test-support.ts';
+
 import { signTestALReceiptControl, toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const KEYLESS_DETAIL = 'RTC receipt cannot be verified: 1 of 2 counted recipients registered no publication key';
@@ -365,9 +367,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
     it('a send held without a room snapshot states its counted recipients\' keys when the snapshot arrives', async () => {
         const keys = await createPageKeys(['b', 'c']);
-        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-keyed');
+        const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-keyed');
 
-        fixture.groups.accept('room', createKeyedRoom(keys));
+        fixture.groups.accept('room', toArrivingRoom(keys));
         await vi.advanceTimersByTimeAsync(5_000);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
@@ -377,9 +379,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
     });
 
     it('a send held without a room snapshot is settled rejected at its freezing dequeue if a counted recipient is keyless', async () => {
-        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-keyless');
+        const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-keyless');
 
-        fixture.groups.accept('room', createKeyedRoom(await createPageKeys(['b'])));
+        fixture.groups.accept('room', toArrivingRoom(await createPageKeys(['b'])));
         await vi.advanceTimersByTimeAsync(5_000);
 
         const keys = (await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys;
@@ -399,9 +401,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
     it('a held already-frozen send states its keys at the dequeue that first sees its room', async () => {
         const keys = await createPageKeys(['b', 'c']);
-        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-frozen-keyed', ['b', 'c']);
+        const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-keyed', ['b', 'c']);
 
-        fixture.groups.accept('room', createKeyedRoom(keys));
+        fixture.groups.accept('room', toArrivingRoom(keys));
         await vi.advanceTimersByTimeAsync(5_000);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
@@ -413,9 +415,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
     it('Limit: a held already-frozen send to a keyless recipient is sent and left to its receipt timeout', async () => {
         // Limit (S8-i): the stored plan of a send frozen before its admission is never judged, so a fix would refuse it unsupported and send nothing.
         const keys = await createPageKeys(['b']);
-        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-frozen-keyless', ['b', 'c']);
+        const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-keyless', ['b', 'c']);
 
-        fixture.groups.accept('room', createKeyedRoom(keys));
+        fixture.groups.accept('room', toArrivingRoom(keys));
         await vi.advanceTimersByTimeAsync(5_000);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
@@ -437,8 +439,8 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
     it('counts the recipients its dequeue froze, so a counted recipient\'s own unsigned ACK there is missing-proof', async () => {
         // The row's policy was captured before the freeze and expects nobody; the canonical's frozen targets name who counts.
-        const { fixture, message } = await holdWithoutRoomSnapshot('held-freeze-counted');
-        fixture.groups.accept('room', createKeyedRoom(await createPageKeys(['b', 'c'])));
+        const { fixture, message, toArrivingRoom } = await holdWithoutRoomSnapshot('held-freeze-counted');
+        fixture.groups.accept('room', toArrivingRoom(await createPageKeys(['b', 'c'])));
         await vi.advanceTimersByTimeAsync(5_000);
 
         const admitted = await fixture.manager.acceptControlMessage(newALAckControlMessage(
@@ -457,8 +459,8 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
     it('Limit: a send whose row froze no key reads unknown-key and runs to its retry', async () => {
         // Limit (S8-i): a held already-frozen send whose room keys none of its counted recipients is sent unjudged and
         // stores no key record, so even a recipient's own signed ACK keys nobody; its receipt retries, then times out.
-        const { fixture, message } = await holdWithoutRoomSnapshot('held-frozen-unkeyed', ['b', 'c']);
-        fixture.groups.accept('room', createKeyedRoom({}));
+        const { fixture, message, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-unkeyed', ['b', 'c']);
+        fixture.groups.accept('room', toArrivingRoom({}));
         for (let step = 0; step < 50 && fixture.channels.c!.sent.length === 0; step++) {
             await vi.advanceTimersByTimeAsync(100);
         }
@@ -531,11 +533,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
     it('captures every counted recipient\'s key on the sent row of an admitted receiver send', async () => {
         const keys = await createPageKeys(['b', 'c']);
-        const fixture = createRtcOriginOverlayFixture({
-            snapshot: createKeyedRoom(keys),
-            nextHopPeerIds: ['b', 'c'],
-            publicationCrypto: await createAvailablePublicationCryptoFixture()
-        });
+        const fixture = await createSigningOriginFixture(keys);
         const message = createOriginReceiverMulticast('keyed');
 
         const result = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
@@ -548,10 +546,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
     it('a send whose first admission conflicted still verifies its counted recipients\' ACKs', async () => {
         const recipients = { b: await createAvailablePublicationCryptoFixture(), c: await createAvailablePublicationCryptoFixture() };
-        const fixture = createRtcOriginOverlayFixture({
-            snapshot: createKeyedRoom({ b: toGroupPresencePublicationKey(recipients.b)!, c: toGroupPresencePublicationKey(recipients.c)! }),
-            nextHopPeerIds: ['b', 'c'],
-            publicationCrypto: await createAvailablePublicationCryptoFixture()
+        const fixture = await createSigningOriginFixture({
+            b: toGroupPresencePublicationKey(recipients.b)!,
+            c: toGroupPresencePublicationKey(recipients.c)!
         });
         const store = fixture.resources.admissionStore;
         const commitBundle = store.commitBundle.bind(store);
@@ -566,7 +563,12 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         const message = createOriginReceiverMulticast('conflicted-keyed');
 
         await fixture.manager.enqueueLegIfAbsent(message, 'hold');
-        await vi.advanceTimersByTimeAsync(10);
+        // Its admission now also signs the send (D756) with real WebCrypto, which fake timers alone do not drain.
+        const sentToBoth = () => fixture.channels.b!.sent.length > 0 && fixture.channels.c!.sent.length > 0;
+        for (let step = 0; step < 20 && !sentToBoth(); step++) {
+            await vi.advanceTimersByTimeAsync(10);
+            await drainUntil(sentToBoth, 20);
+        }
         const sentBefore = [fixture.channels.b!.sent.length, fixture.channels.c!.sent.length];
         const admitted = [];
         for (const peerId of ['b', 'c'] as const) {
@@ -619,27 +621,37 @@ function createKeyedRoom(keys: Readonly<Record<string, GroupPresencePublicationK
     };
 }
 
-async function createKeylessRecipientFixture() {
+/** The origin `a` over `b` and `c`, its page key registered beside `keys`, so it signs its receipted sends (D756). */
+async function createSigningOriginFixture(keys: Readonly<Record<string, GroupPresencePublicationKey>>) {
+    const crypto = await createAvailablePublicationCryptoFixture();
     return createRtcOriginOverlayFixture({
-        snapshot: createKeyedRoom(await createPageKeys(['a', 'b'])),
+        snapshot: createKeyedRoom({ ...keys, a: toGroupPresencePublicationKey(crypto)! }),
         nextHopPeerIds: ['b', 'c'],
-        publicationCrypto: await createAvailablePublicationCryptoFixture()
+        publicationCrypto: crypto
     });
+}
+
+async function createKeylessRecipientFixture() {
+    return await createSigningOriginFixture(await createPageKeys(['b']));
 }
 
 /** A durable receiver send, frozen to `frozenPeerIds` when given, the origin admits while its room snapshot is not cached. */
 async function holdWithoutRoomSnapshot(resourceId: string, frozenPeerIds?: readonly string[]) {
+    const crypto = await createAvailablePublicationCryptoFixture();
     const fixture = createRtcOriginOverlayFixture({
         snapshot: createOriginSnapshot(['a', 'b', 'c'], 4),
         nextHopPeerIds: ['b', 'c'],
-        publicationCrypto: await createAvailablePublicationCryptoFixture()
+        publicationCrypto: crypto
     });
+    // The arriving room names the origin's own key beside `keys`, so its freezing dequeue signs the send (D756).
+    const toArrivingRoom = (keys: Readonly<Record<string, GroupPresencePublicationKey>>) =>
+        createKeyedRoom({ ...keys, a: toGroupPresencePublicationKey(crypto)! });
     fixture.groups.delete('room');
     const unfrozen: ALMessage = { ...createOriginReceiverMulticast(resourceId), qos: { durability: { algo: 'local-outbox' } } };
     const message = frozenPeerIds === undefined ? unfrozen : { ...unfrozen, targets: toOriginFrozenTargets(frozenPeerIds, 4) };
     const held = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
     await vi.advanceTimersByTimeAsync(0);
-    return { fixture, message, held };
+    return { fixture, message, held, toArrivingRoom };
 }
 
 function createFrozenMulticast(recipientPeerIds: readonly string[]): ALMessage {

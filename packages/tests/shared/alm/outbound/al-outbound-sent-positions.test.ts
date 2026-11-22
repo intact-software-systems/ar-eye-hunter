@@ -211,11 +211,17 @@ async function signWithTestProof(msg: ALMessage): Promise<Either<string, ALMessa
     return Either.ofRight({ ...msg, proof: PROOF });
 }
 
-/** A signer whose every signature differs, so an envelope signed twice carries two proofs. */
+/**
+ * A signer whose every signature differs, so an envelope signed twice carries two proofs. It returns a frame already
+ * signed as it is, as the carrier's does: the runtime asks it at every dispatch that plans a send (D756).
+ */
 function createCountingSigner(): SignAdmittedMessage {
     const signatures = ['Q', 'g', 'w', 'A', 'E', 'I'];
     let signed = 0;
     return async (msg) => {
+        if (msg.proof !== undefined) {
+            return Either.ofRight(msg);
+        }
         const signature = signatures[signed % signatures.length]!.repeat(86);
         signed += 1;
         return Either.ofRight({ ...msg, proof: { ...PROOF, signature } });

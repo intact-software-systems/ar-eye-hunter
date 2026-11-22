@@ -673,17 +673,17 @@ describe('the sent positions an RTC origin records for its frozen audience', () 
         expect(fixture.manager['planOutgoingMessage'](stored, 'admission').recordsSentPositions).toEqual(['b', 'c']);
     });
 
-    it('stamps a keyed members-topic multicast with its record, carried unsigned to every frozen recipient', async () => {
+    it('stamps a keyed receiver members-topic multicast with its record, which its proof signs and every frozen recipient carries', async () => {
         const fixture = createFixture();
 
         const admitted = await enqueueLegAndDrain(fixture, toKeyedFrame(createOriginReceiverMulticast('members-keyed')));
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(admitted.message.ordering).toEqual({ orderingKey: 'chat', epoch: 1, seq: 1, priorSeqByRecipient: {} });
-        expect(admitted.message.proof).toBeUndefined();
-        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => sent.ordering)).toEqual([
-            admitted.message.ordering,
-            admitted.message.ordering
+        expect(admitted.message.proof).toBeDefined();
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => [sent.ordering, sent.proof])).toEqual([
+            [admitted.message.ordering, admitted.message.proof],
+            [admitted.message.ordering, admitted.message.proof]
         ]);
     });
 

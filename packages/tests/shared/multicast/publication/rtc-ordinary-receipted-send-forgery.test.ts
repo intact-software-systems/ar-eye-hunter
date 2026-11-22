@@ -101,7 +101,12 @@ describe('a forged copy of an ordinary receipted RTC room send (S8-i, D590)', ()
     it('does not let a forged unreceipted copy turn the origin\'s receipted copy into an acknowledged duplicate', async () => {
         const room = await createForgeryRoom();
         const { message, originCopy } = await sendReceiverToRecipient(room, 'downgraded-forgery');
-        const downgraded: ALMessage = { ...toForgedCopy(originCopy), delivery: { reliability: 'best-effort', ack: 'none' } };
+        // The forger cannot carry the origin's proof onto other content, and a copy that asks no receipt needs none.
+        const downgraded: ALMessage = {
+            ...toForgedCopy(originCopy),
+            proof: undefined,
+            delivery: { reliability: 'best-effort', ack: 'none' }
+        };
 
         await room.recipient.receive(downgraded, 'b');
         await room.recipient.receive(originCopy, 'a');
@@ -226,7 +231,7 @@ async function sendReceiverToRecipient(room: ForgeryRoom, resourceId: string): P
     const message = { ...createOriginReceiverMulticast(resourceId), targets: toOriginFrozenTargets(['b', 'c'], 3) };
     expect((await enqueueAndDrain(room.origin.manager, message)).verdict.kind).toBe('admitted');
     const originCopy = room.origin.channels.c!.sent[0]!;
-    expect(originCopy.proof).toBeUndefined();
+    expect(originCopy.proof).toBeDefined();
     expect(originCopy.delivery?.ack).toBe('all-logical-recipients');
     return { message, originCopy };
 }

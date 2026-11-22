@@ -106,7 +106,7 @@ describe('a signed RTC frame on a topic the receiver\'s snapshot does not grant'
         await receiver.receive(signed, 'a');
 
         expect(refreshedRooms).toEqual([]);
-        expect(readAdmissionReasons(receiver)).toEqual(['unauthorized: proof-on-ungranted-topic']);
+        expect(readAdmissionReasons(receiver)).toEqual(['unauthorized: proof-not-required']);
         expect([receiver.delivered, await receiver.readSent('a')]).toEqual([[], []]);
     });
 });

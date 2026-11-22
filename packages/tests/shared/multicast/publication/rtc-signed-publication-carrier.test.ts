@@ -2,18 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { newALBroadcastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import type {
     ALOutboundDispatchPlan,
     ALOutboundRepairRequest
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
-import { RtcGrantedPublicationCarrier } from '@shared/multicast/publication/rtc-granted-publication-carrier.ts';
+import { RtcSignedPublicationCarrier } from '@shared/multicast/publication/rtc-signed-publication-carrier.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
@@ -70,7 +68,7 @@ const GRANTED_LIST = newALBroadcastMessage({
 
 const MEMBERS: ALMessage = { ...GRANTED, route: { ...GRANTED.route, topicId: 'room.chat' } };
 
-describe('RtcGrantedPublicationCarrier', () => {
+describe('RtcSignedPublicationCarrier', () => {
     it('admits a granted unicast and a granted list leg for the shape its sender gave', async () => {
         const carrier = createKeyedCarrier(await createAvailablePublicationCryptoFixture());
 
@@ -156,13 +154,36 @@ describe('RtcGrantedPublicationCarrier', () => {
         expect(signed.left).toMatch(/^signing-unavailable: /);
     });
 
-    it('forwards a granted frame as it is, and normalizes any other frame as every carrier does', () => {
+    it('requires a proof of a granted frame and of a receipted members room send, and of no other members frame', () => {
         const carrier = createKeylessCarrier();
-        const granted = { ...GRANTED, proof: PROOF };
-        const effective = normalizeALQosPolicy(MEMBERS).effective;
+        const receipted: ALMessage = { ...MEMBERS, delivery: { reliability: 'at-least-once', ack: 'receiver' } };
 
-        expect(carrier.toForwardedMessage(granted, effective)).toBe(granted);
-        expect(carrier.toForwardedMessage(MEMBERS, effective)).toEqual(toALOutboundMessage(MEMBERS, effective));
+        expect([GRANTED, receipted, MEMBERS].map((message) => carrier.isProofRequired(message))).toEqual([true, true, false]);
+        expect([GRANTED, receipted].map((message) => carrier.isGrantedPublication(message))).toEqual([true, false]);
+    });
+
+    it('signs a frozen receipted members room send of its own once, and refuses one it cannot sign named by its kind', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const receipted: ALMessage = { ...MEMBERS, delivery: { reliability: 'at-least-once', ack: 'receiver' } };
+
+        const signed = await createKeyedCarrier(crypto).signAdmitted(receipted);
+        const unsigned = await createKeylessCarrier(createKeyedSnapshot(crypto)).signAdmitted(receipted);
+
+        expect(signed.right?.proof).toMatchObject({ alg: 'ES256', keyId: crypto.keyPair.keyId });
+        expect(unsigned.left).toMatch(/^signing-unavailable: /);
+        expect((await createKeyedCarrier(crypto).signAdmitted(signed.right!)).right).toBe(signed.right);
+        expect((await createKeylessCarrier().signAdmitted(MEMBERS)).right).toBe(MEMBERS);
+    });
+
+    it('passes a receipted room send it cannot sign yet unsigned: one held without its room snapshot or its frozen audience', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const receipted: ALMessage = { ...MEMBERS, delivery: { reliability: 'at-least-once', ack: 'receiver' } };
+        const unfrozen: ALMessage = { ...receipted, targets: { mode: 'multicast', groupRef: ORIGIN_ROOM } };
+
+        const withoutSnapshot = await createCarrier(crypto, undefined).signAdmitted(receipted);
+        const heldUnfrozen = await createKeyedCarrier(crypto).signAdmitted(unfrozen);
+
+        expect([withoutSnapshot.right, heldUnfrozen.right]).toEqual([receipted, unfrozen]);
     });
 
     it('keeps the room\'s not-yet-in-sync plan for an ungranted proof while the room it names is still pending', () => {
@@ -244,12 +265,12 @@ describe('a granted publication\'s repair a relay asks for a recipient below it 
     });
 });
 
-function createKeylessCarrier(snapshot?: GroupSnapshot): RtcGrantedPublicationCarrier {
+function createKeylessCarrier(snapshot?: GroupSnapshot): RtcSignedPublicationCarrier {
     return createCarrier(UNAVAILABLE_PUBLICATION_CRYPTO, snapshot);
 }
 
 /** A carrier that can sign: its room of `a`, `b` and `c` attests `a`'s page key, and `b` and `c` may subscribe. */
-function createKeyedCarrier(crypto: AvailablePublicationCrypto): RtcGrantedPublicationCarrier {
+function createKeyedCarrier(crypto: AvailablePublicationCrypto): RtcSignedPublicationCarrier {
     return createCarrier(crypto, createKeyedSnapshot(crypto));
 }
 
@@ -262,12 +283,12 @@ function createKeyedSnapshot(crypto: AvailablePublicationCrypto): GroupSnapshot 
     });
 }
 
-function createCarrier(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot | undefined): RtcGrantedPublicationCarrier {
+function createCarrier(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot | undefined): RtcSignedPublicationCarrier {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     if (snapshot !== undefined) {
         groupCache.accept(snapshot.group.groupId, snapshot);
     }
-    return new RtcGrantedPublicationCarrier({
+    return new RtcSignedPublicationCarrier({
         groupCache,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto,
