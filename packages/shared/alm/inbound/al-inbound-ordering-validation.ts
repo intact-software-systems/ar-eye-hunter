@@ -42,8 +42,9 @@ export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessa
     /** The carrier the buffered message arrived on: its release is claimed and dispatched by that runtime. */
     readonly carrier: ALDeliveryCarrier;
     /**
-     * Every carrier that brought a copy while the slot stood, `carrier` first: a sender may hold its receipt on any
-     * of them, so the release answers each.
+     * Every carrier and acknowledging peer that brought a copy while the slot stood, each pair once, the slot's own pair
+     * (on `carrier`) first: a sender may hold its receipt on any carrier, and a reshape may hand the slot a second parent on the same
+     * one, so the release answers each.
      */
     readonly copyCarriers: readonly ALInboundBufferedCopyCarrier[];
     readonly delivery?: ALInboundDeliveryOwner;
@@ -130,9 +131,9 @@ export function decodeALInboundBufferedSnapshot(
     const copyCarriers = decodeALAdmissionArray(snapshot.copyCarriers, decodeBufferedCopyCarrier);
     if (
         copyCarriers[0]?.carrier !== carrier ||
-        new Set(copyCarriers.map((copy) => copy.carrier)).size !== copyCarriers.length
+        new Set(copyCarriers.map(toBufferedCopyKey)).size !== copyCarriers.length
     ) {
-        throw new TypeError('Persisted buffered copy carriers must name the slot carrier first, each once');
+        throw new TypeError('Persisted buffered copy carriers must name the slot carrier first, each pair once');
     }
     if (trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}`) {
         throw new TypeError('Persisted buffered message does not match its ordering slot');
@@ -156,6 +157,10 @@ export function decodeALInboundBufferedSnapshot(
         copyCarriers,
         delivery: { effectId: decodeALAdmissionString(delivery.effectId) }
     };
+}
+
+function toBufferedCopyKey(copy: ALInboundBufferedCopyCarrier): string {
+    return JSON.stringify([copy.carrier, copy.ackToPeerId]);
 }
 
 function decodeBufferedCopyCarrier(value: unknown): ALInboundBufferedCopyCarrier {

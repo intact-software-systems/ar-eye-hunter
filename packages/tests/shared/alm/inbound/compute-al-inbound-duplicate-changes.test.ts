@@ -125,6 +125,24 @@ const RELAYED_FROZEN_LEAF_PEER: ReceivingPeer = {
 
 const RTC_FROM_RELAY: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: RELAY_PEER_ID };
 
+/** The relay a reshape made the frozen leaf's parent, on the same carrier as the first. */
+const NEW_PARENT_PEER_ID = 'relay-2';
+const RTC_FROM_NEW_PARENT: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: NEW_PARENT_PEER_ID };
+
+/** The relayed frozen leaf after a reshape: its RTC copies come through either relay. */
+const RESHAPED_FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID, NEW_PARENT_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID, NEW_PARENT_PEER_ID]
+        }),
+    canForward: false,
+    forwardsRetriedCopies: false
+};
+
 /** The same leaf holding no active token: its RTC carrier plans a granted copy forward-not-subscribed. */
 const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
     planner: (msg, source, observations) => {
@@ -448,6 +466,32 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
         expect(toRepeatedAcks(release).map(({ carrier, toPeerId, status }) => ({ carrier, toPeerId, status }))).toEqual([
             { carrier: 'rtc', toPeerId: RELAY_PEER_ID, status: 'delivered' },
             { carrier: 'ws', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' }
+        ]);
+    });
+
+    it('records a reshape\'s new parent on the same carrier, and the release answers both parents', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-reshaped', 2);
+        const fromRelay = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        const fromNewParent = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_NEW_PARENT } as const;
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, fromRelay))).toBe('committed');
+
+        const reshaped = await computeArrival(admissionStore, toRetriedHopCopy(msg), fromNewParent);
+        expect(reshaped.durableEffects).toEqual([]);
+        expect(toBufferedCopyCarriers(reshaped)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: RELAY_PEER_ID },
+            { carrier: 'rtc', ackToPeerId: NEW_PARENT_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(reshaped)).toBe('committed');
+        expect(toBufferedCopyCarriers(await computeArrival(admissionStore, toRetriedHopCopy(msg), fromNewParent))).toEqual([]);
+        const predecessor = createFrozenReceiverMessage('buffered-reshaped-predecessor', 1);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, predecessor, fromRelay))).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, RESHAPED_FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release).map(({ carrier, toPeerId, status }) => ({ carrier, toPeerId, status }))).toEqual([
+            { carrier: 'rtc', toPeerId: RELAY_PEER_ID, status: 'delivered' },
+            { carrier: 'rtc', toPeerId: NEW_PARENT_PEER_ID, status: 'delivered' }
         ]);
     });
 

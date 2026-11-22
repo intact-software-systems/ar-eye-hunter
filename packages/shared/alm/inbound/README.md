@@ -408,10 +408,11 @@ delivery is what the other carrier's receipt counts; the ACKs it relayed stay
 on the first carrier (R-S3b-21). One rule holds on both carriers: a copy whose sequence its track still holds buffered
 draws no answer on either, so no `delivered` confirms a message before its release. Answering one would complete the
 recipient's statement at its relay and its origin, which then refuse every renewal of the gap that holds the
-message back. The buffered slot records instead every carrier that brought a copy (`copyCarriers`, the slot's own
-carrier first, each with the peer its copy acknowledges to): a copy on a carrier the slot does not record yet adds it,
-and the release sends `delivered` on each recorded carrier. A sender that handed the message over (D56) holds its
-receipt on the carrier it moved to, so that receipt is confirmed once the message is delivered.
+message back. The buffered slot records instead every carrier and peer pair that brought a copy (`copyCarriers`: each
+carrier with the peer its copy acknowledges to, the slot's own pair first, each pair once): a copy from a pair the slot
+does not record yet adds it, and the release sends `delivered` to each recorded pair once. A sender that handed the
+message over (D56) holds its receipt on the carrier it moved to, and a parent a reshape gave this peer while the gap
+held holds its own on the same carrier as the first, so each receipt is confirmed once the message is delivered.
 
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by
@@ -664,7 +665,8 @@ NACK fails strict decoding until it expires (`controlHistoryTtlMs`, 30 minutes b
 pair and in the server's PostgreSQL store; the deadline plus the receipt grace in the volatile lane). Nothing is
 migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped.
 
-**The copy-carriers window.** The buffered slot's `copyCarriers` is required. No store resets for it, and
+**The copy-carriers window.** The buffered slot's `copyCarriers` is required: its own pair first, each carrier and
+peer pair once, so one carrier may appear once per peer. No store resets for it, and
 `AL_ADMISSION_SCHEMA_ID` is not bumped: since #652 a different schema identity refuses a returning browser's durable
 store rather than resetting it, and the slot's `carrier` field (#588) gave no precedent for a bump, since #588 bumped
 the identity for the one-inbound-store-per-session namespace it introduced. A buffered-slot row the previous build wrote

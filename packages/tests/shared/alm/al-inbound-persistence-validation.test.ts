@@ -482,8 +482,8 @@ describe('inbound admission persisted values', () => {
             copyCarriers: [{ carrier: 'rtc', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: message.id.senderId }]
         },
         {
-            shape: 'names its own carrier twice',
-            copyCarriers: [{ carrier: 'ws', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: 'relay' }]
+            shape: 'names its own pair twice',
+            copyCarriers: [{ carrier: 'ws', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: message.id.senderId }]
         }
     ])('refuses a stored buffered slot that $shape, and reads the same slot back once it names its own', async ({ copyCarriers }) => {
         const snapshot = createBufferedSnapshot();
@@ -493,6 +493,14 @@ describe('inbound admission persisted values', () => {
 
         await expect(readStoredBufferedSlot(stored)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await readStoredBufferedSlot(snapshot))?.snapshot.copyCarriers).toEqual(recorded);
+    });
+
+    // A reshape gives the slot a second parent on its own carrier, which the release answers too.
+    it('reads back a stored buffered slot that names a second peer on its own carrier', async () => {
+        const copyCarriers = [{ carrier: 'ws', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: 'relay' }];
+
+        expect((await readStoredBufferedSlot({ ...createBufferedSnapshot(), copyCarriers }))?.snapshot.copyCarriers)
+            .toEqual(copyCarriers);
     });
 
     it('rejects malformed nested plans in direct buffered reads', async () => {

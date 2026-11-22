@@ -4,6 +4,7 @@ import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-
 import { toALInboundAckEffect, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from '../al-inbound-ordering-validation.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
 
 /** The copy an arrival brought: the peer it acknowledges to, and the instant the slot may not outlive. */
 export interface ALInboundRecordedCopy {
@@ -36,8 +37,9 @@ export function toALInboundRecordedCopyMutation(
 }
 
 /**
- * A copy of a held message on a carrier its slot does not record yet adds that carrier, so the release answers it
- * there too: the sender handed the message over and holds its receipt on that carrier now.
+ * A copy of a held message from a carrier and peer pair its slot does not record yet adds that pair, so the release
+ * answers it too: the sender handed the message over and holds its receipt on that carrier now, or a reshape gave this
+ * peer a new parent that holds its own.
  */
 export function toALInboundCopyCarrierMutations(
     read: ALInboundMessageReadDto,
@@ -45,7 +47,10 @@ export function toALInboundCopyCarrierMutations(
 ): readonly ALInboundAdmissionMutation[] {
     const carrier = toALDeliveryCarrier(read.source);
     const slot = read.bufferedSnapshots.find((snapshot) => snapshot.seq === read.msg.ordering?.seq);
-    if (slot === undefined || slot.copyCarriers.some((copy) => copy.carrier === carrier)) {
+    if (
+        slot === undefined ||
+        slot.copyCarriers.some((copy) => copy.carrier === carrier && copy.ackToPeerId === toPeerId)
+    ) {
         return [];
     }
     const { ownerRetainUntilMs, ...snapshot } = slot;
@@ -55,8 +60,9 @@ export function toALInboundCopyCarrierMutations(
 }
 
 /**
- * The release's `delivered` on every other carrier that brought a copy while the message waited: a sender that handed
- * the message over holds its receipt there, and that copy drew no answer while the message was held.
+ * The release's `delivered` to every other pair that brought a copy while the message waited, each once: a sender that
+ * handed the message over, or a parent a reshape gave this peer, holds its receipt there, and that copy drew no answer
+ * while the message was held. The slot's own pair, first, is the one the release's own acknowledgement answers.
  */
 export function toALInboundCopyCarrierReleaseAcks(
     snapshot: ALInboundOrderedDeliverySnapshot
@@ -65,8 +71,8 @@ export function toALInboundCopyCarrierReleaseAcks(
     if (plan.ack.algo === 'none') {
         return [];
     }
-    return snapshot.copyCarriers.flatMap((copy) => {
-        if (copy.carrier === snapshot.carrier || copy.ackToPeerId === null) {
+    return snapshot.copyCarriers.slice(1).flatMap((copy) => {
+        if (copy.ackToPeerId === null) {
             return [];
         }
         const ack = toALInboundAckEffect({
@@ -77,6 +83,9 @@ export function toALInboundCopyCarrierReleaseAcks(
             carrier: copy.carrier,
             status: 'delivered'
         });
-        return [{ ...ack, effectId: `${ack.effectId}:${copy.carrier}` }];
+        return [{
+            ...ack,
+            effectId: toALInboundEffectId(['ack', msg.id.msgId, copy.ackToPeerId, 'delivered', copy.carrier])
+        }];
     });
 }
