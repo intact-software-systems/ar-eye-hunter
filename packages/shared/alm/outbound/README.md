@@ -1484,20 +1484,20 @@ sending handle's lifecycle.
 
 Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
 
-- **Budget exhaustion.** When the last `ack-timeout` window closes with the budget spent
-  (`attempts >= maxAttempts`), [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) ends the
-  message in one commit (below), deleting the repair-attempt row and keeping the pending-ACK row, and, once it lands, states
-  `receipt-exhausted` with the row's confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical
-  recipients under `receiver` and `leader`). The handle reads `failed` and keeps who confirmed. The message is marked
-  ended, so the fact is stated once across replays and reloads and a late ACK is refused and completes nothing. Under
-  persistent loss a revealing message whose recipient holds it buffered behind the gap is never confirmed (that
-  recipient answers no copy until the release), so its handle ends `receipt-exhausted` too. A deadline charges
-  only once the first transmission has left (below): the first deadline after it left charges the first attempt, so
-  with the defaults (a 2 000 ms ACK timeout, three receipt retries) and uninterrupted timeout execution the budget ends
-  about 6 s after that deadline, about 8 s after admission for a frame that leaves at once. Each gap repair that
-  dispatches the message moves the receipt's deadline a timeout on, so renewals push the end later. A send whose
-  carrier takes nothing is not charged and ends at its message's deadline, which the handle reads as `expired`.
-  Downtime leaves unspent attempts available until the original message deadline.
+- **Budget exhaustion.** When the last `ack-timeout` window closes with the budget spent (`attempts >= maxAttempts`),
+  [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) ends the message in one commit (below), deleting the
+  repair-attempt row and keeping the pending-ACK row, and, once it lands, states `receipt-exhausted` with the row's
+  confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical recipients under `receiver` and `leader`).
+  The handle reads `failed` and keeps who confirmed. The message is marked ended, so the fact is stated once across
+  replays and reloads and a late ACK is refused and completes nothing. Under persistent loss a revealing message whose
+  recipient holds it buffered behind the gap is never confirmed (that recipient answers no copy until the release), so
+  its handle ends `receipt-exhausted` too. A deadline charges only once the first transmission has left (below): the
+  first deadline after it left charges the first attempt, so with the defaults (a 2 000 ms ACK timeout, three receipt
+  retries) and uninterrupted timeout execution the budget ends about 6 s after that deadline, about 8 s after admission
+  for a frame that leaves at once. Each gap repair that dispatches the message moves the receipt's deadline a timeout
+  on, so renewals push the end later. A send whose carrier takes nothing is not charged and ends at its message's
+  deadline, which the handle reads as `expired`. Downtime leaves unspent attempts available until the original message
+  deadline.
 - **A requester's repair budget.** `repair-exhausted` ends the open receipt at once with its message (`maxRepairs`,
   above), keeping its row, so the message's other receivers lose the receipt's remaining retries.
 - **The first hop.** A WS client's first-hop wait whose retries are spent ends the message and states
@@ -1523,34 +1523,36 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
 
-**A terminal settlement ends its message.** The commit that states a terminal settlement also ends everything the
-sender holds for the message, and from then on the sender writes no frame and starts no timer for it. Terminal are the
-receipt completed, `receipt-exhausted` (its budget spent or a hop's refusal), a server's `timed-out` receipt, a
-first-hop wait spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. The commit is
-[`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts): the repair-attempt row's
-delete, the first-hop wait's delete, the completion of both timers, and the marker: the field `ended` of the stored
-message row every message already has (`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write
-per message end. The receipt row stays, whatever the carrier, as the final snapshot of who confirmed. It is fenced on the sender version, so a commit decided on
-an older read conflicts and decides again on a read that holds the marker. A message this sender only dequeues from an
-external source holds no row and gets no marker; every later path stops at the missing row. Every end through this
-bundle keeps the receipt row as a final snapshot to its expiry -- an open receipt the end settles, a complete one and a
-server's terminal one (a terminal NACK's removal and a hand-over still delete it) -- since a gap request, own-word or relayed, is admitted by reading its revealing message's row, so the renewals of a gap
-revealed by a message whose receipt ended still reach the origin. The marker lives as long as the row, past the deadline, so a
-terminal fact is stated once per message across reloads. Afterwards a dispatch of the message answers
+**A terminal settlement ends its message.** The commit that states a terminal settlement also ends everything the sender
+holds for the message, and from then on the sender writes no frame and starts no timer for it. Terminal are the receipt
+completed, `receipt-exhausted` (its budget spent or a hop's refusal), a server's `timed-out` receipt, a first-hop wait
+spent, `repair-exhausted`, a re-plan refused for good and a relay's rejection. The commit is
+[`toALOutboundMessageEndBundle`](./message-end/to-al-outbound-message-end-bundle.ts): the repair-attempt row's delete,
+the first-hop wait's delete, the completion of both timers, and the marker: the field `ended` of the stored message row
+every message already has (`<namespace>:sent:<msgId>`), so the marker costs no read and one more row write per message
+end. The receipt row stays, whatever the carrier, as the final snapshot of who confirmed. It is fenced on the sender
+version, so a commit decided on an older read conflicts and decides again on a read that holds the marker. A message
+this sender only dequeues from an external source holds no row and gets no marker; every later path stops at the missing
+row. Every end through this bundle keeps the receipt row as a final snapshot to its expiry -- an open receipt the end
+settles, a complete one and a server's terminal one (a terminal NACK's removal and a hand-over still delete it) -- since
+a gap request, own-word or relayed, is admitted by reading its revealing message's row, so the renewals of a gap
+revealed by a message whose receipt ended still reach the origin. The marker lives as long as the row, past the
+deadline, so a terminal fact is stated once per message across reloads. Afterwards a dispatch of the message answers
 `skipped`/`message-ended`, which is never stated on the settlements port, so no handle ever reads it; a queued copy
-meets the marker at `readSendGuards` and completes without a frame; a receipt is refused; a kept incomplete receipt row is the final snapshot, so
-[`validateALOutboundEndedMessageControl`](./message-end/validate-al-outbound-ended-message-control.ts) refuses an ACK
-or an outside-audience NACK while it stands and no settlement follows the terminal one (a kept complete row still admits
+meets the marker at `readSendGuards` and completes without a frame; a receipt is refused; a kept incomplete receipt row
+is the final snapshot, so
+[`validateALOutboundEndedMessageControl`](./message-end/validate-al-outbound-ended-message-control.ts) refuses an ACK or
+an outside-audience NACK while it stands and no settlement follows the terminal one (a kept complete row still admits
 them, a next hop's late terminal ACK included), and the server's own `commitOutsideAudience` answers `absent` for it;
 any other NACK but a gap is refused; a gap NACK or repair request, which names the message whose arrival revealed the
 gap, is admitted and served for every sequence it names that has not ended, the ended one served nothing and charged
-nothing; and a timer that meets an ended message's kept incomplete row writes nothing. A control commit decides its
-own end in [`toALOutboundControlMessageEnd`](./message-end/to-al-outbound-control-message-end.ts). Not terminal: a
-written `ack: 'none'` send, whose obligation to repair runs to its deadline; an `admitted` receipt;
-`not-yet-in-sync-exhausted`; a hand-over (below); the completion an empty frozen audience states at admission; a NACK
-from one peer on a send that holds no receipt. The deadline writes no marker: time is the marker. Cancel and supersede
-keep their own paths, and a cancel and a hand-over end later work from memory only. One frame can still follow an end
-that lands between `readSendGuards` and the carrier's write.
+nothing; and a timer that meets an ended message's kept incomplete row writes nothing. A control commit decides its own
+end in [`toALOutboundControlMessageEnd`](./message-end/to-al-outbound-control-message-end.ts). Not terminal: a written
+`ack: 'none'` send, whose obligation to repair runs to its deadline; an `admitted` receipt; `not-yet-in-sync-exhausted`;
+a hand-over (below); the completion an empty frozen audience states at admission; a NACK from one peer on a send that
+holds no receipt. The deadline writes no marker: time is the marker. Cancel and supersede keep their own paths, and a
+cancel and a hand-over end later work from memory only. One frame can still follow an end that lands between
+`readSendGuards` and the carrier's write.
 
 **A deadline whose attempt has not left.** One rule decides a deadline of both timers that retry a send, the receipt's
 `ack-timeout` and the first-hop wait:
