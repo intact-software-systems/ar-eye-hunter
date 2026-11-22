@@ -20,3 +20,18 @@ export function toALOutboundReceiptClasses(
         outsideAudiencePeerIds: receipt.expectedPeerIds.filter((peerId) => !isAcked(peerId) && isOutside(peerId))
     };
 }
+
+/** Whether two snapshots of one receipt row hold the same peers confirmed and the same outside the audience. */
+export function isSameALOutboundReceiptClasses(
+    current: ALOutboundPendingAckSnapshot,
+    next: ALOutboundPendingAckSnapshot
+): boolean {
+    const before = toALOutboundReceiptClasses(current);
+    const after = toALOutboundReceiptClasses(next);
+    return isSamePeerList(before.confirmedPeerIds, after.confirmedPeerIds) &&
+        isSamePeerList(before.outsideAudiencePeerIds, after.outsideAudiencePeerIds);
+}
+
+function isSamePeerList(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((peerId, index) => peerId === right[index]);
+}

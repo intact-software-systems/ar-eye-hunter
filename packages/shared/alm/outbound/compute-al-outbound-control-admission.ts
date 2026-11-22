@@ -29,7 +29,10 @@ import {
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
-import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
+import {
+    isSameALOutboundReceiptClasses,
+    toALOutboundReceiptClasses
+} from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundEndedTimeoutEffectIds } from './control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
@@ -290,28 +293,12 @@ function appendBounded<T>(current: readonly T[], next: T): readonly T[] {
     return [...retained, next];
 }
 
-/**
- * The receipt row a control leaves. An ACK that moves neither a peer between the receipt's classes nor the hop view,
- * a true repeat, leaves the row as it was, so its commit states nothing; one that completes a hop states the hop lists
- * as they now stand, though no class moved.
- */
 function computePendingAckWrite(
     read: ALControlAdmissionRead,
     history: ALControlHistory
 ): ALPendingAckWrite {
     if (read.parsed.type === 'ack' && history.kind === 'acks') {
-        const ack = read.parsed.payload;
-        const accepted = acceptALOutboundPendingAckSnapshot({ current: read.pending, acks: [], ack });
-        if (read.pending === undefined || accepted === undefined) {
-            return { kind: 'remove' };
-        }
-        const owedPeerIds = toALOutboundReceiptClasses(accepted).unconfirmedPeerIds;
-        const next = isALOutboundImpliedNotSubscribedAck(accepted.mode, ack, owedPeerIds)
-            ? acceptALOutboundOutsideAudienceNack(accepted, ack.logicalRecipientPeerId)
-            : accepted;
-        return isSameReceiptClasses(read.pending, next) && !completesHop(read, ack)
-            ? { kind: 'unchanged' }
-            : { kind: 'set', value: next };
+        return computeAcknowledgedPendingAckWrite(read, read.parsed.payload);
     }
     if (read.parsed.type === 'nack' && isALOutsideAudienceNackReason(read.parsed.payload.reason) && read.pending) {
         return {
@@ -324,22 +311,28 @@ function computePendingAckWrite(
         : { kind: 'unchanged' };
 }
 
-function isSameReceiptClasses(current: ALOutboundPendingAckSnapshot, next: ALOutboundPendingAckSnapshot): boolean {
-    const before = toALOutboundReceiptClasses(current);
-    const after = toALOutboundReceiptClasses(next);
-    return equalPeerIds(before.confirmedPeerIds, after.confirmedPeerIds) &&
-        equalPeerIds(before.outsideAudiencePeerIds, after.outsideAudiencePeerIds);
+/**
+ * The receipt row an ACK leaves. One that moves neither a peer between the receipt's classes nor the hop view, a true
+ * repeat, leaves the row as it was, so its commit states nothing; one that completes a hop states the hop lists as they
+ * now stand, though no class moved.
+ */
+function computeAcknowledgedPendingAckWrite(read: ALControlAdmissionRead, ack: ALAckPayload): ALPendingAckWrite {
+    const current = read.pending;
+    const accepted = acceptALOutboundPendingAckSnapshot({ current, acks: [], ack });
+    if (current === undefined || accepted === undefined) {
+        return { kind: 'remove' };
+    }
+    const owedPeerIds = toALOutboundReceiptClasses(accepted).unconfirmedPeerIds;
+    const next = isALOutboundImpliedNotSubscribedAck(accepted.mode, ack, owedPeerIds)
+        ? acceptALOutboundOutsideAudienceNack(accepted, ack.logicalRecipientPeerId)
+        : accepted;
+    return isSameALOutboundReceiptClasses(current, next) && !completesHop(read.acknowledgements, ack)
+        ? { kind: 'unchanged' }
+        : { kind: 'set', value: next };
 }
 
-function completesHop(read: ALControlAdmissionRead, ack: ALAckPayload): boolean {
-    return isALHopCompletionAck(ack) &&
-        !toALOutboundCompletedHopPeerIds(read.history.kind === 'acks' ? read.history.values : []).includes(
-            ack.fromPeerId
-        );
-}
-
-function equalPeerIds(left: readonly string[], right: readonly string[]): boolean {
-    return left.length === right.length && left.every((peerId, index) => peerId === right[index]);
+function completesHop(acknowledgements: readonly ALAckPayload[], ack: ALAckPayload): boolean {
+    return isALHopCompletionAck(ack) && !toALOutboundCompletedHopPeerIds(acknowledgements).includes(ack.fromPeerId);
 }
 
 function toRepairHintEffect(

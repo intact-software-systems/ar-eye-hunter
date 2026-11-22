@@ -125,19 +125,17 @@ function validateAcknowledgedReceipt(
 ): readonly ALOutboundControlIssue[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
+    const expectedPeerId = pending?.expectedPeerIds.find((peerId) => peerId === countedPeerId);
     if (
-        pending && (countedPeerId === undefined || !pending.expectedPeerIds.includes(countedPeerId)) &&
+        pending && expectedPeerId === undefined &&
         (isOpenNextHopCompletion(read, ack) || isForwardedOutsideHopEnd(read, pending, ack))
     ) {
         return [];
     }
-    if (
-        !pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId) ||
-        pending.outsideAudiencePeerIds.includes(countedPeerId)
-    ) {
+    if (!pending || !expectedPeerId || pending.outsideAudiencePeerIds.includes(expectedPeerId)) {
         return [toALOutboundRefusalIssue('AL acknowledgement confirms no peer of the pending outbound receipt')];
     }
-    return pending.ackedPeerIds.includes(countedPeerId) && !isOpenNextHopCompletion(read, ack)
+    return pending.ackedPeerIds.includes(expectedPeerId) && !isOpenNextHopCompletion(read, ack)
         ? [toALOutboundDuplicateIssue('AL acknowledgement confirms a peer the receipt already counted')]
         : [];
 }
