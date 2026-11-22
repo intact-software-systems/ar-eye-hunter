@@ -505,7 +505,7 @@ async function seedRelayRow(
         observations: (await readInboundTestDecisionSurface(store, message)).observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true },
+            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true, originAuthenticated: false },
             expireAtTimestamp: rowExpiresAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
         }, {
             kind: 'set-control-pending',

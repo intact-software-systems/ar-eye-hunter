@@ -194,7 +194,8 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                 senderId: input.senderId,
                 source: { kind: 'ws-client', peerId: input.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                 supersedenceKey: null,
-                deliveredLocally: true
+                deliveredLocally: true,
+                originAuthenticated: false
             },
             expireAtTimestamp: input.expireAtTimestamp
         }, {
@@ -411,7 +412,8 @@ describe('inbound admission persisted values', () => {
                             groupRecipientPeerIds
                         },
                         supersedenceKey: null,
-                        deliveredLocally: true
+                        deliveredLocally: true,
+                        originAuthenticated: false
                     },
                     expireAtTimestamp
                 }],
@@ -823,7 +825,8 @@ describe('inbound admission persisted values', () => {
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp: work.expireAtTimestamp
             }],
@@ -872,7 +875,8 @@ describe('inbound admission persisted values', () => {
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }],
@@ -894,7 +898,8 @@ describe('inbound admission persisted values', () => {
                             authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
                         },
                         supersedenceKey: null,
-                        deliveredLocally: true
+                        deliveredLocally: true,
+                        originAuthenticated: false
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }],
@@ -1114,7 +1119,8 @@ async function seedPendingAcknowledgement(
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp
             }, {

@@ -315,5 +315,5 @@ async function readDeliveredTracks(backend: ALAdmissionWorkBackend): Promise<rea
 
 async function readOrderingObservation(fixture: OrderingCapFixture, message: ALMessage) {
     const read = await readInboundTestDecisionSurface(fixture.inbound.stores.admissionStore, message);
-    return computeALInboundPlanningObservations(read).orderingObservation;
+    return computeALInboundPlanningObservations(read, false).orderingObservation;
 }

@@ -62,6 +62,11 @@ interface ALInboundLocalDeliveryInput {
     readonly msg: ALMessage;
     readonly plan: ALMessageHandlingPlan;
     readonly carrier: ALDeliveryCarrier;
+    /**
+     * An origin-authenticated readmission over an unauthenticated first admission (D756): its delivery is work of its
+     * own, never the first admission's row under the same message id.
+     */
+    readonly readmission: boolean;
 }
 
 export interface ALInboundControlEffectInput extends ALInboundLocalDeliveryInput {
@@ -121,9 +126,18 @@ export function toALInboundReleaseEffectId(trackKey: string, seq: number): strin
     return toALInboundEffectId(['release', trackKey, seq]);
 }
 
-/** The one row that delivers `msg` to this peer's own consumers; a retained delivery is found by it. */
-export function toALInboundLocalDeliveryEffectId(msg: ALMessage): string {
-    return toALInboundEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
+/**
+ * The row that delivers `msg` to this peer's consumers: its first admission's, or an origin-authenticated readmission's
+ * (D756). A completed row stays as its delivery's evidence until it expires, so a readmission's delivery needs an
+ * identity of its own.
+ */
+export function toALInboundLocalDeliveryEffectId(msg: ALMessage, readmission: boolean): string {
+    return toALInboundEffectId(['dispatch', msg.id.senderId, msg.id.msgId, ...(readmission ? ['readmitted'] : [])]);
+}
+
+/** Every local delivery row `msg` may own; a retained delivery is found by these. */
+export function toALInboundLocalDeliveryEffectIds(msg: ALMessage): readonly string[] {
+    return [toALInboundLocalDeliveryEffectId(msg, false), toALInboundLocalDeliveryEffectId(msg, true)];
 }
 
 export function toALInboundLocalDeliveryEffects(
@@ -133,7 +147,7 @@ export function toALInboundLocalDeliveryEffects(
         return [];
     }
     return [{
-        effectId: toALInboundLocalDeliveryEffectId(input.msg),
+        effectId: toALInboundLocalDeliveryEffectId(input.msg, input.readmission),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,
         payload: {

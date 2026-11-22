@@ -29,7 +29,7 @@ import {
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
 import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
-import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
+import { toALInboundLocalDeliveryEffectIds } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
@@ -261,22 +261,29 @@ export class ALInboundStoreLane {
     }
 
     private async writeRetainedDeliveriesDueNowInStore(msgs: readonly ALMessage[]): Promise<readonly ALMessage[]> {
-        const { admissionStore, workQueue } = this.input.stores;
+        const { admissionStore } = this.input.stores;
         const workType = toALInboundWorkType(admissionStore.namespace, this.input.runtime.carrier);
         const nowMs = this.readNowMs();
         const broughtDue: ALMessage[] = [];
         for (const msg of msgs) {
-            const observed = await workQueue.getItem(
-                toALInboundWorkKey(admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg))
+            const due = await Promise.all(
+                toALInboundLocalDeliveryEffectIds(msg).map(async (effectId) =>
+                    await this.writeRetainedDeliveryDueNow(effectId, workType, nowMs)
+                )
             );
-            if (observed?.typeId !== workType || !isALInboundRetryDueAfter(observed, nowMs)) {
-                continue;
-            }
-            if (await workQueue.replaceIfObserved(observed, toALInboundRetryDueAt(observed, nowMs)) !== null) {
+            if (due.includes(true)) {
                 broughtDue.push(msg);
             }
         }
         return broughtDue;
+    }
+
+    /** One retained delivery row of this lane's carrier, brought due now when it waits out a retry delay. */
+    private async writeRetainedDeliveryDueNow(effectId: string, workType: string, nowMs: number): Promise<boolean> {
+        const { workQueue, admissionStore } = this.input.stores;
+        const observed = await workQueue.getItem(toALInboundWorkKey(admissionStore.namespace, effectId));
+        return observed?.typeId === workType && isALInboundRetryDueAfter(observed, nowMs) &&
+            await workQueue.replaceIfObserved(observed, toALInboundRetryDueAt(observed, nowMs)) !== null;
     }
 
     /**

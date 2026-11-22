@@ -8,9 +8,14 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
+import {
+    isALInboundOriginAuthenticated,
+    isALInboundOriginAuthenticatedReadmission
+} from './admission/is-al-inbound-origin-authenticated-readmission.ts';
 import { toALInboundOrderingPosition } from './admission/to-al-inbound-ordering-position.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
+import { toALInboundLocalDeliveryEffectId } from './al-inbound-effect-intent.ts';
 import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
@@ -18,7 +23,7 @@ import { computeALInboundPlanningObservations } from './al-inbound-planner-snaps
 import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { recordALInboundDiagnostic } from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
-import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
+import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey } from './al-inbound-work-entry.ts';
 import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
@@ -130,7 +135,8 @@ export class ALInboundMessageAdmission {
         if (decoded.left) {
             return Either.ofLeft(decoded.left);
         }
-        await this.dependencies.verifyPublicationProof?.(admitted);
+        const proofVerified = await this.dependencies.verifyPublicationProof?.(admitted) === true;
+        const originAuthenticated = isALInboundOriginAuthenticated({ source, proofVerified });
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
         const read = await admissionStore.readIncomingMessage({
             msg: admitted,
@@ -143,17 +149,34 @@ export class ALInboundMessageAdmission {
         if (this.shutdown.signal.aborted) {
             return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' }, wroteWork: false });
         }
-        const plan = planner(admitted, source, computeALInboundPlanningObservations(read));
+        const readmission = isALInboundOriginAuthenticatedReadmission({
+            msg: admitted,
+            ackAlgo: prePlan.ack.algo,
+            originAuthenticated,
+            owner: read.observations.messageOwner
+        });
+        const plan = planner(admitted, source, computeALInboundPlanningObservations(read, readmission));
         const deadline = resolveALMessageExpireAtMs(admitted, plan.effective) ??
             nowMs + read.retention.durableEffectTtlMs;
         if (deadline <= clock.nowMs()) {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
+        if (readmission && await this.isFirstDeliveryQueued(admitted)) {
+            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
+        }
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
         const recordedParentPresent = read.pendingAck === undefined ||
             (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true);
-        const computed = computeALInboundAdmission({ read, plan, canForward, recordedParentPresent, facts });
+        const computed = computeALInboundAdmission({
+            read,
+            plan,
+            canForward,
+            recordedParentPresent,
+            originAuthenticated,
+            readmission,
+            facts
+        });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);
@@ -173,10 +196,7 @@ export class ALInboundMessageAdmission {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
         if (status === 'conflict') {
-            return Either.ofRight({
-                kind: 'conflict',
-                pending: { kind: 'admit-message', msg: toALInboundMessageWithDeadline(admitted, deadline), source }
-            });
+            return Either.ofRight(toPendingAttempt(admitted, deadline, source));
         }
         this.recordResyncRequired(msg, source, plan);
         this.recordOrderingPosition(msg, source, plan);
@@ -185,6 +205,18 @@ export class ALInboundMessageAdmission {
             acceptance: toAdmissionAcceptance(plan),
             wroteWork: signed.durableEffects.length > 0
         });
+    }
+
+    /**
+     * Whether the first admission's local delivery of `msg` still waits to run. A readmission waits for it (D756): the
+     * first delivery reads the stored message when it runs, so the application gets the first copy's content, then the
+     * origin's, each once.
+     */
+    private async isFirstDeliveryQueued(msg: ALMessage): Promise<boolean> {
+        const entry = await this.dependencies.workPort.readEntry(
+            toALInboundWorkKey(this.dependencies.admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg, false))
+        );
+        return entry !== undefined && NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status);
     }
 
     /** After the commit, so the owner is told of a resynchronization the store has already NACKed. */
@@ -360,6 +392,18 @@ function toAttemptReplay(
         admission: shutDown
             ? undefined
             : Either.ofRight(attempt.kind === 'conflict' ? { kind: 'pending-admission' } : attempt.acceptance)
+    };
+}
+
+/** An attempt retained to run again: its commit conflicted, or it waits on an earlier delivery of its message. */
+function toPendingAttempt(
+    msg: ALMessage,
+    deadline: number,
+    source: ALInboundMessageRuntime.Source
+): ALInboundMessageAdmission.Attempt {
+    return {
+        kind: 'conflict',
+        pending: { kind: 'admit-message', msg: toALInboundMessageWithDeadline(msg, deadline), source }
     };
 }
 

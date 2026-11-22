@@ -335,8 +335,10 @@ async function admitMessage(
         prePlan: planIncomingMessage(msg, source, { nowMs })
     });
     const bundle = computeALInboundAdmission({
+        originAuthenticated: false,
+        readmission: false,
         read,
-        plan: planIncomingMessage(msg, source, computeALInboundPlanningObservations(read)),
+        plan: planIncomingMessage(msg, source, computeALInboundPlanningObservations(read, false)),
         canForward: false,
         recordedParentPresent: true,
         facts: readALInboundEffectFacts(nowMs, {

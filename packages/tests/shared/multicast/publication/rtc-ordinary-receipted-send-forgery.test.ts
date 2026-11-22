@@ -98,7 +98,7 @@ describe('a forged copy of an ordinary receipted RTC room send (S8-i, D590)', ()
         expect(readConfirmedDelivery(room, message)).toEqual({ confirmed: true, delivered: [originCopy.payload.resource] });
     });
 
-    it('does not let a forged unreceipted copy turn the origin\'s receipted copy into an acknowledged duplicate', async () => {
+    it('delivers the forged unreceipted content and then the origin\'s, and confirms the recipient for the origin\'s copy', async () => {
         const room = await createForgeryRoom();
         const { message, originCopy } = await sendReceiverToRecipient(room, 'downgraded-forgery');
         // The forger cannot carry the origin's proof onto other content, and a copy that asks no receipt needs none.
@@ -112,10 +112,14 @@ describe('a forged copy of an ordinary receipted RTC room send (S8-i, D590)', ()
         await room.recipient.receive(originCopy, 'a');
         await acceptEach(room.origin, await room.recipient.readSent('a'));
 
-        // Today: the forged copy asks for no receipt, so `c` answers nothing to `b`; the origin's copy is then a
-        // duplicate that `c` still answers `delivered`, and the origin's receipt confirms `c` on content it never had.
+        // Ruling 1: the origin's authenticated copy is no duplicate of the forged admission. It is delivered and answered
+        // as a first copy, so the application sees both contents and the receipt confirms `c` for the origin's.
         expect(toControlTuples(await room.recipient.readSentControls('b'))).toEqual([]);
-        expect(readConfirmedDelivery(room, message)).toEqual({ confirmed: true, delivered: [originCopy.payload.resource] });
+        expect(toControlTuples(await room.recipient.readSentControls('a'))).toEqual([['ack', 'c', 'delivered']]);
+        expect(readConfirmedDelivery(room, message)).toEqual({
+            confirmed: true,
+            delivered: [FORGED_RESOURCE, originCopy.payload.resource]
+        });
     });
 
     it('under a leader receipt, never reaches the director\'s application and draws no delivered ACK', async () => {
@@ -301,7 +305,7 @@ async function readOriginReceipt(origin: RtcOriginOverlayFixture, message: ALMes
 }
 
 /** Whether the origin's last acknowledgement confirms the recipient `c`, beside what `c`'s application received. */
-function readConfirmedDelivery(room: ForgeryRoom, message: ALMessage): { confirmed: boolean; delivered: readonly unknown[]; } {
+function readConfirmedDelivery(room: ForgeryRoom, message: ALMessage): { confirmed: boolean; delivered: readonly string[]; } {
     const last = room.origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.msgId === message.id.msgId)
         .at(-1);
     return {
@@ -310,7 +314,8 @@ function readConfirmedDelivery(room: ForgeryRoom, message: ALMessage): { confirm
     };
 }
 
-function readDeliveredResources(fixture: RtcRelayOverlayFixture): readonly unknown[] {
+/** Each payload the session's application received, as the JSON string its envelope carries. */
+function readDeliveredResources(fixture: RtcRelayOverlayFixture): readonly string[] {
     return fixture.delivered.map((message) => message.payload.resource);
 }
 

@@ -256,11 +256,19 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
     const prePlan = planALMessageHandling(message, context);
     const read = await store.readIncomingMessage({ selfPeerId: 'receiver', orderingObserver: 'addressed', msg: message, source, nowMs, prePlan });
-    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
+    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read, false) });
     return {
         read,
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts: readEffectFacts(nowMs), canForward: false, recordedParentPresent: true })
+        bundle: computeALInboundAdmission({
+            originAuthenticated: false,
+            readmission: false,
+            read,
+            plan,
+            facts: readEffectFacts(nowMs),
+            canForward: false,
+            recordedParentPresent: true
+        })
     };
 }
 

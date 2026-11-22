@@ -169,7 +169,14 @@ class AcknowledgementFixture {
                 mutations: [
                     {
                         kind: 'set-msg-owner',
-                        value: { msgId: 'subject', senderId: 'origin', source: this.source, supersedenceKey: null, deliveredLocally: true },
+                        value: {
+                            msgId: 'subject',
+                            senderId: 'origin',
+                            source: this.source,
+                            supersedenceKey: null,
+                            deliveredLocally: true,
+                            originAuthenticated: false
+                        },
                         expireAtTimestamp
                     },
                     {

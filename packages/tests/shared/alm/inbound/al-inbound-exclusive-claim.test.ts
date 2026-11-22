@@ -309,7 +309,7 @@ async function readClaimDecision(
         nowMs,
         prePlan: planALMessageHandling(message, context)
     });
-    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
+    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read, false) });
     const facts = readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'server-1',
@@ -317,7 +317,7 @@ async function readClaimDecision(
     });
     return {
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true })
+        bundle: computeALInboundAdmission({ originAuthenticated: false, readmission: false, read, plan, facts, canForward: false, recordedParentPresent: true })
     };
 }
 

@@ -289,7 +289,7 @@ async function seedPendingAcknowledgement(store: ALInboundAdmissionStore, messag
         observations: (await readInboundTestDecisionSurface(store, message)).observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true },
+            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true, originAuthenticated: false },
             expireAtTimestamp
         }, {
             kind: 'set-control-pending',

@@ -35,7 +35,7 @@ const message = newALUnicastMessage({
 function toNackReasons(reason: ALInboundNackPlanReason): readonly ALNackReason[] {
     const planned = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', fromPeerId: 'origin' });
     const plan = { ...planned, nack: { enabled: true, toPeerId: 'origin', reason, missingRanges: [] } };
-    return toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin' })
+    return toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin', readmission: false })
         .flatMap((effect) => effect.payload.kind === 'send-nack' ? [effect.payload.reason] : []);
 }
 
@@ -48,7 +48,7 @@ function toEffectKindsBelowPosition(reason: ALInboundNackPlanReason): readonly s
         repair: { enabled: true, algo: 'retransmit' as const },
         orderingRuntime: { status: 'stale' as const, trackKey: 'track', seq: 2, missingRanges: [], releasableSeqs: [] }
     };
-    return toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin' })
+    return toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin', readmission: false })
         .map((effect) => effect.payload.kind);
 }
 
@@ -73,7 +73,7 @@ describe('inbound NACK effects', () => {
         });
         const plan = { ...planned, nack: { enabled: true, toPeerId: 'origin', missingRanges: [] } };
 
-        expect(toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin' }))
+        expect(toALInboundNegativeControlEffects({ msg: message, plan, carrier: 'rtc', fromPeerId: 'origin', readmission: false }))
             .toEqual([]);
     });
 });

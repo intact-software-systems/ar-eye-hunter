@@ -176,9 +176,28 @@ export async function readALInboundMessageOwner(
     );
 }
 
-/** A row written before `deliveredLocally` existed reads as delivered, the only outcome such a build recorded. */
+/**
+ * The owner row as it is written: `originAuthenticated` only when the admission was, so an absent key is the row's
+ * shape for one that was not, and every row an older build wrote reads that way.
+ */
+export type ALStoredInboundMessageOwnerRow = Omit<ALInboundMessageOwner, 'originAuthenticated'> & {
+    readonly originAuthenticated?: true;
+};
+
+export function toALStoredInboundMessageOwnerRow(owner: ALInboundMessageOwner): ALStoredInboundMessageOwnerRow {
+    const { originAuthenticated, ...row } = owner;
+    return originAuthenticated ? { ...row, originAuthenticated } : row;
+}
+
+/**
+ * A row written before `deliveredLocally` existed reads as delivered, the only outcome such a build recorded; one
+ * without `originAuthenticated` reads as an admission that was not origin-authenticated.
+ */
 export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {
-    const owner = decodeALAdmissionRecord(value, AL_INBOUND_MESSAGE_OWNER_FIELDS, ['deliveredLocally']);
+    const owner = decodeALAdmissionRecord(value, AL_INBOUND_MESSAGE_OWNER_FIELDS, [
+        'deliveredLocally',
+        'originAuthenticated'
+    ]);
     const msgId = decodeALAdmissionString(owner.msgId);
     const senderId = decodeALAdmissionString(owner.senderId);
     if (
@@ -193,12 +212,16 @@ export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessa
     if (owner.deliveredLocally !== undefined && typeof owner.deliveredLocally !== 'boolean') {
         throw new TypeError('Stored inbound message owner local delivery is invalid');
     }
+    if (owner.originAuthenticated !== undefined && owner.originAuthenticated !== true) {
+        throw new TypeError('Stored inbound message owner origin authentication is invalid');
+    }
     return {
         msgId,
         senderId,
         source: decodeALInboundSource(owner.source),
         supersedenceKey: owner.supersedenceKey,
-        deliveredLocally: owner.deliveredLocally ?? true
+        deliveredLocally: owner.deliveredLocally ?? true,
+        originAuthenticated: owner.originAuthenticated === true
     };
 }
 

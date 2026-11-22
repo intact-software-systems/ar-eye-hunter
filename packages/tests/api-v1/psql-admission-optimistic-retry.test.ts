@@ -66,7 +66,8 @@ describe('PSql admission optimistic retry', () => {
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }]
@@ -100,7 +101,8 @@ describe('PSql admission optimistic retry', () => {
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }]

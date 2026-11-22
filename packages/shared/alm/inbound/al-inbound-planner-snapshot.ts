@@ -53,10 +53,18 @@ export interface ALInboundStoredPlannerSnapshot {
     readonly supersedenceTrackTtlMs: number;
 }
 
-export function computeALInboundPlanningObservations(read: ALInboundPlannerSnapshot): ALMessagePlanningObservations {
+/**
+ * A copy is a duplicate while its dedup row lives, unless it is an origin-authenticated readmission over a first
+ * admission that was not (`isALInboundOriginAuthenticatedReadmission`).
+ */
+export function computeALInboundPlanningObservations(
+    read: ALInboundPlannerSnapshot,
+    readmission: boolean
+): ALMessagePlanningObservations {
     return {
         nowMs: read.nowMs,
-        dedupSeen: !read.admitted && read.dedupExpiresAt !== undefined && read.dedupExpiresAt > read.nowMs,
+        dedupSeen: !read.admitted && read.dedupExpiresAt !== undefined && read.dedupExpiresAt > read.nowMs &&
+            !readmission,
         claimHolderPeerId: read.admitted ? undefined : read.claimHolderPeerId,
         orderingObservation: read.admitted
             ? undefined
