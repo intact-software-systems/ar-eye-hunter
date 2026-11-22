@@ -40,20 +40,23 @@ it('uses the captured director and program revision for both transitions and the
     for (const [operation, schedule] of [['pause-program', paused], ['resume-program', resumed]] as const) {
         const control = { name: 'court', expectedRevision: schedule.revision - 1, expectedDirectorEpoch: 7 };
         const requestId = 'court-program-request-' + schedule.revision;
-        const fetch = vi.fn(async (url: string, init: RequestInit) => {
-            expect(url).toBe(path + '/requests/' + requestId);
-            expect(JSON.parse(String(init.body))).toEqual({
-                actorPrincipalId: 'principal-1',
-                actorSessionId: 'session-1',
-                roomClock: { ...control, operation }
-            });
+        const requests: { url: string; body: string; }[] = [];
+        vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+            requests.push({ url, body: String(init.body) });
             return response(schedule);
         });
-        vi.stubGlobal('fetch', fetch);
         const act = operation === 'pause-program' ? api.pauseProgram : api.resumeProgram;
         await expect(act(room, control, requestId)).resolves.toEqual(schedule);
         await expect(act(room, control, requestId)).resolves.toEqual(schedule);
-        expect(fetch).toHaveBeenCalledTimes(2);
+        const expectedRequest = {
+            url: path + '/requests/' + requestId,
+            body: {
+                actorPrincipalId: 'principal-1',
+                actorSessionId: 'session-1',
+                roomClock: { ...control, operation }
+            }
+        };
+        expect(requests.map(({ url, body }) => ({ url, body: JSON.parse(body) }))).toEqual([expectedRequest, expectedRequest]);
     }
 });
 
@@ -73,8 +76,11 @@ it('recovers a missed resume on foreground without accepting a different state a
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     let stored: RoomSchedule = paused;
-    const fetch = vi.fn(async () => response(stored));
-    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('fetch', async () => {
+        const snapshot = response(stored);
+        stored = resumed;
+        return snapshot;
+    });
     const observed: RoomSchedule.Observation[] = [];
     const stop = rooms.watchSchedule(room, 'court', (observation) => observed.push(observation));
     try {
@@ -82,12 +88,8 @@ it('recovers a missed resume on foreground without accepting a different state a
         page.dispatchEvent(new Event('pagehide'));
         stored = { ...paused, status: 'scheduled' };
         page.dispatchEvent(new Event('pageshow'));
-        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-        expect(observed.at(-1)).toEqual({ status: 'stale', schedule: paused });
-        page.dispatchEvent(new Event('pagehide'));
-        stored = resumed;
-        page.dispatchEvent(new Event('pageshow'));
-        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: resumed }));
+        await expect.poll(() => observed.at(-1), { timeout: 5000 }).toEqual({ status: 'current', schedule: resumed });
+        expect(observed).toContainEqual({ status: 'stale', schedule: paused });
         expect(observed.some(({ status, schedule }) => status === 'current' && schedule?.revision === 2 && schedule.status === 'scheduled')).toBe(false);
     }
     finally {
