@@ -495,6 +495,36 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
         ]);
     });
 
+    it.each([
+        { recorded: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1, written: [AL_MESSAGE_RESOURCE_LIMITS.collectionEntries] },
+        { recorded: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries, written: [] }
+    ])('a slot holding $recorded pairs records a new parent\'s pair up to the bound its decoder reads, and none past it', async ({ recorded, written }) => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage(`buffered-at-cap-${recorded}`, 2);
+        const fromRelay = { peer: RESHAPED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        const buffered = await computeArrival(admissionStore, msg, fromRelay);
+        const filled = buffered.mutations.map((mutation) =>
+            mutation.kind === 'set-buffered'
+                ? {
+                    ...mutation,
+                    snapshot: {
+                        ...mutation.snapshot,
+                        copyCarriers: [
+                            ...mutation.snapshot.copyCarriers,
+                            ...Array.from({ length: recorded - 1 }, (_, index) => ({ carrier: 'ws' as const, ackToPeerId: `sender-${index}` }))
+                        ]
+                    }
+                }
+                : mutation
+        );
+        expect(await admissionStore.commitBundle({ ...buffered, mutations: filled })).toBe('committed');
+
+        const reshaped = await computeArrival(admissionStore, toRetriedHopCopy(msg), { ...fromRelay, source: RTC_FROM_NEW_PARENT });
+
+        expect(toBufferedCopyCarriers(reshaped).map((copyCarriers) => copyCarriers.length)).toEqual(written);
+        expect(await admissionStore.commitBundle(reshaped)).toBe('committed');
+    });
+
     it('records nothing more for a same-carrier copy of a message it holds buffered: its carrier is already on the slot', async () => {
         const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
         const msg = createFrozenReceiverMessage('buffered-same-carrier', 2);

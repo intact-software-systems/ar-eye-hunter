@@ -1,3 +1,4 @@
+import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
@@ -39,7 +40,7 @@ export function toALInboundRecordedCopyMutation(
 /**
  * A copy of a held message from a carrier and peer pair its slot does not record yet adds that pair, so the release
  * answers it too: the sender handed the message over and holds its receipt on that carrier now, or a reshape gave this
- * peer a new parent that holds its own.
+ * peer a new parent that holds its own. A slot already at the bound its decoder reads records no more.
  */
 export function toALInboundCopyCarrierMutations(
     read: ALInboundMessageReadDto,
@@ -49,6 +50,7 @@ export function toALInboundCopyCarrierMutations(
     const slot = read.bufferedSnapshots.find((snapshot) => snapshot.seq === read.msg.ordering?.seq);
     if (
         slot === undefined ||
+        slot.copyCarriers.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
         slot.copyCarriers.some((copy) => copy.carrier === carrier && copy.ackToPeerId === toPeerId)
     ) {
         return [];

@@ -412,7 +412,9 @@ message back. The buffered slot records instead every carrier and peer pair that
 carrier with the peer its copy acknowledges to, the slot's own pair first, each pair once): a copy from a pair the slot
 does not record yet adds it, and the release sends `delivered` to each recorded pair once. A sender that handed the
 message over (D56) holds its receipt on the carrier it moved to, and a parent a reshape gave this peer while the gap
-held holds its own on the same carrier as the first, so each receipt is confirmed once the message is delivered.
+held holds its own on the same carrier as the first, so each receipt is confirmed once the message is delivered. A
+slot holding `collectionEntries` (256) pairs, the most its decoder reads, records no further pair, whose copy then
+draws no answer at the release.
 
 No retried copy is delivered locally twice. A next hop outside the frozen audience reads complete at the origin once
 its own terminal hop-end arrives, which confirms no recipient but completes its hop in the origin's hop view, so a
