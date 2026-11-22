@@ -79,8 +79,8 @@ export function validateALInboundNackAdmission(
  * nothing of: the NACK is the child's own word, the row is left as it was, and the origin judges it (6d).
  */
 function isPassedUpward(candidate: ALInboundNackAdmissionCandidate): boolean {
-    const { nack, isLayoutChild } = candidate.read;
-    return nack.reason === 'gap' && isLayoutChild && isALOwnWord(nack);
+    const { nack, layoutParentPeerId } = candidate.read;
+    return nack.reason === 'gap' && layoutParentPeerId !== undefined && isALOwnWord(nack);
 }
 
 /**

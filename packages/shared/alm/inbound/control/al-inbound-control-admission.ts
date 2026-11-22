@@ -246,8 +246,9 @@ export class ALInboundControlAdmission {
             pending: surface.pendingAck,
             acks: surface.acks,
             nacks: surface.nacks,
-            isLayoutChild: surface.pendingAck?.expectedFromPeerIds.includes(nack.fromPeerId) !== true &&
-                this.isLayoutChildGapNack(nack),
+            layoutParentPeerId: surface.pendingAck?.expectedFromPeerIds.includes(nack.fromPeerId) === true
+                ? undefined
+                : this.readLayoutParentPeerId(nack),
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -441,7 +442,7 @@ export class ALInboundControlAdmission {
     private async readLayoutChildSurface(
         nack: ALInboundNackAdmissionRead['nack']
     ): Promise<(ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; }) | undefined> {
-        return this.isLayoutChildGapNack(nack)
+        return this.readLayoutParentPeerId(nack) !== undefined
             ? await this.readDecisionSurface({
                 msgId: nack.msgId,
                 fromPeerId: nack.fromPeerId,
@@ -450,8 +451,9 @@ export class ALInboundControlAdmission {
             : undefined;
     }
 
-    private isLayoutChildGapNack(nack: ALInboundNackAdmissionRead['nack']): boolean {
-        return nack.reason === 'gap' && this.readGapNackParent?.(nack) !== undefined;
+    /** This relay's current upstream peer for a gap NACK from its layout child (6d); none for any other NACK. */
+    private readLayoutParentPeerId(nack: ALInboundNackAdmissionRead['nack']): string | undefined {
+        return nack.reason === 'gap' ? this.readGapNackParent?.(nack)?.peerId : undefined;
     }
 
     /** The surface of a child's control: none for a peer that owes no tracked message, never one without provenance. */

@@ -39,10 +39,11 @@ export interface ALInboundNackAdmissionRead {
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     /**
-     * Read only for a gap NACK from a sender the row does not wait on: the lane names that sender this relay's child in
-     * its accepted layout, as a new parent's is after a reshape (6d); `false` for any other NACK.
+     * Read only for a gap NACK from a sender the row does not wait on: this relay's current upstream peer toward the
+     * origin in an accepted layout that names that sender its child, as a new parent's is after a reshape (6d); absent
+     * for any other NACK, which goes to the row's parent.
      */
-    readonly isLayoutChild: boolean;
+    readonly layoutParentPeerId: string | undefined;
     readonly nowMs: number;
     readonly controlMsgId: string;
     readonly traceId: string;
@@ -90,7 +91,7 @@ export function computeALInboundNackAdmission(
                 msgId: read.nack.msgId,
                 owner: read.owner,
                 relayPeerId: read.nack.toPeerId,
-                pending: row,
+                pending: { ...row, toPeerId: read.layoutParentPeerId ?? row.toPeerId },
                 nowMs: read.nowMs,
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
@@ -206,7 +207,7 @@ function toALInboundRowlessGapNackCandidate(
             pending: undefined,
             acks: [],
             nacks: [],
-            isLayoutChild: false,
+            layoutParentPeerId: undefined,
             nowMs,
             controlMsgId,
             traceId

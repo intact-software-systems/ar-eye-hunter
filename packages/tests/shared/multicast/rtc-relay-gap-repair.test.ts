@@ -117,6 +117,12 @@ const LEAF_BESIDE_CARRYING_B: SessionNextHops = { a: ['r', 'b'], r: ['a', 'c'], 
 /** The layout a reshape promotes: the leaf `c` hangs below `b`, which already carries the track to `d`. */
 const LEAF_BELOW_CARRYING_B: SessionNextHops = { a: ['r', 'b'], r: ['a'], b: ['a', 'c', 'd'], c: ['b'], d: ['b'] };
 
+/** `r` carries the track to the leaf `c` and to `b`, which relays it to a second subscriber `d`. */
+const LEAF_AND_CARRYING_B_BELOW_R: SessionNextHops = { a: ['r'], r: ['a', 'c', 'b'], b: ['r', 'd'], c: ['r'], d: ['b'] };
+
+/** The layout a reshape promotes once `r` leaves: `b` hangs below the origin and carries the leaf `c` beside `d`. */
+const LEAF_BELOW_CARRYING_B_WITHOUT_R: SessionNextHops = { a: ['b'], b: ['a', 'c', 'd'], c: ['b'], d: ['b'] };
+
 const RELAY_NAMESPACE = 'relay-gap-repair';
 
 const CHAIN_STEP_MS = 250;
@@ -671,6 +677,50 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
 
         expect(rowBefore).toMatchObject({ expectedFromPeerIds: ['d'] });
         expect(await secondRelay.readPendingAck({ msgId: revealing.id.msgId, fromPeerId: 'd' })).toEqual(rowBefore);
+        expect(readRelayedNacks(toPeerControls(relayed))).toEqual([
+            { control: ['nack', 'c', 'gap'], orderingKey: readLeafTrackKey(gap), missingRanges: '2-2' }
+        ]);
+        expect(outcomes.get(relayed.find((control) => findGapNack([control]) !== undefined)!)).toBe('committed');
+    });
+
+    it('a new parent whose row\'s parent has left passes the leaf\'s gap NACK to its current upstream peer', async () => {
+        const gap = await createGapChain({
+            ack: 'receiver',
+            originLayout: LEAF_AND_CARRYING_B_BELOW_R,
+            secondSubscriber: true,
+            relayChildPeerIds: ['c', 'b'],
+            relayLayout: createOriginOverlay(LEAF_AND_CARRYING_B_BELOW_R.r!, LEAF_AND_CARRYING_B_BELOW_R),
+            secondRelay: {
+                neighbourPeerIds: ['r', 'd', 'a', 'c'],
+                initialOverlay: createOriginOverlay(LEAF_AND_CARRYING_B_BELOW_R.b!, LEAF_AND_CARRYING_B_BELOW_R)
+            },
+            leaf: {
+                neighbourPeerIds: ['r', 'b'],
+                initialOverlay: createOriginOverlay(LEAF_AND_CARRYING_B_BELOW_R.c!, LEAF_AND_CARRYING_B_BELOW_R)
+            }
+        });
+        const secondRelay = gap.secondRelay!;
+        const revealing = gap.frames[2]!;
+        await forwardTrack(gap, [1, 2, 3]);
+        await drainUntil(async () => (await gap.relay.readSent('b')).length >= gap.frames.length);
+        await deliverEach(await gap.relay.readSent('b'), secondRelay, 'r');
+        await drainUntil(async () => (await secondRelay.readSent('d')).length >= gap.frames.length);
+        await receiveAtLeaf(gap, [1, 3]);
+        await readLeafControls(gap);
+        const rowBefore = await secondRelay.readPendingAck({ msgId: revealing.id.msgId, fromPeerId: 'd' });
+
+        // `r` leaves: the reshape hangs `b` below the origin, and neither `b` nor the leaf keeps an edge to `r`.
+        promoteLayout(gap, LEAF_BELOW_CARRYING_B_WITHOUT_R, [gap.leaf, secondRelay]);
+        await gap.leaf.closeEdge('r');
+        await secondRelay.closeEdge('r');
+        await advanceChainBy(2_000);
+        const relayedBefore = (await secondRelay.readSent('a')).length;
+        await deliverEach(await gap.leaf.readSent('b'), secondRelay, 'c');
+        await drainUntil(async () => findGapNack((await secondRelay.readSent('a')).slice(relayedBefore)) !== undefined);
+        const relayed = (await secondRelay.readSent('a')).slice(relayedBefore);
+        const outcomes = await acceptEachAtOrigin(gap, relayed);
+
+        expect(rowBefore).toMatchObject({ toPeerId: 'r', expectedFromPeerIds: ['d'] });
         expect(readRelayedNacks(toPeerControls(relayed))).toEqual([
             { control: ['nack', 'c', 'gap'], orderingKey: readLeafTrackKey(gap), missingRanges: '2-2' }
         ]);

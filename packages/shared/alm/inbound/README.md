@@ -717,7 +717,8 @@ holds a pending row that waits on that child; about a stored message that asked 
 one it passes the copy down to (6c); and, as a new parent after a reshape does, while the NACK is the child's own word
 and the child is its child in its accepted layout (6d): about a message it holds nothing of, to its own upstream peer
 ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), and about one its receipt row
-holds for other children, to that row's parent with the row left as it was. Neither forward records anything. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
+holds for other children, to that same upstream peer, not the row's parent a reshape may have removed, with the row
+left as it was. Neither forward records anything. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
 repair to the relay, a ready room neighbour, and while the receipt still owes the recipient (or, with no receipt, the
 audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A
 sequence past the window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the

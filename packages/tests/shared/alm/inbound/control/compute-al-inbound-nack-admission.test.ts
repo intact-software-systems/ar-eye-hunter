@@ -96,7 +96,7 @@ function computeArrival(
         pending: row,
         acks,
         nacks,
-        isLayoutChild: false,
+        layoutParentPeerId: undefined,
         nowMs: NOW_MS,
         controlMsgId: 'forwarded',
         traceId: 'trace-relayed-nack'
@@ -142,6 +142,21 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
     it('refuses a gap NACK from a child the row does not wait on', () => {
         expect(validateALInboundNackAdmission(computeArrival({ reason: 'gap', fromPeerId: 'stranger' })))
             .toEqual([{ code: 'unauthorized', message: 'Inbound NACK sender has no pending obligation' }]);
+    });
+
+    it('passes a layout child\'s own gap NACK the row does not wait on to its current upstream peer, not the row\'s parent (6d)', () => {
+        const arrival = { reason: 'gap', fromPeerId: 'leaf', logicalRecipientPeerId: 'leaf' } as const;
+        const candidate = computeALInboundNackAdmission(
+            { ...computeArrival(arrival).read, layoutParentPeerId: 'new-parent' },
+            RETENTION
+        );
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([]);
+        expect(toALInboundNackCommitBundle(candidate).mutations).toEqual([]);
+        expect(toUpwardControls(candidate)).toEqual([{
+            type: 'nack',
+            payload: { ...toChildNack(arrival), fromPeerId: 'relay', toPeerId: 'new-parent' }
+        }]);
     });
 
     it('refuses a gap NACK for a recipient whose confirmation the relay already forwarded', () => {

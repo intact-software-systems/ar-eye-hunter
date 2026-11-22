@@ -681,7 +681,7 @@ async function commitChildControl(
         ? toALInboundControlCommitBundle(computeALInboundControlAdmission({ ...read, ack: control.payload }, retention))
         : toALInboundNackCommitBundle(
             computeALInboundNackAdmission(
-                { ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) }, isLayoutChild: false },
+                { ...read, nack: { ...control.payload, reason: toRelayedNackReason(control.payload.reason) }, layoutParentPeerId: undefined },
                 retention
             )
         );
