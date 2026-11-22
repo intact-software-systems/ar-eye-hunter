@@ -100,7 +100,7 @@ export class GroupQuickJoinService {
                 resolvedJoinCode: null,
                 joinCodeVerifier: null,
                 internalAuthority: 'none',
-                capacity: this.config.capacity,
+                capacity: { defaultMaxMembers: this.config.capacity.defaultMaxMembers },
                 authenticatedAuthority: {
                     principalId: command.actorPrincipalId,
                     sessionId: command.actorSessionId
