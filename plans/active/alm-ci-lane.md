@@ -438,6 +438,28 @@ uploaded both artifacts (run 45009025510):
 - The failed scenarios are not diagnosed by this plan. They are the ledger's first entries, and each
   gets a fix slice of its own.
 
+## What slice 3's ready run found (2026-11-22)
+
+At the head `a5f1b9128` the full scope ran with `rtc` as two jobs on PostgreSQL (run 45039430280):
+
+| Job                                           | Time     | Scenarios       | Failed                                                   |
+| --------------------------------------------- | -------- | --------------- | -------------------------------------------------------- |
+| `rtc`: two-agent, addressed, same-context     | 19.3 min | 37 of 38 passed | two-agent: `churn-bounded-tracks`                        |
+| `rtc`: three-agent, same-principal, four-role | 20.4 min | 29 of 31 passed | four-role: `subscription-ordered-omission`, `-reconnect` |
+| `rtc-with-ws-fallback`                        | 18.6 min | 50 of 50 passed | none                                                     |
+| `ws`                                          | 25.7 min | 59 of 60 passed | four-role: `subscription-ordered-reconnect`              |
+
+- Slice 3's acceptance is met: two `rtc` jobs, each under 30 minutes, which the ledger reads as one
+  `rtc` run with no reading issue. Each job's plan file names all six families, and the artifact
+  names ending in a family list (commas included) upload and download.
+- The three failed `rtc` scenarios are the same three as in the second ready run of slice 1.
+- A skipped matrix job is listed under its unevaluated name, `ALM conformance observation
+  (${{ matrix.carrier }}…)`. The ledger's job-name pattern refuses it.
+- The Release Gate of that run failed on one test: `tests-typecheck-maintained-project.test.ts`
+  copies `scripts/check-tests-typecheck.mjs` into a temporary project, and slice 2 made that script
+  import a module the test did not copy. Slice 2's focused test runs did not include that file. It
+  is fixed on the ledger branch. The Release Gate has not run on the fixed head.
+
 ## What merging slice 1 does to open pull requests
 
 A pull request's workflows come from its merge with `main`, but the Release Gate checks out the
