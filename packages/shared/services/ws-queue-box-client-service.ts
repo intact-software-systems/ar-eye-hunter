@@ -292,6 +292,7 @@ export class WsQueueBoxClientService {
                 },
                 onResyncRequired: this.dependencies.onResyncRequired,
                 readUpstreamPeerId: () => undefined,
+                isLayoutChildPeer: () => false,
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );

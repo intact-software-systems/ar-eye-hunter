@@ -365,6 +365,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
     const engine = new InboxOutboxEngine();
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'rtc',

@@ -131,6 +131,7 @@ function createStores(sql: PostgresSql, name: string): ALInboundRuntimeStores {
 function createRuntime(stores: ALInboundRuntimeStores, controls: ALMessage[]): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'every-track',
         carrier: 'ws',

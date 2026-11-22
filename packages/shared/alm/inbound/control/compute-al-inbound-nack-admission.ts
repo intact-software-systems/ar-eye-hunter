@@ -120,8 +120,8 @@ export function computeALInboundNackAdmission(
 
 /**
  * A relay keeps the parent it knows for a child's gap NACK while that parent is a ready room peer, and passes the NACK
- * to its current upstream peer only once that parent is gone: the arrival tree the known parents follow cannot cycle,
- * and a gone peer is on no cycle.
+ * to its current upstream peer only once that parent is gone. The admission lets only a child's own word take that
+ * fallback, so a NACK takes it at most once and otherwise follows the arrival tree, which cannot cycle.
  */
 function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInboundGapNackRoute | undefined): string {
     return route === undefined || route.knownParentReady

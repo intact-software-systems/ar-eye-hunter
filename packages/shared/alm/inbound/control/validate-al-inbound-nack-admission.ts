@@ -5,6 +5,7 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-res
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { isALOwnWord } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type {
+    ALInboundGapNackRoute,
     ALInboundNackAdmissionCandidate,
     ALInboundUnheldGapNackAdmissionRead,
     ALInboundUnreceiptedGapNackAdmissionRead
@@ -24,6 +25,11 @@ const OUTSIDE_FROZEN_AUDIENCE: ALMessageRejection = {
 const MISSING_GAP_ORDERING_HINTS: ALMessageRejection = {
     code: 'malformed',
     message: 'Inbound gap NACK carries no ordering hints to forward'
+};
+
+const PARENT_GONE_FOR_RELAYED_NACK: ALMessageRejection = {
+    code: 'unauthorized',
+    message: 'Inbound NACK a child relayed has no parent to go to: the parent this relay knows is gone'
 };
 
 /**
@@ -60,6 +66,9 @@ export function validateALInboundNackAdmission(
     }
     if (nack.reason === 'gap' && !hasGapOrderingHints(nack)) {
         issues.push(MISSING_GAP_ORDERING_HINTS);
+    }
+    if (hasNoParentFor(nack, candidate.read.gapRoute)) {
+        issues.push(PARENT_GONE_FOR_RELAYED_NACK);
     }
     if (
         nack.reason !== 'gap' &&
@@ -127,7 +136,19 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     else if (nack.orderingKey !== toALOrderingTrackKey(msg)) {
         issues.push(rejectInboundNack('Inbound NACK names a track the message is not on'));
     }
+    if (hasNoParentFor(nack, read.route)) {
+        issues.push(PARENT_GONE_FOR_RELAYED_NACK);
+    }
     return issues;
+}
+
+/**
+ * Once the parent this relay knows is gone, only a child's own word passes to the current upstream peer, as on the
+ * row-less path (6d). A NACK forwarded upward is not own word at the next relay, so it goes on only to that relay's
+ * known parent: a NACK takes the upstream fallback at most once, and no cycle of relays can pass it round.
+ */
+function hasNoParentFor(nack: ALNackPayload, route: ALInboundGapNackRoute | undefined): boolean {
+    return route !== undefined && !route.knownParentReady && !isALOwnWord(nack);
 }
 
 /**

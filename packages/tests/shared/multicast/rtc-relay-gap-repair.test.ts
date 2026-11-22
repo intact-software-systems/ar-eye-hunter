@@ -49,6 +49,8 @@ interface GapChain {
     readonly secondRelay: RtcRelayOverlayFixture | undefined;
     /** The relay `u` beside them; absent, none. */
     readonly thirdRelay: RtcRelayOverlayFixture | undefined;
+    /** The relay `y` beside them; absent, none. */
+    readonly fourthRelay: RtcRelayOverlayFixture | undefined;
     readonly leaf: RtcRelayOverlayFixture;
     /** The relay session's inbound rows. */
     readonly relayRows: ALAdmissionMemoryState;
@@ -74,6 +76,8 @@ interface GapChainInput {
     readonly secondRelay?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
     /** A third publish-only relay `u` beside `b`, in the room from the start; absent, none. */
     readonly thirdRelay?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
+    /** A fourth publish-only relay `y`, in the room from the start; absent, none. */
+    readonly fourthRelay?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay'>;
 }
 
 /** The frames each link had carried when they were read. */
@@ -150,6 +154,12 @@ const RELAY_CYCLE_VIEWS: Readonly<Record<'r' | 'b' | 'u', SessionNextHops>> = {
     b: { a: ['r'], r: ['a', 'b', 'c'], b: ['r', 'u'], u: ['b', 'd'], c: ['r'], d: ['u'] }
 };
 
+/** The track runs down one line, `a`, `r`, `b`, `u`, `y` and the leaf `c`. */
+const LINE_BELOW_R: SessionNextHops = { a: ['r'], r: ['a', 'b'], b: ['r', 'u'], u: ['b', 'y'], y: ['u', 'c'], c: ['y'] };
+
+/** The layout `b` and `y` promote once `r` leaves: `y` below the origin, `b` below `y`, and `u` below `b`. */
+const B_BELOW_Y: SessionNextHops = { a: ['y'], y: ['a', 'b', 'c'], b: ['y', 'u'], u: ['b'], c: ['y'] };
+
 const RELAY_NAMESPACE = 'relay-gap-repair';
 
 const CHAIN_STEP_MS = 250;
@@ -157,7 +167,7 @@ const CHAIN_STEP_MS = 250;
 /** Real event-loop turns in a row that change nothing before a drain calls the chain quiet. */
 const QUIET_TURNS = 5;
 
-/** The most real event-loop turns one drain runs: as many as `drainUntil` gives a condition. */
+/** The most real event-loop turns one drain may run before the chain counts as spinning. */
 const QUIET_MAX_TURNS = 200;
 
 describe('a gap below a publish-only RTC relay on a receipted ordered granted track (S4ii-R4)', () => {
@@ -824,6 +834,52 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
 
         expect(passedGapNacks).toEqual({ r: ['a'], b: [], u: [] });
     });
+
+    it('a relay whose parent has left passes on no gap NACK a child relay forwarded, so disagreeing layouts pass it at most once each', async () => {
+        const tree = LINE_BELOW_R;
+        const gap = await createGapChain({
+            ack: 'none',
+            originLayout: tree,
+            relayChildPeerIds: ['b'],
+            relayLayout: createOriginOverlay(tree.r!, tree),
+            secondRelay: { neighbourPeerIds: ['r', 'u', 'y'], initialOverlay: createOriginOverlay(tree.b!, tree) },
+            thirdRelay: { neighbourPeerIds: ['b', 'y'], initialOverlay: createOriginOverlay(tree.u!, tree) },
+            fourthRelay: { neighbourPeerIds: ['u', 'b', 'c'], initialOverlay: createOriginOverlay(tree.y!, tree) },
+            leaf: { neighbourPeerIds: ['y'], initialOverlay: createOriginOverlay(tree.c!, tree) }
+        });
+        const relays = { b: gap.secondRelay!, u: gap.thirdRelay!, y: gap.fourthRelay! };
+        const neighbourPeerIds = { b: ['r', 'u', 'y'], u: ['b', 'y'], y: ['u', 'b', 'c'] };
+        await deliverEach(gap.frames, gap.relay, 'a');
+        for (
+            const [fromPeerId, from, toPeerId, to] of [
+                ['r', gap.relay, 'b', relays.b],
+                ['b', relays.b, 'u', relays.u],
+                ['u', relays.u, 'y', relays.y]
+            ] as const
+        ) {
+            await drainUntil(async () => (await from.readSent(toPeerId)).length >= gap.frames.length);
+            await deliverEach(await from.readSent(toPeerId), to, fromPeerId);
+        }
+        await drainUntil(async () => (await relays.y.readSent('c')).length >= gap.frames.length);
+
+        // `r` leaves; `b` and `y` promote a layout that hangs `b` below `y`, while `u` still holds `y` below it.
+        promoteLayout(gap, B_BELOW_Y, [relays.b, relays.y]);
+        await relays.b.closeEdge('r');
+        await deliverEach((await relays.y.readSent('c')).filter((copy) => copy.ordering?.seq !== 2), gap.leaf, 'y');
+        await drainUntil(async () => findGapNack(await gap.leaf.readSent('y')) !== undefined);
+        await deliverEach(await gap.leaf.readSent('y'), relays.y, 'c');
+
+        await passBetweenRelays(relays, 3);
+        const passedGapNacks = Object.fromEntries(
+            await Promise.all(
+                Object.entries(relays).map(async ([peerId, relay]) =>
+                    [peerId, await readPassedGapNackPeers(relay, neighbourPeerIds[peerId as keyof typeof relays])] as const
+                )
+            )
+        );
+
+        expect(passedGapNacks).toEqual({ b: [], u: ['b'], y: ['u'] });
+    });
 });
 
 /** What `b` passed upward of the leaf's gap NACK, and the origin's answer to each. */
@@ -1017,9 +1073,18 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
                 ...GRANTS,
                 b: PUBLISH_ONLY,
                 ...(input.secondSubscriber ? { d: SUBSCRIBE_ONLY } : {}),
-                ...(input.thirdRelay === undefined ? {} : { u: PUBLISH_ONLY })
+                ...(input.thirdRelay === undefined ? {} : { u: PUBLISH_ONLY }),
+                ...(input.fourthRelay === undefined ? {} : { y: PUBLISH_ONLY })
             },
-            ['a', 'r', 'b', 'c', ...(input.secondSubscriber ? ['d'] : []), ...(input.thirdRelay === undefined ? [] : ['u'])],
+            [
+                'a',
+                'r',
+                'b',
+                'c',
+                ...(input.secondSubscriber ? ['d'] : []),
+                ...(input.thirdRelay === undefined ? [] : ['u']),
+                ...(input.fourthRelay === undefined ? [] : ['y'])
+            ],
             input.originLayout
         );
     const pair = createObservedVolatileInboundPair(RELAY_NAMESPACE);
@@ -1031,6 +1096,7 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     });
     const secondRelay = input.secondRelay === undefined ? undefined : createChainHop(chain, { selfPeerId: 'b', ...input.secondRelay });
     const thirdRelay = input.thirdRelay === undefined ? undefined : createChainHop(chain, { selfPeerId: 'u', ...input.thirdRelay });
+    const fourthRelay = input.fourthRelay === undefined ? undefined : createChainHop(chain, { selfPeerId: 'y', ...input.fourthRelay });
     const leaf = createChainHop(chain, {
         selfPeerId: 'c',
         neighbourPeerIds: input.leaf?.neighbourPeerIds ?? ['r'],
@@ -1052,8 +1118,9 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     relay.acceptSnapshot(snapshot);
     secondRelay?.acceptSnapshot(snapshot);
     thirdRelay?.acceptSnapshot(snapshot);
+    fourthRelay?.acceptSnapshot(snapshot);
     leaf.acceptSnapshot(snapshot);
-    return { chain, relay, secondRelay, thirdRelay, leaf, relayRows: pair.state, frames };
+    return { chain, relay, secondRelay, thirdRelay, fourthRelay, leaf, relayRows: pair.state, frames };
 }
 
 /** The relay receives the origin's copies of `seqs`; any other is lost on `a→r`. */
@@ -1143,11 +1210,17 @@ async function advanceChainBy(gap: GapChain, ms: number): Promise<void> {
     }
 }
 
-/** Runs the chain's due work, one real event-loop turn at a time, until `QUIET_TURNS` turns in a row change nothing. */
+/**
+ * Runs the chain's due work, one real event-loop turn at a time, until `QUIET_TURNS` turns in a row change nothing.
+ * A chain still busy after `QUIET_MAX_TURNS` turns fails the test, naming the clock it spun at.
+ */
 async function drainChainUntilQuiet(gap: GapChain): Promise<void> {
     let activity = readChainActivity(gap);
     let quietTurns = 0;
-    for (let turn = 0; turn < QUIET_MAX_TURNS && quietTurns < QUIET_TURNS; turn++) {
+    for (let turn = 0; quietTurns < QUIET_TURNS; turn++) {
+        if (turn === QUIET_MAX_TURNS) {
+            throw new Error(`The chain was still busy after ${QUIET_MAX_TURNS} turns at ${new Date().toISOString()}`);
+        }
         await drainUntil(() => false, 1);
         const next = readChainActivity(gap);
         quietTurns = next === activity ? quietTurns + 1 : 0;
@@ -1157,7 +1230,7 @@ async function drainChainUntilQuiet(gap: GapChain): Promise<void> {
 
 /** A count that grows with every step any session takes: its events, its deliveries and the origin's sends. */
 function readChainActivity(gap: GapChain): number {
-    const sessions = [gap.relay, gap.secondRelay, gap.thirdRelay, gap.leaf].filter((session) => session !== undefined);
+    const sessions = [gap.relay, gap.secondRelay, gap.thirdRelay, gap.fourthRelay, gap.leaf].filter((session) => session !== undefined);
     const { origin } = gap.chain;
     return origin.diagnostics.length + origin.settlements.length +
         Object.values(origin.channels).reduce((sent, channel) => sent + channel.sent.length, 0) +
@@ -1217,6 +1290,9 @@ function promoteLayout(gap: GapChain, tree: SessionNextHops, sessions: readonly 
     }
     if (gap.thirdRelay !== undefined) {
         sessionIds.set(gap.thirdRelay, 'u');
+    }
+    if (gap.fourthRelay !== undefined) {
+        sessionIds.set(gap.fourthRelay, 'y');
     }
     for (const session of sessions) {
         const promoted = toAcceptedLayout(gap.chain.snapshot, layout, sessionIds.get(session)!);

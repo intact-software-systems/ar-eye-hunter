@@ -604,6 +604,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
 function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMessageRuntime.Dependencies {
     return {
         readUpstreamPeerId: () => undefined,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,

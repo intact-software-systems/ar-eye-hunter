@@ -48,7 +48,11 @@ const ROW: ALPendingAckSnapshot = {
 };
 
 /** The relay's room: the sender is no layout child, and the parent the relay knows is gone, past `new-parent`. */
-const PARENT_GONE: ALInboundGapNackRoute = { isLayoutChild: false, knownParentReady: false, upstreamPeerId: 'new-parent' };
+const PARENT_GONE: ALInboundGapNackRoute = {
+    isLayoutChild: false,
+    knownParentReady: false,
+    upstreamPeerId: 'new-parent'
+};
 
 const GAP_ORDERING = {
     orderingKey: 'feed:origin:1',
@@ -163,13 +167,28 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         }]);
     });
 
-    it('passes a gap NACK from a child the row waits on to its current upstream peer once the row\'s parent is gone (6d)', () => {
-        const candidate = computeALInboundNackAdmission({ ...computeArrival({ reason: 'gap' }).read, gapRoute: PARENT_GONE }, RETENTION);
+    it('passes the own gap NACK of a child the row waits on to its current upstream peer once the row\'s parent is gone (6d)', () => {
+        const arrival = { reason: 'gap', logicalRecipientPeerId: 'child' } as const;
+        const candidate = computeALInboundNackAdmission({ ...computeArrival(arrival).read, gapRoute: PARENT_GONE }, RETENTION);
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([]);
         expect(toUpwardControls(candidate)).toEqual([{
             type: 'nack',
-            payload: { ...toChildNack({ reason: 'gap' }), fromPeerId: 'relay', toPeerId: 'new-parent' }
+            payload: { ...toChildNack(arrival), fromPeerId: 'relay', toPeerId: 'new-parent' }
+        }]);
+    });
+
+    it('refuses a gap NACK a child relayed for a recipient below it once the row\'s parent is gone, which it may pass only there', () => {
+        const ready = computeALInboundNackAdmission(
+            { ...computeArrival({ reason: 'gap' }).read, gapRoute: { ...PARENT_GONE, knownParentReady: true } },
+            RETENTION
+        );
+        const gone = computeALInboundNackAdmission({ ...computeArrival({ reason: 'gap' }).read, gapRoute: PARENT_GONE }, RETENTION);
+
+        expect(validateALInboundNackAdmission(ready)).toEqual([]);
+        expect(validateALInboundNackAdmission(gone)).toEqual([{
+            code: 'unauthorized',
+            message: 'Inbound NACK a child relayed has no parent to go to: the parent this relay knows is gone'
         }]);
     });
 
@@ -193,13 +212,14 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         }]);
     });
 
-    it('passes a gap NACK to the row\'s parent once it is gone when no upstream peer resolves', () => {
+    it('passes a child\'s own gap NACK to the row\'s parent once it is gone when no upstream peer resolves', () => {
+        const arrival = { reason: 'gap', logicalRecipientPeerId: 'child' } as const;
         const gapRoute = { ...PARENT_GONE, upstreamPeerId: undefined };
-        const candidate = computeALInboundNackAdmission({ ...computeArrival({ reason: 'gap' }).read, gapRoute }, RETENTION);
+        const candidate = computeALInboundNackAdmission({ ...computeArrival(arrival).read, gapRoute }, RETENTION);
 
         expect(toUpwardControls(candidate)).toEqual([{
             type: 'nack',
-            payload: { ...toChildNack({ reason: 'gap' }), fromPeerId: 'relay', toPeerId: 'parent' }
+            payload: { ...toChildNack(arrival), fromPeerId: 'relay', toPeerId: 'parent' }
         }]);
     });
 
@@ -410,6 +430,15 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
 
         expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([]);
         expect(toUpwardControls(candidate)).toEqual([{ type: 'nack', payload: { ...read.nack, fromPeerId: 'relay', toPeerId: 'new-parent' } }]);
+    });
+
+    it('refuses a gap NACK a child relayed for a recipient below it once the peer the message arrived from is gone', () => {
+        const read = { ...readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }), route: PARENT_GONE };
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(read)).toEqual([{
+            code: 'unauthorized',
+            message: 'Inbound NACK a child relayed has no parent to go to: the parent this relay knows is gone'
+        }]);
     });
 
     it('forwards a child\'s gap NACK for a recipient of the frozen audience below it', () => {

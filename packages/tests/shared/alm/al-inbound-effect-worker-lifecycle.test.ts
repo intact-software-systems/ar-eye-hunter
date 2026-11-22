@@ -103,6 +103,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -138,6 +139,7 @@ describe('inbound durable effect worker lifecycle', () => {
         );
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -192,6 +194,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -248,6 +251,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -309,6 +313,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -384,6 +389,7 @@ describe('inbound durable effect worker lifecycle', () => {
         }
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -415,6 +421,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const dependencies = {
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             ...resources,
             carrier: 'ws' as const,
             orderingObserver: 'addressed' as const,
@@ -514,6 +521,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -546,6 +554,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const releaseDispatch = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -587,6 +596,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const releaseSend = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -672,6 +682,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -772,6 +783,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -882,6 +894,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -967,6 +980,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -1008,6 +1022,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -1063,6 +1078,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -1201,6 +1217,7 @@ describe('inbound durable effect worker lifecycle', () => {
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
@@ -1297,6 +1314,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const deliveredMessageIds: string[] = [];
         const dependencies = {
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             ...resources,
             carrier: 'ws' as const,
             orderingObserver: 'addressed' as const,

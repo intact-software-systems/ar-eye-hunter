@@ -263,10 +263,9 @@ export class ALInboundControlAdmission {
             : await this.admitRowNack(arrival, { nack, surface: indexed, gapRoute: undefined, nowMs }, evidence);
     }
 
-    /** The lane relays a gap NACK without a row (6c, 6d), or names a layout child in the message's room. */
+    /** The lane relays a gap NACK without a row (6c, 6d), and so routes one by the message's room. */
     private routesGapNack(): boolean {
-        return this.planRetriedCopyNextHops !== undefined || this.readGapNackParent !== undefined ||
-            this.isLayoutChildPeer !== undefined;
+        return this.planRetriedCopyNextHops !== undefined || this.readGapNackParent !== undefined;
     }
 
     /**
@@ -397,7 +396,7 @@ export class ALInboundControlAdmission {
         );
         return stored === undefined
             ? undefined
-            : { msg: stored.msg, isLayoutChild: this.isLayoutChildPeer?.(stored.msg, nack.fromPeerId) === true };
+            : { msg: stored.msg, isLayoutChild: this.isLayoutChildPeer(stored.msg, nack.fromPeerId) };
     }
 
     /** What the message's room says of a child's gap NACK, for the parent this relay knows of the message (6d). */

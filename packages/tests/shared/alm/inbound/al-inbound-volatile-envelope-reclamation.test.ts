@@ -428,6 +428,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
             });
         const runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({

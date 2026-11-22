@@ -201,9 +201,9 @@ export namespace ALInboundMessageRuntime {
         readonly isRoutedPeerReady?: (msg: ALMessage, peerId: string) => boolean;
         /**
          * Whether `peerId` is this lane's child in the accepted layout of the message's room: a neighbour there on no
-         * route toward its origin. Absence means this lane routes over no layout, so no peer is a layout child.
+         * route toward its origin. A runtime with no overlay (WS) passes `() => false` at its composition root.
          */
-        readonly isLayoutChildPeer?: (msg: ALMessage, peerId: string) => boolean;
+        readonly isLayoutChildPeer: (msg: ALMessage, peerId: string) => boolean;
         /**
          * The parent this relay forwards a child's gap NACK to when it holds neither a row nor a copy of the message, as
          * a new parent after a reshape does: its upstream peer toward the NACK's origin, while the NACK's sender is its

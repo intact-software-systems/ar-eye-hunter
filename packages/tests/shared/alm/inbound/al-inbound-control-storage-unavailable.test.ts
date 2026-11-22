@@ -108,6 +108,7 @@ function createRuntime(
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

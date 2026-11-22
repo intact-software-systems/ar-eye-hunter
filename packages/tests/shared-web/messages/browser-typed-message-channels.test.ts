@@ -1131,6 +1131,7 @@ function createSharedInboundCarriers(callbacks: {
     const [ws, rtc] = (['ws', 'rtc'] as const).map((carrier) => {
         const runtime = createDefaultALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             selfPeerId: 'session-1',

@@ -105,6 +105,7 @@ class AcknowledgementFixture {
         this.nowMs = input.nowMs ?? Date.now;
         this.runtime = new ALInboundMessageRuntime({
             readUpstreamPeerId: () => undefined,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({

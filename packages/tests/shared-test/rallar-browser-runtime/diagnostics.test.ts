@@ -851,6 +851,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
         readUpstreamPeerId: () => undefined,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         selfPeerId: 'origin',

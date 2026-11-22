@@ -244,6 +244,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         canDispatchMessage: input.canDispatchMessage,
         forwardMessage: input.forwardMessage,
         readUpstreamPeerId: input.readUpstreamPeerId ?? (() => undefined),
+        isLayoutChildPeer: () => false,
         isRoutedPeerReady: input.isRoutedPeerReady,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,
