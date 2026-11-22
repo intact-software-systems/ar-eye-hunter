@@ -5,7 +5,9 @@ puts all of it there: the smoke scope becomes a required lane of the Release Gat
 on the PostgreSQL API for every push to `main` and for every pull request that can change ALM, and a
 ledger computed from those runs says how close each carrier is to becoming required too.
 
-Nothing is built yet. The maintainer decided the shape on 2026-11-21 (see "Decisions").
+Slice 1 (the lane in CI) is pull request #867; slice 2 (the ledger) is built on a branch stacked on
+it. The maintainer decided the shape on 2026-11-21 (see "Decisions"). What the first ready run found
+is near the end.
 
 ## Why
 
@@ -225,36 +227,52 @@ Three were weighed with the maintainer, who picked the first.
 
 - **Pure core**, in `packages/shared-test/rallar-bb-test/conformance/alm/ledger/`: from a list of
   runs (commit, event, attempt, carrier, the job's conclusion, and that run's plan and lane result
-  files) and the recorded causes, it computes:
-  - per carrier, the **streak**: the number of most recent runs, newest first, that are green. A run
-    is green when it is a first attempt, its job concluded in success, every family in its plan file
-    has a result file, and every scenario in them `passed` with `familyOutcome` passed;
-  - how a run that is not plainly green or red is read, by its job's conclusion: a job still in
-    progress or skipped is left out and does not break the streak; a cancelled job of a `main` push
-    is red, because a push run has a concurrency group of its own and only a person or a dying
-    runner cancels it (the first ready run of slice 1 showed a full-scope job that GitHub reported
-    as cancelled after nine minutes, with no upload); a cancelled job of a pull-request run is left
-    out, because a newer push cancels it by design; any other job without a plan file (it died
-    before planning) is a red run with nothing to attribute;
-  - per scenario (`carrier/family/scenarioKey`, and `carrier/family` for a failure outside any
-    scenario), how many of the read runs failed it or did not run it, and in which runs;
-  - the failed scenarios that have no recorded cause.
-- **Which runs count.** The streak counts full-scope runs of `main` pushes only. Runs of pull
-  requests and dispatched runs are read and shown beside it, because a red pull-request run may be
-  the pull request's own regression, caught as intended, and not a flake.
+  files) and the recorded causes, it computes, per carrier:
+  - the **streak**: the number of most recent counted runs, newest first, that are green. A run is
+    green when it is a first attempt, its job concluded in success, its plan plans at least one
+    scenario, every family in its plan has a result, and every scenario in them `passed` with
+    `familyOutcome` passed. Plan and results are compared by scenario key;
+  - the **red runs with nothing to attribute**, each with its reason: a rerun (attempt above 1), a
+    job that did not conclude in success although every recorded scenario passed, a job with no plan
+    (it died before planning, or its artifact could not be read), a cancelled job, or a completed
+    run in which no job of that carrier could be read at all;
+  - per key (`carrier/family/scenarioKey`, and `carrier/family` for a failure outside any
+    scenario), the runs that failed it and the runs that did not run it;
+  - the **failures without a cause**: a key that failed in a counted run, a key that did not run
+    in a family where no scenario failed (when a scenario fails or throws, the scenarios after it
+    do not run, and the failed one answers for them), and a red run with nothing to attribute, each
+    when the causes file has no entry for it.
+- **How a job's conclusion is read.** A job still in progress or skipped is left out and does not
+  break the streak. A cancelled job of a pull-request run is left out and listed as such, because a
+  newer push to the pull request cancels it by design. A cancelled job of a `main` push or of a
+  dispatched run is red: those runs have a concurrency group of their own, so only a person or a
+  dying runner cancels them (the first ready run of slice 1 showed a full-scope job that GitHub
+  reported as cancelled after nine minutes, with no upload). A rerun makes every job of its run
+  report the new attempt, so one rerun reddens all three carriers of that run; that is the rule's
+  "no rerun".
+- **Which runs count.** The streak counts full-scope runs of `main` pushes only, on the PostgreSQL
+  API. Runs of pull requests and dispatched runs are read and shown beside it, because a red
+  pull-request run may be the pull request's own regression, caught as intended, and not a flake. A
+  push that changes only `performance-observations/**` starts no run and is not counted. History
+  ends where artifact retention ends: an old run whose artifact has expired is reported as such and
+  reads red, never green.
 - **Causes** live in one file in the repository,
   `packages/shared-test/rallar-bb-test/conformance/alm/ledger/alm-lane-flake-causes.json`: a list of
-  entries with the scenario's key, the root cause in a sentence or two, and the pull request that
-  fixed it, or `null` while it is open. The file starts empty. A decoder refuses a malformed file.
+  entries with a key, the root cause in a sentence or two, and the pull request that fixed it, or
+  `null` while it is open. A key is a scenario key, a family key, or `<carrier>/run/<run id>` for a
+  red run with nothing to attribute. The file starts empty. A decoder refuses a malformed file.
 - **The command**, `npm run alm:lane:ledger`: a thin entry point that reads the recent runs of
-  `alm-conformance-observation.yml` (its `push` runs for the streak; for the side list, its
-  dispatched and pull-request runs), with each job's conclusion, downloads
-  each run's `alm-lane-result-*-full-*` artifacts, and prints the ledger. It reads GitHub through
-  `gh`, the way `scripts/validation-evidence/github-validation-evidence.mjs` does. That file's run
-  reader is generalised to take the event and status, and one artifact reader serves both callers;
-  there is no second reader.
-- It prints, per carrier: the streak against ten, the last red run with its failed scenarios, and
-  the count of failures without a cause. It exits 0; it is a report, not a gate.
+  `alm-conformance-observation.yml`, each kind in its own query (`main` push runs up to the limit
+  for the streak; pull-request and dispatched runs for the side list), with each job's conclusion,
+  downloads each job's `alm-lane-result-<carrier>-full-<sha>` artifact, and prints the ledger. It
+  reads GitHub through one shared reader, `scripts/github-actions/read-github-workflow-runs.mjs`,
+  which the branch gate's evidence reuse uses too. The names it relies on (the lane job's name and
+  the artifact's prefix) are pinned against the workflow and the action by a repository test.
+- It prints, per carrier: the streak against ten and how many runs it was read from, the last red
+  run with its reason and its failed and not-run keys, the red runs with nothing to attribute, and
+  the count of failures without a cause; then the table of keys with each cause's state; the runs
+  shown beside the streak; the jobs left out; and the issues met while reading. It exits 0 when it
+  could read GitHub; it is a report, not a gate.
 
 ### 6. The promotion rule, restated
 
