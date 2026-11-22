@@ -118,9 +118,11 @@ export function computeALInboundNackAdmission(
 }
 
 /**
- * A relay passes a child's gap NACK to its current upstream peer, and to the parent it knows of the message, its row's
- * or the peer it arrived from, only when none resolves. Relays whose accepted layouts disagree can pass one NACK round
- * a cycle: each forward spends one of its relay hops, so the cycle ends once the leaf's grant is spent.
+ * A relay passes a child's gap NACK to its current upstream peer in the message's room, and to the parent it knows of
+ * the message only when none resolves: its row's, the peer the message arrived from, or, holding nothing of the message
+ * and so reading no room for it, the upstream peer its accepted layouts name (6d). Relays whose accepted layouts disagree
+ * can pass one NACK round a cycle: each forward spends one of its relay hops, so the cycle ends once the leaf's grant
+ * is spent.
  */
 function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInboundGapNackRoute | undefined): string {
     return route?.upstreamPeerId ?? knownParentPeerId;
@@ -207,7 +209,11 @@ export function computeALInboundUnheldGapNackAdmission(
     return toALInboundRowlessGapNackCandidate({
         read: { ...read, owner },
         observedMessageOwner: undefined,
-        upward: { toPeerId: parent.peerId, expireAtTimestamp: undefined, upwardAudiencePeerIds: undefined }
+        upward: {
+            toPeerId: resolveALInboundGapNackTarget(parent.peerId, undefined),
+            expireAtTimestamp: undefined,
+            upwardAudiencePeerIds: undefined
+        }
     }, retention);
 }
 

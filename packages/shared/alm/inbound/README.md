@@ -737,8 +737,9 @@ message that asked for no receipt (6c); and from a layout child its row does not
 nothing of (6d), whether the NACK is the child's own word or one it relayed for a recipient below it. Every path sends
 it to the relay's current upstream peer, the one connected neighbour the accepted layout routes toward the origin and
 never the sender; when none resolves, to the parent it knows, the row's or on 6c the peer the message arrived from. A
-relay that holds nothing of the message knows no parent: it sends to the upstream peer its accepted layouts name
-([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)). Relays whose accepted layouts
+relay that holds nothing of the message reads no room for it, so the parent it knows is the upstream peer its accepted
+layouts name ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)); one function,
+`resolveALInboundGapNackTarget`, picks the target on every path. Relays whose accepted layouts
 disagree during a reshape can pass one NACK round a cycle, so a gap NACK carries a hop limit (ruling 20):
 `relayHopsLeft`, required on a gap and outside the recipient's signature as `fromPeerId` and `toPeerId` are. The leaf
 grants `AL_GAP_NACK_RELAY_HOP_LIMIT` (255) on its report and on every renewal: the overlay planner bounds a layout's
