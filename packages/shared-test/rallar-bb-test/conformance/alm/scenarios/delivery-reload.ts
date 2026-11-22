@@ -65,10 +65,7 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
     };
 }
 
-/**
- * The native hold ends only with the old document; the fresh runtime restores the original durable work, and the
- * durable message cancelled under the same hold stays cancelled.
- */
+/** The native hold ends only with the old document; the fresh runtime restores the original durable work. */
 function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const reconnect = toConnectCommand(sender);
     return [
@@ -178,6 +175,10 @@ function toReloadDurableSend(
 /**
  * A second durable message, held like the original, is cancelled before the reload. Over `rtc-with-ws-fallback` the
  * hold may hand it to WS before the cancel lands; either leg holds it, so the cancel reads `cancelled` on both.
+ * This is a regression check, not the proof that a cancel survives a reload: the receiver's absence window before the
+ * reload lasts about 17 s, and the old page's in-memory cancel completes each of the message's work rows as it is
+ * claimed (its send at once, its 2 s receipt or first-hop timer when due), so none is left for the reloaded page
+ * whether or not the cancel stored its end. The unit tests in `al-outbound-ended-across-reload.test.ts` carry that proof.
  */
 function toCancelledBeforeReloadCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -200,7 +201,7 @@ function toReloadPayload(step: AlmConformanceStepInput, marker: ReloadMarker): R
     return { marker, carrier: step.input.carrier };
 }
 
-/** The cancelled message's absence follows the original's arrival, so it covers the restored page's first batch. */
+/** The cancelled message's absence follows the original's arrival and also reads arrivals retained before it. */
 function toDeliveryReloadReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const payload = toReloadPayload(receiver, ORIGINAL_MARKER);
     return [

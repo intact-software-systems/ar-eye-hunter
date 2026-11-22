@@ -1372,8 +1372,12 @@ unsubmitted; under the same hold it sends a second durable message with the mark
 proves it retained and cancels it, asserting `cancelled`. It then reloads, reconnects with the restored session, reads
 the old handle `unobservable` and waits for the `restored` recoveries described in the runtime diagnostic contract.
 The receiver proves the original absent before the reload and receives it after; then an absence wait on the cancelled
-marker, which also reads the arrivals retained before it starts, proves the restored page never sends the cancelled
-message.
+marker, which also reads the arrivals retained before it starts, proves the cancelled message never arrives. That wait
+is a regression check, not the proof that a cancel's stored end survives a reload: the reload follows the receiver's
+17 s pre-reload absence window, and by then the old page's in-memory cancel has completed every work row of the
+cancelled message as it was claimed (its send at once, its 2 s receipt or first-hop timer when due), so the reloaded
+page has nothing of it to resume whether or not the end was stored; its recovery reads `claimed` 1 either way, the
+original's row. The unit tests of the outbound runtime carry the proof (`al-outbound-ended-across-reload.test.ts`).
 Over `rtc-with-ws-fallback` the hold may hand the cancelled message to WS before the cancel lands, and the cell cannot
 tell which leg held it: it asserts the `cancelled` state and the absence on the receiver, not which store ended it.
 
