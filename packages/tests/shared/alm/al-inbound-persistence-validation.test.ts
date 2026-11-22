@@ -23,7 +23,11 @@ import {
     type ALInboundControlOwnerIndex,
     type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { readALInboundStoredMessage, type ALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import {
+    readALInboundStoredMessage,
+    toALInboundMessageKey,
+    type ALInboundMessageReference
+} from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALStoredInboundBufferedSnapshot } from '@shared/alm/inbound/al-inbound-ordering-validation.ts';
 import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
@@ -46,6 +50,10 @@ import {
     vi
 } from 'vitest';
 
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+
+import '../../setup-browser-indexeddb.ts';
+import { createInboundTestBackendStores } from './inbound-runtime-test-fixture.ts';
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
@@ -553,6 +561,40 @@ describe('inbound admission persisted values', () => {
 
         await expect(store.readBufferedRelease({ trackKey: unsaid.trackKey, seq: 2, nowMs: Date.now() }))
             .rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key });
+    });
+
+    it.each(
+        [
+            ['reads the predecessor\'s own slot by its key and lists nothing', true, 0],
+            ['lists the track\'s slots only when no slot holds the predecessor', false, 1]
+        ] as const
+    )('%s', async (_name, predecessorBuffered, lists) => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const { backend, stores } = createInboundTestBackendStores({ namespace: 'predecessor-read', storage: 'indexeddb', observer });
+        const namespace = stores.admissionStore.namespace;
+        const trackKey = toALOrderingTrackKey(message)!;
+        const copies = [3, 4].map((seq) => ({ ...message, id: { ...message.id, msgId: `copy-${seq}` }, ordering: { orderingKey: 'chat', seq } }));
+        const retainUntilMs = Date.now() + 60_000;
+        await backend.write(async (transaction) => {
+            await transaction.set(`${namespace}:delivered:${trackKey}`, { completedThrough: 1, expireAtTimestamp: retainUntilMs });
+            for (const copy of copies.filter((candidate) => predecessorBuffered || candidate.ordering.seq === 4)) {
+                const reference = toMessageReference(copy);
+                await transaction.set(toALInboundMessageKey(namespace, reference), { ...reference, msg: copy, retainUntilMs }, retainUntilMs);
+                await transaction.set(`${namespace}:buffered:${trackKey}:${copy.ordering.seq}`, {
+                    trackKey,
+                    seq: copy.ordering.seq,
+                    message: reference,
+                    plan: planMessage(copy),
+                    carrier: 'ws',
+                    completesThrough: copy.ordering.seq
+                }, retainUntilMs);
+            }
+        });
+        observer.reset();
+
+        await stores.admissionStore.readOrderedDelivery(trackKey, 4);
+
+        expect(observer.getCounts().byKind.list ?? 0).toBe(lists);
     });
 
     it('rejects a buffered snapshot whose canonical message belongs to another ordering track', async () => {

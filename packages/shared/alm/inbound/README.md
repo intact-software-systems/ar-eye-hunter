@@ -791,7 +791,10 @@ sequence its completed delivery moves the progress through (`completesThrough`, 
 `seq`, and for the run's last copy the end of the expired copies passed after it), so completing that copy completes
 the passed ones too and the next copy, in order after them, is delivered; one rule,
 [`computeALInboundDeliveryCompletion`](./admission/al-inbound-delivery-progress.ts), beside the omission's jump to its
-prior, reads it for every completion and for the bundle validator. A buffered copy is live only
+prior, reads it for every completion and for the bundle validator, and its reach predicate `isALInboundDeliveryReaching`
+serves the delivery-readiness lookup of a predecessor (the predecessor's own slot by its key, or on a miss the slot
+whose reach passes it, so a copy that arrives before the run's last delivery completed waits on that delivery) and the
+check, at write and at read, that a slot reaches at least its own sequence. A buffered copy is live only
 while its message lives: its slot is written with the message's own expiry and every rewrite of it takes a release
 row's, which is that expiry too.
 [`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts) commits an entry as an entered

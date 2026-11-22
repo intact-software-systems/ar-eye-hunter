@@ -14,6 +14,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
+import { isALInboundDeliveryReaching } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundDeliveryProgress,
@@ -116,7 +117,10 @@ export function decodeALInboundBufferedSnapshot(
     const plan = decodeALInboundPlan(snapshot.plan);
     const carrier = decodeALAdmissionCarrier(snapshot.carrier);
     const completesThrough = decodeALAdmissionNumber(snapshot.completesThrough);
-    if (trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}` || completesThrough < seq) {
+    if (
+        trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}` ||
+        !isALInboundDeliveryReaching({ seq, completesThrough }, seq)
+    ) {
         throw new TypeError('Persisted buffered message does not match its ordering slot');
     }
     if (plan.orderingRuntime.trackKey !== undefined && plan.orderingRuntime.trackKey !== trackKey) {

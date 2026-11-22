@@ -7,7 +7,8 @@ import { decodeALInboundDeliveryProgress } from '../al-inbound-ordering-validati
 import { decodeALInboundControlOwnerIndex, decodeALInboundSource } from '../al-inbound-source-validation.ts';
 import {
     computeALInboundDeliveryCompletion,
-    computeALInboundWitnessedCompletedThrough
+    computeALInboundWitnessedCompletedThrough,
+    isALInboundDeliveryReaching
 } from './al-inbound-delivery-progress.ts';
 
 /** Every reason one mutation may not be committed, in the order the bundle rejects them. */
@@ -29,6 +30,9 @@ export function validateALInboundAdmissionMutation(
         catch {
             issues.push('Inbound admission candidate has invalid delivery progress');
         }
+    }
+    if (mutation.kind === 'set-buffered' && !isALInboundDeliveryReaching(mutation.snapshot, mutation.snapshot.seq)) {
+        issues.push('Inbound admission candidate has a buffered slot whose completion reaches below its own sequence');
     }
     if (mutation.kind === 'set-msg-owner') {
         try {

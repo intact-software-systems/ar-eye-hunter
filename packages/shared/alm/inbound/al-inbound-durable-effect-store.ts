@@ -95,12 +95,19 @@ export class ALInboundDurableEffectStore {
         );
     }
 
-    /** The slot whose completed delivery reaches `seq`: its own, or one whose reach a bounded hold extended past it. */
+    /**
+     * The slot whose completed delivery reaches `seq`: its own, read by its key, or on a miss one whose reach a bounded
+     * hold extended past it, found among the track's slots.
+     */
     private async readReachingSlot(
         session: ALAdmissionReadSession,
         trackKey: string,
         seq: number
     ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
+        const own = await this.readSlot(session, trackKey, seq);
+        if (own !== undefined) {
+            return own;
+        }
         const prefix = `${this.namespace}:buffered:${trackKey}:`;
         const slots = await session.list(
             prefix,

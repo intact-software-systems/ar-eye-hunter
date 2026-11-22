@@ -202,6 +202,28 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
             .toEqual(['Inbound admission candidate writes outside its original observations']);
     });
 
+    it('refuses a buffered slot whose completion reaches below its own sequence', () => {
+        const msg = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', contextId: 'room', resourceId: 'copy-9' },
+            groupRef: ROOM,
+            typeId: 'chat.v1',
+            resource: {},
+            options: { orderingKey: 'chat', seq: 9 }
+        });
+        const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
+        const toSlot = (completesThrough: number): ALInboundAdmissionMutation => ({
+            kind: 'set-buffered',
+            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc', completesThrough },
+            expireAtTimestamp: 1_000
+        });
+
+        expect(validateALInboundAdmissionMutation(toSlot(9), toMovingBundle([toSlot(9)]))).toEqual([]);
+        expect(validateALInboundAdmissionMutation(toSlot(8), toMovingBundle([toSlot(8)])))
+            .toEqual(['Inbound admission candidate has a buffered slot whose completion reaches below its own sequence']);
+    });
+
     describe('a completed delivery whose slot reaches past expired copies the bounded hold passed', () => {
         /** The completion of entered copy 3, whose slot completes the track through 4, from progress at 0. */
         function toCompletionBundle(completedThrough: number): readonly [ALInboundAdmissionMutation, ALInboundCommitBundle] {
