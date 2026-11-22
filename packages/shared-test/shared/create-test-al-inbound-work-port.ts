@@ -44,7 +44,6 @@ export function createTestALInboundControlAdmission(
         planRetriedCopyNextHops: undefined,
         readGapNackParent: undefined,
         readUpstreamPeerId: () => undefined,
-        isRoomPeerPresent: undefined,
         isLayoutChildPeer: () => false
     });
 }

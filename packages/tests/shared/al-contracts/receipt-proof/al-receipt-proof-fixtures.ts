@@ -1,4 +1,5 @@
 import type { ALAckPayload, ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
@@ -37,7 +38,8 @@ export const GAP_NACK: Extract<ALReceiptControl, { type: 'nack'; }> = {
         orderingKey: 'room-1',
         expectedSeq: 3,
         missingRanges: [{ from: 3, to: 4 }],
-        gapRequestNumber: 1
+        gapRequestNumber: 1,
+        relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT
     } as ALNackPayload
 };
 

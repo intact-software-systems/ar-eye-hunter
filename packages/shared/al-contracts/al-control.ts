@@ -87,6 +87,11 @@ export interface ALNackPayload {
     readonly missingRanges?: readonly ALSeqRange[];
     /** Which request for the sequences it names this is, 1 for a report an arrival causes; present exactly on a `gap`. */
     readonly gapRequestNumber?: number;
+    /**
+     * How many more relays may forward it toward the origin; present exactly on a `gap`. Each relay forwards it one
+     * lower, so it lies outside the recipient's signature, as `fromPeerId` and `toPeerId` do.
+     */
+    readonly relayHopsLeft?: number;
     readonly serverSnapshotVersion?: number;
     readonly proof: SignatureProof | null;
 }

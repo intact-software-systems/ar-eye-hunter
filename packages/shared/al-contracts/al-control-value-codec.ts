@@ -11,7 +11,7 @@ import type {
     ALRepairPayload,
     ALRepairReason
 } from './al-control.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 import { decodeALSeqRanges } from './al-seq-range.ts';
 
@@ -92,7 +92,7 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             'observedAtEpochMs',
             'proof'
         ],
-        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber', 'serverSnapshotVersion']
+        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber', 'relayHopsLeft', 'serverSnapshotVersion']
     );
     const reason = decodeNackReason(record.reason);
     return {
@@ -110,6 +110,7 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             misplaced: 'NACK gap request number is required on a gap and refused on any other reason',
             label: 'NACK gap request number'
         }),
+        ...decodeRelayHopsLeft(record, reason === 'gap'),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
         proof: decodeControlProof(record.proof)
     };
@@ -323,6 +324,11 @@ export function toALGapRequestNumberField(
     return gapRequestNumber === undefined ? {} : { gapRequestNumber };
 }
 
+/** The relay hops the NACK's own sender grants it: every one a leaf may on a gap, and the field nowhere else. */
+export function toALGrantedRelayHopsField(reason: ALNackReason): Readonly<{ relayHopsLeft?: number; }> {
+    return reason === 'gap' ? { relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT } : {};
+}
+
 interface GapRequestNumberRefusals {
     readonly misplaced: string;
     /** The number's name in its `<label> is invalid` refusal. */
@@ -346,6 +352,21 @@ function decodeGapRequestNumber(
         throw new TypeError(`${refusals.label} is invalid`);
     }
     return { gapRequestNumber: value };
+}
+
+/** Present exactly on a gap NACK; from none left to the most a leaf grants. */
+function decodeRelayHopsLeft(record: ControlRecord, namesGap: boolean): Readonly<{ relayHopsLeft?: number; }> {
+    if (Object.hasOwn(record, 'relayHopsLeft') !== namesGap) {
+        throw new TypeError('NACK relay hop count is required on a gap and refused on any other reason');
+    }
+    if (!namesGap) {
+        return {};
+    }
+    const value = decodeControlNumber(record.relayHopsLeft, 'NACK relay hop count');
+    if (value > AL_GAP_NACK_RELAY_HOP_LIMIT) {
+        throw new TypeError('NACK relay hop count is invalid');
+    }
+    return { relayHopsLeft: value };
 }
 
 function decodeOptionalSeqRanges(

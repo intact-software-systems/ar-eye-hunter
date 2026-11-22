@@ -27,7 +27,7 @@ import {
     type ALReceiptPayload,
     type ALRepairPayload
 } from '@shared/al-contracts/al-control.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
@@ -92,6 +92,7 @@ const GAP_NACK_FIELDS = {
     expectedSeq: 1,
     missingRanges: [{ from: 1, to: 1 }],
     gapRequestNumber: 1,
+    relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT,
     proof: null
 } as const;
 const MISSING_SEQ_FIELDS: ALRepairPayload = {
@@ -135,6 +136,7 @@ describe('AL control message codec', () => {
             orderingKey: 'k',
             expectedSeq: 1,
             missingRanges: [{ from: 1, to: 1 }],
+            relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT,
             proof: null
         };
         expect(() => decodeALNackPayload(gap)).toThrow(
@@ -146,7 +148,29 @@ describe('AL control message codec', () => {
         expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 0 })).toThrow('NACK gap request number is invalid');
         expect(() => decodeALNackPayload({ ...gap, gapRequestNumber: 1.5 })).toThrow('NACK gap request number is invalid');
         expect(decodeALNackPayload({ ...gap, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
-        expect(decodeALNackPayload({ ...gap, reason: 'expired' })).not.toHaveProperty('gapRequestNumber');
+        const { relayHopsLeft: _hops, ...ungranted } = gap;
+        expect(decodeALNackPayload({ ...ungranted, reason: 'expired' })).not.toHaveProperty('gapRequestNumber');
+    });
+
+    it('requires a relay hop count on a gap NACK, from none left to the relay hop limit, and refuses one on any other reason', () => {
+        const { relayHopsLeft: _hops, ...unbounded } = GAP_NACK_FIELDS;
+        const { gapRequestNumber: _number, ...expired } = { ...GAP_NACK_FIELDS, reason: 'expired' } as const;
+
+        expect(AL_GAP_NACK_RELAY_HOP_LIMIT).toBe(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1);
+        expect(() => decodeALNackPayload(unbounded)).toThrow(
+            'NACK relay hop count is required on a gap and refused on any other reason'
+        );
+        expect(() => decodeALNackPayload(expired)).toThrow(
+            'NACK relay hop count is required on a gap and refused on any other reason'
+        );
+        expect(decodeALNackPayload({ ...GAP_NACK_FIELDS, relayHopsLeft: 0 }).relayHopsLeft).toBe(0);
+        expect(decodeALNackPayload(GAP_NACK_FIELDS).relayHopsLeft).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        const { relayHopsLeft: _expiredHops, ...expiredUnbounded } = expired;
+        expect(decodeALNackPayload(expiredUnbounded)).not.toHaveProperty('relayHopsLeft');
+    });
+
+    it.each([-1, 1.5, AL_GAP_NACK_RELAY_HOP_LIMIT + 1, '1', null])('refuses a gap NACK with %s relay hops left as invalid', (relayHopsLeft) => {
+        expect(() => decodeALNackPayload({ ...GAP_NACK_FIELDS, relayHopsLeft })).toThrow('NACK relay hop count is invalid');
     });
 
     it('requires a gap request number on a missing-seq repair request and refuses one on any other reason', () => {
@@ -206,7 +230,7 @@ describe('AL control message codec', () => {
     });
 
     it('keeps the missing ranges a NACK of another reason names, as the WS server states them for an expired copy on a gapped track', () => {
-        const { gapRequestNumber: _number, ...expired } = GAP_NACK_FIELDS;
+        const { gapRequestNumber: _number, relayHopsLeft: _hops, ...expired } = GAP_NACK_FIELDS;
 
         expect(decodeALNackPayload({ ...expired, reason: 'expired' }).missingRanges).toEqual([{ from: 1, to: 1 }]);
     });

@@ -33,6 +33,13 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     gapRenewalMaxStretch: 1.5
 } as const;
 
+/**
+ * The relays a gap NACK may pass toward its origin, which its leaf grants it and each relay spends one of. The overlay
+ * planner bounds a layout's degree, not its depth, so a layout's longest line runs through every session of a room at
+ * the RTC room limit: the origin and `collectionEntries` recipients, with all but the last one relaying.
+ */
+export const AL_GAP_NACK_RELAY_HOP_LIMIT = AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1;
+
 /** An arrival's own gap report carries 1, so a receiver's first renewal of it carries 2. */
 export const AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER = 2;
 

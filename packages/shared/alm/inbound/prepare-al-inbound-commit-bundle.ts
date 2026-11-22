@@ -1,5 +1,9 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
-import { toALGapRequestNumberField, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
+import {
+    toALGapRequestNumberField,
+    toALGrantedRelayHopsField,
+    type ALDeliveryCarrier
+} from '../../al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -232,6 +236,7 @@ export function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffe
                     msgId: payload.msgId,
                     reason: payload.reason,
                     ...toALGapRequestNumberField(payload.gapRequestNumber),
+                    ...toALGrantedRelayHopsField(payload.reason),
                     observedAtEpochMs: facts.observedAtEpochMs,
                     proof: null
                 })

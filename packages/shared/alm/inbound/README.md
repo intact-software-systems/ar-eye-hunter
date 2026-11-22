@@ -341,9 +341,9 @@ to its parent as the recipient signed it, so the origin repairs that recipient t
 that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
 `forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
 relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
-nothing (6c). It sends it to the peer the message arrived from while that peer is a ready room peer; once that peer is
-gone, it sends a child's own word to its current upstream peer and refuses one the child relayed. It admits one from a
-child (one it forwards the message to, or one the accepted layout of the message's room names), never that peer, naming
+nothing (6c). It sends it one relay hop lower to its current upstream peer, or to the peer the message arrived from
+when none resolves. It admits one from a child (one it forwards the message to, or one the accepted layout of the
+message's room names), never that peer, naming
 a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's own track; the
 origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and its child lost is
 repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
@@ -723,15 +723,20 @@ Every run arms the next number. A relay never forwards a repair request. The row
 (`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one the accepted layout of the
 message's room names below it ([`isRtcLayoutChildPeer`](../../multicast/resolve-rtc-upstream-peer-id.ts)). A relay
 forwards a child's gap NACK toward the origin while it holds a pending row that waits on that child; about a stored
-message that asked for no receipt (6c); and, while the NACK is the child's own word, from a layout child its row does
-not wait on or about a message it holds nothing of (6d). It keeps the parent it knows, then passes upward: the NACK
-goes to the row's parent, or on 6c the peer the message arrived from, while that peer is a ready room peer. Once it
-is gone, only a child's own word goes to the relay's current upstream peer; a NACK a child relayed is refused. A
+message that asked for no receipt (6c); and from a layout child its row does not wait on, or about a message it holds
+nothing of (6d), whether the NACK is the child's own word or one it relayed for a recipient below it. Every path sends
+it to the relay's current upstream peer, the one connected neighbour the accepted layout routes toward the origin and
+never the sender; when none resolves, to the parent it knows, the row's or on 6c the peer the message arrived from. A
 relay that holds nothing of the message knows no parent: it sends to the upstream peer its accepted layouts name
-([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), and also only a child's own
-word. A NACK forwarded upward is not own word at the next relay, so it takes that upstream fallback at most once and
-otherwise follows the known parents, the arrival tree, which cannot cycle: relays whose accepted layouts disagree pass
-one NACK at most once each. The forwards of 6c and 6d record nothing, and a row is left as it was. The origin admits a
+([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)). Relays whose accepted layouts
+disagree during a reshape can pass one NACK round a cycle, so a gap NACK carries a hop limit (ruling 20):
+`relayHopsLeft`, required on a gap and outside the recipient's signature as `fromPeerId` and `toPeerId` are. The leaf
+grants `AL_GAP_NACK_RELAY_HOP_LIMIT` (255) on its report and on every renewal: the overlay planner bounds a layout's
+degree, not its depth, so the longest line in a room at the RTC room limit passes that many relays. Each relay forwards
+it one lower and refuses one with none left, so a cycle ends within that many forwards; it also refuses one that speaks
+for itself, its own report come back round a cycle, as its own reports leave from its gap run. Whom a relayed NACK
+speaks for the origin judges, by the recipient's signature or its receipt. The forwards of 6c and 6d record nothing, and
+a row is left as it was. The origin ignores the hop count. The origin admits a
 gap NACK such a relay re-sends for a room send once its repair authority planned a repair to the relay, a ready room
 neighbour, and while the receipt still owes the recipient (or, with no receipt, the
 audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A

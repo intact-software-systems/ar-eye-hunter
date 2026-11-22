@@ -15,6 +15,7 @@ import {
     type ALNackPayload,
     type ALRepairPayload
 } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
@@ -115,7 +116,15 @@ function toGapReport(
 function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId' | 'originPeerId' | 'proof'>): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
-        { gapRequestNumber: 1, ...report, logicalRecipientPeerId: report.fromPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
+        {
+            gapRequestNumber: 1,
+            relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT,
+            ...report,
+            logicalRecipientPeerId: report.fromPeerId,
+            originPeerId: report.toPeerId,
+            reason: 'gap',
+            proof: null
+        }
     );
 }
 
@@ -127,7 +136,15 @@ function toRelayedGapNack(
 ): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
-        { gapRequestNumber: 1, ...report, logicalRecipientPeerId: recipientPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
+        {
+            gapRequestNumber: 1,
+            relayHopsLeft: AL_GAP_NACK_RELAY_HOP_LIMIT,
+            ...report,
+            logicalRecipientPeerId: recipientPeerId,
+            originPeerId: report.toPeerId,
+            reason: 'gap',
+            proof: null
+        }
     );
 }
 

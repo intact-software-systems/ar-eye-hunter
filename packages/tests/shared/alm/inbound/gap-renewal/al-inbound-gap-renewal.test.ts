@@ -5,6 +5,7 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPeerControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -295,6 +296,18 @@ describe('a receiver whose ordered track has a gap', () => {
 
         expect(nacks.map((nack) => nack.gapRequestNumber)).toEqual([1, 2]);
         expect(await Promise.all(nacks.map(async (nack) => await verifyTestALReceiptControl(CRYPTO, nack.msg)))).toEqual([true, true]);
+    });
+
+    it.each(['none', 'receiver'] as const)('a %s track\'s gap NACK and its renewal grant every relay hop a leaf may (ruling 20)', async (ack) => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: SIGNED });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack }), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+        const relayHops = readSentControls(fixture).flatMap((msg) => {
+            const control = decodeALPeerControlMessage(msg).right;
+            return control?.type === 'nack' ? [[control.payload.gapRequestNumber, control.payload.relayHopsLeft]] : [];
+        });
+
+        expect(relayHops).toEqual([[1, AL_GAP_NACK_RELAY_HOP_LIMIT], [2, AL_GAP_NACK_RELAY_HOP_LIMIT]]);
     });
 
     it('a page that cannot sign sends an unreceipted track\'s gap NACK and its renewal unsigned (ruling 19)', async () => {

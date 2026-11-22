@@ -3,9 +3,7 @@ import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-froze
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
-import { isALOwnWord } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type {
-    ALInboundGapNackRoute,
     ALInboundNackAdmissionCandidate,
     ALInboundUnheldGapNackAdmissionRead,
     ALInboundUnreceiptedGapNackAdmissionRead
@@ -27,17 +25,22 @@ const MISSING_GAP_ORDERING_HINTS: ALMessageRejection = {
     message: 'Inbound gap NACK carries no ordering hints to forward'
 };
 
-const PARENT_GONE_FOR_RELAYED_NACK: ALMessageRejection = {
+const NO_RELAY_HOP_LEFT: ALMessageRejection = {
     code: 'unauthorized',
-    message: 'Inbound NACK a child relayed has no parent to go to: the parent this relay knows is gone'
+    message: 'Inbound gap NACK has no relay hop left'
+};
+
+const SPEAKS_FOR_RELAY: ALMessageRejection = {
+    code: 'unauthorized',
+    message: 'Inbound gap NACK speaks for this relay itself'
 };
 
 /**
- * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on, or, as the child's own
- * word, from a child the accepted layout of the message's room names (6d), and name a recipient of the frozen audience
- * the origin counts that no stored control of the same statement recorded outside or confirmed (PL9, PL16, S8ii-R1).
- * An outside-audience NACK must also fit the row's outside list and its NACK history; a gap NACK, which writes no row,
- * must carry the ordering hints it forwards.
+ * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on, or from a child the
+ * accepted layout of the message's room names (6d), and name a recipient of the frozen audience the origin counts that
+ * no stored control of the same statement recorded outside or confirmed (PL9, PL16, S8ii-R1). An outside-audience NACK
+ * must also fit the row's outside list and its NACK history; a gap NACK, which writes no row, must carry the ordering
+ * hints it forwards and a relay hop to spend, and speak for another recipient than this relay.
  */
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
@@ -49,7 +52,8 @@ export function validateALInboundNackAdmission(
     const history = toALReceiptStatementHistory(acks, nacks);
     const subject = toALReceiptStatementSubject(nack);
     const issues: ALMessageRejection[] = [];
-    if (!isRowChild(candidate)) {
+    const isLayoutChild = candidate.read.gapRoute?.isLayoutChild === true;
+    if (!isALInboundRelayChild(nack.fromPeerId, pending.expectedFromPeerIds, isLayoutChild)) {
         issues.push(rejectInboundNack('Inbound NACK sender has no pending obligation'));
     }
     if (nack.originPeerId !== owner.senderId) {
@@ -64,11 +68,11 @@ export function validateALInboundNackAdmission(
     if (hasALConfirmedStatement(history.acks, subject)) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already forwarded'));
     }
-    if (nack.reason === 'gap' && !hasGapOrderingHints(nack)) {
-        issues.push(MISSING_GAP_ORDERING_HINTS);
-    }
-    if (hasNoParentFor(nack, candidate.read.gapRoute)) {
-        issues.push(PARENT_GONE_FOR_RELAYED_NACK);
+    if (nack.reason === 'gap') {
+        issues.push(
+            ...(hasGapOrderingHints(nack) ? [] : [MISSING_GAP_ORDERING_HINTS]),
+            ...validateALInboundGapNackHop(nack)
+        );
     }
     if (
         nack.reason !== 'gap' &&
@@ -96,21 +100,11 @@ export function isALInboundRelayChild(
 }
 
 /**
- * The row waits on the sender, or the sender is a layout child of a new parent whose row waits on others: then the NACK
- * must be the child's own word, the row is left as it was, and the origin judges it (6d).
- */
-function isRowChild(candidate: ALInboundNackAdmissionCandidate): boolean {
-    const { nack, pending, gapRoute } = candidate.read;
-    const waitedOn = pending?.expectedFromPeerIds ?? [];
-    return isALInboundRelayChild(nack.fromPeerId, waitedOn, gapRoute?.isLayoutChild === true) &&
-        (waitedOn.includes(nack.fromPeerId) || isALOwnWord(nack));
-}
-
-/**
  * Every reason a child's gap NACK about a message that asked for no receipt may not be forwarded without a row (6c): it
  * comes from a child of this relay (one it forwards the message to, or one its accepted layout names), never the peer
  * the message arrived from; it names a recipient of the message's frozen audience, or, with none frozen, only the child
- * itself; and it names the message's track with the hints the origin repairs by.
+ * itself; it names the message's track with the hints the origin repairs by; and it has a relay hop to spend and
+ * speaks for another recipient than this relay.
  */
 export function validateALInboundUnreceiptedGapNackAdmission(
     read: ALInboundUnreceiptedGapNackAdmissionRead
@@ -136,35 +130,33 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     else if (nack.orderingKey !== toALOrderingTrackKey(msg)) {
         issues.push(rejectInboundNack('Inbound NACK names a track the message is not on'));
     }
-    if (hasNoParentFor(nack, read.route)) {
-        issues.push(PARENT_GONE_FOR_RELAYED_NACK);
-    }
-    return issues;
+    return [...issues, ...validateALInboundGapNackHop(nack)];
 }
 
 /**
- * Once the parent this relay knows is gone, only a child's own word passes to the current upstream peer, as on the
- * row-less path (6d). A NACK forwarded upward is not own word at the next relay, so it goes on only to that relay's
- * known parent: a NACK takes the upstream fallback at most once, and no cycle of relays can pass it round.
- */
-function hasNoParentFor(nack: ALNackPayload, route: ALInboundGapNackRoute | undefined): boolean {
-    return route !== undefined && !route.knownParentReady && !isALOwnWord(nack);
-}
-
-/**
- * Every reason a child's gap NACK about a message this relay holds nothing of may not be forwarded (6d): it is the
- * recipient's own word, as only its own report reaches a parent it has no history with, and it carries the ordering
- * hints the origin repairs by. The lane named this relay's parent only for a sender that is its child in its accepted
- * layout.
+ * Every reason a child's gap NACK about a message this relay holds nothing of may not be forwarded (6d): it carries the
+ * ordering hints the origin repairs by, a relay hop to spend, and speaks for another recipient than this relay. The
+ * lane named this relay's parent only for a sender that is its child in its accepted layout; whom it speaks for the
+ * origin judges, by the recipient's signature or its receipt.
  */
 export function validateALInboundUnheldGapNackAdmission(
     read: ALInboundUnheldGapNackAdmissionRead
 ): readonly ALMessageRejection[] {
     return [
-        ...(isALOwnWord(read.nack)
-            ? []
-            : [rejectInboundNack('Inbound NACK speaks for another recipient than its sender')]),
-        ...(hasGapOrderingHints(read.nack) ? [] : [MISSING_GAP_ORDERING_HINTS])
+        ...(hasGapOrderingHints(read.nack) ? [] : [MISSING_GAP_ORDERING_HINTS]),
+        ...validateALInboundGapNackHop(read.nack)
+    ];
+}
+
+/**
+ * Every relay spends one of a gap NACK's relay hops, so a NACK relays whose accepted layouts disagree pass round a cycle
+ * stops once its leaf's grant is spent. A NACK that speaks for this relay is its own report come back round such a
+ * cycle: the relay's own reports leave from its gap run, never from this admission.
+ */
+function validateALInboundGapNackHop(nack: ALNackPayload): readonly ALMessageRejection[] {
+    return [
+        ...(nack.relayHopsLeft === 0 ? [NO_RELAY_HOP_LEFT] : []),
+        ...(nack.logicalRecipientPeerId === nack.toPeerId ? [SPEAKS_FOR_RELAY] : [])
     ];
 }
 

@@ -44,6 +44,7 @@ export const AL_RECEIPT_PROOF_FIELD_CLASSES = {
         serverSnapshotVersion: 'signed',
         fromPeerId: 'excluded',
         toPeerId: 'excluded',
+        relayHopsLeft: 'excluded',
         proof: 'excluded'
     } satisfies Record<keyof ALNackPayload, SignedFieldClass>
 } as const;

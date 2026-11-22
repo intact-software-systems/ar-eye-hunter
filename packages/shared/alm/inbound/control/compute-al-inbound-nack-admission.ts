@@ -25,6 +25,7 @@ import type { NacksControlValue, PendingControlValue } from './al-inbound-contro
 import { toALInboundControlObservations } from './compute-al-inbound-control-admission.ts';
 import {
     toALInboundUpwardControlWork,
+    type ALInboundUpwardControl,
     type ALInboundUpwardControlContext
 } from './to-al-inbound-upward-control-work.ts';
 
@@ -39,8 +40,8 @@ export interface ALInboundNackAdmissionRead {
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     /**
-     * For a gap NACK, what the message's room says of it and of the row's parent (6d); absent for any other NACK, or
-     * where the relay reads no room for it, which goes to the row's parent.
+     * For a gap NACK, what the message's room says of it (6d); absent for any other NACK, or where the relay reads no
+     * room for it, which goes to the row's parent.
      */
     readonly gapRoute: ALInboundGapNackRoute | undefined;
     readonly nowMs: number;
@@ -48,12 +49,10 @@ export interface ALInboundNackAdmissionRead {
     readonly traceId: string;
 }
 
-/** What the accepted layout and the ready peers of a message's room say of a child's gap NACK at this relay (6d). */
+/** What the accepted layout of a message's room says of a child's gap NACK at this relay (6d). */
 export interface ALInboundGapNackRoute {
     /** The sender is this relay's child in the room's accepted layout. */
     readonly isLayoutChild: boolean;
-    /** The parent this relay knows of the message, its row's or the peer it arrived from, is a ready room peer. */
-    readonly knownParentReady: boolean;
     /** This relay's upstream peer toward the origin in that layout, never the sender; absent when none resolves. */
     readonly upstreamPeerId: string | undefined;
 }
@@ -105,7 +104,7 @@ export function computeALInboundNackAdmission(
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            [{ kind: 'forwarded', control: { type: 'nack', payload: read.nack } }],
+            toALInboundRelayedNackControls(read.nack),
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },
@@ -119,14 +118,24 @@ export function computeALInboundNackAdmission(
 }
 
 /**
- * A relay keeps the parent it knows for a child's gap NACK while that parent is a ready room peer, and passes the NACK
- * to its current upstream peer only once that parent is gone. The admission lets only a child's own word take that
- * fallback, so a NACK takes it at most once and otherwise follows the arrival tree, which cannot cycle.
+ * A relay passes a child's gap NACK to its current upstream peer, and to the parent it knows of the message, its row's
+ * or the peer it arrived from, only when none resolves. Relays whose accepted layouts disagree can pass one NACK round
+ * a cycle: each forward spends one of its relay hops, so the cycle ends once the leaf's grant is spent.
  */
 function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInboundGapNackRoute | undefined): string {
-    return route === undefined || route.knownParentReady
-        ? knownParentPeerId
-        : route.upstreamPeerId ?? knownParentPeerId;
+    return route?.upstreamPeerId ?? knownParentPeerId;
+}
+
+/**
+ * The child's NACK as this relay forwards it: a gap NACK one relay hop lower, and none with no hop left; any other NACK
+ * as it came.
+ */
+function toALInboundRelayedNackControls(nack: ALNackPayload): readonly ALInboundUpwardControl[] {
+    if (nack.relayHopsLeft === 0) {
+        return [];
+    }
+    const payload = nack.relayHopsLeft === undefined ? nack : { ...nack, relayHopsLeft: nack.relayHopsLeft - 1 };
+    return [{ kind: 'forwarded', control: { type: 'nack', payload } }];
 }
 
 /** A child's gap NACK about a stored message that asked for no receipt, for which the relay keeps no row (6c). */
@@ -138,7 +147,7 @@ export interface ALInboundUnreceiptedGapNackAdmissionRead {
     readonly owner: ALInboundMessageOwner;
     /** The peer the message arrived from: never a child, and the parent this relay knows of the message. */
     readonly arrivalPeerId: string;
-    /** What the message's room says of the NACK and of the peer the message arrived from (6d). */
+    /** What the message's room says of the NACK (6d). */
     readonly route: ALInboundGapNackRoute;
     /** The next hops the relay passes a copy of the message down to: the children whose gap NACK it relays. */
     readonly childPeerIds: readonly string[];
@@ -248,7 +257,7 @@ function toALInboundRowlessGapNackCandidate(
                 controlMsgId,
                 traceId
             },
-            [{ kind: 'forwarded', control: { type: 'nack', payload: nack } }],
+            toALInboundRelayedNackControls(nack),
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },

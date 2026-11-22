@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { ALAckPayload, ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     AL_ACK_PROOF_DOMAIN_TAG,
     AL_NACK_PROOF_DOMAIN_TAG,
@@ -153,6 +154,15 @@ describe('ALM receipt proof signing and verification', () => {
 
         expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, { gapRequestNumber: 2 }) })).left?.kind)
             .toBe('invalid-signature');
+    });
+
+    it('still verifies a gap NACK whose relay hop count each relay lowered on its way', async () => {
+        const { publicKey, signed } = await createCryptoAndSigned(GAP_NACK);
+        const relayed = withPayload(signed, { fromPeerId: 'relay', toPeerId: 'upstream', relayHopsLeft: 0 });
+
+        expect(GAP_NACK.payload.relayHopsLeft).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+        expect(AL_RECEIPT_PROOF_FIELD_CLASSES.nack.relayHopsLeft).toBe('excluded');
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: relayed })).right).toBe(true);
     });
 
     it('still verifies a gap NACK whose fromPeerId and toPeerId a relay rewrote', async () => {

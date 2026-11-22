@@ -86,7 +86,6 @@ export interface ALInboundControlAdmissionDependencies {
     /** `undefined` on a lane that relays no gap NACK about a message it holds nothing of (6d). */
     readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
     readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
-    readonly isRoomPeerPresent: ALInboundMessageRuntime.Dependencies['isRoomPeerPresent'];
     readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 }
 
@@ -164,7 +163,6 @@ export class ALInboundControlAdmission {
     private readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
     private readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
     private readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
-    private readonly isRoomPeerPresent: ALInboundMessageRuntime.Dependencies['isRoomPeerPresent'];
     private readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
@@ -178,7 +176,6 @@ export class ALInboundControlAdmission {
         this.planRetriedCopyNextHops = dependencies.planRetriedCopyNextHops;
         this.readGapNackParent = dependencies.readGapNackParent;
         this.readUpstreamPeerId = dependencies.readUpstreamPeerId;
-        this.isRoomPeerPresent = dependencies.isRoomPeerPresent;
         this.isLayoutChildPeer = dependencies.isLayoutChildPeer;
     }
 
@@ -272,7 +269,7 @@ export class ALInboundControlAdmission {
      * A child's gap NACK: about a message this relay holds nothing of (6d); about one whose row waits on the sender or,
      * in the room's accepted layout, has the sender as its child; or about a stored message that asked for no receipt
      * (6c). The provenance row is read first, so a message without one costs no canonical read, and the stored message
-     * once, for the room that decides the sender's place and the known parent's readiness.
+     * once, for the room that decides the sender's place and this relay's upstream peer.
      */
     private async admitGapNack(
         arrival: ALInboundControlArrival,
@@ -297,10 +294,7 @@ export class ALInboundControlAdmission {
             })
             : undefined);
         if (surface !== undefined) {
-            const knownParentPeerId = surface.pendingAck?.toPeerId;
-            const gapRoute = stored === undefined || knownParentPeerId === undefined
-                ? undefined
-                : this.readGapNackRoute(stored, nack, knownParentPeerId);
+            const gapRoute = stored === undefined ? undefined : this.readGapNackRoute(stored, nack);
             return await this.admitRowNack(arrival, { nack, surface, gapRoute, nowMs }, evidence);
         }
         const unreceipted = stored === undefined
@@ -399,24 +393,19 @@ export class ALInboundControlAdmission {
             : { msg: stored.msg, isLayoutChild: this.isLayoutChildPeer(stored.msg, nack.fromPeerId) };
     }
 
-    /** What the message's room says of a child's gap NACK, for the parent this relay knows of the message (6d). */
-    private readGapNackRoute(
-        stored: ALInboundStoredGapNackMessage,
-        nack: ALInboundGapNack,
-        knownParentPeerId: string
-    ): ALInboundGapNackRoute {
+    /** What the message's room says of a child's gap NACK (6d). */
+    private readGapNackRoute(stored: ALInboundStoredGapNackMessage, nack: ALInboundGapNack): ALInboundGapNackRoute {
         const upstreamPeerId = this.readUpstreamPeerId(stored.msg);
         return {
             isLayoutChild: stored.isLayoutChild,
-            knownParentReady: this.isRoomPeerPresent?.(stored.msg, knownParentPeerId) ?? true,
             upstreamPeerId: upstreamPeerId === nack.fromPeerId ? undefined : upstreamPeerId
         };
     }
 
     /**
-     * Its parent is the peer the message arrived from, else, once that one is gone, this relay's current upstream peer;
-     * its children the next hops the lane passes a copy down to; absent for a message that asked for a receipt, or on a
-     * lane that passes no copy down.
+     * Its parent is this relay's current upstream peer, else the peer the message arrived from; its children the next
+     * hops the lane passes a copy down to; absent for a message that asked for a receipt, or on a lane that passes no
+     * copy down.
      */
     private readUnreceiptedGapNack(
         arrival: ALInboundControlArrival,
@@ -440,7 +429,7 @@ export class ALInboundControlAdmission {
             msg: stored.msg,
             owner,
             arrivalPeerId: owner.source.peerId,
-            route: this.readGapNackRoute(stored, nack, owner.source.peerId),
+            route: this.readGapNackRoute(stored, nack),
             childPeerIds: this.planRetriedCopyNextHops(stored.msg, owner.source),
             nowMs,
             controlMsgId: this.newControlId(),

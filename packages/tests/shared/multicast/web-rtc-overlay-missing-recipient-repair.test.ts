@@ -623,7 +623,11 @@ describe('a relay forwarding what its child signed (S8-R6)', () => {
                     ...child.payload,
                     fromPeerId: 'r',
                     toPeerId: 'a',
-                    ...(child.type === 'ack' ? { carrier: 'rtc' } : {})
+                    ...(child.type === 'ack' ? { carrier: 'rtc' } : {}),
+                    // The relay spends one of a gap NACK's relay hops, outside the recipient's proof (ruling 20).
+                    ...(child.type === 'nack' && child.payload.relayHopsLeft !== undefined
+                        ? { relayHopsLeft: child.payload.relayHopsLeft - 1 }
+                        : {})
                 }
             });
             expect(await verifyTestALReceiptControl(chain.keys.c!, received[0]!)).toBe(true);
