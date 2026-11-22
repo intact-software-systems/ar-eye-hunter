@@ -36,7 +36,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { toALOutboundEffectId, toALOutboundEndMessageEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
@@ -339,11 +339,11 @@ describe('outbound admission persisted-record validation', () => {
         expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
     });
 
-    it.each(['ack-timeout', 'repair-hint', 'nack-retry'])('terminates corrupt %s replay as non-retryable', async (kind) => {
+    it.each(['ack-timeout', 'repair-hint', 'nack-retry', 'end-message'])('terminates corrupt %s replay as non-retryable', async (kind) => {
         const admission = createAdmission();
         const { backend, store } = admission;
         const msg = createMessage();
-        const payload = kind === 'ack-timeout'
+        const payload = kind === 'ack-timeout' || kind === 'end-message'
             ? { kind, msgId: msg.id.msgId }
             : kind === 'nack-retry'
             ? { kind, msgId: msg.id.msgId, reason: 'not-yet-in-sync' }
@@ -351,9 +351,7 @@ describe('outbound admission persisted-record validation', () => {
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
             await tx.set(`outbound:sent:${msg.id.msgId}`, { msgId: msg.id.msgId, msg: { ...msg, payload: {} } });
-            const effectId = kind === 'nack-retry'
-                ? toALOutboundEffectId(['nack-retry', msg.id.msgId, 'not-yet-in-sync', 1])
-                : effect.effectId;
+            const effectId = toCorruptReplayEffectId(kind, msg, effect.effectId);
             await writeRawOutboundWork(backend, effectId, { effectId, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
@@ -376,9 +374,7 @@ describe('outbound admission persisted-record validation', () => {
         });
         try {
             await runtime.ready();
-            const workId = kind === 'nack-retry'
-                ? toALOutboundEffectId(['nack-retry', msg.id.msgId, 'not-yet-in-sync', 1])
-                : effect.effectId;
+            const workId = toCorruptReplayEffectId(kind, msg, effect.effectId);
             expect(await backend.workQueue.getItem(toALOutboundWorkKey('outbound', workId)))
                 .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
         }
@@ -690,4 +686,12 @@ async function writeRawOutboundWork(
     );
     await backend.workQueue.setItem(entry.key, entry, { expireAtTimestamp: Date.now() + 60_000 });
     return entry;
+}
+
+/** The work id each corrupt replay kind is written under: its own identity where its decoder checks one. */
+function toCorruptReplayEffectId(kind: string, msg: ALMessage, sendEffectId: string): string {
+    if (kind === 'nack-retry') {
+        return toALOutboundEffectId(['nack-retry', msg.id.msgId, 'not-yet-in-sync', 1]);
+    }
+    return kind === 'end-message' ? toALOutboundEndMessageEffectId(msg.id.msgId) : sendEffectId;
 }

@@ -32,6 +32,10 @@ import {
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
 import { computeALOutboundFirstHopWaitWrites } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALCapacityRefusedVerdict } from './lane/admit-al-outbound-volatile-budget.ts';
+import {
+    isALOutboundEmptyAudienceReceipt,
+    toALOutboundEmptyAudienceReceipt
+} from './message-end/to-al-outbound-empty-audience-receipt.ts';
 import { toALOutboundReadMessageEndBundle } from './message-end/to-al-outbound-message-end-bundle.ts';
 import {
     computeALOutboundRepairAttemptCharge,
@@ -45,8 +49,6 @@ import {
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
-    isALOutboundEmptyAudienceReceipt,
-    toALOutboundEmptyAudienceReceipt,
     toALOutboundTrackedReceiptAlgo,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';

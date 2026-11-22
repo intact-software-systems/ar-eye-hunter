@@ -32,6 +32,7 @@ import {
 import {
     decodeALOutboundSendAttemptIdentity,
     toALOutboundEffectId,
+    toALOutboundEndMessageEffectId,
     toALOutboundSendEffectId,
     type ALOutboundSendEffectIdentity
 } from './to-al-outbound-effect-id.ts';
@@ -148,6 +149,13 @@ export function decodeALOutboundEffectPayload<TPrepared>(
             }
             requireALOutboundNotYetInSyncRetryEffectIdentity(effectId, msgId);
             return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'nack-retry'; }>;
+        case 'end-message':
+            decodeALAdmissionRecord(value, ['kind', 'msgId']);
+            requirePersistedALNonEmptyString(payload.msgId, 'message end message id');
+            if (effectId !== toALOutboundEndMessageEffectId(payload.msgId as string)) {
+                throw new TypeError('Persisted AL message end identity does not match its message');
+            }
+            return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'end-message'; }>;
         default:
             throw new TypeError('Persisted AL outbound effect kind is invalid');
     }

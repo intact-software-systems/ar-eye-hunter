@@ -1,16 +1,13 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     isALHopCompletionAck,
     type ALAckPayload
 } from '../../al-contracts/al-control.ts';
-import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 import type {
     ALOutboundAckTrackingPlan,
-    ALOutboundDispatchPlan,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
@@ -209,29 +206,4 @@ export function isALOutboundReceiptComplete(
     const classes = toALOutboundReceiptClasses(pending);
     return pending.expectedPeerIds.length === 0 ||
         (classes.confirmedPeerIds.length > 0 && classes.unconfirmedPeerIds.length === 0);
-}
-
-/**
- * A `receiver` multicast frozen to an empty audience has nobody left to confirm it: its receipt is
- * complete with no row, as the WS server answers an empty audience.
- */
-export function isALOutboundEmptyAudienceReceipt<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): boolean {
-    return plan.ackTracking?.mode === 'receiver' &&
-        resolveALFrozenMulticastAudience(plan.msg.targets)?.recipientPeerIds.length === 0;
-}
-
-/** The acknowledgement of a receipt an empty frozen audience completed: nobody expected, nobody confirmed. */
-export function toALOutboundEmptyAudienceReceipt(msg: ALMessage): ALOutboundSettlementFact {
-    return toALOutboundAcknowledgementFact({
-        receipt: {
-            msgId: msg.id.msgId,
-            mode: 'receiver',
-            expectedPeerIds: [],
-            ackedPeerIds: [],
-            outsideAudiencePeerIds: []
-        },
-        hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
-        complete: true,
-        traceId: msg.id.traceId
-    });
 }

@@ -3,9 +3,12 @@ import { toALOutboundMessageEndBundle } from './to-al-outbound-message-end-bundl
 
 /**
  * What ending a message wrote: the stored row was marked ended, there was no row to mark (none in this store, one
- * already ended, or one whose retention ran out under the commit), or the sender's fence moved under the commit.
+ * already ended, or one whose retention ran out under the commit), or the sender's fence moved under the commit,
+ * which names the message's deadline for the end retained as work.
  */
-export type ALOutboundMessageEndOutcome = 'ended' | 'nothing-to-end' | 'conflict';
+export type ALOutboundMessageEndOutcome =
+    | Readonly<{ kind: 'ended' | 'nothing-to-end'; }>
+    | Readonly<{ kind: 'conflict'; expiresAtMs: number; }>;
 
 /**
  * Ends one message in a commit of its own with the bundle every terminal settlement commits, and states nothing:
@@ -18,7 +21,7 @@ export async function writeALOutboundMessageEnd<TPrepared>(
     const read = await admissionStore.readMessageEnd(msgId);
     const stored = read.storedMessage;
     if (stored === undefined || stored.ended) {
-        return 'nothing-to-end';
+        return { kind: 'nothing-to-end' };
     }
     const status = await admissionStore.commitBundle(toALOutboundMessageEndBundle<TPrepared>({
         senderId: stored.reference.senderId,
@@ -29,5 +32,8 @@ export async function writeALOutboundMessageEnd<TPrepared>(
         openReceipt: read.pendingAck,
         firstHopWait: read.firstHopWait
     }));
-    return status === 'expired' ? 'nothing-to-end' : status === 'committed' ? 'ended' : 'conflict';
+    if (status === 'conflict') {
+        return { kind: 'conflict', expiresAtMs: stored.reference.expiresAtMs };
+    }
+    return { kind: status === 'committed' ? 'ended' : 'nothing-to-end' };
 }

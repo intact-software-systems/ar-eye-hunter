@@ -13,6 +13,7 @@ import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
 import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from '../alm-reload-pair.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
+import { assessAlmReloadCancellations } from './assess-alm-reload-cancellations.ts';
 import { assessAlmReloadStorage } from './assess-alm-reload-storage.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
 
@@ -76,7 +77,7 @@ export function assessAlmReloadIdentity(
             continue;
         }
         issues.push(...assessReloadCommands(evidence));
-        issues.push(...assessReloadCancellations(evidence));
+        issues.push(...assessAlmReloadCancellations({ ...evidence, receive: resolveRecoveredReceives(evidence)[0] }));
         issues.push(...assessReloadTrace(evidence));
         issues.push(...assessReloadDocuments(evidence));
         issues.push(...assessReloadRetention(evidence));
@@ -195,36 +196,6 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             reloadValue.readyTimeoutMs === evidence.reload.readyTimeoutMs
         ? []
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
-}
-
-/**
- * Each cancelled send is cancelled before the reload, reads `cancelled`, and is proven absent after the original
- * arrives: the restored page resumes the original and not the cancelled message.
- */
-function assessReloadCancellations(evidence: ReloadEvidence): readonly string[] {
-    const { prefix, recovery, sender, receiver, send, checkpoint } = evidence;
-    const [receive] = resolveRecoveredReceives(evidence);
-    const unresumed = evidence.cancelled.every((cancelled) => {
-        const cancel = prefix.find((command) =>
-            command.kind === 'messages.cancel' && command.handleId === cancelled.handleId
-        );
-        const absence = recovery.find((command): command is RallarBlackBoxTestWaitCommand =>
-            command.kind === 'wait' && command.absent === true && command.match.kind === 'message' &&
-            command.match.payloadPath === 'data.payload' &&
-            isSameJsonValue(command.match.equals, decodeJsonValue(cancelled.payload))
-        );
-        const cancelValue = toRecordedAlmResultValue(sender, cancel);
-        const absenceValue = toRecordedAlmResultValue(receiver, absence);
-        return nonemptyString(cancelled.handleId) && cancelled.handleId !== send.handleId &&
-            !isSameJsonValue(decodeJsonValue(cancelled.payload), decodeJsonValue(send.payload)) &&
-            cancel !== undefined && prefix.indexOf(cancel) > prefix.indexOf(cancelled) &&
-            isJsonRecordValue(cancelValue) && cancelValue.state === 'cancelled' &&
-            absence !== undefined && receive !== undefined && recovery.indexOf(absence) > recovery.indexOf(receive) &&
-            isJsonRecordValue(absenceValue) && absenceValue.absent === true && absenceValue.matched === false;
-    });
-    return unresumed
-        ? []
-        : [`${checkpoint.key}: a cancelled send must read cancelled before the reload and never arrive.`];
 }
 
 /** The recovered original keeps its generated identity, so it carries the trace its pre-reload send returned. */

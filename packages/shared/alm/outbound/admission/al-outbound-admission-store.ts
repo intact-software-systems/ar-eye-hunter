@@ -60,6 +60,7 @@ import type {
     ALOrderingIndexedSequence,
     ALOrderingStoredPredecessors
 } from '../lane/compute-al-outbound-group-sent-positions.ts';
+import { readALOutboundMessageEnd } from '../message-end/read-al-outbound-message-end.ts';
 import type { ALOutboundMessageEndRead } from '../message-end/to-al-outbound-message-end-bundle.ts';
 import {
     ALOutboundAdmissionEffectStore,
@@ -83,7 +84,6 @@ import {
 } from './al-outbound-canonical-fact-writes.ts';
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
-import { readALOutboundMessageEnd } from './read-al-outbound-message-end.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
     ALOutboundRoomSentFloorChange,
@@ -364,6 +364,11 @@ export type ALOutboundDurableEffect<TPrepared> =
         kind: 'nack-retry';
         msgId: string;
         reason: 'not-yet-in-sync';
+    }>
+    /** The end of a message whose own commit conflicted: its run commits that end again (D750). */
+    | Readonly<{
+        kind: 'end-message';
+        msgId: string;
     }>
     | Readonly<{
         kind: 'admit-control';

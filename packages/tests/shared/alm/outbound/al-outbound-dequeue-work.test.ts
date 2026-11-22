@@ -344,13 +344,10 @@ describe('AL outbound dequeue work', () => {
             await runOutboundWorkTask(runtime);
             expect(timings.filter((event) => event.stage === 'reservation-return')).toHaveLength(2);
             expect(timings.filter((event) => event.stage === 'admission-start')).toHaveLength(0);
-            // The cancelled row first stores its message's end, so the two settle in either order.
-            const settled = timings.filter((event) => event.stage === 'attempt-settled');
-            expect(settled).toHaveLength(2);
-            expect(settled).toEqual(expect.arrayContaining([
+            expect(timings.filter((event) => event.stage === 'attempt-settled')).toEqual([
                 expect.objectContaining({ key: entries[0]!.key, outcome: 'completed', reason: 'cancelled' }),
                 expect.objectContaining({ key: entries[1]!.key, outcome: 'completed', reason: 'expired' })
-            ]));
+            ]);
         }
         finally {
             await runtime.dispose();

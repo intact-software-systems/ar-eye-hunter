@@ -1,7 +1,10 @@
 import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
+import { toALOutboundEndMessageEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     beforeEach,
@@ -83,7 +86,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         expect(kinds).not.toContain('attempt-started');
     });
 
-    it('stores the end at the next claimed effect of the message when its own commit conflicts (C6)', async () => {
+    it('retains its end as work when the commit conflicts, and the run of that row stores it (C6)', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const fixture = createHandOverFixture(true, 1_000);
         const claims = holdOutboundClaims(fixture.stores);
@@ -93,6 +96,11 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
 
         await fixture.runtime.handOver(message.id.msgId);
         expect((await fixture.stores.admissionStore.readSendGuards(message)).kind).toBe('current');
+        const endKey = toALOutboundWorkKey(
+            fixture.stores.admissionStore.namespace,
+            toALOutboundEndMessageEffectId(message.id.msgId)
+        );
+        expect((await fixture.stores.workQueue.getItem(endKey))?.status).toBe(EntityStatus.NEW);
         await claims.release(fixture.runtime);
         await runOutboundWorkTask(fixture.runtime);
         // Past the receipt's first window and inside the message deadline: a live receipt would charge an attempt.
@@ -100,6 +108,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         await runOutboundWorkTask(fixture.runtime);
 
         expect(await fixture.stores.admissionStore.readSendGuards(message)).toEqual({ kind: 'ended' });
+        expect((await fixture.stores.workQueue.getItem(endKey))?.status).toBe(EntityStatus.COMPLETED);
         expect(await peekOutboundWorkReadyAt(fixture.stores.workQueue, fixture.stores.admissionStore.namespace))
             .toBeUndefined();
         expect(fixture.sent).toEqual([]);

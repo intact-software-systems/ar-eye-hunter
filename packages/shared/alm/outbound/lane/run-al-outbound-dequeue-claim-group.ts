@@ -19,11 +19,10 @@ export namespace ALOutboundDequeueClaimGroup {
         readonly createEvidence: (
             work: ALOutboundEffectSnapshot<TPrepared>
         ) => ALOutboundReceiptWorkEvidence | undefined;
-        /** The settled attempt of a row that must not be admitted; undefined for a row the group admits. */
-        readonly startSettledBeforeEffect: (
+        readonly readSettledBeforeEffect: (
             work: ALOutboundEffectSnapshot<TPrepared>,
             observed: ALOutboundClaimObservation
-        ) => Promise<ALWorkAttemptResult> | undefined;
+        ) => ALWorkAttemptResult | undefined;
         readonly admit: (
             members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
         ) => readonly Promise<ALWorkAttemptResult>[];
@@ -98,8 +97,8 @@ function startDequeueClaim<TPrepared>(
         observation,
         batchIndex
     };
-    const settled = input.startSettledBeforeEffect(work, observation);
+    const settled = input.readSettledBeforeEffect(work, observation);
     return settled === undefined
         ? { kind: 'admit', member, observation }
-        : { kind: 'settled', observation, attempt: settled };
+        : { kind: 'settled', observation, attempt: Promise.resolve(settled) };
 }

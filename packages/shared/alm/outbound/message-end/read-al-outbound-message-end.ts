@@ -1,6 +1,6 @@
 import type { ALAdmissionReadSession } from '../../al-admission-work-backend.ts';
-import type { ALOutboundMessageEndRead } from '../message-end/to-al-outbound-message-end-bundle.ts';
-import type { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
+import type { ALOutboundAdmissionReads } from '../admission/al-outbound-admission-reads.ts';
+import type { ALOutboundMessageEndRead } from './to-al-outbound-message-end-bundle.ts';
 
 /**
  * What the end of one message marks and deletes, read without planning the message. A message with no stored row
