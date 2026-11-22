@@ -103,9 +103,9 @@ export function computeAlmLaneLedger(input: ComputeAlmLaneLedgerInput): AlmLaneL
 }
 
 /**
- * A carrier whose jobs are still running or skipped says nothing yet. A newer push to a pull request cancels its jobs by
- * design, so that run is left out; a push or dispatched run has a concurrency group of its own, so a cancelled one is
- * read.
+ * A carrier whose jobs are still running or skipped says nothing yet. A newer push to a pull request cancels its jobs
+ * by design, so that run is left out; a push or dispatched run has a concurrency group of its own, so a cancelled one
+ * is read.
  */
 function isReadRun(run: AlmLaneObservedRun): boolean {
     if (run.jobConclusion === 'in-progress' || run.jobConclusion === 'skipped') {

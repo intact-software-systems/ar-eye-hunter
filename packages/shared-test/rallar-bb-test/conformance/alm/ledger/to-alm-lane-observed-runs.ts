@@ -10,7 +10,7 @@ import {
     type AlmLaneDecodedFile,
     type AlmLaneResultFile
 } from './decode-alm-lane-result-file.ts';
-import { toAlmLaneJobConclusion, type AlmLaneReportedJob } from './to-alm-lane-job-conclusion.ts';
+import type { AlmLaneReportedJob } from './to-alm-lane-job-conclusion.ts';
 
 const ALM_LANE_RUN_EVENTS: readonly AlmLaneRunEvent[] = ['push', 'pull_request', 'workflow_dispatch'];
 
@@ -23,7 +23,13 @@ export interface AlmLaneListedArtifact {
     readonly expired: boolean;
 }
 
-export interface AlmLaneResultArtifact extends AlmLaneListedArtifact {
+/** A result artifact name as the ledger reads it: once, however many times the run lists it. */
+export interface AlmLaneResolvedArtifact extends AlmLaneListedArtifact {
+    /** Above 1 after a rerun: a rerun job uploads again under its name, and a download by name returns one copy. */
+    readonly listedCount: number;
+}
+
+export interface AlmLaneResultArtifact extends AlmLaneResolvedArtifact {
     /** Null when the artifact has expired or could not be downloaded. */
     readonly files: readonly AlmLaneResultFile[] | null;
 }
@@ -66,11 +72,24 @@ interface AlmLaneArtifactReading {
     readonly issues: readonly string[];
 }
 
-/** The artifacts the ledger reads: each carrier's full-scope lane result, expired or not. */
-export function resolveAlmLaneResultArtifacts<T extends AlmLaneListedArtifact>(artifacts: readonly T[]): readonly T[] {
-    return artifacts.filter((artifact) =>
+/**
+ * The artifacts the ledger reads: each carrier's full-scope lane result, expired or not, each name once with the first
+ * listing kept.
+ */
+export function resolveAlmLaneResultArtifacts(
+    artifacts: readonly AlmLaneListedArtifact[]
+): readonly AlmLaneResolvedArtifact[] {
+    const results = artifacts.filter((artifact) =>
         ALM_CONFORMANCE_CARRIERS.some((carrier) => artifact.name.startsWith(toAlmLaneResultArtifactPrefix(carrier)))
     );
+    const firsts = results.filter((artifact, index) =>
+        results.findIndex((other) => other.name === artifact.name) === index
+    );
+    return firsts.map(({ name, expired }) => ({
+        name,
+        expired,
+        listedCount: results.filter((other) => other.name === name).length
+    }));
 }
 
 /**
@@ -103,19 +122,16 @@ export function toAlmLaneObservedRuns(input: ToAlmLaneObservedRunsInput): AlmLan
 
 /** The jobs of each carrier, carriers in the order their first job is listed. */
 function toCarrierReads(jobReads: readonly AlmLaneJobRead[]): readonly AlmLaneCarrierRead[] {
-    return jobReads.flatMap((first, index): readonly AlmLaneCarrierRead[] =>
-        jobReads.findIndex((read) => read.carrier === first.carrier) === index
-            ? [{
-                carrier: first.carrier,
-                jobs: [
-                    first.job,
-                    ...jobReads.slice(index + 1).filter((read) => read.carrier === first.carrier).map((read) =>
-                        read.job
-                    )
-                ]
-            }]
-            : []
+    const firsts = jobReads.filter((read, index) =>
+        jobReads.findIndex((other) => other.carrier === read.carrier) === index
     );
+    return firsts.map((first) => ({
+        carrier: first.carrier,
+        jobs: [
+            first.job,
+            ...jobReads.filter((read) => read !== first && read.carrier === first.carrier).map((read) => read.job)
+        ]
+    }));
 }
 
 function resolveCarriersWithoutJob(
@@ -149,19 +165,20 @@ function toNotReadRun(
     };
 }
 
-/** No reading for a job that is not a lane job, or a skipped one whose matrix name GitHub never expanded. */
+/**
+ * No reading for a job that is not a lane job, which includes a job skipped before its matrix expanded: GitHub names it
+ * with the workflow's unevaluated name, which the pattern does not match. A lane job naming no known carrier is an
+ * issue.
+ */
 function toJobRead(runId: number, job: AlmLaneReportedJob): readonly Either<string, AlmLaneJobRead>[] {
     const named = ALM_LANE_JOB_NAME_PATTERN.exec(job.name)?.[1];
     if (named === undefined) {
         return [];
     }
     const carrier = ALM_CONFORMANCE_CARRIERS.find((known) => known === named);
-    if (carrier !== undefined) {
-        return [Either.ofRight({ carrier, job })];
-    }
-    return toAlmLaneJobConclusion(job) === 'skipped'
-        ? []
-        : [Either.ofLeft(`run ${runId}: job ${JSON.stringify(job.name)} names no known carrier.`)];
+    return carrier === undefined
+        ? [Either.ofLeft(`run ${runId}: job ${JSON.stringify(job.name)} names no known carrier.`)]
+        : [Either.ofRight({ carrier, job })];
 }
 
 function toObservedRun(
@@ -175,10 +192,12 @@ function toObservedRun(
         .map((artifact) => toArtifactReading(artifact, read.carrier));
     const plans = artifacts.flatMap((artifact) => artifact.plan === null ? [] : [artifact.plan]);
     const firstPlan = plans[0];
-    const everyJobRead = artifacts.filter((artifact) => artifact.read).length === read.jobs.length;
+    const readCount = artifacts.filter((artifact) => artifact.read).length;
+    const everyJobRead = readCount === read.jobs.length;
     const results = artifacts.flatMap((artifact) => artifact.results);
     const issues = [
         ...artifacts.flatMap((artifact) => artifact.issues),
+        ...(everyJobRead || read.jobs.length === 1 ? [] : [toPlanWithheldIssue(readCount, read.jobs.length)]),
         ...(firstPlan !== undefined && plans.some((plan) => !isSameAlmLanePlan(plan, firstPlan))
             ? [`the plans of this carrier's jobs differ; read the first.`]
             : []),
@@ -220,10 +239,22 @@ function toArtifactReading(artifact: AlmLaneResultArtifact, carrier: AlmConforma
 }
 
 function toArtifactIssues(artifact: AlmLaneResultArtifact): readonly string[] {
+    const listed = artifact.listedCount > 1
+        ? [
+            `artifact ${artifact.name} is listed ${artifact.listedCount} times` +
+            ` (a rerun uploads again under its job's name); read once.`
+        ]
+        : [];
     if (artifact.expired) {
-        return [`artifact ${artifact.name} has expired; history ends at artifact retention.`];
+        return [...listed, `artifact ${artifact.name} has expired; history ends at artifact retention.`];
     }
-    return artifact.files === null ? [`artifact ${artifact.name} could not be downloaded.`] : [];
+    return artifact.files === null ? [...listed, `artifact ${artifact.name} could not be downloaded.`] : listed;
+}
+
+function toPlanWithheldIssue(readCount: number, jobCount: number): string {
+    return `${readCount} of ${jobCount} jobs ${
+        readCount === 1 ? 'has' : 'have'
+    } a readable result artifact; the plan is not read.`;
 }
 
 /**

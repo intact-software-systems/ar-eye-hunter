@@ -63,6 +63,11 @@ describe('the names the ALM lane ledger reads from GitHub', () => {
         expect(ALM_LANE_JOB_NAME_PATTERN.exec(jobName)?.[1]).toBe(entry.carrier);
     });
 
+    it('does not read the workflow\'s unevaluated job name, which a job skipped before its matrix expands carries, as a lane job', () => {
+        expect(lane?.name).toContain('${{ matrix.carrier }}');
+        expect(ALM_LANE_JOB_NAME_PATTERN.exec(lane?.name ?? '')).toBeNull();
+    });
+
     it.each(entries)('finds the result artifact of %j by its name in the action', (entry) => {
         const resultName = toUploadNames(entry).find((name) => name.startsWith('alm-lane-result-'));
 

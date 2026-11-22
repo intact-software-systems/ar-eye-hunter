@@ -46,7 +46,7 @@ function toLaneJob(carrier: string, conclusion: string | null = 'success'): AlmL
 }
 
 function toArtifact(carrier: AlmConformanceCarrier, files: readonly AlmLaneResultFile[]): AlmLaneResultArtifact {
-    return { name: `alm-lane-result-${carrier}-full-merge-sha`, expired: false, files };
+    return { name: `alm-lane-result-${carrier}-full-merge-sha`, expired: false, listedCount: 1, files };
 }
 
 const wsArtifact = toArtifact('ws', [
@@ -85,11 +85,15 @@ describe('toAlmLaneObservedRuns', () => {
         });
     });
 
-    it('skips a job that is not a lane job, and a skipped matrix job whose name was never expanded', () => {
+    it('skips a job that is not a lane job, and a skipped matrix job under the workflow\'s unevaluated name', () => {
         const reading = toAlmLaneObservedRuns(toInput({
             jobs: [
                 { name: 'Detect ALM lane changes', status: 'completed', conclusion: 'success' },
-                toLaneJob('${{ matrix.carrier }}', 'skipped')
+                {
+                    name: 'ALM conformance observation (${{ matrix.carrier }}${{ matrix.families && format(\', {0}\', matrix.families) || \'\' }})',
+                    status: 'completed',
+                    conclusion: 'skipped'
+                }
             ],
             artifacts: []
         }));
@@ -97,8 +101,8 @@ describe('toAlmLaneObservedRuns', () => {
         expect(reading).toEqual({ runs: [], issues: [] });
     });
 
-    it('names a lane job for a carrier it does not know that was not skipped', () => {
-        const reading = toAlmLaneObservedRuns(toInput({ jobs: [toLaneJob('tcp', 'failure')], artifacts: [] }));
+    it.each(['failure', 'skipped'])('names a lane job that concluded %s for a carrier it does not know', (conclusion) => {
+        const reading = toAlmLaneObservedRuns(toInput({ jobs: [toLaneJob('tcp', conclusion)], artifacts: [] }));
 
         expect(reading.runs).toEqual([]);
         expect(reading.issues).toEqual(['run 7: job "ALM conformance observation (tcp)" names no known carrier.']);
@@ -272,7 +276,7 @@ const rtcTwoAgent = toFixtureResult('rtc', 'two-agent', new Map([['a', 'passed']
 const rtcThreeAgent = toFixtureResult('rtc', 'three-agent', new Map([['c', 'passed']]));
 
 function toSplitArtifact(families: string, files: readonly AlmLaneResultFile[]): AlmLaneResultArtifact {
-    return { name: `alm-lane-result-rtc-full-merge-sha-${families}`, expired: false, files };
+    return { name: `alm-lane-result-rtc-full-merge-sha-${families}`, expired: false, listedCount: 1, files };
 }
 
 const firstArtifact = toSplitArtifact(FIRST_FAMILIES, [
@@ -333,12 +337,15 @@ describe('toAlmLaneObservedRuns over a carrier split across jobs', () => {
     it.each(
         [
             ['has expired', [firstArtifact, { ...secondArtifact, expired: true, files: null }], [
-                `artifact ${secondArtifact.name} has expired; history ends at artifact retention.`
+                `artifact ${secondArtifact.name} has expired; history ends at artifact retention.`,
+                '1 of 2 jobs has a readable result artifact; the plan is not read.'
             ]],
             ['could not be downloaded', [firstArtifact, { ...secondArtifact, files: null }], [
-                `artifact ${secondArtifact.name} could not be downloaded.`
+                `artifact ${secondArtifact.name} could not be downloaded.`,
+                '1 of 2 jobs has a readable result artifact; the plan is not read.'
             ]],
-            ['is absent', [firstArtifact], []]
+            ['is absent', [firstArtifact], ['1 of 2 jobs has a readable result artifact; the plan is not read.']],
+            ['and the other are absent', [], ['0 of 2 jobs have a readable result artifact; the plan is not read.']]
         ] as const
     )('reads a carrier one of whose job artifacts %s as having no plan, red with nothing to attribute', (_, artifacts, issues) => {
         const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts }));
@@ -437,6 +444,69 @@ describe('toAlmLaneObservedRuns over a carrier split across jobs', () => {
     });
 });
 
+/** The artifacts as the entry point hands them over: listed by GitHub, resolved, and each name downloaded once. */
+function toDownloaded(listed: readonly Omit<AlmLaneResultArtifact, 'listedCount'>[]): readonly AlmLaneResultArtifact[] {
+    return resolveAlmLaneResultArtifacts(listed).map((artifact) => ({
+        ...artifact,
+        files: listed.find((entry) => entry.name === artifact.name)?.files ?? null
+    }));
+}
+
+describe('toAlmLaneObservedRuns over a rerun that uploaded again under a job\'s name', () => {
+    it('reads a one-job carrier listed twice once, and names the second listing', () => {
+        const reading = toAlmLaneObservedRuns(toInput({ attempt: 2, artifacts: toDownloaded([wsArtifact, wsArtifact]) }));
+
+        expect(reading.runs.map(({ plan, familyResults }) => ({ plan, familyResults }))).toEqual([
+            { plan: toPlan('ws'), familyResults: [toResult('ws')] }
+        ]);
+        expect(reading.issues).toEqual([
+            `run 7 ws: artifact ${wsArtifact.name} is listed 2 times (a rerun uploads again under its job's name); read once.`
+        ]);
+    });
+
+    it('reads a split carrier listed A, B, B with its plan, names the failed scenario, and is red as a rerun', () => {
+        const failedThreeAgent = toFixtureResult('rtc', 'three-agent', new Map([['c', 'failed']]), 'failed');
+        const rerunSecond = toSplitArtifact(SECOND_FAMILIES, [
+            toFile('rtc-full-plan.json', toFixturePlan('rtc')),
+            toFile('rtc-full-three-agent.json', failedThreeAgent)
+        ]);
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            attempt: 2,
+            artifacts: toDownloaded([firstArtifact, rerunSecond, rerunSecond])
+        }));
+
+        expect(reading.runs[0]?.plan).toEqual(toFixturePlan('rtc'));
+        expect(reading.issues).toEqual([
+            `run 7 rtc: artifact ${rerunSecond.name} is listed 2 times (a rerun uploads again under its job's name); read once.`
+        ]);
+        expect(reading.runs.map(computeAlmLaneRunReading)).toMatchObject([{
+            green: false,
+            failed: ['rtc/three-agent/c'],
+            candidates: ['rtc/three-agent/c']
+        }]);
+    });
+
+    it('reads a split carrier listed A, A, its other job dead in both attempts, with no plan', () => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            attempt: 2,
+            artifacts: toDownloaded([firstArtifact, firstArtifact])
+        }));
+
+        expect(reading.issues).toEqual([
+            `run 7 rtc: artifact ${firstArtifact.name} is listed 2 times (a rerun uploads again under its job's name); read once.`,
+            'run 7 rtc: 1 of 2 jobs has a readable result artifact; the plan is not read.'
+        ]);
+        expect(reading.runs.map(computeAlmLaneRunReading)).toMatchObject([{
+            green: false,
+            planRead: false,
+            failed: [],
+            notRun: [],
+            candidates: ['rtc/run/7'],
+            unattributedReason: 'rerun'
+        }]);
+    });
+});
+
 describe('resolveAlmLaneResultArtifacts', () => {
     it('selects the full-scope lane result artifacts of every carrier, expired ones included', () => {
         const toListed = (name: string, expired = false) => ({ name, expired });
@@ -448,8 +518,19 @@ describe('resolveAlmLaneResultArtifacts', () => {
             toListed('alm-conformance-lane-ws-full-abc'),
             toListed('validation-evidence-v2')
         ])).toEqual([
-            toListed('alm-lane-result-ws-full-abc'),
-            toListed('alm-lane-result-rtc-with-ws-fallback-full-abc', true)
+            { ...toListed('alm-lane-result-ws-full-abc'), listedCount: 1 },
+            { ...toListed('alm-lane-result-rtc-with-ws-fallback-full-abc', true), listedCount: 1 }
+        ]);
+    });
+
+    it('selects a name a rerun listed again once, the first listing kept, with how many times it is listed', () => {
+        expect(resolveAlmLaneResultArtifacts([
+            { name: 'alm-lane-result-rtc-full-abc-two-agent', expired: false },
+            { name: 'alm-lane-result-rtc-full-abc-three-agent', expired: false },
+            { name: 'alm-lane-result-rtc-full-abc-two-agent', expired: true }
+        ])).toEqual([
+            { name: 'alm-lane-result-rtc-full-abc-two-agent', expired: false, listedCount: 2 },
+            { name: 'alm-lane-result-rtc-full-abc-three-agent', expired: false, listedCount: 1 }
         ]);
     });
 });
