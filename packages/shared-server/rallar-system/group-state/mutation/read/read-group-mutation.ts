@@ -77,7 +77,7 @@ async function readSequentialGroupMutationWithPolicy(
     // Safe beside the sequential read because the policy document is written
     // once at creation and never updated in this release; a policy-update
     // surface must move this into the read's stability window.
-    const lifecyclePolicy = readsGroupLifecyclePolicy(command.operation)
+    const lifecyclePolicy = readsGroupLifecyclePolicy(command)
         ? await repository.readLifecyclePolicy(command.aggregateRef)
         : null;
     return await readSequentialGroupMutation({ repository, command, lifecyclePolicy });
@@ -88,7 +88,10 @@ async function readLobbyForMutation(repository: GroupStateRepository, command: G
     const configures = command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure';
     const principalId = resolveGroupMutationTargetPrincipalId(command);
     const targets = configures ? read.activeMembers?.map(member => member.principalId) ?? [] : [];
-    const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets, command.operation === 'createGroup' ? 'expired' : 'active');
+    const includeCandidateMembers = command.operation === 'rotateGroupJoinCode' ||
+        command.operation === 'updateGroup' && (command.input.joinMode !== null || command.input.metadata !== null) ||
+        read.lifecyclePolicy?.status === 'present' && (read.lifecyclePolicy.policy.admission.mode === 'closed' || read.lifecyclePolicy.policy.admission.untilMemberCount !== null);
+    const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets, command.operation === 'createGroup' ? 'expired' : 'active', includeCandidateMembers);
     // Some lobby reads follow the group query. Recheck its revision before using the private roster and policy together.
     if (read.group) {
         const current = await repository.findGroupEntry(command.aggregateRef);

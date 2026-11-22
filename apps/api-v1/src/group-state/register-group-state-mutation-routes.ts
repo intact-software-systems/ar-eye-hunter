@@ -82,6 +82,9 @@ function registerUpdateGroupRoute(
                         })
                     )
                 });
+                if (request.roomLobby?.operation === 'release' || request.roomLobby?.operation === 'wait') {
+                    return context.json({ roomRef: { ...scope, groupId } });
+                }
                 return context.json(written.snapshot);
             }
             catch (error) {

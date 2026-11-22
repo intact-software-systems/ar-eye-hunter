@@ -54,7 +54,7 @@ export async function readExactGroupMutation({
         aggregateRef: command.aggregateRef,
         includeGroup: true,
         includePresenceSummary: true,
-        includeLifecyclePolicy: readsGroupLifecyclePolicy(command.operation),
+        includeLifecyclePolicy: readsGroupLifecyclePolicy(command),
         sessionIntentPrincipalId: groupSessionIntentPrincipal(command),
         includeSessionReservations: readsGroupSessionReservations(command.operation),
         includeGroupSnapshot: includeGroupSnapshot || readsGroupActiveMembers(command.operation),

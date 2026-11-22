@@ -139,7 +139,6 @@ export function computeGroupMutationWriteResult(
     const { command, eventGroup, facts, guard, read } = input;
     const group = eventGroup ??
         (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
-    const lobby = computeRoomLobbyMutation(input, group);
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
     const event = input.eventType === null
@@ -155,6 +154,7 @@ export function computeGroupMutationWriteResult(
         });
     const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;
+    const lobby = computeRoomLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
     const scheduled = computeScheduledMutationWrites(input, group, sessionReservationWrite);
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const outboxWrites = [...outboxEntries.map(computeAppOutboxInsert), ...scheduled.outboxWrites, ...lobby.outbox];

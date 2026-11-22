@@ -1,5 +1,5 @@
 import {
-    changeRoomLobby, configureRoomLobby, createRoomLobby, decodeRoomLobby, decodeRoomLobbyAccountView, projectRoomLobbyAccount, roomLobbyApplicationDefault,
+    changeRoomLobby, configureRoomLobby, configureRoomLobbyCapacityClaims, createRoomLobby, decodeRoomLobby, decodeRoomLobbyAccountView, projectRoomLobbyAccount, roomLobbyApplicationDefault,
     type RoomLobby
 } from '@shared/api/room-lobbies/room-lobby.ts';
 import { describe, expect, it } from 'vitest';
@@ -15,6 +15,65 @@ function apply(lobby: RoomLobby, command: RoomLobby.Command, now: number): RoomL
 }
 
 describe('named room lobby seats', () => {
+    it('allocates an exclusive offer to the oldest waiter before a walk-in, and confirms only on arrival', () => {
+        const first = createRoomLobby(roomRef, 1, policy, 'courts');
+        const full = apply(first, { kind: 'arrive', principalId: 'host' }, 10);
+        const waiting = apply(full, { kind: 'wait', principalId: 'alice', eligibleUntilEpochMs: null }, 100);
+        const queue = apply(waiting, { kind: 'wait', principalId: 'bob', eligibleUntilEpochMs: null }, 90);
+        const retry = apply(queue, { kind: 'wait', principalId: 'alice', eligibleUntilEpochMs: null }, 95);
+        expect(retry).toBe(queue);
+        expect(projectRoomLobbyAccount(scope, 'bob', queue).seat).toEqual({ roomRef, status: 'waiting', deadlineEpochMs: null });
+        const offered = apply(queue, { kind: 'release', principalId: 'host' }, 200);
+        expect(projectRoomLobbyAccount(scope, 'alice', offered).seat).toEqual({ roomRef, status: 'offered', deadlineEpochMs: 60200 });
+        expect(changeRoomLobby(offered, { kind: 'reserve', principalId: 'outsider' }, 201).rejection).toBe('full');
+        const joined = apply(offered, { kind: 'reserve', principalId: 'alice' }, 202);
+        expect(joined).toBe(offered);
+        const arrived = apply(joined, { kind: 'arrive', principalId: 'alice' }, 203);
+        expect(projectRoomLobbyAccount(scope, 'alice', arrived).seat?.status).toBe('present');
+        const again = apply(arrived, { kind: 'release', principalId: 'alice' }, 204);
+        expect(projectRoomLobbyAccount(scope, 'bob', again).seat?.status).toBe('offered');
+        expect(decodeRoomLobby(again)).toEqual(again);
+    });
+
+    it('expires or declines offers once, skips expired eligibility, and cancels waiting privately', () => {
+        const full = apply(createRoomLobby(roomRef, 1, policy, 'courts'), { kind: 'arrive', principalId: 'host' }, 0);
+        let lobby = full;
+        for (const [principalId, eligibleUntilEpochMs] of [['alice', 20], ['bob', 40], ['carl', null], ['deb', null]] as const) {
+            lobby = apply(lobby, { kind: 'wait', principalId, eligibleUntilEpochMs }, 2);
+        }
+        lobby = apply(lobby, { kind: 'release', principalId: 'deb' }, 3);
+        const offered = apply(lobby, { kind: 'release', principalId: 'host' }, 21);
+        expect(projectRoomLobbyAccount(scope, 'alice', offered).seat).toBeNull();
+        const offer = offered.seats[0]!.offerWindow!;
+        expect(offer.dueAtEpochMs).toBe(40);
+        const promoted = apply(offered, { kind: 'expire', ...offer }, 40);
+        expect(projectRoomLobbyAccount(scope, 'carl', promoted).seat?.status).toBe('offered');
+        expect(apply(promoted, { kind: 'expire', ...offer }, 41)).toBe(promoted);
+        const declined = apply(promoted, { kind: 'release', principalId: 'carl' }, 42);
+        expect(declined.seats).toEqual([]);
+        expect(declined.waiters).toEqual([]);
+    });
+
+    it('preserves scheduled places, skips a blocked waiter, and offers onward when the held capacity expires', () => {
+        const empty = createRoomLobby(roomRef, 1, policy, 'scheduled');
+        const held = configureRoomLobbyCapacityClaims(empty, { principalIds: ['bob'], dueAtEpochMs: 100 }, 0).lobby;
+        const blocked = apply(held, { kind: 'wait', principalId: 'alice', eligibleUntilEpochMs: null }, 1);
+        expect(projectRoomLobbyAccount(scope, 'alice', blocked).seat?.status).toBe('waiting');
+        expect(changeRoomLobby(blocked, { kind: 'reserve', principalId: 'outsider' }, 2).rejection).toBe('full');
+        const reserved = apply(blocked, { kind: 'wait', principalId: 'bob', eligibleUntilEpochMs: null }, 3);
+        expect(projectRoomLobbyAccount(scope, 'bob', reserved).seat?.status).toBe('offered');
+        const declined = apply(reserved, { kind: 'release', principalId: 'bob' }, 4);
+        expect(decodeRoomLobby(declined)).toEqual(declined);
+        expect(declined.seats.length).toBe(0);
+        const due = held.capacityClaims!;
+        const promoted = apply(declined, { kind: 'expire', generation: due.generation, dueAtEpochMs: 100 }, 100);
+        expect(promoted.capacityClaims).toBeNull();
+        expect(projectRoomLobbyAccount(scope, 'alice', promoted).seat?.status).toBe('offered');
+        expect(apply(promoted, { kind: 'expire', generation: due.generation, dueAtEpochMs: 100 }, 105)).toBe(promoted);
+        const withdrawn = configureRoomLobbyCapacityClaims(declined, null, 5).lobby;
+        expect(projectRoomLobbyAccount(scope, 'alice', withdrawn).seat?.status).toBe('offered');
+    });
+
     it('resolves only explicit application policies, including valid names shared by object prototypes', () => {
         expect(roomLobbyApplicationDefault(undefined, 'toString')).toBeUndefined();
         expect(roomLobbyApplicationDefault({ sports: policy }, 'toString')).toBeUndefined();

@@ -21,9 +21,10 @@ import {
  * replanning landing, and the admission surfaces read the admission mode.
  */
 export function readsGroupLifecyclePolicy(
-    operation: GroupMutationCommand['operation']
+    command: GroupMutationCommand
 ): boolean {
-    return (
+    const operation = command.operation;
+    return (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') || (
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
@@ -154,9 +155,10 @@ export function requiresRoomLobbyRead(command: GroupMutationCommand, read: Group
     }
     if (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure') return true;
     if (!read.group || !readRoomLobbyPolicy(read.group.value.metadata)) return false;
+    if (isGroupLifecycleTransitionOperation(command.operation)) return true;
     switch (command.operation) {
         case 'updateGroup':
-            return command.input.roomLobby !== undefined || command.input.status !== null || command.input.kind !== null ||
+            return (command.input.metadata !== null && read.group.value.joinMode === 'code') || command.input.roomLobby !== undefined || command.input.joinMode !== null || command.input.status !== null || command.input.kind !== null ||
                 command.input.maxMembers !== null || command.input.expiresAtEpochMs !== null || command.input.purgeAfterEpochMs !== null;
         case 'connectPresence':
         case 'disconnectPresence':
@@ -167,6 +169,9 @@ export function requiresRoomLobbyRead(command: GroupMutationCommand, read: Group
         case 'grantGroupAdmission':
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
+        case 'revokeGroupInvite':
+        case 'declineGroupAdmission':
+        case 'rotateGroupJoinCode':
         case 'banGroupMember':
         case 'removeGroupMember':
             return true;

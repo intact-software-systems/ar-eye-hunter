@@ -1,4 +1,4 @@
-import { settleDueSeats } from '@shared/api/room-lobbies/room-lobby-windows.ts';
+import { allocateLobbyPlaces, occupiedLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
@@ -85,11 +85,11 @@ export function matchesGroupDirectoryQuery(
 export function projectRoomLobbyOccupancy(
     room: GroupSnapshot, lobby: RoomLobby, nowEpochMs: number
 ): Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'> {
-    const seats = settleDueSeats(lobby, nowEpochMs);
+    const { seats, capacityClaims } = allocateLobbyPlaces(lobby, nowEpochMs, lobby.revision + 1);
     const online = new Set(room.activeSessions.filter(session =>
         session.status === 'active' && session.expiresAtEpochMs > nowEpochMs).map(session => session.principalId));
     return {
-        playerCount: seats.length,
+        playerCount: occupiedLobbyPlaces(seats, capacityClaims).size,
         onlinePlayerCount: seats.filter(seat => seat.present && online.has(seat.principalId)).length
     };
 }

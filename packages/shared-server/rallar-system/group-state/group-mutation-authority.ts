@@ -408,6 +408,9 @@ function assertAuthenticatedGroupMutationDescriptor(descriptor: GroupMutationDes
 }
 
 function resolveCommandJoinCode(command: GroupMutationCommand, commandHash: string): string | null {
+    if (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') {
+        return command.input.roomLobby.joinCode ?? null;
+    }
     return command.operation === 'rotateGroupJoinCode'
         ? (command.input.joinCode ?? commandHash.slice('sha256:'.length, 19).toUpperCase())
         : command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite'

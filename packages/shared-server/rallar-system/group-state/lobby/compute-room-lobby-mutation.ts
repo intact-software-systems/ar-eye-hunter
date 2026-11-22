@@ -1,9 +1,11 @@
+import { computeWaitRegistration, revokedLobbyCandidates } from './room-lobby-wait-access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import {
     changeRoomLobby,
     configureRoomLobby,
+    configureRoomLobbyCapacityClaims,
     createRoomLobby,
     readRoomLobbyPolicy,
     type RoomLobby
@@ -11,7 +13,6 @@ import {
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
-import { countGroupSessionOccupiedSeats } from '../schedule/group-session-reservations.ts';
 import { computeRoomLobbyPublication } from './room-lobby-publication.ts';
 import { computeRoomLobbyEffects, type RoomLobbyRead } from './room-lobby-storage.ts';
 
@@ -87,8 +88,9 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
     }
 
     const accounts = new Map(state.accounts.map((account) => [account.principalId, account.stored?.value.seat]));
-    for (const change of lobbyParticipationChanges(input, state, lobby)) {
-        if (change.kind === 'arrive' || change.kind === 'reserve') {
+    const revocations = revokedLobbyCandidates(input, group, state, lobby);
+    for (const change of [...revocations, ...lobbyParticipationChanges(input, state, lobby)]) {
+        if (change.kind === 'wait' || change.kind === 'arrive' || change.kind === 'reserve') {
             const commitment = accounts.get(change.principalId);
             if (commitment && !isSameGroupRef(commitment.roomRef, group)) {
                 throw new GroupPolicyDeniedError(
@@ -106,18 +108,20 @@ function computeRoomLobbyRoster(input: GroupMutationWriteInput, group: Group, st
         }
         lobby = updated.lobby;
     }
+    // Apply admissions against their previous reservations first. Exchanging a reservation for a seat must never create an offer between the two writes.
     const reservations = input.sessionReservationWrite?.value ?? read.sessionReservations?.value;
-    if (
-        schedule && reservations && countGroupSessionOccupiedSeats({
-                schedule,
-                reservations,
-                activePlayerPrincipalIds: lobby.seats.map((seat) => seat.principalId),
-                nowEpochMs: now
-            }) > lobby.capacity
-    ) {
-        throw new GroupPolicyDeniedError(
-            denyGroupPolicy('group-full', 'Available player places are reserved for this scheduled session.')
-        );
+    if (schedule && reservations) {
+        const timing = toGroupSessionTiming(schedule, now);
+        const principalIds = timing.reservationsExpireAtEpochMs > now ? reservations.principalIds : [];
+        const due = timing.reservationsExpireAtEpochMs;
+        const current = lobby.capacityClaims;
+        if (principalIds.length !== (current?.principalIds.length ?? 0) || principalIds.length > 0 &&
+            (current?.dueAtEpochMs !== due || principalIds.some((id, index) => current.principalIds[index] !== id))) {
+            const claims = principalIds.length ? { principalIds, dueAtEpochMs: due } : null;
+            const updated = configureRoomLobbyCapacityClaims(lobby, claims, now);
+            if (updated.rejection) throw new GroupPolicyDeniedError(denyGroupPolicy('group-full', 'The scheduled places exceed the available lobby capacity.'));
+            lobby = updated.lobby;
+        }
     }
     return lobby;
 }
@@ -136,6 +140,9 @@ function lobbyParticipationChanges(
         ).map((session) => session.principalId)
     );
     if (command.operation === 'updateGroup') {
+        if (command.input.roomLobby?.operation === 'wait' && command.input.actorPrincipalId) {
+            changes.push(computeWaitRegistration(input, command.input.actorPrincipalId, command.input.roomLobby.joinCode));
+        }
         if (command.input.roomLobby?.operation === 'release' && command.input.actorPrincipalId) {
             changes.push({ kind: 'release', principalId: command.input.actorPrincipalId });
         }

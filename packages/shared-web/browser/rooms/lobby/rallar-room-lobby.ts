@@ -1,3 +1,8 @@
+import type { RallarJoinRoomOptions } from '../rallar-room-contracts.ts';
+import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
+import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
+import { toStateGroupHttpPath } from '../../api/state-http-path.ts';
 import { DEFAULT_ROOM_LOBBY_POLICY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -50,6 +55,12 @@ export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView,
         });
     }
 
+    wait(roomRef: GroupRef, options: Pick<RallarJoinRoomOptions, 'joinCode'> = {}): Promise<void> {
+        return this.act({ roomRef: this.roomInScope(roomRef), roomLobby: {
+            operation: 'wait', ...(options.joinCode === undefined ? {} : { joinCode: options.joinCode })
+        } });
+    }
+
     release(roomRef: GroupRef): Promise<void> {
         return this.act({ roomRef: this.roomInScope(roomRef), roomLobby: { operation: 'release' } });
     }
@@ -76,12 +87,23 @@ async function readOwnSeat({ scope, session, signal }: AuthenticatedResource.Rea
 async function writeLobbyCommand({ scope, session, request, signal, requestId }:
     AuthenticatedResource.ChangeInput<RallarRoomLobby.Command>): Promise<null> {
     if (!isSameGroupScope(request.roomRef, scope)) throw new TypeError('Lobby room belongs to another scope');
-    const snapshot = await roomGroupStateHttpApi.updateGroup({
-        groupId: request.roomRef.groupId, scope,
-        request: { actorPrincipalId: session.clientId, actorSessionId: session.sessionId, roomLobby: request.roomLobby },
-        options: { authSession: session, requestId, signal }
-    });
-    validateAuthoritativeGroupSnapshot(snapshot, scope);
-    if (!isSameGroupRef(request.roomRef, snapshot.group)) throw new TypeError('Lobby acknowledgement belongs to another room');
+    const body = { actorPrincipalId: session.clientId, actorSessionId: session.sessionId, roomLobby: request.roomLobby };
+    const options = { authSession: session, requestId, signal };
+    let acknowledged: GroupRef;
+    if (request.roomLobby.operation === 'configure') {
+        const snapshot = await roomGroupStateHttpApi.updateGroup({ groupId: request.roomRef.groupId, scope, request: { ...body, roomLobby: request.roomLobby }, options });
+        validateAuthoritativeGroupSnapshot(snapshot, scope);
+        acknowledged = snapshot.group;
+    }
+    else {
+        const result = await sendApiHttpRequest<typeof body, unknown>({
+            baseUrl: readApiBaseUrl(), method: 'PUT', body, options,
+            path: toApiMutationRequestPath(toStateGroupHttpPath(scope, request.roomRef.groupId), requestId)
+        });
+        const ack = requireRecord(result, 'Private lobby acknowledgement');
+        requireExactKeys(ack, ['roomRef'], 'Private lobby acknowledgement');
+        acknowledged = decodeExactGroupRef(ack.roomRef, 'Acknowledged lobby');
+    }
+    if (!isSameGroupRef(request.roomRef, acknowledged)) throw new TypeError('Lobby acknowledgement belongs to another room');
     return null;
 }

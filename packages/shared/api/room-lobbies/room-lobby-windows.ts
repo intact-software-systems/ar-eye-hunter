@@ -17,6 +17,7 @@ export function settleDueSeats(lobby: RoomLobby, now: number): readonly RoomLobb
         }
     }
     const remaining = lobby.seats.filter(seat =>
+        !(seat.offerWindow && seat.offerWindow.dueAtEpochMs <= now) &&
         !(seat.admissionWindow && seat.admissionWindow.dueAtEpochMs <= now) &&
         seat.returnWindow?.dueAtEpochMs !== firstDueReturn);
     if (remaining.length === lobby.seats.length) return lobby.seats;
@@ -25,7 +26,7 @@ export function settleDueSeats(lobby: RoomLobby, now: number): readonly RoomLobb
 
 export function reconcileReturnWindows(lobby: RoomLobby, nowEpochMs: number): RoomLobby {
     const { seats, capacity, policy, revision } = lobby;
-    const full = seats.filter(seat => seat.admissionWindow === null).length === capacity;
+    const full = seats.filter(seat => seat.admissionWindow === null && seat.offerWindow === null).length === capacity;
     const roster = seats.map(seat => {
         if (!full && seat.returnWindow) return { ...seat, returnWindow: null };
         if (full && !seat.present && !seat.returnWindow) {

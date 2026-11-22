@@ -17,7 +17,7 @@ import {
 
 const ref = { applicationId: 'scheduled-tests', workspaceId: 'default', groupId: 'last-seat' };
 
-async function createScheduledFixture(startOffsetMs = 3_600_000) {
+async function createScheduledFixture(startOffsetMs = 3_600_000, managed = false) {
     const fixture = await createRetentionDatabaseFixture();
     const create = await prepareMutation(
         fixture,
@@ -32,6 +32,7 @@ async function createScheduledFixture(startOffsetMs = 3_600_000) {
                 kind: 'room',
                 joinMode: 'open',
                 maxMembers: 2,
+                ...(managed ? { roomLobby: { returnWindowMs: 5000, claimWindowMs: 10000 } } : {}),
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary' },
@@ -237,4 +238,20 @@ describe('scheduled-session SQL concurrency and rollback', () => {
             await fixture.storage.close();
         }
     });
+});
+
+it('reserves the scheduled player’s place ahead of a waiting player and offers it when withdrawn', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const reserved = await prepareForAccount(fixture, 'alice', reservation('alice', 'advance'));
+        await commitMutation(fixture, requireMutationWrite(reserved.computed));
+        const wait = await prepareForAccount(fixture, 'bob', mutationDescriptor({operation:'updateGroup', scope:ref, groupId:ref.groupId,
+            request:{requestId:'queue-bob', actorPrincipalId:'bob', roomLobby:{operation:'wait'}}}));
+        await commitMutation(fixture, requireMutationWrite(wait.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'bob'))?.value.seat?.status).toBe('waiting');
+        const withdrawal = await prepareForAccount(fixture, 'alice', mutationDescriptor({operation:'changeGroupSession', scope:ref, groupId:ref.groupId,
+            request:{requestId:'withdraw', actorPrincipalId:'alice', action:'withdraw', expectedScheduleRevision:1, startsAtEpochMs:null}}));
+        await commitMutation(fixture, requireMutationWrite(withdrawal.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'bob'))?.value.seat?.status).toBe('offered');
+    } finally { await fixture.storage.close(); }
 });

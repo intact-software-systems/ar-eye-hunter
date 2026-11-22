@@ -65,6 +65,10 @@ export function validateRoomLobbyInput(operation: 'createGroup' | 'updateGroup',
                 requireExactKeys(command, ['operation', 'policy'], 'Lobby configuration');
                 if (command.policy !== null) decodeRoomLobbyPolicy(command.policy);
             }
+            else if (command.operation === 'wait') {
+                requireExactKeys(command, Object.hasOwn(command, 'joinCode') ? ['operation', 'joinCode'] : ['operation'], 'Lobby wait');
+                if (Object.hasOwn(command, 'joinCode') && (typeof command.joinCode !== 'string' || !command.joinCode.trim())) throw new TypeError('Invalid lobby join code');
+            }
             else {
                 requireExactKeys(command, ['operation'], 'Lobby command');
                 if (command.operation !== 'release') throw new TypeError('Unknown lobby command');

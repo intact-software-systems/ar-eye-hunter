@@ -79,8 +79,9 @@ export function createGroupStateRouteAuthorization(
             }
         },
         async assertCanUpdateGroup(principalId, ref, request) {
-            // The group AppInbox checks director authority against the same revision as the deadline write.
-            if (request.roomLobby?.operation !== 'release' && request.roomClock === undefined && request.roomDeadline?.expectedDirectorEpoch === undefined) {
+            // The AppInbox checks seat eligibility and director authority against the revision it writes.
+            const lobbyOperation = request.roomLobby?.operation;
+            if (lobbyOperation !== 'release' && lobbyOperation !== 'wait' && request.roomClock === undefined && request.roomDeadline?.expectedDirectorEpoch === undefined) {
                 await assertCanUpdateGroup(principalId, ref, dependencies);
             }
         },

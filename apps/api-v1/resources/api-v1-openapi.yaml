@@ -1265,14 +1265,20 @@ paths:
               $ref: '#/components/schemas/UpdateGroupRequest'
       responses:
         '200':
-          description: Updated group snapshot.
+          description: Self-service lobby commands acknowledge the target room. Other updates return the group snapshot.
           headers:
             x-request-id:
               $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupSnapshot'
+                oneOf:
+                  - { $ref: '#/components/schemas/GroupSnapshot' }
+                  - type: object
+                    required: [roomRef]
+                    additionalProperties: false
+                    properties:
+                      roomRef: { $ref: '#/components/schemas/GroupRef' }
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -5278,7 +5284,7 @@ components:
               required: [roomRef, status, deadlineEpochMs]
               properties:
                 roomRef: { $ref: '#/components/schemas/GroupRef' }
-                status: { enum: [arriving, present, away] }
+                status: { enum: [waiting, offered, arriving, present, away] }
                 deadlineEpochMs: { type: [integer, 'null'], minimum: 0 }
     MatchmakingSnapshot:
       type: object
@@ -9231,6 +9237,12 @@ components:
               additionalProperties: false
               properties:
                 operation: { const: release }
+            - type: object
+              required: [operation]
+              additionalProperties: false
+              properties:
+                operation: { const: wait }
+                joinCode: { type: string, minLength: 1 }
         roomClock:
           type: object
           additionalProperties: false

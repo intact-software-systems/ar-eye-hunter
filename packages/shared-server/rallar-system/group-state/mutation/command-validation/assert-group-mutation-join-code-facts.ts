@@ -13,6 +13,10 @@ export function assertGroupMutationJoinCodeFacts(
         }
         return;
     }
+    if (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') {
+        if (facts.resolvedJoinCode !== (command.input.roomLobby.joinCode ?? null)) throw new TypeError('Lobby wait credentials differ from captured join code');
+        return;
+    }
     if (command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
         if (facts.resolvedJoinCode !== command.input.joinCode) {
             throw new TypeError('Group resolved join code differs from join command intent');

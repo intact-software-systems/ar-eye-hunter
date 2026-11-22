@@ -1,7 +1,7 @@
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { AuditStamp, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 
-import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
+import { readJoinCode } from '../../policy/group-join-code.ts';
 import {
     assertAllowed,
     assertGovernance,
