@@ -23,7 +23,7 @@ export type AlmLaneUnattributedReason =
     | 'no-job-read'
     | 'plan-plans-nothing';
 
-/** One job of one workflow run, for one carrier. */
+/** A carrier's jobs in one workflow run, read as one run. */
 export interface AlmLaneObservedRun {
     readonly runId: number;
     readonly commitSha: string;
@@ -31,7 +31,7 @@ export interface AlmLaneObservedRun {
     readonly attempt: number;
     readonly carrier: AlmConformanceCarrier;
     readonly jobConclusion: AlmLaneJobConclusion;
-    /** Null when the job uploaded no plan file. */
+    /** Null when no job of the carrier uploaded a readable plan, or a job's artifact is missing or unread. */
     readonly plan: AlmLanePlanRecord | null;
     readonly familyResults: readonly AlmLaneFamilyResult[];
 }

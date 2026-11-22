@@ -54,10 +54,12 @@ interface AlmLaneJobRead {
 
 interface AlmLaneCarrierRead {
     readonly carrier: AlmConformanceCarrier;
-    readonly jobs: readonly AlmLaneReportedJob[];
+    readonly jobs: readonly [AlmLaneReportedJob, ...AlmLaneReportedJob[]];
 }
 
 interface AlmLaneArtifactReading {
+    /** False when the artifact has expired or could not be downloaded. */
+    readonly read: boolean;
     /** Null when the artifact holds no plan. */
     readonly plan: AlmLanePlanRecord | null;
     readonly results: readonly Extract<AlmLaneDecodedFile, { readonly kind: 'result'; }>[];
@@ -101,10 +103,19 @@ export function toAlmLaneObservedRuns(input: ToAlmLaneObservedRunsInput): AlmLan
 
 /** The jobs of each carrier, carriers in the order their first job is listed. */
 function toCarrierReads(jobReads: readonly AlmLaneJobRead[]): readonly AlmLaneCarrierRead[] {
-    return [...new Set(jobReads.map((read) => read.carrier))].map((carrier) => ({
-        carrier,
-        jobs: jobReads.filter((read) => read.carrier === carrier).map((read) => read.job)
-    }));
+    return jobReads.flatMap((first, index): readonly AlmLaneCarrierRead[] =>
+        jobReads.findIndex((read) => read.carrier === first.carrier) === index
+            ? [{
+                carrier: first.carrier,
+                jobs: [
+                    first.job,
+                    ...jobReads.slice(index + 1).filter((read) => read.carrier === first.carrier).map((read) =>
+                        read.job
+                    )
+                ]
+            }]
+            : []
+    );
 }
 
 function resolveCarriersWithoutJob(
@@ -164,11 +175,12 @@ function toObservedRun(
         .map((artifact) => toArtifactReading(artifact, read.carrier));
     const plans = artifacts.flatMap((artifact) => artifact.plan === null ? [] : [artifact.plan]);
     const firstPlan = plans[0];
+    const everyJobRead = artifacts.filter((artifact) => artifact.read).length === read.jobs.length;
     const results = artifacts.flatMap((artifact) => artifact.results);
     const issues = [
         ...artifacts.flatMap((artifact) => artifact.issues),
         ...(firstPlan !== undefined && plans.some((plan) => !isSameAlmLanePlan(plan, firstPlan))
-            ? [`plans of ${plans.length} jobs differ; read the first.`]
+            ? [`the plans of this carrier's jobs differ; read the first.`]
             : []),
         ...results.filter((result, index) =>
             results.findIndex((other) => other.record.family === result.record.family) !== index
@@ -183,7 +195,7 @@ function toObservedRun(
             attempt: input.attempt,
             carrier: read.carrier,
             jobConclusion: computeAlmLaneCarrierConclusion(read.jobs),
-            plan: firstPlan ?? null,
+            plan: everyJobRead && firstPlan !== undefined ? firstPlan : null,
             familyResults: results.map((result) => result.record)
         }],
         issues: issues.map(toIssue)
@@ -196,6 +208,7 @@ function toArtifactReading(artifact: AlmLaneResultArtifact, carrier: AlmConforma
     const accepted = EitherCollectors.toListFoldRights(decoded);
     const plans = accepted.flatMap((file) => file.kind === 'plan' ? [file] : []);
     return {
+        read: !artifact.expired && artifact.files !== null,
         plan: plans[0]?.record ?? null,
         results: accepted.flatMap((file) => file.kind === 'result' ? [file] : []),
         issues: [
@@ -213,10 +226,12 @@ function toArtifactIssues(artifact: AlmLaneResultArtifact): readonly string[] {
     return artifact.files === null ? [`artifact ${artifact.name} could not be downloaded.`] : [];
 }
 
-/** Equal plans name the same identity and the same families with the same scenario keys, in the same order. */
+/**
+ * Equal plans name the same families with the same scenario keys, in the same order; their identity is the job's, which
+ * the decoder already checked.
+ */
 function isSameAlmLanePlan(left: AlmLanePlanRecord, right: AlmLanePlanRecord): boolean {
-    return left.carrier === right.carrier && left.scope === right.scope && left.backend === right.backend &&
-        left.families.length === right.families.length &&
+    return left.families.length === right.families.length &&
         left.families.every((planned, index) => {
             const other = right.families[index];
             return other?.family === planned.family && other.scenarioKeys.length === planned.scenarioKeys.length &&

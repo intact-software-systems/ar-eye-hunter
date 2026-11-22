@@ -4,6 +4,7 @@ import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     toAlmLaneFamilyResult,
     type AlmLaneFamilyResult,
@@ -270,14 +271,6 @@ const SECOND_FAMILIES = 'three-agent,same-principal,four-role';
 const rtcTwoAgent = toFixtureResult('rtc', 'two-agent', new Map([['a', 'passed'], ['b', 'passed']]));
 const rtcThreeAgent = toFixtureResult('rtc', 'three-agent', new Map([['c', 'passed']]));
 
-function toSplitJob(families: string, conclusion: string | null = 'success'): AlmLaneReportedJob {
-    return {
-        name: `ALM conformance observation (rtc, ${families})`,
-        status: conclusion === null ? 'in_progress' : 'completed',
-        conclusion
-    };
-}
-
 function toSplitArtifact(families: string, files: readonly AlmLaneResultFile[]): AlmLaneResultArtifact {
     return { name: `alm-lane-result-rtc-full-merge-sha-${families}`, expired: false, files };
 }
@@ -293,9 +286,19 @@ const secondArtifact = toSplitArtifact(SECOND_FAMILIES, [
 
 function toSplitInput(overrides: Partial<ToAlmLaneObservedRunsInput>): ToAlmLaneObservedRunsInput {
     return toInput({
-        jobs: [toSplitJob(FIRST_FAMILIES), toSplitJob(SECOND_FAMILIES)],
+        jobs: [toLaneJob(`rtc, ${FIRST_FAMILIES}`), toLaneJob(`rtc, ${SECOND_FAMILIES}`)],
         artifacts: [firstArtifact, secondArtifact],
         ...overrides
+    });
+}
+
+function toSixFamilyResult(family: AlmConformanceLaneFamily): AlmLaneFamilyResult {
+    return toAlmLaneFamilyResult({
+        identity: { carrier: 'rtc', scope: 'full', backend: 'postgres' },
+        family,
+        scenarioKeys: [`${family}-key`],
+        settled: new Map([[`${family}-key`, 'passed']]),
+        familyOutcome: 'passed'
     });
 }
 
@@ -319,48 +322,76 @@ describe('toAlmLaneObservedRuns over a carrier split across jobs', () => {
         expect(computeAlmLaneRunReading(reading.runs[0]!).green).toBe(true);
     });
 
-    it.each(
-        [
-            [['success', 'timed_out'], 'failure'],
-            [['skipped', 'success'], 'failure'],
-            [['failure', 'cancelled'], 'cancelled'],
-            [['cancelled', null], 'in-progress']
-        ] as const
-    )('combines jobs that concluded %j into one %s', (conclusions, expected) => {
+    it('gives the carrier the one conclusion its jobs combine into', () => {
         const reading = toAlmLaneObservedRuns(toSplitInput({
-            jobs: [toSplitJob(FIRST_FAMILIES, conclusions[0]), toSplitJob(SECOND_FAMILIES, conclusions[1])]
+            jobs: [toLaneJob(`rtc, ${FIRST_FAMILIES}`), toLaneJob(`rtc, ${SECOND_FAMILIES}`, 'timed_out')]
         }));
 
-        expect(reading.runs.map((run) => run.jobConclusion)).toEqual([expected]);
+        expect(reading.runs.map((run) => run.jobConclusion)).toEqual(['failure']);
     });
 
     it.each(
         [
-            ['has expired', { expired: true, files: null }, 'has expired; history ends at artifact retention.'],
-            ['could not be downloaded', { files: null }, 'could not be downloaded.']
+            ['has expired', [firstArtifact, { ...secondArtifact, expired: true, files: null }], [
+                `artifact ${secondArtifact.name} has expired; history ends at artifact retention.`
+            ]],
+            ['could not be downloaded', [firstArtifact, { ...secondArtifact, files: null }], [
+                `artifact ${secondArtifact.name} could not be downloaded.`
+            ]],
+            ['is absent', [firstArtifact], []]
         ] as const
-    )('names a job artifact that %s and reads the other job artifact', (_, unread, issue) => {
-        const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts: [firstArtifact, { ...secondArtifact, ...unread }] }));
+    )('reads a carrier one of whose job artifacts %s as having no plan, red with nothing to attribute', (_, artifacts, issues) => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts }));
 
-        expect(reading.runs.map(({ plan, familyResults }) => ({ plan, familyResults }))).toEqual([
-            { plan: toFixturePlan('rtc'), familyResults: [rtcTwoAgent] }
-        ]);
-        expect(reading.issues).toEqual([`run 7 rtc: artifact ${secondArtifact.name} ${issue}`]);
+        expect(reading.runs.map((run) => run.plan)).toEqual([null]);
+        expect(reading.issues).toEqual(issues.map((issue) => `run 7 rtc: ${issue}`));
+        expect(computeAlmLaneRunReading(reading.runs[0]!)).toMatchObject({
+            green: false,
+            failed: [],
+            notRun: [],
+            candidates: ['rtc/run/7'],
+            unattributedReason: 'no-plan'
+        });
+    });
+
+    it('reads a carrier whose one job in the run has results for three of six planned families as red, the other three answering', () => {
+        const families = ['two-agent', 'addressed', 'three-agent', 'same-context', 'same-principal', 'four-role'] as const;
+        const plan = {
+            ...toFixturePlan('rtc'),
+            families: families.map((family) => ({ family, scenarioKeys: [`${family}-key`] }))
+        };
+        const ranFamilies = ['two-agent', 'addressed', 'same-context'] as const;
+        const reading = toAlmLaneObservedRuns(toInput({
+            jobs: [toLaneJob(`rtc, ${FIRST_FAMILIES}`)],
+            artifacts: [toSplitArtifact(FIRST_FAMILIES, [
+                toFile('rtc-full-plan.json', plan),
+                ...ranFamilies.map((family) => toFile(`rtc-full-${family}.json`, toSixFamilyResult(family)))
+            ])]
+        }));
+
+        expect(reading.issues).toEqual([]);
+        expect(reading.runs.map(computeAlmLaneRunReading)).toMatchObject([{
+            green: false,
+            failed: [],
+            notRun: ['rtc/three-agent/three-agent-key', 'rtc/same-principal/same-principal-key', 'rtc/four-role/four-role-key'],
+            candidates: ['rtc/three-agent', 'rtc/same-principal', 'rtc/four-role'],
+            unattributedReason: null
+        }]);
     });
 
     it.each(
         [
-            ['plan another order of scenario keys', [{ family: 'two-agent', scenarioKeys: ['b', 'a'] }]],
-            ['plan another set of families', [{ family: 'two-agent', scenarioKeys: ['a', 'b'] }]]
+            ['other scenario keys order', [{ family: 'two-agent', scenarioKeys: ['b', 'a'] }]],
+            ['other families', [{ family: 'two-agent', scenarioKeys: ['a', 'b'] }]]
         ] as const
-    )('names jobs whose plans %s and reads the first plan', (_, families) => {
+    )('names jobs whose plans name %s and reads the first plan', (_, families) => {
         const otherPlan = { ...toFixturePlan('rtc'), families };
         const reading = toAlmLaneObservedRuns(toSplitInput({
             artifacts: [firstArtifact, toSplitArtifact(SECOND_FAMILIES, [toFile('rtc-full-plan.json', otherPlan)])]
         }));
 
         expect(reading.runs[0]?.plan).toEqual(toFixturePlan('rtc'));
-        expect(reading.issues).toEqual(['run 7 rtc: plans of 2 jobs differ; read the first.']);
+        expect(reading.issues).toEqual(['run 7 rtc: the plans of this carrier\'s jobs differ; read the first.']);
     });
 
     it('names a second result for one family across the jobs and keeps both, so the ledger reads the family red', () => {
@@ -372,17 +403,23 @@ describe('toAlmLaneObservedRuns over a carrier split across jobs', () => {
         expect(reading.issues).toEqual(['run 7 rtc: rtc-full-two-agent.json is a second result for family two-agent.']);
     });
 
-    it('reads a carrier whose second job never uploaded as red, its families not run', () => {
-        const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts: [firstArtifact] }));
+    it.each(
+        [
+            ['in progress', null, 'in-progress'],
+            ['cancelled', 'cancelled', 'cancelled']
+        ] as const
+    )('leaves a pull-request run out once, and not red, when one job of its carrier is %s', (_, conclusion, expected) => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            jobs: [toLaneJob(`rtc, ${FIRST_FAMILIES}`), toLaneJob(`rtc, ${SECOND_FAMILIES}`, conclusion)],
+            artifacts: [firstArtifact]
+        }));
 
-        expect(reading.issues).toEqual([]);
-        expect(reading.runs.map(computeAlmLaneRunReading)).toMatchObject([{
-            green: false,
-            failed: [],
-            notRun: ['rtc/three-agent/c'],
-            candidates: ['rtc/three-agent'],
-            unattributedReason: null
-        }]);
+        const ledger = computeAlmLaneLedger({ runs: reading.runs, causes: [] });
+
+        expect(ledger.leftOutRuns).toEqual([
+            { runId: 7, event: 'pull_request', carrier: 'rtc', jobConclusion: expected }
+        ]);
+        expect(ledger.sideRuns).toEqual([]);
     });
 
     it('still reads a completed push run with no job of the split carrier as no job read', () => {

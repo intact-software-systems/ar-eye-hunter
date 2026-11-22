@@ -62,7 +62,7 @@ export interface AlmLaneSideRun {
     readonly green: boolean;
 }
 
-/** A job the ledger does not read: still running, skipped, or a cancelled pull-request job. */
+/** A carrier's run the ledger does not read: still running, skipped, or a cancelled pull-request run. */
 export interface AlmLaneLeftOutRun {
     readonly runId: number;
     readonly event: AlmLaneRunEvent;
@@ -103,8 +103,9 @@ export function computeAlmLaneLedger(input: ComputeAlmLaneLedgerInput): AlmLaneL
 }
 
 /**
- * A job still running or skipped says nothing yet. A newer push to a pull request cancels its job by design, so that
- * one is left out; a push or dispatched run has a concurrency group of its own, so a cancelled job of one is read.
+ * A carrier whose jobs are still running or skipped says nothing yet. A newer push to a pull request cancels its jobs by
+ * design, so that run is left out; a push or dispatched run has a concurrency group of its own, so a cancelled one is
+ * read.
  */
 function isReadRun(run: AlmLaneObservedRun): boolean {
     if (run.jobConclusion === 'in-progress' || run.jobConclusion === 'skipped') {

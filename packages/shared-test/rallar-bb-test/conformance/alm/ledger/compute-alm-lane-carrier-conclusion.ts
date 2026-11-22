@@ -6,8 +6,8 @@ import { toAlmLaneJobConclusion, type AlmLaneReportedJob } from './to-alm-lane-j
  * so a carrier half of whose families never ran cannot read as skipped or green.
  */
 export function computeAlmLaneCarrierConclusion(
-    jobs: readonly Pick<AlmLaneReportedJob, 'status' | 'conclusion'>[]
-): AlmLaneJobConclusion {
+    jobs: readonly [AlmLaneReportedJob, ...AlmLaneReportedJob[]]
+): Exclude<AlmLaneJobConclusion, 'not-read'> {
     const conclusions = jobs.map(toAlmLaneJobConclusion);
     const skipped = conclusions.filter((conclusion) => conclusion === 'skipped').length;
     if (conclusions.includes('in-progress')) {
