@@ -1,6 +1,6 @@
 import { isRallarGroupDirectorSessionActive, readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
 import { observeRoomDirectorLoss, observeRoomDirectorPresence, observeRoomDirectorMembership, recoverRoomDirector } from '@shared/api/room-directors/room-director-succession-presence.ts';
-import { readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
+import { decodeRoomDirectorSuccessionCommand, readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { changeRoomDirectorSuccession } from '@shared/api/room-directors/change-room-director-succession.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { expect, it } from 'vitest';
@@ -106,4 +106,34 @@ it('revokes a demoted director immediately and clears a departed deputy’s excl
     const deputy = configured.members.find(member => member.principalId === 'deputy')!;
     const cleared = observeRoomDirectorMembership(revoked, { ...deputy, status: 'removed', joined: null, left: null, banned: null, removed: deputy.updated }, 51);
     expect(readRoomDirectorSuccession(cleared)).toMatchObject({ deputyPrincipalId: null, loss: { declined: true } });
+});
+
+it('rejects unrepresentable windows while accepting zero and ordinary windows', () => {
+    const configure = { operation: 'configure', expectedRevision: 0, expectedDirectorEpoch: 0, deputyPrincipalId: null };
+    for (const field of ['reconnectWindowMs', 'deputyWindowMs']) {
+        expect(() => decodeRoomDirectorSuccessionCommand({ ...configure, [field]: Number.MAX_SAFE_INTEGER })).toThrow();
+        for (const windowMs of [0, 30_000]) {
+            expect(decodeRoomDirectorSuccessionCommand({ ...configure, [field]: windowMs })).toEqual({ ...configure, [field]: windowMs });
+        }
+    }
+});
+
+it('preserves an existing policy and allows admin replacement after an invalid configuration', () => {
+    const appointed = accept(players(), 'owner', appoint, 1);
+    const snapshot = { ...appointed, members: appointed.members.map(member =>
+        member.principalId === 'other' ? { ...member, role: 'admin' as const } : member) };
+    const configured = accept(snapshot, 'other', { operation: 'configure', expectedDirectorEpoch: 1,
+        expectedRevision: 1, deputyPrincipalId: 'deputy', reconnectWindowMs: 10, deputyWindowMs: 20 }, 2);
+    const state = readRoomDirectorSuccession(configured.group.metadata)!;
+    for (const field of ['reconnectWindowMs', 'deputyWindowMs']) {
+        expect(() => readRoomDirectorSuccession({ rallarDirectorSuccession: { ...state, loss: null,
+            [field]: Number.MAX_SAFE_INTEGER } })).toThrow();
+    }
+    expect(() => decodeRoomDirectorSuccessionCommand({ operation: 'configure', expectedDirectorEpoch: 1,
+        expectedRevision: 2, deputyPrincipalId: null, reconnectWindowMs: Number.MAX_SAFE_INTEGER })).toThrow();
+    const lost = { ...configured, group: { ...configured.group, metadata: observeRoomDirectorLoss(configured.group.metadata, 5) } };
+    expect(readRoomDirectorSuccession(lost.group.metadata)?.loss).toMatchObject({ reconnectUntilEpochMs: 15, deputyUntilEpochMs: 35 });
+    const replaced = accept(lost, 'other', { ...appoint, expectedDirectorEpoch: 1, targetPrincipalId: 'deputy', targetSessionId: 'deputy' }, 6);
+    expect(readRallarGroupDirectorFromSnapshot(replaced)).toMatchObject({ principalId: 'deputy', epoch: 2 });
+    expect(readRoomDirectorSuccession(replaced.group.metadata)?.loss).toBeNull();
 });

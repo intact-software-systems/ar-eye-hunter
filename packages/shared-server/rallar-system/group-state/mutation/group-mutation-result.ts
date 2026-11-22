@@ -155,7 +155,8 @@ export function computeGroupMutationWriteResult(
             command,
             facts,
             members: input.members,
-            publicationGrantEffects: input.publicationGrantEffects
+            publicationGrantEffects: input.publicationGrantEffects,
+            directorPresenceChanged: input.directorPresenceGroup !== undefined
         });
     const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;

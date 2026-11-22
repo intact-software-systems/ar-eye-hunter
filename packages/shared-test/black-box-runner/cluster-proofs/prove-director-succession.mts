@@ -23,8 +23,28 @@ export async function proveDirectorSuccession({ api, room, owner, deputy }: Dire
     await api.connectPresence({ ...room, actor: owner });
     await api.connectPresence({ ...room, actor: deputy });
     await appoint(owner, {});
+    const startingPolicy = { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0, deputyPrincipalId: deputy.clientId };
+    const half = Math.floor(Number.MAX_SAFE_INTEGER / 2);
+    for (const windows of [
+        { reconnectWindowMs: Number.MAX_SAFE_INTEGER },
+        { deputyWindowMs: Number.MAX_SAFE_INTEGER },
+        { reconnectWindowMs: half, deputyWindowMs: half }
+    ]) {
+        await appoint(owner, { succession: { ...startingPolicy, ...windows } }, 400);
+    }
+    const afterRefusal = await requestJson(deputy.apiBaseUrl, path, { method: 'GET', session: deputy });
+    const unchanged = requireRecord(requireRecord(afterRefusal.group, 'group').metadata, 'metadata');
+    assert.equal(unchanged.rallarDirectorSuccession, undefined);
+    assert.equal(requireRecord(unchanged.rallarDirector, 'current director').epoch, 1);
     await appoint(owner, { succession: { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0,
         reconnectWindowMs: 250, deputyWindowMs: 10000, deputyPrincipalId: deputy.clientId } });
+    await appoint(owner, { succession: { ...startingPolicy, expectedRevision: 1, deputyWindowMs: Number.MAX_SAFE_INTEGER } }, 400);
+    const retained = await requestJson(deputy.apiBaseUrl, path, { method: 'GET', session: deputy });
+    const retainedMetadata = requireRecord(requireRecord(retained.group, 'group').metadata, 'metadata');
+    const retainedPolicy = requireRecord(retainedMetadata.rallarDirectorSuccession, 'retained policy');
+    assert.equal(retainedPolicy.revision, 1);
+    assert.equal(retainedPolicy.reconnectWindowMs, 250);
+    assert.equal(retainedPolicy.deputyWindowMs, 10000);
     const namedClock = { name: 'game', expectedDirectorEpoch: 1 };
     await clock(owner, { ...namedClock, expectedRevision: 0, operation: 'start', durationMs: 600000 });
     const paused = await clock(owner, { ...namedClock, expectedRevision: 1, operation: 'pause' });

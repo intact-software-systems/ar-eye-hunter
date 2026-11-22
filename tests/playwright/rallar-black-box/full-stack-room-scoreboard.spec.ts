@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { readFullStackConfig } from './full-stack-helpers.ts';
+import { readFullStackConfig, type FullStackUser } from './full-stack-helpers.ts';
 
 const config = readFullStackConfig();
 const url = '/@fs' + fileURLToPath(new URL('../../../examples/room-scoreboard/index.html', import.meta.url));
@@ -19,13 +19,93 @@ async function enterCourts({ page, guest, otherCourtOwner, court }: CourtPartici
         [guest, config.userB, 'Enter room', court]
     ] as const) {
         await screen.goto(url);
-        await screen.getByLabel('Username').fill(user.username);
-        await screen.getByLabel('Password').fill(user.password);
-        await screen.getByLabel('Room', { exact: true }).fill(groupId);
-        await screen.getByRole('button', { name: action }).click();
-        await expect(screen.getByRole('heading', { name: groupId, exact: true })).toBeVisible();
+        await submitCourtEntry(screen, user, action, groupId);
     }
 }
+
+async function submitCourtEntry(screen: Page, user: FullStackUser, action: 'Create room' | 'Enter room', groupId: string) {
+    await screen.getByLabel('Username').fill(user.username);
+    await screen.getByLabel('Password').fill(user.password);
+    await screen.getByLabel('Room', { exact: true }).fill(groupId);
+    await screen.getByRole('button', { name: action }).click();
+    await expect(screen.getByRole('heading', { name: groupId, exact: true })).toBeVisible();
+}
+
+test('a guest watches the same director renew the room lease', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const court = 'court-' + crypto.randomUUID();
+    const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    try {
+        await page.goto(url);
+        await page.evaluate(async ({ sdkUrl, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            rallar.setDefaults({
+                applicationId: room.applicationId,
+                workspaceId: room.workspaceId,
+                groupPresence: { leaseMs: 30_000, renewalIntervalMs: 2_000, requestTimeoutMs: 3_000, retryMs: 1_000 }
+            });
+        }, { sdkUrl, room });
+        await submitCourtEntry(page, config.userA, 'Create room', court);
+        await guest.goto(url);
+        await submitCourtEntry(guest, config.userB, 'Enter room', court);
+        await page.getByRole('button', { name: 'Take clock control' }).click();
+        await expect(page.getByRole('button', { name: 'Start 10 minutes' })).toBeEnabled();
+        const configured = await page.evaluate(async ({ sdkUrl, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const expectedDirectorEpoch = rallar.director.status(room).appointment!.epoch;
+            return rallar.rooms.changeDirector(room, {
+                operation: 'configure', expectedDirectorEpoch, expectedRevision: 0, deputyPrincipalId: null
+            }, crypto.randomUUID());
+        }, { sdkUrl, room });
+        const watch = await guest.evaluateHandle(async ({ sdkUrl, room }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const leases: number[] = [];
+            const stop = rallar.rooms.watchDirector(room, ({ status, value }) => {
+                const lease = value?.succession?.directorLeaseExpiresAtEpochMs;
+                if (status === 'current' && lease != null) leases.push(lease);
+            });
+            return { leases, stop };
+        }, { sdkUrl, room });
+        try {
+            await expect.poll(() => watch.evaluate(state => state.leases.length)).toBeGreaterThan(0);
+            const firstLease = await watch.evaluate(state => state.leases[0]!);
+            await expect.poll(() => watch.evaluate(state => state.leases.at(-1))).toBeGreaterThan(firstLease);
+            const previousLease = await watch.evaluate(state => state.leases.at(-1)!);
+            const pointReadPath = '/api/state/apps/room-scoreboard/workspaces/default/groups/' + court;
+            const roomReads: string[] = [];
+            guest.on('request', request => {
+                if (request.method() === 'GET' && new URL(request.url()).pathname === pointReadPath) {
+                    roomReads.push(request.url());
+                }
+            });
+            await page.waitForResponse(response => {
+                const path = new URL(response.url()).pathname;
+                return path.includes('/groups/' + court + '/sessions/') && path.includes('/heartbeat/requests/') &&
+                    response.request().method() === 'POST' && response.ok();
+            });
+            await expect.poll(() => watch.evaluate(state => state.leases.at(-1))).toBeGreaterThan(previousLease);
+            expect(roomReads).toHaveLength(0);
+            const renewed = await guest.evaluate(async ({ sdkUrl, room }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+                return rallar.rooms.readDirector(room);
+            }, { sdkUrl, room });
+            expect(renewed.appointment).toEqual(configured.appointment);
+            expect(renewed.succession?.revision).toBe(configured.succession?.revision);
+            const renewedLease = renewed.succession?.directorLeaseExpiresAtEpochMs;
+            expect(renewedLease).toBeGreaterThan(previousLease);
+            await expect.poll(() => watch.evaluate(state => state.leases.at(-1)), {
+                timeout: 15_000,
+                message: 'The guest watch must deliver the renewed lease while the same director stays connected'
+            }).toBeGreaterThanOrEqual(renewedLease!);
+        } finally {
+            await watch.evaluate(state => state.stop());
+        }
+    } finally {
+        await guest.close();
+    }
+});
 
 test('an owner appoints a present participant and both browsers recover the same paused clock', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
