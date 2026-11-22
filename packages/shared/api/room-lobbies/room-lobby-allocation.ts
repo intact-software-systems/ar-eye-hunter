@@ -1,3 +1,4 @@
+import { closeRegistrationIfDue } from './room-lobby-registration.ts';
 import { requireEpoch, requireString } from '../exact-object-decoding.ts';
 import { makeSeatWindow, reconcileReturnWindows, settleDueSeats } from './room-lobby-windows.ts';
 import type { RoomLobby } from './room-lobby.ts';
@@ -9,6 +10,7 @@ export function occupiedLobbyPlaces(seats: readonly RoomLobby.Seat[], claims: Ro
 /** Shared by admission, directory reads and deadline delivery. Expiry and exclusive allocation
  * are one decision: an unrelated walk-in cannot take the vacancy between them. */
 export function allocateLobbyPlaces(lobby: RoomLobby, now: number, generation: number): RoomLobby {
+    lobby = closeRegistrationIfDue(lobby, now);
     const seats = settleDueSeats(lobby, now);
     const claims = lobby.capacityClaims && lobby.capacityClaims.dueAtEpochMs <= now ? null : lobby.capacityClaims;
     const occupied = occupiedLobbyPlaces(seats, claims);

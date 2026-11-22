@@ -33,7 +33,7 @@ export function configureRoomLobby(
     const unchanged = lobby.capacity === capacity && lobby.policy.returnWindowMs === selected.returnWindowMs &&
         lobby.policy.claimWindowMs === selected.claimWindowMs;
     const settled = allocateLobbyPlaces({ ...lobby, seats, capacity: full ? lobby.capacity : capacity, policy: full ? lobby.policy : selected }, nowEpochMs, lobby.revision + 1);
-    if (settled.seats === lobby.seats && settled.waiters === lobby.waiters && settled.capacityClaims === lobby.capacityClaims && (full || unchanged)) return { lobby, rejection: full ? 'full' : null };
+    if (settled.seats === lobby.seats && settled.waiters === lobby.waiters && settled.registration === lobby.registration && settled.capacityClaims === lobby.capacityClaims && (full || unchanged)) return { lobby, rejection: full ? 'full' : null };
     const revision = lobby.revision + 1;
     requireEpoch(revision, 'Lobby revision');
     return { lobby: reconcileReturnWindows({ ...settled, revision }, nowEpochMs), rejection: full ? 'full' : null };

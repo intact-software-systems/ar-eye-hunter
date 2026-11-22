@@ -15,7 +15,7 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
 export interface GroupLobbyDeadline {
-    readonly kind: 'seat' | 'room';
+    readonly kind: 'seat' | 'room' | 'registration';
     readonly generation: number;
     readonly roomRef: GroupRef;
     readonly activationId: string;
@@ -32,7 +32,7 @@ export function decodeGroupLobbyDeadline(value: unknown): GroupLobbyDeadline {
     requireString(row.activationId, 'Lobby activation');
     requireEpoch(row.groupCreatedAtEpochMs, 'Room creation time');
     requireEpoch(row.dueAtEpochMs, 'Lobby window deadline');
-    if (row.kind === 'seat') requirePositiveInteger(row.generation, 'Lobby seat generation');
+    if (row.kind === 'seat' || row.kind === 'registration') requirePositiveInteger(row.generation, 'Lobby deadline generation');
     else if (row.kind !== 'room') throw new TypeError('Unexpected lobby deadline kind');
     requireEpoch(row.generation, 'Lobby deadline generation');
     return {

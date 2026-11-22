@@ -1,5 +1,5 @@
-import { ROOM_LOBBY_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
-import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import { assertRoomClockMutation, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -20,7 +20,7 @@ export function validateGroupMetadataInput(
             kind: 'enum',
             allowed: ['listed', 'unlisted']
         }], 'Group metadata'));
-        if (Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY)) {
+        if (Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY) || Object.hasOwn(metadata, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) {
             issues.push(new TypeError('Room lobby metadata is server-owned; use roomLobby.'));
         }
         if (Object.hasOwn(metadata, ROOM_CLOCKS_METADATA_KEY)) {
@@ -51,33 +51,4 @@ export function validateGroupMetadataInput(
         }
     }
     return issues;
-}
-
-export function validateGroupLobbyInput(operation: 'createGroup' | 'updateGroup', value: JsonWireValue | undefined): readonly TypeError[] {
-    if (value === undefined) return [];
-    try {
-        if (operation === 'createGroup') {
-            if (value !== null) decodeRoomLobbyPolicy(value);
-        }
-        else {
-            const command = requireRecord(value, 'Lobby command');
-            if (command.operation === 'configure') {
-                requireExactKeys(command, ['operation', 'policy'], 'Lobby configuration');
-                if (command.policy !== null) decodeRoomLobbyPolicy(command.policy);
-            }
-            else if (command.operation === 'wait') {
-                requireExactKeys(command, Object.hasOwn(command, 'joinCode') ? ['operation', 'joinCode'] : ['operation'], 'Lobby wait');
-                if (Object.hasOwn(command, 'joinCode') && (typeof command.joinCode !== 'string' || !command.joinCode.trim())) throw new TypeError('Invalid lobby join code');
-            }
-            else {
-                requireExactKeys(command, ['operation'], 'Lobby command');
-                if (command.operation !== 'release') throw new TypeError('Unknown lobby command');
-            }
-        }
-    }
-    catch (error) {
-        if (!(error instanceof TypeError)) throw error;
-        return [error];
-    }
-    return [];
 }

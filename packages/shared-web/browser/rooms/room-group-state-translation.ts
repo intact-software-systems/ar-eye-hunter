@@ -16,6 +16,7 @@ import { GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
 import { GROUP_SESSION_SCHEDULE_METADATA_KEY } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectating.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
@@ -290,6 +291,7 @@ const serverOwnedRoomMetadata = new Map<string, string>([
     [ROOM_CLOCKS_METADATA_KEY, 'rooms.changeClock'],
     [ROOM_DEADLINES_METADATA_KEY, 'rooms.setDeadline'],
     [ROOM_LOBBY_METADATA_KEY, 'lobby.configure'],
+    [ROOM_LOBBY_REGISTRATION_METADATA_KEY, 'lobby.setRegistrationCutoff'],
     [GROUP_SESSION_SCHEDULE_METADATA_KEY, 'the room schedule commands'],
     [GROUP_RETENTION_METADATA_KEY, 'room creation retention options'],
     [GROUP_DIRECTORY_LISTING_METADATA_KEY, 'rooms.update with directoryListing'],

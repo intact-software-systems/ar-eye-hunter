@@ -1,4 +1,5 @@
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -190,7 +191,7 @@ export function computeCreate(
     if (policy && !eligible) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'A lobby requires a room with finite player capacity.' });
     }
-    const group = policy ? { ...initial, maxMembers: capacity, metadata: { ...initial.metadata, [ROOM_LOBBY_METADATA_KEY]: { ...policy } } } : initial;
+    const group = policy ? { ...initial, maxMembers: capacity, metadata: { ...initial.metadata, [ROOM_LOBBY_METADATA_KEY]: { ...policy }, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]: { revision: 0, atEpochMs: null } } } : initial;
     const owner = createInitialOwner(command, audit);
     const summary = createInitialPresenceSummary({ command, read, facts, snapshotVersion });
     return computeGroupMutationWriteResult({

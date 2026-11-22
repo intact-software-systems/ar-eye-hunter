@@ -371,7 +371,7 @@ describe('room request translation', () => {
 
     it.each([
         ['rallarRoomDeadlines', 'setDeadline'], ['rallarRoomClocks', 'changeClock'],
-        ['rallarRoomLobby', 'configure'],
+        ['rallarRoomLobby', 'configure'], ['rallarRoomLobbyRegistration', 'setRegistrationCutoff'],
         ['rallarSessionSchedule', 'schedule'],
         ['rallarRetention', 'retention'], ['rallarDirectoryListing', 'directoryListing'],
         ['rallarSpectatorCapacity', 'maxSpectators']

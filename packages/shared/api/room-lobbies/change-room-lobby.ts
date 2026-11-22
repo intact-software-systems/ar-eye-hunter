@@ -1,3 +1,4 @@
+import { changeRegistration } from './room-lobby-registration.ts';
 import { changeLobbyWait } from './change-lobby-wait.ts';
 import { allocateLobbyPlaces, occupiedLobbyPlaces } from './room-lobby-allocation.ts';
 import { requireEpoch, requireString } from '../exact-object-decoding.ts';
@@ -13,6 +14,7 @@ function updateSeat(seats: readonly RoomLobby.Seat[], seat: RoomLobby.Seat): rea
 
 export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, nowEpochMs: number): RoomLobby.Change {
     requireEpoch(nowEpochMs, 'Lobby time');
+    if (command.kind === 'set-registration-cutoff' || command.kind === 'close-registration') return changeRegistration(lobby, command, nowEpochMs);
     if (command.kind === 'expire' && (command.dueAtEpochMs > nowEpochMs ||
         !lobbyWindows(lobby).has(JSON.stringify([command.generation, command.dueAtEpochMs])))) {
         return { lobby, rejection: null };
@@ -25,6 +27,7 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
     if (command.kind !== 'expire') {
         requireString(command.principalId, 'Lobby seat account');
         const existing = seats.find(seat => seat.principalId === command.principalId);
+        const reservedPlace = allocated.capacityClaims?.principalIds.includes(command.principalId);
         const prior = lobby.seats.find(seat => seat.principalId === command.principalId);
         const waiter = waiters.find(candidate => candidate.principalId === command.principalId);
         if (command.kind === 'wait' || command.kind === 'limit') {
@@ -36,10 +39,13 @@ export function changeRoomLobby(lobby: RoomLobby, command: RoomLobby.Command, no
         else if (command.kind === 'release' && waiter) {
             waiters = waiters.filter(candidate => candidate !== waiter);
         }
+        else if (!existing && !reservedPlace && allocated.registration.closed && (command.kind === 'reserve' || command.kind === 'arrive')) {
+            rejection = 'registration-closed';
+        }
         else if ((command.kind === 'arrive' || (command.kind === 'reserve' && prior?.offerWindow)) && prior && !existing) {
             rejection = (prior.admissionWindow || prior.offerWindow) ? 'admission-expired' : 'return-expired';
         }
-        else if (!existing && (command.kind === 'arrive' || command.kind === 'reserve') && !allocated.capacityClaims?.principalIds.includes(command.principalId) && occupiedLobbyPlaces(seats, allocated.capacityClaims).size >= lobby.capacity) {
+        else if (!existing && (command.kind === 'arrive' || command.kind === 'reserve') && !reservedPlace && occupiedLobbyPlaces(seats, allocated.capacityClaims).size >= lobby.capacity) {
             rejection = 'full';
         }
         else if (command.kind === 'arrive' && !existing?.present) {

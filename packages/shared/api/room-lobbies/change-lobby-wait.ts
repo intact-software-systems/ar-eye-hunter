@@ -10,6 +10,7 @@ export function changeLobbyWait(
     const seat = lobby.seats.find(candidate => candidate.principalId === principalId);
     if (command.kind === 'wait') {
         if (seat || waiter) return { lobby, rejection: null };
+        if (lobby.registration.closed) return { lobby, rejection: 'registration-closed' };
         if (eligibleUntilEpochMs !== null && eligibleUntilEpochMs <= nowEpochMs) return { lobby, rejection: 'eligibility-expired' };
         const registration = { principalId, eligibleUntilEpochMs, generation: lobby.revision + 1 };
         return { lobby: { ...lobby, waiters: [...lobby.waiters, registration] }, rejection: null };

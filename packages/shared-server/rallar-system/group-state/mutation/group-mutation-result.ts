@@ -1,3 +1,4 @@
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
     GroupLifecyclePolicy
@@ -48,6 +49,7 @@ import {
     GroupConnectDeniedError,
     GroupRetiredError,
     GroupClockRevisionConflictError,
+    GroupLobbyRegistrationRevisionConflictError,
     GroupDeadlineRevisionConflictError,
     GroupDirectorChangedError,
     type GroupMutationRejectionCode
@@ -58,6 +60,7 @@ import { toGroupMutationActor, toGroupMutationEvent } from './to-group-mutation-
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface GroupMutationWriteInput {
+    readonly revisedLobby?: RoomLobby;
     readonly sessionIntentEffect?: RuntimeStateGuardedBatchEffect;
     readonly sessionReservationWrite?: GroupSessionReservationWrite;
     readonly command: GroupMutationCommand;
@@ -287,6 +290,7 @@ export function toGroupMutationRejectionError(
 ):
     | GroupDirectorChangedError
     | GroupClockRevisionConflictError
+    | GroupLobbyRegistrationRevisionConflictError
     | GroupDeadlineRevisionConflictError
     | GroupRetiredError
     | GroupAlreadyExistsError
@@ -299,6 +303,8 @@ export function toGroupMutationRejectionError(
             return new GroupPolicyDeniedError(computed.policyDenial);
         case 'room-director-changed':
             return new GroupDirectorChangedError(message);
+        case 'room-lobby-registration-revision-conflict':
+            return new GroupLobbyRegistrationRevisionConflictError(message);
         case 'room-clock-revision-conflict':
             return new GroupClockRevisionConflictError(message);
         case 'room-deadline-revision-conflict':

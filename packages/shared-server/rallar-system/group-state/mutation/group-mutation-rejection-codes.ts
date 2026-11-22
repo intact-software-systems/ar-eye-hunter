@@ -7,6 +7,7 @@ import {
 export const GROUP_MUTATION_REJECTION_CODES = [
     'group-already-exists',
     'room-clock-revision-conflict',
+    'room-lobby-registration-revision-conflict',
     'room-deadline-revision-conflict',
     'room-director-changed',
     'group-retired',
@@ -53,6 +54,11 @@ export class GroupConnectDeniedError extends Error {
 export class GroupDirectorChangedError extends Error {
     readonly status = 409;
     readonly code = 'room-director-changed';
+}
+
+export class GroupLobbyRegistrationRevisionConflictError extends Error {
+    readonly status = 409;
+    readonly code = 'room-lobby-registration-revision-conflict';
 }
 
 export class GroupClockRevisionConflictError extends Error {

@@ -1,3 +1,5 @@
+import { decodeRoomLobbyRegistration } from './room-lobby-registration.ts';
+export { ROOM_LOBBY_REGISTRATION_METADATA_KEY, readRoomLobbyRegistration } from './room-lobby-registration.ts';
 import { decodeCapacityClaims } from './room-lobby-capacity.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { isSameGroupScope } from '../api-type-utils.ts';
@@ -11,7 +13,19 @@ export { configureRoomLobby } from './room-lobby-capacity.ts';
 export { changeRoomLobby } from './change-room-lobby.ts';
 
 export namespace RoomLobby {
-    export type Mutation = { readonly operation: 'configure'; readonly policy: Policy | null; }
+    export interface RegistrationDefinition {
+        readonly revision: number;
+        readonly atEpochMs: number | null;
+    }
+    export interface Registration extends RegistrationDefinition {
+        readonly closed: boolean;
+    }
+    export interface RegistrationCutoff {
+        readonly expectedRevision: number;
+        readonly atEpochMs: number | null;
+    }
+    export type Mutation = ({ readonly operation: 'set-registration-cutoff'; } & RegistrationCutoff) |
+        { readonly operation: 'configure'; readonly policy: Policy | null; }
         | { readonly operation: 'wait'; readonly joinCode?: string; }
         | { readonly operation: 'release'; };
 
@@ -39,17 +53,20 @@ export namespace RoomLobby {
         readonly returnWindow: ReturnWindow | null;
     }
     export type Command =
+        | ({ readonly kind: 'set-registration-cutoff'; } & RegistrationCutoff)
+        | ({ readonly kind: 'close-registration'; } & ReturnWindow)
         | { readonly kind: 'reserve' | 'arrive' | 'away' | 'release'; readonly principalId: string; }
         | { readonly kind: 'limit'; readonly principalId: string; readonly eligibleUntilEpochMs: number; }
         | { readonly kind: 'wait'; readonly principalId: string; readonly eligibleUntilEpochMs: number | null; }
         | ({ readonly kind: 'expire'; } & ReturnWindow);
     export interface Change {
         readonly lobby: RoomLobby;
-        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | 'eligibility-expired' | null;
+        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | 'eligibility-expired' | 'revision-conflict' | 'registration-closed' | null;
     }
 }
 
 export interface RoomLobby {
+    readonly registration: RoomLobby.Registration;
     readonly activationId: string;
     readonly expiresAtEpochMs: number | null;
     readonly roomRef: GroupRef;
@@ -84,7 +101,7 @@ export function createRoomLobby({ roomRef, capacity, policy, activationId, expir
     requireString(activationId, 'Room lobby activation');
     return {
         activationId, expiresAtEpochMs, roomRef: decodeExactGroupRef(roomRef, 'Room lobby'), capacity: decodePositiveLobbyInteger(capacity, 'Lobby capacity'),
-        policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: [], waiters: [], capacityClaims: null
+        registration: { revision: 0, atEpochMs: null, closed: false }, policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: [], waiters: [], capacityClaims: null
     };
 }
 
@@ -100,7 +117,7 @@ function decodeWindow(value: unknown, revision: number): RoomLobby.ReturnWindow 
 
 export function decodeRoomLobby(value: unknown): RoomLobby {
     const record = requireRecord(value, 'Room lobby');
-    requireExactKeys(record, ['activationId', 'expiresAtEpochMs', 'roomRef', 'capacity', 'policy', 'revision', 'seats', 'waiters', 'capacityClaims'], 'Room lobby');
+    requireExactKeys(record, ['registration', 'activationId', 'expiresAtEpochMs', 'roomRef', 'capacity', 'policy', 'revision', 'seats', 'waiters', 'capacityClaims'], 'Room lobby');
     const expiresAtEpochMs = record.expiresAtEpochMs;
     if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
     requireString(record.activationId, 'Room lobby activation');
@@ -131,9 +148,10 @@ export function decodeRoomLobby(value: unknown): RoomLobby {
     if (seats.some(seat => (seat.returnWindow !== null) !== (full && !seat.present))) {
         throw new TypeError('Return windows require a full roster');
     }
+    const registration = decodeRoomLobbyRegistration(record.registration);
     const capacityClaims = decodeCapacityClaims(record.capacityClaims, revision, capacity);
     const occupied = new Set([...principals, ...(capacityClaims?.principalIds ?? [])]);
-    if (occupied.size > capacity || !Array.isArray(record.waiters) || (record.waiters.length && occupied.size !== capacity)) {
+    if (occupied.size > capacity || !Array.isArray(record.waiters) || (registration.closed && record.waiters.length > 0) || (record.waiters.length && occupied.size !== capacity)) {
         throw new TypeError('Invalid lobby queue');
     }
     let previousGeneration = 0;
@@ -151,7 +169,7 @@ export function decodeRoomLobby(value: unknown): RoomLobby {
         principals.add(waiter.principalId);
         return { principalId: waiter.principalId, generation, eligibleUntilEpochMs };
     });
-    return { activationId: record.activationId, expiresAtEpochMs, roomRef, capacity, policy, revision, seats, waiters, capacityClaims };
+    return { registration, activationId: record.activationId, expiresAtEpochMs, roomRef, capacity, policy, revision, seats, waiters, capacityClaims };
 }
 
 export function projectRoomLobbySeat(roomRef: GroupRef, seat: RoomLobby.Seat | undefined, waiting = false): RoomLobbyAccountView['seat'] {

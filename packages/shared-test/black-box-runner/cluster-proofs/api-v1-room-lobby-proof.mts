@@ -83,6 +83,30 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
     await requestJson(second.baseUrl, releasePath, release);
     assert.deepEqual(await seat(bob), offer);
     assert.equal(await seat(outsider), null);
+    await requestJson(second.baseUrl, toApiMutationRequestPath(room, crypto.randomUUID()), {
+        method: 'PUT', session: outsider, body: { roomLobby: { operation: 'wait' } }
+    });
+    const cutoff = Date.now() + 5000;
+    assert.ok(offer?.deadlineEpochMs && cutoff < offer.deadlineEpochMs);
+    await requestJson(second.baseUrl, toApiMutationRequestPath(room, crypto.randomUUID()), {
+        method: 'PUT', session: alice, body: { roomLobby: {
+            operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: cutoff
+        } }
+    });
+    await controls.stop(first.port, 'crash');
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, cutoff - Date.now() + 1)));
+    await controls.restart(first.port, { ...first, logPath: first.logPath + '.cutoff-restart' });
+    const recovery = AbortSignal.timeout(20000);
+    while (await seat(outsider) !== null) {
+        recovery.throwIfAborted();
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.deepEqual(await seat(bob), offer);
+    const target = { ...scope, groupId, proofId: 'registration-closure-' + crypto.randomUUID() };
+    const returning = { ...bob, apiBaseUrl: second.baseUrl };
+    await users.activateMember({ ...target, actor: returning, memberClientId: returning.clientId });
+    await users.connectPresence({ ...target, actor: returning });
+    assert.equal((await seat(returning))?.status, 'present');
     const guarded = 'code-court';
     await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
         method: 'POST', session: alice, expectedStatus: 201,
