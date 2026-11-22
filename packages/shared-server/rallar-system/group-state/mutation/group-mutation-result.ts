@@ -1,5 +1,4 @@
-import { readRoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
-import { groupStateUpdatePresenceAdmissionDescriptor, groupStateUpdatePresenceDescriptor } from '../persistence/presence/group-presence-write-descriptors.ts';
+import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
@@ -178,9 +177,7 @@ export function computeGroupMutationWriteResult(
         outcome: 'write',
         viewProvenance: [...scheduled.viewProvenance, ...lobby.provenance],
         ...(input.directorPresenceGroup ? { directorPresenceGroup: input.directorPresenceGroup } : {}),
-        ...((command.operation === 'appointDirector' && command.input.succession ||
-            command.operation === 'updateGroup' && (command.input.roomClock || command.input.roomDeadline?.expectedDirectorEpoch !== undefined) &&
-            readRoomDirectorSuccession(group.metadata)) ? { directorAuthorityFences: directorAuthorityFences(read) } : {}),
+        directorAuthorityFences: directorAuthorityFences(command, read, group),
         lobbyEffects: lobby.effects,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
         sessionReservationWrite,
@@ -201,24 +198,6 @@ export function computeGroupMutationWriteResult(
         subscriptionEffects: input.subscriptionEffects
     };
     return { ...computed, persistence: computeGroupMutationPersistence(computed, facts, read) };
-}
-
-/** A disconnect or generation change after reading an eligible session must invalidate the appointment attempt. */
-function directorAuthorityFences(read: GroupMutationRead): RuntimeStateGuardedBatchEffect[] {
-    const effects = new Map<string, RuntimeStateGuardedBatchEffect>();
-    for (const row of [read.targetPresence, ...read.authorityPresenceSessionEntries]) {
-        if (!row) continue;
-        const effectId = 'director-session:' + row.value.sessionId;
-        effects.set(effectId, { ...groupStateUpdatePresenceDescriptor(row.value, row.entry.revision),
-            effectId, operation: 'update-exact', expectedValue: row.entry.value });
-    }
-    for (const row of [read.targetAdmission, read.authorityAdmission, read.directorAdmission]) {
-        if (!row) continue;
-        const effectId = 'director-admission:' + row.value.principalId;
-        effects.set(effectId, { ...groupStateUpdatePresenceAdmissionDescriptor(row.value, row.entry.revision),
-            effectId, operation: 'update-exact', expectedValue: row.entry.value });
-    }
-    return [...effects.values()];
 }
 
 function toGroupMutationIdempotency(

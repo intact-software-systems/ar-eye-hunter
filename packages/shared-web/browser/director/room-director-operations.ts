@@ -1,12 +1,12 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { readRallarGroupDirectorAppointment, type RallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
-import { decodeRoomDirectorSuccessionCommand, readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/group-director-succession-record.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { CreateBrowserRallarRoomsInput } from './browser-rallar-rooms.ts';
-import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
-import { captureRoomSession } from './room-session-fence.ts';
-import { explicitRoomRef, readObservedRoom, watchRoomRevision } from './watch-room-revision.ts';
+import { decodeRoomDirectorSuccessionCommand, readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
+import { roomGroupStateHttpApi } from '../rooms/room-group-state-http-api.ts';
+import { captureRoomSession } from '../rooms/room-session-fence.ts';
+import { explicitRoomRef, readObservedRoom, watchRoomRevision, type ObservedRoomMetadata } from '../state-read/watch-room-revision.ts';
 
 export namespace RoomDirectorOperations {
     export interface View {
@@ -28,7 +28,7 @@ export interface RoomDirectorOperations {
         options?: { readonly signal?: AbortSignal }): () => void;
 }
 
-function directorView(group: GroupSnapshot['group']): RoomDirectorOperations.View {
+function directorView(group: ObservedRoomMetadata): RoomDirectorOperations.View {
     return { revision: group.snapshotVersion, appointment: readRallarGroupDirectorAppointment(group.metadata) ?? null,
         succession: readRoomDirectorSuccession(group.metadata) };
 }

@@ -1,10 +1,21 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import { expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService, requireSnapshot, seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';
 
-async function createCourt() {
+interface TestCourt {
+    readonly writer: GroupStateTestService;
+    writerAt(offset: number): GroupStateTestService;
+    readonly base: number;
+    readonly owner: { actorPrincipalId: string; actorSessionId: string };
+    readonly player: { actorPrincipalId: string; actorSessionId: string };
+    metadata(): Promise<ApiJsonObject>;
+}
+
+async function createCourt(): Promise<TestCourt> {
     const database = new GroupBarrierRepository();
     const base = Date.now();
     database.nowEpochMs = () => base;

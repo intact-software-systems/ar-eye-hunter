@@ -1,4 +1,5 @@
-import { observeRoomDirectorLoss, observeRoomDirectorPresence, readRoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
+import { observeRoomDirectorLoss, observeRoomDirectorPresence } from '@shared/api/room-directors/room-director-succession-presence.ts';
+import { readRoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { GroupEventType, GroupPresenceSession } from '@shared/api/group-types.ts';
 
@@ -71,7 +72,7 @@ export function computeGroupPresenceWrite({
             const lostAt = Math.min(facts.attemptAtEpochMs, session.expiresAtEpochMs);
             metadata = observeRoomDirectorLoss(metadata, lostAt);
         } else {
-            metadata = observeRoomDirectorPresence(metadata, session.principalId, session.sessionId, facts.attemptAtEpochMs, session.expiresAtEpochMs);
+            metadata = observeRoomDirectorPresence(metadata, session, facts.attemptAtEpochMs);
         }
     }
     const revised = metadata === current.metadata ? undefined : {

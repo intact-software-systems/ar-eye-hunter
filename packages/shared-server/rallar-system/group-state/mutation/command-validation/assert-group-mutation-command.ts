@@ -1,4 +1,4 @@
-import { decodeRoomDirectorSuccessionCommand } from '@shared/api/group-director-succession.ts';
+import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -63,9 +63,7 @@ export function assertGroupMutationCommand(
     const input = requireRecord(value.input, 'Group mutation input') as JsonWireObject;
     assertExactKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
     for (const key of ['actorPrincipalId', 'actorSessionId', 'reason']) {
-        if (input[key] !== null) {
-            requireNonEmptyString(input[key], `Group mutation ${key}`);
-        }
+        assertNullableString(input, key, `Group mutation ${key}`);
     }
     if (hasSession) {
         requireNonEmptyString(value.sessionId, 'Group session id');
@@ -95,15 +93,11 @@ function assertOperationInput(
     if (isGroupTransportOperation(operation)) {
         return;
     }
+    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
+        assertLifecycleGroupMutationCommandInput({ operation, input, requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation] });
+        return;
+    }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
-        if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-            assertLifecycleGroupMutationCommandInput({
-                operation,
-                input,
-                requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
-            });
-            return;
-        }
         assertAggregateOperationInput(operation, input);
         return;
     }
@@ -279,9 +273,9 @@ function assertPresenceOperationInput(
     assertNullableInteger(input, 'expiresAtEpochMs', true);
 }
 
-function assertNullableString(input: JsonWireObject, key: string): void {
+function assertNullableString(input: JsonWireObject, key: string, label = `Group ${key}`): void {
     if (input[key] !== null) {
-        requireNonEmptyString(input[key], `Group ${key}`);
+        requireNonEmptyString(input[key], label);
     }
 }
 

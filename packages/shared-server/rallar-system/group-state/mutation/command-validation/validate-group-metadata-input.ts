@@ -1,4 +1,4 @@
-import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/group-director-succession.ts';
+import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
