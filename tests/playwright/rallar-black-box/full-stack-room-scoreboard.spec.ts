@@ -124,6 +124,57 @@ test('a director can recover a clock-only court and explicitly advance its exist
     await expect(page.locator('#phase')).toHaveText('Running');
 });
 
+test('a returning participant recovers the paused program and the director can retry resume', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const otherCourtOwner = await browser.newPage({ baseURL });
+    const court = 'court-' + crypto.randomUUID();
+    const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    try {
+        await enterCourts({ page, guest, otherCourtOwner, court });
+        await page.getByRole('button', { name: 'Take clock control' }).click();
+        await expect(page.getByRole('button', { name: 'Start 10 minutes' })).toBeEnabled();
+        const director = await page.evaluateHandle(async path => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(path);
+            return rallar;
+        }, sdkUrl);
+        const next = await page.waitForFunction(sdk => sdk.deadlineAfter(600000) ?? 0, director);
+        const name = 'game-program';
+        const expectedDirectorEpoch = await director.evaluate((sdk, ref) => sdk.director.status(ref).appointment!.epoch, room);
+        const command = { name, expectedDirectorEpoch };
+        await director.evaluate(async (sdk, { room, command, next }) => sdk.rooms.publishSchedule(room, {
+            ...command, expectedRevision: 0, phases: [{ phase: 'play', startsAtEpochMs: 0 }, { phase: 'break', startsAtEpochMs: next }]
+        }, crypto.randomUUID()), { room, command, next: await next.jsonValue() });
+        await guest.getByRole('button', { name: 'Switch court' }).click();
+        await guest.getByLabel('Room', { exact: true }).fill(court + '-other');
+        await guest.getByRole('button', { name: 'Enter room' }).click();
+        await expect(guest.getByRole('heading', { name: court + '-other', exact: true })).toBeVisible();
+        const paused = await director.evaluate(async (sdk, { room, command }) =>
+            sdk.rooms.pauseProgram(room, { ...command, expectedRevision: 1 }, crypto.randomUUID()), { room, command });
+        await guest.getByRole('button', { name: 'Switch court' }).click();
+        await guest.getByLabel('Room', { exact: true }).fill(court);
+        await guest.getByRole('button', { name: 'Enter room' }).click();
+        await expect(guest.getByRole('heading', { name: court, exact: true })).toBeVisible();
+        const recovered = await guest.evaluate(async ({ room, name, sdkUrl }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const schedule = await rallar.rooms.readSchedule(room, name);
+            return { schedule, position: schedule && rallar.schedulePosition(schedule) };
+        }, { room, name, sdkUrl });
+        expect(recovered.schedule).toEqual(paused);
+        expect(recovered.position).toMatchObject({ status: 'paused', current: { phase: 'play' },
+            remainingMs: paused.phases[1]!.startsAtEpochMs - paused.elapsedThroughEpochMs });
+        const id = crypto.randomUUID();
+        const resume = () => director.evaluate(async (sdk, { room, command, id }) =>
+            sdk.rooms.resumeProgram(room, { ...command, expectedRevision: 2 }, id), { room, command, id });
+        const resumed = await resume();
+        expect(await resume()).toEqual(resumed);
+        expect(resumed.revision).toBe(3);
+    } finally {
+        await Promise.all([guest.close(), otherCourtOwner.close()]);
+    }
+});
+
 test('a guest returning after the old boundary recovers the revised schedule and crosses its new boundary locally', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });
