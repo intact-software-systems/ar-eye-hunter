@@ -28,11 +28,16 @@ The held-seat implementation exposes two places to extend. The room roster seria
 2. Represent waiting and offered explicitly in the private account view. Add SDK actions to join and leave the queue. Entering through normal room admission confirms an offer. A notification, reconnect or reading the offer from another room leaves it unclaimed.
 3. Drive decline, loss of eligibility and expiry through the same seat allocation decision. An expired offer delivered twice must advance the queue once. Exercise delivery after a worker restart, and assert that public room discovery exposes capacity without participant identities.
 
+## Third implementation slice — close registration on schedule
+
+1. Give a lobby organizer a server and SDK command to schedule or revise a UTC registration cutoff while registration is open. Bind its wake to the lobby activation and cutoff revision. Test an obsolete wake after a revision and test a command arriving at the exact cutoff before the worker has run.
+2. At closure release waiting commitments, reject new registrations and walk-ins, and stop making offers. Honor existing seats and unexpired offers. A reservation, decline or expiry cannot promote someone after closure. Use the same allocation decision for inline commands and the unattended wake. Include account updates and private notifications in the transaction.
+3. With the organizer offline, stop the worker across the cutoff and exercise claim and decline independently on another API process. Verify that a promised offer keeps its displayed deadline and that a waiting account can commit elsewhere after closure. Expose registration status through the room's authoritative state so an observing app can recover after a missed notice.
+
 ## Subsequent outcomes
 
 | Order | Outcome | End-to-end evidence |
 | --- | --- | --- |
-| 3 | Scheduled registration closure | Issue an offer before closure, restart with the organizer offline, then accept before the offer's own expiry. Declining after closure releases capacity without issuing another offer. Use both deadline actions to judge what is reusable. |
 | 4 | Whole-program pause and resume | Pause during a phase, resume ten minutes later, retry resume, and recover from another room. Assert one shift, the same phase balance and an unchanged independent venue cutoff. |
 | 5 | Admin appointment and deputy succession | The former director reconnects as the deputy claims. Exactly one appointment controls the clock. An explicit admin appointment supersedes it. Run with running and paused programs. |
 | 6 | Present-player succession | Race two eligible players after fallback opens. Verify a single winner and reject an away holder, ordinary spectator and commands from a replaced director. |

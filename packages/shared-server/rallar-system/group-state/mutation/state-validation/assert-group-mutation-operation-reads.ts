@@ -50,7 +50,7 @@ function assertLifecyclePolicyRead(
     read: GroupMutationRead,
     command: GroupMutationCommand
 ): void {
-    if (readsGroupLifecyclePolicy(command.operation)) {
+    if (readsGroupLifecyclePolicy(command)) {
         if (read.lifecyclePolicy === null) {
             throw new TypeError('Group mutation read is missing the lifecycle policy read');
         }

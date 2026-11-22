@@ -17,6 +17,7 @@ export function settleDueSeats(lobby: RoomLobby, now: number): readonly RoomLobb
         }
     }
     const remaining = lobby.seats.filter(seat =>
+        !(seat.offerWindow && seat.offerWindow.dueAtEpochMs <= now) &&
         !(seat.admissionWindow && seat.admissionWindow.dueAtEpochMs <= now) &&
         seat.returnWindow?.dueAtEpochMs !== firstDueReturn);
     if (remaining.length === lobby.seats.length) return lobby.seats;
@@ -25,7 +26,7 @@ export function settleDueSeats(lobby: RoomLobby, now: number): readonly RoomLobb
 
 export function reconcileReturnWindows(lobby: RoomLobby, nowEpochMs: number): RoomLobby {
     const { seats, capacity, policy, revision } = lobby;
-    const full = seats.filter(seat => seat.admissionWindow === null).length === capacity;
+    const full = seats.filter(seat => seat.admissionWindow === null && seat.offerWindow === null).length === capacity;
     const roster = seats.map(seat => {
         if (!full && seat.returnWindow) return { ...seat, returnWindow: null };
         if (full && !seat.present && !seat.returnWindow) {
@@ -34,4 +35,25 @@ export function reconcileReturnWindows(lobby: RoomLobby, nowEpochMs: number): Ro
         return seat;
     });
     return { ...lobby, seats: roster };
+}
+
+export function lobbyWindows(lobby: Pick<RoomLobby, 'seats' | 'waiters' | 'capacityClaims'> | null): Map<string, RoomLobby.ReturnWindow> {
+    const windows = new Map<string, RoomLobby.ReturnWindow>();
+    if (!lobby) return windows;
+    if (lobby.capacityClaims) {
+        const { generation, dueAtEpochMs } = lobby.capacityClaims;
+        windows.set(JSON.stringify([generation, dueAtEpochMs]), { generation, dueAtEpochMs });
+    }
+    for (const waiter of lobby.waiters) {
+        if (waiter.eligibleUntilEpochMs !== null) {
+            const window = { generation: waiter.generation, dueAtEpochMs: waiter.eligibleUntilEpochMs };
+            windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
+        }
+    }
+    for (const seat of lobby.seats) {
+        for (const window of [seat.admissionWindow, seat.returnWindow, seat.offerWindow]) {
+            if (window) windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
+        }
+    }
+    return windows;
 }

@@ -20,9 +20,10 @@ import {
  * replanning landing, and the admission surfaces read the admission mode.
  */
 export function readsGroupLifecyclePolicy(
-    operation: GroupMutationCommand['operation']
+    command: GroupMutationCommand
 ): boolean {
-    return (
+    const operation = command.operation;
+    return operation === 'createGroupInvite' || operation === 'revokeGroupInvite' || (command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'wait') || (
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||

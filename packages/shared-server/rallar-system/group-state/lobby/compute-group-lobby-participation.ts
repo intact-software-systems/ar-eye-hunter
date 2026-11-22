@@ -1,3 +1,5 @@
+import { computeGroupLobbyMembership } from './compute-group-lobby-membership.ts';
+import { computeWaitRegistration } from './group-lobby-wait-access.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
@@ -17,6 +19,11 @@ export function computeGroupLobbyParticipation(
         ).map((session) => session.principalId)
     );
     if (command.operation === 'updateGroup') {
+        if (command.input.roomLobby?.operation === 'wait' && command.input.actorPrincipalId) {
+            changes.push(
+                computeWaitRegistration(input, command.input.actorPrincipalId, command.input.roomLobby.joinCode)
+            );
+        }
         if (command.input.roomLobby?.operation === 'release' && command.input.actorPrincipalId) {
             changes.push({ kind: 'release', principalId: command.input.actorPrincipalId });
         }
@@ -28,25 +35,7 @@ export function computeGroupLobbyParticipation(
             }
         }
     }
-    for (const member of input.members) {
-        const principalId = member.principalId;
-        if (member.status === 'active' && member.role !== 'spectator') {
-            const predecessor = principalId === read.targetMember?.principalId ? read.targetMember : read.actorMember;
-            if (
-                command.operation === 'createGroup' || command.operation === 'joinGroup' ||
-                command.operation === 'acceptGroupInvite' ||
-                predecessor?.status !== 'active' || predecessor.role === 'spectator'
-            ) {
-                changes.push({ kind: 'reserve', principalId });
-            }
-        }
-        else if (member.status === 'left' && principalId === command.input.actorPrincipalId) {
-            changes.push({ kind: 'away', principalId });
-        }
-        else {
-            changes.push({ kind: 'release', principalId });
-        }
-    }
+    changes.push(...computeGroupLobbyMembership(input));
     if (
         guard.kind === 'presence' && read.targetMember?.role !== 'spectator' && command.operation === 'connectPresence'
     ) {

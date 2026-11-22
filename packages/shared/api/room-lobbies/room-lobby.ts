@@ -1,3 +1,4 @@
+import { decodeCapacityClaims } from './room-lobby-capacity.ts';
 import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { isSameGroupScope } from '../api-type-utils.ts';
 import { requireEpoch, requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
@@ -6,10 +7,12 @@ import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 import { decodePositiveLobbyInteger, decodeRoomLobbyPolicy } from './room-lobby-policy.ts';
 
-export { changeRoomLobby, configureRoomLobby } from './room-lobby-roster.ts';
+export { configureRoomLobby } from './room-lobby-capacity.ts';
+export { changeRoomLobby } from './change-room-lobby.ts';
 
 export namespace RoomLobby {
     export type Mutation = { readonly operation: 'configure'; readonly policy: Policy | null; }
+        | { readonly operation: 'wait'; readonly joinCode?: string; }
         | { readonly operation: 'release'; };
 
     export interface Policy {
@@ -20,7 +23,16 @@ export namespace RoomLobby {
         readonly generation: number;
         readonly dueAtEpochMs: number;
     }
+    export interface CapacityClaims extends ReturnWindow {
+        readonly principalIds: readonly string[];
+    }
+    export interface Waiter {
+        readonly principalId: string;
+        readonly eligibleUntilEpochMs: number | null;
+        readonly generation: number;
+    }
     export interface Seat {
+        readonly offerWindow: ReturnWindow | null;
         readonly principalId: string;
         readonly present: boolean;
         readonly admissionWindow: ReturnWindow | null;
@@ -28,10 +40,12 @@ export namespace RoomLobby {
     }
     export type Command =
         | { readonly kind: 'reserve' | 'arrive' | 'away' | 'release'; readonly principalId: string; }
+        | { readonly kind: 'limit'; readonly principalId: string; readonly eligibleUntilEpochMs: number; }
+        | { readonly kind: 'wait'; readonly principalId: string; readonly eligibleUntilEpochMs: number | null; }
         | ({ readonly kind: 'expire'; } & ReturnWindow);
     export interface Change {
         readonly lobby: RoomLobby;
-        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | null;
+        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | 'eligibility-expired' | null;
     }
 }
 
@@ -43,6 +57,8 @@ export interface RoomLobby {
     readonly policy: RoomLobby.Policy;
     readonly revision: number;
     readonly seats: readonly RoomLobby.Seat[];
+    readonly waiters: readonly RoomLobby.Waiter[];
+    readonly capacityClaims: RoomLobby.CapacityClaims | null;
 }
 
 export interface RoomLobbyAccountView {
@@ -50,7 +66,7 @@ export interface RoomLobbyAccountView {
     readonly principalId: string;
     readonly seat: {
         readonly roomRef: GroupRef;
-        readonly status: 'arriving' | 'present' | 'away';
+        readonly status: 'waiting' | 'offered' | 'arriving' | 'present' | 'away';
         readonly deadlineEpochMs: number | null;
     } | null;
 }
@@ -68,7 +84,7 @@ export function createRoomLobby({ roomRef, capacity, policy, activationId, expir
     requireString(activationId, 'Room lobby activation');
     return {
         activationId, expiresAtEpochMs, roomRef: decodeExactGroupRef(roomRef, 'Room lobby'), capacity: decodePositiveLobbyInteger(capacity, 'Lobby capacity'),
-        policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: []
+        policy: decodeRoomLobbyPolicy(policy), revision: 0, seats: [], waiters: [], capacityClaims: null
     };
 }
 
@@ -84,7 +100,7 @@ function decodeWindow(value: unknown, revision: number): RoomLobby.ReturnWindow 
 
 export function decodeRoomLobby(value: unknown): RoomLobby {
     const record = requireRecord(value, 'Room lobby');
-    requireExactKeys(record, ['activationId', 'expiresAtEpochMs', 'roomRef', 'capacity', 'policy', 'revision', 'seats'], 'Room lobby');
+    requireExactKeys(record, ['activationId', 'expiresAtEpochMs', 'roomRef', 'capacity', 'policy', 'revision', 'seats', 'waiters', 'capacityClaims'], 'Room lobby');
     const expiresAtEpochMs = record.expiresAtEpochMs;
     if (expiresAtEpochMs !== null) requireEpoch(expiresAtEpochMs, 'Lobby expiry');
     requireString(record.activationId, 'Room lobby activation');
@@ -99,35 +115,56 @@ export function decodeRoomLobby(value: unknown): RoomLobby {
     const principals = new Set<string>();
     const seats = record.seats.map((value): RoomLobby.Seat => {
         const seat = requireRecord(value, 'Lobby seat');
-        requireExactKeys(seat, ['principalId', 'present', 'admissionWindow', 'returnWindow'], 'Lobby seat');
+        requireExactKeys(seat, ['principalId', 'present', 'admissionWindow', 'returnWindow', 'offerWindow'], 'Lobby seat');
         requireString(seat.principalId, 'Lobby seat account');
         if (principals.has(seat.principalId) || typeof seat.present !== 'boolean') throw new TypeError('Invalid lobby seat');
         principals.add(seat.principalId);
         const admissionWindow = decodeWindow(seat.admissionWindow, revision);
         const returnWindow = decodeWindow(seat.returnWindow, revision);
-        if (admissionWindow && (seat.present || returnWindow) || seat.present && returnWindow) {
+        const offerWindow = decodeWindow(seat.offerWindow, revision);
+        if ([admissionWindow, returnWindow, offerWindow, seat.present].filter(Boolean).length > 1) {
             throw new TypeError('Invalid lobby seat windows');
         }
-        return { principalId: seat.principalId, present: seat.present, admissionWindow, returnWindow };
+        return { principalId: seat.principalId, present: seat.present, admissionWindow, returnWindow, offerWindow };
     });
-    const full = seats.filter(seat => seat.admissionWindow === null).length === capacity;
+    const full = seats.filter(seat => seat.admissionWindow === null && seat.offerWindow === null).length === capacity;
     if (seats.some(seat => (seat.returnWindow !== null) !== (full && !seat.present))) {
         throw new TypeError('Return windows require a full roster');
     }
-    return { activationId: record.activationId, expiresAtEpochMs, roomRef, capacity, policy, revision, seats };
+    const capacityClaims = decodeCapacityClaims(record.capacityClaims, revision, capacity);
+    const occupied = new Set([...principals, ...(capacityClaims?.principalIds ?? [])]);
+    if (occupied.size > capacity || !Array.isArray(record.waiters) || (record.waiters.length && occupied.size !== capacity)) {
+        throw new TypeError('Invalid lobby queue');
+    }
+    let previousGeneration = 0;
+    const waiters = record.waiters.map((value): RoomLobby.Waiter => {
+        const waiter = requireRecord(value, 'Lobby waiter');
+        requireExactKeys(waiter, ['principalId', 'eligibleUntilEpochMs', 'generation'], 'Lobby waiter');
+        requireString(waiter.principalId, 'Waiting account');
+        const eligibleUntilEpochMs = waiter.eligibleUntilEpochMs;
+        if (eligibleUntilEpochMs !== null) requireEpoch(eligibleUntilEpochMs, 'Lobby eligibility deadline');
+        const generation = decodePositiveLobbyInteger(waiter.generation, 'Waiter generation');
+        if (occupied.has(waiter.principalId) || principals.has(waiter.principalId) || generation > revision || generation <= previousGeneration) {
+            throw new TypeError('Invalid lobby queue order or duplicate account');
+        }
+        previousGeneration = generation;
+        principals.add(waiter.principalId);
+        return { principalId: waiter.principalId, generation, eligibleUntilEpochMs };
+    });
+    return { activationId: record.activationId, expiresAtEpochMs, roomRef, capacity, policy, revision, seats, waiters, capacityClaims };
 }
 
-export function projectRoomLobbySeat(roomRef: GroupRef, seat: RoomLobby.Seat | undefined): RoomLobbyAccountView['seat'] {
-    if (!seat) return null;
+export function projectRoomLobbySeat(roomRef: GroupRef, seat: RoomLobby.Seat | undefined, waiting = false): RoomLobbyAccountView['seat'] {
+    if (!seat) return waiting ? { roomRef, status: 'waiting', deadlineEpochMs: null } : null;
     return {
-        roomRef, status: seat.present ? 'present' : seat.admissionWindow ? 'arriving' : 'away',
-        deadlineEpochMs: (seat.admissionWindow ?? seat.returnWindow)?.dueAtEpochMs ?? null
+        roomRef, status: seat.offerWindow ? 'offered' : seat.present ? 'present' : seat.admissionWindow ? 'arriving' : 'away',
+        deadlineEpochMs: (seat.offerWindow ?? seat.admissionWindow ?? seat.returnWindow)?.dueAtEpochMs ?? null
     };
 }
 
 export function projectRoomLobbyAccount(scope: StateScope, principalId: string, lobby: RoomLobby | null): RoomLobbyAccountView {
     if (lobby && !isSameGroupScope(lobby.roomRef, scope)) throw new TypeError('Room lobby is outside the account scope');
-    return { scope, principalId, seat: lobby ? projectRoomLobbySeat(lobby.roomRef, lobby.seats.find(seat => seat.principalId === principalId)) : null };
+    return { scope, principalId, seat: lobby ? projectRoomLobbySeat(lobby.roomRef, lobby.seats.find(seat => seat.principalId === principalId), lobby.waiters.some(waiter => waiter.principalId === principalId)) : null };
 }
 
 export function decodeRoomLobbyAccountView(value: unknown): RoomLobbyAccountView {
@@ -140,10 +177,10 @@ export function decodeRoomLobbyAccountView(value: unknown): RoomLobbyAccountView
     requireExactKeys(seat, ['roomRef', 'status', 'deadlineEpochMs'], 'Private lobby seat');
     const roomRef = decodeExactGroupRef(seat.roomRef, 'Private lobby seat');
     if (!isSameGroupScope(roomRef, scope)) throw new TypeError('Lobby seat is outside account scope');
-    const status = requireOneOf(seat.status, ['present', 'arriving', 'away'], 'Lobby seat status');
+    const status = requireOneOf(seat.status, ['present', 'arriving', 'away', 'waiting', 'offered'], 'Lobby seat status');
     const deadlineEpochMs = seat.deadlineEpochMs;
     if (deadlineEpochMs !== null) requireEpoch(deadlineEpochMs, 'Lobby seat deadline');
-    if ((status === 'present' && deadlineEpochMs !== null) || (status === 'arriving' && deadlineEpochMs === null)) {
+    if (((status === 'present' || status === 'waiting') && deadlineEpochMs !== null) || ((status === 'arriving' || status === 'offered') && deadlineEpochMs === null)) {
         throw new TypeError('Invalid deadline for lobby seat status');
     }
     return { scope, principalId: view.principalId, seat: { roomRef, status, deadlineEpochMs } };

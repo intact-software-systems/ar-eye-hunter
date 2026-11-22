@@ -1,17 +1,18 @@
 import type { ViewInvalidationPublication } from '../../websocket/outbox/compute-view-invalidation-publication.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { changeRoomLobby, configureRoomLobby, createRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { configureRoomLobbyCapacityClaims } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
-import { countGroupSessionOccupiedSeats } from '../schedule/group-session-reservations.ts';
 import { computeGroupLobbyParticipation } from './compute-group-lobby-participation.ts';
 import { computeGroupLobbyPublication } from './compute-group-lobby-publication.ts';
 import { computeGroupLobbyEffects, type GroupLobbyRead } from './group-lobby-storage.ts';
+import { revokedLobbyCandidates } from './group-lobby-wait-access.ts';
 
 interface GroupLobbyMutation extends ViewInvalidationPublication {
     readonly effects: readonly RuntimeStateGuardedBatchEffect[];
@@ -65,8 +66,11 @@ function computeGroupLobbyRoster(input: GroupMutationWriteInput, group: Group, s
     }
 
     let lobby = state.lobby?.value;
-    if (!lobby && command.operation !== 'createGroup' &&
-        !(command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure' && read.group && !readRoomLobbyPolicy(read.group.value.metadata))) {
+    if (
+        !lobby && command.operation !== 'createGroup' &&
+        !(command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure' && read.group &&
+            !readRoomLobbyPolicy(read.group.value.metadata))
+    ) {
         throw new RuntimeStateWriteConflictError();
     }
     if (!lobby || command.operation === 'createGroup') {
@@ -95,8 +99,9 @@ function computeGroupLobbyRoster(input: GroupMutationWriteInput, group: Group, s
     }
 
     const accounts = new Map(state.accounts.map((account) => [account.principalId, account.stored?.value.seat]));
-    for (const change of computeGroupLobbyParticipation(input, state, lobby)) {
-        if (change.kind === 'arrive' || change.kind === 'reserve') {
+    const revocations = revokedLobbyCandidates({ input, next: group, state, lobby });
+    for (const change of [...revocations, ...computeGroupLobbyParticipation(input, state, lobby)]) {
+        if (change.kind === 'wait' || change.kind === 'arrive' || change.kind === 'reserve') {
             const commitment = accounts.get(change.principalId);
             if (commitment && !isSameGroupRef(commitment.roomRef, group)) {
                 throw new GroupPolicyDeniedError(
@@ -114,18 +119,18 @@ function computeGroupLobbyRoster(input: GroupMutationWriteInput, group: Group, s
         }
         lobby = updated.lobby;
     }
+    // Apply admissions against their previous reservations first. Exchanging a reservation for a seat must never create an offer between the two writes.
     const reservations = input.sessionReservationWrite?.value ?? read.sessionReservations?.value;
-    if (
-        schedule && reservations && countGroupSessionOccupiedSeats({
-                schedule,
-                reservations,
-                activePlayerPrincipalIds: lobby.seats.map((seat) => seat.principalId),
-                nowEpochMs: now
-            }) > lobby.capacity
-    ) {
-        throw new GroupPolicyDeniedError(
-            denyGroupPolicy('group-full', 'Available player places are reserved for this scheduled session.')
-        );
+    if (schedule && reservations) {
+        const { reservationsExpireAtEpochMs } = toGroupSessionTiming(schedule, now);
+        const claims = { principalIds: reservations.principalIds, dueAtEpochMs: reservationsExpireAtEpochMs };
+        const updated = configureRoomLobbyCapacityClaims(lobby, claims, now);
+        if (updated.rejection) {
+            throw new GroupPolicyDeniedError(
+                denyGroupPolicy('group-full', 'The scheduled places exceed the available lobby capacity.')
+            );
+        }
+        lobby = updated.lobby;
     }
     return lobby;
 }

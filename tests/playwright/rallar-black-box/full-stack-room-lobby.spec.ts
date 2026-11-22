@@ -23,6 +23,50 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
     }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
+test('waiting players receive exclusive offers in order while visiting another room', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const bobPage = await browser.newPage({ baseURL });
+    const chrisPage = await browser.newPage({ baseURL });
+    const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+    const court = { ...scope, groupId: 'court' };
+    const lounge = { ...scope, groupId: 'lounge' };
+    try {
+        const [host, bob, chris] = await Promise.all([
+            signIn(page, config.userA, scope), signIn(bobPage, config.userB, scope), signIn(chrisPage, config.userC, scope)
+        ]);
+        await host.evaluate(async ({ rooms }, ref) => {
+            await rooms.createAndSwitch({ ...ref, displayName: 'Court', joinMode: 'open', maxMembers: 1,
+                roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } });
+        }, court);
+        await bob.evaluate(async ({ rooms }, ref) => {
+            await rooms.createAndSwitch({ ...ref, displayName: 'Lounge', joinMode: 'open' });
+        }, lounge);
+        await chris.evaluate(async ({ rooms }, ref) => { await rooms.enter(ref); }, lounge);
+        for (const player of [bob, chris]) {
+            await player.evaluate(async ({ lobby }, ref) => { await lobby.wait(ref); }, court);
+            expect(await player.evaluate(({ lobby }) => lobby.getState().view?.seat)).toEqual({
+                roomRef: court, status: 'waiting', deadlineEpochMs: null
+            });
+        }
+        await host.evaluate(async ({ lobby }, ref) => { await lobby.release(ref); }, court);
+        await expect.poll(() => bob.evaluate(({ lobby }) => lobby.getState().view?.seat?.status)).toBe('offered');
+        expect(await chris.evaluate(({ lobby }) => lobby.getState().view?.seat?.status)).toBe('waiting');
+        await chris.evaluate(({ lobby }) => lobby.stop());
+        await bob.evaluate(async ({ lobby }, ref) => { await lobby.release(ref); }, court);
+        await chris.evaluate(async ({ lobby }) => { await lobby.start(); });
+        expect(await chris.evaluate(({ lobby }) => lobby.getState().view?.seat)).toEqual({
+            roomRef: court, status: 'offered', deadlineEpochMs: expect.any(Number)
+        });
+        expect(await chris.evaluate(({ rooms }) => rooms.selected())).toMatchObject(lounge);
+        await chris.evaluate(async ({ rooms }, ref) => { await rooms.enter(ref); }, court);
+        await expect.poll(() => chris.evaluate(({ lobby }) => lobby.getState().view?.seat)).toEqual({
+            roomRef: court, status: 'present', deadlineEpochMs: null
+        });
+    } finally {
+        await Promise.all([bobPage.close(), chrisPage.close()]);
+    }
+});
+
 test('a player keeps a private seat in another room and recovers a missed return-window cancellation', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guestPage = await browser.newPage({ baseURL });

@@ -82,7 +82,7 @@ function registerUpdateGroupRoute(
                         })
                     )
                 });
-                const response = request.roomLobby?.operation === 'release'
+                const response = request.roomLobby?.operation === 'release' || request.roomLobby?.operation === 'wait'
                     ? { roomRef: { ...scope, groupId } }
                     : written.snapshot;
                 return context.json(response);

@@ -49,11 +49,61 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
         method: 'POST', session: bob, body: { actorPrincipalId: bob.clientId }
     });
     assert.equal((await seat(bob))?.status, 'arriving');
-    const acknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(groupPath, crypto.randomUUID()), {
+    const releaseAcknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(groupPath, crypto.randomUUID()), {
         method: 'PUT', session: bob, body: { actorPrincipalId: bob.clientId, roomLobby: { operation: 'release' } }
     });
-    assert.deepEqual(acknowledgement, { roomRef: { ...scope, groupId: winner.groupId } });
+    assert.deepEqual(releaseAcknowledgement, { roomRef: { ...scope, groupId: winner.groupId } });
     assert.equal(await seat(bob), null);
+    const outsider = await users.login({
+        principal: 'admin', label: 'walk-in', apiBaseUrl: second.baseUrl, wsBaseUrl: second.baseUrl.replace(/^http/, 'ws')
+    });
+    const groups = '/api/state' + path + '/groups';
+    const groupId = 'exclusive-court';
+    const room = groups + '/' + groupId;
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId, displayName: 'Exclusive court', createdByPrincipalId: alice.clientId, kind: 'room',
+            joinMode: 'open', maxMembers: 1, roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } }
+    });
+    await requestJson(second.baseUrl, toApiMutationRequestPath(room, crypto.randomUUID()), {
+        method: 'PUT', session: bob, body: { roomLobby: { operation: 'wait' } }
+    });
+    assert.equal((await seat(bob))?.status, 'waiting');
+    const releasePath = toApiMutationRequestPath(room, crypto.randomUUID());
+    const release = { method: 'PUT', session: alice, body: { roomLobby: { operation: 'release' } } };
+    const join = toApiMutationRequestPath(room + '/members/' + encodeURIComponent(outsider.clientId), crypto.randomUUID());
+    await Promise.all([
+        requestJson(first.baseUrl, releasePath, release),
+        requestJson(second.baseUrl, join, { method: 'PUT', session: outsider, body: { status: 'active' }, expectedStatus: 403 })
+    ]);
+    const offer = await seat(bob);
+    assert.equal(offer?.status, 'offered');
+    await controls.stop(first.port, 'crash');
+    await controls.restart(first.port, { ...first, logPath: first.logPath + '.offer-restart' });
+    await requestJson(second.baseUrl, releasePath, release);
+    assert.deepEqual(await seat(bob), offer);
+    assert.equal(await seat(outsider), null);
+    const guarded = 'code-court';
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId: guarded, displayName: 'Code court', createdByPrincipalId: alice.clientId, kind: 'room',
+            joinMode: 'code', maxMembers: 1, roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } }
+    });
+    const guardedRoom = groups + '/' + guarded;
+    const rotate = () => requestJson(second.baseUrl, toApiMutationRequestPath(guardedRoom + '/join-code/rotate', crypto.randomUUID()),
+        { method: 'POST', session: alice, body: {} });
+    const { joinCode } = await rotate();
+    assert.equal(typeof joinCode, 'string');
+    await requestJson(first.baseUrl, toApiMutationRequestPath(guardedRoom, crypto.randomUUID()), {
+        method: 'PUT', session: outsider, body: { roomLobby: { operation: 'wait' } }, expectedStatus: 403
+    });
+    const acknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(guardedRoom, crypto.randomUUID()), {
+        method: 'PUT', session: outsider, body: { roomLobby: { operation: 'wait', joinCode } }
+    });
+    assert.deepEqual(acknowledgement, { roomRef: { ...scope, groupId: guarded } });
+    assert.equal((await seat(outsider))?.status, 'waiting');
+    await rotate();
+    assert.equal(await seat(outsider), null);
 }
 
 if (import.meta.main) {

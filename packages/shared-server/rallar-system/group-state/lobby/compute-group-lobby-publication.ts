@@ -1,4 +1,5 @@
-import { projectRoomLobbySeat, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { lobbyWindows } from '@shared/api/room-lobbies/room-lobby-windows.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
@@ -7,9 +8,11 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import { computeViewInvalidationPublication, type ViewInvalidationPublication } from '../../websocket/outbox/compute-view-invalidation-publication.ts';
 import { groupLobbyDeadlineRoute, type GroupLobbyDeadline } from './group-lobby-deadline.ts';
 
+import { projectGroupLobbyCommitments } from './project-group-lobby-commitments.ts';
+
 interface GroupLobbyPublicationInput extends Pick<GroupLobbyDeadline, 'roomRef' | 'groupCreatedAtEpochMs'> {
-    readonly before: Pick<RoomLobby, 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
-    readonly after: Pick<RoomLobby, 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
+    readonly before: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
+    readonly after: Pick<RoomLobby, 'capacityClaims' | 'waiters' | 'seats' | 'revision' | 'activationId' | 'expiresAtEpochMs'> | null;
     readonly createdAtEpochMs: number;
     readonly serviceId: string;
     readonly traceId: string;
@@ -19,16 +22,14 @@ interface GroupLobbyPublicationInput extends Pick<GroupLobbyDeadline, 'roomRef' 
 /** Only a changed private seat wakes its account; several seats can share a single durable window. */
 export function computeGroupLobbyPublication(input: GroupLobbyPublicationInput): ViewInvalidationPublication {
     const { before, after, roomRef, groupCreatedAtEpochMs } = input;
-    const oldSeats = new Map(before?.seats.map(seat => [seat.principalId, seat]));
-    const newSeats = new Map(after?.seats.map(seat => [seat.principalId, seat]));
+    const oldSeats = projectGroupLobbyCommitments(roomRef, before);
+    const newSeats = projectGroupLobbyCommitments(roomRef, after);
     const accounts = new Set([...oldSeats.keys(), ...newSeats.keys()]);
     const { applicationId, workspaceId } = roomRef;
     const notices = computeViewInvalidationPublication({
         resource: 'room-lobby',
         scope: { applicationId, workspaceId },
-        principalIds: [...accounts].filter(id => !jsonEquals(
-            projectRoomLobbySeat(roomRef, oldSeats.get(id)), projectRoomLobbySeat(roomRef, newSeats.get(id))
-        )),
+        principalIds: [...accounts].filter(id => !jsonEquals(oldSeats.get(id), newSeats.get(id))),
         changeId: computeSha256CanonicalJson({ roomRef, groupCreatedAtEpochMs, before: before && [before.activationId, before.revision], after: after && [after.activationId, after.revision] }),
         createdAtEpochMs: input.createdAtEpochMs,
         retentionMs: input.retentionMs,
@@ -59,14 +60,4 @@ export function computeGroupLobbyPublication(input: GroupLobbyPublicationInput):
         }));
     }
     return { outbox, provenance: notices.provenance };
-}
-
-function lobbyWindows(lobby: GroupLobbyPublicationInput['after']): Map<string, RoomLobby.ReturnWindow> {
-    const windows = new Map<string, RoomLobby.ReturnWindow>();
-    for (const seat of lobby?.seats ?? []) {
-        for (const window of [seat.admissionWindow, seat.returnWindow]) {
-            if (window) windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
-        }
-    }
-    return windows;
 }

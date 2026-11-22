@@ -1,3 +1,5 @@
+import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
+import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -52,7 +54,6 @@ import { computeGroupClockUpdate } from './compute-group-clock-change.ts';
 import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
-const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
 const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
 
 interface GroupWriteInput {
@@ -60,7 +61,7 @@ interface GroupWriteInput {
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
     readonly group: Group;
-    readonly eventType: GroupEventType;
+    readonly eventType: GroupEventType | null;
 }
 
 export function computeUpdate(
@@ -74,8 +75,11 @@ export function computeUpdate(
         !['roomLobby', 'actorPrincipalId', 'actorSessionId', 'reason'].includes(key) && value != null)) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'A room lobby change must be a separate update.' });
     }
-    if (lobbyChange?.operation === 'release' && !command.input.actorPrincipalId) {
+    if (lobbyChange && lobbyChange.operation !== 'configure' && !command.input.actorPrincipalId) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
+    }
+    if (lobbyChange?.operation === 'wait' && !read.lobbyState?.lobby) {
+        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'This room has no lobby queue.' });
     }
     const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
     if (directorEpoch !== undefined) {
@@ -90,7 +94,7 @@ export function computeUpdate(
             return rejected({ command, read, facts, ...refusal });
         }
     }
-    else if (lobbyChange?.operation !== 'release') {
+    else if (!lobbyChange || lobbyChange.operation === 'configure') {
         const authorityDenial = toUpdateAuthorityDenial(command, read);
         if (authorityDenial) {
             return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
@@ -115,6 +119,19 @@ export function computeUpdate(
         if (!active.allowed) {
             return rejectedByGroupPolicy({ command, read, facts, denial: active });
         }
+    }
+    if (lobbyChange && lobbyChange.operation !== 'configure') {
+        const roster = read.lobbyState?.lobby?.value;
+        const principalId = command.input.actorPrincipalId;
+        // Settle old offers at the command time even if their expiry delivery is delayed.
+        const places = roster && lobbyChange.operation === 'wait'
+            ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
+            : roster;
+        const committed = places?.seats.some(seat => seat.principalId === principalId) ||
+            places?.waiters.some(waiter => waiter.principalId === principalId);
+        if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
+        // Serialize with room access changes while keeping the account, trace and request out of public room events.
+        return groupWrite({ command, read, facts, group: stored.value, eventType: null });
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -145,7 +162,7 @@ export function computeUpdate(
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
     }
-    if (sameGroupIgnoringVersions(current, next) && !(lobbyChange?.operation === 'release' && read.lobbyState?.lobby?.value.seats.some(seat => seat.principalId === command.input.actorPrincipalId))) {
+    if (sameGroupIgnoringVersions(current, next)) {
         return noOp(command, read, facts);
     }
     return groupWrite({
@@ -310,7 +327,7 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
-        presenceSummaryWork: 'enqueue'
+        presenceSummaryWork: eventType === null ? 'none' : 'enqueue'
     });
 }
 
@@ -394,36 +411,6 @@ function sameGroupIgnoringVersions(current: Group, next: Group): boolean {
         { ...current, snapshotVersion: 0, metadataVersion: 0, updated: null },
         { ...next, snapshotVersion: 0, metadataVersion: 0, updated: null }
     );
-}
-
-export function readJoinCode(metadata: Group['metadata']): JoinCodeMetadata | undefined {
-    const value = metadata[RALLAR_GROUP_JOIN_CODE_METADATA_KEY];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return undefined;
-    }
-    const candidate = value as Group['metadata'];
-    return typeof candidate.version === 'number' &&
-            typeof candidate.verifier === 'string' &&
-            typeof candidate.expiresAtEpochMs === 'number' &&
-            typeof candidate.rotatedAtEpochMs === 'number'
-        ? {
-            version: candidate.version,
-            verifier: candidate.verifier,
-            expiresAtEpochMs: candidate.expiresAtEpochMs,
-            rotatedAtEpochMs: candidate.rotatedAtEpochMs
-        }
-        : undefined;
-}
-
-interface JoinCodeMetadata {
-    readonly version: number;
-    readonly verifier: string;
-    readonly expiresAtEpochMs: number;
-    readonly rotatedAtEpochMs: number;
-}
-
-function mergeJoinCode(metadata: Group['metadata'], joinCode: JoinCodeMetadata): Group['metadata'] {
-    return { ...metadata, [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: { ...joinCode } };
 }
 
 interface ComputeUpdatedGroupMetadataInput {

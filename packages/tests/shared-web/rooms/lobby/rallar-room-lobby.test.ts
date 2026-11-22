@@ -79,3 +79,35 @@ it('accepts a private release acknowledgement and recovers the account view', as
     }
     finally { owner.stop(); }
 });
+
+
+it('waits from another room and receives an exclusive offer without entering', async () => {
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    let view: RoomLobbyAccountView = { scope, principalId: session.clientId, seat: null };
+    let writes = 0;
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+        if (init.method === 'PUT') {
+            expect(JSON.parse(String(init.body)).roomLobby).toEqual({ operation: 'wait', joinCode: 'court-code' });
+            writes++;
+            view = { ...view, seat: { roomRef, status: 'waiting', deadlineEpochMs: null } };
+            return Response.json({ roomRef });
+        }
+        return Response.json(view);
+    });
+    const push = new ViewPushBrowser(() => session);
+    const owner = new RallarRoomLobby({
+        session: () => session, ws: push.ws, messages: push.messages, auth: { onChange: () => () => {} }
+    }, scope);
+    try {
+        await owner.start();
+        await owner.wait(roomRef, { joinCode: 'court-code' });
+        expect(owner.getState().view?.seat?.status).toBe('waiting');
+        view = { ...view, seat: { roomRef, status: 'offered', deadlineEpochMs: 60000 } };
+        push.reopen();
+        await expect.poll(() => owner.getState().view?.seat).toEqual(view.seat);
+        expect(writes).toBe(1);
+    }
+    finally { owner.stop(); }
+});

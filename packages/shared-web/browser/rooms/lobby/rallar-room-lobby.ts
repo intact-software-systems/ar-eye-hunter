@@ -1,3 +1,4 @@
+import type { RallarJoinRoomOptions } from '../rallar-room-contracts.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
@@ -54,6 +55,12 @@ export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView,
         return this.act({
             roomRef: this.roomInScope(roomRef), roomLobby: { operation: 'configure', policy: policy === null ? null : decodeRoomLobbyPolicy(policy) }
         });
+    }
+
+    wait(roomRef: GroupRef, options: Pick<RallarJoinRoomOptions, 'joinCode'> = {}): Promise<void> {
+        return this.act({ roomRef: this.roomInScope(roomRef), roomLobby: {
+            operation: 'wait', ...(options.joinCode === undefined ? {} : { joinCode: options.joinCode })
+        } });
     }
 
     release(roomRef: GroupRef): Promise<void> {
