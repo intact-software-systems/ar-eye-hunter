@@ -1,6 +1,6 @@
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
-import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
+import { decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import {

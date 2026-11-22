@@ -2,7 +2,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { projectRoomLobbySeat, type RoomLobby, type RoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 
 /** The same account projection decides which private rows change and who receives a notification. */
-export function projectRoomLobbyCommitments(
+export function projectGroupLobbyCommitments(
     roomRef: GroupRef, lobby: Pick<RoomLobby, 'seats' | 'waiters'> | null
 ): ReadonlyMap<string, RoomLobbyAccountView['seat']> {
     const views = new Map<string, RoomLobbyAccountView['seat']>();

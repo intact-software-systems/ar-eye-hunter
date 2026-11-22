@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 
 const scope = { applicationId: 'courts', workspaceId: 'league' };
 const room = { ...scope, groupId: 'a' };
-const fresh = () => createRoomLobby(room, 1, { claimWindowMs: 100, returnWindowMs: 200 }, 'league-day');
+const fresh = () => createRoomLobby({roomRef: room, capacity: 1, policy: { claimWindowMs: 100, returnWindowMs: 200 }, activationId: 'league-day'});
 
 function apply(lobby: RoomLobby, command: RoomLobby.Command, now: number) {
     const change = changeRoomLobby(lobby, command, now);

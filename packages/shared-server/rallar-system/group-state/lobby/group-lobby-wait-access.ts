@@ -8,7 +8,7 @@ import { resolveAdmittedMemberStatus } from '../mutation/membership/compute-grou
 import { readJoinCode } from '../policy/group-join-code.ts';
 import { canJoinGroup } from '../policy/group-membership-admission-policy.ts';
 import { denyGroupPolicy, GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
-import type { RoomLobbyRead } from './room-lobby-storage.ts';
+import type { GroupLobbyRead } from './group-lobby-storage.ts';
 
 /** Membership and the queue use the same admission policy. Time-limited credentials also bound future offers. */
 export function computeWaitRegistration(
@@ -54,13 +54,15 @@ export function computeWaitRegistration(
     return { kind: 'wait', principalId, eligibleUntilEpochMs: deadlines.length ? Math.min(...deadlines) : null };
 }
 
+interface LobbyAccessChange {
+    readonly input: GroupMutationWriteInput;
+    readonly next: Group;
+    readonly state: GroupLobbyRead;
+    readonly lobby: RoomLobby;
+}
+
 /** Losing an admission credential withdraws a waiting or offered place before a replacement may be allocated. */
-export function revokedLobbyCandidates(
-    input: GroupMutationWriteInput,
-    next: Group,
-    state: RoomLobbyRead,
-    lobby: RoomLobby
-): readonly RoomLobby.Command[] {
+export function revokedLobbyCandidates({ input, next, state, lobby }: LobbyAccessChange): readonly RoomLobby.Command[] {
     const previous = input.read.group?.value;
     if (!previous) {
         return [];

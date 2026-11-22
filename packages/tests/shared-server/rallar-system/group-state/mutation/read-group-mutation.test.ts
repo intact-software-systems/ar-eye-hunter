@@ -155,9 +155,7 @@ describe('GroupStateService mutation exact reads', () => {
         runtime.readBatchCalls.length = 0;
 
         const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
-            repository,
-            joinCommand(ref, 'bob'),
-            'bob-session'
+            { repository, command: joinCommand(ref, 'bob'), authSessionId: 'bob-session' }
         );
 
         expect(mutationReadCalls(runtime).map((selectors) => selectors.map((selector) => selector.selectorId)))
@@ -208,8 +206,8 @@ describe('GroupStateService mutation exact reads', () => {
         const repository = createTestGroupStateRepository(path === 'exact' ? runtime : cloneRuntime(runtime));
         const command = kind === 'join' ? joinCommand(ref, 'bob') : updateCommand(ref, 'roster-read');
         const observed = result === 'snapshot'
-            ? await readGroupMutationWithSnapshot(repository, command, null)
-            : await readGroupMutation(repository, command, null);
+            ? await readGroupMutationWithSnapshot({ repository, command, authSessionId: null })
+            : await readGroupMutation({ repository, command, authSessionId: null });
         expect(observed.read.activeMembers?.map(({ principalId, role }) => ({ principalId, role }))).toEqual([
             { principalId: 'owner', role: 'owner' },
             { principalId: 'watcher', role: 'spectator' }
@@ -558,11 +556,9 @@ describe('GroupStateService mutation exact reads', () => {
         const requestId = 'expiry-replacement-request';
         const command = updateCommand(ref, requestId);
 
-        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command, null);
+        const observed = await readGroupMutation({ repository: createTestGroupStateRepository(runtime), command, authSessionId: null });
         const expected = await readGroupMutation(
-            createTestGroupStateRepository(cloneRuntime(runtime)),
-            command,
-            null
+            { repository: createTestGroupStateRepository(cloneRuntime(runtime)), command, authSessionId: null }
         );
 
         expect(observed).toEqual(expected);

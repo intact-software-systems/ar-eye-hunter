@@ -1,6 +1,6 @@
 import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
-import { projectRoomLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
-import { ROOM_LOBBIES_NAMESPACE, ROOM_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey, decodeStoredLobby, decodeStoredCommitment } from '../lobby/room-lobby-storage.ts';
+import { projectGroupLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
+import { GROUP_LOBBIES_NAMESPACE, GROUP_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey, decodeStoredLobby, decodeStoredCommitment } from '../lobby/group-lobby-storage.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
@@ -370,26 +370,26 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     }
 
     /** Project only counts for the directory. Held seats can outlive presence or be released while membership remains. */
-    async readLobbyOccupancy(rooms: readonly GroupSnapshot[], nowEpochMs: number) {
-        const byKey = new Map(rooms.map(room => [groupStateGroupStorageKey(room.group), room]));
-        const rows = await this.listJsonEntryValuesByKeys(ROOM_LOBBIES_NAMESPACE, [...byKey.keys()]);
+    async readLobbyOccupancy(snapshots: readonly GroupSnapshot[], nowEpochMs: number) {
+        const byKey = new Map(snapshots.map(snapshot => [groupStateGroupStorageKey(snapshot.group), snapshot]));
+        const rows = await this.listJsonEntryValuesByKeys(GROUP_LOBBIES_NAMESPACE, [...byKey.keys()]);
         const counts = new Map<string, Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'>>();
         for (const row of rows) {
-            const room = byKey.get(row.entry.key);
-            if (!room) throw new TypeError('Unexpected room in lobby occupancy read');
-            const { value } = decodeStoredLobby(row, room.group);
-            counts.set(room.group.groupId, projectRoomLobbyOccupancy(room, value, nowEpochMs));
+            const snapshot = byKey.get(row.entry.key);
+            if (!snapshot) throw new TypeError('Unexpected snapshot in lobby occupancy read');
+            const { value } = decodeStoredLobby(row, snapshot.group);
+            counts.set(snapshot.group.groupId, projectGroupLobbyOccupancy(snapshot, value, nowEpochMs));
         }
         return counts;
     }
 
-    async findRoomLobbyEntry(ref: GroupRef) {
-        const stored = await this.getJsonEntryValue(ROOM_LOBBIES_NAMESPACE, groupStateGroupStorageKey(ref));
+    async findGroupLobbyEntry(ref: GroupRef) {
+        const stored = await this.getJsonEntryValue(GROUP_LOBBIES_NAMESPACE, groupStateGroupStorageKey(ref));
         return stored ? decodeStoredLobby(stored, ref) : undefined;
     }
 
     async findLobbyCommitmentEntry(scope: GroupScope, principalId: string) {
-        const stored = await this.getJsonEntryValue(ROOM_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey(scope, principalId));
+        const stored = await this.getJsonEntryValue(GROUP_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey(scope, principalId));
         return stored ? decodeStoredCommitment(stored, scope, principalId) : undefined;
     }
 

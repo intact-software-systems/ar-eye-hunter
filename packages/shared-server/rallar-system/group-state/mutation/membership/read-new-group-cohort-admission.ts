@@ -1,4 +1,4 @@
-import { readRoomLobbyState } from '../../lobby/room-lobby-storage.ts';
+import { readGroupLobbyState } from '../../lobby/group-lobby-storage.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
@@ -19,7 +19,7 @@ export interface NewGroupCohortMember {
 }
 
 export interface NewGroupCohortAdmissionReadInput {
-    readonly roomLobbyDefault?: RoomLobby.Policy;
+    readonly lobbyDefault?: RoomLobby.Policy;
     readonly groups: GroupStateRepository;
     readonly roomRef: GroupRef;
     readonly displayName: string;
@@ -43,12 +43,17 @@ export async function readNewGroupCohortAdmission(
         throw new TypeError('Cohort admission requires distinct consenting accounts');
     }
     const create = toCohortCreateCommand(input, leader);
-    const groupRead = (await readGroupMutation(input.groups, create, leader.sessionId)).read;
-    const roomLobby = input.roomLobbyDefault ? await readRoomLobbyState(input.groups, input.roomRef, input.participants.map(actor => actor.principalId), 'expired') : null;
+    const groupRead = (await readGroupMutation({ repository: input.groups, command: create, authSessionId: leader.sessionId })).read;
+    const lobbyState = input.lobbyDefault ? await readGroupLobbyState({
+        repository: input.groups,
+        roomRef: input.roomRef,
+        principalIds: input.participants.map(actor => actor.principalId),
+        mode: 'expired'
+    }) : null;
     const creation = {
         command: create,
         facts: admissionFacts(input, create),
-        read: { ...groupRead, roomLobby }
+        read: { ...groupRead, lobbyState }
     };
     const participants = await Promise.all(
         input.participants.slice(1).map(async (actor) => {
@@ -56,7 +61,7 @@ export async function readNewGroupCohortAdmission(
             return {
                 command,
                 facts: admissionFacts(input, command),
-                read: (await readGroupMutation(input.groups, command, actor.sessionId)).read
+                read: (await readGroupMutation({ repository: input.groups, command, authSessionId: actor.sessionId })).read
             };
         })
     );
@@ -127,7 +132,7 @@ function admissionFacts(input: NewGroupCohortAdmissionReadInput, command: GroupM
     }
     const commandHash = computeMutationCommandDigest(decodeJsonWireValue(command, 'Cohort group command'));
     return {
-        ...(command.operation === 'createGroup' && input.roomLobbyDefault ? { roomLobbyDefault: input.roomLobbyDefault } : {}),
+        ...(command.operation === 'createGroup' && input.lobbyDefault ? { lobbyDefault: input.lobbyDefault } : {}),
         nowEpochMs: capturedAtEpochMs,
         expireAtEpochMs: capturedAtEpochMs + input.finishedRetentionMs,
         serviceId,

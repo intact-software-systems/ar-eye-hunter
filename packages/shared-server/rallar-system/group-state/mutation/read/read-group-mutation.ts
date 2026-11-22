@@ -1,5 +1,6 @@
+import { requiresGroupLobbyRead } from '../../lobby/requires-group-lobby-read.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { readRoomLobbyState } from '../../lobby/room-lobby-storage.ts';
+import { readGroupLobbyState } from '../../lobby/group-lobby-storage.ts';
 import { resolveGroupMutationTargetPrincipalId } from '../orchestration/resolve-group-mutation-target-identity.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupStateMutationExactAuthSession } from '../../persistence/read-exact-group-state-mutation.ts';
@@ -8,7 +9,7 @@ import type {
     GroupMutationRead,
     GroupMutationSnapshotRead
 } from '../group-mutation-contracts.ts';
-import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy, requiresRoomLobbyRead } from './group-mutation-read-scope.ts';
+import { readsGroupActiveMemberPrincipalIds, readsGroupLifecyclePolicy } from './group-mutation-read-scope.ts';
 import { readExactGroupMutation } from './read-exact-group-mutation.ts';
 import { readSequentialGroupMutation } from './read-sequential-group-mutation.ts';
 
@@ -25,11 +26,15 @@ export interface SessionGroupMutationSnapshotRead extends GroupMutationSnapshotR
 
 const UNREAD_AUTH_SESSION: GroupStateMutationExactAuthSession = { status: 'unread' };
 
+interface ReadGroupMutationInput {
+    readonly repository: GroupStateRepository;
+    readonly command: GroupMutationCommand;
+    readonly authSessionId: string | null;
+    readonly lobbyDefault?: boolean;
+}
+
 export async function readGroupMutation(
-    repository: GroupStateRepository,
-    command: GroupMutationCommand,
-    authSessionId: string | null,
-    lobbyDefault = false
+    { repository, command, authSessionId, lobbyDefault = false }: ReadGroupMutationInput
 ): Promise<SessionGroupMutationRead> {
     const exact = readsExactGroupMutation(command)
         ? await readExactGroupMutation({ repository, command, includeGroupSnapshot: false, authSessionId })
@@ -37,7 +42,7 @@ export async function readGroupMutation(
     const result = exact === null
         ? { read: await readSequentialGroupMutationWithPolicy(repository, command), authSession: UNREAD_AUTH_SESSION }
         : { read: exact.read, authSession: exact.authSession };
-    return { ...result, read: await readLobbyForMutation(repository, command, result.read, lobbyDefault) };
+    return { ...result, read: await readLobbyForMutation({ repository, command, read: result.read, lobbyDefault }) };
 }
 
 /**
@@ -45,10 +50,7 @@ export async function readGroupMutation(
  * the snapshot always matches the read; the sequential read runs beside a snapshot read of its own.
  */
 export async function readGroupMutationWithSnapshot(
-    repository: GroupStateRepository,
-    command: GroupMutationCommand,
-    authSessionId: string | null,
-    lobbyDefault = false
+    { repository, command, authSessionId, lobbyDefault = false }: ReadGroupMutationInput
 ): Promise<SessionGroupMutationSnapshotRead> {
     const exact = readsExactGroupMutation(command)
         ? await readExactGroupMutation({ repository, command, includeGroupSnapshot: true, authSessionId })
@@ -57,13 +59,13 @@ export async function readGroupMutationWithSnapshot(
         if (exact.groupSnapshot.status !== 'read') {
             throw new TypeError('An exact read that includes the group snapshot returns it');
         }
-        return { read: await readLobbyForMutation(repository, command, exact.read, lobbyDefault), currentSnapshot: exact.groupSnapshot.snapshot, authSession: exact.authSession };
+        return { read: await readLobbyForMutation({ repository, command, read: exact.read, lobbyDefault }), currentSnapshot: exact.groupSnapshot.snapshot, authSession: exact.authSession };
     }
     const [read, currentSnapshot] = await Promise.all([
         readSequentialGroupMutationWithPolicy(repository, command),
         repository.readSnapshot(command.aggregateRef)
     ]);
-    return { read: await readLobbyForMutation(repository, command, read, lobbyDefault), currentSnapshot, authSession: UNREAD_AUTH_SESSION };
+    return { read: await readLobbyForMutation({ repository, command, read, lobbyDefault }), currentSnapshot, authSession: UNREAD_AUTH_SESSION };
 }
 
 function readsExactGroupMutation(command: GroupMutationCommand): boolean {
@@ -83,19 +85,32 @@ async function readSequentialGroupMutationWithPolicy(
     return await readSequentialGroupMutation({ repository, command, lifecyclePolicy });
 }
 
-async function readLobbyForMutation(repository: GroupStateRepository, command: GroupMutationCommand, read: GroupMutationRead, lobbyDefault: boolean): Promise<GroupMutationRead> {
-    if (!requiresRoomLobbyRead(command, read, lobbyDefault)) return read;
+interface ReadLobbyForMutationInput {
+    readonly repository: GroupStateRepository;
+    readonly command: GroupMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly lobbyDefault: boolean;
+}
+
+async function readLobbyForMutation({ repository, command, read, lobbyDefault }: ReadLobbyForMutationInput): Promise<GroupMutationRead> {
+    if (!requiresGroupLobbyRead(command, read, lobbyDefault)) return read;
     const configures = command.operation === 'updateGroup' && command.input.roomLobby?.operation === 'configure';
     const principalId = resolveGroupMutationTargetPrincipalId(command);
     const targets = configures ? read.activeMembers?.map(member => member.principalId) ?? [] : [];
     const includeCandidateMembers = command.operation === 'rotateGroupJoinCode' ||
         command.operation === 'updateGroup' && (command.input.joinMode !== null || command.input.metadata !== null) ||
         read.lifecyclePolicy?.status === 'present' && (read.lifecyclePolicy.policy.admission.mode === 'closed' || read.lifecyclePolicy.policy.admission.untilMemberCount !== null);
-    const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets, command.operation === 'createGroup' ? 'expired' : 'active', includeCandidateMembers);
+    const lobbyState = await readGroupLobbyState({
+        repository,
+        roomRef: command.aggregateRef,
+        principalIds: principalId ? [...targets, principalId] : targets,
+        includeCandidateMembers,
+        mode: command.operation === 'createGroup' ? 'expired' : 'active'
+    });
     // Some lobby reads follow the group query. Recheck its revision before using the private roster and policy together.
     if (read.group) {
         const current = await repository.findGroupEntry(command.aggregateRef);
         if (current?.entry.revision !== read.group.entry.revision || current.entry.value !== read.group.entry.value) throw new RuntimeStateWriteConflictError();
     }
-    return { ...read, roomLobby };
+    return { ...read, lobbyState };
 }

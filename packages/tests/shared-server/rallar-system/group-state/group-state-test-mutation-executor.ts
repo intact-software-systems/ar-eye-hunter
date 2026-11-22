@@ -106,7 +106,7 @@ export class GroupStateTestMutationExecutor {
         const commandHash = computeMutationCommandDigest(
             decodeJsonWireValue(command, 'Group maintenance command')
         );
-        const { read } = await readGroupMutation(this.repository(), command, null);
+        const { read } = await readGroupMutation({ repository: this.repository(), command, authSessionId: null });
         const facts: GroupMutationFacts = {
             traceId: 'trace-group-state-test-mutation-executor',
             nowEpochMs: atEpochMs,

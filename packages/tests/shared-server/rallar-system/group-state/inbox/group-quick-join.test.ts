@@ -146,7 +146,7 @@ describe('Quick Join through AppInbox', () => {
             return (await harness.repository.readLobbyOccupancy(snapshots, now)).get('court');
         };
         expect(await counts()).toEqual({ playerCount: 1, onlinePlayerCount: 0 });
-        const initial = await harness.repository.findRoomLobbyEntry({ ...SCOPE, groupId: 'court' });
+        const initial = await harness.repository.findGroupLobbyEntry({ ...SCOPE, groupId: 'court' });
         const deadline = initial?.value.seats[0]?.admissionWindow?.dueAtEpochMs;
         if (deadline === undefined) throw new Error('Expected provisional owner seat');
         expect(await counts(deadline)).toEqual({ playerCount: 0, onlinePlayerCount: 0 });

@@ -103,7 +103,7 @@ describe('retention through the registered AppInbox capability', () => {
             runtime: current.runtime,
             groupOwnedAppData: { read: async () => [] },
             repository: {
-                findRoomLobbyEntry: ref => current.repository.findRoomLobbyEntry(ref),
+                findGroupLobbyEntry: ref => current.repository.findGroupLobbyEntry(ref),
                 findLobbyCommitmentEntry: (ref, id) => current.repository.findLobbyCommitmentEntry(ref, id),
                 readRetirementEntries: (ref) => current.repository.readRetirementEntries(ref),
                 findIdempotentGroupMutationReceipt: (ref, id) => current.repository.findIdempotentGroupMutationReceipt(ref, id),

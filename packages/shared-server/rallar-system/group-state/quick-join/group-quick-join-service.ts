@@ -123,7 +123,7 @@ export class GroupQuickJoinService {
         const candidates: GroupQuickJoinCandidate[] = [];
         for (const snapshot of snapshots.filter((candidate) => matchesGroupQuickJoin(candidate, ingress.command))) {
             const command = toSelectedJoinCommand(ingress, snapshot.group);
-            const read = await readGroupMutationWithSnapshot(this.dependencies.repository, command, null);
+            const read = await readGroupMutationWithSnapshot({ repository: this.dependencies.repository, command, authSessionId: null });
             candidates.push({ command, read: read.read, currentSnapshot: read.currentSnapshot });
         }
         return { command: ingress.command, facts, candidates };
