@@ -10,6 +10,7 @@ import {
     type AlmLanePlanRecord
 } from '@shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
 import { computeAlmLaneLedger } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-ledger.ts';
+import { computeAlmLaneRunReading } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-run-reading.ts';
 import type { AlmLaneResultFile } from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-result-file.ts';
 import type { AlmLaneReportedJob } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-job-conclusion.ts';
 import {
@@ -18,6 +19,8 @@ import {
     type AlmLaneResultArtifact,
     type ToAlmLaneObservedRunsInput
 } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-observed-runs.ts';
+
+import { toFixturePlan, toFixtureResult } from './alm-lane-ledger-fixture.ts';
 
 function toPlan(carrier: AlmConformanceCarrier, scope: 'full' | 'smoke' = 'full'): AlmLanePlanRecord {
     return { carrier, scope, backend: 'postgres', families: [{ family: 'two-agent', scenarioKeys: ['a'] }] };
@@ -174,17 +177,6 @@ describe('toAlmLaneObservedRuns', () => {
         expect(reading.issues).toEqual(['run 7 ws: copy-ws-full-plan.json is a second plan.']);
     });
 
-    it('names a carrier that has two result artifacts and reads the first', () => {
-        const second = { ...wsArtifact, name: 'alm-lane-result-ws-full-other-sha', files: [] };
-
-        const reading = toAlmLaneObservedRuns(toInput({ artifacts: [wsArtifact, second] }));
-
-        expect(reading.runs[0]?.plan).toEqual(toPlan('ws'));
-        expect(reading.issues).toEqual([
-            'run 7 ws: 2 result artifacts (alm-lane-result-ws-full-merge-sha, alm-lane-result-ws-full-other-sha); read the first.'
-        ]);
-    });
-
     it('names an artifact that could not be downloaded and reads the job as having no files', () => {
         const reading = toAlmLaneObservedRuns(toInput({ artifacts: [{ ...wsArtifact, files: null }] }));
 
@@ -270,6 +262,141 @@ describe('toAlmLaneObservedRuns', () => {
         const reading = toAlmLaneObservedRuns(toInput({ event: 'schedule' }));
 
         expect(reading).toEqual({ runs: [], issues: ['run 7: event schedule is not one the ledger reads.'] });
+    });
+});
+
+const FIRST_FAMILIES = 'two-agent,addressed,same-context';
+const SECOND_FAMILIES = 'three-agent,same-principal,four-role';
+const rtcTwoAgent = toFixtureResult('rtc', 'two-agent', new Map([['a', 'passed'], ['b', 'passed']]));
+const rtcThreeAgent = toFixtureResult('rtc', 'three-agent', new Map([['c', 'passed']]));
+
+function toSplitJob(families: string, conclusion: string | null = 'success'): AlmLaneReportedJob {
+    return {
+        name: `ALM conformance observation (rtc, ${families})`,
+        status: conclusion === null ? 'in_progress' : 'completed',
+        conclusion
+    };
+}
+
+function toSplitArtifact(families: string, files: readonly AlmLaneResultFile[]): AlmLaneResultArtifact {
+    return { name: `alm-lane-result-rtc-full-merge-sha-${families}`, expired: false, files };
+}
+
+const firstArtifact = toSplitArtifact(FIRST_FAMILIES, [
+    toFile('rtc-full-plan.json', toFixturePlan('rtc')),
+    toFile('rtc-full-two-agent.json', rtcTwoAgent)
+]);
+const secondArtifact = toSplitArtifact(SECOND_FAMILIES, [
+    toFile('rtc-full-plan.json', toFixturePlan('rtc')),
+    toFile('rtc-full-three-agent.json', rtcThreeAgent)
+]);
+
+function toSplitInput(overrides: Partial<ToAlmLaneObservedRunsInput>): ToAlmLaneObservedRunsInput {
+    return toInput({
+        jobs: [toSplitJob(FIRST_FAMILIES), toSplitJob(SECOND_FAMILIES)],
+        artifacts: [firstArtifact, secondArtifact],
+        ...overrides
+    });
+}
+
+describe('toAlmLaneObservedRuns over a carrier split across jobs', () => {
+    it('reads the two jobs of a carrier as one run, with their one plan and the results of both artifacts', () => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({}));
+
+        expect(reading).toEqual({
+            runs: [{
+                runId: 7,
+                commitSha: 'abcdef1234567',
+                event: 'pull_request',
+                attempt: 1,
+                carrier: 'rtc',
+                jobConclusion: 'success',
+                plan: toFixturePlan('rtc'),
+                familyResults: [rtcTwoAgent, rtcThreeAgent]
+            }],
+            issues: []
+        });
+        expect(computeAlmLaneRunReading(reading.runs[0]!).green).toBe(true);
+    });
+
+    it.each(
+        [
+            [['success', 'timed_out'], 'failure'],
+            [['skipped', 'success'], 'failure'],
+            [['failure', 'cancelled'], 'cancelled'],
+            [['cancelled', null], 'in-progress']
+        ] as const
+    )('combines jobs that concluded %j into one %s', (conclusions, expected) => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            jobs: [toSplitJob(FIRST_FAMILIES, conclusions[0]), toSplitJob(SECOND_FAMILIES, conclusions[1])]
+        }));
+
+        expect(reading.runs.map((run) => run.jobConclusion)).toEqual([expected]);
+    });
+
+    it.each(
+        [
+            ['has expired', { expired: true, files: null }, 'has expired; history ends at artifact retention.'],
+            ['could not be downloaded', { files: null }, 'could not be downloaded.']
+        ] as const
+    )('names a job artifact that %s and reads the other job artifact', (_, unread, issue) => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts: [firstArtifact, { ...secondArtifact, ...unread }] }));
+
+        expect(reading.runs.map(({ plan, familyResults }) => ({ plan, familyResults }))).toEqual([
+            { plan: toFixturePlan('rtc'), familyResults: [rtcTwoAgent] }
+        ]);
+        expect(reading.issues).toEqual([`run 7 rtc: artifact ${secondArtifact.name} ${issue}`]);
+    });
+
+    it.each(
+        [
+            ['plan another order of scenario keys', [{ family: 'two-agent', scenarioKeys: ['b', 'a'] }]],
+            ['plan another set of families', [{ family: 'two-agent', scenarioKeys: ['a', 'b'] }]]
+        ] as const
+    )('names jobs whose plans %s and reads the first plan', (_, families) => {
+        const otherPlan = { ...toFixturePlan('rtc'), families };
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            artifacts: [firstArtifact, toSplitArtifact(SECOND_FAMILIES, [toFile('rtc-full-plan.json', otherPlan)])]
+        }));
+
+        expect(reading.runs[0]?.plan).toEqual(toFixturePlan('rtc'));
+        expect(reading.issues).toEqual(['run 7 rtc: plans of 2 jobs differ; read the first.']);
+    });
+
+    it('names a second result for one family across the jobs and keeps both, so the ledger reads the family red', () => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({
+            artifacts: [firstArtifact, toSplitArtifact(SECOND_FAMILIES, [toFile('rtc-full-two-agent.json', rtcTwoAgent)])]
+        }));
+
+        expect(reading.runs[0]?.familyResults).toEqual([rtcTwoAgent, rtcTwoAgent]);
+        expect(reading.issues).toEqual(['run 7 rtc: rtc-full-two-agent.json is a second result for family two-agent.']);
+    });
+
+    it('reads a carrier whose second job never uploaded as red, its families not run', () => {
+        const reading = toAlmLaneObservedRuns(toSplitInput({ artifacts: [firstArtifact] }));
+
+        expect(reading.issues).toEqual([]);
+        expect(reading.runs.map(computeAlmLaneRunReading)).toMatchObject([{
+            green: false,
+            failed: [],
+            notRun: ['rtc/three-agent/c'],
+            candidates: ['rtc/three-agent'],
+            unattributedReason: null
+        }]);
+    });
+
+    it('still reads a completed push run with no job of the split carrier as no job read', () => {
+        const reading = toAlmLaneObservedRuns(toInput({
+            event: 'push',
+            jobs: [toLaneJob('ws'), toLaneJob('rtc-with-ws-fallback')],
+            artifacts: [wsArtifact]
+        }));
+
+        const ledger = computeAlmLaneLedger({ runs: reading.runs, causes: [] });
+
+        expect(ledger.carriers.find((streak) => streak.carrier === 'rtc')?.unattributed).toEqual([
+            { runId: 7, commitSha: 'abcdef1234567', reason: 'no-job-read' }
+        ]);
     });
 });
 

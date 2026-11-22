@@ -133,8 +133,8 @@ The commit, the event and the attempt are not in the files; the workflow run tha
 `npm run alm:lane:ledger` reads, through `gh`, the newest `main` push runs of
 `alm-conformance-observation.yml`, and beside them its newest pull-request runs and its newest
 dispatched runs, each kind read on its own so that pull-request traffic cannot crowd the push runs
-out of the window. It downloads each job's `alm-lane-result-<carrier>-full-<sha>` artifact (with
-`-<families>` for a split leg) and prints the ledger. It only reads GitHub. Options: `--limit <n>`
+out of the window. It downloads every `alm-lane-result-<carrier>-full-<sha>` artifact of a run
+(with `-<families>` for a job of a split carrier) and prints the ledger. It only reads GitHub. Options: `--limit <n>`
 (the `main` push runs to read, 1 to 100, default 30; at most as many pull-request and as many
 dispatched runs are read beside them) and `--repository <owner/name>` (default: the repository
 `gh repo view` resolves for the working directory), for example
@@ -152,12 +152,25 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
 
 ### How a run is read
 
-- Each lane job (`ALM conformance observation (<carrier>)`, or
-  `ALM conformance observation (<carrier>, <families>)` for a split leg) is one run of its carrier;
-  other jobs, such as `Detect ALM lane changes`, are not read. The carrier comes from the job's
-  name, and the job reads only its carrier's artifact. A completed `main` push or dispatched run in
-  which no job of a carrier could be read is red for that carrier (reason `no-job-read`) and named
-  as an issue. A run that was skipped as a whole is not asked for its jobs or artifacts.
+- A lane job is `ALM conformance observation (<carrier>)`, or
+  `ALM conformance observation (<carrier>, <families>)` for one job of a carrier split by family
+  (`rtc` runs as two); other jobs, such as `Detect ALM lane changes`, are not read. The carrier
+  comes from the job's name. A completed `main` push or dispatched run in which no job of a
+  carrier could be read is red for that carrier (reason `no-job-read`) and named as an issue. A run
+  that was skipped as a whole is not asked for its jobs or artifacts.
+- **A carrier's jobs are read as one run.** Every job of a carrier in a workflow run makes one run
+  of that carrier, read from every artifact whose name starts with
+  `alm-lane-result-<carrier>-full-`: the plan the jobs agree on, the results of all the artifacts,
+  and one conclusion. Each job writes the whole carrier's plan, so the plans are equal; jobs whose
+  plans differ (other families, or other scenario keys or order) are named as an issue,
+  `plans of <n> jobs differ; read the first.`, and the first is read. A second plan inside one
+  artifact, and a second result for one family across all of them, are issues too. An expired or
+  undownloadable artifact is named on its own, and the other artifacts are still read; a job that
+  uploaded nothing leaves its families without a result, so the carrier reads red.
+- The jobs' one conclusion is `in-progress` when any job is still running; else `cancelled` when
+  any was cancelled; else `failure` when any failed, or when some were skipped and others were not;
+  else `success` when all succeeded; else `skipped`. A carrier with one job reads that job's
+  conclusion.
 - GitHub's job conclusion maps onto the ledger's values: still running is `in-progress`; `success`,
   `skipped` and `cancelled` keep their names; every other conclusion (`failure`, `timed_out`,
   `startup_failure`, ...) is `failure`. A job under `continue-on-error: true` that failed is
