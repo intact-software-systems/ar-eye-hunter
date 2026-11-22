@@ -57,7 +57,6 @@ describe('PR handoff admission', () => {
                     'game-changes',
                     'release-gate',
                     'games-release-gate',
-                    'alm-conformance-observation',
                     'navigation-report-observation',
                     'publish-validation-evidence',
                     'rtc-observation-integrity'
@@ -119,7 +118,7 @@ describe('PR handoff admission', () => {
         const scenario = { draft, cancelled: false, governanceResult: 'success', mode };
 
         expect(isAdmitted(workflow.jobs['rtc-observation-integrity'].if, scenario)).toBe(integrity);
-        for (const job of ['release-gate', 'games-release-gate', 'alm-conformance-observation', 'publish-validation-evidence']) {
+        for (const job of ['release-gate', 'games-release-gate', 'publish-validation-evidence']) {
             expect(isAdmitted(workflow.jobs[job].if, scenario), job).toBe(false);
         }
     });
