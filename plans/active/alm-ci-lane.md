@@ -189,7 +189,10 @@ Three were weighed with the maintainer, who picked the first.
   result file was never started, and all its scenarios are `not-run`. How the plan file is written
   (a job step before Playwright, or the spec's first test) is the builder's, as long as there is one
   planning function.
-- The job uploads two artifacts, both with `if: always()`:
+- The job uploads two artifacts in a step of its own that runs `if: always()`. The uploads are not
+  nested in the action that runs the lane: a composite action is one step of the job, and when that
+  step is cancelled its nested steps are skipped, whatever their `if` says (seen in the first ready
+  run). The two artifacts:
   - `alm-conformance-lane-<carrier>-<scope>-<sha>`: the Playwright output root, as today but with
     the scope in its name;
   - `alm-lane-result-<carrier>-<scope>-<sha>`: the `alm-lane-result/` directory alone, so the
@@ -338,6 +341,29 @@ Calls made after the whole-branch review of slice 1, each from a fact in the cod
 - The changed paths are read from the merge base, with the shared reader (section 4).
 - Playwright's global timeout sits below each job's time limit (section 2).
 - `familyOutcome` follows the family test's whole outcome, not only its scenarios' (section 3).
+
+## What the first ready run found (2026-11-21)
+
+The pull request's first ready run passed the Release Gate, with the three `alm-smoke` jobs green in
+5.5 to 5.9 minutes each. The full scope did not complete on any carrier: `rtc` lost its runner after
+52 minutes, and `ws` and `rtc-with-ws-fallback` were cancelled by GitHub 7 to 8.5 minutes into the
+first family, with no upload.
+
+The cause was in the lane's own harness, not in ALM. `readControlRun` and its siblings in
+`tests/playwright/rallar-black-box/full-stack-helpers.ts` fetched the control run's snapshot through
+Playwright's request fixture and never disposed the response. Playwright keeps every response body
+until the fixture ends, which is the end of the family test, and the lane polls a snapshot that grows
+with the run. Measured on a developer machine, the full scope over `ws`:
+
+|                                     | Before  | After the fix |
+| ----------------------------------- | ------- | ------------- |
+| Playwright process, peak            | 33.1 GB | 3.5 GB        |
+| The lane's whole process tree, peak | 38.5 GB | 9.0 GB        |
+
+A GitHub runner has 16 GB. Every response the lane reads is now disposed through one function,
+`tests/playwright/rallar-black-box/read-disposed-response.ts`, which the live-RTC and retention
+clients use too. A job whose runner loses contact with GitHub still uploads nothing; no workflow
+shape changes that.
 
 ## What merging slice 1 does to open pull requests
 
