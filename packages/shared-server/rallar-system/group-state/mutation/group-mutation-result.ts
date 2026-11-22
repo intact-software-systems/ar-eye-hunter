@@ -18,6 +18,7 @@ import type {
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeGroupSessionMembershipEffects } from '../schedule/compute-group-session-membership-effects.ts';
+import { computeRoomProgramPublication } from '../schedule/compute-room-program-publication.ts';
 import { computeGroupSessionViewPublication } from '../schedule/compute-group-session-view-publication.ts';
 import { computeGroupSessionDeadlines } from '../schedule/group-session-deadline.ts';
 
@@ -429,6 +430,7 @@ function computeScheduledMutationWrites(
     }
     const { command, read, facts, members } = input;
     const publication = computeGroupSessionViewPublication({ command, read, facts, group, members, reservations });
+    const program = computeRoomProgramPublication(input, group);
     const deadlines = computeGroupSessionDeadlines({
         changedMembers: members,
         previousMembers: [read.actorMember, read.targetMember, read.authorityMember, read.directorMember].filter((
@@ -441,5 +443,8 @@ function computeScheduledMutationWrites(
         serviceId: facts.serviceId,
         traceId: facts.traceId
     });
-    return { outboxWrites: [...publication.outbox, ...deadlines], viewProvenance: publication.provenance };
+    return {
+        outboxWrites: [...publication.outbox, ...program.outbox, ...deadlines],
+        viewProvenance: [...publication.provenance, ...program.provenance]
+    };
 }
