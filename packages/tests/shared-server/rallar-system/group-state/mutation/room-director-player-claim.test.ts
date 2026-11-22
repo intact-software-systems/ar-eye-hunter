@@ -44,13 +44,13 @@ it('retries a succession read if the candidate reconnects between its admission 
         await connect('generation-two');
         return find(ref);
     });
-    await expect(readGroupMutation(repo, {
+    await expect(readGroupMutation({ repository: repo, authSessionId: null, command: {
         operation: 'appointDirector',
         aggregateRef: groupRef(room),
         requestId: 'claim',
         commandId: 'claim',
         input: { ...actor, reason: null, heartbeatTtlMs: 5000, succession: { operation: 'claim-player', expectedDirectorEpoch: 1 } }
-    }, null)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+    } })).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
 });
 
 it('awards the open director seat once to a present player and allows an organizer to supersede that winner', async () => {
