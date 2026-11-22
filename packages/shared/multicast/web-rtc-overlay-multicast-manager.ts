@@ -110,6 +110,7 @@ import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt
 import { createRtcRecipientAuthentication } from './receipt-proof/create-rtc-recipient-authentication.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { createRtcInboundRoutes, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
+import type { RtcInboundRoutes } from './resolve-rtc-upstream-peer-id.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
@@ -585,7 +586,7 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /** The inbound runtime's route capabilities over this lane's layouts (6d). */
-    toInboundRoutes() {
+    toInboundRoutes(): RtcInboundRoutes {
         return createRtcInboundRoutes(this, (msg) => this.readOutboundObservation(msg));
     }
 
