@@ -1,3 +1,4 @@
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -51,6 +52,53 @@ it('retries a succession read if the candidate reconnects between its admission 
         commandId: 'claim',
         input: { ...actor, reason: null, heartbeatTtlMs: 5000, succession: { operation: 'claim-player', expectedDirectorEpoch: 1 } }
     } })).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+});
+
+it('configures succession when the acting director reconnects between authority admission reads', async () => {
+    const runtime = new GroupBarrierRepository();
+    const now = Date.now();
+    runtime.nowEpochMs = () => now;
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: now, attemptCount: 5,
+        injectedRandomId: () => crypto.randomUUID(), timing: undefined });
+    const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
+    await service.createGroup(SCOPE, { groupId: 'court', createdByPrincipalId: 'owner', displayName: 'Court',
+        kind: 'room', joinMode: 'open', requestId: 'create' });
+    await service.joinGroup(SCOPE, 'court', { actorPrincipalId: 'deputy', actorSessionId: 'deputy-session', requestId: 'join-deputy' });
+    const connect = (generationId: string) => service.connectPresenceSession(SCOPE, 'court', actor.actorSessionId, {
+        ...actor, principalId: 'owner', generationId, connectionGenerationId: generationId, publicationKey: null, requestId: generationId
+    });
+    await connect('original');
+    await service.appointDirector(SCOPE, 'court', { ...actor, requestId: 'appoint' });
+
+    const read = GroupStateRepository.prototype.findPresenceAdmissionEntry;
+    let first = true;
+    let reconnect: Promise<unknown> | undefined;
+    const admission = vi.spyOn(GroupStateRepository.prototype, 'findPresenceAdmissionEntry').mockImplementation(async function (this: GroupStateRepository, ref) {
+        if (ref.principalId !== 'owner') return read.call(this, ref);
+        if (first) {
+            first = false;
+            const original = read.call(this, ref);
+            reconnect = original.then(() => {
+                // Reconnect uses the same repository method. Its own reads must proceed normally.
+                admission.mockRestore();
+                return connect('replacement');
+            });
+            await reconnect;
+            return original;
+        }
+        await reconnect;
+        return read.call(this, ref);
+    });
+    try {
+        await service.appointDirector(SCOPE, 'court', { ...actor, requestId: 'configure', succession: {
+            operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0, deputyPrincipalId: 'deputy'
+        } });
+        expect(first).toBe(false);
+        const snapshot = await requireSnapshot(runtime, 'court');
+        expect(snapshot.group.metadata.rallarDirectorSuccession).toMatchObject({ revision: 1, deputyPrincipalId: 'deputy' });
+    } finally {
+        admission.mockRestore();
+    }
 });
 
 it('awards the open director seat once to a present player and allows an organizer to supersede that winner', async () => {

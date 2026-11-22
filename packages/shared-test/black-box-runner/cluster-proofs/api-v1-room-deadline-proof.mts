@@ -222,9 +222,9 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
         assert.deepEqual(deadlines(await requestJson(baseUrl, first, { method: 'GET', session: deputy })), expected);
         assert.deepEqual(deadlines(await requestJson(baseUrl, second, { method: 'GET', session: owner })), secondOccurrence);
     }
-    await proveDirectorSuccession({ api, owner, deputy, room: { ...room, groupId: 'succession', proofId: crypto.randomUUID() } });
     await provePlayerSuccession({ api, owner, player: deputy, observerOrigin: reader.baseUrl,
         room: { ...room, groupId: 'players', proofId: crypto.randomUUID() } });
+    await proveDirectorSuccession({ api, owner, deputy, room: { ...room, groupId: 'succession', proofId: crypto.randomUUID() } });
 }
 
 async function putDeadline(input: { session: ProofSession; path: string; body: object }): Promise<Response> {

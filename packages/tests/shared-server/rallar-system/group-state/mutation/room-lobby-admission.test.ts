@@ -1,5 +1,6 @@
+import { GROUP_LOBBIES_NAMESPACE } from '@shared-server/rallar-system/group-state/lobby/group-lobby-storage.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
@@ -94,4 +95,48 @@ it('bounds and renews every private account row with a finite room lifetime', as
     await service.updateGroup(SCOPE, 'court', { actorPrincipalId: 'alice', requestId: 'renew', expiresAtEpochMs: now + 120000 });
     expect((await groups.findLobbyCommitmentEntry(SCOPE, 'bob'))?.entry.expireAtTimestamp).toBe(now + 120000);
     expect((await groups.findGroupLobbyEntry(groupRef('court')))?.value.expiresAtEpochMs).toBe(now + 120000);
+});
+
+it('keeps a live player present when another arrival overlaps its session and roster reads', async () => {
+    const runtime = new FakeRuntimeStateRepository();
+    const groups = createTestGroupStateRepository(runtime);
+    const service = createTestGroupStateService({
+        runtimeRepository: runtime, now: () => Date.now(), serviceId: 'test', randomId: () => crypto.randomUUID(), attemptCount: 3
+    });
+    const room = groupRef('concurrent-arrivals');
+    await service.createGroup(SCOPE, {
+        groupId: room.groupId, displayName: 'Court', createdByPrincipalId: 'alice', requestId: 'create',
+        kind: 'room', joinMode: 'open', maxMembers: 2, roomLobby: { returnWindowMs: 60000, claimWindowMs: 60000 }
+    });
+    await service.joinGroup(SCOPE, room.groupId, { actorPrincipalId: 'bob', requestId: 'join-bob' });
+    const connect = (principalId: string) => service.connectPresenceSession(SCOPE, room.groupId, 'session-' + principalId, {
+        principalId, actorPrincipalId: principalId, generationId: 'generation-' + principalId,
+        connectionGenerationId: 'socket-' + principalId, publicationKey: null, requestId: 'connect-' + principalId
+    });
+
+    const aliceReading = Promise.withResolvers<void>();
+    const bobCommitted = Promise.withResolvers<void>();
+    const read = runtime.findEntry.bind(runtime);
+    let delayNextRosterRead = true;
+    const gate = vi.spyOn(runtime, 'findEntry').mockImplementation(async (namespace, key) => {
+        if (namespace === GROUP_LOBBIES_NAMESPACE && delayNextRosterRead) {
+            delayNextRosterRead = false;
+            aliceReading.resolve();
+            await bobCommitted.promise;
+        }
+        return read(namespace, key);
+    });
+    const alice = connect('alice');
+    try {
+        await aliceReading.promise;
+        await connect('bob');
+    } finally {
+        bobCommitted.resolve();
+        gate.mockRestore();
+    }
+    await alice;
+    for (const principalId of ['alice', 'bob']) {
+        expect((await groups.findLobbyCommitmentEntry(SCOPE, principalId))?.value.seat)
+            .toEqual({ roomRef: room, status: 'present', deadlineEpochMs: null });
+    }
 });

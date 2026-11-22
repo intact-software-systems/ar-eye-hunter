@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import postgres from 'postgres';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { decodeRoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ApiV1RtcTopologyProofApi, requestJson, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from './run-managed-cluster-proof.mts';
 
-async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.ScenarioInput): Promise<void> {
+async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [first, second, observer] = plans;
     assert.ok(first && second && observer);
     const users = new ApiV1RtcTopologyProofApi({
@@ -49,11 +51,14 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
         method: 'POST', session: bob, body: { actorPrincipalId: bob.clientId }
     });
     assert.equal((await seat(bob))?.status, 'arriving');
+    const publicEvents = () => requestJson(observer.baseUrl, groupPath + '/events/page', { method: 'GET', session: alice });
+    const beforeRelease = await publicEvents();
     const releaseAcknowledgement = await requestJson(first.baseUrl, toApiMutationRequestPath(groupPath, crypto.randomUUID()), {
         method: 'PUT', session: bob, body: { actorPrincipalId: bob.clientId, roomLobby: { operation: 'release' } }
     });
     assert.deepEqual(releaseAcknowledgement, { roomRef: { ...scope, groupId: winner.groupId } });
     assert.equal(await seat(bob), null);
+    assert.deepEqual(await publicEvents(), beforeRelease, 'Private release changed the public event stream');
     const outsider = await users.login({
         principal: 'admin', label: 'walk-in', apiBaseUrl: second.baseUrl, wsBaseUrl: second.baseUrl.replace(/^http/, 'ws')
     });
@@ -128,6 +133,123 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
     assert.equal((await seat(outsider))?.status, 'waiting');
     await rotate();
     assert.equal(await seat(outsider), null);
+    const independent = await Promise.allSettled([
+        proveConcurrentArrivals(plans, users, alice, bob),
+        proveReservedEntry(plans, alice, bob, outsider),
+        proveRenewedWaitBeforeExpiryRecovery(plans, databaseUrl, alice, bob)
+    ]);
+    const cases = ['concurrent live arrivals', 'pre-cutoff reservation entry', 'wait after offer expiry'];
+    const failures = [];
+    for (const [index, result] of independent.entries()) {
+        if (result.status === 'rejected') failures.push(new Error(cases[index], { cause: result.reason }));
+        else console.log('Passed:', cases[index]);
+    }
+    if (failures.length) throw new AggregateError(failures, 'Lobby regression scenarios failed');
+}
+
+/** Account commitments are scoped by workspace so each scenario can start with an empty roster. */
+function lobbyRoom(workspaceId: string, groupId: string, baseUrl: string) {
+    const roomRef: GroupRef = { applicationId: 'lobby-proof', workspaceId, groupId };
+    const scopePath = `/apps/lobby-proof/workspaces/${workspaceId}`;
+    const groups = `/api/state${scopePath}/groups`;
+    const group = `${groups}/${groupId}`;
+    const seat = async (session: ProofSession) => decodeRoomLobbyAccountView(await requestJson(baseUrl,
+        `/api/room-lobbies${scopePath}`, { method: 'GET', session })).seat;
+    return { groups, group, roomRef, seat };
+}
+
+async function proveReservedEntry(
+    plans: ManagedClusterProof.ScenarioInput['plans'],
+    alice: ProofSession, bob: ProofSession, walkIn: ProofSession
+): Promise<void> {
+    const [first, second, observer] = plans;
+    assert.ok(first && second && observer);
+    const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'scheduled-court', observer.baseUrl);
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId: roomRef.groupId, displayName: 'Reserved court', createdByPrincipalId: alice.clientId,
+            kind: 'room', joinMode: 'open', maxMembers: 2, roomLobby: { returnWindowMs: 60000, claimWindowMs: 60000 },
+            retention: { mode: 'temporary' }, scheduledStartAtEpochMs: Date.now() + 300000 }
+    });
+    await requestJson(second.baseUrl, toApiMutationRequestPath(group + '/session', crypto.randomUUID()), {
+        method: 'POST', session: bob, body: { action: 'reserve', expectedScheduleRevision: 1, startsAtEpochMs: null }
+    });
+    const join = (session: ProofSession, expectedStatus: number) => requestJson(second.baseUrl,
+        toApiMutationRequestPath(group + '/join', crypto.randomUUID()), { method: 'POST', session, expectedStatus,
+            body: { actorPrincipalId: session.clientId } });
+    await join(walkIn, 403);
+    assert.equal(await seat(walkIn), null);
+    await requestJson(first.baseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), {
+        method: 'PUT', session: alice, body: { roomLobby: {
+            operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: Date.now()
+        } }
+    });
+    await join(bob, 200);
+    assert.equal((await seat(bob))?.status, 'arriving');
+}
+
+async function proveConcurrentArrivals(
+    plans: ManagedClusterProof.ScenarioInput['plans'], users: ApiV1RtcTopologyProofApi, alice: ProofSession, bob: ProofSession
+): Promise<void> {
+    const [first, second, observer] = plans;
+    assert.ok(first && second && observer);
+    const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'concurrent-court', observer.baseUrl);
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId: roomRef.groupId, displayName: 'Concurrent court', createdByPrincipalId: alice.clientId,
+            kind: 'room', joinMode: 'open', maxMembers: 2, roomLobby: { returnWindowMs: 60000, claimWindowMs: 60000 } }
+    });
+    await requestJson(second.baseUrl, toApiMutationRequestPath(group + '/join', crypto.randomUUID()), {
+        method: 'POST', session: bob, body: { actorPrincipalId: bob.clientId }
+    });
+    const active = [ { ...alice, apiBaseUrl: first.baseUrl }, { ...bob, apiBaseUrl: second.baseUrl } ];
+    // Opposing API processes may read competing predecessors. Both successful arrivals must survive every commit.
+    await Promise.all(active.map(actor => users.connectPresence({ ...roomRef, actor, proofId: crypto.randomUUID() })));
+    for (const actor of active) {
+        const commitment = await seat(actor);
+        assert.equal(commitment?.status, 'present');
+        assert.equal(commitment?.deadlineEpochMs, null);
+    }
+}
+
+async function proveRenewedWaitBeforeExpiryRecovery(
+    plans: ManagedClusterProof.ScenarioInput['plans'], databaseUrl: string,
+    alice: ProofSession, bob: ProofSession
+): Promise<void> {
+    const [first, second, observer] = plans;
+    assert.ok(first && second && observer);
+    const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'renewed-wait', observer.baseUrl);
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId: roomRef.groupId, displayName: 'Renewed wait', createdByPrincipalId: alice.clientId,
+            kind: 'room', joinMode: 'open', maxMembers: 2, roomLobby: { returnWindowMs: 60000, claimWindowMs: 3000 } }
+    });
+    const wait = () => requestJson(second.baseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), {
+        method: 'PUT', session: bob, body: { roomLobby: { operation: 'wait' } }
+    });
+    await wait();
+    const firstOffer = await seat(bob);
+    assert.ok(firstOffer?.status === 'offered' && firstOffer.deadlineEpochMs !== null);
+    // Hold this room's durable deadline wakes so the API sees the overdue offer before housekeeping can settle it.
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+        await sql.begin(async transaction => {
+            const wakes = await transaction`
+                select ri_resource_id from resource_inbox
+                where ri_topic_id = 'room-lobby.deadline'
+                  and (ri_resource::jsonb->'payload'->>'resource')::jsonb->'roomRef'->>'workspaceId' = ${roomRef.workspaceId}
+                for update
+            `;
+            assert.ok(wakes.length && Date.now() < firstOffer.deadlineEpochMs!, 'Hold the deadline wakes before expiry');
+            await new Promise(resolve => setTimeout(resolve, Math.max(0, firstOffer.deadlineEpochMs! - Date.now() + 1)));
+            await wait();
+            const secondOffer = await seat(bob);
+            assert.ok(secondOffer?.status === 'offered' && secondOffer.deadlineEpochMs !== null);
+            assert.ok(secondOffer.deadlineEpochMs > firstOffer.deadlineEpochMs!, 'A fresh wait must receive a new offer window');
+        });
+    } finally {
+        await sql.end();
+    }
 }
 
 if (import.meta.main) {

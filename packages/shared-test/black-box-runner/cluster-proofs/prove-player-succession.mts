@@ -19,12 +19,25 @@ export async function provePlayerSuccession({ api, room, owner, player, observer
     for (const actor of [player, second]) await api.activateMember({ ...room, actor, memberClientId: actor.clientId });
     for (const actor of [owner, player, second]) await api.connectPresence({ ...room, actor });
     await requestJson(owner.apiBaseUrl, appointmentPath(), { method: 'POST', session: owner, body: {} });
-    await requestJson(owner.apiBaseUrl, appointmentPath(), { method: 'POST', session: owner,
-        body: { succession: { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0,
-            reconnectWindowMs: 100, deputyWindowMs: 30000, deputyPrincipalId: null } } });
+    // The organizer is also the current director: both authority roles refer to the same admission.
+    const reconnectId = crypto.randomUUID();
+    const [configured] = await Promise.all([
+        requestJson(owner.apiBaseUrl, appointmentPath(), { method: 'POST', session: owner,
+            body: { succession: { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0,
+                reconnectWindowMs: 100, deputyWindowMs: 30000, deputyPrincipalId: null } } }),
+        api.connectPresence({ ...room, proofId: reconnectId, actor: { ...owner, apiBaseUrl: observerOrigin } })
+    ]);
+    const configuredMetadata = requireRecord(requireRecord(configured.group, 'group').metadata, 'metadata');
+    assert.equal(requireRecord(configuredMetadata.rallarDirectorSuccession, 'configured policy').revision, 1);
+    const afterReconnect = await requestJson(observerOrigin, group, { method: 'GET', session: owner });
+    assert.ok(Array.isArray(afterReconnect.activeSessions));
+    assert.ok(afterReconnect.activeSessions.some(row => {
+        const session = requireRecord(row, 'room session');
+        return session.sessionId === owner.sessionId && session.generationId === reconnectId + '-generation-' + owner.label;
+    }));
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), { method: 'PUT', session: owner, body: { roomClock: clock } });
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/sessions/' + owner.sessionId + '/disconnect', crypto.randomUUID()), {
-        method: 'POST', session: owner, body: { principalId: owner.clientId, generationId: room.proofId + '-generation-' + owner.label }
+        method: 'POST', session: owner, body: { principalId: owner.clientId, generationId: reconnectId + '-generation-' + owner.label }
     });
     await new Promise(resolve => setTimeout(resolve, 150));
     const body = { succession: { operation: 'claim-player', expectedDirectorEpoch: 1 } };

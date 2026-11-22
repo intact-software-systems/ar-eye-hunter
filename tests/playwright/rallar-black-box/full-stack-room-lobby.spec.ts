@@ -23,6 +23,36 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
     }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
+for (const feature of ['lobby', 'director succession'] as const) {
+    test(`an owner updates ordinary room metadata with ${feature} enabled`, async ({ page }) => {
+        test.skip(!config.enabled, config.skipReason);
+        const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+        const room = { ...scope, groupId: 'court' };
+        const host = await signIn(page, config.userA, scope);
+        const result = await host.evaluate(async ({ rooms }, { room, feature }) => {
+            await rooms.createAndSwitch({
+                ...room, displayName: 'Court', joinMode: 'open', maxMembers: 2,
+                ...(feature === 'lobby' && { roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } })
+            });
+            if (feature === 'director succession') {
+                const director = await rooms.readDirector(room);
+                await rooms.changeDirector(room, {
+                    operation: 'configure', expectedDirectorEpoch: director.appointment?.epoch ?? 0,
+                    expectedRevision: 0, deputyPrincipalId: null
+                }, crypto.randomUUID());
+            }
+            const updated = await rooms.updateMetadata(room, { courtLabel: 'Final' });
+            return updated.group.metadata;
+        }, { room, feature });
+        expect(result.courtLabel).toBe('Final');
+        if (feature === 'lobby') {
+            expect(result.rallarRoomLobby).toMatchObject({ returnWindowMs: 120000, claimWindowMs: 60000 });
+        } else {
+            expect(result.rallarDirectorSuccession).toMatchObject({ deputyPrincipalId: null });
+        }
+    });
+}
+
 test('waiting players receive exclusive offers in order while visiting another room', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const bobPage = await browser.newPage({ baseURL });
