@@ -272,3 +272,27 @@ it('refuses a new scheduled reservation after registration closes and still allo
         expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual([]);
     } finally { await fixture.storage.close(); }
 });
+
+it('admits the owner of a scheduled reservation after lobby registration closes', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const reserved = await prepareForAccount(fixture, 'alice', reservation('alice', 'before-cutoff'));
+        await commitMutation(fixture, requireMutationWrite(reserved.computed));
+        const close = await prepareMutation(fixture, mutationDescriptor({
+            operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+            request: {
+                requestId: 'cutoff', actorPrincipalId: 'owner',
+                roomLobby: { operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: fixture.nowEpochMs }
+            }
+        }));
+        await commitMutation(fixture, requireMutationWrite(close.computed));
+        const joined = await prepareForAccount(fixture, 'alice', mutationDescriptor({
+            operation: 'joinGroup', scope: ref, groupId: ref.groupId, targetPrincipalId: 'alice',
+            request: { requestId: 'claim-place', actorPrincipalId: 'alice', participation: 'player' }
+        }));
+        await commitMutation(fixture, requireMutationWrite(joined.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'alice'))?.value.seat?.status).toBe('arriving');
+    } finally {
+        await fixture.storage.close();
+    }
+});
