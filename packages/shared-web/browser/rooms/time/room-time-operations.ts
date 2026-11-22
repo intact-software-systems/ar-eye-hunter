@@ -106,6 +106,10 @@ interface WriteRoomTime {
     readonly signal?: AbortSignal;
 }
 
+interface WriteRoomProgram extends WriteRoomTime {
+    readonly change: { readonly roomClock: RoomSchedule.Control; };
+}
+
 interface WriteRoomTimeline extends WriteRoomTime {
     readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>; };
 }
@@ -198,17 +202,18 @@ export function createRoomTimeOperations(
         const metadata = await write(request);
         return acknowledgedTimeline(metadata, roomClock);
     }
-    async function changeProgram(roomRef: GroupRef, roomClock: RoomSchedule.Control, requestId: string, signal?: AbortSignal) {
+    async function changeProgram(request: WriteRoomProgram) {
+        const { roomClock } = request.change;
         assertRoomClockMutation(roomClock);
-        const metadata = await write({ roomRef, change: { roomClock }, requestId, signal });
+        const metadata = await write(request);
         return acknowledgedProgram(metadata, roomClock);
     }
     return {
         pauseProgram(room, control, requestId, { signal } = {}) {
-            return changeProgram(room, { ...control, operation: 'pause-program' }, requestId, signal);
+            return changeProgram({ roomRef: room, change: { roomClock: { ...control, operation: 'pause-program' } }, requestId, signal });
         },
         resumeProgram(room, control, requestId, { signal } = {}) {
-            return changeProgram(room, { ...control, operation: 'resume-program' }, requestId, signal);
+            return changeProgram({ roomRef: room, change: { roomClock: { ...control, operation: 'resume-program' } }, requestId, signal });
         },
         async publishSchedule(roomRef, publication, requestId, { signal } = {}) {
             const roomClock = { ...structuredClone(publication), operation: 'publish-schedule' as const };
