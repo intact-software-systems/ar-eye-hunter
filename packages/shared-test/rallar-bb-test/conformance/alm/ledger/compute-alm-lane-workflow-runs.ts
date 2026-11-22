@@ -30,9 +30,7 @@ export interface ComputeAlmLaneWorkflowRunsInput<T extends AlmLaneListedWorkflow
 }
 
 export interface AlmLaneWorkflowRunsComputed<T extends AlmLaneListedWorkflowRun> {
-    /** Newest first, each run once. */
-    readonly runs: readonly T[];
-    /** The runs whose jobs and artifacts are worth asking for: a skipped run has none. */
+    /** Newest first, each run once, without the skipped runs: a skipped run has no jobs or artifacts to ask for. */
     readonly runsToRead: readonly T[];
     readonly window: AlmLaneWorkflowRunWindow;
 }
@@ -44,7 +42,6 @@ export function computeAlmLaneWorkflowRuns<T extends AlmLaneListedWorkflowRun>(
     const runs = merged.filter((run, index) => merged.findIndex((other) => other.id === run.id) === index)
         .sort((left, right) => right.run_number - left.run_number || right.id - left.id);
     return {
-        runs,
         runsToRead: runs.filter((run) => run.conclusion !== 'skipped'),
         window: {
             counts: { push: input.push.length, pullRequest: input.pullRequest.length, dispatch: input.dispatch.length },

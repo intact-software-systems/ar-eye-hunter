@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     toAlmLaneFamilyResult,
     type AlmLaneFamilyResult,
     type AlmLanePlanRecord
 } from '@shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts';
+import { computeAlmLaneLedger } from '@shared-test/rallar-bb-test/conformance/alm/ledger/compute-alm-lane-ledger.ts';
 import type { AlmLaneResultFile } from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-result-file.ts';
 import type { AlmLaneReportedJob } from '@shared-test/rallar-bb-test/conformance/alm/ledger/to-alm-lane-job-conclusion.ts';
 import {
@@ -225,6 +229,30 @@ describe('toAlmLaneObservedRuns', () => {
             ]);
         }
     );
+
+    it('gives every carrier of a rerun push run that attempt, so the ledger reads all three red as a rerun', () => {
+        const toCarrierArtifact = (carrier: AlmConformanceCarrier) =>
+            toArtifact(carrier, [
+                toFile(`${carrier}-full-plan.json`, toPlan(carrier)),
+                toFile(`${carrier}-full-two-agent.json`, toResult(carrier))
+            ]);
+        const reading = toAlmLaneObservedRuns(toInput({
+            event: 'push',
+            attempt: 2,
+            jobs: ALM_CONFORMANCE_CARRIERS.map((carrier) => toLaneJob(carrier)),
+            artifacts: ALM_CONFORMANCE_CARRIERS.map(toCarrierArtifact)
+        }));
+
+        const ledger = computeAlmLaneLedger({ runs: reading.runs, causes: [] });
+
+        expect(reading.runs.map((run) => run.attempt)).toEqual([2, 2, 2]);
+        expect(ledger.carriers.map(({ carrier, unattributed }) => ({ carrier, unattributed }))).toEqual(
+            ALM_CONFORMANCE_CARRIERS.map((carrier) => ({
+                carrier,
+                unattributed: [{ runId: 7, commitSha: 'abcdef1234567', reason: 'rerun' }]
+            }))
+        );
+    });
 
     it('reads nothing missing of a pull-request run, or of a push run still in progress', () => {
         expect(toAlmLaneObservedRuns(toInput({ jobs: [] }))).toEqual({ runs: [], issues: [] });

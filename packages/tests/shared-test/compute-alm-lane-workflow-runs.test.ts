@@ -14,7 +14,7 @@ describe('computeAlmLaneWorkflowRuns', () => {
             dispatch: [toRun(25, 11, 'workflow_dispatch')]
         });
 
-        expect(computed.runs.map((run) => run.id)).toEqual([40, 30, 25, 20, 10]);
+        expect(computed.runsToRead.map((run) => run.id)).toEqual([40, 30, 25, 20, 10]);
         expect(computed.window.counts).toEqual({ push: 2, pullRequest: 2, dispatch: 1 });
     });
 
@@ -33,7 +33,7 @@ describe('computeAlmLaneWorkflowRuns', () => {
     it('reads a run listed twice once', () => {
         const run = toRun(30, 12, 'push');
 
-        expect(computeAlmLaneWorkflowRuns({ push: [run], pullRequest: [run], dispatch: [] }).runs).toEqual([run]);
+        expect(computeAlmLaneWorkflowRuns({ push: [run], pullRequest: [run], dispatch: [] }).runsToRead).toEqual([run]);
     });
 
     it('keeps every push run however many pull-request runs there are', () => {
@@ -42,8 +42,8 @@ describe('computeAlmLaneWorkflowRuns', () => {
 
         const computed = computeAlmLaneWorkflowRuns({ push: pushes, pullRequest: pullRequests, dispatch: [] });
 
-        expect(computed.runs.filter((run) => run.event === 'push')).toHaveLength(10);
-        expect(computed.runs).toHaveLength(110);
+        expect(computed.runsToRead.filter((run) => run.event === 'push')).toHaveLength(10);
+        expect(computed.runsToRead).toHaveLength(110);
     });
 
     it('asks for the jobs and artifacts of every run but the skipped ones', () => {

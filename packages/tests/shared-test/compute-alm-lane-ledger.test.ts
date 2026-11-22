@@ -112,6 +112,17 @@ describe('computeAlmLaneLedger', () => {
         expect(toCarrierStreak(runs, [toCause('ws/two-agent')])?.uncaused).toEqual([]);
     });
 
+    it('counts a failed key and a never-started family, not the unrun keys after the failure', () => {
+        const failedThenUnrun = toFixtureResult('ws', 'two-agent', new Map([['a', 'failed']]), 'failed');
+        const run: AlmLaneObservedRun = {
+            ...toFixtureRunWithTwoAgentResult(1, failedThenUnrun),
+            familyResults: [failedThenUnrun]
+        };
+
+        expect(toCarrierStreak([run])?.uncaused).toEqual(['ws/three-agent', 'ws/two-agent/a']);
+        expect(toCarrierStreak([run], [toCause('ws/two-agent/a')])?.uncaused).toEqual(['ws/three-agent']);
+    });
+
     it('counts failures without a cause from push runs only', () => {
         const pullRequest: AlmLaneObservedRun = { ...toFixtureRunWithTwoAgentResult(2, twoAgentFailedA), event: 'pull_request' };
 

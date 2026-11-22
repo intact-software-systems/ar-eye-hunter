@@ -157,8 +157,9 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
   `familyOutcome` is `passed`. A planned family without a result file was never started, so its
   scenarios did not run.
 - A file of the artifact must state the job's carrier, scope `full` and backend `postgres`; a file
-  that disagrees, is not JSON, or does not decode is an issue and read as absent. A job whose plan
-  is absent reads red with the reason `no-plan`.
+  that disagrees, is not JSON, or does not decode is an issue and read as absent. A first-attempt
+  job that was not cancelled and whose plan is absent reads red with the reason `no-plan` (see the
+  order of reasons below).
 - **The streak counts `main` push runs only**, per carrier, newest first, up to the first that is
   not green. Pull-request and dispatched runs are shown beside it: a red pull-request run may be
   that pull request's own regression, caught as intended. A job still running or skipped is left
@@ -170,12 +171,16 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
   including the ones carried over unchanged, reports the new `run_attempt` (seen on run
   44941158105 of this repository), and a run read at attempt 2 or later is never green.
 - **History ends at artifact retention.** An old run whose artifact has expired is named as an issue
-  and reads red with the reason `no-plan`, never green. A `main` push that changes only
+  and reads red, never green: with the reason `no-plan` for a first-attempt job that was not
+  cancelled. A `main` push that changes only
   `performance-observations/**` starts no run and is not counted.
 
 ### Red runs with nothing to attribute
 
-A red run that names no key is listed under its carrier with one reason:
+A red run that names no key is listed under its carrier with one reason, chosen in this order,
+the first that applies: `no-job-read`, `rerun`, `cancelled`, `no-plan`, `plan-plans-nothing`,
+`job-not-success`. So a rerun whose artifact has expired reads `rerun`, and a cancelled job with
+no plan reads `cancelled`.
 
 | Reason               | The run                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------- |
@@ -200,7 +205,8 @@ failures that need a cause are:
 
 A scenario that did not run is never counted by itself: when a scenario fails or throws, the ones
 after it do not run, and the failed one answers for them. Each counts as a **failure without a
-cause** while the causes file has no entry for its key. A carrier may become required when its
+cause** while the causes file has no entry for its key. The count is of distinct keys per carrier:
+a key that failed in several runs counts once, and one cause entry clears it in every run. A carrier may become required when its
 streak reaches ten with no rerun and that count is 0; making it required stays the maintainer's
 decision.
 
@@ -218,6 +224,7 @@ ws: streak 7/10 of 30 runs read
       ws/two-agent/ordered-burst
   red runs with nothing to attribute: none
   failures without a cause: 1
+    ws/two-agent/fenced-catch-up
 ...
 ```
 
@@ -227,10 +234,14 @@ ws: streak 7/10 of 30 runs read
   the window), then the newest red push run with its attempt, job conclusion, whether a plan was
   read, its reason when it names no key, and its failed and not-run keys (ten each at most, then
   `and <k> more`); the carrier's red runs with nothing to attribute, with their reasons; and
-  `failures without a cause`.
+  `failures without a cause` with its count, followed by the keys themselves (ten at most, then
+  `and <k> more`), spelled exactly as a cause entry's `key` must be, `carrier/run/<run id>` keys
+  included.
 - **Keys failed or not run in main-push runs**: every key, sorted, with the push runs that failed
-  it, the push runs that did not run it, and its cause: `none` with no entry, `open` while
-  `fixedByPullRequest` is null, `#<n>` once fixed.
+  it, the push runs that did not run it, and its cause: `open` while `fixedByPullRequest` is null,
+  `#<n>` once fixed, and, with no entry, `none` for a key that failed and `-` for a key that only
+  did not run (it never needs a cause). A family key that answers for a cut-off or never-started
+  family is in no row of this table; it is listed under its carrier's failures without a cause.
 - **Pull-request and dispatched runs**: run id, event, carrier, green or red.
 - **Jobs left out**: running, skipped, or a cancelled pull-request job, with the job's conclusion.
 - **Issues met while reading** (ten at most, then `and <k> more`): files refused or undecodable,
@@ -243,7 +254,8 @@ Each section that is empty prints one line saying so.
 
 When a failure's root cause is known, add an entry to
 `packages/shared-test/rallar-bb-test/conformance/alm/ledger/alm-lane-flake-causes.json`. The file is
-a JSON array; each entry has a `key` exactly as the ledger prints it, the `cause` in a sentence or
+a JSON array; each entry has a `key` exactly as the ledger prints it under `failures without a
+cause`, the `cause` in a sentence or
 two, and `fixedByPullRequest`: the pull request that fixed it, or `null` while it is open. A key
 appears at most once, and must have one of three forms, with a known carrier and family:
 

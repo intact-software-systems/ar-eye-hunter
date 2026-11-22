@@ -1,6 +1,5 @@
 import type {
     AlmLaneCarrierStreak,
-    AlmLaneFlakeCause,
     AlmLaneKeyFailures,
     AlmLaneLedger,
     AlmLaneLeftOutRun,
@@ -64,7 +63,8 @@ function toCarrierLines(streak: AlmLaneCarrierStreak): readonly string[] {
         ...(unattributed.length === 0
             ? ['  red runs with nothing to attribute: none']
             : ['  red runs with nothing to attribute:', ...toCappedLines(unattributed, '    ')]),
-        `  failures without a cause: ${streak.uncaused.length}`
+        `  failures without a cause: ${streak.uncaused.length}`,
+        ...toCappedLines(streak.uncaused, '    ')
     ];
 }
 
@@ -105,17 +105,20 @@ function toKeyLines(keys: readonly AlmLaneKeyFailures[]): readonly string[] {
             failures.key,
             toRunIdsText(failures.failedRunIds),
             toRunIdsText(failures.notRunRunIds),
-            toCauseText(failures.cause)
+            toCauseText(failures)
         ])
     ]);
 }
 
-/** `none` without an entry, `open` while unfixed, and the fixing pull request's number once fixed. */
-function toCauseText(cause: AlmLaneFlakeCause | null): string {
-    if (cause === null) {
-        return 'none';
+/**
+ * `open` while unfixed and the fixing pull request's number once fixed; for a key with no entry, `none` when it failed
+ * (it needs a cause) and `-` when it only did not run (it never needs one).
+ */
+function toCauseText(failures: AlmLaneKeyFailures): string {
+    if (failures.cause === null) {
+        return failures.failedRunIds.length > 0 ? 'none' : '-';
     }
-    return cause.fixedByPullRequest === null ? 'open' : `#${cause.fixedByPullRequest}`;
+    return failures.cause.fixedByPullRequest === null ? 'open' : `#${failures.cause.fixedByPullRequest}`;
 }
 
 function toSideRunLines(sideRuns: readonly AlmLaneSideRun[]): readonly string[] {

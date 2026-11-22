@@ -96,6 +96,7 @@ describe('toAlmLaneLedgerText', () => {
             '      ws/three-agent/c',
             '  red runs with nothing to attribute: none',
             '  failures without a cause: 1',
+            '    ws/three-agent',
             'rtc: streak 0/10 of 1 run read',
             '  last red: run 5 at 5555555, attempt 2, job success, no plan read, nothing to attribute: rerun',
             '    failed: none',
@@ -103,13 +104,14 @@ describe('toAlmLaneLedgerText', () => {
             '  red runs with nothing to attribute:',
             '    run 5 at 5555555: rerun',
             '  failures without a cause: 1',
+            '    rtc/run/5',
             'rtc-with-ws-fallback: streak 0/10 of 0 runs read',
             '  red runs with nothing to attribute: none',
             '  failures without a cause: 0',
             '',
             'Keys failed or not run in main-push runs:',
             '  key               failed in  not run in  cause',
-            '  ws/three-agent/c  -          2           none',
+            '  ws/three-agent/c  -          2           -',
             '  ws/two-agent/a    2, 1       -           #851',
             '  ws/two-agent/b    1          -           open',
             '',
@@ -181,7 +183,7 @@ describe('toAlmLaneLedgerText', () => {
 
         const lines = toAlmLaneLedgerText({ ledger: red, window, issues: [] }).split('\n');
 
-        expect(lines.slice(3, 20)).toEqual([
+        expect(lines.slice(3, 31)).toEqual([
             'ws: streak 0/10 of 1 run read',
             '  last red: run 3 at 3333333, attempt 1, job failure, plan read',
             '    failed:',
@@ -189,7 +191,9 @@ describe('toAlmLaneLedgerText', () => {
             '      and 2 more',
             '    not run: none',
             '  red runs with nothing to attribute: none',
-            '  failures without a cause: 12'
+            '  failures without a cause: 12',
+            ...failed.slice(0, 10).map((key) => `    ${key}`),
+            '    and 2 more'
         ]);
     });
 
@@ -204,5 +208,27 @@ describe('toAlmLaneLedgerText', () => {
             '  and 3 more',
             ''
         ]);
+    });
+
+    it('shows the cause state of a key that was only not run when it has an entry', () => {
+        const cause = { key: 'ws/three-agent/c', cause: 'Recorded anyway.', fixedByPullRequest: null };
+        const withEntry: AlmLaneLedger = {
+            ...ledger,
+            keys: [{ key: 'ws/three-agent/c', failedRunIds: [], notRunRunIds: [2], cause }]
+        };
+
+        const lines = toAlmLaneLedgerText({ ledger: withEntry, window, issues: [] }).split('\n');
+
+        expect(lines).toContain('  ws/three-agent/c  -          2           open');
+    });
+
+    it('prints a streak that equals the runs read', () => {
+        const bounded: AlmLaneLedger = {
+            ...ledger,
+            carriers: [{ carrier: 'ws', streak: 5, runsRead: 5, lastRed: null, unattributed: [], uncaused: [] }]
+        };
+
+        expect(toAlmLaneLedgerText({ ledger: bounded, window, issues: [] }).split('\n')[3])
+            .toBe('ws: streak 5/10 of 5 runs read');
     });
 });
