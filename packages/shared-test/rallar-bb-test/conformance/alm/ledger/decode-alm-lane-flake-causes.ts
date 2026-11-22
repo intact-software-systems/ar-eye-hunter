@@ -46,3 +46,13 @@ function validatePullRequest(field: AlmLaneFileField): readonly string[] {
         (typeof field.value === 'number' && Number.isInteger(field.value) && field.value > 0);
     return accepted ? [] : [toIssue(field, 'a positive integer or null')];
 }
+
+/** The text of `alm-lane-flake-causes.json`; text that is not JSON is an issue, as a malformed entry is. */
+export function decodeAlmLaneFlakeCausesText(text: string): Either<readonly string[], readonly AlmLaneFlakeCause[]> {
+    try {
+        return decodeAlmLaneFlakeCauses(JSON.parse(text));
+    }
+    catch {
+        return Either.ofLeft(['The flake causes file is not JSON.']);
+    }
+}

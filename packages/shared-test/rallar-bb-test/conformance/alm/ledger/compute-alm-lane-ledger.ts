@@ -151,13 +151,14 @@ function computePlanMisses(
     plan: AlmLanePlanRecord,
     results: readonly AlmLaneFamilyResult[]
 ): AlmLaneRunMisses {
-    const toFirstResult = (family: AlmConformanceLaneFamily) =>
+    const resolveFirstResult = (family: AlmConformanceLaneFamily) =>
         results.find((result) => result.carrier === carrier && result.family === family);
     const familyMisses = plan.families.map((planned) =>
-        computeFamilyMisses(carrier, planned, toFirstResult(planned.family))
+        computeFamilyMisses(carrier, planned, resolveFirstResult(planned.family))
     );
     const refused = results.filter((result) =>
-        toFirstResult(result.family) !== result || !plan.families.some((planned) => planned.family === result.family)
+        resolveFirstResult(result.family) !== result ||
+        !plan.families.some((planned) => planned.family === result.family)
     );
     const failed = [
         ...familyMisses.flatMap((misses) => misses.failed),

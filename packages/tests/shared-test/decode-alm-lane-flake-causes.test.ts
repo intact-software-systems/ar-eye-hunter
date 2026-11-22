@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import committedCauses from '@shared-test/rallar-bb-test/conformance/alm/ledger/alm-lane-flake-causes.json' with { type: 'json' };
-import { decodeAlmLaneFlakeCauses } from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-flake-causes.ts';
+import {
+    decodeAlmLaneFlakeCauses,
+    decodeAlmLaneFlakeCausesText
+} from '@shared-test/rallar-bb-test/conformance/alm/ledger/decode-alm-lane-flake-causes.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 const validEntry = {
@@ -52,5 +55,21 @@ describe('decodeAlmLaneFlakeCauses', () => {
 
     it('returns every issue at once', () => {
         expect(toIssues(decodeAlmLaneFlakeCauses([{ scenario: '', cause: '', fixedByPullRequest: -1 }]))).toHaveLength(3);
+    });
+});
+
+describe('decodeAlmLaneFlakeCausesText', () => {
+    it('decodes the text of a causes file', () => {
+        expect(decodeAlmLaneFlakeCausesText(JSON.stringify([validEntry])).right).toEqual([validEntry]);
+    });
+
+    it('refuses text that is not JSON as an issue', () => {
+        expect(toIssues(decodeAlmLaneFlakeCausesText('[{"scenario":'))).toEqual(['The flake causes file is not JSON.']);
+    });
+
+    it('returns the issues of JSON that does not decode', () => {
+        expect(toIssues(decodeAlmLaneFlakeCausesText('{}'))).toEqual([
+            'The flake causes must be an array; received an object.'
+        ]);
     });
 });
