@@ -482,8 +482,20 @@ the full scope ran again (run 45055329614):
 - `ws`: 56 of 60 passed in 31.6 minutes. Four-role `subscription-ordered-entry`, `-omission` and
   `-reconnect` failed, and so did two-agent `buffered-track-drains`.
 - `ws` took more than 30 minutes, so it is split by family too, with the same two family lists as
-  `rtc` (the maintainer's ruling "Yes, split ws", 2026-11-22). The `ws` split has not run on GitHub
-  yet.
+  `rtc` (the maintainer's ruling "Yes, split ws", 2026-11-22).
+
+At the head `39d319ef3`, after all three branches were rebased onto `main`, the Release Gate passed
+(run 45068154163: 32 jobs passed, 2 skipped) and the full scope ran as five jobs (run 45068154152):
+
+- `ws`, two-agent, addressed and same-context: 37 of 37 scenarios passed in 16.2 minutes.
+- `ws`, three-agent, same-principal and four-role: 23 of 23 passed in 9.2 minutes.
+- `rtc`, two-agent, addressed and same-context: 37 of 38 passed in 19.7 minutes. Two-agent
+  `churn-bounded-tracks` failed, as it has in every full-scope run so far.
+- `rtc`, three-agent, same-principal and four-role: 31 of 31 passed in 14.5 minutes.
+- `rtc-with-ws-fallback`, one job: 47 of 50 passed in 27.1 minutes. Four-role
+  `subscription-ordered-entry`, `-omission` and `-reconnect` failed.
+- The ledger reads the two `ws` jobs as one green `ws` run and the two `rtc` jobs as one red `rtc`
+  run, with no reading issue.
 
 ## What merging slice 1 does to open pull requests
 
