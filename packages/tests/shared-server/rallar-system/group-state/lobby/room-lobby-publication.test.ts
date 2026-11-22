@@ -88,6 +88,27 @@ it('notifies only the two affected holders and schedules a durable wake for an o
         ]);
 });
 
+it('arms one durable registration cutoff and gives a rescheduled cutoff a distinct identity', () => {
+    const initial = { expiresAtEpochMs: null, activationId: 'lobby', revision: 1, seats: [], waiters: [], capacityClaims: null,
+        registration: { revision: 0, atEpochMs: null, closed: false } };
+    const first = { ...initial, revision: 2, registration: { revision: 1, atEpochMs: 5000, closed: false } };
+    const revised = { ...first, revision: 3, registration: { ...first.registration, revision: 2, atEpochMs: 6000 } };
+    const keys = [];
+    for (const [before, after] of [[initial, first], [first, revised]] as const) {
+        const messages = computeRoomLobbyPublication({ ...facts, before, after }).outbox
+            .map(row => decodePersistedALMessage(row.entry.resource));
+        expect(messages).toHaveLength(1);
+        const message = messages[0]!;
+        expect(JSON.parse(message.payload.resource)).toEqual({
+            kind: 'registration', generation: after.registration.revision, dueAtEpochMs: after.registration.atEpochMs,
+            activationId: 'lobby', groupCreatedAtEpochMs: 1000, roomRef
+        });
+        keys.push(message.id.msgId);
+    }
+    expect(new Set(keys).size).toBe(2);
+    expect(computeRoomLobbyPublication({ ...facts, before: revised, after: { ...revised, revision: 4 } }).outbox).toEqual([]);
+});
+
 it('persists independent wakes for an expiring access grant and scheduled no-show capacity', () => {
     const before = { expiresAtEpochMs: null, activationId: 'lobby', revision: 1, seats: [], waiters: [], capacityClaims: null };
     const after = { ...before, revision: 3,
