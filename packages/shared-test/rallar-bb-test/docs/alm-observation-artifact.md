@@ -21,7 +21,8 @@ minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a faile
 whose job takes more than 30 minutes is split: `rtc` took 36.5 minutes as one job (run 45009025510)
 and `ws` 31.6 minutes (run 45055329614). `rtc-with-ws-fallback` runs as one leg. A leg passes its
 family list to both actions as the `families` input, which sets `RALLAR_BLACK_BOX_ALM_FAMILIES`; a
-leg with an empty list runs every family. The lane job is named `ALM conformance observation (<carrier>)`, or
+leg with an empty list runs every family. The lane job is named
+`ALM conformance observation (<carrier>)`, or
 `ALM conformance observation (<carrier>, <families>)` for a split leg. The job uploads the results
 through a second action, `.github/actions/alm-conformance-lane-results/action.yml`, as its next step
 with `always()`: a cancelled composite step skips its own remaining steps, so the uploads are a step
@@ -155,10 +156,10 @@ on, the lane job's name and the result artifact's prefix, are pinned against the
 
 - A lane job is `ALM conformance observation (<carrier>)`, or
   `ALM conformance observation (<carrier>, <families>)` for one job of a carrier split by family
-  (`rtc` runs as two); other jobs, such as `Detect ALM lane changes`, are not read. The carrier
-  comes from the job's name. A completed `main` push or dispatched run in which no job of a
-  carrier could be read is red for that carrier (reason `no-job-read`) and named as an issue. A run
-  that was skipped as a whole is not asked for its jobs or artifacts.
+  (`ws` and `rtc` each run as two); other jobs, such as `Detect ALM lane changes`, are not read.
+  The carrier comes from the job's name. A completed `main` push or dispatched run in which no job
+  of a carrier could be read is red for that carrier (reason `no-job-read`) and named as an issue. A
+  run that was skipped as a whole is not asked for its jobs or artifacts.
 - **A carrier's jobs are read as one run.** Every job of a carrier in a workflow run makes one run
   of that carrier, read from every artifact whose name starts with
   `alm-lane-result-<carrier>-full-`, each name once (see the rerun rule below): the plan the jobs
