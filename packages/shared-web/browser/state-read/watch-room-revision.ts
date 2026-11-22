@@ -1,3 +1,4 @@
+import type { RallarStateEventMessage } from '../messages/rallar-message-contracts.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
@@ -5,7 +6,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { RallarRoomEventOptions } from '../rooms/rallar-room-contracts.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { parseGroupStateDeltaEnvelope } from '../state-cache/group-state-delta-application.ts';
 import { readStateGroupSnapshot } from './point-read.ts';
@@ -43,6 +44,23 @@ export async function readObservedRoom(roomRef: GroupRef, requireSession: Create
     return result.snapshot.group;
 }
 
+function validateReadRevision<T extends { readonly revision: number }>(
+    next: T | null, previous: T | null, announcedRevision: number, regresses: WatchRoomRevisionInput<T>['regresses']
+): void {
+    if ((next?.revision ?? 0) < announcedRevision) throw new Error('Room read predates the server notification.');
+    if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
+        throw new Error('Room read regressed.');
+    }
+}
+
+function readServerDelta(message: RallarStateEventMessage<GroupEvent>, room: GroupRef) {
+    if (message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
+        message.typeId !== AppTopics.groupStateEvent) return;
+    const target = readALTargetGroupRef(message.raw);
+    if (!target || !isSameGroupRef(target, room)) return;
+    return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
+}
+
 /** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
 export function watchRoomRevision<T extends { readonly revision: number; }>(input: WatchRoomRevisionInput<T>): () => void {
     input.signal?.throwIfAborted();
@@ -76,11 +94,13 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
         queued = false;
         publish('stale');
     }
+    function isInactive(): boolean {
+        return signal.aborted || pageSuspended || socketLost || document.visibilityState === 'hidden' ||
+            navigator.onLine === false;
+    }
     async function refresh(): Promise<void> {
         clearTimeout(retry);
-        const inactive = pageSuspended || socketLost || document.visibilityState === 'hidden' ||
-            navigator.onLine === false;
-        if (signal.aborted || inactive) {
+        if (isInactive()) {
             suspend();
             return;
         }
@@ -94,25 +114,15 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
         try {
             fence.assertCurrent();
             next = input.project(await readObservedRoom(room, requireSession, AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])));
-            const previous = observed;
-            if ((next?.revision ?? 0) < announcedRevision) {
-                throw new Error('Room read predates the server notification.');
-            }
-            if (
-                previous && (!next || next.revision < previous.revision ||
-                    input.regresses(previous, next))
-            ) {
-                throw new Error('Room read regressed.');
-            }
+            validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
         catch {
-            if (request === attempt) {
-                request = undefined;
-                publish('stale');
-                // One bounded retry burst per external wakeup, including when the server stays unavailable.
-                if (!signal.aborted && retries < 3) {
-                    retry = setTimeout(() => void refresh(), 1000 * 2 ** retries++);
-                }
+            if (request !== attempt) return;
+            request = undefined;
+            publish('stale');
+            // One bounded retry burst per external wakeup, including when the server stays unavailable.
+            if (!signal.aborted && retries < 3) {
+                retry = setTimeout(() => void refresh(), 1000 * 2 ** retries++);
             }
             return;
         }
@@ -148,28 +158,21 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
-        if (message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
-            message.typeId !== AppTopics.groupStateEvent) return;
-        const target = readALTargetGroupRef(message.raw);
-        if (!target || !isSameGroupRef(target, room)) return;
-        const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
+        const delta = readServerDelta(message, room);
         if (!delta) return;
         const announced = input.project(delta.group);
-        const revision = announced?.revision ?? 0;
-        if (revision > Math.max(announcedRevision, observed?.revision ?? 0)) {
-            const action = observed && announced ? input.onDelta?.(observed, announced) : 'refresh';
-            if (action === 'ignore') return;
-            announcedRevision = revision;
-            if (action === 'publish' && observed && announced && status === 'current' && !request &&
-                !pageSuspended && !socketLost && document.visibilityState !== 'hidden' && navigator.onLine !== false &&
-                !input.regresses(observed, announced)) {
-                fence.assertCurrent();
-                publish('current', announced);
-                return;
-            }
-            publish('stale');
-            wake();
+        if (!announced || announced.revision <= Math.max(announcedRevision, observed?.revision ?? 0)) return;
+        const action = observed && input.onDelta?.(observed, announced);
+        if (action === 'ignore') return;
+        announcedRevision = announced.revision;
+        if (action === 'publish' && observed && status === 'current' && !request && !isInactive() &&
+            !input.regresses(observed, announced)) {
+            fence.assertCurrent();
+            publish('current', announced);
+            return;
         }
+        publish('stale');
+        wake();
     }, { roomRef: room, scope: room, eventTypes: input.eventTypes });
     const unsubscribeSocket = ws.onLifecycle((event) => {
         socketLost = ['close', 'disconnected', 'error'].includes(event.kind);
