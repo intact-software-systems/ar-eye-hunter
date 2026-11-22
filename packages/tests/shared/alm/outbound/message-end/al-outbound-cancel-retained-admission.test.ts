@@ -132,10 +132,10 @@ describe('a cancel or hand-over of a message whose admission was retained (D751)
         vi.spyOn(tab.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
         expect((await tab.runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
         const owner = openPageOwner(dbName, NAMESPACE);
-        const replay = vi.spyOn(owner.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        vi.spyOn(owner.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
         await owner.runtime.ready();
         await runOutboundWorkTask(owner.runtime);
-        expect(replay).toHaveBeenCalled();
+        expect(await owner.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
 
         tab.runtime.cancel(message.id.msgId, message.id.traceId);
         await tab.runtime.dispose();

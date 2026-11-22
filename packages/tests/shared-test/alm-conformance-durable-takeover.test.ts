@@ -106,8 +106,10 @@ describe('durable-takeover conformance scenario', () => {
             'messages.cancel',
             'assert'
         ]);
-        expect(findTakeover(carrier).sender.commands.filter((command) => command.kind === 'messages.send').map((command) => command.payload))
-            .toEqual([{ marker: 'durable-takeover', carrier }, { marker: 'durable-takeover-cancelled', carrier }]);
+        const payloads = findTakeover(carrier).sender.commands.flatMap((command) =>
+            command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command.payload] : []
+        );
+        expect(payloads).toEqual([{ marker: 'durable-takeover', carrier }, { marker: 'durable-takeover-cancelled', carrier }]);
     });
 
     // The owner's page closes as its recipe ends; over the fallback carrier the row must be in the WS store by then.
