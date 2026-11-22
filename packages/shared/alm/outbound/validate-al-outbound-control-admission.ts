@@ -10,10 +10,8 @@ import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audienc
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import {
-    isALOutboundExpectedRepairPeer,
     isALOutboundRecipientControlSender,
-    isALOutboundRepairAuthorityControl,
-    isALOutboundUnreceiptedRepairRecipient
+    isALOutboundRepairRequester
 } from './control/is-al-outbound-expected-repair-peer.ts';
 import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
@@ -101,11 +99,7 @@ function validateRepairRequest(
     if (isALOutboundRelayedGapNack(control)) {
         issues.push(...validateALOutboundRelayedNack(read, control.payload));
     }
-    else if (
-        !isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.payload.fromPeerId) &&
-        !(isALOutboundRepairAuthorityControl(control) &&
-            isALOutboundUnreceiptedRepairRecipient(read, control.payload.fromPeerId))
-    ) {
+    else if (!isTrustedRelayRejection(read) && !isALOutboundRepairRequester(read, control)) {
         issues.push(toALOutboundRefusalIssue('AL repair sender has no retained outbound obligation'));
     }
     if (!hasValidOrderingHints(sent, control.payload)) {

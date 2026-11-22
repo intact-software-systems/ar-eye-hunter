@@ -60,7 +60,10 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
-import { toALOutboundUnreceiptedRepairAudience } from './is-al-outbound-expected-repair-peer.ts';
+import {
+    isALOutboundUnreceiptedSend,
+    toALOutboundUnreceiptedRepairAudience
+} from './is-al-outbound-expected-repair-peer.ts';
 import {
     readALOutboundRecipientProof,
     toALOutboundRefusedControlAdmission,
@@ -379,7 +382,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         const sent = await this.reads.readStoredMessage(session, msgId);
         return {
             sent,
-            unreceiptedRepairAudience: sent?.policy.ackTracking === null && pending === undefined
+            unreceiptedRepairAudience: isALOutboundUnreceiptedSend({ sent, pending })
                 ? toALOutboundUnreceiptedRepairAudience((await this.reads.readSentMessage(session, msgId))?.msg)
                 : undefined
         };

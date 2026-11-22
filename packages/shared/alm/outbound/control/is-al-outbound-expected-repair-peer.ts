@@ -26,10 +26,28 @@ export function isALOutboundRecipientControlSender(read: ALControlAdmissionRead,
         read.sent?.policy.ackTracking?.nextHopPeerIds.includes(peerId) === true;
 }
 
+/**
+ * A repair request, or a NACK other than one a relay re-sends, comes from a peer a repair may come from, or, when the
+ * repair authority judged it, from one a send that tracks no receipt may be repaired for (6c).
+ */
+export function isALOutboundRepairRequester(
+    read: ALControlAdmissionRead,
+    control: ALPeerRepairControlMessage
+): boolean {
+    const requesterPeerId = control.payload.fromPeerId;
+    return isALOutboundExpectedRepairPeer(read, requesterPeerId) ||
+        (isALOutboundRepairAuthorityControl(control) && isALOutboundUnreceiptedRepairRecipient(read, requesterPeerId));
+}
+
 /** The controls the repair authority judges before their admission: a gap or not-yet-in-sync NACK, or a repair request. */
 export function isALOutboundRepairAuthorityControl(control: ALPeerRepairControlMessage): boolean {
     return control.type === 'repair' ||
         (control.type === 'nack' && (control.payload.reason === 'gap' || control.payload.reason === 'not-yet-in-sync'));
+}
+
+/** A retained send that tracks no receipt and holds no receipt row, whose repair the frozen audience may ask for (6c). */
+export function isALOutboundUnreceiptedSend(read: Pick<ALControlAdmissionRead, 'sent' | 'pending'>): boolean {
+    return read.sent?.policy.ackTracking === null && read.pending === undefined;
 }
 
 /**
