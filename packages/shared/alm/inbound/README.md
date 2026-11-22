@@ -395,7 +395,10 @@ delivery is what the other carrier's receipt counts; the ACKs it relayed stay
 on the first carrier (R-S3b-21). One rule holds on both carriers: a copy whose sequence its track still holds buffered
 draws no answer on either, so no `delivered` confirms a message before its release. Answering one would complete the
 recipient's statement at its relay and its origin, which then refuse every renewal of the gap that holds the
-message back.
+message back. The buffered slot records instead every carrier that brought a copy (`copyCarriers`, the slot's own
+carrier first, each with the peer its copy acknowledges to): a copy on a carrier the slot does not record yet adds it,
+and the release sends `delivered` on each recorded carrier. A sender that handed the message over (D56) holds its
+receipt on the carrier it moved to, so that receipt is confirmed once the message is delivered.
 
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by
@@ -630,6 +633,13 @@ when the lane claims it (a hint names its number exactly when it names a missing
 `AL_ADMISSION_SCHEMA_ID` is not bumped. A page still running the previous build has its gap NACKs and repair
 requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
 symmetrically.
+
+**The copy-carriers window.** The buffered slot's `copyCarriers` is required. A buffered-slot row the previous build
+wrote carries none and fails strict decoding until it expires, as the slot's `carrier` did when it was added: the
+message's own TTL, or `bufferedMessageTtlMs` (the repository TTL of 60 minutes by default) when it has none. Until
+then every admission on that ordered track, which reads every buffered slot of the track, stalls on
+`ALAdmissionCorruptionError`. Nothing is migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped, since a different schema
+identity refuses a returning browser's durable store rather than resetting it.
 
 **The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 (D147) made older browser schemas incompatible, which current opening refuses without resetting them.

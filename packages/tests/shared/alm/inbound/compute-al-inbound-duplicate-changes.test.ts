@@ -255,6 +255,11 @@ function createRelayedUnicast(msgId: string, toPeerId: string): ALMessage {
     return { ...message, id: { ...message.id, msgId } };
 }
 
+/** The carriers each buffered-slot write of the bundle records. */
+function toBufferedCopyCarriers(bundle: ALInboundCommitBundle): readonly (readonly unknown[])[] {
+    return bundle.mutations.flatMap((mutation) => mutation.kind === 'set-buffered' ? [mutation.snapshot.copyCarriers] : []);
+}
+
 function toRepeatedAcks(bundle: ALInboundCommitBundle): readonly RepeatedAck[] {
     return bundle.durableEffects.flatMap((effect): RepeatedAck[] => {
         if (effect.payload.kind !== 'send-control') {
@@ -362,6 +367,48 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
 
         const copy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
         expect(copy.durableEffects).toEqual([]);
+    });
+
+    it('records on the buffered slot every carrier that brought a copy, and the release answers delivered on each', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-on-both', 2);
+        const buffered = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+        expect(toBufferedCopyCarriers(buffered)).toEqual([[{ carrier: 'rtc', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }]]);
+        expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+        const wsCopy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(wsCopy.durableEffects).toEqual([]);
+        expect(toBufferedCopyCarriers(wsCopy)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID },
+            { carrier: 'ws', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(wsCopy)).toBe('committed');
+        const predecessor = await computeArrival(admissionStore, createFrozenReceiverMessage('buffered-on-both-predecessor', 1), {
+            peer: FROZEN_LEAF_PEER,
+            carrier: 'rtc'
+        });
+        expect(await admissionStore.commitBundle(predecessor)).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release)).toEqual(['rtc', 'ws'].map((carrier) => ({
+            rowCarrier: carrier,
+            carrier,
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: 'buffered-on-both',
+            status: 'delivered'
+        })));
+    });
+
+    it('records nothing more for a same-carrier copy of a message it holds buffered: its carrier is already on the slot', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-same-carrier', 2);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' })))
+            .toBe('committed');
+
+        const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+
+        expect(toBufferedCopyCarriers(retried)).toEqual([]);
     });
 
     it.each(['rtc', 'ws'] as const)(

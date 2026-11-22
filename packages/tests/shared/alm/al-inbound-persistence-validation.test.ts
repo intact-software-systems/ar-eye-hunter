@@ -128,7 +128,8 @@ function createBufferedSnapshot(): ALStoredInboundBufferedSnapshot {
         seq: 2,
         message: toMessageReference(message),
         plan: planMessage(message),
-        carrier: 'ws' as const
+        carrier: 'ws' as const,
+        copyCarriers: [{ carrier: 'ws' as const, ackToPeerId: message.id.senderId }]
     };
 }
 

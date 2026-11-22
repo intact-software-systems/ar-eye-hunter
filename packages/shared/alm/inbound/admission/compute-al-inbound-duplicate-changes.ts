@@ -50,8 +50,8 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21). A peer
  * that answered `not-subscribed` ends its hop with an ACK that confirms nobody, and answers with that NACK again.
  * No own ACK goes out again while the track holds the copy's sequence buffered behind a gap, on either carrier: the
- * peer delivered nothing yet, its `delivered` goes out on the release, and an early one would complete its statement
- * upstream, which then refuses every renewal of the gap.
+ * peer delivered nothing yet, and an early one would complete its statement upstream, which then refuses every renewal
+ * of the gap. The copy adds its carrier to the slot instead, and the release sends `delivered` on each carrier there.
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -62,15 +62,16 @@ export function computeALInboundDuplicateChanges(
     if (plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined) {
         return NO_DUPLICATE_CHANGES;
     }
+    if (isHeldBuffered(read) && (!isAddressedToSelf(read.msg, input.selfPeerId) || pendingAck === undefined)) {
+        return { mutations: toCopyCarrierMutations(read, toPeerId), effects: [] };
+    }
     if (!isAddressedToSelf(read.msg, input.selfPeerId)) {
-        return isCrossCarrierCopy(read) && !isHeldBuffered(read)
+        return isCrossCarrierCopy(read)
             ? { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] }
             : NO_DUPLICATE_CHANGES;
     }
     if (pendingAck === undefined) {
-        return isHeldBuffered(read)
-            ? NO_DUPLICATE_CHANGES
-            : { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
+        return { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
     }
     if (read.fromPeerId === pendingAck.toPeerId) {
         return { mutations: [], effects: toParentAnswer(read, pendingAck, input.selfPeerId) };
@@ -127,6 +128,34 @@ function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
 function isHeldBuffered(read: ALInboundMessageReadDto): boolean {
     const seq = read.msg.ordering?.seq;
     return seq !== undefined && read.orderingSnapshot?.bufferedSeqs.includes(seq) === true;
+}
+
+/**
+ * A copy of a held message on a carrier its slot does not record yet adds that carrier, so the release answers it
+ * there too: the sender handed the message over and holds its receipt on that carrier now.
+ */
+function toCopyCarrierMutations(
+    read: ALInboundMessageReadDto,
+    toPeerId: string
+): readonly ALInboundAdmissionMutation[] {
+    const carrier = toALDeliveryCarrier(read.source);
+    const slot = read.bufferedSnapshots.find((snapshot) => snapshot.seq === read.msg.ordering?.seq);
+    if (slot === undefined || slot.copyCarriers.some((copy) => copy.carrier === carrier)) {
+        return [];
+    }
+    const { ownerRetainUntilMs, ...snapshot } = slot;
+    return [{
+        kind: 'set-buffered',
+        snapshot: { ...snapshot, copyCarriers: [...slot.copyCarriers, { carrier, ackToPeerId: toPeerId }] },
+        expireAtTimestamp: Math.min(
+            resolveExpireAtTimestampWithFallback(
+                resolveALMessageExpireAtMs(slot.msg, slot.plan.effective),
+                read.retention.bufferedMessageTtlMs,
+                read.nowMs
+            ),
+            ownerRetainUntilMs
+        )
+    }];
 }
 
 /** A retried hop copy names this peer as its one next hop (D25). */

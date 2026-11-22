@@ -323,6 +323,7 @@ function toDeliveryOwnerMutation(
             msg: snapshot.msg,
             plan: snapshot.plan,
             carrier: snapshot.carrier,
+            copyCarriers: snapshot.copyCarriers,
             delivery: { effectId: effect.effectId }
         },
         expireAtTimestamp

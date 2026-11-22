@@ -260,10 +260,39 @@ export function computeALInboundBufferedRelease(
         ],
         effects: [
             ...acknowledgements.immediateEffects,
-            ...acknowledgements.completedEffects
+            ...acknowledgements.completedEffects,
+            ...(deliverable ? toOtherCopyCarrierAcks(read, supersedenceAcceptance) : [])
         ]
     });
     return { ...bundle, localDelivery };
+}
+
+/**
+ * The release's `delivered` on every other carrier that brought a copy while the message waited: a sender that handed
+ * the message over holds its receipt there, and that copy drew no answer while the message was held.
+ */
+function toOtherCopyCarrierAcks(
+    read: ALInboundBufferedReleaseReadDto,
+    supersedenceAcceptance: ALSupersedenceAcceptance | undefined
+): readonly ALInboundEffectIntent[] {
+    const { msg, plan } = read.snapshot;
+    if (supersedenceAcceptance?.observation.status === 'superseded' || plan.ack.algo === 'none') {
+        return [];
+    }
+    return read.snapshot.copyCarriers.flatMap((copy) => {
+        if (copy.carrier === read.snapshot.carrier || copy.ackToPeerId === null) {
+            return [];
+        }
+        const ack = toALInboundAckEffect({
+            toPeerId: copy.ackToPeerId,
+            ackedMsgId: msg.id.msgId,
+            originPeerId: msg.id.senderId,
+            expireAtTimestamp: resolveALMessageExpireAtMs(msg, plan.effective),
+            carrier: copy.carrier,
+            status: 'delivered'
+        });
+        return [{ ...ack, effectId: `${ack.effectId}:${copy.carrier}` }];
+    });
 }
 
 function computeIncomingAcknowledgements(

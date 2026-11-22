@@ -88,6 +88,8 @@ interface ReceiptLoopExpectation {
     readonly expectedRecipientPeerIds: readonly ('b' | 'c')[];
     readonly initialConfirmedPeerIds: readonly ('b' | 'c')[];
     readonly delivered: Readonly<Record<'b' | 'c', readonly string[]>>;
+    /** The sequence the message takes on the origin's ordered track; absent, the message is unordered. */
+    readonly orderedSeq?: number;
 }
 
 const RECEIVER_EXPECTATION: ReceiptLoopExpectation = {
@@ -102,6 +104,15 @@ const LEADER_EXPECTATION: ReceiptLoopExpectation = {
     expectedRecipientPeerIds: ['c'],
     initialConfirmedPeerIds: [],
     delivered: { b: [], c: ['{"start":true}'] }
+};
+
+const ORDERED_TRACK_KEY = 'director-track';
+
+/** The leader receipt of a message at seq 3 on the origin's ordered track, whose seq 2 the receiver has not seen. */
+const LEADER_BUFFERED_EXPECTATION: ReceiptLoopExpectation = {
+    ...LEADER_EXPECTATION,
+    delivered: { b: [], c: ['{"beforeStart":1}'] },
+    orderedSeq: 3
 };
 
 interface ReceiptLoopServer {
@@ -284,6 +295,46 @@ describe('cross-carrier receipts', () => {
             );
         }
     );
+
+    // A copy of a message the receiver holds buffered draws no answer on any carrier; its release answers every carrier
+    // that brought a copy, so the WS receipt the hand-over left live is confirmed once the message is delivered.
+    it('completes the WS receipt of a handed-over message the receiver held buffered, with its release (leader)', async () => {
+        const loop = await createReceiptLoop(LEADER_BUFFERED_EXPECTATION);
+        const c = loop.receivers.c;
+        const completed = loop.origin.handle.wait({ until: ['acknowledged'] });
+        const entry = await sendOrderedPredecessorToC(loop, 1);
+        expect((await c.rtc.admitIncomingMessage(entry, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        await loop.clock.advanceBy(100);
+        const missing = await sendOrderedPredecessorToC(loop, 2);
+        loop.origin.dispatch.send(loop.origin.delivery);
+        await loop.clock.advanceBy(100);
+        const bufferedCopy = loop.origin.rtc.channels.c!.sent.find((frame) => frame.id.msgId === loop.origin.handle.msgId)!;
+        expect((await c.rtc.admitIncomingMessage(bufferedCopy, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        await loop.clock.advanceBy(100);
+        expect(c.delivered).toEqual(LEADER_BUFFERED_EXPECTATION.delivered.c);
+
+        await exhaustRtcAndAdmitWsFallback(loop);
+        await deliverWsDuplicates(loop);
+        expect(readSubmittedAcks(c)).toEqual([]);
+
+        expect((await c.rtc.admitIncomingMessage(missing, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        await loop.clock.advanceBy(100);
+        expect(c.delivered).toEqual(['{"beforeStart":1}', '{"beforeStart":2}', '{"start":true}']);
+        const releaseAck = readSubmittedAck(c, 'c');
+        expect(readSubmittedAcks(c)).toHaveLength(1);
+        await returnAckToServer(loop, 'c', releaseAck);
+        await loop.clock.advanceBy(100);
+
+        expect(readServerReceipts(loop.server)).toEqual([
+            expect.objectContaining({ phase: 'admitted', confirmedRecipientPeerIds: [] }),
+            expect.objectContaining({ phase: 'complete', expectedRecipientPeerIds: ['c'], confirmedRecipientPeerIds: ['c'] })
+        ]);
+        await returnReceiptToOrigin(loop, 'complete');
+        expect(await completed).toMatchObject({
+            status: 'settled',
+            lifecycle: { state: 'acknowledged', evidence: { confirmedRecipientPeerIds: ['c'], unconfirmedRecipientPeerIds: [] } }
+        });
+    });
 
     it('times out naming c when both ACKs are submitted but only b reaches server ingress', async () => {
         const loop = await createReceiptLoop(RECEIVER_EXPECTATION);
@@ -608,7 +659,8 @@ function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessag
                 ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
                 reliability: 'at-least-once',
                 ttlMs: 30_000,
-                qos: { durability: { algo: 'volatile' } }
+                qos: { durability: { algo: 'volatile' } },
+                ...(expectation.orderedSeq === undefined ? {} : { orderingKey: ORDERED_TRACK_KEY, seq: expectation.orderedSeq })
             }
         }
     );
@@ -669,6 +721,27 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
         timeoutMs: 2_000,
         maxAttempts: 3
     });
+}
+
+/** The origin's seq on the ordered track, sent before the receipt loop's message and lost on the way to c. */
+async function sendOrderedPredecessorToC(loop: ReceiptLoop, seq: number): Promise<ALMessage> {
+    const sentBefore = loop.origin.rtc.channels.c!.sent.length;
+    await loop.origin.rtc.manager.enqueueLegIfAbsent(
+        newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.ar-eye-hunter.director', resourceId: `before-start-${seq}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { beforeStart: seq },
+            options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, orderingKey: ORDERED_TRACK_KEY, seq }
+        }),
+        'hold'
+    );
+    await loop.clock.advanceBy(100);
+    const predecessor = loop.origin.rtc.channels.c!.sent[sentBefore];
+    expect(predecessor?.ordering?.seq).toBe(seq);
+    return predecessor!;
 }
 
 async function exhaustRtcReceipt(loop: ReceiptLoop): Promise<void> {
@@ -747,6 +820,11 @@ async function deliverWsDuplicates(loop: ReceiptLoop): Promise<void> {
     await loop.clock.advanceBy(100);
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
+}
+
+/** Every ACK the receiver submitted to the server. */
+function readSubmittedAcks(receiver: ReceiptLoopReceiver): readonly ALMessage[] {
+    return receiver.socket.sent.map(decodePersistedALMessage).filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
 }
 
 function readSubmittedAck(receiver: ReceiptLoopReceiver, peerId: 'b' | 'c'): ALMessage {

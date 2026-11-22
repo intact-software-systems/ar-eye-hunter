@@ -194,7 +194,7 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
         const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
         const slot: ALInboundAdmissionMutation = {
             kind: 'set-buffered',
-            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc' },
+            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc', copyCarriers: [{ carrier: 'rtc', ackToPeerId: msg.id.senderId }] },
             expireAtTimestamp: 1_000
         };
 
