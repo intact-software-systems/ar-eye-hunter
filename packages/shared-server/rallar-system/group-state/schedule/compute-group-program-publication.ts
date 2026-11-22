@@ -8,7 +8,7 @@ import {
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 
 /** Program revisions reach durable members even when their only presence is in another room. */
-export function computeRoomProgramPublication(
+export function computeGroupProgramPublication(
     { command, read, facts, members }: GroupMutationWriteInput,
     group: Group
 ): ViewInvalidationPublication {
