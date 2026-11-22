@@ -157,13 +157,23 @@ Three were weighed with the maintainer, who picked the first.
 - **A hang ends as a failed step, not a cancelled job.** Both lane scripts run with Playwright's
   global timeout set below the job's time limit (14 minutes under a 20 minute limit for smoke, 55
   under 60 for the full scope), so the uploads run and the job concludes in failure.
-- **Time.** The full scope has never run on a GitHub runner. Family times recorded on a developer
-  machine add up to 20 to 30 minutes per carrier, and `rtc` is the longest. The first build sets the
-  job's limit to 60 minutes and measures. The rule after measuring: a carrier whose job took more
-  than 30 minutes is split across two runners by family. The split needs a lane parameter that
-  selects families (none exists; Playwright's `--shard` cannot split one spec file), decoded where
-  the other lane parameters are (`lane/decode-alm-lane-parameters.ts`). That is slice 3, built only
-  if the measurement asks for it.
+- **Time.** Measured by the second ready run (below): `rtc-with-ws-fallback` 18.0 minutes, `ws`
+  29.4, `rtc` 36.5. The rule: a carrier whose job took more than 30 minutes is split across two
+  runners by family. So `rtc` runs as two jobs, each with its own runner and database:
+  `two-agent,addressed,same-context` (16.6 minutes of family time in that run) and
+  `three-agent,same-principal,four-role` (18.5). The other two carriers stay one job each.
+  - The lane parameter `RALLAR_BLACK_BOX_ALM_FAMILIES` (a comma-separated list of family names;
+    empty runs every family) selects the families a run executes. It is decoded with the other lane
+    parameters in `lane/decode-alm-lane-parameters.ts`; a family test it does not select is skipped
+    with that reason, and a key `RALLAR_BLACK_BOX_ALM_ONLY` names must run in a selected family.
+  - The workflow's matrix lists its jobs as carrier and family list. A repository test fails unless
+    every carrier is there and each carrier's family lists name every family exactly once.
+  - A split job's name is `ALM conformance observation (<carrier>, <families>)`, and its two
+    artifacts end in `-<families>` after the commit, so two jobs of one carrier never collide.
+- **The per-family time limit.** A family test's own limit was 15 minutes, set from a developer
+  machine. On a GitHub runner the two-agent family over `rtc` took 14.1 minutes. The limit is 25
+  minutes, so a slow runner does not cut a healthy family off; the run's global timeout (55 minutes)
+  still ends a hang.
 
 ### 3. Every run records every scenario's outcome
 
@@ -190,7 +200,9 @@ Three were weighed with the maintainer, who picked the first.
   the catalog of the commit the ledger happens to run from. A family that is in the plan and has no
   result file was never started, and all its scenarios are `not-run`. How the plan file is written
   (a job step before Playwright, or the spec's first test) is the builder's, as long as there is one
-  planning function.
+  planning function. The plan names every family of the carrier, whichever families
+  `RALLAR_BLACK_BOX_ALM_FAMILIES` lets the run execute: a carrier's two jobs write the same plan,
+  and a job that never ran leaves its families without a result, which reads red.
 - The job uploads two artifacts in a step of its own that runs `if: always()`. The uploads are not
   nested in the action that runs the lane: a composite action is one step of the job, and when that
   step is cancelled its nested steps are skipped, whatever their `if` says (seen in the first ready
@@ -252,6 +264,12 @@ Three were weighed with the maintainer, who picked the first.
   reported as cancelled after nine minutes, with no upload). A rerun makes every job of its run
   report the new attempt, so one rerun reddens all three carriers of that run; that is the rule's
   "no rerun".
+- **A carrier's jobs are read as one run.** A carrier may run as several jobs of one workflow run
+  (`rtc` runs as two). The ledger reads them together: the plan the jobs agree on, the results of
+  all their artifacts, and one conclusion. That conclusion is in progress when any job is, else
+  cancelled when any was, else a failure when any failed or when some were skipped and others not,
+  else success when all succeeded, else skipped. Two jobs whose plans differ are reported as an
+  issue.
 - **Which runs count.** The streak counts full-scope runs of `main` pushes only, on the PostgreSQL
   API. Runs of pull requests and dispatched runs are read and shown beside it, because a red
   pull-request run may be the pull request's own regression, caught as intended, and not a flake. A
@@ -266,7 +284,7 @@ Three were weighed with the maintainer, who picked the first.
 - **The command**, `npm run alm:lane:ledger`: a thin entry point that reads the recent runs of
   `alm-conformance-observation.yml`, each kind in its own query (`main` push runs up to the limit
   for the streak; pull-request and dispatched runs for the side list), with each job's conclusion,
-  downloads each job's `alm-lane-result-<carrier>-full-<sha>` artifact, and prints the ledger. It
+  downloads every `alm-lane-result-<carrier>-full-<sha>…` artifact of the run, and prints the ledger. It
   reads GitHub through one shared reader, `scripts/github-actions/read-github-workflow-runs.mjs`,
   which the branch gate's evidence reuse uses too. The names it relies on (the lane job's name and
   the artifact's prefix) are pinned against the workflow and the action by a repository test.
@@ -318,6 +336,9 @@ This goes into the roadmap as one decision row, with D639 named as amended.
    against the real runs once slice 1 is on `main`. Acceptance: the command prints a streak and a
    failure list from real `main` runs, and flags the known flakes as having no cause.
 3. **The family split**, only if a carrier's full-scope job took more than 30 minutes in slice 1.
+   It did: `rtc` took 36.5 minutes. Built as its own pull request, stacked on slice 2, because it
+   changes what the ledger reads. Acceptance: a ready or dispatched run shows two `rtc` jobs, each
+   under 30 minutes, and the ledger reads them as one `rtc` run.
 
 After these, outside this plan: one slice per flake, most frequent first, each proven by repeated
 dispatched runs; then promotion of a carrier when the ledger shows its streak.
@@ -389,6 +410,26 @@ A GitHub runner has 16 GB. Every response the lane reads is now disposed through
 clients use too. A job whose runner loses contact with GitHub still uploads nothing; no workflow
 shape changes that.
 
+## What the second ready run found (2026-11-22)
+
+At the head `7c2934b60`, with the leak fixed, the Release Gate passed again (the three `alm-smoke`
+jobs in 5.1 to 5.9 minutes), and the full scope ran to the end on every carrier on PostgreSQL and
+uploaded both artifacts (run 45009025510):
+
+| Carrier                | Job      | Scenarios       | Failed                                                                                      |
+| ---------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `rtc-with-ws-fallback` | 18.0 min | 50 of 50 passed | none                                                                                        |
+| `ws`                   | 29.4 min | 57 of 60 passed | four-role: `subscription-ordered-entry`, `-omission`, `-reconnect`                          |
+| `rtc`                  | 36.5 min | 66 of 69 passed | two-agent: `churn-bounded-tracks`; four-role: `subscription-ordered-omission`, `-reconnect` |
+
+- Under `continue-on-error` the jobs API reports a failed lane job as `failure`, the run concludes
+  in `success`, and the upload step runs after the failed lane step.
+- `rtc` passed the 30-minute rule, so slice 3 is built. Its family tests took 14.1 (two-agent), 1.1
+  (addressed), 9.6 (three-agent), 1.5 (same-principal), 7.4 (four-role) and 1.4 minutes
+  (same-context); the two-agent family ran within a minute of its own 15-minute limit.
+- The failed scenarios are not diagnosed by this plan. They are the ledger's first entries, and each
+  gets a fix slice of its own.
+
 ## What merging slice 1 does to open pull requests
 
 A pull request's workflows come from its merge with `main`, but the Release Gate checks out the
@@ -410,8 +451,8 @@ this, and the sessions with open branches are told.
 
 ## Not established
 
-- How long the full scope takes on a GitHub runner, per carrier, and whether a cold RTC handshake
-  stays inside the recipe budgets there on the PostgreSQL API.
+- How long a green full-scope `rtc` run takes on a GitHub runner: the measured run had three
+  failed scenarios, which waited out their timeouts.
 - Whether a dispatched run of a workflow whose `workflow_dispatch` trigger is not yet on `main`
   can be started from the branch. If it cannot, the first measurement is slice 1's ready run alone.
 - The flake rate of any scenario on GitHub runners. The ledger is what will show it.
