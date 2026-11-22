@@ -238,10 +238,12 @@ Three were weighed with the maintainer, who picked the first.
     run in which no job of that carrier could be read at all;
   - per key (`carrier/family/scenarioKey`, and `carrier/family` for a failure outside any
     scenario), the runs that failed it and the runs that did not run it;
-  - the **failures without a cause**: a key that failed in a counted run, a key that did not run
-    in a family where no scenario failed (when a scenario fails or throws, the scenarios after it
-    do not run, and the failed one answers for them), and a red run with nothing to attribute, each
-    when the causes file has no entry for it.
+  - the **failures without a cause**, counted per run and family: every key that failed in a
+    counted run; the family's own key, once, when the family is not green and no scenario of it
+    failed (it never started, it was cut off, or its result is missing or refused); and a red run
+    with nothing to attribute. A scenario that did not run is never counted by itself: when a
+    scenario fails or throws, the ones after it do not run, and the failed one answers for them.
+    Each counts when the causes file has no entry for it.
 - **How a job's conclusion is read.** A job still in progress or skipped is left out and does not
   break the streak. A cancelled job of a pull-request run is left out and listed as such, because a
   newer push to the pull request cancels it by design. A cancelled job of a `main` push or of a
