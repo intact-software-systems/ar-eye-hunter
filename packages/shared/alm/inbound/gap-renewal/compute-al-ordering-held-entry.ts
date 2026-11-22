@@ -1,52 +1,94 @@
-import type { ALOrderingObservation, ALOrderingTrackSnapshot } from '../../../al-contracts/al-runtime.ts';
-import { isALOrderingSnapshotLive } from '../../../al-contracts/al-runtime.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
+import { isALOrderingSnapshotLive, toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { computeALOrderingEntry } from '../../compute-al-ordering-observation.ts';
 import {
-    computeALOrderingEntry,
-    type ComputeALOrderingObservationInput
-} from '../../compute-al-ordering-observation.ts';
-import { isALOrderingTrackStartOwed } from '../admission/is-al-ordering-track-start-owed.ts';
+    isALOrderingTrackStartOwed,
+    type ALOrderingTrackStartInput
+} from '../admission/is-al-ordering-track-start-owed.ts';
 
-/** A track's lowest buffered copy when its last gap renewal fell due unanswered, and what its plan says. */
-export type ComputeALOrderingHeldEntryInput = Pick<
-    ComputeALOrderingObservationInput,
-    'snapshot' | 'msg' | 'nowMs' | 'trackTtlMs' | 'selfPeerId' | 'bufferedPriorSeqs' | 'latestWins' | 'repairsGaps'
->;
+/** A gap timer's range, and the copy that revealed it with what that copy's plan says. */
+export interface ALOrderingHeldStartRangeInput {
+    readonly range: ALSeqRange;
+    readonly start: ALOrderingTrackStartInput;
+}
 
-/** Where a bounded hold enters its track: the entry observed at the lowest copy, and the position it moves to. */
-export interface ALOrderingHeldEntry {
-    readonly trackKey: string;
-    readonly observation: ALOrderingObservation;
-    readonly nextSnapshot: ALOrderingTrackSnapshot;
+export interface ComputeALOrderingHeldEntryInput extends ALOrderingHeldStartRangeInput {
+    /** The track as the store holds it. */
+    readonly snapshot: ALOrderingTrackSnapshot | undefined;
+    /** The track's buffered copies whose slots are still live, in sequence order. */
+    readonly live: readonly ALMessage[];
+    readonly nowMs: number;
+    readonly trackTtlMs: number;
+    /** Each buffered copy's own prior for this receiver, by its sequence; a copy without a record has none. */
+    readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
 }
 
 /**
- * The bounded hold. A track opened at its start that has delivered nothing (position `0`) enters at its lowest buffered
- * copy once its last gap renewal fell due unanswered: the copy and its contiguous successors are released, and a copy
- * below the new position that arrives later is stale, as it is at any entry. `undefined`, keeping today's behaviour,
- * for a track that delivered something, a copy that is not its lowest buffered one, or one whose record owes no start.
+ * Where a bounded hold ends its track: `entered` at the lowest live buffered copy, which with its contiguous live
+ * successors is released, or `passed` when every buffered copy expired, releasing nothing.
+ */
+export type ALOrderingHeldEntry =
+    | Readonly<{
+        kind: 'entered';
+        trackKey: string;
+        /** The lowest live copy, which the track enters at. */
+        msg: ALMessage;
+        observation: ALOrderingObservation;
+        nextSnapshot: ALOrderingTrackSnapshot;
+    }>
+    | Readonly<{ kind: 'passed'; trackKey: string; nextSnapshot: ALOrderingTrackSnapshot; }>;
+
+/**
+ * Whether a gap timer holds a track's start: the range `1..p` the first copy of a track revealed where its record owed
+ * the recipient the start. That timer outlives its copy until the renewal schedule's last timer, so the hold always ends.
+ */
+export function isALOrderingHeldStartRange(input: ALOrderingHeldStartRangeInput): boolean {
+    return input.range.from === 1 && isALOrderingTrackStartOwed(input.start);
+}
+
+/**
+ * The bounded hold. When the start range's last renewal falls due unanswered on a track that has delivered nothing
+ * (position `0`), the track passes every buffered sequence below its lowest live copy and enters at that copy,
+ * releasing it and its contiguous live successors; with no live copy it passes every buffered sequence and releases
+ * nothing, so its next copy follows in order. A copy below the new position that arrives later is stale, as at any
+ * entry. `undefined`, keeping today's behaviour, for a track that delivered something or a timer that holds no start.
  */
 export function computeALOrderingHeldEntry(input: ComputeALOrderingHeldEntryInput): ALOrderingHeldEntry | undefined {
-    const seq = input.msg.ordering?.seq;
+    const trackKey = toALOrderingTrackKey(input.start.msg);
     const snapshot = isALOrderingSnapshotLive(input.snapshot, input.trackTtlMs, input.nowMs)
         ? input.snapshot
         : undefined;
+    const passedSeq = snapshot?.bufferedSeqs.at(-1);
     if (
-        snapshot?.lastContiguousSeq !== 0 || snapshot.bufferedSeqs[0] !== seq ||
-        !isALOrderingTrackStartOwed({ ...input, evictedTrack: false })
+        trackKey === undefined || snapshot?.lastContiguousSeq !== 0 || passedSeq === undefined ||
+        !isALOrderingHeldStartRange(input)
     ) {
         return undefined;
     }
+    const [lowest, ...successors] = input.live;
+    if (lowest === undefined) {
+        return {
+            kind: 'passed',
+            trackKey,
+            nextSnapshot: { lastContiguousSeq: passedSeq, bufferedSeqs: [], updatedAtMs: input.nowMs }
+        };
+    }
     const { observation, nextSnapshot } = computeALOrderingEntry({
-        ...input,
-        snapshot: { ...snapshot, bufferedSeqs: snapshot.bufferedSeqs.slice(1) },
+        ...input.start,
+        msg: lowest,
+        snapshot: { ...snapshot, bufferedSeqs: successors.flatMap((copy) => copy.ordering?.seq ?? []) },
+        nowMs: input.nowMs,
+        trackTtlMs: input.trackTtlMs,
+        bufferedPriorSeqs: input.bufferedPriorSeqs,
         apply: true,
-        role: 'recipient',
-        evictedTrack: false
+        role: 'recipient'
     });
-    const trackKey = observation.trackKey;
-    return trackKey === undefined || nextSnapshot === undefined ? undefined : {
+    return nextSnapshot === undefined || observation.seq === undefined ? undefined : {
+        kind: 'entered',
         trackKey,
-        observation: { ...observation, releasableSeqs: [seq, ...observation.releasableSeqs] },
+        msg: lowest,
+        observation: { ...observation, releasableSeqs: [observation.seq, ...observation.releasableSeqs] },
         nextSnapshot
     };
 }

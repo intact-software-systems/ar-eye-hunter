@@ -39,6 +39,8 @@ const START_MS = Date.UTC(2026, 10, 19, 12);
 const STORAGES: readonly InboundTestStorage[] = ['memory', 'indexeddb'];
 /** How far one step moves the fake clock while a started engine runs by itself. */
 const ENGINE_STEP_MS = 20;
+/** A message lifetime shorter than the renewal schedule's 7 s at the fixture's stretch of 1. */
+const SHORT_TTL_MS = 5_000;
 /** Turns of the event loop each step gives the store, more than one engine pass needs. */
 const STORAGE_TURNS_PER_STEP = 100;
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
@@ -361,6 +363,67 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(readNackReasons(fixture, '1')).toEqual(['before-entry']);
     });
 
+    it('outlives a 5 s lifetime: with every held copy expired it passes them, sends no fourth request, and its next copy follows in order', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        expect(gapControls(fixture).map((control) => control.gapRequestNumber)).toEqual([1, 1, 1, 1, 2, 2, 3, 3]);
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([4]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('enters at the lowest held copy still live when the copy that revealed the gap has expired', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('still asks a fourth time when the entry\'s commit is refused as expired', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = (await readInboundTestWorkRows(fixture.stores))
+            .find((effect) => effect.payload.kind === 'renew-gap' && effect.payload.requestNumber === 4);
+        if (timer?.payload.kind !== 'renew-gap') {
+            throw new Error('The schedule armed no last timer');
+        }
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        const renewal = new ALInboundGapRenewal({
+            admissionStore: Object.assign(Object.create(admissionStore) as typeof admissionStore, {
+                commitBundle: async () => 'expired' as const,
+                commitMutations: async () => 'expired' as const
+            }),
+            workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
+            clock: { nowMs: Date.now },
+            orderingObserver: 'addressed',
+            planIncomingMessage: planInboundTestMessage,
+            effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
+            stretch: 1,
+            receiptProofs: { kind: 'carrier-authenticated' },
+            diagnostics: undefined
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        expect(
+            (await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId)
+                .filter((effectId) => effectId.includes('renewal') && effectId.endsWith(':4'))
+        ).toHaveLength(2);
+    });
+
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
@@ -409,8 +472,8 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
 }
 
 /** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
-function recordedMessage(seq: number): ALMessage {
-    const message = orderedMessage(seq);
+function recordedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage {
+    const message = orderedMessage(seq, input);
     return { ...message, ordering: { ...message.ordering!, priorSeqByRecipient: {} } };
 }
 

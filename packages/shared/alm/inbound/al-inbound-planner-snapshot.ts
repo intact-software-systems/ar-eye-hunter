@@ -3,9 +3,9 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resour
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
 import {
     resolveALOrderingPriorSeq,
-    type ALOrderingObservation,
     type ALOrderingObservationStatus,
-    type ALOrderingTrackSnapshot
+    type ALOrderingTrackSnapshot,
+    type ALSeqRange
 } from '../../al-contracts/al-runtime.ts';
 import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
@@ -16,6 +16,7 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import { isALInboundDeliveringPlan } from './admission/al-inbound-not-subscribed-plan.ts';
+import { toALOrderingTrackStartInput } from './admission/is-al-ordering-track-start-owed.ts';
 import {
     resolveALOrderingObserverRole,
     type ALOrderingObserver
@@ -26,11 +27,7 @@ import type {
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
-import {
-    computeALOrderingHeldEntry,
-    type ALOrderingHeldEntry,
-    type ComputeALOrderingHeldEntryInput
-} from './gap-renewal/compute-al-ordering-held-entry.ts';
+import { computeALOrderingHeldEntry, type ALOrderingHeldEntry } from './gap-renewal/compute-al-ordering-held-entry.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;
@@ -150,15 +147,23 @@ export function computeALInboundOrderingAcceptance(
     apply: boolean
 ): ALOrderingAcceptance {
     const ordering = computeALOrderingObservation({
-        ...toOrderingTrackInput(read),
+        ...toALOrderingTrackStartInput({
+            msg: read.msg,
+            plan: read.prePlan,
+            selfPeerId: read.selfPeerId,
+            evictedTrack: read.orderingTrackEvicted
+        }),
+        snapshot: read.orderingSnapshot,
+        nowMs: read.nowMs,
+        trackTtlMs: read.orderingTrackTtlMs,
+        bufferedPriorSeqs: toBufferedPriorSeqs(read),
         apply,
         role: resolveALOrderingObserverRole({
             msg: read.msg,
             selfPeerId: read.selfPeerId,
             delivering: isALInboundDeliveringPlan(read.prePlan),
             observer: read.orderingObserver
-        }),
-        evictedTrack: read.orderingTrackEvicted
+        })
     });
     if (
         !read.prePlan.localDelivery.enabled ||
@@ -173,33 +178,28 @@ export function computeALInboundOrderingAcceptance(
 }
 
 /**
- * The bounded hold's entry on the track of `read`, read as its lowest buffered copy's own admission surface, whose
- * `prePlan` is the plan that copy was admitted with; `undefined` when the track keeps today's behaviour.
+ * The bounded hold's end on the track of `read` at the last timer of `range`: `read` is the admission surface of the
+ * copy that revealed the range, planned as it was admitted, and its buffered snapshots are the track's live copies.
+ * `undefined` when the track keeps today's behaviour.
  */
-export function computeALInboundHeldOrderingEntry(read: ALInboundPlannerSnapshot): ALOrderingHeldEntry | undefined {
-    return computeALOrderingHeldEntry(toOrderingTrackInput(read));
-}
-
-/** What the hold's lowest copy is planned against at its entry: a copy already admitted, now entered at `observation`. */
-export function computeALInboundHeldEntryPlanningObservations(
+export function computeALInboundHeldOrderingEntry(
     read: ALInboundPlannerSnapshot,
-    observation: ALOrderingObservation
-): ALMessagePlanningObservations {
-    return { ...computeALInboundPlanningObservations({ ...read, admitted: true }), orderingObservation: observation };
-}
-
-/** The copy, its track as the store holds it, and what the copy's plan says about entering that track. */
-function toOrderingTrackInput(read: ALInboundPlannerSnapshot): ComputeALOrderingHeldEntryInput {
-    return {
+    range: ALSeqRange
+): ALOrderingHeldEntry | undefined {
+    return computeALOrderingHeldEntry({
+        range,
+        start: toALOrderingTrackStartInput({
+            msg: read.msg,
+            plan: read.prePlan,
+            selfPeerId: read.selfPeerId,
+            evictedTrack: false
+        }),
         snapshot: read.orderingSnapshot,
-        msg: read.msg,
+        live: read.bufferedSnapshots.map((buffered) => buffered.msg),
         nowMs: read.nowMs,
         trackTtlMs: read.orderingTrackTtlMs,
-        selfPeerId: read.selfPeerId,
-        bufferedPriorSeqs: toBufferedPriorSeqs(read),
-        latestWins: read.prePlan.supersedence.algo === 'latest-wins',
-        repairsGaps: read.prePlan.effective.repair.algo !== 'none'
-    };
+        bufferedPriorSeqs: toBufferedPriorSeqs(read)
+    });
 }
 
 /** The statuses that retain the copy in a buffered slot until its delivery: delivered now, or held for a gap. */

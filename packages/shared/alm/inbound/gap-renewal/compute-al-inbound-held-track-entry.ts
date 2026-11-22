@@ -1,4 +1,5 @@
 import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
+import { computeALInboundWitnessedCompletedThrough } from '../admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundCommitBundle,
@@ -9,26 +10,30 @@ import { prepareALInboundCommitBundle, type ALInboundEffectFacts } from '../prep
 import type { ALOrderingHeldEntry } from './compute-al-ordering-held-entry.ts';
 
 export interface ComputeALInboundHeldTrackEntryInput {
-    /** The admission surface of the track's lowest buffered copy, read with the plan that copy was admitted with. */
+    /** The admission surface of the copy that revealed the start range, planned as it was admitted. */
     readonly read: ALInboundAdmissionRead;
-    readonly entry: ALOrderingHeldEntry;
-    /** The copy's plan as an entered copy: what its slot records, so its delivery waits on nothing below it. */
+    readonly entry: Extract<ALOrderingHeldEntry, { readonly kind: 'entered'; }>;
+    /**
+     * The entered copy's plan as the copy entered at, from the same sender's track and source: what its slot records,
+     * so its delivery waits on nothing below it.
+     */
     readonly plan: ALMessageHandlingPlan;
     readonly facts: ALInboundEffectFacts;
 }
 
 /**
- * The bundle that ends a track's bounded hold, as an entered admission of its lowest buffered copy would write it: the
- * track's new position, and a release of that copy and of each contiguous successor through the buffered-release path.
- * It is guarded by the track it read, so an arrival that moved the track first wins and the timer runs again.
+ * The bundle that ends a track's bounded hold at its lowest live copy, as an entered admission of that copy would write
+ * it: the new position, and a release of that copy and of each contiguous live successor through the buffered-release
+ * path. It is guarded by the track as read, so an arrival that moved the track first wins and the timer runs again.
  */
 export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackEntryInput): ALInboundCommitBundle {
-    const { read, entry, plan } = input;
+    const { read, entry } = input;
+    const plan = { ...input.plan, orderingRuntime: entry.observation };
     const entered: ALInboundMessageReadDto = {
         kind: 'incoming',
         orderingTrackTtlMs: read.orderingTrackTtlMs,
         namespace: read.namespace,
-        msg: read.msg,
+        msg: entry.msg,
         fromPeerId: read.fromPeerId,
         source: read.source,
         nowMs: read.nowMs,
@@ -53,4 +58,34 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }],
         effects: toALInboundBufferedReleaseEffects(entered)
     });
+}
+
+/**
+ * The bundle that ends a track's bounded hold when every buffered copy expired: the position and the delivery progress
+ * move past every buffered sequence, as a witness moves them, and nothing is released. It is bookkeeping on expired
+ * copies, so it names no admission deadline; it is guarded by the track as read, as the entry is.
+ */
+export function computeALInboundPassedTrack(
+    read: ALInboundAdmissionRead,
+    entry: Extract<ALOrderingHeldEntry, { readonly kind: 'passed'; }>
+): ALInboundCommitBundle {
+    const progress = read.observations.deliveryProgress?.value;
+    return {
+        admissionExpiresAtMs: null,
+        senderId: read.msg.id.senderId,
+        observations: read.observations,
+        mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }, {
+            kind: 'set-delivery-progress',
+            trackKey: entry.trackKey,
+            value: {
+                completedThrough: computeALInboundWitnessedCompletedThrough({
+                    completedThrough: progress?.completedThrough ?? 0,
+                    previousPosition: 0,
+                    witnessedPosition: entry.nextSnapshot.lastContiguousSeq
+                }),
+                expireAtTimestamp: Math.max(progress?.expireAtTimestamp ?? 0, read.nowMs + read.orderingTrackTtlMs)
+            }
+        }],
+        durableEffects: []
+    };
 }

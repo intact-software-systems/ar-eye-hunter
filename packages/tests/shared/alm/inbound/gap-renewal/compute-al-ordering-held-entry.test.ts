@@ -1,87 +1,112 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOrderingTrackSnapshot } from '@shared/al-contracts/al-runtime.ts';
+import type { ALOrderingTrackSnapshot, ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import {
     computeALOrderingHeldEntry,
-    type ALOrderingHeldEntry,
-    type ComputeALOrderingHeldEntryInput
+    type ALOrderingHeldEntry
 } from '@shared/alm/inbound/gap-renewal/compute-al-ordering-held-entry.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 describe('the bounded hold: a track opened at its start whose last gap renewal went unanswered', () => {
-    it('enters at its lowest buffered copy and releases that copy and its contiguous successors', () => {
-        const result = enterHeld({ msg: recordedMessage(2, {}), snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 } });
+    it('enters at its lowest live copy and releases that copy and its contiguous live successors', () => {
+        const result = endHold({ live: [recordedMessage(2, {}), recordedMessage(3, {})] });
 
-        expect(result?.observation).toEqual({
-            status: 'entered',
+        expect(result).toEqual({
+            kind: 'entered',
             trackKey: expect.any(String),
-            seq: 2,
-            expectedSeq: 4,
-            lastContiguousSeq: 3,
-            missingRanges: [],
-            releasableSeqs: [2, 3],
-            priorSeq: 1
+            msg: recordedMessage(2, {}),
+            observation: {
+                status: 'entered',
+                trackKey: expect.any(String),
+                seq: 2,
+                expectedSeq: 4,
+                lastContiguousSeq: 3,
+                missingRanges: [],
+                releasableSeqs: [2, 3],
+                priorSeq: 1
+            },
+            nextSnapshot: { lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 }
         });
-        expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 });
     });
 
-    it('keeps a successor past a further gap buffered behind the new position', () => {
-        const result = enterHeld({ msg: recordedMessage(2, {}), snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 } });
+    it('keeps a live successor past a further gap buffered behind the new position', () => {
+        const result = endHold({
+            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 },
+            live: [recordedMessage(2, {}), recordedMessage(5, {})]
+        });
 
-        expect(result?.observation).toMatchObject({ status: 'entered', seq: 2, lastContiguousSeq: 2, releasableSeqs: [2] });
+        expect(result).toMatchObject({ kind: 'entered', observation: { seq: 2, lastContiguousSeq: 2, releasableSeqs: [2] } });
         expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 2, bufferedSeqs: [5], updatedAtMs: 1_001 });
     });
 
-    it('releases a successor whose own record names the lowest copy as its prior', () => {
-        const result = enterHeld({
-            msg: recordedMessage(2, {}),
+    it('releases a live successor whose own record names the lowest copy as its prior', () => {
+        const result = endHold({
             snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 5], updatedAtMs: 1_000 },
+            live: [recordedMessage(2, {}), recordedMessage(5, {})],
             bufferedPriorSeqs: { 2: 1, 5: 2 }
         });
 
-        expect(result?.observation).toMatchObject({ lastContiguousSeq: 5, releasableSeqs: [2, 5] });
+        expect(result).toMatchObject({ kind: 'entered', observation: { lastContiguousSeq: 5, releasableSeqs: [2, 5] } });
     });
 
-    it.each<[string, Partial<ComputeALOrderingHeldEntryInput>]>([
-        ['a track that delivered something', { snapshot: { lastContiguousSeq: 1, bufferedSeqs: [3], updatedAtMs: 1_000 }, msg: recordedMessage(3, {}) }],
-        ['a copy that is not the lowest one buffered', { msg: recordedMessage(3, {}) }],
+    it('passes an expired lower copy and enters at the lowest copy still live, whatever revealed the range', () => {
+        const result = endHold({ live: [recordedMessage(3, {})] });
+
+        expect(result).toMatchObject({ kind: 'entered', msg: recordedMessage(3, {}), observation: { seq: 3, releasableSeqs: [3] } });
+        expect(result?.nextSnapshot).toEqual({ lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 });
+    });
+
+    it('passes every buffered sequence and releases nothing when every held copy expired', () => {
+        expect(endHold({ live: [] })).toEqual({
+            kind: 'passed',
+            trackKey: expect.any(String),
+            nextSnapshot: { lastContiguousSeq: 3, bufferedSeqs: [], updatedAtMs: 1_001 }
+        });
+    });
+
+    it.each<[string, Partial<EndHoldInput>]>([
+        ['a track that delivered something', { snapshot: { lastContiguousSeq: 1, bufferedSeqs: [3], updatedAtMs: 1_000 } }],
+        ['a range above the track\'s start', { range: { from: 3, to: 4 } }],
         ['a track past its TTL', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: -60_000 } }],
-        ['a copy no authority recorded', { msg: orderedMessage(2) }],
-        ['a copy frozen to another audience', { msg: recordedMessage(2, {}, ['other']) }],
-        ['a copy whose plan repairs no gap', { repairsGaps: false }],
-        ['a latest-wins copy', { latestWins: true }]
+        ['a track with nothing buffered', { snapshot: { lastContiguousSeq: 0, bufferedSeqs: [], updatedAtMs: 1_000 } }],
+        ['a revealing copy no authority recorded', { revealing: orderedMessage(2) }],
+        ['a revealing copy frozen to another audience', { revealing: recordedMessage(2, {}, ['other']) }],
+        ['a plan that repairs no gap', { repairsGaps: false }],
+        ['a latest-wins plan', { latestWins: true }]
     ])('holds no start for %s, which keeps today\'s behaviour', (_name, overrides) => {
-        expect(enterHeld({
-            msg: recordedMessage(2, {}),
-            snapshot: { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 },
-            ...overrides
-        })).toBeUndefined();
+        expect(endHold(overrides)).toBeUndefined();
     });
 });
 
-interface EnterHeldInput {
-    readonly msg: ALMessage;
+interface EndHoldInput {
+    readonly range: ALSeqRange;
+    /** The copy that revealed the range. */
+    readonly revealing: ALMessage;
     readonly snapshot: ALOrderingTrackSnapshot | undefined;
-    /** Absent, no buffered copy carries a record. */
-    readonly bufferedPriorSeqs?: Readonly<Record<number, number>>;
-    /** Absent, the copy's plan supersedes nothing. */
-    readonly latestWins?: boolean;
-    /** Absent, the copy's plan repairs gaps. */
-    readonly repairsGaps?: boolean;
+    readonly live: readonly ALMessage[];
+    readonly bufferedPriorSeqs: Readonly<Record<number, number>>;
+    readonly latestWins: boolean;
+    readonly repairsGaps: boolean;
 }
 
-function enterHeld(input: EnterHeldInput): ALOrderingHeldEntry | undefined {
+/** Absent fields: the start range `1..1` copy 2 revealed, copies 2 and 3 held and live, a gap-repairing plan. */
+function endHold(input: Partial<EndHoldInput>): ALOrderingHeldEntry | undefined {
     return computeALOrderingHeldEntry({
-        msg: input.msg,
-        snapshot: input.snapshot,
+        range: input.range ?? { from: 1, to: 1 },
+        start: {
+            msg: input.revealing ?? recordedMessage(2, {}),
+            selfPeerId: 'receiver',
+            evictedTrack: false,
+            latestWins: input.latestWins ?? false,
+            repairsGaps: input.repairsGaps ?? true
+        },
+        snapshot: 'snapshot' in input ? input.snapshot : { lastContiguousSeq: 0, bufferedSeqs: [2, 3], updatedAtMs: 1_000 },
+        live: input.live ?? [recordedMessage(2, {}), recordedMessage(3, {})],
         nowMs: 1_001,
         trackTtlMs: 60_000,
-        selfPeerId: 'receiver',
-        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {},
-        latestWins: input.latestWins ?? false,
-        repairsGaps: input.repairsGaps ?? true
+        bufferedPriorSeqs: input.bufferedPriorSeqs ?? {}
     });
 }
 

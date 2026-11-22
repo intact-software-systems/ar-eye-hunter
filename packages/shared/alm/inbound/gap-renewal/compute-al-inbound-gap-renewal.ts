@@ -6,6 +6,7 @@ import {
 } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import { computeALOrderingMissingRanges } from '../../compute-al-ordering-observation.ts';
+import { toALOrderingTrackStartInput } from '../admission/is-al-ordering-track-start-owed.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundGapRenewalEffect,
@@ -18,6 +19,7 @@ import {
     isALInboundCountedSelf,
     isALInboundRecipientReceiptIntent
 } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
+import { isALOrderingHeldStartRange } from './compute-al-ordering-held-entry.ts';
 
 /** The gap NACK an admission planned for an arrival that revealed a gap. */
 export type ALInboundGapNackIntent = ALInboundEffectIntent & {
@@ -82,7 +84,24 @@ export function isALInboundGapNackIntent(intent: ALInboundEffectIntent): intent 
     return intent.payload.kind === 'send-nack' && intent.payload.reason === 'gap';
 }
 
-/** One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. */
+/** How long the renewal schedule takes to reach its last timer at the most a stretch may be. */
+export function computeALGapRenewalScheduleMs(): number {
+    return AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs.reduce(
+        (totalMs, _intervalMs, index) =>
+            totalMs +
+            (computeALGapRenewalDelayMs(
+                AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER + index,
+                AL_MESSAGE_RESOURCE_LIMITS.gapRenewalMaxStretch
+            ) ?? 0),
+        0
+    );
+}
+
+/**
+ * One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. The
+ * timer of a held start range lives at least until the schedule's last timer, whatever the copy's own lifetime, so the
+ * bounded hold always ends.
+ */
 export function toALInboundGapRenewalEffects(
     input: ToALInboundGapRenewalEffectsInput
 ): readonly ALInboundEffectIntent[] {
@@ -93,6 +112,16 @@ export function toALInboundGapRenewalEffects(
     }
     const { toPeerId } = gapNack.payload;
     const countsSelf = isALInboundCountedSelf(read.msg, read.plan, input.selfPeerId);
+    const start = toALOrderingTrackStartInput({
+        msg: read.msg,
+        plan: read.plan,
+        selfPeerId: input.selfPeerId,
+        evictedTrack: read.observations.ordering?.evicted ?? false
+    });
+    const heldStartExpireAtMs = Math.max(
+        gapNack.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs,
+        read.nowMs + computeALGapRenewalScheduleMs()
+    );
     return computeALInboundNewlyMissingRanges(read.orderingSnapshot, read.plan.orderingRuntime).map((range) => {
         const payload: ALInboundGapRenewalEffect = {
             kind: 'renew-gap',
@@ -106,7 +135,9 @@ export function toALInboundGapRenewalEffects(
         };
         return {
             effectId: toALInboundGapRenewalEffectId(payload),
-            expireAtTimestamp: gapNack.expireAtTimestamp,
+            expireAtTimestamp: isALOrderingHeldStartRange({ range, start })
+                ? heldStartExpireAtMs
+                : gapNack.expireAtTimestamp,
             carrier: gapNack.carrier,
             payload
         };

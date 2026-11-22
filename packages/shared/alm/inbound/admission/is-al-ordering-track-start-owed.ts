@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALFrozenMulticastRecipient } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 import { resolveALOrderingPriorSeq } from '../../../al-contracts/al-runtime.ts';
 
 /** A recorded copy at a fresh recipient, and what the copy's plan says about asking for what came before it. */
@@ -13,6 +14,25 @@ export interface ALOrderingTrackStartInput {
     readonly latestWins: boolean;
     /** Whether the copy's plan repairs gaps: one that repairs none plans no gap NACK, so it can never ask for a start. */
     readonly repairsGaps: boolean;
+}
+
+/** A copy as its plan admits it at a recipient, and whether the store evicted the copy's track. */
+export interface ToALOrderingTrackStartInput {
+    readonly msg: ALMessage;
+    readonly plan: ALMessageHandlingPlan;
+    readonly selfPeerId: string;
+    readonly evictedTrack: boolean;
+}
+
+/** What the copy's plan says about asking for the sends before it: whether it repairs gaps and supersedes by latest-wins. */
+export function toALOrderingTrackStartInput(input: ToALOrderingTrackStartInput): ALOrderingTrackStartInput {
+    return {
+        msg: input.msg,
+        selfPeerId: input.selfPeerId,
+        evictedTrack: input.evictedTrack,
+        latestWins: input.plan.supersedence.algo === 'latest-wins',
+        repairsGaps: input.plan.effective.repair.algo !== 'none'
+    };
 }
 
 /**
