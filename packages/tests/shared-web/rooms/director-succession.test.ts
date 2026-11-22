@@ -1,5 +1,5 @@
-import type { RoomDirectorOperations } from '@shared-web/browser/director/room-director-operations.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { RoomDirectorOperations } from '@shared-web/browser/director/room-director-operations.ts';
 import type { RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -8,19 +8,36 @@ import { createRoomSnapshot, resetRoomWorkflowTestRuntime } from './room-workflo
 
 const room = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const state: RoomDirectorSuccession = {
-    revision: 1, reconnectWindowMs: 30000, deputyWindowMs: 30000, deputyPrincipalId: 'player',
-    directorLeaseExpiresAtEpochMs: null, spectatorDirectorEpoch: null, loss: null
+    revision: 1,
+    reconnectWindowMs: 30000,
+    deputyWindowMs: 30000,
+    deputyPrincipalId: 'player',
+    directorLeaseExpiresAtEpochMs: null,
+    spectatorDirectorEpoch: null,
+    loss: null
 };
 const policy = { operation: 'configure', expectedDirectorEpoch: 0, expectedRevision: 0, deputyPrincipalId: 'player' } as const;
 installFakeBroadcastChannelPerTest();
-beforeEach(() => { resetRoomWorkflowTestRuntime(); configureApiClient({ apiBaseUrl: '' }); });
+beforeEach(() => {
+    resetRoomWorkflowTestRuntime();
+    configureApiClient({ apiBaseUrl: '' });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 function response(metadata: object, revision = 1) {
     const snapshot = createRoomSnapshot(room.groupId, ['session-1']);
-    return Response.json({ ...snapshot, causalRevision: { ...snapshot.causalRevision, groupRevision: revision }, group: { ...snapshot.group, snapshotVersion: revision, metadata } }, { headers: {
-        'cache-control': 'no-store', 'rallar-state-source': 'durable', 'rallar-group-revision': String(revision), 'rallar-presence-revision': '1'
-    } });
+    return Response.json({
+        ...snapshot,
+        causalRevision: { ...snapshot.causalRevision, groupRevision: revision },
+        group: { ...snapshot.group, snapshotVersion: revision, metadata }
+    }, {
+        headers: {
+            'cache-control': 'no-store',
+            'rallar-state-source': 'durable',
+            'rallar-group-revision': String(revision),
+            'rallar-presence-revision': '1'
+        }
+    });
 }
 
 it('writes the captured policy revision to the appointment route and verifies an acknowledgement', async () => {
@@ -47,23 +64,31 @@ it('recovers durable director policy on foreground without issuing idle reads or
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
     let stored = state;
-    const fetch = vi.fn(async () => response({ rallarDirectorSuccession: stored }, stored.revision));
-    vi.stubGlobal('fetch', fetch);
+    const methods: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+        methods.push(init.method ?? 'GET');
+        return response({ rallarDirectorSuccession: stored }, stored.revision);
+    });
     const observed: RoomDirectorOperations.Observation[] = [];
-    const stop = rooms.watchDirector(room, observation => observed.push(observation));
+    const stop = rooms.watchDirector(room, (observation) => observed.push(observation));
     try {
         await vi.waitFor(() => expect(observed.at(-1)).toMatchObject({ status: 'current', value: { succession: state } }));
+        expect(methods).toEqual(['GET']);
+        methods.length = 0;
         vi.useFakeTimers();
         await vi.advanceTimersByTimeAsync(300000);
-        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(methods).toEqual([]);
         vi.useRealTimers();
         page.dispatchEvent(new Event('pagehide'));
         stored = { ...state, revision: 2, deputyPrincipalId: 'replacement' };
         page.dispatchEvent(new Event('pageshow'));
         await vi.waitFor(() => expect(observed.at(-1)).toMatchObject({ status: 'current', value: { succession: stored } }));
-        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(methods).toEqual(['GET']);
     }
-    finally { vi.useRealTimers(); stop(); }
+    finally {
+        vi.useRealTimers();
+        stop();
+    }
 });
 
 it('submits a player claim for the captured epoch and verifies the winning session', async () => {
@@ -71,8 +96,15 @@ it('submits a player claim for the captured epoch and verifies the winning sessi
     const rooms = createRallarFacade().rooms;
     const claim = { operation: 'claim-player', expectedDirectorEpoch: 7 } as const;
     const requestId = 'player-claim-00000001';
-    const appointment = { version: 1, mode: 'appointed-spa', epoch: 8, sessionId: 'session-1',
-        principalId: 'principal-1', appointedAtEpochMs: 123, heartbeatTtlMs: 5000 };
+    const appointment = {
+        version: 1,
+        mode: 'appointed-spa',
+        epoch: 8,
+        sessionId: 'session-1',
+        principalId: 'principal-1',
+        appointedAtEpochMs: 123,
+        heartbeatTtlMs: 5000
+    };
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
         expect(JSON.parse(String(init.body))).toEqual({ actorPrincipalId: 'principal-1', actorSessionId: 'session-1', succession: claim });
         return response({ rallarDirector: appointment, rallarDirectorSuccession: state });

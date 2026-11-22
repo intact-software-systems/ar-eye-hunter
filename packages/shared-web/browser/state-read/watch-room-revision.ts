@@ -1,17 +1,16 @@
-import type { RallarStateEventMessage } from '../messages/rallar-message-contracts.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
-import type { RallarRoomEventOptions } from '../rooms/rallar-room-contracts.ts';
-import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
+import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
+import type { RallarRoomEventOptions } from '../rooms/rallar-room-contracts.ts';
+import { captureRoomSession } from '../rooms/room-session-fence.ts';
 import { parseGroupStateDeltaEnvelope } from '../state-cache/group-state-delta-application.ts';
 import { readStateGroupSnapshot } from './point-read.ts';
-import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
-import { captureRoomSession } from '../rooms/room-session-fence.ts';
 
 export interface ObservedRoomMetadata {
     readonly snapshotVersion: number;
@@ -34,35 +33,40 @@ export function explicitRoomRef(room: GroupRef): GroupRef {
     return { ...room };
 }
 
-export async function readObservedRoom(roomRef: GroupRef, requireSession: CreateBrowserRallarRoomsInput['requireSession'], signal?: AbortSignal): Promise<ObservedRoomMetadata> {
+export async function readObservedRoom(
+    roomRef: GroupRef,
+    requireSession: CreateBrowserRallarRoomsInput['requireSession'],
+    signal?: AbortSignal
+): Promise<ObservedRoomMetadata> {
     const room = explicitRoomRef(roomRef);
     const fence = captureRoomSession(requireSession, signal);
     fence.assertCurrent();
     const result = await readStateGroupSnapshot(room.groupId, room, { authSession: fence.session, signal });
     fence.assertCurrent();
-    if (result.source !== 'durable' || !isSameGroupRef(result.snapshot.group, room)) throw new Error('Room reads require the requested durable snapshot.');
+    if (result.source !== 'durable' || !isSameGroupRef(result.snapshot.group, room)) {
+        throw new Error('Room reads require the requested durable snapshot.');
+    }
     return result.snapshot.group;
 }
 
-function validateReadRevision<T extends { readonly revision: number }>(
-    next: T | null, previous: T | null, announcedRevision: number, regresses: WatchRoomRevisionInput<T>['regresses']
+function validateReadRevision<T extends { readonly revision: number; }>(
+    next: T | null,
+    previous: T | null,
+    announcedRevision: number,
+    regresses: WatchRoomRevisionInput<T>['regresses']
 ): void {
-    if ((next?.revision ?? 0) < announcedRevision) throw new Error('Room read predates the server notification.');
+    if ((next?.revision ?? 0) < announcedRevision) {
+        throw new Error('Room read predates the server notification.');
+    }
     if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
         throw new Error('Room read regressed.');
     }
 }
 
-function readServerDelta(message: RallarStateEventMessage<GroupEvent>, room: GroupRef) {
-    if (message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
-        message.typeId !== AppTopics.groupStateEvent) return;
-    const target = readALTargetGroupRef(message.raw);
-    if (!target || !isSameGroupRef(target, room)) return;
-    return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
-}
-
 /** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
-export function watchRoomRevision<T extends { readonly revision: number; }>(input: WatchRoomRevisionInput<T>): () => void {
+export function watchRoomRevision<T extends { readonly revision: number; }>(
+    input: WatchRoomRevisionInput<T>
+): () => void {
     input.signal?.throwIfAborted();
     const room = explicitRoomRef(input.room);
     const { requireSession, ws, roomEvents, auth } = input.services;
@@ -113,11 +117,19 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
         let next: T | null;
         try {
             fence.assertCurrent();
-            next = input.project(await readObservedRoom(room, requireSession, AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])));
+            next = input.project(
+                await readObservedRoom(
+                    room,
+                    requireSession,
+                    AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])
+                )
+            );
             validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
         catch {
-            if (request !== attempt) return;
+            if (request !== attempt) {
+                return;
+            }
             request = undefined;
             publish('stale');
             // One bounded retry burst per external wakeup, including when the server stays unavailable.
@@ -158,15 +170,33 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
-        const delta = readServerDelta(message, room);
-        if (!delta) return;
+        if (
+            message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
+            message.typeId !== AppTopics.groupStateEvent
+        ) {
+            return;
+        }
+        const target = readALTargetGroupRef(message.raw);
+        if (!target || !isSameGroupRef(target, room)) {
+            return;
+        }
+        const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
+        if (!delta) {
+            return;
+        }
         const announced = input.project(delta.group);
-        if (!announced || announced.revision <= Math.max(announcedRevision, observed?.revision ?? 0)) return;
+        if (!announced || announced.revision <= Math.max(announcedRevision, observed?.revision ?? 0)) {
+            return;
+        }
         const action = observed && input.onDelta?.(observed, announced);
-        if (action === 'ignore') return;
+        if (action === 'ignore') {
+            return;
+        }
         announcedRevision = announced.revision;
-        if (action === 'publish' && observed && status === 'current' && !request && !isInactive() &&
-            !input.regresses(observed, announced)) {
+        if (
+            action === 'publish' && observed && status === 'current' && !request && !isInactive() &&
+            !input.regresses(observed, announced)
+        ) {
             fence.assertCurrent();
             publish('current', announced);
             return;
@@ -179,7 +209,9 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
         wake();
     }, { emitCurrent: false });
     const unsubscribeAuth = auth.onChange(({ session }) => {
-        if (session?.sessionId === fence.session.sessionId && session?.clientId === fence.session.clientId) return;
+        if (session?.sessionId === fence.session.sessionId && session?.clientId === fence.session.clientId) {
+            return;
+        }
         try {
             publish('stale', null);
         }
