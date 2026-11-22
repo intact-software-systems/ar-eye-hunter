@@ -111,7 +111,8 @@ async function computeArrival(
         plan: peer.planner(msg, RTC_SOURCE, computeALInboundPlanningObservations(read)),
         facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
         canForward: peer.canForward,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
 }
 

@@ -338,25 +338,27 @@ refused as past the persistence limits when the row's outside list is full (256)
 recipient, since the list gains a recipient only when it is absent. A `gap` NACK must carry its `orderingKey`,
 `expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it
 to its parent as the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). A send
-that asks for no receipt leaves no relay row: the relay forwards a child's gap NACK about such a stored message
-without one, toward the peer the message arrived from, each time it admits it, and records nothing (6c). It admits
-one from a child other than that peer, naming a recipient of the message's frozen audience (with none frozen, only
-the child itself) and the message's own track; the origin answers a repeat of a numbered request `duplicate`. A
-sequence the relay already forwarded and its child lost is repaired too: a duplicate of such a message from the peer
-it first arrived from, naming this relay a next hop, is passed down again as a retried forward to the next hops it
-would go to were it new, and a child that holds it reads a duplicate and answers nothing. Nothing tells a repair copy
-from another copy of the parent's, so a parent that replays copies is passed down each time, the exposure the
-receipted parent-retry path already accepts; a copy from any other neighbour goes nowhere. The leaf's paired `repair`
-control is not relayed. An outside-audience NACK the relay records in the row's `outsideAudiencePeerIds` and in a
-`nacks` control history beside `acks` (`set-control-nacks`, bounded and expired as `acks` is), and forwards to its
-parent, once per distinct statement; its answer to a retried copy forwards again the first of each distinct statement
-among the stored NACKs and hop-ends that named the recipient, a NACK, with the child's own reason, before a hop-end
-of the same statement. The NACK completes no hop, and no confirming ACK for that recipient that is the same statement
-is admitted after it (PL9, PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the
-relay forwards the hop-end and refuses the later NACK: the origin records the recipient outside in either order, but
-the child's reason reaches it only when the NACK comes first. A row stored before `outsideAudiencePeerIds` existed
-reads none. The row stays until it expires, so a child ACK that arrives after completion is still relayed, and a
-retried copy of the message is answered from it
+that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
+`forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
+relay forwards a child's gap NACK about such a stored message without one, toward the peer the message arrived from,
+each time it admits it, and records nothing (6c). It admits one from a child it forwards the message to, never that
+peer, naming a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's
+own track; the origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and
+its child lost is repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
+naming this relay a next hop, is passed down again as a retried forward to the next hops it would go to were it new,
+and a child that holds it reads a duplicate and answers nothing. Nothing tells a repair copy from another copy of the
+parent's, so a parent that replays copies is passed down each time, the exposure the receipted parent-retry path
+already accepts; a copy from any other neighbour goes nowhere. The leaf's paired `repair` control is not relayed. An
+outside-audience NACK the relay records in the row's `outsideAudiencePeerIds` and in a `nacks` control history beside
+`acks` (`set-control-nacks`, bounded and expired as `acks` is), and forwards to its parent, once per distinct
+statement; its answer to a retried copy forwards again the first of each distinct statement among the stored NACKs
+and hop-ends that named the recipient, a NACK, with the child's own reason, before a hop-end of the same statement.
+The NACK completes no hop, and no confirming ACK for that recipient that is the same statement is admitted after it
+(PL9, PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the relay forwards the
+hop-end and refuses the later NACK: the origin records the recipient outside in either order, but the child's reason
+reaches it only when the NACK comes first. A row stored before `outsideAudiencePeerIds` existed reads none. The row
+stays until it expires, so a child ACK that arrives after completion is still relayed, and a retried copy of the
+message is answered from it
 ([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
 
 - from the relay's recorded parent, the relay forwards again each child

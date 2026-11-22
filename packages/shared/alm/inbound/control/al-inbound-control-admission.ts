@@ -46,6 +46,26 @@ import {
     validateALInboundUnreceiptedGapNackAdmission
 } from './validate-al-inbound-nack-admission.ts';
 
+/** The next hops a lane passes a copy of `msg` from `source` down to, as it would forward it were it new. */
+export type ALInboundRetriedCopyNextHops = (
+    msg: ALMessage,
+    source: ALInboundMessageRuntime.Source
+) => readonly string[];
+
+/**
+ * The lane's retried-copy next hops: as its planner forwards a copy that is new, and only where it supplies
+ * `forwardRetriedCopy`; `undefined` on any other lane.
+ */
+export function resolveALInboundRetriedCopyNextHops(
+    lane: Pick<ALInboundMessageRuntime.Dependencies, 'forwardRetriedCopy' | 'planIncomingMessage' | 'clock'>
+): ALInboundRetriedCopyNextHops | undefined {
+    if (lane.forwardRetriedCopy === undefined) {
+        return undefined;
+    }
+    return (msg, source) =>
+        lane.planIncomingMessage(msg, source, { nowMs: lane.clock.nowMs() }).forwarding.nextHopPeerIds;
+}
+
 export interface ALInboundControlAdmissionDependencies {
     readonly admissionStore: ALInboundAdmissionStore;
     readonly port: ALWorkQueuePort;
@@ -54,6 +74,11 @@ export interface ALInboundControlAdmissionDependencies {
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly receiptProofs: ALInboundReceiptProofs;
     readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+    /**
+     * `undefined` on a lane that forwards no retried copy. Such a lane relays no gap NACK about a message it keeps no
+     * row for: the repair that NACK asks for would reach no child through it (6c).
+     */
+    readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
 }
 
 export type ALInboundControlAdmissionResult =
@@ -104,6 +129,7 @@ export class ALInboundControlAdmission {
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly receiptProofs: ALInboundReceiptProofs;
     private readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+    private readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
         this.admissionStore = dependencies.admissionStore;
@@ -113,6 +139,7 @@ export class ALInboundControlAdmission {
         this.retention = dependencies.retention;
         this.receiptProofs = dependencies.receiptProofs;
         this.diagnostics = dependencies.diagnostics;
+        this.planRetriedCopyNextHops = dependencies.planRetriedCopyNextHops;
     }
 
     async admit(
@@ -188,8 +215,9 @@ export class ALInboundControlAdmission {
     ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
         const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
-        const unreceipted = surface?.pendingAck === undefined && nack.reason === 'gap'
-            ? await this.readUnreceiptedGapNack(arrival, { ...nack, reason: 'gap' }, surface, nowMs)
+        // Only a receipted message's relay row writes a control-owner index, so a surface rules the row-less path out.
+        const unreceipted = surface === undefined && nack.reason === 'gap'
+            ? await this.readUnreceiptedGapNack(arrival, { ...nack, reason: 'gap' }, nowMs)
             : undefined;
         if (unreceipted !== undefined) {
             return await this.admitUnreceiptedGapNack(arrival, unreceipted, evidence);
@@ -240,22 +268,26 @@ export class ALInboundControlAdmission {
     }
 
     /**
-     * A gap NACK about a stored message that asked for no receipt, which the relay keeps no row for; absent for any
-     * other, which the row's rules decide as before. Its parent is the peer the message arrived from.
+     * A gap NACK about a stored message that asked for no receipt, which the relay keeps no row for, on a lane that
+     * passes the repair copy down; absent for any other, which the row's rules decide as before. Its parent is the peer
+     * the message arrived from, its children the next hops the lane passes a copy down to. The provenance row is read
+     * first, so a message without one costs no canonical read.
      */
     private async readUnreceiptedGapNack(
         arrival: ALInboundControlArrival,
         nack: ALInboundUnreceiptedGapNackAdmissionRead['nack'],
-        surface: ALInboundControlDecisionSurface | undefined,
         nowMs: number
     ): Promise<ALInboundUnreceiptedGapNackAdmissionRead | undefined> {
-        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
-        const stored = await this.admissionStore.readDeliverySurface(reference, nowMs);
-        if (stored === undefined || resolveALDeliveryReceiptAlgo(stored.msg) !== 'none') {
+        if (this.planRetriedCopyNextHops === undefined) {
             return undefined;
         }
-        const owner = surface?.messageOwner ?? await this.admissionStore.readMessageProvenance(reference);
+        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
+        const owner = await this.admissionStore.readMessageProvenance(reference);
         if (owner === undefined || owner.source.kind === 'trusted-server') {
+            return undefined;
+        }
+        const stored = await this.admissionStore.readDeliverySurface(reference, nowMs);
+        if (stored === undefined || resolveALDeliveryReceiptAlgo(stored.msg) !== 'none') {
             return undefined;
         }
         return {
@@ -264,8 +296,7 @@ export class ALInboundControlAdmission {
             msg: stored.msg,
             owner,
             parentPeerId: owner.source.peerId,
-            controlOwners: surface?.controlOwners,
-            acks: surface?.acks ?? [],
+            childPeerIds: this.planRetriedCopyNextHops(stored.msg, owner.source),
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId

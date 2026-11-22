@@ -105,9 +105,8 @@ export interface ALInboundUnreceiptedGapNackAdmissionRead {
     readonly owner: ALInboundMessageOwner;
     /** The peer the message arrived from, toward which the relay forwards the NACK. */
     readonly parentPeerId: string;
-    /** The control rows the commit observes unchanged. */
-    readonly controlOwners: ALInboundControlOwnerIndex | undefined;
-    readonly acks: readonly ALAckPayload[];
+    /** The next hops the relay passes a copy of the message down to: the children whose gap NACK it relays. */
+    readonly childPeerIds: readonly string[];
     readonly nowMs: number;
     readonly controlMsgId: string;
     readonly traceId: string;
@@ -121,15 +120,16 @@ export function computeALInboundUnreceiptedGapNackAdmission(
     read: ALInboundUnreceiptedGapNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const { namespace, nack, owner, controlOwners, acks, nowMs, controlMsgId, traceId } = read;
+    const { namespace, nack, owner, nowMs, controlMsgId, traceId } = read;
+    // The commit observes the message's control rows absent: a message that asked for no receipt writes none.
     return {
         read: {
             namespace,
             nack,
-            controlOwners,
+            controlOwners: undefined,
             owner,
             pending: undefined,
-            acks,
+            acks: [],
             nacks: [],
             nowMs,
             controlMsgId,

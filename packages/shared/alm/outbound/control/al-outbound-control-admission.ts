@@ -364,7 +364,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                 nowMs,
                 owner,
                 ...ownerSurface,
-                ...await this.readSentMessage(session, targetMsgId, ownerSurface.pending),
+                ...await this.readSentSurface(session, targetMsgId, ownerSurface.pending),
                 ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
@@ -374,7 +374,7 @@ export class ALOutboundControlAdmission<TPrepared> {
      * The retained send, and, for one that tracks no receipt and holds no receipt row, who may ask for its repair, read
      * from its canonical copy.
      */
-    private async readSentMessage(
+    private async readSentSurface(
         session: ALAdmissionReadSession,
         msgId: string,
         pending: ALControlAdmissionRead['pending']

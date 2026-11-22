@@ -61,6 +61,7 @@ export namespace ALInboundMessageAdmission {
             | 'planIncomingMessage'
             | 'verifyPublicationProof'
             | 'forwardMessage'
+            | 'forwardRetriedCopy'
             | 'canForwardMessage'
             | 'isRoomPeerPresent'
             | 'readPendingAdmissionAuthority'
@@ -153,7 +154,16 @@ export class ALInboundMessageAdmission {
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
         const recordedParentPresent = read.pendingAck === undefined ||
             (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true);
-        const computed = computeALInboundAdmission({ read, plan, canForward, recordedParentPresent, facts });
+        const computed = computeALInboundAdmission({
+            read,
+            plan,
+            canForward,
+            recordedParentPresent,
+            retriedCopyNextHopPeerIds: this.dependencies.forwardRetriedCopy === undefined
+                ? []
+                : prePlan.forwarding.nextHopPeerIds,
+            facts
+        });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);

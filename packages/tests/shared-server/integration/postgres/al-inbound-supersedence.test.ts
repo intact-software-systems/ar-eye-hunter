@@ -196,5 +196,9 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
-    return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }) };
+    return {
+        read,
+        plan,
+        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
+    };
 }

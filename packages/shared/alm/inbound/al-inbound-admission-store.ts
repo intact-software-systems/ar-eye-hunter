@@ -173,8 +173,11 @@ export interface ALInboundMessageReadDto {
     readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly plan: ALMessageHandlingPlan;
-    /** The copy planned before the store's observations: where it would go were it new, which a duplicate no longer plans. */
-    readonly prePlan: ALMessageHandlingPlan;
+    /**
+     * The next hops a parent's repeat of this message is passed down to when it keeps no relay row: where it would go
+     * were it new, on a lane that forwards a retried copy; none on any other lane.
+     */
+    readonly retriedCopyNextHopPeerIds: readonly string[];
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
 }

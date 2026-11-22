@@ -317,7 +317,7 @@ async function readClaimDecision(
     });
     return {
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true })
+        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
     };
 }
 

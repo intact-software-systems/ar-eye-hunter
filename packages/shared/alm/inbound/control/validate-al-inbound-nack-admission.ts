@@ -14,6 +14,11 @@ import {
     toALReceiptStatementSubject
 } from './is-al-same-receipt-statement.ts';
 
+const OUTSIDE_FROZEN_AUDIENCE: ALMessageRejection = {
+    code: 'unauthorized',
+    message: 'Inbound NACK names no recipient of the frozen audience'
+};
+
 const MISSING_GAP_ORDERING_HINTS: ALMessageRejection = {
     code: 'malformed',
     message: 'Inbound gap NACK carries no ordering hints to forward'
@@ -42,7 +47,7 @@ export function validateALInboundNackAdmission(
         issues.push(rejectInboundNack('Inbound NACK names another origin than the message it answers'));
     }
     if (pending.upwardAudiencePeerIds?.includes(nack.logicalRecipientPeerId) !== true) {
-        issues.push(rejectInboundNack('Inbound NACK names no recipient of the frozen audience'));
+        issues.push(OUTSIDE_FROZEN_AUDIENCE);
     }
     if (hasALOutsideStatement(pending, history, subject)) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient already forwarded outside the audience'));
@@ -68,7 +73,8 @@ export function validateALInboundNackAdmission(
 
 /**
  * Every reason a child's gap NACK about a message that asked for no receipt may not be forwarded without a row (6c): it
- * comes from a child, never the peer the message arrived from; it names a recipient of the message's frozen audience,
+ * comes from a child this relay forwards the message to, never the peer the message arrived from; it names a recipient
+ * of the message's frozen audience,
  * or, with none frozen, only the child itself; and it names the message's track with the hints the origin repairs by.
  */
 export function validateALInboundUnreceiptedGapNackAdmission(
@@ -80,8 +86,11 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     if (nack.fromPeerId === read.parentPeerId) {
         issues.push(rejectInboundNack('Inbound NACK comes from the peer the message arrived from'));
     }
+    if (!read.childPeerIds.includes(nack.fromPeerId)) {
+        issues.push(rejectInboundNack('Inbound NACK comes from no child this relay forwards the message to'));
+    }
     if (frozenPeerIds !== undefined && !frozenPeerIds.includes(nack.logicalRecipientPeerId)) {
-        issues.push(rejectInboundNack('Inbound NACK names no recipient of the frozen audience'));
+        issues.push(OUTSIDE_FROZEN_AUDIENCE);
     }
     if (frozenPeerIds === undefined && nack.logicalRecipientPeerId !== nack.fromPeerId) {
         issues.push(rejectInboundNack('Inbound NACK speaks for another recipient of a message that froze no audience'));

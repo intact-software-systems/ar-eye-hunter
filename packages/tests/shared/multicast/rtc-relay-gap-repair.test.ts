@@ -15,7 +15,7 @@ import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/cont
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 
-import { ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
+import { ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 import { PUBLICATION_TOPIC_ID, PUBLISH_AND_SUBSCRIBE, PUBLISH_ONLY, SUBSCRIBE_ONLY } from './rtc-publication-proof-fixtures.ts';
 import {
     createChainHop,
@@ -374,23 +374,28 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
     it('admits a ready room neighbour\'s gap NACK for a room send that froze no audience, and leaves a peer that is no ready neighbour\'s unhandled', async () => {
         const { origin } = await createOriginRelayChain(GRANTS);
         const sentBefore = origin.channels.r!.sent.length;
-        const message = newALBroadcastMessage({
-            scope: 'room',
-            createdAtEpochMs: Date.now(),
-            senderId: 'a',
-            route: { topicId: 'room.chat', resourceId: 'unfrozen-3', contextId: ORIGIN_ROOM.groupId },
-            typeId: 'room.chat.v1',
-            resource: { text: 'unfrozen' },
-            options: {
-                groupRef: ORIGIN_ROOM,
-                ack: 'none',
-                reliability: 'at-least-once',
-                ttlMs: 30_000,
-                ordering: { orderingKey: 'chat', epoch: 1, seq: 3 }
-            }
-        });
-        expect((await origin.manager.enqueueLegIfAbsent(message, 'hold')).verdict.kind).toBe('admitted');
-        await drainUntil(() => origin.channels.r!.sent.length > sentBefore);
+        const toUnfrozenFrame = (seq: number): ALMessage =>
+            newALBroadcastMessage({
+                scope: 'room',
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'room.chat', resourceId: `unfrozen-${seq}`, contextId: ORIGIN_ROOM.groupId },
+                typeId: 'room.chat.v1',
+                resource: { text: `unfrozen ${seq}` },
+                options: {
+                    groupRef: ORIGIN_ROOM,
+                    ack: 'none',
+                    reliability: 'at-least-once',
+                    ttlMs: 30_000,
+                    ordering: { orderingKey: 'chat', epoch: 1, seq }
+                }
+            });
+        const [missing, message] = [toUnfrozenFrame(2), toUnfrozenFrame(3)];
+        for (const frame of [missing, message]) {
+            const sentBeforeFrame = origin.channels.r!.sent.length;
+            expect((await origin.manager.enqueueLegIfAbsent(frame, 'hold')).verdict.kind).toBe('admitted');
+            await drainUntil(() => origin.channels.r!.sent.length > sentBeforeFrame);
+        }
         const toUnfrozenGapNack = (fromPeerId: string): ALMessage =>
             newALNackControlMessage(
                 { v: 4, msgId: `unfrozen-gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: message.id.traceId },
@@ -410,10 +415,12 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
 
         const fromNoNeighbour = await origin.manager.acceptControlMessage(toUnfrozenGapNack('c'));
         const fromNeighbour = await origin.manager.acceptControlMessage(toUnfrozenGapNack('r'));
+        await drainUntil(async () => (await readRepairRequesters(origin, missing)).length > 0);
 
         expect(origin.channels.r!.sent[sentBefore]?.targets).toMatchObject({ mode: 'broadcast', scope: 'room' });
         expect([fromNoNeighbour.kind, fromNeighbour.kind]).toEqual(['not-handled', 'committed']);
         expect(origin.channels.c!.sent).toEqual([]);
+        expect(await readRepairRequesters(origin, missing)).toEqual(['r']);
     });
 
     it('refuses at the relay a gap NACK from the neighbour the message arrived from', async () => {
@@ -584,6 +591,24 @@ function readGapNack(controls: readonly ALMessage[]): GapNackControl {
         throw new Error('The leaf sent no gap NACK');
     }
     return nack;
+}
+
+/** The requesters the origin's repair-attempt row for `message` charges, from whichever pair holds the send. */
+async function readRepairRequesters(origin: RtcOriginOverlayFixture, message: ALMessage): Promise<readonly string[]> {
+    const read = {
+        msg: message,
+        planner: (planned: ALMessage) => ({ msg: planned, dropReasonCode: undefined, lane: 'volatile' as const, preparedMessages: [] }),
+        observedCanonicalEntry: undefined,
+        intent: 'enqueue' as const
+    };
+    const stores = [origin.resources.admissionStore, origin.resources.volatileStores?.admissionStore];
+    for (const store of stores) {
+        const attempt = store === undefined ? undefined : (await store.readOutgoingMessage(read)).repairAttempt;
+        if (attempt !== undefined) {
+            return Object.keys(attempt.attemptsByRequester);
+        }
+    }
+    return [];
 }
 
 /** The leaf's gap NACK as the message it sent. */

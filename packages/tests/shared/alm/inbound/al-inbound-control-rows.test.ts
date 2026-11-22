@@ -73,7 +73,8 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
         plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read)),
         facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
         canForward: true,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
 }

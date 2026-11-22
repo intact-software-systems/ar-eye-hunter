@@ -73,9 +73,11 @@ const DOWNSTREAM_PEER_IDS = ['downstream-1', 'downstream-2'];
 interface ReceivingPeer {
     readonly planner: ALInboundPlanner;
     readonly canForward: boolean;
+    /** The lane supplies `forwardRetriedCopy`, as the RTC relay's does. */
+    readonly forwardsRetriedCopies: boolean;
 }
 
-const LEAF_PEER: ReceivingPeer = { planner: planInboundTestMessage, canForward: false };
+const LEAF_PEER: ReceivingPeer = { planner: planInboundTestMessage, canForward: false, forwardsRetriedCopies: false };
 const RELAY_PEER: ReceivingPeer = {
     planner: (msg, _source, observations) =>
         planALMessageHandling(msg, {
@@ -86,7 +88,8 @@ const RELAY_PEER: ReceivingPeer = {
             groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, ...DOWNSTREAM_PEER_IDS],
             overlayNeighborPeerIds: DOWNSTREAM_PEER_IDS
         }),
-    canForward: true
+    canForward: true,
+    forwardsRetriedCopies: true
 };
 
 /** A frozen leaf of the sender's room, planning every copy as the room authorizes it. */
@@ -99,7 +102,8 @@ const FROZEN_LEAF_PEER: ReceivingPeer = {
             connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
             groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID]
         }),
-    canForward: false
+    canForward: false,
+    forwardsRetriedCopies: false
 };
 
 /** The relay of the sender's room that carries its RTC copies to the frozen leaf. */
@@ -115,7 +119,8 @@ const RELAYED_FROZEN_LEAF_PEER: ReceivingPeer = {
             connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID],
             groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID]
         }),
-    canForward: false
+    canForward: false,
+    forwardsRetriedCopies: false
 };
 
 const RTC_FROM_RELAY: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: RELAY_PEER_ID };
@@ -128,7 +133,8 @@ const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
             ? toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-not-subscribed' }), INBOUND_TEST_SENDER_PEER_ID)
             : plan;
     },
-    canForward: false
+    canForward: false,
+    forwardsRetriedCopies: false
 };
 
 interface RepeatedAck {
@@ -201,7 +207,8 @@ async function computeArrival(
         plan,
         facts,
         canForward: peer.canForward,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: peer.forwardsRetriedCopies ? read.prePlan.forwarding.nextHopPeerIds : []
     });
 }
 
@@ -593,6 +600,18 @@ describe('a relay answering a copy of a message that asked for no receipt', () =
         expect(toRetriedForwards(bundle)).toEqual([{ fromPeerId: INBOUND_TEST_SENDER_PEER_ID, retryPeerIds: DOWNSTREAM_PEER_IDS }]);
         expect(toRepeatedAcks(bundle)).toEqual([]);
         expect(bundle.mutations).toEqual([]);
+    });
+
+    it('passes down nothing on a lane that forwards no retried copy', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const lane = { ...RELAY_PEER, forwardsRetriedCopies: false };
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, UNRECEIPTED_MSG, { peer: lane, carrier: 'rtc' })))
+            .toBe('committed');
+
+        const bundle = await computeArrival(admissionStore, PARENT_COPY, { peer: lane, carrier: 'rtc' });
+
+        expect(toRetriedForwards(bundle)).toEqual([]);
+        expect(bundle.durableEffects).toEqual([]);
     });
 
     it('passes down no copy from a neighbour other than the parent', async () => {

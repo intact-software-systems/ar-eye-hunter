@@ -238,7 +238,8 @@ async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, m
         plan: planAsDirector(msg, DIRECTOR_SOURCE, computeALInboundPlanningObservations(read)),
         facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }),
         canForward: true,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
 }
 

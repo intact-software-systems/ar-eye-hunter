@@ -40,6 +40,7 @@ export function createTestALInboundControlAdmission(
         newControlId: input.newControlId,
         retention: input.admissionStore.retention,
         receiptProofs: { kind: 'carrier-authenticated' },
-        diagnostics: undefined
+        diagnostics: undefined,
+        planRetriedCopyNextHops: undefined
     });
 }

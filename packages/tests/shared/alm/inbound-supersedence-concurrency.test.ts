@@ -260,7 +260,14 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
     return {
         read,
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts: readEffectFacts(nowMs), canForward: false, recordedParentPresent: true })
+        bundle: computeALInboundAdmission({
+            read,
+            plan,
+            facts: readEffectFacts(nowMs),
+            canForward: false,
+            recordedParentPresent: true,
+            retriedCopyNextHopPeerIds: []
+        })
     };
 }
 

@@ -97,9 +97,9 @@ export function computeALInboundDuplicateChanges(
 
 /**
  * A copy of a message that asked for no receipt, which keeps no relay row, so nothing tells a repair from another copy
- * (6c). A copy from the peer the message first arrived from, naming this peer a next hop, is passed down again as a
- * retried forward to the next hops it would go to were it new, so the origin's repair reaches a child that lost the
- * first forward; a child that holds the message reads it a duplicate and answers nothing. A parent that replays its
+ * (6c). On a lane that forwards a retried copy, a copy from the peer the message first arrived from, naming this peer a
+ * next hop, is passed down again as a retried forward to the next hops it would go to were it new, so the origin's
+ * repair reaches a child that lost the first forward; a child that holds the message reads it a duplicate and answers nothing. A parent that replays its
  * copies is passed down each time: the exposure the receipted parent-retry path already accepts. A copy from any other
  * neighbour goes nowhere.
  */
@@ -109,7 +109,7 @@ function computeUnreceiptedParentCopyChanges(
 ): ALInboundDuplicateChanges {
     const parent = read.observations.messageOwner?.source;
     const fromParent = parent !== undefined && parent.kind !== 'trusted-server' && parent.peerId === read.fromPeerId;
-    const nextHopPeerIds = read.prePlan.forwarding.nextHopPeerIds.filter((peerId) => peerId !== read.fromPeerId);
+    const nextHopPeerIds = read.retriedCopyNextHopPeerIds.filter((peerId) => peerId !== read.fromPeerId);
     return fromParent && read.msg.forwarding?.nextHopPeerIds?.includes(selfPeerId) === true && nextHopPeerIds.length > 0
         ? { mutations: [], effects: [toRetriedForward(read, nextHopPeerIds)] }
         : NO_DUPLICATE_CHANGES;

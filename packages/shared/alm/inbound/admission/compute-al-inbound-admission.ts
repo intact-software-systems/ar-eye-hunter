@@ -75,6 +75,8 @@ export interface ComputeALInboundAdmissionInput {
     readonly canForward: boolean;
     /** Whether the parent a relay row of this message records is still a member of the room and reachable. */
     readonly recordedParentPresent: boolean;
+    /** The DTO's `retriedCopyNextHopPeerIds`, which only a lane that forwards a retried copy names. */
+    readonly retriedCopyNextHopPeerIds: readonly string[];
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -91,9 +93,9 @@ export interface ALInboundBufferedRelease extends ALInboundCommitBundle {
 }
 
 function computeALInboundMessageRead(
-    read: ALInboundAdmissionRead,
-    plan: ALMessageHandlingPlan
+    input: Pick<ComputeALInboundAdmissionInput, 'read' | 'plan' | 'retriedCopyNextHopPeerIds'>
 ): ALInboundMessageReadDto {
+    const { read, plan, retriedCopyNextHopPeerIds } = input;
     const expiresAtMs = resolveALMessageExpireAtMs(read.msg, plan.effective);
     const supersedence = plan.supersedence.enabled && plan.supersedence.key
         ? {
@@ -118,7 +120,7 @@ function computeALInboundMessageRead(
         nacks: read.nacks,
         controlOwners: read.controlOwners,
         plan,
-        prePlan: read.prePlan,
+        retriedCopyNextHopPeerIds,
         retention: read.retention,
         durability: read.durability,
         supersedence: read.supersedence,
@@ -161,7 +163,7 @@ const NO_INBOUND_ACKNOWLEDGEMENTS: InboundAcknowledgementChanges = {
 export function computeALInboundAdmission(
     input: ComputeALInboundAdmissionInput
 ): ALInboundCommitBundle {
-    const finalRead = computeALInboundMessageRead(input.read, input.plan);
+    const finalRead = computeALInboundMessageRead(input);
     const changes = computeALInboundAdmissionChanges(finalRead, input);
     return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
 }

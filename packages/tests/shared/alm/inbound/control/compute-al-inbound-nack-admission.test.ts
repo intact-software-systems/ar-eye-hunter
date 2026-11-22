@@ -307,8 +307,7 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
             msg,
             owner: { msgId: 'subject', senderId: 'origin', source: { kind: 'rtc-peer', peerId: 'parent' }, supersedenceKey: null, deliveredLocally: false },
             parentPeerId: 'parent',
-            controlOwners: undefined,
-            acks: [],
+            childPeerIds: ['child'],
             nowMs: NOW_MS,
             controlMsgId: 'forwarded',
             traceId: 'trace-relayed-nack'
@@ -329,13 +328,28 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
     });
 
     it('refuses a gap NACK naming a recipient outside the frozen audience', () => {
-        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', fromPeerId: 'stranger', logicalRecipientPeerId: 'stranger' })))
+        expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'stranger' })))
             .toEqual([{ code: 'unauthorized', message: 'Inbound NACK names no recipient of the frozen audience' }]);
     });
 
     it('refuses a gap NACK from the peer the message arrived from', () => {
         expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', fromPeerId: 'parent', logicalRecipientPeerId: 'leaf' })))
-            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK comes from the peer the message arrived from' }]);
+            .toEqual([
+                { code: 'unauthorized', message: 'Inbound NACK comes from the peer the message arrived from' },
+                { code: 'unauthorized', message: 'Inbound NACK comes from no child this relay forwards the message to' }
+            ]);
+    });
+
+    it.each(
+        [
+            ['a frozen audience', FROZEN],
+            ['no frozen audience', { mode: 'broadcast', scope: 'room', groupRef: ROOM } as const]
+        ] as const
+    )('refuses, under %s, the own gap NACK of a peer this relay forwards the message to no copy of', (_name, targets) => {
+        const read = readUnreceipted({ reason: 'gap', fromPeerId: 'leaf', logicalRecipientPeerId: 'leaf' }, targets);
+
+        expect(validateALInboundUnreceiptedGapNackAdmission(read))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK comes from no child this relay forwards the message to' }]);
     });
 
     it('forwards only a child\'s own word for a message that froze no audience', () => {

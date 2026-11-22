@@ -317,5 +317,9 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     });
-    expect(await store.commitBundle(computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }))).toBe('committed');
+    expect(
+        await store.commitBundle(
+            computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
+        )
+    ).toBe('committed');
 }
