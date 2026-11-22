@@ -40,9 +40,9 @@ it('uses the captured director and program revision for both transitions and the
     for (const [operation, schedule] of [['pause-program', paused], ['resume-program', resumed]] as const) {
         const control = { name: 'court', expectedRevision: schedule.revision - 1, expectedDirectorEpoch: 7 };
         const requestId = 'court-program-request-' + schedule.revision;
-        const requests: { url: string; body: unknown; }[] = [];
+        const requests: { url: string; body: string; }[] = [];
         vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-            requests.push({ url, body: JSON.parse(String(init.body)) });
+            requests.push({ url, body: String(init.body) });
             return response(schedule);
         });
         const act = operation === 'pause-program' ? api.pauseProgram : api.resumeProgram;
@@ -56,7 +56,7 @@ it('uses the captured director and program revision for both transitions and the
                 roomClock: { ...control, operation }
             }
         };
-        expect(requests).toEqual([expectedRequest, expectedRequest]);
+        expect(requests.map(({ url, body }) => ({ url, body: JSON.parse(body) }))).toEqual([expectedRequest, expectedRequest]);
     }
 });
 
