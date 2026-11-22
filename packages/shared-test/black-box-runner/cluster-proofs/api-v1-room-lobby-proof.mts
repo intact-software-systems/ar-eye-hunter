@@ -44,6 +44,35 @@ async function proveLobbyCommitments({ plans, controls }: ManagedClusterProof.Sc
         timeout.throwIfAborted();
         await new Promise(resolve => setTimeout(resolve, 100));
     }
+    const outsider = await users.login({
+        principal: 'admin', label: 'walk-in', apiBaseUrl: second.baseUrl, wsBaseUrl: second.baseUrl.replace(/^http/, 'ws')
+    });
+    const groups = '/api/state' + path + '/groups';
+    const groupId = 'exclusive-court';
+    const room = groups + '/' + groupId;
+    await requestJson(first.baseUrl, toApiMutationRequestPath(groups, crypto.randomUUID()), {
+        method: 'POST', session: alice, expectedStatus: 201,
+        body: { groupId, displayName: 'Exclusive court', createdByPrincipalId: alice.clientId, kind: 'room',
+            joinMode: 'open', maxMembers: 1, roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } }
+    });
+    await requestJson(second.baseUrl, toApiMutationRequestPath(room, crypto.randomUUID()), {
+        method: 'PUT', session: bob, body: { roomLobby: { operation: 'wait' } }
+    });
+    assert.equal((await seat(bob))?.status, 'waiting');
+    const releasePath = toApiMutationRequestPath(room, crypto.randomUUID());
+    const release = { method: 'PUT', session: alice, body: { roomLobby: { operation: 'release' } } };
+    const join = toApiMutationRequestPath(room + '/members/' + encodeURIComponent(outsider.clientId), crypto.randomUUID());
+    await Promise.all([
+        requestJson(first.baseUrl, releasePath, release),
+        requestJson(second.baseUrl, join, { method: 'PUT', session: outsider, body: { status: 'active' }, expectedStatus: 403 })
+    ]);
+    const offer = await seat(bob);
+    assert.equal(offer?.status, 'offered');
+    await controls.stop(first.port, 'crash');
+    await controls.restart(first.port, { ...first, logPath: first.logPath + '.offer-restart' });
+    await requestJson(second.baseUrl, releasePath, release);
+    assert.deepEqual(await seat(bob), offer);
+    assert.equal(await seat(outsider), null);
 }
 
 if (import.meta.main) {
