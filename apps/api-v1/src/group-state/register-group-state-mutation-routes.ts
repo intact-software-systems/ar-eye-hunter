@@ -82,10 +82,10 @@ function registerUpdateGroupRoute(
                         })
                     )
                 });
-                if (request.roomLobby?.operation === 'release') {
-                    return context.json({ roomRef: { ...scope, groupId } });
-                }
-                return context.json(written.snapshot);
+                const response = request.roomLobby?.operation === 'release'
+                    ? { roomRef: { ...scope, groupId } }
+                    : written.snapshot;
+                return context.json(response);
             }
             catch (error) {
                 return toGroupMutationErrorResponse(context, error);
