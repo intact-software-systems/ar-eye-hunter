@@ -34,6 +34,12 @@ receipt settles within 45 s. Today that run cannot pass.
    owner.
 3. After the measurement below: **"Yes, the record"**, a fence-free record with one row per confirming
    recipient. This replaces ruling 2.
+4. Whether the server's own receipted publications count in the record too: **"Yes, include them"**, over
+   client sends only.
+5. Whether a re-sent copy after the end is answered with the terminal receipt again: **"Yes, answer it"**,
+   over staying silent.
+6. Whether the record goes through AppInbox: **"One more ALM runtime store"**, written directly at WS
+   ingress.
 
 ## What the measurement found
 
@@ -64,7 +70,8 @@ from many sockets on many instances; a confirmation is idempotent and commutativ
 
 - A receipted WS send's receipt is the same whether or not the instance that admitted it survives: any
   instance counts any ACK, any instance ends the receipt, any instance answers a re-sent copy.
-- One implementation of the count, on memory stores and on PostgreSQL.
+- One implementation of the count, on memory stores and on PostgreSQL, for every receipt the WS server
+  answers for: a client's send and the server's own publications.
 - Counting an ACK takes no fence and no lock another ACK waits on, and its cost is pinned by a test.
 - The memory aggregate, its cap, its deadline index and the cross-instance ACK notice are deleted.
 
@@ -196,14 +203,43 @@ complete (the crash case above). A head already ended reads a conflict and nothi
 
 A copy accepted `duplicate` or `pending-admission` is answered from `read`, on any instance, to that
 sender alone and under a fresh control id, as today: `admitted` with the confirmations so far while the
-head is `open`, and the terminal receipt, from the head's own sets, once it has ended. The second half is
-new: today nothing is answered after the end, which is how a send whose `complete` was lost ends `failed`
-although delivered.
+head is `open`, and the terminal receipt, from the head's own sets, once it has ended (ruling 5). The
+second half is new: today nothing is answered after the end, which is how a send whose `complete` was lost
+ends `failed` although delivered.
 
-### 7. What is deleted
+### 7. The server's own receipted publications
+
+The server's own receipted publications, of which the group-state delta is the production one, count in
+the record too (ruling 4). Today their ACKs, addressed to the server, are admitted into the server's
+fenced `receiver` pending row, every one a commit on the server's one version row.
+
+- The record is opened when the server enqueues a receipted publication of its own, under the server's
+  peer id as origin, with the audience the publication was admitted for.
+- An ACK addressed to the server is counted in the record when its message opened one; any other control
+  addressed to the server goes to the server's outbound owner as today.
+- A recipient the server sent nothing, on its own rows as on a client's, is one `outside` confirmation in
+  the record. The fenced `commitOutsideAudience` on the pending row, with its three tries and its
+  diagnostic, goes.
+- Ending writes the receipt work as for a client's send. The work has no origin to answer; it settles the
+  server's pending row with the terminal receipt and states the settlement the admin read shows.
+
+The pending row stays, on `outbox` topics for a client's send (D38) and for the server's own rows, as the
+record of what is still to be retransmitted. It no longer learns of a confirmation until the receipt ends,
+so the WS server's repair plan leaves out the recipients the record has confirmed. A retransmission then
+reaches the recipients that have not confirmed, as it does today.
+
+### 8. The record under the mutation doctrine
+
+A recipient's ACK over WS writes the record directly, guard first and in one transaction. It does not pass
+through AppInbox. The record is one more AL runtime store (ruling 6), written at WS ingress as the AL
+runtime's inbound and outbound stores are; a decision row states it.
+
+### 9. What is deleted
 
 - The memory count, cap and sweep in `ws-queue-box-server-receipt-aggregation.ts`; what remains there is
   the translation from an admission or an ACK to the record's operations.
+- The counting of ACKs in the server's own pending row, and `commitOutsideAudience` with its caller in
+  `ws-queue-box-server-track-order.ts`.
 - `ws-queue-box-server-receipt-deadline-index.ts`.
 - `ws-queue-box-server-ack-relay.ts`, `relayed-ack-notice.ts`, `relayed-ack-notice-subscriber.ts`,
   `create-postgres-relayed-ack-notice-transport.ts`, their notice channel, and the `ack-relay` observation
@@ -242,6 +278,8 @@ although delivered.
   survivor, reads `complete` for the broadcast its lost server admitted.
   `api-v1-cluster-subscriber-instance-loss` keeps its `timed-out`, since the lost subscriber cannot
   confirm.
+- The group-state delta's receipt: fifty sessions confirming at once complete it with no fenced commit per
+  ACK, and a retransmission inside the window reaches only the sessions that have not confirmed.
 - The ALM growth proof classifies the record's namespace; `test:api-v1:black-box:postgres:medium-scale`
   and the four ALM lane families over `ws` are green.
 
@@ -253,21 +291,10 @@ although delivered.
    receipts, deadline work, re-sent copies; the memory count, cap and deadline index deleted. From `main`
    after #869.
 3. The ACK relay deleted, with its notice, transport, channel and observation kind.
-4. Proofs, recipes, documents: the backlog lines this closes removed, decision rows D740 onward, the
+4. The server's own receipted publications count in the record; the repair plan reads the record's
+   confirmations; `commitOutsideAudience` deleted.
+5. Proofs, recipes, documents: the backlog lines this closes removed, decision rows D740 onward, the
    outbound and WS server READMEs, the product description.
-
-## Open rulings for the maintainer
-
-1. **The server's own receipted publications.** The group-state delta counts its ACKs in the fenced
-   pending row today, on the server's one version row. At +5 ms the measurement puts 50 confirmations at
-   about four seconds there. Counting them in the record too would leave the server one count. It widens
-   this work to the outbound owner's ACK path for server rows.
-2. **A re-sent copy after the end** is answered with the terminal receipt again (section 6). It changes
-   what a client that lost its `complete` reads, from `failed` to the true outcome.
-3. **The record's standing under the mutation doctrine.** A recipient's ACK over WS writes the record
-   directly, guard first and in one transaction, as the AL runtime's inbound and outbound stores are
-   written at WS ingress today; it does not pass through AppInbox. The design treats the record as one
-   more AL runtime store.
 
 ## Calls made here, each the maintainer's to overrule
 
@@ -304,3 +331,7 @@ although delivered.
 - The cost of the record through the admission backend, as opposed to the runtime-state repository it was
   measured on.
 - The hosted statement latency itself: 5 ms is one attributed run.
+- Where the WS server's repair plan takes its unconfirmed recipients from today, and so how small the
+  change in section 7 is. The pending row's `ackedPeerIds` is the likely source; it was not read.
+- Whether every receipted publication of the server's own is enqueued through one path where the record
+  can be opened, or through several.
