@@ -134,9 +134,9 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
     await rotate();
     assert.equal(await seat(outsider), null);
     const independent = await Promise.allSettled([
-        proveConcurrentArrivals(plans, users, alice, bob),
-        proveReservedEntry(plans, alice, bob, outsider),
-        proveRenewedWaitBeforeExpiryRecovery(plans, databaseUrl, alice, bob)
+        proveConcurrentArrivals({ plans, users, alice, bob }),
+        proveReservedEntry({ plans, alice, bob, walkIn: outsider }),
+        proveRenewedWaitBeforeExpiryRecovery({ plans, databaseUrl, alice, bob })
     ]);
     const cases = ['concurrent live arrivals', 'pre-cutoff reservation entry', 'wait after offer expiry'];
     const failures = [];
@@ -158,10 +158,17 @@ function lobbyRoom(workspaceId: string, groupId: string, baseUrl: string) {
     return { groups, group, roomRef, seat };
 }
 
-async function proveReservedEntry(
-    plans: ManagedClusterProof.ScenarioInput['plans'],
-    alice: ProofSession, bob: ProofSession, walkIn: ProofSession
-): Promise<void> {
+interface LobbyProofParticipants {
+    readonly plans: ManagedClusterProof.ScenarioInput['plans'];
+    readonly alice: ProofSession;
+    readonly bob: ProofSession;
+}
+
+interface ReservedEntryInput extends LobbyProofParticipants {
+    readonly walkIn: ProofSession;
+}
+
+async function proveReservedEntry({ plans, alice, bob, walkIn }: ReservedEntryInput): Promise<void> {
     const [first, second, observer] = plans;
     assert.ok(first && second && observer);
     const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'scheduled-court', observer.baseUrl);
@@ -188,9 +195,11 @@ async function proveReservedEntry(
     assert.equal((await seat(bob))?.status, 'arriving');
 }
 
-async function proveConcurrentArrivals(
-    plans: ManagedClusterProof.ScenarioInput['plans'], users: ApiV1RtcTopologyProofApi, alice: ProofSession, bob: ProofSession
-): Promise<void> {
+interface ConcurrentArrivalsInput extends LobbyProofParticipants {
+    readonly users: ApiV1RtcTopologyProofApi;
+}
+
+async function proveConcurrentArrivals({ plans, alice, bob, users }: ConcurrentArrivalsInput): Promise<void> {
     const [first, second, observer] = plans;
     assert.ok(first && second && observer);
     const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'concurrent-court', observer.baseUrl);
@@ -212,10 +221,11 @@ async function proveConcurrentArrivals(
     }
 }
 
-async function proveRenewedWaitBeforeExpiryRecovery(
-    plans: ManagedClusterProof.ScenarioInput['plans'], databaseUrl: string,
-    alice: ProofSession, bob: ProofSession
-): Promise<void> {
+interface RenewedWaitInput extends LobbyProofParticipants {
+    readonly databaseUrl: string;
+}
+
+async function proveRenewedWaitBeforeExpiryRecovery({ plans, alice, bob, databaseUrl }: RenewedWaitInput): Promise<void> {
     const [first, second, observer] = plans;
     assert.ok(first && second && observer);
     const { groups, group, roomRef, seat } = lobbyRoom(crypto.randomUUID(), 'renewed-wait', observer.baseUrl);

@@ -117,7 +117,7 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        return computePrivateLobbyUpdate(command, read, facts, stored.value, lobbyChange.operation);
+        return computePrivateLobbyUpdate({ command, read, facts, group: stored.value, operation: lobbyChange.operation });
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -184,13 +184,12 @@ export function computeUpdate(
     });
 }
 
-function computePrivateLobbyUpdate(
-    command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    group: Group,
-    operation: 'wait' | 'release'
-): GroupMutationComputed {
+interface PrivateLobbyUpdate extends Pick<GroupWriteInput, 'read' | 'facts' | 'group'> {
+    readonly command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>;
+    readonly operation: 'wait' | 'release';
+}
+
+function computePrivateLobbyUpdate({ command, read, facts, group, operation }: PrivateLobbyUpdate): GroupMutationComputed {
     const roster = read.lobbyState?.lobby?.value;
     const principalId = command.input.actorPrincipalId;
     // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.

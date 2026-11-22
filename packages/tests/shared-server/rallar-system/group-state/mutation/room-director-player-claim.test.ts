@@ -72,8 +72,9 @@ it('configures succession when the acting director reconnects between authority 
 
     const read = GroupStateRepository.prototype.findPresenceAdmissionEntry;
     let first = true;
-    let reconnect: Promise<unknown> | undefined;
-    const admission = vi.spyOn(GroupStateRepository.prototype, 'findPresenceAdmissionEntry').mockImplementation(async function (this: GroupStateRepository, ref) {
+    let reconnect: ReturnType<typeof connect> | undefined;
+    const admission = vi.spyOn(GroupStateRepository.prototype, 'findPresenceAdmissionEntry');
+    admission.mockImplementation(async function (this: GroupStateRepository, ref) {
         if (ref.principalId !== 'owner') return read.call(this, ref);
         if (first) {
             first = false;
@@ -207,20 +208,20 @@ it('awards the open director seat once to a present player and allows an organiz
     await claim(winner, 101, 'claim-' + winner);
     const appointment = async () => readRallarGroupDirectorAppointment((await requireSnapshot(runtime, room)).group.metadata);
     expect(await appointment()).toMatchObject({ principalId: winner, epoch: 2 });
-    const publish = (id: string, expectedDirectorEpoch: number, requestId: string, expectedRevision: number) =>
+    const publish = (id: string, requestId: string, expectedRevision: number) =>
         serviceAt(110).updateGroup(SCOPE, room, {
             ...actor(id),
             requestId,
             roomClock: {
                 operation: 'publish-schedule',
                 expectedRevision,
-                expectedDirectorEpoch,
+                expectedDirectorEpoch: 2,
                 name: 'program',
                 phases: [{ phase: 'start', startsAtEpochMs: base }]
             }
         });
-    await publish(winner, 2, 'winner-command', 0);
-    await expect(publish(loser, 2, 'loser-command', 1)).rejects.toMatchObject({ code: 'room-director-changed' });
+    await publish(winner, 'winner-command', 0);
+    await expect(publish(loser, 'loser-command', 1)).rejects.toMatchObject({ code: 'room-director-changed' });
     await serviceAt(111).appointDirector(SCOPE, room, {
         ...actor('owner'),
         requestId: 'override',
@@ -232,5 +233,5 @@ it('awards the open director seat once to a present player and allows an organiz
         }
     });
     expect(await appointment()).toMatchObject({ principalId: loser, epoch: 3 });
-    await expect(publish(winner, 2, 'replaced-command', 1)).rejects.toMatchObject({ code: 'room-director-changed' });
+    await expect(publish(winner, 'replaced-command', 1)).rejects.toMatchObject({ code: 'room-director-changed' });
 });
