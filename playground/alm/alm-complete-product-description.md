@@ -117,7 +117,9 @@ An expired or cancelled room notification can still have confirmed recipients.
 admission resolves. Its states are `submitted`, `rejected`, `pending-authority`,
 `accepted`, `queued`, `transport-accepted`, `acknowledged`, `expired`,
 `superseded`, `failed`, `cancelled` and `unobservable`. `cancel()` stops the
-remaining owned attempts. The admission-snapshot send result is deleted (D14).
+remaining owned attempts and ends the message where it is stored, so a reloaded
+page and the session's other tabs send nothing more for it (D752). The
+admission-snapshot send result is deleted (D14).
 
 ## Envelope and compatibility
 
@@ -513,7 +515,8 @@ per session is shared by both carriers (D20, D54), so the second copy meets its 
 every member of the frozen audience, relay or leaf, sends its own ACK again over WS: the receipt the WS
 leg needs (R-S3b-1, R-S3b-21). Limits:
 `ws-then-rtc` falls back at admission only, and a durable RTC message resumed after a reload has no handle
-and never hands over (D64).
+and never hands over (D64). A message that handed over before the reload is ended on the carrier it left, so
+that carrier resumes nothing for it (D752).
 
 **CURRENT — #566, RTC authority gaps and redial:** a gap in the room authority an RTC send needs (no room
 snapshot, a room that is not `flowing`, no accepted layout or a `bootstrap` one, presence that moved while
@@ -1409,7 +1412,8 @@ a gap; an evicted track's next recorded copy enters it again, an unrecorded one
 reads as a gap from sequence 1, and a
 buffered release on it reads `resync-required`. What a session keeps per
 message, track or peer is bounded rather than held for its lifetime: the ids of
-cancelled and handed-over sends for 60 minutes, the browser's record of
+cancelled and handed-over sends for 60 minutes (the page's own guard; the stored
+message row carries the end itself, D752), the browser's record of
 resynchronized tracks for 5 minutes and at most 256 tracks (a track that has not
 resynchronized for 5 minutes, or that 256 later tracks pushed out, calls its
 recovery handler again when it next resyncs), at most 256 ordering snapshots in
