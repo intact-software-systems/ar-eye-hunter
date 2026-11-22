@@ -1,3 +1,4 @@
+import { assertRoomLobbyRegistrationBoundary } from '@shared/api/room-lobbies/room-lobby-registration-boundary.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { readRoomLobbyRegistration } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import type { RallarConnectionOperations, RallarDeadlineAuthority } from '../../rallar-connection-facade.ts';
@@ -23,7 +24,7 @@ import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidatio
 import type { SubscribeViewRecovery } from '../../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../../browser-activity.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
-import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
+import { readRoomSchedule } from '@shared/api/group-deadlines/room-clock.ts';
 
 export namespace RallarRoomLobby {
     export interface Registration extends RoomLobby.RegistrationDefinition {
@@ -46,6 +47,10 @@ export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView,
         const definition = readRoomLobbyRegistration(metadata);
         if (!definition) return null;
         if (definition.atEpochMs === null) return { ...definition, status: 'open' };
+        if (definition.boundary) {
+            const schedule = readRoomSchedule(metadata, definition.boundary.program);
+            if (schedule && schedule.elapsedThroughEpochMs >= definition.atEpochMs) return { ...definition, status: 'closed' };
+        }
         const comparison = clock.compareDeadline(definition.atEpochMs, authority);
         const status = { before: 'open', 'at-or-after': 'closed', overlaps: 'uncertain', unavailable: 'unavailable' } as const;
         return { ...definition, status: status[comparison] };
@@ -72,6 +77,14 @@ export class RallarRoomLobby extends AuthenticatedResource<RoomLobbyAccountView,
         return this.act({
             roomRef: this.roomInScope(roomRef), roomLobby: { operation: 'configure', policy: policy === null ? null : decodeRoomLobbyPolicy(policy) }
         });
+    }
+
+    setRegistrationBoundary(roomRef: GroupRef, boundary: RoomLobby.SetRegistrationBoundary): Promise<void> {
+        assertRoomLobbyRegistrationBoundary(boundary);
+        const { program, phase, expectedRevision, expectedProgramRevision } = boundary;
+        return this.act({ roomRef: this.roomInScope(roomRef), roomLobby: {
+            operation: 'set-registration-boundary', program, phase, expectedRevision, expectedProgramRevision
+        } });
     }
 
     setRegistrationCutoff(roomRef: GroupRef, cutoff: RoomLobby.RegistrationCutoff): Promise<void> {
@@ -116,17 +129,24 @@ async function writeLobbyCommand({ scope, session, request, signal, requestId }:
     if (!isSameGroupScope(request.roomRef, scope)) throw new TypeError('Lobby room belongs to another scope');
     const body = { actorPrincipalId: session.clientId, actorSessionId: session.sessionId, roomLobby: request.roomLobby };
     const options = { authSession: session, requestId, signal };
+    const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
+        baseUrl: readApiBaseUrl(), method: 'PUT', body, options,
+        path: toApiMutationRequestPath(toStateGroupHttpPath(scope, request.roomRef.groupId), requestId)
+    });
+    const change = request.roomLobby;
     let acknowledged: GroupRef;
-    if (request.roomLobby.operation === 'configure' || request.roomLobby.operation === 'set-registration-cutoff') {
-        const snapshot = await roomGroupStateHttpApi.updateGroup({ groupId: request.roomRef.groupId, scope, request: { ...body, roomLobby: request.roomLobby }, options });
-        validateAuthoritativeGroupSnapshot(snapshot, scope);
-        acknowledged = snapshot.group;
+    if (change.operation !== 'release' && change.operation !== 'wait') {
+        validateAuthoritativeGroupSnapshot(result, scope);
+        acknowledged = result.group;
+        if (change.operation === 'set-registration-boundary') {
+            const definition = readRoomLobbyRegistration(result.group.metadata);
+            if (!definition?.boundary || definition.boundary.program !== change.program || definition.boundary.phase !== change.phase ||
+                (definition.revision !== change.expectedRevision && definition.revision !== change.expectedRevision + 1)) {
+                throw new TypeError('The room did not acknowledge the requested registration boundary');
+            }
+        }
     }
     else {
-        const result = await sendApiHttpRequest<typeof body, ApiJsonValue>({
-            baseUrl: readApiBaseUrl(), method: 'PUT', body, options,
-            path: toApiMutationRequestPath(toStateGroupHttpPath(scope, request.roomRef.groupId), requestId)
-        });
         const ack = requireRecord(result, 'Private lobby acknowledgement');
         requireExactKeys(ack, ['roomRef'], 'Private lobby acknowledgement');
         acknowledged = decodeExactGroupRef(ack.roomRef, 'Acknowledged lobby');

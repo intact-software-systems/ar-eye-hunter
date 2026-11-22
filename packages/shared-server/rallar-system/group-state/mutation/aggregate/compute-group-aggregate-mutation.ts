@@ -2,7 +2,7 @@ import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-director
 import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
-import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -25,6 +25,7 @@ import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectat
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { computeGroupRegistrationUpdate } from '../../lobby/compute-group-registration-update.ts';
 import { toGroupCapacityRefusal } from './to-group-capacity-refusal.ts';
 
 import { canGovernGroupMember } from '../../policy/group-governance-policy.ts';
@@ -135,19 +136,6 @@ export function computeUpdate(
         }
         next = { ...next, metadata };
     }
-    if (lobbyChange?.operation === 'set-registration-cutoff') {
-        const observed = read.lobbyState?.lobby?.value;
-        if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
-        const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
-        if (updated.rejection) {
-            const rejectionCode = updated.rejection === 'revision-conflict' ? 'room-lobby-registration-revision-conflict' : 'group-mutation-rejected';
-            return rejected({command, read, facts, rejectionCode, message:'The registration cutoff has changed or closed.'});
-        }
-        if (updated.lobby === observed) return noOp(command, read, facts);
-        const {revision, atEpochMs} = updated.lobby.registration;
-        next = {...next, metadata:{...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]:{revision, atEpochMs}}};
-        return groupWrite({ command, read, facts, group: next, eventType:'group-updated', revisedLobby: updated.lobby });
-    }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
         const deadline = computeGroupDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
@@ -164,6 +152,17 @@ export function computeUpdate(
         }
         next = updated;
     }
+    const registration = computeGroupRegistrationUpdate({
+        group: next,
+        lobby: read.lobbyState?.lobby?.value,
+        change: lobbyChange,
+        clockName: clockCommand?.name,
+        nowEpochMs: facts.attemptAtEpochMs
+    });
+    if (registration && 'rejectionCode' in registration) {
+        return rejected({ command, read, facts, ...registration });
+    }
+    if (registration) next = registration.group;
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
@@ -176,6 +175,7 @@ export function computeUpdate(
         read,
         facts,
         group: next,
+        revisedLobby: registration?.lobby,
         eventType: next.status === 'archived'
             ? 'group-archived'
             : next.status === 'deleted'

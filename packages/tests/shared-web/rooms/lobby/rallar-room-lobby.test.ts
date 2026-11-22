@@ -136,11 +136,15 @@ it('sends a revision-bound cutoff update and validates the returned room snapsho
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     vi.stubGlobal('navigator', { onLine: true });
+    let publishedPhase: string | null = 'play';
     const writes: RoomLobby.Mutation[] = [];
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
         if (init.method === 'PUT') {
             writes.push(JSON.parse(String(init.body)).roomLobby);
-            return Response.json(createGroupSnapshotFixture({ ...roomRef, sessionIds: [] }));
+            const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: [] });
+            const metadata = publishedPhase === null ? {} : { rallarRoomLobbyRegistration: { revision: 3, atEpochMs: null,
+                boundary: { program: 'match', phase: publishedPhase } } };
+            return Response.json({ ...snapshot, group: { ...snapshot.group, metadata } });
         }
         return Response.json({ scope, principalId: session.clientId, seat: null });
     });
@@ -152,7 +156,26 @@ it('sends a revision-bound cutoff update and validates the returned room snapsho
         await owner.start();
         await owner.setRegistrationCutoff(roomRef, { expectedRevision: 1, atEpochMs: 1200 });
         expect(writes).toEqual([{ operation: 'set-registration-cutoff', expectedRevision: 1, atEpochMs: 1200 }]);
+        const boundary = { program: 'match', phase: 'play', expectedRevision: 2, expectedProgramRevision: 5 };
+        await owner.setRegistrationBoundary(roomRef, boundary);
+        expect(writes.at(-1)).toEqual({ operation: 'set-registration-boundary', ...boundary });
         expect(owner.getState().error).toBeNull();
+        await owner.setRegistrationBoundary(roomRef, { ...boundary, expectedRevision: 3 });
+        expect(owner.getState().error).toBeNull();
+        for (publishedPhase of [null, 'halftime']) {
+            await owner.setRegistrationBoundary(roomRef, boundary);
+            expect(owner.getState().error).toMatch(/acknowledge/i);
+        }
     }
     finally { owner.stop(); }
+});
+
+it('uses the published program cursor to confirm an elapsed phase without clock calibration', () => {
+    const boundary = { program: 'match', phase: 'play' };
+    const metadata = { rallarRoomLobbyRegistration: { revision: 1, atEpochMs: 100, boundary },
+        rallarRoomClocks: [{ name: 'match', revision: 3, status: 'program-paused', elapsedThroughEpochMs: 120,
+            phases: [{ phase: 'play', startsAtEpochMs: 100 }] }] };
+    const compareDeadline = vi.fn(() => 'unavailable' as const);
+    expect(RallarRoomLobby.registration(metadata, { compareDeadline })).toEqual({ ...metadata.rallarRoomLobbyRegistration, status: 'closed' });
+    expect(compareDeadline).not.toHaveBeenCalled();
 });

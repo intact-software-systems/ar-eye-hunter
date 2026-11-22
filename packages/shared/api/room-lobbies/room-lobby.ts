@@ -13,7 +13,16 @@ export { configureRoomLobby } from './room-lobby-capacity.ts';
 export { changeRoomLobby } from './change-room-lobby.ts';
 
 export namespace RoomLobby {
+    export interface Boundary {
+        readonly program: string;
+        readonly phase: string;
+    }
+    export interface SetRegistrationBoundary extends Boundary {
+        readonly expectedRevision: number;
+        readonly expectedProgramRevision: number;
+    }
     export interface RegistrationDefinition {
+        readonly boundary?: Boundary;
         readonly revision: number;
         readonly atEpochMs: number | null;
     }
@@ -24,7 +33,7 @@ export namespace RoomLobby {
         readonly expectedRevision: number;
         readonly atEpochMs: number | null;
     }
-    export type Mutation = ({ readonly operation: 'set-registration-cutoff'; } & RegistrationCutoff) |
+    export type Mutation = ({ readonly operation: 'set-registration-boundary'; } & SetRegistrationBoundary) | ({ readonly operation: 'set-registration-cutoff'; } & RegistrationCutoff) |
         { readonly operation: 'configure'; readonly policy: Policy | null; }
         | { readonly operation: 'wait'; readonly joinCode?: string; }
         | { readonly operation: 'release'; };
@@ -61,7 +70,7 @@ export namespace RoomLobby {
         | ({ readonly kind: 'expire'; } & ReturnWindow);
     export interface Change {
         readonly lobby: RoomLobby;
-        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | 'eligibility-expired' | 'revision-conflict' | 'registration-closed' | null;
+        readonly rejection: 'full' | 'return-expired' | 'admission-expired' | 'eligibility-expired' | 'revision-conflict' | 'registration-closed' | 'invalid-boundary' | null;
     }
 }
 

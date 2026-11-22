@@ -5,6 +5,7 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import { decodeRoomLobbyAccountView } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ApiV1RtcTopologyProofApi, requestJson, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from './run-managed-cluster-proof.mts';
+import { proveProgramRegistrationBoundary } from './prove-program-registration-boundary.mts';
 
 async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [first, second, observer] = plans;
@@ -17,6 +18,8 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         principal, label: principal, apiBaseUrl: observer.baseUrl, wsBaseUrl: observer.baseUrl.replace(/^http/, 'ws')
     });
     const [alice, bob] = await Promise.all([login('alice'), login('bob')]);
+    await proveProgramRegistrationBoundary({ plans, controls, databaseUrl, users, owner: alice, player: bob });
+    console.log('Passed: program-bound registration survives pause, disconnection and duplicate delivery');
     const scope = { applicationId: 'lobby-proof', workspaceId: crypto.randomUUID() };
     const path = '/apps/' + scope.applicationId + '/workspaces/' + scope.workspaceId;
     const seat = async (session: ProofSession) => decodeRoomLobbyAccountView(await requestJson(observer.baseUrl,

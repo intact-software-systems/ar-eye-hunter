@@ -1,4 +1,5 @@
 import { isGroupLifecycleTransitionOperation } from '../mutation/group-mutation-contracts.ts';
+import { readRoomLobbyRegistration } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 
@@ -13,6 +14,9 @@ export function requiresGroupLobbyRead(command: GroupMutationCommand, read: Grou
     if (isGroupLifecycleTransitionOperation(command.operation)) return true;
     switch (command.operation) {
         case 'updateGroup':
+            if (command.input.roomClock && readRoomLobbyRegistration(read.group.value.metadata)?.boundary?.program === command.input.roomClock.name) {
+                return true;
+            }
             return (command.input.metadata !== null && read.group.value.joinMode === 'code') || command.input.roomLobby !== undefined || command.input.joinMode !== null || command.input.status !== null || command.input.kind !== null ||
                 command.input.maxMembers !== null || command.input.expiresAtEpochMs !== null || command.input.purgeAfterEpochMs !== null;
         case 'connectPresence':
