@@ -110,7 +110,7 @@ export function computeALInboundNackAdmission(
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            toALInboundRelayedNackControls(read.nack, read.gapRoute?.relayHops ?? AL_GAP_NACK_RELAY_HOP_LIMIT),
+            toALInboundRelayedNackControls(read.nack, resolveALInboundGapNackRelayGrant(read.gapRoute)),
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },
@@ -134,16 +134,21 @@ function resolveALInboundGapNackTarget(knownParentPeerId: string, route: ALInbou
     return route?.upstreamPeerId ?? knownParentPeerId;
 }
 
+/** The relays this relay grants a child's gap NACK on the row path: its room's grant, or the wire ceiling without one. */
+export function resolveALInboundGapNackRelayGrant(route: ALInboundGapNackRoute | undefined): number {
+    return route?.relayHops ?? AL_GAP_NACK_RELAY_HOP_LIMIT;
+}
+
 /**
  * The child's NACK as this relay forwards it: a gap NACK one relay hop lower, clamped to this relay's own grant
- * `relayGrant` (the wire ceiling where it reads no room for the message), and none with no hop left; any other NACK as it
- * came.
+ * `relayGrant`, and none with no hop left, which validation refuses; any other NACK as it came.
  */
 function toALInboundRelayedNackControls(nack: ALNackPayload, relayGrant: number): readonly ALInboundUpwardControl[] {
     if (nack.relayHopsLeft === undefined) {
         return [{ kind: 'forwarded', control: { type: 'nack', payload: nack } }];
     }
     const relayHopsLeft = computeALRelayedGapNackHops(nack.relayHopsLeft, relayGrant);
+    // Validation alone refuses this case; the guard only keeps the discarded candidate buildable, as no control encodes -1.
     return relayHopsLeft < 0
         ? []
         : [{ kind: 'forwarded', control: { type: 'nack', payload: { ...nack, relayHopsLeft } } }];

@@ -1,12 +1,16 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import {
+    AL_MESSAGE_RESOURCE_LIMITS,
+    computeALRelayedGapNackHops
+} from '../../../al-contracts/al-message-resource-limits.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
-import type {
-    ALInboundNackAdmissionCandidate,
-    ALInboundUnheldGapNackAdmissionRead,
-    ALInboundUnreceiptedGapNackAdmissionRead
+import {
+    resolveALInboundGapNackRelayGrant,
+    type ALInboundNackAdmissionCandidate,
+    type ALInboundUnheldGapNackAdmissionRead,
+    type ALInboundUnreceiptedGapNackAdmissionRead
 } from './compute-al-inbound-nack-admission.ts';
 import {
     hasALConfirmedStatement,
@@ -71,7 +75,7 @@ export function validateALInboundNackAdmission(
     if (nack.reason === 'gap') {
         issues.push(
             ...(hasGapOrderingHints(nack) ? [] : [MISSING_GAP_ORDERING_HINTS]),
-            ...validateALInboundGapNackHop(nack)
+            ...validateALInboundGapNackHop(nack, resolveALInboundGapNackRelayGrant(candidate.read.gapRoute))
         );
     }
     if (
@@ -128,7 +132,7 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     else if (nack.orderingKey !== toALOrderingTrackKey(msg)) {
         issues.push(rejectInboundNack('Inbound NACK names a track the message is not on'));
     }
-    return [...issues, ...validateALInboundGapNackHop(nack)];
+    return [...issues, ...validateALInboundGapNackHop(nack, read.route.relayHops)];
 }
 
 /**
@@ -142,18 +146,21 @@ export function validateALInboundUnheldGapNackAdmission(
 ): readonly ALMessageRejection[] {
     return [
         ...(hasGapOrderingHints(read.nack) ? [] : [MISSING_GAP_ORDERING_HINTS]),
-        ...validateALInboundGapNackHop(read.nack)
+        ...validateALInboundGapNackHop(read.nack, read.relayHops)
     ];
 }
 
 /**
- * Every relay spends one of a gap NACK's relay hops, so a NACK relays whose accepted layouts disagree pass round a cycle
- * stops once its leaf's grant is spent. A NACK that speaks for this relay is its own report come back round such a
- * cycle: the relay's own reports leave from its gap run, never from this admission.
+ * Every relay spends one of a gap NACK's relay hops, and carries no more than its own grant `relayGrant` leaves, so a
+ * NACK relays whose accepted layouts disagree pass round a cycle stops once its leaf's grant is spent. A NACK that
+ * speaks for this relay is its own report come back round such a cycle: the relay's own reports leave from its gap run,
+ * never from this admission.
  */
-function validateALInboundGapNackHop(nack: ALNackPayload): readonly ALMessageRejection[] {
+function validateALInboundGapNackHop(nack: ALNackPayload, relayGrant: number): readonly ALMessageRejection[] {
+    const hasNoHopLeft = nack.relayHopsLeft !== undefined &&
+        computeALRelayedGapNackHops(nack.relayHopsLeft, relayGrant) < 0;
     return [
-        ...(nack.relayHopsLeft === 0 ? [NO_RELAY_HOP_LEFT] : []),
+        ...(hasNoHopLeft ? [NO_RELAY_HOP_LEFT] : []),
         ...(nack.logicalRecipientPeerId === nack.toPeerId ? [SPEAKS_FOR_RELAY] : [])
     ];
 }

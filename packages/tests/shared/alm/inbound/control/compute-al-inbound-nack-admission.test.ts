@@ -201,6 +201,15 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         expect(validateALInboundNackAdmission(ownReport)).toEqual([SPEAKS_FOR_RELAY]);
     });
 
+    it('refuses a gap NACK with hops left whose relay grants it none', () => {
+        const candidate = computeALInboundNackAdmission(
+            { ...computeArrival({ reason: 'gap', relayHopsLeft: 3 }).read, gapRoute: { ...NEW_UPSTREAM, relayHops: 0 } },
+            RETENTION
+        );
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([NO_RELAY_HOP_LEFT]);
+    });
+
     it('clamps a hostile child\'s 255 relay hops to its own grant in a room of three sessions', () => {
         const route = { ...NEW_UPSTREAM, relayHops: THREE_SESSION_GRANT };
         const candidate = computeALInboundNackAdmission(
@@ -432,6 +441,12 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
         expect(toUpwardControls(candidate)[0]?.payload).toMatchObject({ toPeerId: 'parent', relayHopsLeft: 1 });
     });
 
+    it('refuses a gap NACK with hops left whose relay grants it none', () => {
+        const read = readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'child', relayHopsLeft: 3 });
+
+        expect(validateALInboundUnreceiptedGapNackAdmission({ ...read, route: { ...read.route, relayHops: 0 } })).toEqual([NO_RELAY_HOP_LEFT]);
+    });
+
     it('forwards a child\'s gap NACK for a recipient of the frozen audience below it', () => {
         expect(validateALInboundUnreceiptedGapNackAdmission(readUnreceipted({ reason: 'gap', logicalRecipientPeerId: 'leaf' }))).toEqual([]);
     });
@@ -520,6 +535,10 @@ describe('a child\'s gap NACK at a relay that holds nothing of the message (6d)'
 
         expect(toUpwardControls(computeALInboundUnheldGapNackAdmission(read, RETENTION))[0]?.payload)
             .toMatchObject({ toPeerId: 'parent', relayHopsLeft: 1 });
+    });
+
+    it('refuses a gap NACK with hops left whose relay grants it none', () => {
+        expect(validateALInboundUnheldGapNackAdmission({ ...unheldRead({ relayHopsLeft: 3 }), relayHops: 0 })).toEqual([NO_RELAY_HOP_LEFT]);
     });
 
     it('refuses a NACK without its ordering hints, one with no relay hop left, and one that speaks for this relay', () => {
