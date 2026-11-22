@@ -1,3 +1,4 @@
+import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -40,7 +41,7 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function browser(): BrowserFixture {
+function browser(browserActivity?: BrowserActivity): BrowserFixture {
     let session: AuthSession | undefined = alice;
     let active = true;
     const auth = new SynchronousNotifications<RallarAuthState>((error) => {
@@ -71,7 +72,7 @@ function browser(): BrowserFixture {
     const enter = vi.fn<RallarMatchmaking.Dependencies['entry']['enter']>();
     const owner = new RallarMatchmaking({
         auth: { session: () => session, onChange: (listener) => auth.subscribe(listener).unsubscribe },
-        activity: { isActive: () => active, onChange: (listener) => activity.subscribe(listener).unsubscribe },
+        activity: browserActivity ?? { isActive: () => active, onChange: (listener) => activity.subscribe(listener).unsubscribe },
         api,
         onChanged: (listener) => changes.subscribe(listener).unsubscribe,
         entry: { enter },
@@ -212,6 +213,34 @@ describe('matchmaking browser recovery and consent', () => {
         await test.owner.enter();
         expect(test.enter).not.toHaveBeenCalled();
         expect(test.owner.getState().error).toBe('Offline');
+    });
+
+    it('recovers a missed offer on cached-page restoration and leaves a stopped view cleared', async () => {
+        vi.useFakeTimers();
+        const page = new EventTarget();
+        vi.stubGlobal('window', page);
+        vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+        vi.stubGlobal('navigator', { onLine: true });
+        const test = browser(new BrowserActivity());
+        try {
+            await test.owner.start();
+            test.state(confirming);
+            const show = (persisted: boolean) => page.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }));
+            show(false);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(test.owner.getState().view?.state).toEqual({ status: 'idle' });
+            show(true);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(test.owner.getState().view?.state).toEqual(confirming);
+            test.owner.stop();
+            show(true);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(test.owner.getState().view).toBeNull();
+        }
+        finally {
+            test.owner.stop();
+            vi.unstubAllGlobals();
+        }
     });
 
     it('ignores background invalidations, refreshes on return and stops without cancelling the durable search', async () => {
