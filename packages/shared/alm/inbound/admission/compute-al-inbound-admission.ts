@@ -118,6 +118,7 @@ function computeALInboundMessageRead(
         nacks: read.nacks,
         controlOwners: read.controlOwners,
         plan,
+        prePlan: read.prePlan,
         retention: read.retention,
         durability: read.durability,
         supersedence: read.supersedence,

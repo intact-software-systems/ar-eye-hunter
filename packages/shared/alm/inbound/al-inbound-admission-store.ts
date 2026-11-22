@@ -173,6 +173,8 @@ export interface ALInboundMessageReadDto {
     readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly plan: ALMessageHandlingPlan;
+    /** The copy planned before the store's observations: where it would go were it new, which a duplicate no longer plans. */
+    readonly prePlan: ALMessageHandlingPlan;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
 }

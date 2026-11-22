@@ -284,9 +284,10 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         }
 
         expect(d.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
-        // A relay forwards in arrival order; the receiver below it restores the order on its own.
+        // A relay forwards in arrival order; the receiver below it restores the order on its own. The second half is
+        // the parent's replays, re-forwarded under the unreceipted repair rule (ruling 17).
         const forwardedToE = await d.readSent('e');
-        expect(forwardedToE.map((message) => message.ordering?.seq)).toEqual([1, 3, 2]);
+        expect(forwardedToE.map((message) => message.ordering?.seq)).toEqual([1, 3, 2, 1, 2, 3]);
         const e = mesh.peers.get('e')!;
         for (const copy of forwardedToE) {
             await e.receive(copy, 'd');

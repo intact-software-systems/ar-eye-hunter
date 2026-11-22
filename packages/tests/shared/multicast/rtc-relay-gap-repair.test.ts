@@ -298,25 +298,43 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
-    it('leaves a sequence the relay already forwarded and its child lost unrepaired: the relay reads the repair copy a duplicate and keeps no row to retry (the limit)', async () => {
+    it('repairs a sequence the relay forwarded and its child lost: the relay passes the parent\'s repair copy down again', async () => {
         const gap = await createGapChain({ ack: 'none' });
         await forwardTrack(gap, [1, 2, 3]);
         await receiveAtLeaf(gap, [1, 3]);
         await deliverEach(await readLeafControls(gap), gap.relay, 'c');
         const admissions = await acceptAtOrigin(gap, await readRelayUpwardControls(gap));
-        const forwardedBefore = (await gap.relay.readSent('c')).length;
 
-        await drainUntil(() => gap.chain.origin.channels.r!.sent.length > gap.frames.length);
-        await deliverEach(gap.chain.origin.channels.r!.sent.slice(gap.frames.length), gap.relay, 'a');
-        await drainUntil(() => false, 20);
+        await repairThroughRelay(gap);
 
         expect(admissions.get('gap')).toBe('committed');
         expect(readAdmissionOutcomes(gap.relay, gap.frames[1]!.id.msgId)).toEqual([
             ['committed', 'admitted'],
             ['not-handled', 'duplicate']
         ]);
-        expect((await gap.relay.readSent('c')).slice(forwardedBefore)).toEqual([]);
-        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1]);
+        expect(gap.chain.origin.channels.r!.sent.slice(gap.frames.length).map((copy) => copy.ordering?.seq)).toEqual([2]);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
+    it('a child that already holds the message reads the copy the relay passes down a duplicate and answers nothing', async () => {
+        const gap = await createGapChain({ ack: 'none' });
+        await forwardTrack(gap, [1, 2, 3]);
+        await receiveAtLeaf(gap, [1, 2, 3]);
+        const links = await readChainLinks(gap);
+
+        await gap.relay.receive(gap.frames[1]!, 'a');
+        await drainUntil(async () => (await gap.relay.readSent('c')).length > links.relayToLeaf);
+        const passedDown = (await gap.relay.readSent('c')).slice(links.relayToLeaf);
+        await deliverEach(passedDown, gap.leaf, 'r');
+        await drainUntil(() => false, 20);
+
+        expect(passedDown.map((copy) => copy.ordering?.seq)).toEqual([2]);
+        expect(readAdmissionOutcomes(gap.leaf, gap.frames[1]!.id.msgId)).toEqual([
+            ['committed', 'admitted'],
+            ['not-handled', 'duplicate']
+        ]);
+        expect((await gap.leaf.readSent('r')).slice(links.leafToRelay)).toEqual([]);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
     it('forwards each admission of one numbered request; the origin admits it once and reads the repeat `duplicate`, repairing once', async () => {

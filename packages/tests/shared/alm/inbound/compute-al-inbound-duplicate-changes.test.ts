@@ -560,6 +560,66 @@ describe('a relay answering the retried copy its parent resends', () => {
     });
 });
 
+// 6c: a message that asked for no receipt keeps no relay row, so nothing tells a repair from another copy; the peer the
+// message first arrived from is the one whose copy is passed down again.
+describe('a relay answering a copy of a message that asked for no receipt', () => {
+    const UNRECEIPTED = createRelayedMessage('unreceipted');
+    const UNRECEIPTED_MSG: ALMessage = { ...UNRECEIPTED, delivery: { reliability: 'at-least-once', ack: 'none' } };
+    const FROM_DOWNSTREAM: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: DOWNSTREAM_PEER_IDS[0] };
+
+    /** A copy that names this relay a next hop beside the children the planner reads as its own next hops. */
+    const PARENT_COPY: ALMessage = {
+        ...UNRECEIPTED_MSG,
+        forwarding: { nextHopPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS] }
+    };
+
+    /** Commits the parent's first copy over rtc, then computes what a copy from `source` would commit. */
+    async function computeCopyFrom(source: ALInboundMessageRuntime.Source, copy = PARENT_COPY) {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, UNRECEIPTED_MSG, { peer: RELAY_PEER, carrier: 'rtc' })))
+            .toBe('committed');
+        return await computeArrival(admissionStore, copy, { peer: RELAY_PEER, carrier: 'rtc', source });
+    }
+
+    function toRetriedForwards(bundle: ALInboundCommitBundle) {
+        return bundle.durableEffects.flatMap((effect) =>
+            effect.payload.kind === 'forward-message' ? [{ fromPeerId: effect.payload.fromPeerId, retryPeerIds: effect.payload.retryPeerIds }] : []
+        );
+    }
+
+    it('passes the parent\'s copy down to its next hops again, answering nothing', async () => {
+        const bundle = await computeCopyFrom(SOURCES.rtc);
+
+        expect(toRetriedForwards(bundle)).toEqual([{ fromPeerId: INBOUND_TEST_SENDER_PEER_ID, retryPeerIds: DOWNSTREAM_PEER_IDS }]);
+        expect(toRepeatedAcks(bundle)).toEqual([]);
+        expect(bundle.mutations).toEqual([]);
+    });
+
+    it('passes down no copy from a neighbour other than the parent', async () => {
+        expect(toRetriedForwards(await computeCopyFrom(FROM_DOWNSTREAM))).toEqual([]);
+    });
+
+    it('passes down no parent copy that names this relay as no next hop', async () => {
+        const elsewhere = { ...UNRECEIPTED_MSG, forwarding: { nextHopPeerIds: ['another-relay', ...DOWNSTREAM_PEER_IDS] } };
+
+        expect(toRetriedForwards(await computeCopyFrom(SOURCES.rtc, elsewhere))).toEqual([]);
+    });
+
+    // Characterization: the origin's re-admission on the other carrier after a hand-over arrives from the same peer,
+    // whether a WS session or the trusted server hands it over (the server's copy names the origin as its sender), so it
+    // is passed down again over the relay's own next hops, as a repair copy is.
+    it.each(
+        [
+            ['a WS session', SOURCES.ws],
+            ['the trusted server', { kind: 'trusted-server' } as const]
+        ] as const
+    )('passes down the parent\'s copy on the other carrier, handed over by %s, as it passes down a repair copy', async (_name, source) => {
+        expect(toRetriedForwards(await computeCopyFrom(source))).toEqual([
+            { fromPeerId: INBOUND_TEST_SENDER_PEER_ID, retryPeerIds: DOWNSTREAM_PEER_IDS }
+        ]);
+    });
+});
+
 /** A frozen-audience room message this relay forwards to both downstream peers, itself a recipient too. */
 function createFrozenRelayedMessage(msgId: string): ALMessage {
     return {
