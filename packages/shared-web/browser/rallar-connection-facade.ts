@@ -1,3 +1,4 @@
+import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 import type { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
@@ -148,6 +149,7 @@ export interface RallarConnectionOperations {
         deadlineEpochMs: number,
         authority?: RallarDeadlineAuthority
     ): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
+    schedulePosition(schedule: RoomSchedule, authority?: RallarDeadlineAuthority): RoomSchedule.Position;
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;
     isConnected(): boolean;

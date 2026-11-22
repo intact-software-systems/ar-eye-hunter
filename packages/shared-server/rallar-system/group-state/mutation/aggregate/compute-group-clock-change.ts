@@ -1,4 +1,5 @@
-import { MAX_ROOM_CLOCKS, readRoomClocks, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
+import { MAX_ROOM_CLOCKS, readRoomTimeRecords, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
+import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
@@ -9,10 +10,10 @@ interface ClockRefusal {
 
 /** Evaluated against the same group revision and server time as director authorization. */
 export function computeGroupClockChange(
-    clocks: readonly (RoomClock | RoomTimeline)[],
+    clocks: readonly (RoomClock | RoomTimeline | RoomSchedule)[],
     command: RoomClockMutation,
     now: number
-): RoomClock | RoomTimeline | ClockRefusal {
+): RoomClock | RoomTimeline | RoomSchedule | ClockRefusal {
     const previous = clocks.find((clock) => clock.name === command.name);
     if ((previous?.revision ?? 0) !== command.expectedRevision) {
         return { rejectionCode: 'room-clock-revision-conflict', message: 'Clock revision has changed.' };
@@ -20,6 +21,20 @@ export function computeGroupClockChange(
     const identity = { name: command.name, revision: command.expectedRevision + 1 };
     if (!Number.isSafeInteger(identity.revision) || (!previous && clocks.length >= MAX_ROOM_CLOCKS)) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock capacity exhausted.' };
+    }
+    if (command.operation === 'publish-schedule') {
+        if (previous && previous.status !== 'scheduled') {
+            return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
+        }
+        const elapsedThroughEpochMs = Math.max(now, previous?.elapsedThroughEpochMs ?? now);
+        if (previous && !sameSchedulePhases(previous.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs),
+            command.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs))) {
+            return { rejectionCode: 'group-mutation-rejected', message: 'Elapsed boundaries must be preserved.' };
+        }
+        return { ...identity, status: 'scheduled', elapsedThroughEpochMs, phases: command.phases };
+    }
+    if (previous?.status === 'scheduled') {
+        return { rejectionCode: 'group-mutation-rejected', message: 'Use a schedule revision to change this name.' };
     }
     let occurrence: Pick<RoomTimeline, 'phase' | 'startedAtRevision'> | undefined;
     if (previous && 'phase' in previous) {
@@ -78,13 +93,16 @@ export function computeGroupClockUpdate(group: Group, command: RoomClockMutation
     if (group.kind !== 'room' || group.status !== 'active') {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' };
     }
-    const clocks = readRoomClocks(group.metadata);
+    const clocks = readRoomTimeRecords(group.metadata);
     const clock = computeGroupClockChange(clocks, command, now);
-    if ('rejectionCode' in clock) {
+    if (!('status' in clock)) {
         return clock;
     }
+    const records = [...clocks.filter(previous => previous.name !== clock.name), clock];
     return { ...group, metadata: {
         ...group.metadata,
-        [ROOM_CLOCKS_METADATA_KEY]: [...clocks.filter(previous => previous.name !== clock.name), clock]
+        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => record.status === 'scheduled'
+            ? { ...record, phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs })) }
+            : record)
     } };
 }

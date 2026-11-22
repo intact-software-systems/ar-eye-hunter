@@ -1,10 +1,12 @@
-import { rallar, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
+import { renderCourtProgram } from './render-court-program.ts';
+import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 const entry = document.querySelector<HTMLFormElement>('#entry')!;
 const board = document.querySelector<HTMLElement>('#board')!;
 const output = board.querySelector('output')!;
 const phase = board.querySelector<HTMLElement>('#phase')!;
+const program = board.querySelector<HTMLElement>('#program')!;
 const period = board.querySelector<HTMLElement>('#period')!;
 const advance = board.querySelector<HTMLButtonElement>('#advance')!;
 const switchCourt = board.querySelector<HTMLButtonElement>('#switch')!;
@@ -16,6 +18,7 @@ rallar.configure({ apiBaseUrl: import.meta.env.VITE_RALLAR_API_BASE_URL ?? 'http
 rallar.setDefaults(scope);
 let room: GroupRef | undefined;
 let state: RoomClockObservation = { status: 'stale', clock: null };
+let schedule: RoomSchedule.Observation = { status: 'stale', schedule: null };
 let busy = false;
 let observation: AbortController | undefined;
 type ScoreboardCommand = RoomClockCommand | (RoomTimelineAdvance & { operation: 'advance-phase'; });
@@ -55,6 +58,7 @@ function render() {
         return;
     }
     const director = rallar.director.status(room);
+    renderCourtProgram(program, schedule);
     const face = clockFace();
     const periodName = state.clock && 'phase' in state.clock ? state.clock.phase : undefined;
     period.textContent = periodName ?? '';
@@ -116,6 +120,10 @@ entry.onsubmit = (event) => {
         board.hidden = false;
         board.querySelector('h2')!.textContent = groupId;
         observation = new AbortController();
+        rallar.rooms.watchSchedule(target, 'program', current => {
+            schedule = current;
+            render();
+        }, { signal: observation.signal });
         rallar.rooms.watchClock(target, 'match', (current) => {
             state = current;
             render();
@@ -128,6 +136,7 @@ switchCourt.onclick = () => {
     observation?.abort();
     room = undefined;
     state = { status: 'stale', clock: null };
+    schedule = { status: 'stale', schedule: null };
     retry = undefined;
     entry.hidden = false;
     board.hidden = true;

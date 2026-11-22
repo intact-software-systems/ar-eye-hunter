@@ -1,9 +1,31 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { readFullStackConfig } from './full-stack-helpers.ts';
 
 const config = readFullStackConfig();
 const url = '/@fs' + fileURLToPath(new URL('../../../examples/room-scoreboard/index.html', import.meta.url));
+
+interface CourtParticipants {
+    readonly page: Page;
+    readonly guest: Page;
+    readonly otherCourtOwner: Page;
+    readonly court: string;
+}
+
+async function enterCourts({ page, guest, otherCourtOwner, court }: CourtParticipants) {
+    for (const [screen, user, action, groupId] of [
+        [otherCourtOwner, config.userA, 'Create room', court + '-other'],
+        [page, config.userA, 'Create room', court],
+        [guest, config.userB, 'Enter room', court]
+    ] as const) {
+        await screen.goto(url);
+        await screen.getByLabel('Username').fill(user.username);
+        await screen.getByLabel('Password').fill(user.password);
+        await screen.getByLabel('Room', { exact: true }).fill(groupId);
+        await screen.getByRole('button', { name: action }).click();
+        await expect(screen.getByRole('heading', { name: groupId, exact: true })).toBeVisible();
+    }
+}
 
 test('a returning participant recovers halftime and its paused clock together after visiting another court', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
@@ -11,18 +33,7 @@ test('a returning participant recovers halftime and its paused clock together af
     const otherCourtOwner = await browser.newPage({ baseURL });
     const court = 'court-' + crypto.randomUUID();
     try {
-        for (const [screen, user, action, groupId] of [
-            [otherCourtOwner, config.userA, 'Create room', court + '-other'],
-            [page, config.userA, 'Create room', court],
-            [guest, config.userB, 'Enter room', court]
-        ] as const) {
-            await screen.goto(url);
-            await screen.getByLabel('Username').fill(user.username);
-            await screen.getByLabel('Password').fill(user.password);
-            await screen.getByLabel('Room', { exact: true }).fill(groupId);
-            await screen.getByRole('button', { name: action }).click();
-            await expect(screen.getByRole('heading', { name: groupId, exact: true })).toBeVisible();
-        }
+        await enterCourts({ page, guest, otherCourtOwner, court });
         await page.getByRole('button', { name: 'Take clock control' }).click();
         await page.getByRole('button', { name: 'Start 10 minutes' }).click();
         await expect(guest.locator('#phase')).toHaveText('Running');
@@ -111,4 +122,63 @@ test('a director can recover a clock-only court and explicitly advance its exist
     await page.getByRole('button', { name: 'Advance to halftime' }).click();
     await expect(page.getByLabel('Current period')).toHaveText('halftime');
     await expect(page.locator('#phase')).toHaveText('Running');
+});
+
+test('a guest returning after the old boundary recovers the revised schedule and crosses its new boundary locally', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const otherCourtOwner = await browser.newPage({ baseURL });
+    const court = 'court-' + crypto.randomUUID();
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    try {
+        await enterCourts({ page, guest, otherCourtOwner, court });
+        await page.getByRole('button', { name: 'Take clock control' }).click();
+        await expect(page.getByRole('button', { name: 'Start 10 minutes' })).toBeEnabled();
+        const sdk = await page.evaluateHandle(async sdkUrl => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            return rallar;
+        }, sdkUrl);
+        const calibratedStart = await page.waitForFunction(rallar => rallar.deadlineAfter(12_000) ?? 0, sdk);
+        const original = await page.evaluate(async ({ court, sdkUrl, startsAtEpochMs }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+            const phases = [{ phase: 'halftime', startsAtEpochMs: 0 },
+                { phase: 'second-half', startsAtEpochMs }];
+            return rallar.rooms.publishSchedule(room, { name: 'program', expectedRevision: 0, phases,
+                expectedDirectorEpoch: rallar.director.status(room).appointment!.epoch }, crypto.randomUUID());
+        }, { court, sdkUrl, startsAtEpochMs: await calibratedStart.jsonValue() });
+        await expect(guest.getByLabel('Court program')).toContainText('halftime');
+        await guest.getByRole('button', { name: 'Switch court' }).click();
+        await guest.getByLabel('Room', { exact: true }).fill(court + '-other');
+        await guest.getByRole('button', { name: 'Enter room' }).click();
+        await expect(guest.getByRole('heading', { name: court + '-other', exact: true })).toBeVisible();
+        const revisedStart = original.phases[1].startsAtEpochMs + 10_000;
+        await page.evaluate(async ({ court, sdkUrl, original, revisedStart }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+            await rallar.rooms.publishSchedule(room, { name: 'program', expectedRevision: original.revision,
+                expectedDirectorEpoch: rallar.director.status(room).appointment!.epoch,
+                phases: [original.phases[0], { phase: 'second-half', startsAtEpochMs: revisedStart }] }, crypto.randomUUID());
+        }, { court, sdkUrl, original, revisedStart });
+        await expect.poll(() => page.evaluate(async ({ sdkUrl, at }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            return rallar.compareDeadline(at);
+        }, { sdkUrl, at: original.phases[1].startsAtEpochMs }), { timeout: 20_000 }).toBe('at-or-after');
+        await guest.getByRole('button', { name: 'Switch court' }).click();
+        await guest.getByLabel('Room', { exact: true }).fill(court);
+        await guest.getByRole('button', { name: 'Enter room' }).click();
+        const program = guest.getByLabel('Court program');
+        await expect(program).toHaveText('halftime · Next: second-half at ' + new Date(revisedStart).toISOString());
+        const snapshotReads: string[] = [];
+        guest.on('request', request => {
+            if (request.method() === 'GET' && new URL(request.url()).pathname.endsWith('/groups/' + court)) {
+                snapshotReads.push(request.url());
+            }
+        });
+        await expect(program).toHaveText('second-half', { timeout: 15_000 });
+        expect(snapshotReads).toEqual([]);
+    }
+    finally {
+        await Promise.all([guest.close(), otherCourtOwner.close()]);
+    }
 });

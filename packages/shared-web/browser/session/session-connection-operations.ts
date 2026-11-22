@@ -61,6 +61,20 @@ export function createRallarSessionConnectionOperations(
             }
             return window.earliestEpochMs - deadlineEpochMs >= offset ? 'at-or-after' : 'overlaps';
         },
+        schedulePosition(schedule, authority) {
+            const offset = readMaxAuthorityOffsetMs(authority);
+            const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
+            if (!window) return { status: 'unavailable' };
+            let current = null;
+            for (const phase of schedule.phases) {
+                if (phase.startsAtEpochMs - window.latestEpochMs > offset) {
+                    return { status: 'current', current, next: phase };
+                }
+                if (window.earliestEpochMs - phase.startsAtEpochMs < offset) return { status: 'uncertain' };
+                current = phase;
+            }
+            return { status: 'current', current, next: null };
+        },
         rtcCapture: () => input.transportRuntime.readRtcCaptureReceipt(),
         status: () => input.connectionRuntime.readConnectState(),
         isConnected: () =>

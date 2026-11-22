@@ -11,3 +11,7 @@ Only the appointed director may change the clock. Choose **Advance to halftime**
 
 The scoreboard uses the public room SDK. Its display refreshes locally. Clock changes arrive through
 the room WebSocket, and the SDK reconciles them with durable room state.
+
+The Court program displays the named `program` schedule when a director publishes it through
+`rooms.publishSchedule`. It shows the current phase and the next UTC start, recovers the latest
+revision when switching back to the court, and updates locally as the calibrated clock crosses a boundary.
