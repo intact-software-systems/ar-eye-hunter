@@ -55,7 +55,7 @@ export async function readGroupMutationRelatedEntries({
         ),
         readOptionalAdmissionEntry(repository, command, targetPrincipalId),
         readOptionalMemberEntry(repository, command, ownerMemberId),
-        readOptionalAdmissionEntry(repository, command, appointsDirector ? ownerPrincipalId : null),
+        readOptionalAdmissionEntry(repository, command, appointsDirector ? (command.input.succession ? actorPrincipalId : ownerPrincipalId) : null),
         readOptionalMemberEntry(repository, command, directorMemberId),
         readOptionalAdmissionEntry(repository, command, appointsDirector ? directorPrincipalId : null),
         readOptionalPublicationGrantEntry(

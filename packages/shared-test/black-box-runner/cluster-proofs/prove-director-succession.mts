@@ -16,6 +16,9 @@ export async function proveDirectorSuccession({ api, room, owner, deputy }: Dire
     const clock = (session: ProofSession, roomClock: object, expectedStatus = 200) => requestJson(session.apiBaseUrl,
         toApiMutationRequestPath(path, crypto.randomUUID()), { method: 'PUT', session, body: { roomClock }, expectedStatus });
     await api.createGroup({ ...room, owner });
+    await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(path, crypto.randomUUID()), {
+        method: 'PUT', session: owner, body: { maxSpectators: 1 }
+    });
     await api.activateMember({ ...room, actor: deputy, memberClientId: deputy.clientId });
     await api.connectPresence({ ...room, actor: owner });
     await api.connectPresence({ ...room, actor: deputy });
@@ -30,11 +33,36 @@ export async function proveDirectorSuccession({ api, room, owner, deputy }: Dire
         method: 'POST', session: owner, body: { principalId: owner.clientId, generationId: room.proofId + '-generation-' + owner.label }
     });
     await new Promise(resolve => setTimeout(resolve, 300));
-    const handover = await appoint(deputy, { succession: { operation: 'claim-deputy', expectedDirectorEpoch: 1 } });
+    const [handover] = await Promise.all([
+        appoint(deputy, { succession: { operation: 'claim-deputy', expectedDirectorEpoch: 1 } }),
+        api.connectPresence({ ...room, proofId: crypto.randomUUID(), actor: owner })
+    ]);
     assert.deepEqual(metadata(handover).rallarRoomClocks, metadata(paused).rallarRoomClocks);
     const winner = requireRecord(metadata(handover).rallarDirector, 'appointed director');
     assert.equal(winner.principalId, deputy.clientId);
     assert.equal(winner.epoch, 2);
     await clock(owner, { ...namedClock, expectedRevision: 2, operation: 'resume' }, 409);
     await clock(deputy, { ...namedClock, expectedDirectorEpoch: 2, expectedRevision: 2, operation: 'resume' });
+    await api.updateMemberRole({ ...room, actor: owner, memberClientId: deputy.clientId, role: 'admin', phase: 'succession' });
+    const spectator = await api.login({ principal: 'admin', label: 'spectator', apiBaseUrl: deputy.apiBaseUrl, wsBaseUrl: deputy.wsBaseUrl });
+    await requestJson(spectator.apiBaseUrl, toApiMutationRequestPath(path + '/join', crypto.randomUUID()), {
+        method: 'POST', session: spectator, body: { participation: 'spectator' }
+    });
+    await api.connectPresence({ ...room, actor: spectator });
+    const writers = [{ actor: owner, target: spectator }, { actor: deputy, target: owner }];
+    const attempts = await Promise.all(writers.map(async ({ actor, target }) => {
+        const response = await fetch(actor.apiBaseUrl + toApiMutationRequestPath(path + '/director/appoint', crypto.randomUUID()), {
+            method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + actor.accessToken, 'x-client-id': actor.clientId },
+            body: JSON.stringify({ succession: { operation: 'appoint', expectedDirectorEpoch: 2,
+                targetPrincipalId: target.clientId, targetSessionId: target.sessionId } })
+        });
+        await response.body?.cancel();
+        return response.status;
+    }));
+    assert.deepEqual(attempts.toSorted(), [200, 409]);
+    const current = await requestJson(owner.apiBaseUrl, path, { method: 'GET', session: owner });
+    const appointed = requireRecord(metadata(current).rallarDirector, 'admin replacement');
+    assert.equal(appointed.epoch, 3);
+    assert.equal(appointed.sessionId, writers[attempts.indexOf(200)]!.target.sessionId);
+    await clock(deputy, { ...namedClock, expectedDirectorEpoch: 2, expectedRevision: 3, operation: 'pause' }, 409);
 }

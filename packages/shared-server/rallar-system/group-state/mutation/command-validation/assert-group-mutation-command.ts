@@ -1,3 +1,4 @@
+import { decodeRoomDirectorSuccessionCommand } from '@shared/api/group-director-succession.ts';
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -137,6 +138,7 @@ function assertAggregateOperationInput(
             assertUpdateGroupInput(input);
             return;
         case 'appointDirector':
+            if (input.succession !== undefined) decodeRoomDirectorSuccessionCommand(input.succession);
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
             return;
         case 'changeGroupSession':
@@ -414,7 +416,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],
-    appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs'],
+    appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs', 'succession'],
     planGroupLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     startGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     resetGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],

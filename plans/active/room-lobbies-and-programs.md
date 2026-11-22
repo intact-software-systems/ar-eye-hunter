@@ -46,11 +46,11 @@ The held-seat implementation exposes two places to extend. The room roster seria
 2. Use authoritative loss of admitted presence to start the director's configurable reconnect window (30 seconds by default). A timely return by the director keeps control. After that window the designated deputy has an exclusive configurable window (30 seconds by default) to claim as a present session or decline. Use server time across restart and room changes. An explicit admin appointment supersedes either window. A role or membership revocation must take effect immediately.
 3. Expose policy, appointment and claim through the SDK, and recover succession state through push and authoritative room reads. Race the deputy with a late director return and two admin appointments on different API processes. Exercise paused and running programs. Both must preserve their program state through the handover, and a delayed command from the old director must fail.
 
-## Subsequent outcomes
+## Sixth implementation slice — open succession to present players
 
-| Order | Outcome | End-to-end evidence |
-| --- | --- | --- |
-| 6 | Present-player succession | Race two eligible players after fallback opens. Verify a single winner and reject an away holder, ordinary spectator and commands from a replaced director. |
+1. Add a player claim to the same director command and SDK. Evaluate it against the authoritative reconnect and deputy windows at commit time. A present player may claim when no deputy was designated, after a deputy declines, or once the deputy window expires. Reject a waiting or away seat holder, an absent session, a revoked account and an ordinary spectator. The explicit appointment and designated-deputy paths continue to support spectators.
+2. Race two present players on different API processes against the same appointment epoch; exactly one may become director. Replay the winner's request from a third process and verify the same epoch. An organizer can subsequently override that appointment. Test the old director and losing player against a real protected clock operation.
+3. Exercise the fallback after the organizer has left, recover the current appointment after a room switch and verify that the program keeps its balance. Check the server's stored winner independently of WebSocket delivery. Keep the deadline comparison on the server even when the browser displays a countdown.
 
 Qualify server timing on independently hosted directly routed nodes under a maintained offset budget and representative load. Exercise seat claim on one node and expiry on another. Report clock uncertainty separately from durable admission correctness. Local multi-process tests cover consistency and tooling. An operational accuracy claim requires actual independent-node measurements.
 

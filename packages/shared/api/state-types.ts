@@ -1,3 +1,4 @@
+import type { RoomDirectorSuccession } from './group-director-succession.ts';
 import type { RoomLobby } from './room-lobbies/room-lobby.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 import type {
@@ -148,6 +149,7 @@ export interface GroupConnectRequest extends MutationActorInput {
 }
 
 export interface AppointGroupDirectorRequest extends MutationActorInput {
+    readonly succession?: RoomDirectorSuccession.Command;
     readonly heartbeatTtlMs?: number;
 }
 

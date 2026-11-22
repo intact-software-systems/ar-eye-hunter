@@ -1,3 +1,4 @@
+import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/group-director-succession.ts';
 import { ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
@@ -20,6 +21,9 @@ export function validateGroupMetadataInput(
             kind: 'enum',
             allowed: ['listed', 'unlisted']
         }], 'Group metadata'));
+        if (Object.hasOwn(metadata, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY)) {
+            issues.push(new TypeError('Director succession metadata is server-owned.'));
+        }
         if (Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY) || Object.hasOwn(metadata, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) {
             issues.push(new TypeError('Room lobby metadata is server-owned; use roomLobby.'));
         }

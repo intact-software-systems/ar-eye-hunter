@@ -154,7 +154,7 @@ function assertAdmissionReads({
     identities
 }: AssertGroupMutationAuthorityReadsInput): void {
     const authorityAdmissionPrincipalId = command.operation === 'appointDirector'
-        ? identities.ownerPrincipalId
+        ? (command.input.succession ? command.input.actorPrincipalId : identities.ownerPrincipalId)
         : null;
     const directorAdmissionPrincipalId = command.operation === 'appointDirector'
         ? identities.directorPrincipalId

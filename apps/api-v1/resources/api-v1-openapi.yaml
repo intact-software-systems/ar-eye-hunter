@@ -9408,6 +9408,32 @@ components:
     AppointGroupDirectorRequest:
       type: object
       properties:
+        succession:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [operation, expectedDirectorEpoch, expectedRevision, deputyPrincipalId]
+              properties:
+                operation: { const: configure }
+                expectedDirectorEpoch: { type: integer, minimum: 0 }
+                expectedRevision: { type: integer, minimum: 0 }
+                reconnectWindowMs: { type: integer, minimum: 1, example: 30000 }
+                deputyWindowMs: { type: integer, minimum: 1, example: 30000 }
+                deputyPrincipalId: { type: [string, 'null'] }
+            - type: object
+              additionalProperties: false
+              required: [operation, expectedDirectorEpoch, targetPrincipalId, targetSessionId]
+              properties:
+                operation: { const: appoint }
+                expectedDirectorEpoch: { type: integer, minimum: 0 }
+                targetPrincipalId: { type: string, minLength: 1 }
+                targetSessionId: { type: string, minLength: 1 }
+            - type: object
+              additionalProperties: false
+              required: [operation, expectedDirectorEpoch]
+              properties:
+                operation: { enum: [claim-deputy, decline-deputy] }
+                expectedDirectorEpoch: { type: integer, minimum: 1 }
         heartbeatTtlMs:
           type: integer
           format: int64

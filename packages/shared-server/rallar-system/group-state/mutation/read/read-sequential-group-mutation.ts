@@ -87,6 +87,11 @@ async function readSequentialPrimaryEntries(
             : Promise.resolve({ value: undefined, expiredEntry: undefined }),
         repository.findPresenceSummaryEntry(command.aggregateRef)
     ]);
+    // A session named for another account is an ineligible target. Do not mix its presence with the requested account's admission.
+    if (command.operation === 'appointDirector' && command.input.succession?.operation === 'appoint' &&
+        targetPresenceRead.value && targetPresenceRead.value.value.principalId !== command.input.succession.targetPrincipalId) {
+        return { idempotency, groupRead, targetPresenceRead: { value: undefined, expiredEntry: undefined }, presenceSummary };
+    }
     return { idempotency, groupRead, targetPresenceRead, presenceSummary };
 }
 

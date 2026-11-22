@@ -90,7 +90,10 @@ function computeGroupMutationGuardedBatch(
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
-    effects.push(...computeSessionEffects(computed));
+    effects.push(...computeSessionEffects(computed), ...(computed.directorAuthorityFences ?? []));
+    if (computed.directorPresenceGroup && read.group) {
+        effects.push({ effectId: 'director-presence', ...groupStateUpdateGroupDescriptor(computed.directorPresenceGroup, read.group.entry.revision) });
+    }
     effects.push(...computed.viewProvenance, ...computed.roomLobbyEffects);
     if (computed.acceptedLayoutPromotion) {
         effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));

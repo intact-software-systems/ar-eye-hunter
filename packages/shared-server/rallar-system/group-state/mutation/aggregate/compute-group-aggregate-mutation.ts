@@ -1,3 +1,4 @@
+import { changeRoomDirectorSuccession, readRoomDirectorSuccession, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/group-director-succession.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { changeRoomLobby, readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
@@ -246,6 +247,21 @@ export function computeDirector(
         });
     }
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+    if (command.input.succession) {
+        const result = changeRoomDirectorSuccession({
+            snapshot, actor: { principalId, sessionId }, command: command.input.succession, nowEpochMs: facts.attemptAtEpochMs
+        });
+        if ('rejectionCode' in result) return rejected({ command, read, facts, ...result });
+        const group: Group = {
+            ...stored.value, metadata: result.metadata, snapshotVersion: stored.value.snapshotVersion + 1,
+            metadataVersion: stored.value.metadataVersion + 1, updated: auditStamp(command, facts, principalId)
+        };
+        return groupWrite({ command, read, facts, group, eventType: 'group-updated' });
+    }
+    if (readRoomDirectorSuccession(stored.value.metadata)) {
+        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected',
+            message: 'This room requires an epoch-fenced director succession command.' });
+    }
     const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
         snapshot,
         principalId,
@@ -471,10 +487,13 @@ function computeUpdatedGroupMetadata(
     if (schedule !== null) {
         metadata[GROUP_SESSION_SCHEDULE_METADATA_KEY] = { ...schedule };
     }
+    if (Object.hasOwn(current, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY)) {
+        metadata[ROOM_DIRECTOR_SUCCESSION_METADATA_KEY] = current[ROOM_DIRECTOR_SUCCESSION_METADATA_KEY];
+    }
     delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     if (
         Object.hasOwn(current, RALLAR_GROUP_DIRECTOR_METADATA_KEY) &&
-        !isDirectorResignation({ current, replacement, actor })
+        (Object.hasOwn(current, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY) || !isDirectorResignation({ current, replacement, actor }))
     ) {
         metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     }

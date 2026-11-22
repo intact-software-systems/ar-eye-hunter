@@ -1,7 +1,7 @@
-import { notifyListener } from '../../messages/rallar-listener-delivery.ts';
-import type { RallarWsFacade } from '../../rallar-realtime-facade.ts';
+import { notifyListener } from '../messages/rallar-listener-delivery.ts';
+import type { RallarWsFacade } from '../rallar-realtime-facade.ts';
 
-interface WatchRoomTimeInput<T> {
+interface WatchRoomRevisionInput<T> {
     readonly signal?: AbortSignal;
     readonly ws: Pick<RallarWsFacade, 'onLifecycle' | 'status'>;
     onSessionEnd(stop: () => void): () => void;
@@ -12,7 +12,7 @@ interface WatchRoomTimeInput<T> {
 }
 
 /** Socket events invalidate the durable read. A connected idle room generates no reads. */
-export function watchRoomTime<T extends { readonly revision: number; }>(input: WatchRoomTimeInput<T>): () => void {
+export function watchRoomRevision<T extends { readonly revision: number; }>(input: WatchRoomRevisionInput<T>): () => void {
     input.signal?.throwIfAborted();
     const lifetime = new AbortController();
     const { signal } = lifetime;
@@ -60,13 +60,13 @@ export function watchRoomTime<T extends { readonly revision: number; }>(input: W
             next = await input.read(AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]));
             const previous = observed;
             if ((next?.revision ?? 0) < announcedRevision) {
-                throw new Error('Room time read predates the server notification.');
+                throw new Error('Room read predates the server notification.');
             }
             if (
                 previous && (!next || next.revision < previous.revision ||
                     input.regresses(previous, next))
             ) {
-                throw new Error('Room time read regressed.');
+                throw new Error('Room read regressed.');
             }
         }
         catch {

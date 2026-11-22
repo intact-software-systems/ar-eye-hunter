@@ -204,6 +204,7 @@ function toDirectorCommand(
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: {
+            ...(request.succession === undefined ? {} : { succession: structuredClone(request.succession) }),
             heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
                 request.heartbeatTtlMs ?? DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS
             ),

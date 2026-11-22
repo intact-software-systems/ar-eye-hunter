@@ -219,7 +219,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],
-    appointDirector: [...MUTATION_REQUEST_KEYS, 'heartbeatTtlMs'],
+    appointDirector: [...MUTATION_REQUEST_KEYS, 'heartbeatTtlMs', 'succession'],
     planGroupLayout: [...MUTATION_REQUEST_KEYS],
     startGroupFormation: [...MUTATION_REQUEST_KEYS],
     resetGroupFormation: [...MUTATION_REQUEST_KEYS],

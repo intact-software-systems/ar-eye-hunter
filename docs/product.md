@@ -102,6 +102,17 @@ Deploy clock-aware writers before creating clocks and before permitting raw room
 
 ## Director-controlled room timelines
 
+A room owner or admin can enable director succession, designate a deputy, or appoint a specific
+present session through `rooms.changeDirector`. An explicitly appointed or designated spectator
+can direct the room. `rooms.readDirector` and `rooms.watchDirector` expose the current appointment
+and succession state to a room client. The observer recovers over the existing room WebSocket.
+
+By default the director has 30 seconds to reconnect, followed by 30 seconds for the designated
+deputy to claim. The organizer can change either duration. Each claim checks server time, current
+room presence and the observed appointment epoch. An explicit admin appointment takes precedence.
+Handover preserves running and paused programs, and invalidates delayed clock writes from the
+former director.
+
 Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
 to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
 paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.

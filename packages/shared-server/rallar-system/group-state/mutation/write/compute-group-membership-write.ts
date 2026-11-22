@@ -1,3 +1,4 @@
+import { observeRoomDirectorMembership } from '@shared/api/group-director-succession.ts';
 import type { Group, GroupEventType, GroupMember } from '@shared/api/group-types.ts';
 
 import type {
@@ -36,8 +37,12 @@ export function computeGroupMembershipWrite({
     const activeMemberCount = computeActiveMemberCount(stored.value.activeMemberCount, read, members);
     const ownerPrincipalId = resolveOwnerPrincipalId(stored.value, members, eventType);
     assertOwnerTransition(members, ownerPrincipalId);
+    const metadata = members.reduce((current, member) =>
+        observeRoomDirectorMembership(current, member, facts.attemptAtEpochMs), stored.value.metadata);
     const group: Group = {
         ...stored.value,
+        metadata,
+        metadataVersion: stored.value.metadataVersion + Number(metadata !== stored.value.metadata),
         activeMemberCount,
         ownerPrincipalId,
         snapshotVersion: stored.value.snapshotVersion + 1,

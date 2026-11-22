@@ -1,3 +1,4 @@
+import type { RoomDirectorSuccession } from '@shared/api/group-director-succession.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RoomLobbyRead } from '../lobby/room-lobby-storage.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -142,7 +143,7 @@ export type GroupMutationCommand =
         & GroupMutationCommandBase
         & Readonly<{
             operation: 'appointDirector';
-            input: NullableActorInput & Readonly<{ heartbeatTtlMs: number; }>;
+            input: NullableActorInput & Readonly<{ heartbeatTtlMs: number; succession?: RoomDirectorSuccession.Command; }>;
         }>
     )
     | (
@@ -679,6 +680,8 @@ export type GroupTopicSubscriptionDeleteEffect = Readonly<{
 
 export interface GroupMutationDomainWrite {
     readonly viewProvenance: readonly RuntimeStateGuardedBatchEffect[];
+    readonly directorPresenceGroup?: Group;
+    readonly directorAuthorityFences?: readonly RuntimeStateGuardedBatchEffect[];
     readonly roomLobbyEffects: readonly RuntimeStateGuardedBatchEffect[];
     readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
     readonly sessionReservationWrite: GroupSessionReservationWrite | null;

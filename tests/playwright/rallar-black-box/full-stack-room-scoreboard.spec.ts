@@ -27,6 +27,42 @@ async function enterCourts({ page, guest, otherCourtOwner, court }: CourtPartici
     }
 }
 
+test('an owner appoints a present participant and both browsers recover the same paused clock', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const guest = await browser.newPage({ baseURL });
+    const otherCourtOwner = await browser.newPage({ baseURL });
+    const court = 'court-' + crypto.randomUUID();
+    const room = { applicationId: 'room-scoreboard', workspaceId: 'default', groupId: court };
+    const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
+    try {
+        await enterCourts({ page, guest, otherCourtOwner, court });
+        await page.getByRole('button', { name: 'Take clock control' }).click();
+        await page.getByRole('button', { name: 'Start 10 minutes' }).click();
+        await page.getByRole('button', { name: 'Pause', exact: true }).click();
+        await expect(guest.locator('#phase')).toHaveText('Paused');
+        const shown = await guest.getByLabel('Period clock').textContent();
+        const target = await guest.evaluate(async path => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(path);
+            const session = rallar.session()!;
+            return { targetPrincipalId: session.clientId, targetSessionId: session.sessionId };
+        }, sdkUrl);
+        await page.evaluate(async ({ sdkUrl, room, target }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
+            const expectedDirectorEpoch = rallar.director.status(room).appointment!.epoch;
+            await rallar.rooms.changeDirector(room, { operation: 'configure', expectedDirectorEpoch, expectedRevision: 0,
+                reconnectWindowMs: 30000, deputyWindowMs: 30000, deputyPrincipalId: target.targetPrincipalId }, crypto.randomUUID());
+            await rallar.rooms.changeDirector(room, { operation: 'appoint', expectedDirectorEpoch, ...target }, crypto.randomUUID());
+        }, { sdkUrl, room, target });
+        await expect(guest.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+        await expect(guest.getByLabel('Period clock')).toHaveText(shown!);
+        await guest.getByRole('button', { name: 'Resume', exact: true }).click();
+        await expect(page.locator('#phase')).toHaveText('Running');
+    } finally {
+        await Promise.all([guest.close(), otherCourtOwner.close()]);
+    }
+});
+
 test('a returning participant recovers halftime and its paused clock together after visiting another court', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });

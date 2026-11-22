@@ -1,3 +1,4 @@
+import { decodeRoomDirectorSuccessionCommand } from '@shared/api/group-director-succession.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
@@ -134,6 +135,14 @@ export function validateGroupMutationOperationInput(
         isGroupInputRecord(input.metadata) && Object.hasOwn(input.metadata, GROUP_SESSION_SCHEDULE_METADATA_KEY)
     ) {
         issues.push(new TypeError('Group session schedule metadata is server-owned; use the scheduling commands'));
+    }
+    if (operation === 'appointDirector' && input.succession !== undefined) {
+        try {
+            decodeRoomDirectorSuccessionCommand(input.succession);
+        } catch (error) {
+            if (!(error instanceof TypeError)) throw error;
+            issues.push(error);
+        }
     }
     if (operation === 'changeGroupSession') {
         try {

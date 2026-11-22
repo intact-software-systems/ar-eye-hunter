@@ -28,7 +28,7 @@ import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import { captureRoomSession } from '../room-session-fence.ts';
 import { acknowledgedProgram, acknowledgedTimeline, acknowledgedSchedule, acknowledgedClock, acknowledgedDeadline } from './room-time-acknowledgements.ts';
-import { watchRoomTime } from './watch-room-time.ts';
+import { watchRoomRevision } from '../watch-room-revision.ts';
 
 export interface RoomDeadlineObservation {
     readonly status: 'current' | 'stale';
@@ -138,7 +138,7 @@ export function createRoomTimeOperations(
         const room = toExplicitRoomRef(roomRef);
         assertRoomDeadlineName(name);
         const fence = captureRoomSession(requireSession, signal);
-        return watchRoomTime<T>({
+        return watchRoomRevision<T>({
             regresses,
             signal,
             listener,
