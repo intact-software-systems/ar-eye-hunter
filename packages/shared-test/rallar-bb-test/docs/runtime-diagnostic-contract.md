@@ -395,7 +395,8 @@ every session the page opens. The event's `data` is the event itself:
   commit-scoped kinds, so a hold is charged to the work behind it rather than
   guessed at from a duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
-  `control-admission` (after a receipt's `phase` or a NACK's two fields), `relay-forward-not-enqueued`,
+  `control-admission` (after a receipt's `phase`, or a NACK's fields and any proof refusal),
+  `relay-forward-not-enqueued`,
   `receipt-confirmation`,
   `congestion`, `rtc-ack-submission` and `track-index-end`. `publication-staging` is the one
   message-scoped kind without the pair: it carries the value's `traceId` before
@@ -516,9 +517,15 @@ every session the page opens. The event's `data` is the event itself:
   storage-queue regime (`pageRegime`, `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
-  `reason`, for a receipt `phase` (below), and for a NACK `nackReason`, the
-  NACK's own reason, then `nackOrderingKey`, the track key a gap NACK names
-  (absent when the NACK names none): one event for every inbound ACK, NACK,
+  `reason`, for a receipt `phase` (below), and for a NACK, in this order,
+  `nackReason`, the NACK's own reason; `nackOrderingKey`, the track key a gap
+  NACK names (absent when the NACK names none); `nackGapRequestNumber`, which
+  request for its sequences a gap NACK is, 1 for the report an arrival causes
+  and one more for each renewal (present exactly when the NACK carries one, a
+  gap NACK's); `nackLogicalRecipientPeerId`, the recipient the NACK speaks for;
+  and `nackFromPeerId`, the peer that sent it, the recipient itself or the relay
+  that forwarded it (both present on every NACK, and on no other control): one
+  event for every inbound ACK, NACK,
   repair or receipt control the outbound owner decides, recorded when it decides
   it. Every carrier discards that verdict: when captured, the inbound topic's
   `admission-outcome` for the same control reads `not-handled`/`control`
@@ -543,9 +550,14 @@ every session the page opens. The event's `data` is the event itself:
   `AL control was already admitted`, so a wait that matches a proof refusal
   reads `proofRefusal` rather than the reason's start. Its bounded
   dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
-  `targetMsgId` and the free-text `reason` are not. A gap NACK a relay forwarded
-  reads `nackReason: gap` at the origin, like the recipient's own, since it is
-  the recipient's own. A `rejected` control whose receipt proof the origin
+  `nackGapRequestNumber`, the two peer ids, `targetMsgId` and the free-text
+  `reason` are not. A gap NACK a relay forwarded reads `nackReason: gap` at the
+  origin, like the recipient's own, since it is the recipient's own; it reads the
+  relay as `nackFromPeerId`, so a gap request a relay carried is the one whose
+  `nackFromPeerId` differs from its `nackLogicalRecipientPeerId`. A lane wait
+  matches `"nackGapRequestNumber":<n>,"nackLogicalRecipientPeerId":"<peer>"` as
+  one run (`toGapRequestAdmissionWait`), and `"nackReason":"gap","nackOrderingKey":"<key>`
+  still opens a gap NACK's fields. A `rejected` control whose receipt proof the origin
   refused also carries, straight after the NACK's fields, `proofRefusal`
   (`missing-proof`, `unknown-key`, `key-mismatch` or `invalid-signature`),
   `claimedRecipientPeerId` (the recipient the control speaks for) and

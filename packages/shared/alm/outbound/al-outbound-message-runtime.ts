@@ -435,6 +435,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             nackReason?: ALNackPayload['reason'];
             /** The track a NACK asks about, present exactly when the NACK names one (a gap's). */
             nackOrderingKey?: string;
+            /** Which request for its sequences a gap NACK is, present exactly when the NACK carries one (a gap's). */
+            nackGapRequestNumber?: number;
+            /** The recipient the NACK speaks for; this and the next are present exactly when the control is a NACK. */
+            nackLogicalRecipientPeerId?: string;
+            /** The peer that sent the NACK: its recipient, or the relay that forwarded it. */
+            nackFromPeerId?: string;
             /** Why the control's proof was refused; this and the next two are present exactly when one was. */
             proofRefusal?: ALReceiptProofRefusal['kind'];
             /** The recipient the refused control spoke for. */

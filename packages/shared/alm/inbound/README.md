@@ -733,7 +733,10 @@ leaf to the origin, the run asks the origin, whose copies no longer pass through
 is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward
 the origin ([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves
 (a WS runtime, a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again.
-Every run arms the next number. A relay never forwards a repair request. The row path and 6c take one child rule
+Every run arms the next number. The gap NACK carries the repair; a repair request needs no forward. So a renewal
+reaches the origin behind a relay, on an `ack: 'none'` track and after a reshape alike: every relay path below forwards
+the child's gap NACK, and the lane cells `relayed-gap-renewal` and `relayed-unreceipted-gap-renewal` state it over
+`rtc` by the request number the origin's `control-admission` diagnostic names. The row path and 6c take one child rule
 (`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one the accepted layout of the
 message's room names below it ([`isRtcLayoutChildPeer`](../../multicast/resolve-rtc-upstream-peer-id.ts)). A relay
 forwards a child's gap NACK toward the origin while it holds a pending row that waits on that child; about a stored

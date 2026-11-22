@@ -953,6 +953,9 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
     if (command.kind === 'http.request') {
         return toTranscriptHttpValue(command, sender);
     }
+    if (command.kind === 'wait' && command.match.payloadFields?.['data.nackReason'] === 'gap') {
+        return toTranscriptGapRequestValue(command.match.contains ?? '');
+    }
     const tracedDelta = command.kind === 'wait' ? command.match.payloadFields?.['data.traceId'] : undefined;
     if (typeof tracedDelta === 'string') {
         return toTranscriptDelta(tracedDelta);
@@ -1004,6 +1007,23 @@ function toTranscriptReceiptValue(handleId: string, sender: RallarBlackBoxTestRe
         confirmedRecipientPeerIds: sessions(roles.confirmed),
         unconfirmedRecipientPeerIds: sessions(roles.unconfirmed),
         outsideAudienceRecipientPeerIds: sessions(roles.outsideAudience)
+    };
+}
+
+/** A gap request wait's admitted NACK, as the middle of the path forwarded it for the receiver the wait names. */
+function toTranscriptGapRequestValue(contains: string): ApiJsonObject {
+    const requestNumber = Number(/"nackGapRequestNumber":(\d+)/.exec(contains)?.[1]);
+    return {
+        matched: true,
+        event: {
+            payload: {
+                data: {
+                    nackGapRequestNumber: requestNumber,
+                    nackLogicalRecipientPeerId: 'far-leaf-session',
+                    nackFromPeerId: 'middle-session'
+                }
+            }
+        }
     };
 }
 

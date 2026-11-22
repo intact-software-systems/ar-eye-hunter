@@ -769,9 +769,27 @@ origin's ending receipt confirms both recipients through one hop: the sender
 recipe's metadata `almRelayedReceiptOrigins` names each origin by its role and the
 handle of its send, as `almReceiptRoles` names a send's recipient roles. Its
 `almReceiptRoles` pin describes the sender's send. It runs before
-`granted-rtc-relay-only` and `granted-rtc-ordered-relay`: the three close their
-family because each reshapes the room's topology until its own last step. No hosted
-manifest carries it, nor the two `receipted-audience` cells above.
+`granted-rtc-relay-only`, `granted-rtc-ordered-relay`, `relayed-gap-renewal` and
+`relayed-unreceipted-gap-renewal`: the five close their family because each reshapes
+the room's topology until its own last step. No hosted manifest carries it, nor the
+two `receipted-audience` cells above.
+
+`relayed-gap-renewal` and `relayed-unreceipted-gap-renewal` (`scenarios/relay-path/`,
+three-agent, `rtc`, full scope) run on the same path. Every page states its peer id
+on the cue channel before the owner cues `start`; then the sender and the owner each
+originate an ordered track of three on an ordering key of its own (`ack: 'receiver'`
+in the first cell, `ack: 'none'` in the second), wait until both receivers entered the
+track at the first, hold the second send by its message id and send the third. Each
+origin releases its hold only once its outbound `control-admission` diagnostics
+committed the gap request numbered 3 (2 in the unreceipted cell) from each receiver,
+matched by the request number and the receiver's peer id. Every receiver enters each
+origin's track at the first, releases the third from its buffer and omits nothing;
+each origin reads its three handles `acknowledged` (`transport-accepted` unreceipted).
+After the run the identity assessment fails the cell unless one origin's recorded
+request wait names a `nackFromPeerId` other than its `nackLogicalRecipientPeerId`,
+a request a relay carried: the sender recipe's metadata `almRelayedGapRenewalOrigins`
+names each origin by its role, the request number and its waits. No hosted manifest
+carries either.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
