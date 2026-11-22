@@ -56,6 +56,7 @@ import {
     decodeAlmLaneParameters,
     type AlmLaneParameters
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
+import { toAlmLaneUnselectedFamilyReason } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/is-alm-lane-cell-selected.ts';
 import {
     isAlmLaneRoomLeftAfter,
     resolveAlmLanePlan,
@@ -204,11 +205,10 @@ const { scope, carriers } = laneParameters ?? ALM_LANE_DEFAULT_SELECTION;
  * only by an enabled lane, as its parameters are.
  */
 const backend = config.enabled ? readFullStackApiServerMode() : undefined;
-// Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
-// scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
-// its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
-// the page's renders stay off the lane's sends.
-const CARRIER_TEST_TIMEOUT_MS = 900_000;
+// Each family test's own limit, covering its conformance recipes and connection readiness. On a GitHub runner against
+// PostgreSQL (run 45009025510) the full scope's two-agent family took 14.1 minutes over rtc and 11.1 over ws; the limit
+// leaves room for a slow runner, and the run's global timeout still ends a hang.
+const CARRIER_TEST_TIMEOUT_MS = 1_500_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -238,6 +238,7 @@ test.describe('ALM conformance lane', () => {
         for (const family of ['two-agent', 'addressed'] as const) {
             const title = family === 'two-agent' ? 'baseline' : family;
             test(`${title} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+                skipUnselectedFamily(family);
                 const familyPlan = planFamily(carrier, family);
                 const { plan } = familyPlan;
                 test.skip(
@@ -285,6 +286,7 @@ test.describe('ALM conformance lane', () => {
 
         for (const family of ['three-agent', 'same-principal', 'four-role'] as const) {
             test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+                skipUnselectedFamily(family);
                 const familyPlan = planFamily(carrier, family);
                 const { plan } = familyPlan;
                 test.skip(
@@ -331,6 +333,7 @@ test.describe('ALM conformance lane', () => {
         }
 
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+            skipUnselectedFamily('same-context');
             const familyPlan = planFamily(carrier, 'same-context');
             const { plan } = familyPlan;
             test.skip(
@@ -396,12 +399,13 @@ function readLaneParameters(): AlmLaneParameters {
     const catalog = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         ALM_CONFORMANCE_LANE_FAMILIES.flatMap((family) =>
             createFamilyScenarios(toPlanningSelection(), carrier, family)
-                .map(({ scenarioId, scenarioKey, tags }) => ({ carrier, scenarioId, scenarioKey, tags }))
+                .map(({ scenarioId, scenarioKey, tags }) => ({ carrier, family, scenarioId, scenarioKey, tags }))
         )
     );
     const values = {
         scope: process.env.RALLAR_BLACK_BOX_ALM_SCOPE,
         carriers: process.env.RALLAR_BLACK_BOX_ALM_CARRIERS,
+        families: process.env.RALLAR_BLACK_BOX_ALM_FAMILIES,
         order: process.env.RALLAR_BLACK_BOX_ALM_ORDER,
         seed: process.env.RALLAR_BLACK_BOX_ALM_SEED,
         rooms: process.env.RALLAR_BLACK_BOX_ALM_ROOMS,
@@ -460,6 +464,15 @@ function planFamily(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFa
             mintSeed: () => randomInt(0, 2 ** 31)
         })
     };
+}
+
+/**
+ * A family the run does not select is skipped before it plans, announces or records anything, so it writes no result
+ * file; the plan file still names it.
+ */
+function skipUnselectedFamily(family: AlmConformanceLaneFamily): void {
+    const reason = toAlmLaneUnselectedFamilyReason(requireLaneParameters().families, family);
+    test.skip(reason !== undefined, reason ?? '');
 }
 
 /** Why the family plans no cell over the carrier; `otherwise` is the reason when the catalog alone left it none. */
