@@ -9,6 +9,7 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
+    decodeALPeerControlMessage,
     newALNackControlMessage,
     newALRepairControlMessage,
     type ALNackPayload,
@@ -26,6 +27,7 @@ import type {
     ALOutboundSettlementFact
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairRetransmission } from '@shared/alm/outbound/al-outbound-repair-retransmission.ts';
+import { RtcReceiptProofVerifier } from '@shared/multicast/receipt-proof/rtc-receipt-proof-verifier.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -38,6 +40,14 @@ import {
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
+
+import { signTestALReceiptControl } from '../../../al-control-test-payloads.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    ROOM_PUBLICATION_CRYPTO,
+    ROOM_PUBLICATION_KEY,
+    type AvailablePublicationCrypto
+} from '../../signature/publication-crypto-fixtures.ts';
 
 /** The two fields a skipped settlement is judged by here; the rest is the runtime's stamp. */
 interface SkippedRepair {
@@ -107,6 +117,27 @@ function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
         { gapRequestNumber: 1, ...report, logicalRecipientPeerId: report.fromPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
     );
+}
+
+/** A gap NACK the relay `report.fromPeerId` forwards for `recipientPeerId`, unsigned. */
+function toRelayedGapNack(
+    controlMsgId: string,
+    report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId' | 'originPeerId' | 'proof'>,
+    recipientPeerId: string
+): ALMessage {
+    return newALNackControlMessage(
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
+        { gapRequestNumber: 1, ...report, logicalRecipientPeerId: recipientPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
+    );
+}
+
+/** The relayed gap NACK `nack` carrying the signature `crypto` makes over it. */
+async function toSignedRelayedGapNack(nack: ALMessage, crypto: AvailablePublicationCrypto): Promise<ALMessage> {
+    const control = decodeALPeerControlMessage(nack).right;
+    if (control?.type !== 'nack') {
+        throw new Error('A relayed gap NACK decodes as a NACK');
+    }
+    return newALNackControlMessage(nack.id, (await signTestALReceiptControl(crypto, control)).payload);
 }
 
 function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>): ALMessage {
@@ -345,6 +376,58 @@ describe('the repair budget runs out', () => {
             { msgId: first.id.msgId, reason: 'repair-exhausted' },
             { msgId: second.id.msgId, reason: 'repair-exhausted' }
         ]);
+    });
+
+    it('charges a frozen recipient nothing for a relayed gap NACK unsigned or signed by another key, and charges its own signed one (ruling 19)', async () => {
+        const repairs: string[] = [];
+        const stores = createDefaultOutboundTestStores();
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            planOutgoingMessage,
+            planRepairMessage,
+            recipientAuthentication: {
+                kind: 'signature',
+                verifier: new RtcReceiptProofVerifier({ crypto: ROOM_PUBLICATION_CRYPTO, nowEpochMs: Date.now }),
+                readRecipientKey: (_msg, peerId) => peerId === 'peer-3' ? ROOM_PUBLICATION_KEY : undefined
+            },
+            sendPreparedMessage: async (prepared) => {
+                if (prepared.kind === 'repair') {
+                    repairs.push(prepared.msgId!);
+                }
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const [first, second, third] = [1, 2, 3].map(createFrozenOrderedMessage) as [ALMessage, ALMessage, ALMessage];
+        for (const message of [first, second, third]) {
+            await enqueueOutboundOrThrow(runtime, message);
+        }
+        const trackKey = toALOrderingTrackKey(first)!;
+        const relayed = (controlMsgId: string, gapRequestNumber: number) =>
+            toRelayedGapNack(controlMsgId, {
+                ...toGapReport({ revealing: third, trackKey, missingRanges: [{ from: 1, to: 2 }], requester: 'relay' }),
+                gapRequestNumber
+            }, 'peer-3');
+
+        const unsigned = await runtime.acceptControlMessage(relayed('relayed-unsigned', 1), 'peer');
+        const otherKey = await runtime.acceptControlMessage(
+            await toSignedRelayedGapNack(relayed('relayed-other-key', 2), await createAvailablePublicationCryptoFixture()),
+            'peer'
+        );
+        await waitForOutboundWorkDrained(stores);
+
+        expect([unsigned.kind, otherKey.kind]).toEqual(['rejected', 'rejected']);
+        expect(repairs).toEqual([]);
+        expect(await readRepairAttempts(stores, [first, second], 'peer-3')).toEqual([0, 0]);
+
+        const signed = await runtime.acceptControlMessage(
+            await toSignedRelayedGapNack(relayed('relayed-signed', 3), ROOM_PUBLICATION_CRYPTO),
+            'peer'
+        );
+        await waitForOutboundWorkDrained(stores);
+
+        expect(signed.kind).toBe('committed');
+        expect(repairs).toEqual([first.id.msgId, second.id.msgId]);
+        expect(await readRepairAttempts(stores, [first, second], 'peer-3')).toEqual([1, 1]);
     });
 
     it('charges one attempt per gap: a re-executed hint and a later frame\'s report of the same gap neither charge again nor exhaust, and write no new row', async () => {

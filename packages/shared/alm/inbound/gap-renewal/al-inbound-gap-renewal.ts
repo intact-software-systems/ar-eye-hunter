@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore, ALInboundGapRenewalEffect } from '../al-inbound-admission-store.ts';
@@ -16,6 +17,7 @@ import {
     type ALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '../prepare-al-inbound-commit-bundle.ts';
+import { resolveALInboundSignFailurePolicy } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 import {
     signALInboundReceiptEffects,
     type ALInboundReceiptProofs
@@ -88,10 +90,16 @@ export class ALInboundGapRenewal {
             return NOTHING_RENEWED;
         }
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
-        const toPeerId = await this.resolveRenewalPeerId(payload, nowMs);
+        const revealing = (await admissionStore.readDeliverySurface(payload.message, nowMs))?.msg;
+        const toPeerId = this.resolveRenewalPeerId(payload, revealing);
         const rows = await signALInboundReceiptEffects(
             this.computeRenewalWrites({ effect, payload, position, missingRanges, facts, toPeerId }),
-            { namespace: admissionStore.namespace, receiptProofs, diagnostics }
+            {
+                namespace: admissionStore.namespace,
+                receiptProofs,
+                signFailure: resolveALInboundSignFailurePolicy(revealing),
+                diagnostics
+            }
         );
         for (const row of rows) {
             await workPort.retainIfAbsent(row.entry);
@@ -104,14 +112,13 @@ export class ALInboundGapRenewal {
      * recorded peer while this lane still routes over it, so a reshape's overlap asks the relay that still forwards;
      * once it is gone the track's upstream peer, and with none resolvable the recorded peer again.
      */
-    private async resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, nowMs: number): Promise<string> {
-        const { admissionStore, isRoutedPeerReady, readUpstreamPeerId } = this.dependencies;
-        const surface = await admissionStore.readDeliverySurface(payload.message, nowMs);
-        if (surface === undefined) {
+    private resolveRenewalPeerId(payload: ALInboundGapRenewalEffect, revealing: ALMessage | undefined): string {
+        const { isRoutedPeerReady, readUpstreamPeerId } = this.dependencies;
+        if (revealing === undefined) {
             return payload.toPeerId;
         }
-        const upstreamPeerId = readUpstreamPeerId(surface.msg);
-        if (upstreamPeerId !== surface.msg.id.senderId && isRoutedPeerReady?.(surface.msg, payload.toPeerId) === true) {
+        const upstreamPeerId = readUpstreamPeerId(revealing);
+        if (upstreamPeerId !== revealing.id.senderId && isRoutedPeerReady?.(revealing, payload.toPeerId) === true) {
             return payload.toPeerId;
         }
         return upstreamPeerId ?? payload.toPeerId;

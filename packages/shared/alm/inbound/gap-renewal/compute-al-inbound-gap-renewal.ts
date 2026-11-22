@@ -15,8 +15,8 @@ import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts'
 import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALInboundEffectId, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import {
-    isALInboundCountedSelf,
-    isALInboundRecipientReceiptIntent
+    isALInboundRecipientReceiptIntent,
+    resolveALInboundReceiptStanding
 } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 /** The gap NACK an admission planned for an arrival that revealed a gap. */
@@ -92,7 +92,7 @@ export function toALInboundGapRenewalEffects(
         return [];
     }
     const { toPeerId } = gapNack.payload;
-    const countsSelf = isALInboundCountedSelf(read.msg, read.plan, input.selfPeerId);
+    const standing = resolveALInboundReceiptStanding(read.msg, read.plan, input.selfPeerId);
     return computeALInboundNewlyMissingRanges(read.orderingSnapshot, read.plan.orderingRuntime).map((range) => {
         const payload: ALInboundGapRenewalEffect = {
             kind: 'renew-gap',
@@ -102,7 +102,7 @@ export function toALInboundGapRenewalEffects(
             toPeerId,
             message: toALInboundMessageReference(read.msg),
             traceId: read.msg.id.traceId,
-            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, countsSelf)
+            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, standing)
         };
         return {
             effectId: toALInboundGapRenewalEffectId(payload),

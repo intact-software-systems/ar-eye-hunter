@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
+    decodeALPeerControlMessage,
     newALAckControlMessage,
     newALNackControlMessage,
     newALRepairControlMessage,
@@ -22,7 +23,11 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
-import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../signature/publication-crypto-fixtures.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    ROOM_PUBLICATION_CRYPTO,
+    ROOM_PUBLICATION_KEY
+} from '../../signature/publication-crypto-fixtures.ts';
 
 /** A `receiver` receipt on two frozen recipients, sent through one relay that is neither of them. */
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
@@ -320,7 +325,8 @@ describe('a repeat at the origin', () => {
             { ...RECEIVER_TRACKING, expectedPeerIds: ['peer-1', 'r2'] },
             {
                 kind: 'signature',
-                verifier: new RtcReceiptProofVerifier({ crypto: ROOM_PUBLICATION_CRYPTO, nowEpochMs: Date.now })
+                verifier: new RtcReceiptProofVerifier({ crypto: ROOM_PUBLICATION_CRYPTO, nowEpochMs: Date.now }),
+                readRecipientKey: () => undefined
             }
         );
         const unsigned = toTestALAckPayload({
@@ -431,10 +437,15 @@ describe('a gap request for a send that tracks no receipt (6c)', () => {
     const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } as const;
 
     /** Sequence 3 of the origin's track, sent with no receipt to `targets`; every repair request plans a repair. */
-    async function createUnreceiptedOrigin(id: string, targets: ALMessage['targets']): Promise<OriginFixture> {
+    async function createUnreceiptedOrigin(
+        id: string,
+        targets: ALMessage['targets'],
+        recipientAuthentication: ALOutboundRecipientAuthentication = { kind: 'carrier' }
+    ): Promise<OriginFixture> {
         const stores = createDefaultOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
             stores,
+            recipientAuthentication,
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -532,5 +543,73 @@ describe('a gap request for a send that tracks no receipt (6c)', () => {
         expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'stranger', logicalRecipientPeerId: 'stranger' })))
             .toBe('AL repair sender has no retained outbound obligation');
         expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r1', logicalRecipientPeerId: 'r1' }))).toBe('committed');
+    });
+
+    describe('whose relayed gap NACK carries its recipient\'s signature (ruling 19)', () => {
+        /** The room keys `r2` with the room key; `r1` has left it, so it keys `r1` with nothing. */
+        const SIGNATURE: ALOutboundRecipientAuthentication = {
+            kind: 'signature',
+            verifier: new RtcReceiptProofVerifier({ crypto: ROOM_PUBLICATION_CRYPTO, nowEpochMs: Date.now }),
+            readRecipientKey: (_msg, peerId) => peerId === 'r2' ? ROOM_PUBLICATION_KEY : undefined
+        };
+
+        async function toSignedGapNack(msg: ALMessage, input: GapNackInput, crypto = ROOM_PUBLICATION_CRYPTO): Promise<ALMessage> {
+            const unsigned = toGapNack(msg, input);
+            const control = decodeALPeerControlMessage(unsigned).right!;
+            if (control.type !== 'nack') {
+                throw new Error('A gap NACK decodes as a NACK');
+            }
+            return newALNackControlMessage(unsigned.id, (await signTestALReceiptControl(crypto, control)).payload);
+        }
+
+        it('admits a relay\'s gap NACK its frozen recipient signed, and one for a room send that froze no audience', async () => {
+            const frozen = await createUnreceiptedOrigin('signed-relayed-frozen', FROZEN, SIGNATURE);
+            const unfrozen = await createUnreceiptedOrigin(
+                'signed-relayed-unfrozen',
+                { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+                SIGNATURE
+            );
+            const relayed = { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' };
+
+            expect([
+                await frozen.accept(await toSignedGapNack(frozen.msg, relayed)),
+                await unfrozen.accept(await toSignedGapNack(unfrozen.msg, relayed))
+            ]).toEqual(['committed', 'committed']);
+            expect(await readRepairHintRows(frozen.stores)).toHaveLength(1);
+            expect(await readRepairHintRows(unfrozen.stores)).toHaveLength(1);
+        });
+
+        it('refuses a relayed gap NACK unsigned, signed by another key, or under its recipient\'s key id by another key, raising no repair hint', async () => {
+            const origin = await createUnreceiptedOrigin('unsigned-relayed', FROZEN, SIGNATURE);
+            const relayed = { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' };
+            const otherKey = await createAvailablePublicationCryptoFixture();
+            const forged = await createAvailablePublicationCryptoFixture();
+            const underRecipientKeyId = { ...forged, keyPair: { ...forged.keyPair, keyId: ROOM_PUBLICATION_KEY.keyId } };
+
+            expect([
+                await origin.accept(toGapNack(origin.msg, { ...relayed, controlMsgId: 'unsigned' })),
+                await origin.accept(await toSignedGapNack(origin.msg, { ...relayed, controlMsgId: 'other-key' }, otherKey)),
+                await origin.accept(await toSignedGapNack(origin.msg, { ...relayed, controlMsgId: 'forged' }, underRecipientKeyId))
+            ]).toEqual([
+                'AL control proof is refused: missing-proof',
+                'AL control proof is refused: key-mismatch',
+                'AL control proof is refused: invalid-signature'
+            ]);
+            expect(await readRepairHintRows(origin.stores)).toEqual([]);
+        });
+
+        it('refuses a relayed gap NACK for a recipient the room no longer keys, though its own key signed it', async () => {
+            const origin = await createUnreceiptedOrigin('departed-relayed', FROZEN, SIGNATURE);
+
+            expect(await origin.accept(await toSignedGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r1' })))
+                .toBe('AL control proof is refused: unknown-key');
+            expect(await readRepairHintRows(origin.stores)).toEqual([]);
+        });
+
+        it('admits a frozen recipient\'s own unsigned gap NACK: the carrier authenticates its sender', async () => {
+            const origin = await createUnreceiptedOrigin('own-unsigned', FROZEN, SIGNATURE);
+
+            expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r1', logicalRecipientPeerId: 'r1' }))).toBe('committed');
+        });
     });
 });

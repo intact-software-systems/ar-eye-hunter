@@ -16,7 +16,9 @@ import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/cont
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
 
+import type { AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { toAcceptedLayout, toPromotedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
 import { createOriginOverlay, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 import { PUBLICATION_TOPIC_ID, PUBLISH_AND_SUBSCRIBE, PUBLISH_ONLY, SUBSCRIBE_ONLY } from './rtc-publication-proof-fixtures.ts';
@@ -66,6 +68,8 @@ interface GapChainInput {
     readonly grantsBySeq?: Readonly<Record<number, ChainGrants>>;
     /** The leaf's open edges, its starting layout and its overlap; absent, its edge to the relay alone. */
     readonly leaf?: Pick<ChainHopInput, 'neighbourPeerIds' | 'initialOverlay' | 'replacedLayoutOverlapMs'>;
+    /** `refused`: the leaf's page refuses every signature it is asked for; absent, it signs with its key. */
+    readonly leafSigning?: 'refused';
     /** The origin's starting layout; absent, its one next hop `r` and no adjacency. */
     readonly originLayout?: SessionNextHops;
     /** A second subscriber `d`, frozen into every sequence's audience beside the leaf; absent, the leaf alone. */
@@ -400,6 +404,21 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
+    it('passes the leaf\'s gap NACK upward with the leaf\'s own signature, which the origin verifies before it repairs a loss below the relay (ruling 19)', async () => {
+        const gap = await createGapChain({ ack: 'none' });
+        await forwardTrack(gap, [1, 2, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        await deliverEach(await readLeafControls(gap), gap.relay, 'c');
+        const upward = readGapNackMessage(await readRelayUpwardControls(gap));
+        const admissions = await acceptAtOrigin(gap, [upward]);
+        await repairThroughRelay(gap);
+
+        expect(readGapNack([upward]).payload).toMatchObject({ fromPeerId: 'r', logicalRecipientPeerId: 'c' });
+        expect(await verifyTestALReceiptControl(gap.chain.keys.c!, upward)).toBe(true);
+        expect(admissions.get('gap')).toBe('committed');
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
     it('a child that already holds the message reads the copy the relay passes down a duplicate and answers nothing', async () => {
         const gap = await createGapChain({ ack: 'none' });
         await forwardTrack(gap, [1, 2, 3]);
@@ -458,28 +477,7 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
     it('admits a ready room neighbour\'s gap NACK for a room send that froze no audience, and leaves a peer that is no ready neighbour\'s unhandled', async () => {
         const { origin } = await createOriginRelayChain(GRANTS);
         const sentBefore = origin.channels.r!.sent.length;
-        const toUnfrozenFrame = (seq: number): ALMessage =>
-            newALBroadcastMessage({
-                scope: 'room',
-                createdAtEpochMs: Date.now(),
-                senderId: 'a',
-                route: { topicId: 'room.chat', resourceId: `unfrozen-${seq}`, contextId: ORIGIN_ROOM.groupId },
-                typeId: 'room.chat.v1',
-                resource: { text: `unfrozen ${seq}` },
-                options: {
-                    groupRef: ORIGIN_ROOM,
-                    ack: 'none',
-                    reliability: 'at-least-once',
-                    ttlMs: 30_000,
-                    ordering: { orderingKey: 'chat', epoch: 1, seq }
-                }
-            });
-        const [missing, message] = [toUnfrozenFrame(2), toUnfrozenFrame(3)];
-        for (const frame of [missing, message]) {
-            const sentBeforeFrame = origin.channels.r!.sent.length;
-            expect((await origin.manager.enqueueLegIfAbsent(frame, 'hold')).verdict.kind).toBe('admitted');
-            await drainUntil(() => origin.channels.r!.sent.length > sentBeforeFrame);
-        }
+        const [missing, message] = await publishUnfrozenFrames(origin);
         const toUnfrozenGapNack = (fromPeerId: string): ALMessage =>
             newALNackControlMessage(
                 { v: 4, msgId: `unfrozen-gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: message.id.traceId },
@@ -505,6 +503,47 @@ describe('a gap below a publish-only RTC relay on an unreceipted ordered granted
         expect([fromNoNeighbour.kind, fromNeighbour.kind]).toEqual(['not-handled', 'committed']);
         expect(origin.channels.c!.sent).toEqual([]);
         expect(await readRepairRequesters(origin, missing)).toEqual(['r']);
+    });
+
+    it('admits the relay\'s gap NACK for a room send that froze no audience only under its recipient\'s key the room holds now (ruling 19)', async () => {
+        const { origin, keys, snapshot } = await createOriginRelayChain(GRANTS);
+        const [missing, message] = await publishUnfrozenFrames(origin);
+        const relayed = async (controlMsgId: string, gapRequestNumber: number, signed: boolean) => {
+            const nack = {
+                type: 'nack',
+                payload: toTestALNackPayload({
+                    msgId: message.id.msgId,
+                    fromPeerId: 'r',
+                    toPeerId: 'a',
+                    originPeerId: 'a',
+                    logicalRecipientPeerId: 'c',
+                    reason: 'gap',
+                    orderingKey: toALOrderingTrackKey(message),
+                    expectedSeq: 2,
+                    missingRanges: [{ from: 2, to: 2 }],
+                    gapRequestNumber,
+                    observedAtEpochMs: Date.now()
+                })
+            } as const;
+            const result = await origin.manager.acceptControlMessage(newALNackControlMessage(
+                { v: 4, msgId: controlMsgId, ts: Date.now(), senderId: 'r', traceId: message.id.traceId },
+                signed ? (await signTestALReceiptControl(keys.c!, nack)).payload : nack.payload
+            ));
+            return result.kind === 'rejected' ? [result.kind, result.proofRefusal?.kind] : [result.kind];
+        };
+
+        const unsigned = await relayed('relayed-unsigned', 1, false);
+        const signed = await relayed('relayed-signed', 1, true);
+        await drainUntil(async () => (await readRepairRequesters(origin, missing)).length > 0);
+        origin.groups.accept('room', {
+            ...snapshot,
+            group: { ...snapshot.group, snapshotVersion: snapshot.group.snapshotVersion + 1 },
+            activeSessions: snapshot.activeSessions.filter((session) => session.sessionId !== 'c')
+        });
+        const departed = await relayed('relayed-departed', 2, true);
+
+        expect([unsigned, signed, departed]).toEqual([['rejected', 'missing-proof'], ['committed'], ['rejected', 'unknown-key']]);
+        expect(await readRepairRequesters(origin, missing)).toEqual(['c']);
     });
 
     it('refuses at the relay a gap NACK from the neighbour the message arrived from', async () => {
@@ -558,6 +597,33 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
         expect(readGapRequests(toNewParent)).toEqual([['nack', 2, 'a'], ['repair', 2, 'a']]);
         expect(renewal === undefined ? undefined : outcomes.get(renewal)).toBe('committed');
         expect(servedToLeaf.map((copy) => copy.ordering?.seq)).toEqual([2]);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
+    it('a leaf whose signature fails asks unsigned: the origin refuses its relay\'s forward and serves its renewal over a direct link (ruling 19)', async () => {
+        const gap = await createGapChain({
+            ack: 'none',
+            leaf: { neighbourPeerIds: ['r', 'a'], initialOverlay: createOriginOverlay(RELAYED_LEAF.c!, RELAYED_LEAF) },
+            leafSigning: 'refused'
+        });
+        await forwardTrack(gap, [1, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+        const firstReport = await readLeafControls(gap);
+        await deliverEach(firstReport, gap.relay, 'c');
+        const relayed = await acceptAtOrigin(gap, await readRelayUpwardControls(gap));
+
+        promoteDirectLeafLayout(gap);
+        await advanceChainBy(gap, 2_000);
+        const toOrigin = await gap.leaf.readSent('a');
+        const renewal = toOrigin.find((control) => readGapRequestNumber(control, 'c') === 2);
+        const outcomes = await acceptEachAtOrigin(gap, toOrigin);
+        await deliverEach(gap.chain.origin.channels.c!.sent, gap.leaf, 'a');
+        await drainUntil(() => gap.leaf.delivered.length >= gap.frames.length);
+
+        expect(readGapNack(firstReport).payload.proof).toBeNull();
+        expect(relayed.get('gap')).toBe('rejected');
+        expect(renewal === undefined ? undefined : readGapNack([renewal]).payload.proof).toBeNull();
+        expect(renewal === undefined ? undefined : outcomes.get(renewal)).toBe('committed');
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
@@ -1099,6 +1165,7 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     const fourthRelay = input.fourthRelay === undefined ? undefined : createChainHop(chain, { selfPeerId: 'y', ...input.fourthRelay });
     const leaf = createChainHop(chain, {
         selfPeerId: 'c',
+        publicationCrypto: input.leafSigning === undefined ? undefined : await toSigningRefusedCrypto(chain.keys.c!),
         neighbourPeerIds: input.leaf?.neighbourPeerIds ?? ['r'],
         initialOverlay: input.leaf?.initialOverlay,
         replacedLayoutOverlapMs: input.leaf?.replacedLayoutOverlapMs,
@@ -1121,6 +1188,39 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     fourthRelay?.acceptSnapshot(snapshot);
     leaf.acceptSnapshot(snapshot);
     return { chain, relay, secondRelay, thirdRelay, fourthRelay, leaf, relayRows: pair.state, frames };
+}
+
+/** `crypto` whose private key is its public one: the page verifies as before, and every signature it makes fails. */
+async function toSigningRefusedCrypto(crypto: AvailablePublicationCrypto): Promise<AvailablePublicationCrypto> {
+    const publicKey = (await importEcdsaP256PublicKey(crypto.subtle, crypto.keyPair.publicJwk)).right!;
+    return { ...crypto, keyPair: { ...crypto.keyPair, privateKey: publicKey } };
+}
+
+/** The origin's seq 2 and 3 of a room broadcast that asks for no receipt and froze no audience, each sent `r`. */
+async function publishUnfrozenFrames(origin: RtcOriginOverlayFixture): Promise<readonly [ALMessage, ALMessage]> {
+    const toUnfrozenFrame = (seq: number): ALMessage =>
+        newALBroadcastMessage({
+            scope: 'room',
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.chat', resourceId: `unfrozen-${seq}`, contextId: ORIGIN_ROOM.groupId },
+            typeId: 'room.chat.v1',
+            resource: { text: `unfrozen ${seq}` },
+            options: {
+                groupRef: ORIGIN_ROOM,
+                ack: 'none',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                ordering: { orderingKey: 'chat', epoch: 1, seq }
+            }
+        });
+    const frames = [toUnfrozenFrame(2), toUnfrozenFrame(3)] as const;
+    for (const frame of frames) {
+        const sentBeforeFrame = origin.channels.r!.sent.length;
+        expect((await origin.manager.enqueueLegIfAbsent(frame, 'hold')).verdict.kind).toBe('admitted');
+        await drainUntil(() => origin.channels.r!.sent.length > sentBeforeFrame);
+    }
+    return frames;
 }
 
 /** The relay receives the origin's copies of `seqs`; any other is lost on `a→r`. */

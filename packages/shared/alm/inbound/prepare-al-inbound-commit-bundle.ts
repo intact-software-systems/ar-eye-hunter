@@ -21,8 +21,8 @@ import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-val
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import { toALForwardedReceiptControlMessage } from './control/to-al-forwarded-receipt-control-message.ts';
 import {
-    isALInboundCountedSelf,
-    isALInboundRecipientReceiptIntent
+    isALInboundRecipientReceiptIntent,
+    resolveALInboundReceiptStanding
 } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 export interface ALInboundEffectPreparationDependencies {
@@ -106,7 +106,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
     const { read, facts } = input;
     const msg = toPreparedALInboundMessage(read);
     const { traceId, senderId: originPeerId } = msg.id;
-    const countsSelf = isALInboundCountedSelf(msg, toPreparedALInboundPlan(read), facts.selfPeerId);
+    const standing = resolveALInboundReceiptStanding(msg, toPreparedALInboundPlan(read), facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
@@ -128,7 +128,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
             expireAtTimestamp,
             payload,
             carrier: effect.carrier,
-            signsForRecipient: isALInboundRecipientReceiptIntent(effect, countsSelf)
+            signsForRecipient: isALInboundRecipientReceiptIntent(effect, standing)
         });
     });
 }

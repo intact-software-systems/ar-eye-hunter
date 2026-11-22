@@ -547,6 +547,10 @@ for no receipt and keeps no receipt row may also come from a recipient its froze
 to no single addressee that froze none, from any requester the repair authority planned a repair to, which needs a
 ready room neighbour; a relayed gap NACK for such a send needs only that planned repair of its sender and a logical
 recipient of the frozen audience (6c). The per-requester repair budget bounds it as it bounds a receipted send's.
+Since that budget is charged to the recipient a relayed gap NACK names, over RTC such a NACK is admitted only with a
+proof its recipient signed, verified against the key the message's room registers for that recipient now (no key was
+frozen for a send without a receipt); an unsigned or wrongly signed one, or one for a recipient the room no longer keys,
+is refused before it charges anything. The recipient's own gap NACK needs no proof: its carrier names its sender.
 Over RTC, under `receiver` and `leader`, a control that speaks for a counted recipient confirms, excludes or ends
 nothing until its proof is verified against the key the sent row froze for that recipient (above), whichever hop
 forwarded it: a relay forwards its child's signed control and cannot speak for the recipients below it (see the

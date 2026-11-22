@@ -167,6 +167,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             recipientProof: await readALOutboundRecipientProof({
                 parsed: surface.parsed,
                 sent: surface.sent,
+                unreceiptedRepairAudience: surface.unreceiptedRepairAudience,
                 recipientAuthentication: this.recipientAuthentication,
                 readSentMessage: async () =>
                     (await this.backend.readWithin((session) =>

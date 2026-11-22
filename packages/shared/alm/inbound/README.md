@@ -465,11 +465,16 @@ counted is read from the message's own receipt, never from the plan that
 refused it, so its refusal NACKs (`not-yet-in-sync` and its siblings, whose
 plan states no receipt) are signed too; never a repair request, a control a
 relay forwards, a `hop` or `subtree` control or anything on `ws`, which carry
-`proof: null`. A composition states it: the RTC overlay `signed`, with the
+`proof: null`. On `rtc` a receiver also signs its gap NACK, and each renewal of
+it, for a message that asks for no receipt: a relay forwards that NACK with the
+proof intact, and its origin charges the repair to the recipient it names, so it
+admits a relayed one only under that recipient's signature. A composition states it: the RTC overlay `signed`, with the
 signer `WebRtcRxStreamerService` builds from the session's publication crypto,
 the WS client and the WS server `carrier-authenticated`. A control whose sign
 fails is left out of the commit, nothing unsigned goes in its place (its
-hop-end included), and the inbound `receipt-sign` diagnostic names it; the data
+hop-end included), except the gap NACK of a message that asks for no receipt,
+which goes unsigned (its origin admits it unsigned only from the recipient
+itself), and the inbound `receipt-sign` diagnostic names it; the data
 rows commit, the parent's row stays open, and the origin's retry completes the
 recipient. A relay whose own terminal ACK fails to sign leaves its hop
 unconfirmed while the receipt completes on its recipients' own words, and signs

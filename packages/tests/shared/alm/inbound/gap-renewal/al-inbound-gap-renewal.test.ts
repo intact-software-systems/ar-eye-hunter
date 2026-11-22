@@ -18,7 +18,10 @@ import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry
 
 import '../../../../setup-browser-indexeddb.ts';
 import { verifyTestALReceiptControl } from '../../../../al-control-test-payloads.ts';
-import { createAvailablePublicationCryptoFixture } from '../../../signature/publication-crypto-fixtures.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO
+} from '../../../signature/publication-crypto-fixtures.ts';
 import { readInboundTestWorkDueAtMs } from '../../../wait-for-al-inbound-work.ts';
 import {
     createInboundTestRuntime,
@@ -44,6 +47,11 @@ const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', gro
 const RTC_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const CRYPTO = await createAvailablePublicationCryptoFixture();
 const SIGNED: ALInboundReceiptProofs = { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: CRYPTO }) };
+/** A page whose WebCrypto holds no key: every signature it tries fails. */
+const UNSIGNABLE: ALInboundReceiptProofs = {
+    kind: 'signed',
+    signer: new RtcReceiptProofSigner({ crypto: UNAVAILABLE_PUBLICATION_CRYPTO })
+};
 
 /** What a gap request this receiver sent states: which control, which number, which sequences, about which arrival. */
 interface GapControl {
@@ -279,6 +287,33 @@ describe('a receiver whose ordered track has a gap', () => {
         expect(await verifyTestALReceiptControl(CRYPTO, renewal!)).toBe(true);
     });
 
+    it('an unreceipted track\'s gap NACK and its renewal are signed over rtc (ruling 19)', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: SIGNED });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+        const nacks = readGapNacks(fixture);
+
+        expect(nacks.map((nack) => nack.gapRequestNumber)).toEqual([1, 2]);
+        expect(await Promise.all(nacks.map(async (nack) => await verifyTestALReceiptControl(CRYPTO, nack.msg)))).toEqual([true, true]);
+    });
+
+    it('a page that cannot sign sends an unreceipted track\'s gap NACK and its renewal unsigned (ruling 19)', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapNacks(fixture).map((nack) => [nack.gapRequestNumber, nack.proof])).toEqual([[1, null], [2, null]]);
+    });
+
+    it('a page that cannot sign leaves out a counted recipient\'s gap NACK and its renewal, as before', async () => {
+        const fixture = createRenewalFixture('memory', { carrier: 'rtc', receiptProofs: UNSIGNABLE });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ack: 'receiver' }), RTC_SOURCE);
+        await advanceTo(fixture, 1_000);
+
+        expect(readGapNacks(fixture)).toEqual([]);
+        expect(gapControls(fixture).map((control) => [control.type, control.gapRequestNumber])).toEqual([['repair', 1], ['repair', 2]]);
+    });
+
     it('a timer run a lease recovery repeats writes nothing twice', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
@@ -445,6 +480,16 @@ async function advanceTo(fixture: InboundTestRuntime, ms: number): Promise<void>
 
 function readSentControls(fixture: InboundTestRuntime): readonly ALMessage[] {
     return fixture.controlSends.flat();
+}
+
+/** Each gap NACK this receiver sent, as sent: its number, its proof and the message that carried it. */
+function readGapNacks(fixture: InboundTestRuntime): readonly Readonly<{ gapRequestNumber: number | undefined; proof: unknown; msg: ALMessage; }>[] {
+    return readSentControls(fixture).flatMap((msg) => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' && control.payload.reason === 'gap'
+            ? [{ gapRequestNumber: control.payload.gapRequestNumber, proof: control.payload.proof, msg }]
+            : [];
+    });
 }
 
 function gapControls(fixture: InboundTestRuntime): readonly GapControl[] {

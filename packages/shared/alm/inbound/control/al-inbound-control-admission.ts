@@ -457,6 +457,7 @@ export class ALInboundControlAdmission {
             bundle: admitted.bundle,
             namespace: this.admissionStore.namespace,
             receiptProofs: this.receiptProofs,
+            signFailure: 'leave-out',
             diagnostics: this.diagnostics
         });
         evidence?.commit('pending');

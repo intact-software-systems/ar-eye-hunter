@@ -17,6 +17,7 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '../al-inbound-runtime-diagnostics.ts';
 import { toALInboundWorkEntryWithPayload, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
+import type { ALInboundSignFailurePolicy } from './is-al-inbound-recipient-receipt.ts';
 
 /** How a composition authenticates its counted recipients' controls: by the carrier alone, or by their own signature. */
 export type ALInboundReceiptProofs =
@@ -30,6 +31,8 @@ export interface SignALInboundReceiptControlsInput extends SignALInboundReceiptE
 export interface SignALInboundReceiptEffectsInput {
     readonly namespace: string;
     readonly receiptProofs: ALInboundReceiptProofs;
+    /** What becomes of a marked control whose signature failed: one message's rule, read by its caller. */
+    readonly signFailure: ALInboundSignFailurePolicy;
     readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
 }
 
@@ -40,8 +43,9 @@ interface ALInboundMarkedControl {
 
 /**
  * Runs after validation and before the commit, so the stored control is the signed one every later send resends. A
- * control whose signature failed is left out and nothing goes unsigned in its place: it is a lost control the retry
- * repairs.
+ * control whose signature failed is left out and nothing goes unsigned in its place, a lost control the retry repairs,
+ * unless `signFailure` sends it unsigned: an unreceipted message's gap NACK, which its origin admits unsigned only from
+ * its own recipient (ruling 19).
  */
 export async function signALInboundReceiptControls(
     input: SignALInboundReceiptControlsInput
@@ -81,7 +85,7 @@ async function signRecipientControl(
     return proof.fold(
         (failure) => {
             recordReceiptSignFailure(input.diagnostics, marked, failure);
-            return undefined;
+            return input.signFailure === 'send-unsigned' ? effect : undefined;
         },
         (signature) =>
             toALInboundWorkEntryWithPayload(effect, input.namespace, {
