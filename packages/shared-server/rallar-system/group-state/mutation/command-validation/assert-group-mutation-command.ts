@@ -18,7 +18,8 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
-import { validateGroupMetadataInput, validateRoomLobbyInput } from './validate-group-metadata-input.ts';
+import { validateGroupLobbyInput } from './validate-group-lobby-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
     validateCreationPublicationGrants,
@@ -122,7 +123,7 @@ function assertAggregateOperationInput(
         if (typeof input.maxSpectators === 'number' && input.maxSpectators > 64) {
             throw new TypeError('Group maxSpectators must be at most 64');
         }
-        const metadataIssues = [...validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock), ...validateRoomLobbyInput(operation, input.roomLobby)];
+        const metadataIssues = [...validateGroupMetadataInput(input.metadata, input.roomDeadline, input.roomClock), ...validateGroupLobbyInput(operation, input.roomLobby)];
         if (metadataIssues.length > 0) {
             throw metadataIssues[0];
         }

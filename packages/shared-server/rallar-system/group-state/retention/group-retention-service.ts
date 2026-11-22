@@ -1,5 +1,5 @@
-import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
-import { readRoomLobbyCommitments, type RoomLobbyRead } from '../lobby/room-lobby-storage.ts';
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { readGroupLobbyCommitments, type GroupLobbyRead } from '../lobby/group-lobby-storage.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -58,7 +58,7 @@ export namespace GroupRetentionService {
         readonly idempotency: GroupMutationIdempotencyRecord | null;
         readonly retirementEntries: readonly GroupRetirementEntry[];
         readonly ownedAppData: readonly RoomOwnedAppData.Read[];
-        readonly lobby: Pick<RoomLobbyRead, 'accounts' | 'lobby'> | null;
+        readonly lobby: Pick<GroupLobbyRead, 'accounts' | 'lobby'> | null;
         readonly sessionViewAudience: GroupSessionViewAudience | null;
         readonly publicationRetentionMs: number;
     }
@@ -85,7 +85,7 @@ export namespace GroupRetentionService {
         readonly groupOwnedAppData: Pick<RoomOwnedAppData, 'read'>;
         readonly repository: Pick<
             GroupStateRepository,
-            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt' | 'readRetirementEntries' | 'findRoomLobbyEntry' | 'findLobbyCommitmentEntry'
+            'readPresenceSummaryEntries' | 'findIdempotentGroupMutationReceipt' | 'readRetirementEntries' | 'findGroupLobbyEntry' | 'findLobbyCommitmentEntry'
         >;
     }
 
@@ -142,7 +142,7 @@ export class GroupRetentionService {
                 ? null
                 : readGroupSessionViewAudience(this.dependencies.runtime, ingress.command.groupRef, attemptAtEpochMs),
             authority.group && readRoomLobbyPolicy(authority.group.value.metadata)
-                ? readRoomLobbyCommitments(this.dependencies.repository, ingress.command.groupRef, [])
+                ? readGroupLobbyCommitments({ repository: this.dependencies.repository, roomRef: ingress.command.groupRef, principalIds: [] })
                 : null
         ]);
         if (idempotency !== undefined && idempotency.commandHash !== ingress.commandHash) {

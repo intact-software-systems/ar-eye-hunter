@@ -1,4 +1,4 @@
-import { roomLobbyApplicationDefault } from '@shared/api/room-lobbies/room-lobby.ts';
+import { roomLobbyApplicationDefault } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -119,11 +119,11 @@ async function captureAuthorizedGroupMutationIngress(
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
     const nowEpochMs = dependencies.now();
-    const roomLobbyDefault = command.operation === 'createGroup'
-        ? roomLobbyApplicationDefault(dependencies.capacity?.roomLobbyPoliciesByApplication, command.aggregateRef.applicationId)
+    const lobbyDefault = command.operation === 'createGroup'
+        ? roomLobbyApplicationDefault(dependencies.capacity?.lobbyPoliciesByApplication, command.aggregateRef.applicationId)
         : undefined;
     const facts: GroupMutationIngressFacts = {
-        ...(roomLobbyDefault && { roomLobbyDefault }),
+        ...(lobbyDefault && { lobbyDefault }),
         nowEpochMs,
         expireAtEpochMs: nowEpochMs + dependencies.finishedRetentionMs,
         serviceId: dependencies.serviceId,

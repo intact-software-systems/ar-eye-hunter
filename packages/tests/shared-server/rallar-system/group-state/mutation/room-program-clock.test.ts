@@ -73,7 +73,8 @@ it('rejects overflow, wrong-state transitions, and plain-clock commands on a pro
 it('keeps the pause across director loss and fences the former director’s delayed resume', async () => {
     const runtime = new GroupBarrierRepository();
     await seedOpenGroup(runtime, 'court');
-    const writer = createService({ runtimeRepository: runtime, nowEpochMs: 2000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
+    const now = Date.now();
+    const writer = createService({ runtimeRepository: runtime, nowEpochMs: now, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     const alice = { actorPrincipalId: 'alice', actorSessionId: 'alice-session' };
     const bob = { actorPrincipalId: 'bob', actorSessionId: 'bob-session' };
     await writer.joinGroup(SCOPE, 'court', { actorPrincipalId: 'bob', requestId: 'join-bob' });
@@ -86,10 +87,11 @@ it('keeps the pause across director loss and fences the former director’s dela
     await writer.appointDirector(SCOPE, 'court', { ...alice, requestId: 'first-director' });
     await writer.updateGroup(SCOPE, 'court', { ...alice, requestId: 'publish', roomClock: {
         name: 'court', expectedDirectorEpoch: 1, expectedRevision: 0, operation: 'publish-schedule',
-        phases: [{ phase: 'first', startsAtEpochMs: 1000 }, { phase: 'second', startsAtEpochMs: 3000 }]
+        phases: [{ phase: 'first', startsAtEpochMs: now - 1000 }, { phase: 'second', startsAtEpochMs: now + 1000 }]
     } });
     await writer.updateGroup(SCOPE, 'court', { ...alice, requestId: 'freeze', roomClock: pause });
     const before = readRoomSchedule((await requireSnapshot(runtime, 'court')).group.metadata, 'court');
+    expect(before && pausedRoomSchedulePosition(before)?.remainingMs).toBe(1000);
     await writer.disconnectPresenceSession(SCOPE, 'court', alice.actorSessionId, {
         actorPrincipalId: 'alice', principalId: 'alice', generationId: 'presence-alice', reason: 'closed', requestId: 'disconnect'
     });

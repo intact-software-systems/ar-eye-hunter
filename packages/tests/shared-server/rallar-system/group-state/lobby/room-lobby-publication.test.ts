@@ -1,5 +1,5 @@
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { computeRoomLobbyPublication } from '@shared-server/rallar-system/group-state/lobby/room-lobby-publication.ts';
+import { computeGroupLobbyPublication } from '@shared-server/rallar-system/group-state/lobby/compute-group-lobby-publication.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
@@ -17,7 +17,7 @@ const alice = { ...present, principalId: 'alice', present: false };
 it('publishes the changed private seat across rooms and persists one wake per newly opened window', () => {
     const before = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 4, seats: [alice, present] };
     const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, present] };
-    const result = computeRoomLobbyPublication({ ...facts, before, after });
+    const result = computeGroupLobbyPublication({ ...facts, before, after });
     const entries = result.outbox.map(row => ({ row, message: decodePersistedALMessage(row.entry.resource) }));
     const notices = entries.filter(({ message }) => message.payload.typeId === AppTopics.viewInvalidated);
     expect(notices.map(({ message }) => decodeViewInvalidationMessage(message))).toEqual([
@@ -28,16 +28,16 @@ it('publishes the changed private seat across rooms and persists one wake per ne
     expect(JSON.parse(deadlines[0]!.message.payload.resource)).toEqual({
         kind: 'seat', roomRef, activationId: 'enabled', groupCreatedAtEpochMs: 1000, generation: 5, dueAtEpochMs: 122000
     });
-    expect(computeRoomLobbyPublication({ ...facts, before: after, after }).outbox).toEqual([]);
+    expect(computeGroupLobbyPublication({ ...facts, before: after, after }).outbox).toEqual([]);
 });
 
 it('coalesces simultaneous return deadlines and notifies former holders when the lobby closes', () => {
     const away = { ...alice, principalId: 'chris', returnWindow: window };
     const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }, away] };
-    const opened = computeRoomLobbyPublication({ ...facts, before: null, after });
+    const opened = computeGroupLobbyPublication({ ...facts, before: null, after });
     expect(opened.outbox.map(row => decodePersistedALMessage(row.entry.resource).payload.typeId).sort())
         .toEqual([AppOutboxType.ROOM_LOBBY_DEADLINE, AppTopics.viewInvalidated, AppTopics.viewInvalidated].sort());
-    const closed = computeRoomLobbyPublication({ ...facts, before: after, after: null });
+    const closed = computeGroupLobbyPublication({ ...facts, before: after, after: null });
     expect(closed.outbox.map(row => decodeViewInvalidationMessage(decodePersistedALMessage(row.entry.resource)).principalId).sort())
         .toEqual(['alice', 'chris']);
 });
@@ -45,15 +45,15 @@ it('coalesces simultaneous return deadlines and notifies former holders when the
 it('schedules a replacement generation without notifying a participant whose visible deadline is unchanged', () => {
     const before = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
     const after = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 6, seats: [{ ...alice, returnWindow: { ...window, generation: 6 } }] };
-    const publication = computeRoomLobbyPublication({ ...facts, before, after });
+    const publication = computeGroupLobbyPublication({ ...facts, before, after });
     expect(publication.outbox.map(row => decodePersistedALMessage(row.entry.resource).payload.typeId))
         .toEqual([AppOutboxType.ROOM_LOBBY_DEADLINE]);
 });
 
 it('fences reenabled holds even when the same revision and deadline recur', () => {
     const occupied = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, waiters: [], expiresAtEpochMs: null, activationId: 'enabled', revision: 5, seats: [{ ...alice, returnWindow: window }] };
-    const first = computeRoomLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'first' } });
-    const reopened = computeRoomLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'second' } });
+    const first = computeGroupLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'first' } });
+    const reopened = computeGroupLobbyPublication({ ...facts, before: null, after: { ...occupied, activationId: 'second' } });
     const oldIds = first.outbox.map(row => row.entry.key.resourceId);
     expect(reopened.outbox.map(row => row.entry.key.resourceId).filter(id => oldIds.includes(id))).toEqual([]);
 });
@@ -64,7 +64,7 @@ it('persists a room closure without a seat timer, and schedules its new boundary
     const restored = { ...initial, revision: 3 };
     const ids = [];
     for (const [before, after] of [[null, initial], [initial, renewed], [renewed, restored]] as const) {
-        const publication = computeRoomLobbyPublication({ ...facts, before, after });
+        const publication = computeGroupLobbyPublication({ ...facts, before, after });
         const deadlines = publication.outbox.map(row => decodePersistedALMessage(row.entry.resource))
             .filter(message => message.payload.typeId === AppOutboxType.ROOM_LOBBY_DEADLINE);
         ids.push(...deadlines.map(message => message.id.msgId));
@@ -78,7 +78,7 @@ it('persists a room closure without a seat timer, and schedules its new boundary
 it('notifies only the two affected holders and schedules a durable wake for an offered seat', () => {
     const before = { registration: { revision: 0, atEpochMs: null, closed: false }, expiresAtEpochMs: null, activationId: 'lobby', revision: 4, seats: [present], capacityClaims: null, waiters: [{ principalId: 'alice', generation: 3, eligibleUntilEpochMs: null }, { principalId: 'chris', generation: 4, eligibleUntilEpochMs: null }] };
     const after = { ...before, revision: 5, seats: [{ ...alice, offerWindow: window }], waiters: before.waiters.slice(1) };
-    const messages = computeRoomLobbyPublication({ ...facts, before, after }).outbox
+    const messages = computeGroupLobbyPublication({ ...facts, before, after }).outbox
         .map(row => decodePersistedALMessage(row.entry.resource));
     expect(messages.filter(message => message.payload.typeId === AppTopics.viewInvalidated)
         .map(message => decodeViewInvalidationMessage(message).principalId).sort()).toEqual(['alice', 'bob']);
@@ -95,7 +95,7 @@ it('arms one durable registration cutoff and gives a rescheduled cutoff a distin
     const revised = { ...first, revision: 3, registration: { ...first.registration, revision: 2, atEpochMs: 6000 } };
     const keys = [];
     for (const [before, after] of [[initial, first], [first, revised]] as const) {
-        const messages = computeRoomLobbyPublication({ ...facts, before, after }).outbox
+        const messages = computeGroupLobbyPublication({ ...facts, before, after }).outbox
             .map(row => decodePersistedALMessage(row.entry.resource));
         expect(messages).toHaveLength(1);
         const message = messages[0]!;
@@ -106,7 +106,7 @@ it('arms one durable registration cutoff and gives a rescheduled cutoff a distin
         keys.push(message.id.msgId);
     }
     expect(new Set(keys).size).toBe(2);
-    expect(computeRoomLobbyPublication({ ...facts, before: revised, after: { ...revised, revision: 4 } }).outbox).toEqual([]);
+    expect(computeGroupLobbyPublication({ ...facts, before: revised, after: { ...revised, revision: 4 } }).outbox).toEqual([]);
 });
 
 it('persists independent wakes for an expiring access grant and scheduled no-show capacity', () => {
@@ -115,7 +115,7 @@ it('persists independent wakes for an expiring access grant and scheduled no-sho
         waiters: [{ principalId: 'alice', generation: 3, eligibleUntilEpochMs: 5000 }],
         capacityClaims: { generation: 2, dueAtEpochMs: 7000, principalIds: ['reserved'] }
     };
-    const deadlines = computeRoomLobbyPublication({ ...facts, before, after }).outbox
+    const deadlines = computeGroupLobbyPublication({ ...facts, before, after }).outbox
         .map(row => decodePersistedALMessage(row.entry.resource))
         .filter(message => message.payload.typeId === AppOutboxType.ROOM_LOBBY_DEADLINE)
         .map(message => JSON.parse(message.payload.resource).dueAtEpochMs);

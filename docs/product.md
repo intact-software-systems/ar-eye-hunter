@@ -306,8 +306,10 @@ Scheduled reservations keep their places until withdrawal or the no-show deadlin
 
 An organizer can set a UTC cutoff with `setRegistrationCutoff(roomRef, { expectedRevision, atEpochMs })`.
 Read the current revision and status with `RallarRoomLobby.registration(snapshot.group.metadata, rallar)`.
-Before the cutoff, pass a new time to reschedule or null to cancel. At the cutoff the server clears
-the waiting list and stops admitting new players. An offer issued before closure remains claimable
+Before the cutoff, pass a new time to reschedule or null to cancel. At the cutoff the server stops
+new registrations and offers. Settling closure clears the waiting list and releases its scoped commitments.
+If the timer worker is recovering, a waiting player can claim another managed room once settlement commits.
+An offer issued before closure remains claimable
 until its displayed deadline. The SDK reports `uncertain` while the calibrated time window crosses
 the cutoff and `unavailable` when a scheduled cutoff cannot be compared with server time.
 

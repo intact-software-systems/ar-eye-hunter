@@ -82,11 +82,11 @@ export function matchesGroupDirectoryQuery(
             (query.includeEmpty && readGroupRetentionState(snapshot.group.metadata) === null));
 }
 
-export function projectRoomLobbyOccupancy(
-    room: GroupSnapshot, lobby: RoomLobby, nowEpochMs: number
+export function projectGroupLobbyOccupancy(
+    snapshot: GroupSnapshot, lobby: RoomLobby, nowEpochMs: number
 ): Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'> {
     const { seats, capacityClaims } = allocateLobbyPlaces(lobby, nowEpochMs, lobby.revision + 1);
-    const online = new Set(room.activeSessions.filter(session =>
+    const online = new Set(snapshot.activeSessions.filter(session =>
         session.status === 'active' && session.expiresAtEpochMs > nowEpochMs).map(session => session.principalId));
     return {
         playerCount: occupiedLobbyPlaces(seats, capacityClaims).size,

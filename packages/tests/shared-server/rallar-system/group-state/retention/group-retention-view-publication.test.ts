@@ -62,7 +62,7 @@ it('archives a temporary lobby with its exclusive seat release and private notic
         await commitRetention(fixture, archive);
         expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('archived');
         expect(await fixture.repository.findLobbyCommitmentEntry(RETENTION_REF, 'owner')).toBeUndefined();
-        expect(await fixture.repository.findRoomLobbyEntry(RETENTION_REF)).toBeUndefined();
+        expect(await fixture.repository.findGroupLobbyEntry(RETENTION_REF)).toBeUndefined();
         const rows = await fixture.storage.sql<readonly { ri_resource: string }[]>
             `select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated'`;
         const lobbyNotices = rows.map(row => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource))))

@@ -177,7 +177,7 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         activeMemberPrincipalIds: null,
         activeMembers: null,
         plannedLayoutRow: null,
-        roomLobby: null,
+        lobbyState: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     };

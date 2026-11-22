@@ -1,6 +1,9 @@
 import { changeRoomDirectorSuccession, readRoomDirectorSuccession, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/group-director-succession.ts';
+import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
-import { changeRoomLobby, readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -22,16 +25,11 @@ import {
     GROUP_SESSION_SCHEDULE_METADATA_KEY,
     readGroupSessionSchedule
 } from '@shared/api/group-sessions/group-session-schedule.ts';
-import {
-    countGroupPlayers,
-    GROUP_SPECTATOR_CAPACITY_METADATA_KEY,
-    isGroupSpectator,
-    readGroupSpectatorCapacity
-} from '@shared/api/group-spectating.ts';
+import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { countGroupSessionOccupiedSeats } from '../../schedule/group-session-reservations.ts';
+import { toGroupCapacityRefusal } from './to-group-capacity-refusal.ts';
 
 import { canGovernGroupMember } from '../../policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../policy/group-lifecycle-policy.ts';
@@ -80,7 +78,7 @@ export function computeUpdate(
     if (privateParticipation && !command.input.actorPrincipalId) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
     }
-    if (lobbyChange?.operation === 'wait' && !read.roomLobby?.lobby) {
+    if (lobbyChange?.operation === 'wait' && !read.lobbyState?.lobby) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'This room has no lobby queue.' });
     }
     const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
@@ -123,9 +121,13 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        const roster = read.roomLobby?.lobby?.value;
+        const roster = read.lobbyState?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
-        const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
+        const hasSeat = roster?.seats.some(seat => seat.principalId === principalId);
+        if (lobbyChange.operation === 'wait' && roster && !hasSeat && isRoomLobbyRegistrationClosed(roster.registration, facts.attemptAtEpochMs)) {
+            return rejectedByGroupPolicy({command, read, facts, denial:{allowed:false, code:'group-admission-closed', message:'Lobby registration has closed.'}});
+        }
+        const committed = hasSeat ||
             roster?.waiters.some(waiter => waiter.principalId === principalId);
         if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
         // Serialize with room access changes while keeping the account, trace and request out of public room events.
@@ -148,7 +150,7 @@ export function computeUpdate(
         next = { ...next, metadata };
     }
     if (lobbyChange?.operation === 'set-registration-cutoff') {
-        const observed = read.roomLobby?.lobby?.value;
+        const observed = read.lobbyState?.lobby?.value;
         if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
         const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
         if (updated.rejection) {
@@ -194,35 +196,6 @@ export function computeUpdate(
             ? 'group-deleted'
             : 'group-updated'
     });
-}
-
-/** Capacity changes preserve occupied players, outstanding reservations and spectators. */
-function toGroupCapacityRefusal(next: Group, read: GroupMutationRead, nowEpochMs: number): string | null {
-    const lobby = readRoomLobbyPolicy(next.metadata);
-    if (lobby && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers < 1)) return 'A lobby requires finite room capacity.';
-    const schedule = readGroupSessionSchedule(next.metadata);
-    if (schedule !== null && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers > 64)) {
-        return 'Scheduled rooms require a player capacity of 1 to 64.';
-    }
-    const snapshot = toPolicySnapshot(read, next, nowEpochMs);
-    const occupiedSeats = lobby ? 0 : schedule === null
-        ? countGroupPlayers(snapshot)
-        : countGroupSessionOccupiedSeats({
-            schedule,
-            reservations: requireSessionReservations(read),
-            activePlayerPrincipalIds: snapshot.members.filter((member) =>
-                member.status === 'active' && !isGroupSpectator(member)
-            )
-                .map((member) => member.principalId),
-            nowEpochMs
-        });
-    if (next.maxMembers !== null && next.maxMembers < occupiedSeats) {
-        return 'Group maxMembers cannot be lower than the occupied and reserved player seats.';
-    }
-    if (readGroupSpectatorCapacity(next.metadata) < (read.activeMembers ?? []).filter(isGroupSpectator).length) {
-        return 'Spectator capacity cannot be lower than the spectator count.';
-    }
-    return null;
 }
 
 export function computeDirector(
@@ -519,11 +492,4 @@ function isDirectorResignation(
         readRallarGroupDirectorAppointment(current),
         { clientId: actor.clientId, sessionId: actor.sessionId }
     );
-}
-
-function requireSessionReservations(read: GroupMutationRead) {
-    if (read.sessionReservations === null) {
-        throw new TypeError('Scheduled room capacity requires reservation state');
-    }
-    return read.sessionReservations.value;
 }
