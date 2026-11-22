@@ -1,3 +1,4 @@
+import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -17,7 +18,8 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
-import { validateGroupMetadataInput, validateGroupLobbyInput } from './validate-group-metadata-input.ts';
+import { validateGroupLobbyInput } from './validate-group-lobby-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
     validateCreationPublicationGrants,
@@ -61,9 +63,7 @@ export function assertGroupMutationCommand(
     const input = requireRecord(value.input, 'Group mutation input') as JsonWireObject;
     assertExactKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
     for (const key of ['actorPrincipalId', 'actorSessionId', 'reason']) {
-        if (input[key] !== null) {
-            requireNonEmptyString(input[key], `Group mutation ${key}`);
-        }
+        assertNullableString(input, key, `Group mutation ${key}`);
     }
     if (hasSession) {
         requireNonEmptyString(value.sessionId, 'Group session id');
@@ -93,15 +93,11 @@ function assertOperationInput(
     if (isGroupTransportOperation(operation)) {
         return;
     }
+    if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
+        assertLifecycleGroupMutationCommandInput({ operation, input, requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation] });
+        return;
+    }
     if (AGGREGATE_GROUP_MUTATION_OPERATIONS.has(operation)) {
-        if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
-            assertLifecycleGroupMutationCommandInput({
-                operation,
-                input,
-                requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
-            });
-            return;
-        }
         assertAggregateOperationInput(operation, input);
         return;
     }
@@ -137,6 +133,7 @@ function assertAggregateOperationInput(
             assertUpdateGroupInput(input);
             return;
         case 'appointDirector':
+            if (input.succession !== undefined) decodeRoomDirectorSuccessionCommand(input.succession);
             requirePositiveSafeInteger(input.heartbeatTtlMs, 'Group heartbeatTtlMs');
             return;
         case 'changeGroupSession':
@@ -276,9 +273,9 @@ function assertPresenceOperationInput(
     assertNullableInteger(input, 'expiresAtEpochMs', true);
 }
 
-function assertNullableString(input: JsonWireObject, key: string): void {
+function assertNullableString(input: JsonWireObject, key: string, label = `Group ${key}`): void {
     if (input[key] !== null) {
-        requireNonEmptyString(input[key], `Group ${key}`);
+        requireNonEmptyString(input[key], label);
     }
 }
 
@@ -414,7 +411,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'emptySinceEpochMs',
         'purgeAfterEpochMs'
     ],
-    appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs'],
+    appointDirector: [...ACTOR_INPUT_KEYS, 'heartbeatTtlMs', 'succession'],
     planGroupLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     startGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],
     resetGroupFormation: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch'],

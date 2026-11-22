@@ -17,7 +17,7 @@ import {
 
 const ref = { applicationId: 'scheduled-tests', workspaceId: 'default', groupId: 'last-seat' };
 
-async function createScheduledFixture(startOffsetMs = 3_600_000) {
+async function createScheduledFixture(startOffsetMs = 3_600_000, managed = false) {
     const fixture = await createRetentionDatabaseFixture();
     const create = await prepareMutation(
         fixture,
@@ -32,6 +32,7 @@ async function createScheduledFixture(startOffsetMs = 3_600_000) {
                 kind: 'room',
                 joinMode: 'open',
                 maxMembers: 2,
+                ...(managed ? { roomLobby: { returnWindowMs: 5000, claimWindowMs: 10000 } } : {}),
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary' },
@@ -237,4 +238,95 @@ describe('scheduled-session SQL concurrency and rollback', () => {
             await fixture.storage.close();
         }
     });
+});
+
+it('reserves the scheduled player’s place ahead of a waiting player and offers it when withdrawn', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const reserved = await prepareForAccount(fixture, 'alice', reservation('alice', 'advance'));
+        await commitMutation(fixture, requireMutationWrite(reserved.computed));
+        const wait = await prepareForAccount(fixture, 'bob', mutationDescriptor({operation:'updateGroup', scope:ref, groupId:ref.groupId,
+            request:{requestId:'queue-bob', actorPrincipalId:'bob', roomLobby:{operation:'wait'}}}));
+        await commitMutation(fixture, requireMutationWrite(wait.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'bob'))?.value.seat?.status).toBe('waiting');
+        const withdrawal = await prepareForAccount(fixture, 'alice', mutationDescriptor({operation:'changeGroupSession', scope:ref, groupId:ref.groupId,
+            request:{requestId:'withdraw', actorPrincipalId:'alice', action:'withdraw', expectedScheduleRevision:1, startsAtEpochMs:null}}));
+        await commitMutation(fixture, requireMutationWrite(withdrawal.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'bob'))?.value.seat?.status).toBe('offered');
+    } finally { await fixture.storage.close(); }
+});
+
+it('refuses a new scheduled reservation after registration closes and still allows withdrawal', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const alice = await prepareForAccount(fixture,'alice',reservation('alice','before-cutoff'));
+        await commitMutation(fixture,requireMutationWrite(alice.computed));
+        const close = await prepareMutation(fixture, mutationDescriptor({operation:'updateGroup',scope:ref,groupId:ref.groupId,
+            request:{requestId:'close',actorPrincipalId:'owner',roomLobby:{operation:'set-registration-cutoff',expectedRevision:0,atEpochMs:fixture.nowEpochMs}}}));
+        await commitMutation(fixture,requireMutationWrite(close.computed));
+        const withdraw = await prepareForAccount(fixture,'alice',mutationDescriptor({operation:'changeGroupSession',scope:ref,groupId:ref.groupId,
+            request:{requestId:'withdraw',actorPrincipalId:'alice',action:'withdraw',expectedScheduleRevision:1,startsAtEpochMs:null}}));
+        await commitMutation(fixture,requireMutationWrite(withdraw.computed));
+        const bob = await prepareForAccount(fixture,'bob',reservation('bob','after-cutoff'));
+        expect(bob.computed.outcome).toBe('rejected');
+        expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual([]);
+    } finally { await fixture.storage.close(); }
+});
+
+it('admits the owner of a scheduled reservation after lobby registration closes', async () => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const reserved = await prepareForAccount(fixture, 'alice', reservation('alice', 'before-cutoff'));
+        await commitMutation(fixture, requireMutationWrite(reserved.computed));
+        const close = await prepareMutation(fixture, mutationDescriptor({
+            operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+            request: {
+                requestId: 'cutoff', actorPrincipalId: 'owner',
+                roomLobby: { operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: fixture.nowEpochMs }
+            }
+        }));
+        await commitMutation(fixture, requireMutationWrite(close.computed));
+        const joined = await prepareForAccount(fixture, 'alice', mutationDescriptor({
+            operation: 'joinGroup', scope: ref, groupId: ref.groupId, targetPrincipalId: 'alice',
+            request: { requestId: 'claim-place', actorPrincipalId: 'alice', participation: 'player' }
+        }));
+        await commitMutation(fixture, requireMutationWrite(joined.computed));
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'alice'))?.value.seat?.status).toBe('arriving');
+    } finally {
+        await fixture.storage.close();
+    }
+});
+
+it.each(['open', 'closed'] as const)('evaluates a reservation after offer expiry with registration %s and delivery pending', async (registration) => {
+    const fixture = await createScheduledFixture(100000, true);
+    try {
+        const wait = await prepareForAccount(fixture, 'alice', mutationDescriptor({
+            operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+            request: { requestId: 'offer', actorPrincipalId: 'alice', roomLobby: { operation: 'wait' } }
+        }));
+        await commitMutation(fixture, requireMutationWrite(wait.computed));
+        const expiry = fixture.nowEpochMs + 10000;
+        expect((await fixture.repository.findLobbyCommitmentEntry(ref, 'alice'))?.value.seat).toMatchObject({
+            status: 'offered', deadlineEpochMs: expiry
+        });
+        if (registration === 'closed') {
+            const cutoff = await prepareMutation(fixture, mutationDescriptor({
+                operation: 'updateGroup', scope: ref, groupId: ref.groupId,
+                request: { requestId: 'cutoff', actorPrincipalId: 'owner', roomLobby: {
+                    operation: 'set-registration-cutoff', expectedRevision: 0, atEpochMs: expiry + 1
+                } }
+            }));
+            await commitMutation(fixture, requireMutationWrite(cutoff.computed));
+        }
+        fixture.nowEpochMs = expiry + 1;
+        const attempt = await prepareForAccount(fixture, 'alice', reservation('alice', 'after-offer-expired'));
+        if (registration === 'closed') {
+            expect(attempt.computed).toMatchObject({ outcome: 'rejected', policyDenial: { code: 'group-admission-closed' } });
+        } else {
+            await commitMutation(fixture, requireMutationWrite(attempt.computed));
+            expect((await fixture.repository.findSessionReservationsEntry(ref))?.value.principalIds).toEqual(['alice']);
+        }
+    } finally {
+        await fixture.storage.close();
+    }
 });

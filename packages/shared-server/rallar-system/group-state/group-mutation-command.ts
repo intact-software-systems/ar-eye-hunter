@@ -176,7 +176,9 @@ function toUpdateCommand(
             kind: request.kind ?? null,
             status: request.status ?? null,
             joinMode: request.joinMode ?? null,
-            ...(request.roomLobby === undefined ? {} : { roomLobby: structuredClone(request.roomLobby) }),
+            ...(request.roomLobby === undefined ? {} : { roomLobby: request.roomLobby.operation === 'wait' && request.roomLobby.joinCode !== undefined
+                ? { ...request.roomLobby, joinCode: normalizeJoinCode(request.roomLobby.joinCode) }
+                : structuredClone(request.roomLobby) }),
             ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,
@@ -202,6 +204,7 @@ function toDirectorCommand(
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
         ...toGroupMutationIdentity(request.requestId, randomId),
         input: {
+            ...(request.succession === undefined ? {} : { succession: structuredClone(request.succession) }),
             heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
                 request.heartbeatTtlMs ?? DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS
             ),

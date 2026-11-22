@@ -1,3 +1,5 @@
+import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
 import type {
     GroupLifecyclePolicy
@@ -48,6 +50,7 @@ import {
     GroupConnectDeniedError,
     GroupRetiredError,
     GroupClockRevisionConflictError,
+    GroupLobbyRegistrationRevisionConflictError,
     GroupDeadlineRevisionConflictError,
     GroupDirectorChangedError,
     type GroupMutationRejectionCode
@@ -58,6 +61,8 @@ import { toGroupMutationActor, toGroupMutationEvent } from './to-group-mutation-
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface GroupMutationWriteInput {
+    readonly directorPresenceGroup?: Group;
+    readonly revisedLobby?: RoomLobby;
     readonly sessionIntentEffect?: RuntimeStateGuardedBatchEffect;
     readonly sessionReservationWrite?: GroupSessionReservationWrite;
     readonly command: GroupMutationCommand;
@@ -139,7 +144,6 @@ export function computeGroupMutationWriteResult(
     const { command, eventGroup, facts, guard, read } = input;
     const group = eventGroup ??
         (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
-    const lobby = computeGroupLobbyMutation(input, group);
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
     const event = input.eventType === null
@@ -151,10 +155,12 @@ export function computeGroupMutationWriteResult(
             command,
             facts,
             members: input.members,
-            publicationGrantEffects: input.publicationGrantEffects
+            publicationGrantEffects: input.publicationGrantEffects,
+            directorPresenceChanged: input.directorPresenceGroup !== undefined
         });
     const sessionEffects = computeGroupSessionMembershipEffects(command, input.read, input.members);
     const sessionReservationWrite = input.sessionReservationWrite ?? sessionEffects.sessionReservationWrite;
+    const lobby = computeGroupLobbyMutation(sessionReservationWrite ? {...input, sessionReservationWrite} : input, group);
     const scheduled = computeScheduledMutationWrites(input, group, sessionReservationWrite);
     const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const outboxWrites = [...outboxEntries.map(computeAppOutboxInsert), ...scheduled.outboxWrites, ...lobby.outbox];
@@ -171,6 +177,8 @@ export function computeGroupMutationWriteResult(
     const computed: GroupMutationDomainWrite = {
         outcome: 'write',
         viewProvenance: [...scheduled.viewProvenance, ...lobby.provenance],
+        ...(input.directorPresenceGroup ? { directorPresenceGroup: input.directorPresenceGroup } : {}),
+        directorAuthorityFences: directorAuthorityFences(command, read, group),
         lobbyEffects: lobby.effects,
         sessionIntentEffect: input.sessionIntentEffect ?? sessionEffects.sessionIntentEffect,
         sessionReservationWrite,
@@ -287,6 +295,7 @@ export function toGroupMutationRejectionError(
 ):
     | GroupDirectorChangedError
     | GroupClockRevisionConflictError
+    | GroupLobbyRegistrationRevisionConflictError
     | GroupDeadlineRevisionConflictError
     | GroupRetiredError
     | GroupAlreadyExistsError
@@ -299,6 +308,8 @@ export function toGroupMutationRejectionError(
             return new GroupPolicyDeniedError(computed.policyDenial);
         case 'room-director-changed':
             return new GroupDirectorChangedError(message);
+        case 'room-lobby-registration-revision-conflict':
+            return new GroupLobbyRegistrationRevisionConflictError(message);
         case 'room-clock-revision-conflict':
             return new GroupClockRevisionConflictError(message);
         case 'room-deadline-revision-conflict':

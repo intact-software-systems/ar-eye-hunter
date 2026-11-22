@@ -1,0 +1,26 @@
+name: ALM conformance lane results
+description: Upload the ALM conformance lane's results over one carrier in one scope.
+inputs:
+  carrier:
+    description: 'Carrier the lane ran over: ws, rtc or rtc-with-ws-fallback.'
+    required: true
+  scope:
+    description: 'Scope the lane ran: smoke or full.'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Upload ALM conformance lane results
+      uses: actions/upload-artifact@v7
+      with:
+        name: alm-conformance-lane-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
+        path: apps/rallar-black-box/test-results
+        if-no-files-found: ignore
+        retention-days: 7
+
+    - name: Upload ALM lane result records
+      uses: actions/upload-artifact@v7
+      with:
+        name: alm-lane-result-${{ inputs.carrier }}-${{ inputs.scope }}-${{ github.sha }}
+        path: apps/rallar-black-box/test-results/alm-lane-result
+        if-no-files-found: ignore

@@ -28,8 +28,8 @@ it('processes a persisted return window after restart; only the winner releases 
         const group = createTestGroup({ ...roomRef, kind: 'room', maxMembers: 1 });
         await groups.putGroup(group);
         const due = { generation: 3, dueAtEpochMs: clock + 1000 };
-        const seat = { principalId: 'alice', present: false, returnWindow: due, admissionWindow: null };
-        const lobby: RoomLobby = { roomRef, expiresAtEpochMs: null, activationId: 'current', capacity: 1, policy: { returnWindowMs: 1000, claimWindowMs: 1000 }, revision: 3, seats: [seat] };
+        const seat = { principalId: 'alice', present: false, offerWindow: null, returnWindow: due, admissionWindow: null };
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, roomRef, expiresAtEpochMs: null, activationId: 'current', capacity: 1, policy: { returnWindowMs: 1000, claimWindowMs: 1000 }, revision: 3, waiters: [], seats: [seat] };
         await runtime.upsert({ namespace: GROUP_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef), value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         await runtime.upsert({ namespace: GROUP_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(roomRef, 'alice'), value: JSON.stringify({ scope: { applicationId: 'game', workspaceId: 'default' }, principalId: 'alice', seat: { roomRef, status: 'away', deadlineEpochMs: due.dueAtEpochMs } }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const publication = computeGroupLobbyPublication({ before: null, after: lobby, roomRef, groupCreatedAtEpochMs: group.created.atEpochMs,
@@ -74,9 +74,9 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
         const roomRef = { applicationId: 'game', workspaceId: 'default', groupId: 'court' };
         const runtime = new PSqlRuntimeStateRepository(storage.sql);
         const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(storage.sql));
-        const seat = { principalId: 'alice', present: false, returnWindow: null, admissionWindow: null };
-        const lobby: RoomLobby = { activationId: 'current', expiresAtEpochMs: now - 200, roomRef,
-            policy: { claimWindowMs: 5000, returnWindowMs: 120000 }, capacity: 4, revision: 3, seats: [seat] };
+        const seat = { principalId: 'alice', present: false, offerWindow: null, returnWindow: null, admissionWindow: null };
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims: null, activationId: 'current', expiresAtEpochMs: now - 200, roomRef,
+            policy: { claimWindowMs: 5000, returnWindowMs: 120000 }, capacity: 4, revision: 3, waiters: [], seats: [seat] };
         await runtime.upsert({ namespace: GROUP_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef),
             value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const scope = { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId };
@@ -101,6 +101,69 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
         expect((await groups.findLobbyCommitmentEntry(scope, 'alice'))?.value.seat).toEqual(newSeat);
         const notices = await storage.sql<readonly { notices: number }[]>`select count(*)::int as notices from resource_inbox where ri_topic_id = 'view.invalidated'`;
         expect(notices[0]?.notices).toBe(1);
+    }
+    finally {
+        await storage.close();
+    }
+});
+
+it('promotes the next eligible waiter when an unattended offer expires and privately persists the new offer', async () => {
+    const storage = await createResourceInboxTestStorage('lobby_offer_expiry');
+    try {
+        const now = Date.now();
+        let authorityNow = now;
+        const roomRef = { applicationId: 'game', workspaceId: 'default', groupId: 'court' };
+        const scope = { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId };
+        const runtime = new PSqlRuntimeStateRepository(storage.sql);
+        const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(storage.sql));
+        const group = createTestGroup({ ...roomRef, maxMembers: 1 });
+        await groups.putGroup(group);
+        const due = { generation: 2, dueAtEpochMs: now - 1000 };
+        const capacityClaims = { principalIds: ['alice'], generation: 1, dueAtEpochMs: now + 2000 };
+        const lobby: RoomLobby = { registration: { revision: 0, atEpochMs: null, closed: false }, capacityClaims,
+            roomRef, capacity: 1, activationId: 'lobby', expiresAtEpochMs: null, revision: 4,
+            policy: { returnWindowMs: 5000, claimWindowMs: 1000 },
+            seats: [{ principalId: 'alice', present: false, admissionWindow: null, returnWindow: null, offerWindow: due }],
+            waiters: [
+                { principalId: 'bob', generation: 3, eligibleUntilEpochMs: now - 10 },
+                { principalId: 'carol', generation: 4, eligibleUntilEpochMs: now + 2800 }
+            ]
+        };
+        await runtime.upsert({ namespace: GROUP_LOBBIES_NAMESPACE, key: groupStateGroupStorageKey(roomRef),
+            value: JSON.stringify(lobby), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        for (const principalId of ['alice', 'bob', 'carol']) {
+            const seat = { roomRef, status: principalId === 'alice' ? 'offered' : 'waiting',
+                deadlineEpochMs: principalId === 'alice' ? due.dueAtEpochMs : null };
+            await runtime.upsert({ namespace: GROUP_LOBBY_COMMITMENTS_NAMESPACE, key: lobbyCommitmentKey(scope, principalId),
+                value: JSON.stringify({ scope, principalId, seat }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        }
+        const queue = createSqlServerAppInbox({ database: storage.sql, nowEpochMs: () => authorityNow });
+        const service = new GroupLobbyExpiry({ database: storage.sql, appInbox: queue.inbox, groups, nowEpochMs: () => authorityNow,
+            serviceId: 'api', retentionMs: 60000 });
+        service.listen(queue.outbox);
+        queue.inbox.start();
+        const command = { kind: 'seat' as const, roomRef, groupCreatedAtEpochMs: group.created.atEpochMs, activationId: 'lobby', ...due };
+        expect((await service.expire.enqueue({ command, traceId: 'expiry' })).right).toBeDefined();
+        await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect(await groups.findLobbyCommitmentEntry(scope, 'alice')).toBeUndefined();
+        expect(await groups.findLobbyCommitmentEntry(scope, 'bob')).toBeUndefined();
+        expect((await groups.findLobbyCommitmentEntry(scope, 'carol'))?.value.seat?.status).toBe('waiting');
+        // Alice's separate scheduled reservation still occupies the only place through its no-show boundary.
+        authorityNow = capacityClaims.dueAtEpochMs;
+        const noShow = { ...command, generation: capacityClaims.generation, dueAtEpochMs: capacityClaims.dueAtEpochMs };
+        expect((await service.expire.enqueue({ command: noShow, traceId: 'no-show' })).right).toBeDefined();
+        await queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+        expect((await groups.findLobbyCommitmentEntry(scope, 'carol'))?.value.seat).toEqual({
+            roomRef, status: 'offered', deadlineEpochMs: now + 2800
+        });
+        expect((await groups.findGroupLobbyEntry(roomRef))?.value.waiters).toEqual([]);
+        expect((await service.expire.submit({ command, traceId: 'replay' })).right).toEqual(command);
+        const notifications = await storage.sql<readonly { count: number }[]>`
+            select count(*)::int as count from resource_inbox where ri_topic_id = 'view.invalidated'`;
+        expect(notifications[0]?.count).toBe(3);
+        const timers = await storage.sql<readonly { count: number }[]>`
+            select count(*)::int as count from resource_inbox where ri_topic_id = 'room-lobby.deadline'`;
+        expect(timers[0]?.count).toBe(1);
     }
     finally {
         await storage.close();

@@ -194,6 +194,44 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # One runner per carrier: the three carriers in one lane exhausted the hosted runner's memory.
+  alm-smoke:
+    name: ALM conformance smoke (${{ matrix.carrier }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        carrier: [ws, rtc, rtc-with-ws-fallback]
+    env:
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          bun: 'true'
+          playwright: 'true'
+
+      - name: Run the ALM conformance lane over ${{ matrix.carrier }}
+        uses: ./.github/actions/alm-conformance-lane
+        with:
+          carrier: ${{ matrix.carrier }}
+          scope: smoke
+
+      - name: Upload the ALM conformance lane results over ${{ matrix.carrier }}
+        if: ${{ always() }}
+        uses: ./.github/actions/alm-conformance-lane-results
+        with:
+          carrier: ${{ matrix.carrier }}
+          scope: smoke
+
   e2e-recipe-console:
     name: Browser tests (Recipe Console ${{ matrix.shard }})
     runs-on: ubuntu-latest

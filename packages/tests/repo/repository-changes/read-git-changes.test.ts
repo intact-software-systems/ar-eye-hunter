@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readChangedPaths, readChangedPathsBetweenRevisions } from '../../../../scripts/repository-changes/read-git-changes.mjs';
+import { readChangedPaths, readChangedPathsBetweenRevisions, readMergeBase } from '../../../../scripts/repository-changes/read-git-changes.mjs';
 
 const fixtureRoots: string[] = [];
 
@@ -68,6 +68,28 @@ describe('Git change reads', () => {
                 path: 'docs/guide.md'
             }
         ]);
+    });
+
+    it('reads the merge base of two validated revisions', () => {
+        const fixture = createRepository();
+        runGit(fixture.root, ['checkout', '--quiet', '-b', 'topic']);
+        writeFixture(fixture.root, 'docs/guide.md', 'topic\n');
+        runGit(fixture.root, ['commit', '--quiet', '-am', 'topic change']);
+        runGit(fixture.root, ['checkout', '--quiet', '-']);
+        writeFixture(fixture.root, 'src/original.ts', 'export const original = false;\n');
+        runGit(fixture.root, ['commit', '--quiet', '-am', 'base change']);
+
+        expect(readMergeBase(fixture.root, 'HEAD', 'topic')).toBe(fixture.base);
+        expect(() => readMergeBase(fixture.root, '0'.repeat(40), 'HEAD')).toThrow(/^Git base is not a valid commit/u);
+        expect(() => readMergeBase(fixture.root, 'HEAD', '0'.repeat(40))).toThrow(/^Git head is not a valid commit/u);
+    });
+
+    it('names the head when the head of a comparison is not a valid commit', () => {
+        const fixture = createRepository();
+
+        expect(() => readChangedPathsBetweenRevisions(fixture.root, fixture.base, '0'.repeat(40))).toThrow(
+            /^Git head is not a valid commit/u
+        );
     });
 
     it.each(['', '-n', 'HEAD\nmain'])('rejects an unsafe revision %j', (revision) => {

@@ -1,11 +1,30 @@
 # ALM Observation Artifact
 
 The ALM conformance lane
-(`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`) runs as the non-blocking
-`alm-conformance-observation` job of `.github/workflows/alm-conformance-observation.yml`, which the
-pull-request gate and the main deploy start beside the Release Gate and never wait for. The job runs one
-matrix leg per carrier, each uploading the whole Playwright output root,
-`apps/rallar-black-box/test-results`, as `alm-conformance-lane-<carrier>-<sha>`.
+(`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`) runs in CI in two scopes,
+through one action, `.github/actions/alm-conformance-lane/action.yml`:
+
+- the `smoke` scope on the in-memory API, as the required `alm-smoke` lane of
+  `.github/workflows/release-gate.yml`;
+- the `full` scope on the PostgreSQL API, as the `alm-conformance-observation` job of
+  `.github/workflows/alm-conformance-observation.yml`. It is an observation: nothing waits for it,
+  and no other workflow calls it. It starts itself on every `main` push except one that changes only
+  `performance-observations/**`; on a pull request that is not a draft, when its own
+  `alm-changes` job finds a path changed since the merge base that can change the lane (or that job
+  fails); and on dispatch on any branch. It checks out the event's own commit: on a pull request,
+  the merge commit.
+
+Both run one matrix leg per carrier, with Playwright's global timeout below the job's time limit
+(14 minutes under 20 for `smoke`, 55 under 60 for `full`), so a hang ends as a failed step. The
+job uploads the results through a second action,
+`.github/actions/alm-conformance-lane-results/action.yml`, as its next step with `always()`: a
+cancelled composite step skips its own remaining steps, so the uploads are a step of the job and
+also run for a cancelled job. Each leg uploads two artifacts, pass, fail or cancelled, each when it
+has files: the whole Playwright output root, `apps/rallar-black-box/test-results`, as
+`alm-conformance-lane-<carrier>-<scope>-<sha>` (kept seven days), and its `alm-lane-result/`
+directory alone as `alm-lane-result-<carrier>-<scope>-<sha>` (see "The lane result files" below).
+`<sha>` is the workflow run's commit. On a Release Gate run of a pull request that is the merge
+commit, while the `alm-smoke` lane checked out the pull request's head.
 
 Every cell — one carrier per cell, pass or fail — writes these files into that root:
 
@@ -55,6 +74,51 @@ ALM observation ws-smoke: regime=normal (page) perOperation=unmeasured (1 commit
 
 The second shape is a cell with too few durable send commits to measure: `(page)` says the page regime
 decided `regime`.
+
+## The lane result files
+
+The observation files describe how a family test ran; the lane result files say which planned
+scenarios ran and with what outcome, so a family test cut off by its time limit or an error still
+leaves a true record. The spec writes them into `test-results/alm-lane-result/`, beside the
+observation files and for the same reason, with the pure builders of
+`packages/shared-test/rallar-bb-test/conformance/alm/lane-result/alm-lane-result.ts`.
+
+| File                                                           | Written by                                                            |
+| -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `test-results/alm-lane-result/<carrier>-<scope>-plan.json`     | The first test of each carrier, `lane plan over <carrier> (<scope>)`. |
+| `test-results/alm-lane-result/<carrier>-<scope>-<family>.json` | Each family test that plans at least one scenario.                    |
+
+The **plan file** states the run's plan before any family test of its carrier starts: `carrier`,
+`scope`, `backend` (`memory` or `postgres`, the API the full-stack configuration starts), and
+`families`, every lane family with the `scenarioKeys` it plans. A family that plans nothing is
+listed with no keys; in a run not narrowed by `RALLAR_BLACK_BOX_ALM_ONLY` or `_SKIP`, a carrier
+whose families plan nothing fails its plan test, and a narrowed run writes its plan as it is. It
+comes from the same planning function the family tests run, so a run is judged against its own plan,
+not against a later catalog. The keys are in the plan test's own order: a `shuffled` family that
+names no seed mints one per planning, so its run order may differ. Compare a plan with a result by
+key.
+
+A **family result file** carries the same `carrier`, `scope` and `backend`, its `family`,
+`familyOutcome`, and `scenarios`: one `{ scenarioKey, outcome }` per planned scenario, in plan
+order, and nothing the plan does not name. The family test writes it when its plan is resolved, with
+every scenario `not-run`, again after each scenario, and once more at its end, each time through a
+temporary file and a rename, so a worker killed mid-write leaves the previous complete file.
+
+- A scenario's `outcome` is `failed` when its body threw or added a soft-assertion error to the
+  family test, `passed` when it ended otherwise, and `not-run` when it never ended: the family test
+  stopped before it, on an earlier error, a start barrier or the time limit.
+- `familyOutcome` is `not-finished` until the family test's whole body ends, from opening its pages
+  to closing them, then `failed` when that body threw or left an error on the test, and `passed`
+  otherwise. A family can fail outside every scenario (opening or closing its pages, a start
+  barrier, a root that never ends), so a `failed` family may hold only `passed` scenarios. A family
+  test cut off before its body ended, by its time limit or the run's global timeout, leaves
+  `not-finished`, unless its abandoned body rejects during teardown, which writes `failed`; either
+  way the family is not `passed`.
+- A family whose plan names scenarios but has no result file was never started; every scenario it
+  plans is `not-run`.
+
+The commit, the event and the attempt are not in the files; the workflow run that uploaded the
+`alm-lane-result-<carrier>-<scope>-<sha>` artifact owns them.
 
 ## The budgets stay
 
@@ -224,7 +288,7 @@ records what the runner was doing while the cell ran:
   of the ordering snapshots its inbound stores stated (D191) — and `overloadedReadings` counts the
   readings that found their page refusing its next own send at the count or byte bound. `{ outcome: 'no-readings' }` when no agent read a
   ledger: an artifact from before the block existed, or a cell whose recipes stopped before their
-  `stats` step. No threshold reads it; the observation stays non-blocking.
+  `stats` step. No threshold reads it, so it fails no cell.
 - `congestion` — the congestion decisions the cell's pages counted (D186), from the `rallar.congestion` block of
   each `stats` command's result; the decoded snapshot keeps each reading as `congestionReadings`,
   `{ atEpochMs, agentId, counters }`. A page's counters only grow until its next `close`, so each page contributes its

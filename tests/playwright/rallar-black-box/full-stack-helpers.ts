@@ -40,6 +40,7 @@ import type {
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { closeParticipantContext } from './close-participant-context.ts';
+import { readDisposedResponse } from './read-disposed-response.ts';
 import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
@@ -403,8 +404,10 @@ export async function expectFullStackApiReady(
             origin: FULL_STACK_SPA_ORIGIN
         }
     });
-    expect(configResponse.ok()).toBe(true);
-    expect(configResponse.headers()['access-control-allow-origin']).toBe(FULL_STACK_SPA_ORIGIN);
+    await readDisposedResponse(configResponse, async (response) => {
+        expect(response.ok()).toBe(true);
+        expect(response.headers()['access-control-allow-origin']).toBe(FULL_STACK_SPA_ORIGIN);
+    });
 }
 
 export async function loginThroughUi(input: LoginThroughUiInput): Promise<void> {
@@ -532,7 +535,9 @@ export async function enqueueControlCommand(input: EnqueueControlCommandInput): 
         }/commands`,
         { data: { commandId: input.commandId, command: input.command } }
     );
-    expect(response.status()).toBe(202);
+    await readDisposedResponse(response, async (enqueued) => {
+        expect(enqueued.status()).toBe(202);
+    });
 }
 
 export async function readControlRun(
@@ -542,8 +547,11 @@ export async function readControlRun(
     const response = await request.get(
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
     );
-    expect(response.ok()).toBe(true);
-    return decodeControlRunSnapshot(await response.json()).fold(
+    const body = await readDisposedResponse(response, async (read) => {
+        expect(read.ok()).toBe(true);
+        return await read.json();
+    });
+    return decodeControlRunSnapshot(body).fold(
         (issue) => {
             throw new Error(`Invalid control run snapshot: ${issue}`);
         },
@@ -584,8 +592,11 @@ export async function exportControlRunArtifacts(
     const response = await request.get(
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
     );
-    expect(response.ok()).toBe(true);
-    return decodeControlRunArtifactBundle(await response.json()).fold(
+    const body = await readDisposedResponse(response, async (read) => {
+        expect(read.ok()).toBe(true);
+        return await read.json();
+    });
+    return decodeControlRunArtifactBundle(body).fold(
         (issue) => {
             throw new Error(`Invalid control run artifact: ${issue}`);
         },

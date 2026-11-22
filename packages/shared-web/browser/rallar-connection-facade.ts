@@ -149,6 +149,7 @@ export interface RallarConnectionOperations {
         deadlineEpochMs: number,
         authority?: RallarDeadlineAuthority
     ): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
+    /** Resolves a running schedule with calibrated time or a paused program from its stored checkpoint. */
     schedulePosition(schedule: RoomSchedule, authority?: RallarDeadlineAuthority): RoomSchedule.Position;
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;
     status(): RallarConnectStatus;

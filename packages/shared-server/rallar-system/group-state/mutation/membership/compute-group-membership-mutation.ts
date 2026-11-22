@@ -1,7 +1,7 @@
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { AuditStamp, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 
-import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
+import { readJoinCode } from '../../policy/group-join-code.ts';
 import {
     assertAllowed,
     assertGovernance,
@@ -77,7 +77,7 @@ export function computeJoin(
         : 'member';
     const lobby = read.lobbyState?.lobby?.value;
     const existingSeat = lobby?.seats.find(seat => seat.principalId === command.targetPrincipalId);
-    const deadline = existingSeat?.admissionWindow ?? existingSeat?.returnWindow;
+    const deadline = existingSeat?.admissionWindow ?? existingSeat?.returnWindow ?? existingSeat?.offerWindow;
     const requiresSeat = role !== 'spectator' && lobby && (!existingSeat || (deadline && deadline.dueAtEpochMs <= facts.attemptAtEpochMs));
     if (existing?.status === 'active' && existing.role === role && !requiresSeat) {
         return noOp(command, read, facts);

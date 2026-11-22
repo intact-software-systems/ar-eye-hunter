@@ -202,7 +202,7 @@ describe('the ALM lane parameters', () => {
         ]);
     });
 
-    // A repository variable that is not set reaches the workflow step as an empty string, so empty counts as unset.
+    // A workflow that sets a parameter from an empty expression passes an empty string, so empty counts as unset.
     it('an unset or empty scope runs smoke, and unset or empty carriers run every carrier', () => {
         for (const unset of [undefined, '', ' ']) {
             expect(toDecoded(toDecodeInput({ scope: unset, carriers: unset })), String(unset)).toEqual({

@@ -27,6 +27,7 @@ export type RoomClockCommand =
     );
 
 export type RoomClockMutation = RoomClockCommand
+    | RoomSchedule.Control
     | (RoomTimelineAdvance & { readonly operation: 'advance-phase'; })
     | (RoomSchedule.Publication & { readonly operation: 'publish-schedule'; })
     | (RoomTimelineExtension & { readonly operation: 'extend-phase'; });
@@ -46,7 +47,8 @@ export function assertRoomClockMutation(value: unknown): asserts value is RoomCl
         keys.push('phases');
         assertSchedulePhases(command.phases);
     }
-    else if (command.operation !== 'pause' && command.operation !== 'resume') {
+    else if (command.operation !== 'pause' && command.operation !== 'resume' &&
+        command.operation !== 'pause-program' && command.operation !== 'resume-program') {
         throw new TypeError('Invalid clock operation.');
     }
     requireExactKeys(command, keys, 'Room clock command');
@@ -57,7 +59,7 @@ export function assertRoomClockMutation(value: unknown): asserts value is RoomCl
 
 export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
     assertRoomClockMutation(value);
-    if (value.operation === 'advance-phase' || value.operation === 'extend-phase' || value.operation === 'publish-schedule') {
+    if (value.operation !== 'start' && value.operation !== 'pause' && value.operation !== 'resume') {
         throw new TypeError('Use a timeline command to change a phase.');
     }
 }
@@ -80,11 +82,11 @@ export function readRoomTimeRecords(metadata: ApiJsonObject): (RoomClock | RoomT
         }
         names.add(record.name);
         const identity = { name: record.name, revision: record.revision };
-        if (record.status === 'scheduled') {
+        if (record.status === 'scheduled' || record.status === 'program-paused') {
             requireExactKeys(record, ['name', 'revision', 'status', 'elapsedThroughEpochMs', 'phases'], 'Room schedule');
             requireEpoch(record.elapsedThroughEpochMs, 'Elapsed schedule boundary');
             assertSchedulePhases(record.phases);
-            return { ...identity, status: 'scheduled', elapsedThroughEpochMs: record.elapsedThroughEpochMs, phases: record.phases };
+            return { ...identity, status: record.status, elapsedThroughEpochMs: record.elapsedThroughEpochMs, phases: record.phases };
         }
         let occurrence: { phase: string; startedAtRevision: number; } | undefined;
         const keys = ['name', 'revision', 'status'];
@@ -116,13 +118,13 @@ export function readRoomTimeRecords(metadata: ApiJsonObject): (RoomClock | RoomT
 }
 
 export function readRoomClocks(metadata: ApiJsonObject): (RoomClock | RoomTimeline)[] {
-    return readRoomTimeRecords(metadata).filter(record => record.status !== 'scheduled');
+    return readRoomTimeRecords(metadata).filter((record): record is RoomClock | RoomTimeline => record.status === 'running' || record.status === 'paused');
 }
 
 export function readRoomSchedule(metadata: ApiJsonObject, name: string): RoomSchedule | null {
     assertRoomDeadlineName(name);
     const record = readRoomTimeRecords(metadata).find(value => value.name === name);
-    return record?.status === 'scheduled' ? record : null;
+    return record && 'phases' in record ? record : null;
 }
 
 export function readRoomClock(metadata: ApiJsonObject, name: string): RoomClock | RoomTimeline | null {

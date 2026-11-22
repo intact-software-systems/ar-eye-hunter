@@ -78,11 +78,8 @@ export function computeHeartbeatGroupPresence(
 }
 
 /**
- * A pure lease renewal keeps the session row, event, and receipt but must not
- * expand a presence summary: the session is already listed by the stored
- * summary, its lease had not lapsed at read time and its publication key is
- * unchanged, so members observe nothing new. Anything not provably pure —
- * a lapsed-lease revival, a key change — expands normally.
+ * Skip roster expansion when a renewal leaves membership and publication unchanged.
+ * A director lease that also changes room metadata still publishes in computeGroupPresenceWrite.
  */
 export function isPureLeaseRenewalHeartbeat(
     command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence'; }>,

@@ -1,3 +1,4 @@
+import { directorAuthorityAdmissionPrincipal } from './resolve-group-mutation-read-identities.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupSessionIntentPrincipal } from './group-mutation-read-scope.ts';
@@ -46,6 +47,17 @@ export async function readGroupMutationRelatedEntries({
         ? (directorPrincipalId ?? null)
         : null;
     const intentPrincipalId = groupSessionIntentPrincipal(command);
+    // A principal may occupy several roles. All roles must observe the same admission generation.
+    const admissions = new Map<string, ReturnType<typeof repository.findPresenceAdmissionEntry>>();
+    function readAdmission(principalId: string | null | undefined) {
+        if (!principalId) return undefined;
+        let entry = admissions.get(principalId);
+        if (!entry) {
+            entry = repository.findPresenceAdmissionEntry({ ...command.aggregateRef, principalId });
+            admissions.set(principalId, entry);
+        }
+        return entry;
+    }
     const values = await Promise.all([
         readOptionalMemberEntry(repository, command, actorPrincipalId),
         readOptionalMemberEntry(
@@ -53,11 +65,11 @@ export async function readGroupMutationRelatedEntries({
             command,
             targetPrincipalId !== actorPrincipalId ? targetPrincipalId : null
         ),
-        readOptionalAdmissionEntry(repository, command, targetPrincipalId),
+        readAdmission(targetPrincipalId),
         readOptionalMemberEntry(repository, command, ownerMemberId),
-        readOptionalAdmissionEntry(repository, command, appointsDirector ? ownerPrincipalId : null),
+        readAdmission(directorAuthorityAdmissionPrincipal(command, ownerPrincipalId)),
         readOptionalMemberEntry(repository, command, directorMemberId),
-        readOptionalAdmissionEntry(repository, command, appointsDirector ? directorPrincipalId : null),
+        readAdmission(appointsDirector ? directorPrincipalId : null),
         readOptionalPublicationGrantEntry(
             repository,
             command,
@@ -91,16 +103,6 @@ async function readOptionalMemberEntry(
 ): Promise<GroupMutationRead['actorMemberEntry'] | undefined> {
     return principalId
         ? await repository.findMemberEntry({ ...command.aggregateRef, principalId })
-        : undefined;
-}
-
-async function readOptionalAdmissionEntry(
-    repository: GroupStateRepository,
-    command: GroupMutationCommand,
-    principalId: string | null | undefined
-): Promise<GroupMutationRead['targetAdmission'] | undefined> {
-    return principalId
-        ? await repository.findPresenceAdmissionEntry({ ...command.aggregateRef, principalId })
         : undefined;
 }
 

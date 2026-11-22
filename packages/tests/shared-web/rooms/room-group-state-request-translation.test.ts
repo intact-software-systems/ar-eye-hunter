@@ -371,8 +371,8 @@ describe('room request translation', () => {
 
     it.each([
         ['rallarRoomDeadlines', 'setDeadline'], ['rallarRoomClocks', 'changeClock'],
-        ['rallarRoomLobby', 'configure'],
-        ['rallarSessionSchedule', 'schedule'],
+        ['rallarRoomLobby', 'configure'], ['rallarRoomLobbyRegistration', 'setRegistrationCutoff'],
+        ['rallarDirectorSuccession', 'changeDirector'], ['rallarSessionSchedule', 'schedule'],
         ['rallarRetention', 'retention'], ['rallarDirectoryListing', 'directoryListing'],
         ['rallarSpectatorCapacity', 'maxSpectators']
     ])('omits inherited %s from an app patch and rejects editing it directly', (key, operation) => {

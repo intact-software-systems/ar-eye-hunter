@@ -1,8 +1,8 @@
+import { computeGroupDirectorAppointment } from '../aggregate/compute-group-director-appointment.ts';
 import { requiresGroupLobbyRead } from '../../lobby/requires-group-lobby-read.ts';
 import { computeGroupSessionMutation } from '../../schedule/compute-group-session-mutation.ts';
 import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
-    computeDirector,
     computeRotateJoinCode,
     computeUpdate
 } from '../aggregate/compute-group-aggregate-mutation.ts';
@@ -93,7 +93,7 @@ function computeFreshGroupMutation(
         case 'updateGroup':
             return computeUpdate(command, read, facts);
         case 'appointDirector':
-            return computeDirector(command, read, facts);
+            return computeGroupDirectorAppointment(command, read, facts);
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':

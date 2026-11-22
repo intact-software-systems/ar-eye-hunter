@@ -65,6 +65,7 @@ import type {
 } from './live-rtc-performance-evidence.ts';
 import { readLiveRtcRecorderJsonl, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
+import { readDisposedResponse } from './read-disposed-response.ts';
 
 export interface LiveRtcObservedDeliveries {
     readonly events: readonly LiveRtcControlClient.Event[];
@@ -260,13 +261,10 @@ export class LiveRtcControlClient {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(runId)}`
         );
-        try {
-            expect(response.ok()).toBe(true);
-            return decodeControlRunSnapshot(normalizeJson(await response.json()));
-        }
-        finally {
-            await response.dispose();
-        }
+        return await readDisposedResponse(response, async (read) => {
+            expect(read.ok()).toBe(true);
+            return decodeControlRunSnapshot(normalizeJson(await read.json()));
+        });
     }
 
     async executeResult(
@@ -282,17 +280,14 @@ export class LiveRtcControlClient {
                         `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}` +
                             '?limitEvents=0&limitStats=0&limitReports=0&limitHeartbeats=0'
                     );
-                    try {
-                        expect(response.ok()).toBe(true);
-                        const run = decodeControlRunSnapshot(normalizeJson(await response.json()));
+                    return await readDisposedResponse(response, async (read) => {
+                        expect(read.ok()).toBe(true);
+                        const run = decodeControlRunSnapshot(normalizeJson(await read.json()));
                         latest = run.results.find(
                             (result) => result.commandId === input.commandId
                         );
                         return Boolean(latest);
-                    }
-                    finally {
-                        await response.dispose();
-                    }
+                    });
                 },
                 {
                     timeout: input.timeoutMs ?? 45_000
@@ -319,15 +314,12 @@ export class LiveRtcControlClient {
                 }
             }
         );
-        try {
+        await readDisposedResponse(response, async (enqueued) => {
             expect(
-                response.status(),
-                `Expected command ${input.commandId} for agent ${input.agentId} to enqueue: ${await response.text()}`
+                enqueued.status(),
+                `Expected command ${input.commandId} for agent ${input.agentId} to enqueue: ${await enqueued.text()}`
             ).toBe(202);
-        }
-        finally {
-            await response.dispose();
-        }
+        });
     }
 
     async executeOk(
@@ -708,17 +700,13 @@ export class LiveRtcControlClient {
         const response = await this.#request.get(
             `${this.#baseUrl}/runs/${encodeURIComponent(input.runId)}/artifacts`
         );
-        let bundle: LiveRtcJsonRecord;
-        try {
-            expect(response.ok()).toBe(true);
-            bundle = requiredJsonRecord(
-                normalizeJson(await response.json()),
+        const bundle = await readDisposedResponse(response, async (read) => {
+            expect(read.ok()).toBe(true);
+            return requiredJsonRecord(
+                normalizeJson(await read.json()),
                 '$.artifactBundle'
             );
-        }
-        finally {
-            await response.dispose();
-        }
+        });
         await expectLiveRtcArtifactEvidence(bundle, input, this.#baseUrl);
     }
 

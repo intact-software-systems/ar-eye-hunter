@@ -1,9 +1,11 @@
 import { MAX_ROOM_CLOCKS, readRoomTimeRecords, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
-import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
+import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-interface ClockRefusal {
+import { computeGroupProgramChange } from './compute-group-program-change.ts';
+
+export interface ClockRefusal {
     readonly rejectionCode: 'room-clock-revision-conflict' | 'group-mutation-rejected';
     readonly message: string;
 }
@@ -22,19 +24,14 @@ export function computeGroupClockChange(
     if (!Number.isSafeInteger(identity.revision) || (!previous && clocks.length >= MAX_ROOM_CLOCKS)) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock capacity exhausted.' };
     }
-    if (command.operation === 'publish-schedule') {
-        if (previous && previous.status !== 'scheduled') {
+    if (command.operation === 'publish-schedule' || command.operation === 'pause-program' || command.operation === 'resume-program') {
+        if (previous && !('phases' in previous)) {
             return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
         }
-        const elapsedThroughEpochMs = Math.max(now, previous?.elapsedThroughEpochMs ?? now);
-        if (previous && !sameSchedulePhases(previous.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs),
-            command.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs))) {
-            return { rejectionCode: 'group-mutation-rejected', message: 'Elapsed boundaries must be preserved.' };
-        }
-        return { ...identity, status: 'scheduled', elapsedThroughEpochMs, phases: command.phases };
+        return computeGroupProgramChange(previous, command, now);
     }
-    if (previous?.status === 'scheduled') {
-        return { rejectionCode: 'group-mutation-rejected', message: 'Use a schedule revision to change this name.' };
+    if (previous && 'phases' in previous) {
+        return { rejectionCode: 'group-mutation-rejected', message: 'Use a program command to change this name.' };
     }
     let occurrence: Pick<RoomTimeline, 'phase' | 'startedAtRevision'> | undefined;
     if (previous && 'phase' in previous) {
@@ -101,7 +98,7 @@ export function computeGroupClockUpdate(group: Group, command: RoomClockMutation
     const records = [...clocks.filter(previous => previous.name !== clock.name), clock];
     return { ...group, metadata: {
         ...group.metadata,
-        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => record.status === 'scheduled'
+        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => 'phases' in record
             ? { ...record, phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs })) }
             : record)
     } };

@@ -1,6 +1,7 @@
 import { releaseControlResults } from '@shared-test/rallar-bb-test/result-release/release-control-results.ts';
 
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { readDisposedResponse } from './read-disposed-response.ts';
 
 /** This diagnostic caller consumes results from server artifacts and ends runtime references after each command. */
 export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
@@ -42,14 +43,11 @@ export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
         const response = await this.dependencies.request.get(
             `${this.dependencies.baseUrl}/runs/${encodeURIComponent(input.runId)}/events.jsonl`
         );
-        try {
-            if (!response.ok()) {
+        await readDisposedResponse(response, async (drained) => {
+            if (!drained.ok()) {
                 throw new Error('The owned release acknowledgement journal could not be drained.');
             }
-        }
-        finally {
-            await response.dispose();
-        }
+        });
     }
 
     private readonly fetchControl: typeof globalThis.fetch = async (url, init) => {
@@ -58,11 +56,9 @@ export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
             headers: Object.fromEntries(new Headers(init?.headers).entries()),
             data: typeof init?.body === 'string' ? init.body : undefined
         });
-        try {
-            return new Response(await response.text(), { status: response.status(), headers: response.headers() });
-        }
-        finally {
-            await response.dispose();
-        }
+        return await readDisposedResponse(
+            response,
+            async (read) => new Response(await read.text(), { status: read.status(), headers: read.headers() })
+        );
     };
 }

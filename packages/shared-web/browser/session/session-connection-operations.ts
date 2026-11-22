@@ -11,6 +11,7 @@ import type {
     RallarDeadlineAuthority,
     RallarDefaults
 } from '@shared-web/browser/rallar-connection-facade.ts';
+import { pausedRoomSchedulePosition } from '@shared/api/group-deadlines/room-schedule.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
@@ -63,14 +64,18 @@ export function createRallarSessionConnectionOperations(
         },
         schedulePosition(schedule, authority) {
             const offset = readMaxAuthorityOffsetMs(authority);
+            const paused = pausedRoomSchedulePosition(schedule);
+            if (paused) return paused;
             const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
             if (!window) return { status: 'unavailable' };
+            const earliest = Math.max(schedule.elapsedThroughEpochMs, window.earliestEpochMs - offset);
+            const latest = Math.max(schedule.elapsedThroughEpochMs, window.latestEpochMs + offset);
             let current = null;
             for (const phase of schedule.phases) {
-                if (phase.startsAtEpochMs - window.latestEpochMs > offset) {
+                if (phase.startsAtEpochMs > latest) {
                     return { status: 'current', current, next: phase };
                 }
-                if (window.earliestEpochMs - phase.startsAtEpochMs < offset) return { status: 'uncertain' };
+                if (earliest < phase.startsAtEpochMs) return { status: 'uncertain' };
                 current = phase;
             }
             return { status: 'current', current, next: null };

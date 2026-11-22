@@ -1,3 +1,4 @@
+import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import {
     readGroupSessionSchedule,
     toGroupSessionTiming,
@@ -124,7 +125,19 @@ function computeAccountReservationChange(mutation: GroupSessionMutation): GroupM
     if (action !== 'reserve' && action !== 'withdraw') {
         throw new TypeError('Account reservation change requires reserve or withdraw');
     }
+    const lobby = read.lobbyState?.lobby?.value;
+    // Deadline delivery can lag the reservation request. Resolve current seats and queued offers at the same instant.
+    const places = lobby && action === 'reserve' ? allocateLobbyPlaces(lobby, facts.attemptAtEpochMs, lobby.revision + 1) : lobby;
+    const activePlayerPrincipalIds = places?.seats.map(seat => seat.principalId)
+        ?? mutation.activeMembers.filter(member => !isGroupSpectator(member)).map(member => member.principalId);
     if (action === 'reserve') {
+        const registered = reservations.value.principalIds.includes(principalId) || activePlayerPrincipalIds.includes(principalId);
+        if (places?.registration.closed && !registered) {
+            return rejectedByGroupPolicy({
+                command, read, facts,
+                denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
+            });
+        }
         const credentials = canUseGroupAdmissionCredentials({
             snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: { principalId, sessionId: command.input.actorSessionId ?? undefined },
@@ -140,9 +153,7 @@ function computeAccountReservationChange(mutation: GroupSessionMutation): GroupM
     const result = computeGroupSessionReservation({
         schedule,
         reservations: reservations.value,
-        activePlayerPrincipalIds: read.lobbyState?.lobby?.value.seats.map(seat => seat.principalId) ?? mutation.activeMembers.filter((member) => !isGroupSpectator(member)).map((member) =>
-            member.principalId
-        ),
+        activePlayerPrincipalIds,
         nowEpochMs: facts.attemptAtEpochMs,
         action,
         principalId,

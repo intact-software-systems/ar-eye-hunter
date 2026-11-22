@@ -10,6 +10,8 @@ import {
     type ProofSession
 } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { runManagedClusterProof, type ManagedClusterProof } from './run-managed-cluster-proof.mts';
+import { proveDirectorSuccession } from './prove-director-succession.mts';
+import { provePlayerSuccession } from './prove-player-succession.mts';
 
 async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.ScenarioInput): Promise<void> {
     const [writer, editor, reader] = plans;
@@ -194,12 +196,35 @@ async function proveRoomDeadlines({ plans, controls }: ManagedClusterProof.Scena
     assert.ok(Number.isSafeInteger(elapsedThroughEpochMs) && Number(elapsedThroughEpochMs) > 0);
     assert.deepEqual(programRecord,
         { name: 'program', revision: 2, status: 'scheduled', phases: revision.phases });
+    const control = { name: 'program', expectedDirectorEpoch: successorEpoch };
+    const pausedProgram = await clockWrite(deputy, { ...control, operation: 'pause-program', expectedRevision: 2 });
+    const pausedClocks = clock(pausedProgram);
+    assert.ok(Array.isArray(pausedClocks));
+    const frozen = requireRecord(pausedClocks.find(record => requireRecord(record, 'clock').name === 'program'), 'paused program');
+    assert.equal(frozen.status, 'program-paused');
+    assert.deepEqual(frozen.phases, revision.phases);
+    const resumePath = toApiMutationRequestPath(first, crypto.randomUUID());
+    const resumeProgram = { method: 'PUT', session: deputy, body: { roomClock: { ...control, operation: 'resume-program', expectedRevision: 3 } } };
+    const resumedProgram = await requestJson(writer.baseUrl, resumePath, resumeProgram);
+    assert.deepEqual(await requestJson(reader.baseUrl, resumePath, resumeProgram), resumedProgram);
+    const resumedClocks = clock(resumedProgram);
+    assert.ok(Array.isArray(resumedClocks));
+    const running = requireRecord(resumedClocks.find(record => requireRecord(record, 'clock').name === 'program'), 'running program');
+    assert.equal(running.revision, 4);
+    assert.ok(Array.isArray(running.phases));
+    assert.deepEqual(running.phases[0], revision.phases[0]);
+    const shift = Number(running.elapsedThroughEpochMs) - Number(frozen.elapsedThroughEpochMs);
+    assert.ok(shift >= 0);
+    assert.equal(requireRecord(running.phases[1], 'next phase').startsAtEpochMs, revision.phases[1]!.startsAtEpochMs + shift);
     const replay = await requestJson(writer.baseUrl, winner.path, { method: 'PUT', session: winner.session, body: winner.body });
     assert.deepEqual(replay, accepted);
     for (const baseUrl of [writer.baseUrl, reader.baseUrl]) {
         assert.deepEqual(deadlines(await requestJson(baseUrl, first, { method: 'GET', session: deputy })), expected);
         assert.deepEqual(deadlines(await requestJson(baseUrl, second, { method: 'GET', session: owner })), secondOccurrence);
     }
+    await provePlayerSuccession({ api, owner, player: deputy, observerOrigin: reader.baseUrl,
+        room: { ...room, groupId: 'players', proofId: crypto.randomUUID() } });
+    await proveDirectorSuccession({ api, owner, deputy, room: { ...room, groupId: 'succession', proofId: crypto.randomUUID() } });
 }
 
 async function putDeadline(input: { session: ProofSession; path: string; body: object }): Promise<Response> {

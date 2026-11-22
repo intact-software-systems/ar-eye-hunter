@@ -102,6 +102,23 @@ Deploy clock-aware writers before creating clocks and before permitting raw room
 
 ## Director-controlled room timelines
 
+A room owner or admin can enable director succession, designate a deputy, or appoint a specific
+present session through `rooms.changeDirector`. An explicitly appointed or designated spectator
+can direct the room. `rooms.readDirector` and `rooms.watchDirector` expose the current appointment
+and succession state to a room client. The observer recovers over the existing room WebSocket.
+
+By default the director has 30 seconds to reconnect, followed by 30 seconds for the designated
+deputy to claim. The organizer can change either duration. Each claim checks server time, current
+room presence and the observed appointment epoch. An explicit admin appointment takes precedence.
+Handover preserves running and paused programs, and invalidates delayed clock writes from the
+former director.
+
+After the reconnect window, a present player can send `claim-player` when the room has no
+eligible deputy or the deputy has declined or timed out. The first accepted claim establishes a new
+appointment epoch. Waiting and away lobby commitments do not confer director authority. Ordinary
+spectators remain ineligible for this fallback. A returning participant recovers the winning
+appointment alongside the room program.
+
 Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
 to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
 paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.
@@ -138,6 +155,12 @@ A current position supplies `current` and `next` with their UTC starts. Before t
 At a start the new phase applies inclusively, and the final phase continues. A window crossing a start returns
 `uncertain`; loss of calibration returns `unavailable`. The app displays recovery while a watch is stale.
 A boundary crossing requires no server write or network read and triggers no gameplay side effects.
+
+The appointed director can freeze a published program with `rooms.pauseProgram` and restart it with
+`rooms.resumeProgram`. Both accept the program name, expected revision, director epoch and request ID.
+During a pause, a returning participant can read the frozen phase and milliseconds until the next
+start even before clock calibration finishes. Resume shifts future program starts once. Independent
+UTC deadlines retain their published times. A director disconnect preserves the program's state.
 
 ## Sharing rooms
 
@@ -278,6 +301,33 @@ Use `RallarRoomLobby` from `@shared-web/browser/rooms/lobby/rallar-room-lobby.ts
 presence status, and current deadline. Scoped account WebSocket changes and returning to the foreground
 wake a durable read. Use `release(roomRef)` for an explicit release, `retry()` for an uncertain command,
 and `stop()` when the application ends observation. Stopping observation preserves the commitment.
+
+Use `wait(roomRef)` to request the next available place without entering the room. For a room with
+a join code, supply `{ joinCode }` as the second argument. A waiting player can visit another room,
+disconnect, or cancel with `release(roomRef)`. When a place opens, the server offers it to the oldest
+eligible waiter and protects the place until the offer expires. The private seat changes from
+`waiting` to `offered` and includes the deadline. Enter the room through normal room admission
+to claim it. A decline, expired offer, or loss of access frees the place for the next eligible waiter.
+Scheduled reservations keep their places until withdrawal or the no-show deadline.
+
+An organizer can set a UTC cutoff with `setRegistrationCutoff(roomRef, { expectedRevision, atEpochMs })`.
+Read the current revision and status with `RallarRoomLobby.registration(snapshot.group.metadata, rallar)`.
+Before the cutoff, pass a new time to reschedule or null to cancel. At the cutoff the server stops
+new registrations and offers. Settling closure clears the waiting list and releases its scoped commitments.
+If the timer worker is recovering, a waiting player can claim another managed room once settlement commits.
+An offer issued before closure remains claimable
+until its displayed deadline. The SDK reports `uncertain` while the calibrated time window crosses
+the cutoff and `unavailable` when a scheduled cutoff cannot be compared with server time.
+
+To close registration when play begins, use `lobby.setRegistrationBoundary(roomRef,
+{ expectedRevision, expectedProgramRevision, program: 'match', phase: 'play' })`.
+Use the registration revision from the current room snapshot. Re-enabling a lobby starts a new revision, so a delayed command from its previous activation is rejected.
+The organizer chooses a phase that occurs exactly once in the published program. The cutoff
+moves with revisions to that phase. Pausing before it suspends the cutoff; resuming sets its
+new UTC instant. The registration view exposes the binding and its effective `atEpochMs`,
+which is null while the future boundary is paused. A running worker closes registration even
+when the room is empty. Seat offers issued before closure keep their original claim deadlines.
+To remove or rename a bound phase, clear or replace the cutoff while registration is open.
 
 ## Find players and start together
 
