@@ -128,6 +128,34 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '503':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/room-lobbies/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Groups]
+      summary: Read this account's held lobby seat
+      description: Returns the signed-in account’s commitment in this application and workspace. WebSocket invalidations wake a fresh private read.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Account-specific recovery state.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomLobbyAccountView'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/matchmaking/apps/{applicationId}/workspaces/{workspaceId}:
     get:
       tags: [Matchmaking]
@@ -1237,14 +1265,20 @@ paths:
               $ref: '#/components/schemas/UpdateGroupRequest'
       responses:
         '200':
-          description: Updated group snapshot.
+          description: Self-service lobby commands acknowledge the target room. Other updates return the group snapshot.
           headers:
             x-request-id:
               $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupSnapshot'
+                oneOf:
+                  - { $ref: '#/components/schemas/GroupSnapshot' }
+                  - type: object
+                    required: [roomRef]
+                    additionalProperties: false
+                    properties:
+                      roomRef: { $ref: '#/components/schemas/GroupRef' }
         '401':
           $ref: '#/components/responses/ApiMutationFailure'
         '403':
@@ -5228,6 +5262,30 @@ components:
         - properties:
             status: { const: refused }
             code: { type: string }
+    RoomLobbyPolicy:
+      type: object
+      additionalProperties: false
+      required: [returnWindowMs, claimWindowMs]
+      properties:
+        returnWindowMs: { type: integer, minimum: 1, example: 120000 }
+        claimWindowMs: { type: integer, minimum: 1, example: 60000 }
+    RoomLobbyAccountView:
+      type: object
+      additionalProperties: false
+      required: [scope, principalId, seat]
+      properties:
+        scope: { $ref: '#/components/schemas/StateScope' }
+        principalId: { type: string }
+        seat:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [roomRef, status, deadlineEpochMs]
+              properties:
+                roomRef: { $ref: '#/components/schemas/GroupRef' }
+                status: { enum: [arriving, present, away] }
+                deadlineEpochMs: { type: [integer, 'null'], minimum: 0 }
     MatchmakingSnapshot:
       type: object
       additionalProperties: false
@@ -9099,6 +9157,11 @@ components:
       type: object
       required: [groupId, displayName, kind]
       properties:
+        roomLobby:
+          description: Omit to inherit the application default or send null for ordinary room entry.
+          oneOf:
+            - { $ref: '#/components/schemas/RoomLobbyPolicy' }
+            - { type: 'null' }
         groupId:
           type: string
         slug:
@@ -9158,6 +9221,22 @@ components:
     UpdateGroupRequest:
       type: object
       properties:
+        roomLobby:
+          oneOf:
+            - type: object
+              required: [operation, policy]
+              additionalProperties: false
+              properties:
+                operation: { const: configure }
+                policy:
+                  oneOf:
+                    - { $ref: '#/components/schemas/RoomLobbyPolicy' }
+                    - { type: 'null' }
+            - type: object
+              required: [operation]
+              additionalProperties: false
+              properties:
+                operation: { const: release }
         roomClock:
           type: object
           additionalProperties: false

@@ -37,6 +37,7 @@ export function createApiV1MatchmakingServices(
         serviceId: input.serviceId,
         finishedRetentionMs: configuration.appInbox.finishedRetentionMs,
         defaultPolicy: configuration.matchmaking.defaultPolicy,
+        lobbyPoliciesByApplication: configuration.group.roomLobbyPoliciesByApplication,
         policiesByApplication: configuration.matchmaking.policiesByApplication
     });
     installMatchmakingDeadline({

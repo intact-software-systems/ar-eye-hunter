@@ -121,6 +121,7 @@ function toCreateCommand(
             description: request.description ?? null,
             kind: request.kind,
             joinMode: request.joinMode ?? 'invite-only',
+            ...(request.roomLobby === undefined ? {} : { roomLobby: structuredClone(request.roomLobby) }),
             ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
             ...(request.lifecyclePolicy === undefined
                 ? {}
@@ -175,6 +176,7 @@ function toUpdateCommand(
             kind: request.kind ?? null,
             status: request.status ?? null,
             joinMode: request.joinMode ?? null,
+            ...(request.roomLobby === undefined ? {} : { roomLobby: structuredClone(request.roomLobby) }),
             ...(request.directoryListing === undefined ? {} : { directoryListing: request.directoryListing }),
             maxMembers: request.maxMembers ?? null,
             maxSpectators: request.maxSpectators ?? null,

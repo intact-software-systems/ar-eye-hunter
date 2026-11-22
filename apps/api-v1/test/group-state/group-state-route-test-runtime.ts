@@ -38,6 +38,7 @@ export const TEST_GROUP_SCOPE: StateScope = {
 };
 
 export interface GroupStateRouteTestRuntimeInput {
+    readonly readLobbyOccupancy?: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly session?: AuthSession & GroupStateRouteAuthSession;
     readonly groupDefaultMaxMembers?: number | null;
     readonly nowEpochMs?: () => number;
@@ -104,6 +105,7 @@ export function createGroupStateRouteTestDependencies(
     const session = input.session ?? createGroupStateRouteAuthSession('alice');
     const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
     return {
+        readLobbyOccupancy: input.readLobbyOccupancy ?? (() => Promise.reject(new Error('Unexpected lobby occupancy read'))),
         groupStateService: createGroupStateRouteService(input.groupService),
         sessionDirectory: {
             read: () => Promise.reject(new Error('Unexpected session preview')),

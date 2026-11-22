@@ -136,6 +136,50 @@ async function joinCandidate(harness: AuthorityHarness, groupId: string, princip
 }
 
 describe('Quick Join through AppInbox', () => {
+    it('uses held lobby seats for admission when the only room still has a full player membership', async () => {
+        const harness = await createAuthorityHarness(['owner', 'bob']);
+        await seedCandidate(harness, { groupId: 'court', maxMembers: 1,
+            roomLobby: { claimWindowMs: 60000, returnWindowMs: 120000 } });
+        const request = { traceId: 'court-join', scope: SCOPE, request: { requestId: 'while-full', includeEmpty: true } };
+        const counts = async (now = harness.nowEpochMs) => {
+            const snapshots = await harness.repository.listSnapshots(SCOPE);
+            return (await harness.repository.readLobbyOccupancy(snapshots, now)).get('court');
+        };
+        expect(await counts()).toEqual({ playerCount: 1, onlinePlayerCount: 0 });
+        const initial = await harness.repository.findGroupLobbyEntry({ ...SCOPE, groupId: 'court' });
+        const deadline = initial?.value.seats[0]?.admissionWindow?.dueAtEpochMs;
+        if (deadline === undefined) throw new Error('Expected provisional owner seat');
+        expect(await counts(deadline)).toEqual({ playerCount: 0, onlinePlayerCount: 0 });
+        expect((await quickJoin(harness, request)).status).toBe('unavailable');
+        const release = await processAuthenticated({
+            service: harness.service, reader: harness.reader, authority: harness.sessions.owner,
+            input: { traceId: 'release', type: AppInboxType.GROUP_UPDATE, resourceId: 'release', contextId: 'release',
+                data: { scope: SCOPE, groupId: 'court', request: { requestId: 'release', roomLobby: { operation: 'release' } } } }
+        });
+        expect(release.left).toBeUndefined();
+        expect(await counts()).toEqual({ playerCount: 0, onlinePlayerCount: 0 });
+        const result = await quickJoin(harness, { ...request, request: { requestId: 'after-release', includeEmpty: true } });
+        expect(result.status).toBe('joined');
+        expect(await counts()).toEqual({ playerCount: 1, onlinePlayerCount: 0 });
+    });
+
+    it('orders managed candidates by online seat holders even when a released member is still online', async () => {
+        const harness = await createAuthorityHarness(['owner', 'bob']);
+        await seedCandidate(harness, { groupId: 'z-managed', maxMembers: 2,
+            roomLobby: { claimWindowMs: 60000, returnWindowMs: 120000 } });
+        await seedCandidate(harness, { groupId: 'a-unmanaged' });
+        await seedOnlineSessions(harness, 'z-managed', ['owner']);
+        const release = await processAuthenticated({
+            service: harness.service, reader: harness.reader, authority: harness.sessions.owner,
+            input: { traceId: 'release', type: AppInboxType.GROUP_UPDATE, resourceId: 'release', contextId: 'release',
+                data: { scope: SCOPE, groupId: 'z-managed', request: { requestId: 'release', roomLobby: { operation: 'release' } } } }
+        });
+        expect(release.left).toBeUndefined();
+        const result = await quickJoin(harness, { traceId: 'order', scope: SCOPE,
+            request: { requestId: 'ordered', includeEmpty: true } });
+        expect(result.status === 'joined' && result.snapshot.group.groupId).toBe('a-unmanaged');
+    });
+
     it('admits to the matching existing room and returns its committed membership', async () => {
         const timings: RallarTimingEvent[] = [];
         const harness = await createAuthorityHarness(['owner', 'bob'], { timing: (event) => timings.push(event) });
@@ -247,6 +291,18 @@ describe('Quick Join through AppInbox', () => {
 
         const room = await harness.repository.readSnapshot({ ...SCOPE, groupId: 'capacity' });
         expect(room?.group.activeMemberCount).toBe(1);
+    });
+
+    it('reads an ordinary Quick Join command from a deployment with application lobby defaults', async () => {
+        const harness = await createAuthorityHarness(['owner', 'bob']);
+        const configured = { defaultMaxMembers: 4,
+            lobbyPoliciesByApplication: { courts: { returnWindowMs: 120000, claimWindowMs: 60000 } } };
+        const service = createQuickJoinService(harness, configured, () => harness.nowEpochMs);
+        const command = await service.authorize({ traceId: 'quick-lobby-defaults', scope: SCOPE,
+            request: { requestId: 'ordinary-quick-join-with-defaults' } }, harness.sessions.bob);
+        const captured = await service.capture(command, harness.sessions.bob);
+        const read = await service.read(encodeJsonWireValue(captured, 'Quick Join'), { attemptCount: 1, traceId: 'quick-lobby-defaults' });
+        expect(read.candidates).toEqual([]);
     });
 
     it('stamps each capture with the finished-command window and an event id of its own ingress instant', async () => {

@@ -34,6 +34,16 @@ function withLegacyRequestId<Body extends object>(body: Body) {
 }
 
 describe('room request translation', () => {
+    it('preserves explicit lobby opt-out, held seat policy, and an organizer policy update', () => {
+        const roomLobby = { returnWindowMs: 120000, claimWindowMs: 60000 };
+        for (const policy of [null, roomLobby]) {
+            expect(toCreateGroupStateRequest({ groupId: 'court', room: { displayName: 'Court', roomLobby: policy }, ...actor }))
+                .toHaveProperty('roomLobby', policy);
+        }
+        expect(toUpdateGroupStateRequest({ request: { roomLobby: { operation: 'configure', policy: roomLobby } }, ...actor }))
+            .toEqual({ ...actor, roomLobby: { operation: 'configure', policy: roomLobby } });
+    });
+
     it('carries explicit listing intent separately from metadata and omits absent intent', () => {
         expect(toCreateGroupStateRequest({
             groupId: 'hidden-room',
@@ -359,14 +369,19 @@ describe('room request translation', () => {
         });
     });
 
-    it('keeps server-owned deadlines out of an ordinary metadata patch and rejects explicit changes', () => {
-        const currentMetadata = { rallarRoomDeadlines: [{ name: 'vote', atEpochMs: 5000, revision: 1 }], topic: 'old' };
+    it.each([
+        ['rallarRoomDeadlines', 'setDeadline'], ['rallarRoomClocks', 'changeClock'],
+        ['rallarRoomLobby', 'configure'],
+        ['rallarSessionSchedule', 'schedule'],
+        ['rallarRetention', 'retention'], ['rallarDirectoryListing', 'directoryListing'],
+        ['rallarSpectatorCapacity', 'maxSpectators']
+    ])('omits inherited %s from an app patch and rejects editing it directly', (key, operation) => {
+        const currentMetadata = { [key]: {}, topic: 'old' };
         expect(toRoomMetadataGroupStateRequest({ currentMetadata, patch: { topic: 'new' }, ...actor })).toEqual({
-            metadata: { topic: 'new' },
-            ...actor
+            metadata: { topic: 'new' }, ...actor
         });
-        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { rallarRoomDeadlines: null }, ...actor }))
-            .toThrow(/setDeadline/);
+        expect(() => toRoomMetadataGroupStateRequest({ currentMetadata, patch: { [key]: null }, ...actor }))
+            .toThrow(operation);
     });
 
     it('translates every invite and member-governance request', () => {

@@ -29,6 +29,7 @@ export function createApiV1TournamentServices(
         sessions: runtime.authSessionRepository,
         groups: runtime.topologyServices.groupStateRepository
     }, {
+        lobbyPoliciesByApplication: configuration.group.roomLobbyPoliciesByApplication,
         profiles: configuration.tournaments.profiles,
         serviceId: input.serviceId,
         nowEpochMs,

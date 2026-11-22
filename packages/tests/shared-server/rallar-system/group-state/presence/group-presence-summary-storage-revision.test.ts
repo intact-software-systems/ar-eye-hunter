@@ -223,6 +223,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         activeMemberPrincipalIds: null,
         activeMembers: [owner],
         plannedLayoutRow: null,
+        lobbyState: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     };

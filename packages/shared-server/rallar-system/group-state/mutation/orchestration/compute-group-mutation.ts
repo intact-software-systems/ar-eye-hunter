@@ -1,3 +1,4 @@
+import { requiresGroupLobbyRead } from '../../lobby/requires-group-lobby-read.ts';
 import { computeGroupSessionMutation } from '../../schedule/compute-group-session-mutation.ts';
 import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
@@ -73,6 +74,9 @@ export function computeGroupMutation(input: GroupMutationInput): GroupMutationCo
         });
     }
 
+    if (requiresGroupLobbyRead(command, read, facts.lobbyDefault !== undefined) && !read.lobbyState) {
+        throw new TypeError('Room lobby admission requires the observed private roster and account commitments');
+    }
     return computeFreshGroupMutation(command, read, facts);
 }
 

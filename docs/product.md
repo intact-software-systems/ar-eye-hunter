@@ -261,6 +261,24 @@ A future session survives an empty room until the reservation deadline, then rec
 reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
 deletion apply afterward, including private session records and room-owned game saves.
 
+## Keep a seat while visiting another room
+
+For a finite-capacity player lobby, set `roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 }`
+at creation or use the lobby owner's `configure(roomRef, policy)`. Ordinary room entry is the default.
+An account can hold one lobby commitment per application and workspace. Its seat survives a room switch
+or disconnect. When the last player arrives, absent holders get a return deadline. When the roster drops
+below capacity their countdowns stop. A new fill gives them a fresh window. An accepted arrival in the
+original room secures the seat before its deadline. The room directory counts occupied player seats, including
+provisional arrivals, and reports how many seat holders are online. Quick Join uses the same ordering
+and checks live capacity when admitting a player. Seat holder identities stay private.
+
+Use `RallarRoomLobby` from `@shared-web/browser/rooms/lobby/rallar-room-lobby.ts`. Create
+`new RallarRoomLobby(rallar, scope)` at application scope and call `start()`. Subscribe with
+`onChange(listener)` or inspect `getState().view`. Its private seat identifies the room, arrival or
+presence status, and current deadline. Scoped account WebSocket changes and returning to the foreground
+wake a durable read. Use `release(roomRef)` for an explicit release, `retry()` for an uncertain command,
+and `stop()` when the application ends observation. Stopping observation preserves the commitment.
+
 ## Find players and start together
 
 AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and

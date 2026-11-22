@@ -1,3 +1,4 @@
+import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     AuthenticatedGroupMutationEnqueue,
@@ -369,6 +370,7 @@ export interface GroupStateRouteScopeContext {
 }
 
 export interface GroupStateRouteDependencies {
+    readonly readLobbyOccupancy: GroupStateRepository['readLobbyOccupancy'];
     readonly sessionDirectory: Pick<GroupSessionDirectory, 'read' | 'listForPrincipal'>;
     readonly groupStateService: GroupStateRouteService;
     readonly rtcRttRepository: Pick<RtcRttRepository, 'listMeasurementEntriesForEndpoints'>;

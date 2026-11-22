@@ -24,6 +24,7 @@ import {
 import {
     startGroupRetentionReconciliation
 } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
+import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import { GroupSessionDeadlineService } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
 import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/schedule/group-session-view-watch.ts';
 import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/install-group-session-deadline.ts';
@@ -240,6 +241,11 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     input.backgroundTasks.register(() => appInbox.stop());
     startGroupMaintenance({ runtime, mutation, input });
     startSessionDeadlines({ appInbox, runtime, mutation, input });
+    const lobbyExpiry = new GroupLobbyExpiry({
+        appInbox, database: input.database, groups: mutation.groupsRepository, nowEpochMs: input.nowEpochMs,
+        serviceId: input.serviceId, retentionMs: input.appInboxFinishedRetentionMs
+    });
+    lobbyExpiry.listen(runtime.outboxQueueReader);
     const viewWatches = createViewWatchService(appInbox, mutation, input.nowEpochMs);
     return requireApiV1Runtime({
         runtime,
