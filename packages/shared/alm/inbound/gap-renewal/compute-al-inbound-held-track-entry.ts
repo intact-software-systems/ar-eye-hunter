@@ -40,9 +40,20 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         observations: read.observations,
         orderingSnapshot: read.orderingSnapshot,
         orderingAcceptance: entry,
-        bufferedSnapshots: read.bufferedSnapshots.map((buffered) =>
-            buffered.seq === entry.observation.seq ? { ...buffered, plan } : buffered
-        ),
+        bufferedSnapshots: read.bufferedSnapshots.map((buffered) => {
+            if (buffered.seq === entry.observation.seq) {
+                return { ...buffered, plan };
+            }
+            const priorSeq = entry.passedPriorSeqs[buffered.seq];
+            // A copy released past expired ones waits on the released copy before it, as an omission waits on its prior.
+            return priorSeq === undefined ? buffered : {
+                ...buffered,
+                plan: {
+                    ...buffered.plan,
+                    orderingRuntime: { ...buffered.plan.orderingRuntime, status: 'omitted', priorSeq }
+                }
+            };
+        }),
         supersedence: read.supersedence,
         pendingAck: read.pendingAck,
         acks: read.acks,

@@ -7,6 +7,7 @@ import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
+import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { resolveALInboundWorkDueAtMs } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
@@ -404,7 +405,7 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
     });
 
-    it('still asks a fourth time when the entry\'s commit is refused as expired', async () => {
+    it('runs its last timer again when the end\'s commit is refused as expired, and then enters', async () => {
         const fixture = createRenewalFixture('memory');
         for (const seq of [2, 3]) {
             await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
@@ -417,10 +418,13 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         }
         vi.setSystemTime(START_MS + 7_000);
         const admissionStore = fixture.stores.admissionStore;
+        let refusals = 1;
         const renewal = new ALInboundGapRenewal({
             admissionStore: Object.assign(Object.create(admissionStore) as typeof admissionStore, {
-                commitBundle: async () => 'expired' as const,
-                commitMutations: async () => 'expired' as const
+                commitBundle: async (bundle: ALInboundCommitBundle) => {
+                    refusals -= 1;
+                    return refusals >= 0 ? 'expired' as const : await admissionStore.commitBundle(bundle);
+                }
             }),
             workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
             clock: { nowMs: Date.now },
@@ -432,11 +436,24 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
             diagnostics: undefined
         });
 
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
-        expect(
-            (await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId)
-                .filter((effectId) => effectId.includes('renewal') && effectId.endsWith(':4'))
-        ).toHaveLength(2);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('passes an expired copy between live ones and releases the run past it', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5]);
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
     });
 
     it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {

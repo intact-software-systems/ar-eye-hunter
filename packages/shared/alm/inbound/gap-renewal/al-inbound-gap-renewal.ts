@@ -79,8 +79,7 @@ const HELD_ENTRY_RETRIED: ALInboundGapRenewal.Result = { outcome: { status: 'ret
  * Runs one `renew-gap` timer. While some of its range is still missing it asks again, under the timer's number, for
  * exactly that, and arms the next number's timer; once nothing is missing, or the track is gone, it ends and writes
  * nothing. The last timer of a held start range ends the bounded hold instead of asking, on a track that delivered
- * nothing, since the request before it went unanswered for its whole interval; an end that does not commit for an
- * expired copy leaves the request to go out as before. Every row has a fixed id, so a run that a lease recovery repeats finds what the first run wrote.
+ * nothing, since the request before it went unanswered for its whole interval; an end that does not commit runs again. Every row has a fixed id, so a run that a lease recovery repeats finds what the first run wrote.
  */
 export class ALInboundGapRenewal {
     private readonly dependencies: ALInboundGapRenewal.Dependencies;
@@ -121,8 +120,8 @@ export class ALInboundGapRenewal {
 
     /**
      * Reads the copy that revealed the range, planned as it was admitted, with the track's live copies, and commits the
-     * bounded hold's end there. `undefined` when the track keeps today's behaviour or the end could not commit for an
-     * expired copy, so the last request goes out as before.
+     * bounded hold's end there; a commit refused as a conflict or for an expired copy runs the timer again. `undefined`
+     * when the track keeps today's behaviour, so the last request goes out as before.
      */
     private async endHold(
         payload: ALInboundGapRenewalEffect,
@@ -158,10 +157,8 @@ export class ALInboundGapRenewal {
                 facts
             })
         );
-        if (status === 'conflict') {
-            return HELD_ENTRY_RETRIED;
-        }
-        return status === 'committed' ? { outcome: { status: 'completed' }, wroteWork: true } : undefined;
+        // A copy that expired between the read and the commit is no longer live when the timer runs again.
+        return status === 'committed' ? { outcome: { status: 'completed' }, wroteWork: true } : HELD_ENTRY_RETRIED;
     }
 
     /** The NACK and the repair request, built as an admission builds its own, and the next number's timer. */
