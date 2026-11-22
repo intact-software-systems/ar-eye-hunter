@@ -9263,7 +9263,7 @@ components:
               type: string
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
-              enum: [start, pause, resume, advance-phase, extend-phase, publish-schedule]
+              enum: [start, pause, resume, advance-phase, extend-phase, publish-schedule, pause-program, resume-program]
             phases:
               type: array
               minItems: 1

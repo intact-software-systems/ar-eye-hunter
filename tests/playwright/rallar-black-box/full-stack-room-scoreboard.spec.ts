@@ -140,7 +140,7 @@ test('a returning participant recovers the paused program and the director can r
             return rallar;
         }, sdkUrl);
         const next = await page.waitForFunction(sdk => sdk.deadlineAfter(600000) ?? 0, director);
-        const name = 'game-program';
+        const name = 'program';
         const expectedDirectorEpoch = await director.evaluate((sdk, ref) => sdk.director.status(ref).appointment!.epoch, room);
         const command = { name, expectedDirectorEpoch };
         await director.evaluate(async (sdk, { room, command, next }) => sdk.rooms.publishSchedule(room, {
@@ -162,6 +162,7 @@ test('a returning participant recovers the paused program and the director can r
             return { schedule, position: schedule && rallar.schedulePosition(schedule) };
         }, { room, name, sdkUrl });
         expect(recovered.schedule).toEqual(paused);
+        await expect(guest.getByLabel('Court program')).toHaveText('play · Paused');
         expect(recovered.position).toMatchObject({ status: 'paused', current: { phase: 'play' },
             remainingMs: paused.phases[1]!.startsAtEpochMs - paused.elapsedThroughEpochMs });
         const id = crypto.randomUUID();

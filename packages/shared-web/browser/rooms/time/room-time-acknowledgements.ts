@@ -27,6 +27,15 @@ export function acknowledgedSchedule(metadata: ApiJsonObject, roomClock: RoomSch
     return schedule;
 }
 
+export function acknowledgedProgram(metadata: ApiJsonObject, command: RoomSchedule.Control) {
+    const schedule = readRoomSchedule(metadata, command.name);
+    const expectedStatus = command.operation === 'pause-program' ? 'program-paused' : 'scheduled';
+    if (schedule?.revision !== command.expectedRevision + 1 || schedule.status !== expectedStatus) {
+        throw new Error('Program acknowledgement does not match the requested transition.');
+    }
+    return schedule;
+}
+
 export function acknowledgedClock(metadata: ApiJsonObject, roomClock: RoomClockCommand) {
     const result = readRoomClock(metadata, roomClock.name);
     if (

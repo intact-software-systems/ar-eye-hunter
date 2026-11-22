@@ -5,6 +5,7 @@ export function renderCourtProgram(program: HTMLElement, schedule: RoomSchedule.
     if (!schedule.schedule) return;
     const position = rallar.schedulePosition(schedule.schedule);
     if (schedule.status === 'stale') program.textContent = 'Recovering schedule';
+    else if (position.status === 'paused') program.textContent = (position.current?.phase ?? 'Upcoming') + ' · Paused';
     else if (position.status !== 'current') program.textContent = 'Waiting for server time';
     else {
         const current = position.current?.phase ?? 'Upcoming';

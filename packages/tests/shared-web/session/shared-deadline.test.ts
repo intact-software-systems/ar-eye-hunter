@@ -117,6 +117,8 @@ it('projects a schedule from one calibrated window and withholds the phase acros
         const sample = vi.spyOn(clock, 'readWindow');
         sample.mockReturnValue(Either.ofRight({ earliestEpochMs: 10, latestEpochMs: 20 }));
         expect(facade.schedulePosition(schedule)).toEqual({ status: 'current', current: null, next: phases[0] });
+        expect(facade.schedulePosition({ ...schedule, elapsedThroughEpochMs: 150 }, { maxAuthorityOffsetMs: 5 }))
+            .toEqual({ status: 'current', current: phases[0], next: phases[1] });
         sample.mockReturnValue(Either.ofRight({ earliestEpochMs: 150, latestEpochMs: 195 }));
         expect(facade.schedulePosition(schedule)).toEqual({ status: 'current', current: phases[0], next: phases[1] });
         expect(facade.schedulePosition(schedule, { maxAuthorityOffsetMs: 5 })).toEqual({ status: 'uncertain' });
@@ -127,4 +129,12 @@ it('projects a schedule from one calibrated window and withholds the phase acros
         middleware.mockRestore();
         await clock.close();
     }
+});
+
+it('projects the paused balance from the stored checkpoint with no clock calibration', () => {
+    const phases = [{ phase: 'warmup', startsAtEpochMs: 1000 }, { phase: 'main', startsAtEpochMs: 3000 }];
+    const schedule = { name: 'court', status: 'program-paused' as const, revision: 2, elapsedThroughEpochMs: 1800, phases };
+    expect(createRallarFacade().schedulePosition(schedule)).toEqual({
+        status: 'paused', current: phases[0], next: phases[1], remainingMs: 1200
+    });
 });
