@@ -1,3 +1,4 @@
+import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { changeRoomLobby, readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
@@ -124,7 +125,11 @@ export function computeUpdate(
     if (privateParticipation) {
         const roster = read.roomLobby?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
-        const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
+        const hasSeat = roster?.seats.some(seat => seat.principalId === principalId);
+        if (lobbyChange.operation === 'wait' && roster && !hasSeat && isRoomLobbyRegistrationClosed(roster.registration, facts.attemptAtEpochMs)) {
+            return rejectedByGroupPolicy({command, read, facts, denial:{allowed:false, code:'group-admission-closed', message:'Lobby registration has closed.'}});
+        }
+        const committed = hasSeat ||
             roster?.waiters.some(waiter => waiter.principalId === principalId);
         if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
         // Serialize with room access changes while keeping the account, trace and request out of public room events.

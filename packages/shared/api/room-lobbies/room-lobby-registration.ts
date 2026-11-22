@@ -29,10 +29,14 @@ export function readRoomLobbyRegistration(metadata: ApiJsonObject): RoomLobby.Re
     return readDefinition(record);
 }
 
+export function isRoomLobbyRegistrationClosed(registration: RoomLobby.Registration, nowEpochMs: number): boolean {
+    return registration.closed || (registration.atEpochMs !== null && registration.atEpochMs <= nowEpochMs);
+}
+
 /** Closing the gate releases waiters only. Previously issued offers retain their own expiry. */
 export function closeRegistrationIfDue(lobby: RoomLobby, now: number): RoomLobby {
     const { registration } = lobby;
-    if (registration.closed || registration.atEpochMs === null || now < registration.atEpochMs) return lobby;
+    if (registration.closed || !isRoomLobbyRegistrationClosed(registration, now)) return lobby;
     return { ...lobby, registration: { ...registration, closed: true }, waiters: [] };
 }
 
