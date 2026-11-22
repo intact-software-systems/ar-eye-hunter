@@ -17,7 +17,8 @@ import {
     type GroupMutationCommand
 } from '../group-mutation-contracts.ts';
 import { assertLifecycleGroupMutationCommandInput } from './assert-lifecycle-group-mutation-command-input.ts';
-import { validateGroupMetadataInput, validateGroupLobbyInput } from './validate-group-metadata-input.ts';
+import { validateGroupLobbyInput } from './validate-group-lobby-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { ACTOR_INPUT_KEYS } from './group-mutation-request-validation.ts';
 import {
     validateCreationPublicationGrants,

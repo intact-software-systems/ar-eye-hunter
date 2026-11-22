@@ -49,7 +49,7 @@ import {
     GroupConnectDeniedError,
     GroupRetiredError,
     GroupClockRevisionConflictError,
-    RoomLobbyRegistrationRevisionConflictError,
+    GroupLobbyRegistrationRevisionConflictError,
     GroupDeadlineRevisionConflictError,
     GroupDirectorChangedError,
     type GroupMutationRejectionCode
@@ -290,7 +290,7 @@ export function toGroupMutationRejectionError(
 ):
     | GroupDirectorChangedError
     | GroupClockRevisionConflictError
-    | RoomLobbyRegistrationRevisionConflictError
+    | GroupLobbyRegistrationRevisionConflictError
     | GroupDeadlineRevisionConflictError
     | GroupRetiredError
     | GroupAlreadyExistsError
@@ -304,7 +304,7 @@ export function toGroupMutationRejectionError(
         case 'room-director-changed':
             return new GroupDirectorChangedError(message);
         case 'room-lobby-registration-revision-conflict':
-            return new RoomLobbyRegistrationRevisionConflictError(message);
+            return new GroupLobbyRegistrationRevisionConflictError(message);
         case 'room-clock-revision-conflict':
             return new GroupClockRevisionConflictError(message);
         case 'room-deadline-revision-conflict':
