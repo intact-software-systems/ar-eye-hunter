@@ -71,6 +71,7 @@ describe('outbound control version candidate', () => {
             owner: 'self',
             ownerVersion: Object.freeze({ senderId: 'self', version: 7 }),
             sent: Object.freeze(sent),
+            unreceiptedRepairAudience: undefined,
             history: { kind: 'nacks', values: [] },
             acknowledgements: []
         });
@@ -272,6 +273,7 @@ async function createNackRead(namespace: string): Promise<ALControlAdmissionRead
         owner: 'self',
         ownerVersion: { senderId: 'self', version: 7 },
         sent,
+        unreceiptedRepairAudience: undefined,
         history: { kind: 'nacks', values: [] },
         acknowledgements: [],
         recipientProof: 'carrier-authenticated'
