@@ -17,7 +17,8 @@ import {
     validateGroupInputKeys,
     type GroupInputFieldRule
 } from './group-input-validation-issues.ts';
-import { validateGroupMetadataInput, validateGroupLobbyInput } from './validate-group-metadata-input.ts';
+import { validateGroupLobbyInput } from './validate-group-lobby-input.ts';
+import { validateGroupMetadataInput } from './validate-group-metadata-input.ts';
 import { validateGroupLifecyclePolicyInputShape } from './validate-group-lifecycle-policy-input-shape.ts';
 
 interface GroupMutationOperationInput {

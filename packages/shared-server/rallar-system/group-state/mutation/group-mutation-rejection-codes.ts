@@ -56,7 +56,7 @@ export class GroupDirectorChangedError extends Error {
     readonly code = 'room-director-changed';
 }
 
-export class RoomLobbyRegistrationRevisionConflictError extends Error {
+export class GroupLobbyRegistrationRevisionConflictError extends Error {
     readonly status = 409;
     readonly code = 'room-lobby-registration-revision-conflict';
 }

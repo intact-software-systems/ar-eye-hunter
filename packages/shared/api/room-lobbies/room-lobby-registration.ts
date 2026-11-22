@@ -4,7 +4,9 @@ import type { RoomLobby } from './room-lobby.ts';
 
 export const ROOM_LOBBY_REGISTRATION_METADATA_KEY = 'rallarRoomLobbyRegistration';
 
-function readDefinition(record: Record<string, unknown>): RoomLobby.RegistrationDefinition {
+function decodeRegistrationDefinition(value: unknown): RoomLobby.RegistrationDefinition {
+    const record = requireRecord(value, 'Registration definition');
+    requireExactKeys(record, ['revision', 'atEpochMs'], 'Registration definition');
     requireEpoch(record.revision, 'Registration revision');
     const atEpochMs = record.atEpochMs;
     if (atEpochMs !== null) requireEpoch(atEpochMs, 'Registration cutoff');
@@ -15,7 +17,7 @@ function readDefinition(record: Record<string, unknown>): RoomLobby.Registration
 export function decodeRoomLobbyRegistration(value: unknown): RoomLobby.Registration {
     const record = requireRecord(value, 'Room registration');
     requireExactKeys(record, ['revision', 'atEpochMs', 'closed'], 'Room registration');
-    const definition = readDefinition(record);
+    const definition = decodeRegistrationDefinition({ revision: record.revision, atEpochMs: record.atEpochMs });
     if (typeof record.closed !== 'boolean' || (record.closed && definition.atEpochMs === null)) {
         throw new TypeError('Invalid room registration');
     }
@@ -24,9 +26,7 @@ export function decodeRoomLobbyRegistration(value: unknown): RoomLobby.Registrat
 
 export function readRoomLobbyRegistration(metadata: ApiJsonObject): RoomLobby.RegistrationDefinition | null {
     if (!Object.hasOwn(metadata, ROOM_LOBBY_REGISTRATION_METADATA_KEY)) return null;
-    const record = requireRecord(metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY], 'Registration definition');
-    requireExactKeys(record, ['revision', 'atEpochMs'], 'Registration definition');
-    return readDefinition(record);
+    return decodeRegistrationDefinition(metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY]);
 }
 
 export function isRoomLobbyRegistrationClosed(registration: RoomLobby.Registration, nowEpochMs: number): boolean {
