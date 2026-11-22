@@ -741,7 +741,7 @@ resyncs its next delivered copy. A recorded frozen copy below a recipient's posi
 tracks, and so is a copy of a WS send, which carries no frozen audience: over `ws` the server skips a copy below a
 recorded position before it is sent. After each committed admission, replays included, and after a bounded hold's
 end that enters at a copy (below),
-[`recordALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
+[`recordALInboundOrderingPosition`](./admission/record-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
 carrier. Its bounded dimensions are `status` (four values) and `carrier` (`rtc`, `ws`); `workerId`, `trackKey` and the

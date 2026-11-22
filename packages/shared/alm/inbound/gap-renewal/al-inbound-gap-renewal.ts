@@ -1,8 +1,8 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import { recordALInboundOrderingPosition } from '../admission/record-al-inbound-ordering-position.ts';
 import type { ALOrderingObserver } from '../admission/resolve-al-ordering-observer-role.ts';
-import { recordALInboundOrderingPosition } from '../admission/to-al-inbound-ordering-position.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundCommitBundle,
@@ -185,7 +185,8 @@ export class ALInboundGapRenewal {
             orderingObserver
         });
         const entry = this.computeHeldEntry(payload, read);
-        if (entry?.kind !== 'entered') {
+        // The commit is guarded by this copy's read: a lower copy buffered since the track's read waits for the next run.
+        if (entry?.kind !== 'entered' || entry.msg.id.msgId !== surface.msg.id.msgId) {
             return entry === undefined ? undefined : HELD_ENTRY_RETRIED;
         }
         const held = computeALInboundHeldTrackEntry({
@@ -207,7 +208,7 @@ export class ALInboundGapRenewal {
     /** The one held-entry rule, over the track as a read found it. */
     private computeHeldEntry(
         payload: ALInboundGapRenewalEffect,
-        read: Pick<ALInboundOrderingTrackRead, 'observations' | 'nowMs' | 'orderingTrackTtlMs'>
+        read: ALInboundOrderingTrackRead
     ): ALOrderingHeldEntry | undefined {
         const ordering = read.observations.ordering;
         return computeALOrderingHeldEntry({

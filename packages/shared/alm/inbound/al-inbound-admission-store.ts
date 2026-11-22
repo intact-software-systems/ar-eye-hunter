@@ -503,6 +503,21 @@ export function createVolatileALInboundAdmissionStore(
 }
 
 namespace ProviderBackedALInboundAdmissionStore {
+    /**
+     * The rows observations read: a message's, and each keyed row present here. A set of observations names its own,
+     * so the commit guard reads them again from what it observed.
+     */
+    export interface ObservedRows {
+        readonly msgId: string;
+        readonly senderId: string;
+        readonly dedup?: Readonly<{ key: string; }>;
+        readonly claim?: Readonly<{ key: string; }>;
+        readonly supersedence?: Readonly<{ key?: string; }>;
+        readonly ordering?: Readonly<{ trackKey: string; }>;
+        readonly buffered?: Readonly<{ trackKey: string; seq: number; }>;
+        readonly deliveryProgress?: Readonly<{ trackKey: string; }>;
+    }
+
     export interface OrderingRead {
         readonly trackKey: string | undefined;
         readonly snapshot: ALOrderingTrackSnapshot | undefined;
@@ -611,23 +626,14 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readOrderingTrack(input: ReadALInboundOrderingTrackInput): Promise<ALInboundOrderingTrackRead> {
         const { trackKey, message, nowMs } = input;
-        const named: ALInboundAdmissionObservations = {
+        const rows = {
             msgId: message.msgId,
             senderId: message.senderId,
-            messageOwner: undefined,
-            dedup: undefined,
-            claim: undefined,
-            ordering: { trackKey, snapshot: undefined, buffered: [], evicted: false },
-            buffered: undefined,
-            deliveryProgress: { trackKey, value: undefined },
-            supersedence: {},
-            pendingAck: undefined,
-            acks: [],
-            nacks: [],
-            controlOwners: undefined
+            ordering: { trackKey },
+            deliveryProgress: { trackKey }
         };
         return await this.backend.readWithin(async (session) => ({
-            observations: await this.readCurrentObservations(session, named, nowMs),
+            observations: await this.readCurrentObservations(session, rows, nowMs),
             nowMs,
             orderingTrackTtlMs: this.orderingTrackTtlMs
         }));
@@ -909,34 +915,32 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
     }
 
-    /** What the store holds now for each row `observed` names, in the same shape. */
+    /** What the store holds now for the rows `rows` names, as observations. */
     private async readCurrentObservations(
         database: Pick<ALAdmissionBackend, 'read' | 'list'>,
-        observed: ALInboundAdmissionObservations,
+        rows: ProviderBackedALInboundAdmissionStore.ObservedRows,
         nowMs: number
     ): Promise<ALInboundAdmissionObservations> {
-        const { msgId, senderId } = observed;
+        const { msgId, senderId, dedup, ordering, buffered } = rows;
         const reference = { database, namespace: this.namespace, msgId, senderId };
-        const dedup = observed.dedup === undefined ? undefined : {
-            key: observed.dedup.key,
-            expiresAtTimestamp: await database.read(this.toDedupKey(observed.dedup.key), decodeALAdmissionNumber)
-        };
         return {
-            ...observed,
+            msgId,
+            senderId,
             messageOwner: await readALInboundMessageOwner(reference),
             ...await readStoredAcknowledgements(reference),
             controlOwners: await readStoredControlOwnerIndex(database, this.namespace, msgId),
-            supersedence: await this.readSupersedenceState(database, observed.supersedence.key, msgId),
-            dedup,
-            claim: await this.readClaim(database, observed.claim?.key),
-            ordering: observed.ordering === undefined ? undefined : {
-                ...await this.readOrderingState(database, observed.ordering.trackKey, nowMs),
-                trackKey: observed.ordering.trackKey
+            supersedence: await this.readSupersedenceState(database, rows.supersedence?.key, msgId),
+            dedup: dedup && {
+                key: dedup.key,
+                expiresAtTimestamp: await database.read(this.toDedupKey(dedup.key), decodeALAdmissionNumber)
             },
-            buffered: observed.buffered === undefined
-                ? undefined
-                : await this.readBufferedMessage(database, observed.buffered.trackKey, observed.buffered.seq),
-            deliveryProgress: await this.readDeliveryProgress(database, observed.deliveryProgress?.trackKey)
+            claim: await this.readClaim(database, rows.claim?.key),
+            ordering: ordering && {
+                ...await this.readOrderingState(database, ordering.trackKey, nowMs),
+                trackKey: ordering.trackKey
+            },
+            buffered: buffered && await this.readBufferedMessage(database, buffered.trackKey, buffered.seq),
+            deliveryProgress: await this.readDeliveryProgress(database, rows.deliveryProgress?.trackKey)
         };
     }
 

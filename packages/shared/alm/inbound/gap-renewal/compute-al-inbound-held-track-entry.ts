@@ -1,6 +1,6 @@
 import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 import { computeALInboundWitnessedCompletedThrough } from '../admission/al-inbound-delivery-progress.ts';
-import type { ALInboundOrderingPositionRecord } from '../admission/to-al-inbound-ordering-position.ts';
+import type { ALInboundOrderingPositionStatement } from '../admission/record-al-inbound-ordering-position.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundCommitBundle,
@@ -26,7 +26,7 @@ export interface ComputeALInboundHeldTrackEntryInput {
 /** The bundle that ends a hold at a copy, and that copy as its committed entry names it. */
 export interface ALInboundHeldTrackEntry {
     readonly bundle: ALInboundCommitBundle;
-    readonly entered: Omit<ALInboundOrderingPositionRecord, 'workerId'>;
+    readonly entered: Omit<ALInboundOrderingPositionStatement, 'workerId'>;
 }
 
 /**

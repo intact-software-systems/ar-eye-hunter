@@ -10,7 +10,11 @@ import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
-import type { ALInboundCommitBundle, ALInboundGapRenewalEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundCommitBundle,
+    ALInboundGapRenewalEffect
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -299,8 +303,7 @@ describe('a receiver whose ordered track has a gap', () => {
             throw new Error('The gap admission armed no timer');
         }
         vi.setSystemTime(START_MS + 1_000);
-        const admissionStore = fixture.stores.admissionStore;
-        const renewal = createDirectRenewal(fixture, async (bundle) => await admissionStore.commitBundle(bundle));
+        const { renewal } = createDirectRenewal(fixture, {});
         await renewal.renew(timer, timer.payload);
         const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
         await renewal.renew(timer, timer.payload);
@@ -474,13 +477,17 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         vi.setSystemTime(START_MS + 7_000);
         const admissionStore = fixture.stores.admissionStore;
         let refusals = 1;
-        const renewal = createDirectRenewal(fixture, async (bundle) => {
-            refusals -= 1;
-            return refusals >= 0 ? 'expired' as const : await admissionStore.commitBundle(bundle);
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                refusals -= 1;
+                return refusals >= 0 ? 'expired' as const : await admissionStore.commitBundle(bundle);
+            }
         });
 
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
         await advanceTo(fixture, 7_000);
 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
@@ -497,9 +504,11 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         const timer = await readLastRenewalTimer(fixture);
         vi.setSystemTime(START_MS + 7_000);
         const admissionStore = fixture.stores.admissionStore;
-        const renewal = createDirectRenewal(fixture, async (bundle) => {
-            vi.setSystemTime(START_MS + COPY_EXPIRING_AT_END_TTL_MS + LATE_CLAIM_MS);
-            return await admissionStore.commitBundle(bundle);
+        const { renewal } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                vi.setSystemTime(START_MS + COPY_EXPIRING_AT_END_TTL_MS + LATE_CLAIM_MS);
+                return await admissionStore.commitBundle(bundle);
+            }
         });
 
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
@@ -508,6 +517,33 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
         expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('runs again when a lower copy is buffered between the track\'s read and the read of its lowest copy, which the hold then enters at', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [3, 4]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        let lowerArrived = false;
+        const { renewal } = createDirectRenewal(fixture, {
+            readIncomingMessage: async (input) => {
+                if (!lowerArrived) {
+                    lowerArrived = true;
+                    await fixture.runtime.admitIncomingMessage(recordedMessage(2), INBOUND_TEST_SOURCE);
+                }
+                return await admissionStore.readIncomingMessage(input);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        // The lane's own run of the same timer, due now, ends the hold at the lower copy.
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3, 4]);
     });
 
     it('passes an expired copy between live ones and releases the run past it', async () => {
@@ -688,14 +724,20 @@ async function readLastRenewalTimer(
     return { ...timer, payload: timer.payload };
 }
 
-/** A renewal over the fixture's stores whose bundle commits go through `commitBundle`. */
+/** A renewal over the fixture's stores, with `store`'s reads and commits in place of theirs, and the events it states. */
+interface DirectRenewal {
+    readonly renewal: ALInboundGapRenewal;
+    readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+}
+
 function createDirectRenewal(
     fixture: InboundTestRuntime,
-    commitBundle: (bundle: ALInboundCommitBundle) => Promise<'committed' | 'conflict' | 'expired'>
-): ALInboundGapRenewal {
+    store: Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage'>>
+): DirectRenewal {
     const admissionStore = fixture.stores.admissionStore;
-    return new ALInboundGapRenewal({
-        admissionStore: Object.assign(Object.create(admissionStore) as typeof admissionStore, { commitBundle }),
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const renewal = new ALInboundGapRenewal({
+        admissionStore: Object.assign(Object.create(admissionStore) as typeof admissionStore, store),
         workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
         clock: { nowMs: Date.now },
         orderingObserver: 'addressed',
@@ -703,9 +745,12 @@ function createDirectRenewal(
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
         stretch: 1,
         receiptProofs: { kind: 'carrier-authenticated' },
-        diagnostics: undefined,
+        diagnostics: (event) => {
+            diagnostics.push(event);
+        },
         effectWorkerId: 'al-inbound:gap-renewal-direct'
     });
+    return { renewal, diagnostics };
 }
 
 /** When the memory backend drops a row, read without expiring it. */
