@@ -331,10 +331,12 @@ async function readGroupMutationAttempt(
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationRead> {
     const { read, authSession } = await readGroupMutation(
-        owners.repositoryFor(owners.dependencies.runtimeRepository),
-        ingress.command,
-        resolveGroupMutationAuthSessionId(ingress),
-        ingress.facts.roomLobbyDefault !== undefined
+        {
+        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        command: ingress.command,
+        authSessionId: resolveGroupMutationAuthSessionId(ingress),
+        lobbyDefault: ingress.facts.lobbyDefault !== undefined
+    }
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return await readGroupMutationFences(owners, ingress, read);
@@ -345,10 +347,12 @@ async function readGroupMutationAttemptWithSnapshot(
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationSnapshotRead> {
     const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
-        owners.repositoryFor(owners.dependencies.runtimeRepository),
-        ingress.command,
-        resolveGroupMutationAuthSessionId(ingress),
-        ingress.facts.roomLobbyDefault !== undefined
+        {
+        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        command: ingress.command,
+        authSessionId: resolveGroupMutationAuthSessionId(ingress),
+        lobbyDefault: ingress.facts.lobbyDefault !== undefined
+    }
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };

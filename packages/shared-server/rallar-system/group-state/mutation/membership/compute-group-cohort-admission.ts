@@ -1,4 +1,4 @@
-import { stageRoomLobbyRead } from '../../lobby/stage-room-lobby-read.ts';
+import { stageGroupLobbyRead } from '../../lobby/stage-group-lobby-read.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 import { validateGroupCohortReads } from './validate-group-cohort-reads.ts';
@@ -66,10 +66,10 @@ function stageAdmissions(
     let group = initialGroup;
     let activeMembers = first.read.activeMembers;
     let sessionReservations = first.read.sessionReservations;
-    let roomLobby = first.read.roomLobby;
-    if (roomLobby) {
-        const accounts = new Map(participants.flatMap(participant => participant.read.roomLobby?.accounts ?? []).map(account => [account.principalId, account]));
-        roomLobby = { ...roomLobby, accounts: [...accounts.values()] };
+    let lobbyState = first.read.lobbyState;
+    if (lobbyState) {
+        const accounts = new Map(participants.flatMap(participant => participant.read.lobbyState?.accounts ?? []).map(account => [account.principalId, account]));
+        lobbyState = { ...lobbyState, accounts: [...accounts.values()] };
     }
     const admittedPrincipals = new Set<string>();
     const mutations: GroupMutationComputedWrite[] = [];
@@ -78,7 +78,7 @@ function stageAdmissions(
         if (admittedPrincipals.has(principalId)) {
             continue;
         }
-        const read: GroupMutationRead = { ...participant.read, group, activeMembers, sessionReservations, roomLobby };
+        const read: GroupMutationRead = { ...participant.read, group, activeMembers, sessionReservations, lobbyState };
         const decision = computeParticipantAdmission(participant, read);
         if (decision.status !== 'admitted') {
             return decision;
@@ -115,7 +115,7 @@ function stageAdmissions(
                 }
             };
         }
-        roomLobby = stageRoomLobbyRead(roomLobby, computed.roomLobbyEffects, participant.facts.nowEpochMs);
+        lobbyState = stageGroupLobbyRead(lobbyState, computed.lobbyEffects, participant.facts.nowEpochMs);
         activeMembers = replaceActiveMembers(activeMembers, computed.members);
         mutations.push(computed);
     }

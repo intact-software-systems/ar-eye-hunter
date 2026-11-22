@@ -75,9 +75,9 @@ export function computeJoin(
         : existing?.status === 'active'
         ? existing.role
         : 'member';
-    const lobby = read.roomLobby?.lobby?.value;
+    const lobby = read.lobbyState?.lobby?.value;
     const existingSeat = lobby?.seats.find(seat => seat.principalId === command.targetPrincipalId);
-    const deadline = existingSeat?.admissionWindow ?? existingSeat?.returnWindow;
+    const deadline = existingSeat?.admissionWindow ?? existingSeat?.returnWindow ?? existingSeat?.offerWindow;
     const requiresSeat = role !== 'spectator' && lobby && (!existingSeat || (deadline && deadline.dueAtEpochMs <= facts.attemptAtEpochMs));
     if (existing?.status === 'active' && existing.role === role && !requiresSeat) {
         return noOp(command, read, facts);

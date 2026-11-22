@@ -33,8 +33,8 @@ export function validateGroupCohortReads(
             throw new TypeError('Group cohort participants must name the same destination');
         }
         if (
-            participant.read.roomLobby?.lobby?.entry.value !== first.read.roomLobby?.lobby?.entry.value ||
-            participant.read.roomLobby?.lobby?.entry.revision !== first.read.roomLobby?.lobby?.entry.revision ||
+            participant.read.lobbyState?.lobby?.entry.value !== first.read.lobbyState?.lobby?.entry.value ||
+            participant.read.lobbyState?.lobby?.entry.revision !== first.read.lobbyState?.lobby?.entry.revision ||
             participant.read.group?.entry.revision !== first.read.group?.entry.revision ||
             participant.read.group?.entry.value !== first.read.group?.entry.value
         ) {

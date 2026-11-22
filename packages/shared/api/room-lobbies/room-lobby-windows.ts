@@ -36,3 +36,24 @@ export function reconcileReturnWindows(lobby: RoomLobby, nowEpochMs: number): Ro
     });
     return { ...lobby, seats: roster };
 }
+
+export function lobbyWindows(lobby: Pick<RoomLobby, 'seats' | 'waiters' | 'capacityClaims'> | null): Map<string, RoomLobby.ReturnWindow> {
+    const windows = new Map<string, RoomLobby.ReturnWindow>();
+    if (!lobby) return windows;
+    if (lobby.capacityClaims) {
+        const { generation, dueAtEpochMs } = lobby.capacityClaims;
+        windows.set(JSON.stringify([generation, dueAtEpochMs]), { generation, dueAtEpochMs });
+    }
+    for (const waiter of lobby.waiters) {
+        if (waiter.eligibleUntilEpochMs !== null) {
+            const window = { generation: waiter.generation, dueAtEpochMs: waiter.eligibleUntilEpochMs };
+            windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
+        }
+    }
+    for (const seat of lobby.seats) {
+        for (const window of [seat.admissionWindow, seat.returnWindow, seat.offerWindow]) {
+            if (window) windows.set(JSON.stringify([window.generation, window.dueAtEpochMs]), window);
+        }
+    }
+    return windows;
+}

@@ -1,5 +1,6 @@
-import { ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby.ts';
+import { ROOM_LOBBY_METADATA_KEY, decodeRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
 import { assertRoomClockMutation, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { assertRoomDeadlineChange, ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
@@ -53,7 +54,7 @@ export function validateGroupMetadataInput(
     return issues;
 }
 
-export function validateRoomLobbyInput(operation: 'createGroup' | 'updateGroup', value: unknown): readonly TypeError[] {
+export function validateGroupLobbyInput(operation: 'createGroup' | 'updateGroup', value: JsonWireValue | undefined): readonly TypeError[] {
     if (value === undefined) return [];
     try {
         if (operation === 'createGroup') {

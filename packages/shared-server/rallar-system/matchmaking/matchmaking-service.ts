@@ -1,4 +1,5 @@
-import { roomLobbyApplicationDefault, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { roomLobbyApplicationDefault } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 import type { MatchmakingMutationResult } from '@shared/api/matchmaking/matchmaking-request.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -33,7 +34,7 @@ import type { MatchmakingRepository } from './matchmaking-repository.ts';
 
 export namespace MatchmakingService {
     export interface Config {
-        readonly roomLobbyPoliciesByApplication?: Readonly<Record<string, RoomLobby.Policy>>;
+        readonly lobbyPoliciesByApplication?: Readonly<Record<string, RoomLobby.Policy>>;
         readonly serviceId: string;
         readonly finishedRetentionMs: number;
         readonly defaultPolicy: MatchmakingPolicy;
@@ -223,7 +224,7 @@ export class MatchmakingService {
         const proposal = pendingAdmission(pool.pool.proposals, command, nowEpochMs);
         const sessions = await this.readAdmissionSessions(command, proposal, actor, partyAuthority.sessions);
         const admission = proposal === null ? null : await readMatchmakingAdmission({
-            roomLobbyDefault: roomLobbyApplicationDefault(this.config.roomLobbyPoliciesByApplication, command.scope.applicationId),
+            lobbyDefault: roomLobbyApplicationDefault(this.config.lobbyPoliciesByApplication, command.scope.applicationId),
             groups: this.dependencies.groups,
             proposal,
             command,

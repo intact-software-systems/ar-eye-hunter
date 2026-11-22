@@ -43,6 +43,7 @@ interface OpenApiDocument {
 interface GroupResponseSchemaContract {
     readonly reference?: string;
     readonly arrayItemReference?: string;
+    readonly oneOf?: readonly OpenApiSchema[];
 }
 
 interface GroupOperationContract {
@@ -87,7 +88,11 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
         method: 'put',
         requestSchema: 'UpdateGroupRequest',
         status: '200',
-        responseSchema: { reference: 'GroupSnapshot' }
+        responseSchema: { oneOf: [
+            { $ref: '#/components/schemas/GroupSnapshot' },
+            { type: 'object', required: ['roomRef'], additionalProperties: false,
+                properties: { roomRef: { $ref: '#/components/schemas/GroupRef' } } }
+        ] }
     },
     {
         path: `${GROUP_ID_PATH}/events`,
@@ -408,7 +413,10 @@ function assertOpenApiResponseSchema(
         ?.content?.['application/json']?.schema;
     const expectedReference = expected.responseSchema.reference;
 
-    if (expectedReference) {
+    if (expected.responseSchema.oneOf) {
+        assert.deepEqual(responseSchema?.oneOf, expected.responseSchema.oneOf);
+    }
+    else if (expectedReference) {
         assert.equal(
             responseSchema?.$ref,
             `#/components/schemas/${expectedReference}`

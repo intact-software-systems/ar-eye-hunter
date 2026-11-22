@@ -62,7 +62,7 @@ async function readJoin(
             reason: null
         }
     };
-    const { read } = await readGroupMutation(repository, command, null);
+    const { read } = await readGroupMutation({ repository, command, authSessionId: null });
     return {
         command,
         read: { ...read, targetAdmission: await repository.findPresenceAdmissionEntry({ ...groupRef('pure-room'), principalId }) ?? null },

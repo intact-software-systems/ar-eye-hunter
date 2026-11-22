@@ -1,3 +1,4 @@
+import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import {
     readGroupSessionSchedule,
     toGroupSessionTiming,
@@ -125,6 +126,11 @@ function computeAccountReservationChange(mutation: GroupSessionMutation): GroupM
         throw new TypeError('Account reservation change requires reserve or withdraw');
     }
     if (action === 'reserve') {
+        const lobby = read.lobbyState?.lobby?.value;
+        const registered = reservations.value.principalIds.includes(principalId) || lobby?.seats.some(seat => seat.principalId === principalId);
+        if (lobby && !registered && isRoomLobbyRegistrationClosed(lobby.registration, facts.attemptAtEpochMs)) {
+            return rejectedByGroupPolicy({command, read, facts, denial:{allowed:false, code:'group-admission-closed', message:'Lobby registration has closed.'}});
+        }
         const credentials = canUseGroupAdmissionCredentials({
             snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
             actor: { principalId, sessionId: command.input.actorSessionId ?? undefined },
@@ -140,7 +146,7 @@ function computeAccountReservationChange(mutation: GroupSessionMutation): GroupM
     const result = computeGroupSessionReservation({
         schedule,
         reservations: reservations.value,
-        activePlayerPrincipalIds: read.roomLobby?.lobby?.value.seats.map(seat => seat.principalId) ?? mutation.activeMembers.filter((member) => !isGroupSpectator(member)).map((member) =>
+        activePlayerPrincipalIds: read.lobbyState?.lobby?.value.seats.map(seat => seat.principalId) ?? mutation.activeMembers.filter((member) => !isGroupSpectator(member)).map((member) =>
             member.principalId
         ),
         nowEpochMs: facts.attemptAtEpochMs,

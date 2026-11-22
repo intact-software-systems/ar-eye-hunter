@@ -1,5 +1,8 @@
+import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
-import { changeRoomLobby, readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY, ROOM_LOBBY_REGISTRATION_METADATA_KEY, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
@@ -79,7 +82,7 @@ export function computeUpdate(
     if (privateParticipation && !command.input.actorPrincipalId) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
     }
-    if (lobbyChange?.operation === 'wait' && !read.roomLobby?.lobby) {
+    if (lobbyChange?.operation === 'wait' && !read.lobbyState?.lobby) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'This room has no lobby queue.' });
     }
     const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
@@ -122,9 +125,13 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        const roster = read.roomLobby?.lobby?.value;
+        const roster = read.lobbyState?.lobby?.value;
         const principalId = command.input.actorPrincipalId;
-        const committed = roster?.seats.some(seat => seat.principalId === principalId) ||
+        const hasSeat = roster?.seats.some(seat => seat.principalId === principalId);
+        if (lobbyChange.operation === 'wait' && roster && !hasSeat && isRoomLobbyRegistrationClosed(roster.registration, facts.attemptAtEpochMs)) {
+            return rejectedByGroupPolicy({command, read, facts, denial:{allowed:false, code:'group-admission-closed', message:'Lobby registration has closed.'}});
+        }
+        const committed = hasSeat ||
             roster?.waiters.some(waiter => waiter.principalId === principalId);
         if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
         // Serialize with room access changes while keeping the account, trace and request out of public room events.
@@ -147,7 +154,7 @@ export function computeUpdate(
         next = { ...next, metadata };
     }
     if (lobbyChange?.operation === 'set-registration-cutoff') {
-        const observed = read.roomLobby?.lobby?.value;
+        const observed = read.lobbyState?.lobby?.value;
         if (!observed) return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Registration requires a managed room.' });
         const updated = changeRoomLobby(observed, { kind:'set-registration-cutoff', expectedRevision:lobbyChange.expectedRevision, atEpochMs:lobbyChange.atEpochMs }, facts.attemptAtEpochMs);
         if (updated.rejection) {
