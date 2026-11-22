@@ -127,10 +127,14 @@ export function computeALInboundUnreceiptedGapNackAdmission(
     read: ALInboundUnreceiptedGapNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    return toALInboundRowlessGapNackCandidate(read, read.owner, {
-        toPeerId: read.parentPeerId,
-        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
-        upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
+    return toALInboundRowlessGapNackCandidate({
+        read,
+        observedMessageOwner: read.owner,
+        upward: {
+            toPeerId: read.parentPeerId,
+            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
+            upwardAudiencePeerIds: resolveALFrozenMulticastAudience(read.msg.targets)?.recipientPeerIds
+        }
     }, retention);
 }
 
@@ -163,22 +167,30 @@ export function computeALInboundUnheldGapNackAdmission(
         supersedenceKey: null,
         deliveredLocally: false
     };
-    return toALInboundRowlessGapNackCandidate(
-        { ...read, owner },
-        undefined,
-        { toPeerId: parent.peerId, expireAtTimestamp: undefined, upwardAudiencePeerIds: undefined },
-        retention
-    );
+    return toALInboundRowlessGapNackCandidate({
+        read: { ...read, owner },
+        observedMessageOwner: undefined,
+        upward: { toPeerId: parent.peerId, expireAtTimestamp: undefined, upwardAudiencePeerIds: undefined }
+    }, retention);
 }
 
-/** A forward of a child's gap NACK the relay keeps no row for, toward `upward`'s parent. */
+/** A forward of a child's gap NACK the relay keeps no row for. */
+interface ToALInboundRowlessGapNackCandidateInput {
+    readonly read: Pick<
+        ALInboundNackAdmissionRead,
+        'namespace' | 'nack' | 'owner' | 'nowMs' | 'controlMsgId' | 'traceId'
+    >;
+    readonly observedMessageOwner: ALInboundMessageOwner | undefined;
+    /** The parent the NACK goes to, how long it lives, and whom the origin counts. */
+    readonly upward: ALInboundUpwardControlContext['pending'];
+}
+
 function toALInboundRowlessGapNackCandidate(
-    read: Pick<ALInboundNackAdmissionRead, 'namespace' | 'nack' | 'owner' | 'nowMs' | 'controlMsgId' | 'traceId'>,
-    observedMessageOwner: ALInboundMessageOwner | undefined,
-    upward: ALInboundUpwardControlContext['pending'],
+    input: ToALInboundRowlessGapNackCandidateInput,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const { namespace, nack, owner, nowMs, controlMsgId, traceId } = read;
+    const { observedMessageOwner, upward } = input;
+    const { namespace, nack, owner, nowMs, controlMsgId, traceId } = input.read;
     // The commit observes the message's control rows absent: a row-less forward writes none.
     return {
         read: {

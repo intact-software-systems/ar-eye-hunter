@@ -1,10 +1,11 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALPeerRepairControlMessage } from '../../../al-contracts/al-control.ts';
+import type { ALPeerControlMessage, ALPeerRepairControlMessage } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type {
     ALControlAdmissionRead,
     ALOutboundUnreceiptedRepairAudience
 } from '../compute-al-outbound-control-admission.ts';
+import { isALOutboundRelayedGapNack } from './is-al-outbound-relayed-gap-nack.ts';
 
 /**
  * A repair or NACK comes from a unicast's addressee, from any peer its receipt expects, from a session a server
@@ -48,6 +49,32 @@ export function isALOutboundRepairAuthorityControl(control: ALPeerRepairControlM
 /** A retained send that tracks no receipt and holds no receipt row, whose repair the frozen audience may ask for (6c). */
 export function isALOutboundUnreceiptedSend(read: Pick<ALControlAdmissionRead, 'sent' | 'pending'>): boolean {
     return read.sent?.policy.ackTracking === null && read.pending === undefined;
+}
+
+/** Whether an admission reads the send's canonical copy: for a send that tracks no receipt, or a relayed gap NACK. */
+export function readsALOutboundCanonicalRepairFacts(
+    read: Pick<ALControlAdmissionRead, 'sent' | 'pending'>,
+    control: ALPeerControlMessage
+): boolean {
+    return isALOutboundUnreceiptedSend(read) || isALOutboundRelayedGapNack(control);
+}
+
+/**
+ * What an admission reads of the send's canonical copy `msg`: who may ask for the repair of a send that tracks no
+ * receipt (6c), and whether a relayed gap NACK's send is a room send its repair authority judges (6d).
+ */
+export function toALOutboundCanonicalRepairFacts(
+    read: Pick<ALControlAdmissionRead, 'sent' | 'pending'>,
+    control: ALPeerControlMessage,
+    msg: ALMessage | undefined
+): Pick<ALControlAdmissionRead, 'unreceiptedRepairAudience' | 'isRoomRepairedRelayedGapNack'> {
+    return {
+        unreceiptedRepairAudience: isALOutboundUnreceiptedSend(read)
+            ? toALOutboundUnreceiptedRepairAudience(msg)
+            : undefined,
+        isRoomRepairedRelayedGapNack: isALOutboundRelayedGapNack(control) && msg !== undefined &&
+            isRoomScopedALMessage(msg)
+    };
 }
 
 /**

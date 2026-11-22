@@ -1,4 +1,4 @@
-import { isRoomScopedALMessage, type ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import {
     decodeALPeerControlMessage,
@@ -61,10 +61,9 @@ import {
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
 import {
-    isALOutboundUnreceiptedSend,
-    toALOutboundUnreceiptedRepairAudience
+    readsALOutboundCanonicalRepairFacts,
+    toALOutboundCanonicalRepairFacts
 } from './is-al-outbound-expected-repair-peer.ts';
-import { isALOutboundRelayedGapNack } from './is-al-outbound-relayed-gap-nack.ts';
 import {
     readALOutboundRecipientProof,
     toALOutboundRefusedControlAdmission,
@@ -382,14 +381,10 @@ export class ALOutboundControlAdmission<TPrepared> {
     ): Promise<Pick<ALControlAdmissionRead, 'sent' | 'unreceiptedRepairAudience' | 'isRoomRepairedRelayedGapNack'>> {
         const msgId = controlTargetMsgId(parsed);
         const sent = await this.reads.readStoredMessage(session, msgId);
-        const unreceipted = isALOutboundUnreceiptedSend({ sent, pending });
-        const relayedGapNack = isALOutboundRelayedGapNack(parsed);
-        const msg = unreceipted || relayedGapNack ? (await this.reads.readSentMessage(session, msgId))?.msg : undefined;
-        return {
-            sent,
-            unreceiptedRepairAudience: unreceipted ? toALOutboundUnreceiptedRepairAudience(msg) : undefined,
-            isRoomRepairedRelayedGapNack: relayedGapNack && msg !== undefined && isRoomScopedALMessage(msg)
-        };
+        const msg = readsALOutboundCanonicalRepairFacts({ sent, pending }, parsed)
+            ? (await this.reads.readSentMessage(session, msgId))?.msg
+            : undefined;
+        return { sent, ...toALOutboundCanonicalRepairFacts({ sent, pending }, parsed, msg) };
     }
 
     /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
