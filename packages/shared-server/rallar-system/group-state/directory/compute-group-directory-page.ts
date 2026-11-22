@@ -31,6 +31,7 @@ export interface ComputeGroupDirectoryPageInput {
 interface GroupDirectoryCandidate {
     readonly snapshot: GroupSnapshot;
     readonly position: GroupDirectoryCursor;
+    readonly playerCount: number;
 }
 
 const PEER_RTT_MAX_SAMPLE_AGE_MS = 60_000;
@@ -43,24 +44,28 @@ export function computeGroupDirectoryPage(
     const peerRtt = computeRecentPeerRtt(input);
     const ordered = snapshots
         .filter((snapshot) => matchesGroupDirectoryQuery(snapshot, query))
-        .map((snapshot): GroupDirectoryCandidate => ({
-            snapshot,
-            position: {
-                order: query.order,
-                groupId: snapshot.group.groupId,
-                onlineMemberCount: input.lobbyOccupancy?.get(snapshot.group.groupId)?.onlinePlayerCount ?? countOnlineGroupPlayers(snapshot),
-                peerRttMs: query.order === 'peer-rtt'
-                    ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
-                    : null
-            }
-        }))
+        .map((snapshot): GroupDirectoryCandidate => {
+            const occupancy = input.lobbyOccupancy?.get(snapshot.group.groupId);
+            return {
+                snapshot,
+                playerCount: occupancy?.playerCount ?? countGroupPlayers(snapshot),
+                position: {
+                    order: query.order,
+                    groupId: snapshot.group.groupId,
+                    onlineMemberCount: occupancy?.onlinePlayerCount ?? countOnlineGroupPlayers(snapshot),
+                    peerRttMs: query.order === 'peer-rtt'
+                        ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
+                        : null
+                }
+            };
+        })
         .toSorted((left, right) => compareDirectoryPositions(left.position, right.position))
         .filter((candidate) => query.after === null || compareDirectoryPositions(candidate.position, query.after) > 0);
     const page = ordered.slice(0, query.limit);
     const last = page.at(-1);
 
     return {
-        entries: page.map((candidate) => toGroupDirectoryEntry(candidate, defaultMaxMembers, input.lobbyOccupancy?.get(candidate.snapshot.group.groupId)?.playerCount ?? countGroupPlayers(candidate.snapshot))),
+        entries: page.map((candidate) => toGroupDirectoryEntry(candidate, defaultMaxMembers)),
         nextCursor: last && ordered.length > page.length
             ? encodeGroupDirectoryCursor(last.position)
             : null
@@ -150,10 +155,9 @@ function computeGroupPeerRtt(
 
 function toGroupDirectoryEntry(
     candidate: GroupDirectoryCandidate,
-    defaultMaxMembers: number | null,
-    playerCount: number
+    defaultMaxMembers: number | null
 ): GroupDirectoryEntry {
-    const { snapshot, position } = candidate;
+    const { snapshot, position, playerCount } = candidate;
     const group = snapshot.group;
     const maxMembers = group.maxMembers ?? defaultMaxMembers;
     return {

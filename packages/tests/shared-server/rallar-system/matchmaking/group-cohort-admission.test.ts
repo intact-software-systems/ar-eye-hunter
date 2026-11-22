@@ -1,3 +1,5 @@
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { readNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/read-new-group-cohort-admission.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { computeGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
@@ -130,5 +132,24 @@ it('rolls back the losing room when two writers reserve the same account from an
         await expect(fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, two.mutations[0]))).rejects.toThrow();
         expect(await fixture.repository.readSnapshot({ ...DESTINATION, groupId: 'second-court' })).toBeUndefined();
         expect((await fixture.repository.findLobbyCommitmentEntry(DESTINATION, 'participant'))?.value.seat?.roomRef.groupId).toBe('first-court');
+    } finally { await fixture.storage.close(); }
+});
+
+it('retries a mixed room and lobby read instead of recreating a disabled lobby during admission', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const configure = await fixture.prepare(mutationDescriptor({
+            operation: 'updateGroup', scope: DESTINATION, groupId: DESTINATION.groupId, request: {
+                requestId: 'enable', actorPrincipalId: 'alice',
+                roomLobby: { operation: 'configure', policy: { returnWindowMs: 3000, claimWindowMs: 2000 } }
+            }
+        }), 'alice');
+        const updated = computeGroupMutation(configure);
+        if (updated.outcome !== 'write') throw new Error('Expected managed room');
+        await fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, updated));
+        const before = await fixture.join('bob');
+        if (!before.read.roomLobby) throw new Error('Expected lobby read');
+        const afterDisable = { ...before.read.roomLobby, lobby: null };
+        expect(() => computeGroupMutation({ ...before, read: { ...before.read, roomLobby: afterDisable } })).toThrow(RuntimeStateWriteConflictError);
     } finally { await fixture.storage.close(); }
 });

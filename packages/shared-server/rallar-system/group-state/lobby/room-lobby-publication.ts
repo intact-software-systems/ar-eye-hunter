@@ -39,7 +39,7 @@ export function computeRoomLobbyPublication(input: RoomLobbyPublicationInput): V
     const deadlines: RoomLobbyDeadline[] = [];
     if (after && after.expiresAtEpochMs !== null &&
         (after.activationId !== before?.activationId || after.expiresAtEpochMs !== before.expiresAtEpochMs)) {
-        deadlines.push({ kind: 'room', roomRef, groupCreatedAtEpochMs, activationId: after.activationId, dueAtEpochMs: after.expiresAtEpochMs });
+        deadlines.push({ kind: 'room', generation: after.revision, roomRef, groupCreatedAtEpochMs, activationId: after.activationId, dueAtEpochMs: after.expiresAtEpochMs });
     }
     const outbox = [...notices.outbox];
     for (const [key, window] of lobbyWindows(after)) {

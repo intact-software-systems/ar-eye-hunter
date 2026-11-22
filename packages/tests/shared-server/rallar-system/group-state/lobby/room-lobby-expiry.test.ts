@@ -88,7 +88,7 @@ it('releases a hard-expired empty room after SQL evicts its group and retains an
             serviceId: 'api', retentionMs: 60000 });
         service.listen(queue.outbox);
         queue.inbox.start();
-        const due = { kind: 'room' as const, roomRef, groupCreatedAtEpochMs: now - 10000, activationId: 'current', dueAtEpochMs: now - 200 };
+        const due = { kind: 'room' as const, generation: 3, roomRef, groupCreatedAtEpochMs: now - 10000, activationId: 'current', dueAtEpochMs: now - 200 };
         const resilience = createAppInboxTestResilience(0);
         for (const stale of [{ ...due, dueAtEpochMs: now - 300 }, { ...due, activationId: 'old' }]) {
             expect((await service.expire.enqueue({ command: stale, traceId: 'superseded' })).right).toBeDefined();

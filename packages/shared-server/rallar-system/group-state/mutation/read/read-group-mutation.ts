@@ -1,3 +1,4 @@
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { readRoomLobbyState } from '../../lobby/room-lobby-storage.ts';
 import { resolveGroupMutationTargetPrincipalId } from '../orchestration/resolve-group-mutation-target-identity.ts';
 import { GroupStateRepository } from '../../persistence/group-state-repository.ts';
@@ -88,5 +89,10 @@ async function readLobbyForMutation(repository: GroupStateRepository, command: G
     const principalId = resolveGroupMutationTargetPrincipalId(command);
     const targets = configures ? read.activeMembers?.map(member => member.principalId) ?? [] : [];
     const roomLobby = await readRoomLobbyState(repository, command.aggregateRef, principalId ? [...targets, principalId] : targets, command.operation === 'createGroup' ? 'expired' : 'active');
+    // Some lobby reads follow the group query. Recheck its revision before using the private roster and policy together.
+    if (read.group) {
+        const current = await repository.findGroupEntry(command.aggregateRef);
+        if (current?.entry.revision !== read.group.entry.revision || current.entry.value !== read.group.entry.value) throw new RuntimeStateWriteConflictError();
+    }
     return { ...read, roomLobby };
 }

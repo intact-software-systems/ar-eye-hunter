@@ -14,36 +14,33 @@ import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface RoomLobbyDeadlineIdentity {
+export interface RoomLobbyDeadline {
+    readonly kind: 'seat' | 'room';
+    readonly generation: number;
     readonly roomRef: GroupRef;
     readonly activationId: string;
     readonly groupCreatedAtEpochMs: number;
     readonly dueAtEpochMs: number;
 }
 
-export type RoomLobbyDeadline = RoomLobbyDeadlineIdentity & (
-    { readonly kind: 'seat'; readonly generation: number } | { readonly kind: 'room' }
-);
-
 export function decodeRoomLobbyDeadline(value: unknown): RoomLobbyDeadline {
     const row = requireRecord(value, 'Room lobby deadline');
-    const keys = ['kind', 'roomRef', 'activationId', 'groupCreatedAtEpochMs', 'dueAtEpochMs'];
-    requireExactKeys(row, row.kind === 'seat' ? [...keys, 'generation'] : keys, 'Room lobby deadline');
+    requireExactKeys(row, ['kind', 'generation', 'roomRef', 'activationId', 'groupCreatedAtEpochMs', 'dueAtEpochMs'], 'Room lobby deadline');
     const ref = requireRecord(row.roomRef, 'Room lobby deadline room');
     requireExactKeys(ref, ['applicationId', 'workspaceId', 'groupId'], 'Room lobby deadline room');
     const roomRef = assertValidRallarGroupRef(ref);
     requireString(row.activationId, 'Lobby activation');
     requireEpoch(row.groupCreatedAtEpochMs, 'Room creation time');
     requireEpoch(row.dueAtEpochMs, 'Lobby window deadline');
-    const identity = {
-        roomRef, activationId: row.activationId,
+    if (row.kind === 'seat') requirePositiveInteger(row.generation, 'Lobby seat generation');
+    else if (row.kind !== 'room') throw new TypeError('Unexpected lobby deadline kind');
+    requireEpoch(row.generation, 'Lobby deadline generation');
+    return {
+        kind: row.kind, generation: row.generation, roomRef, activationId: row.activationId,
         groupCreatedAtEpochMs: row.groupCreatedAtEpochMs,
         dueAtEpochMs: row.dueAtEpochMs
     };
-    if (row.kind === 'room') return { ...identity, kind: 'room' };
-    if (row.kind !== 'seat') throw new TypeError('Unexpected lobby deadline kind');
-    requirePositiveInteger(row.generation, 'Lobby window generation');
-    return { ...identity, kind: 'seat', generation: Number(row.generation) };
+
 }
 
 export function roomLobbyDeadlineRoute(deadline: RoomLobbyDeadline) {

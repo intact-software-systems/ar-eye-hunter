@@ -61,12 +61,16 @@ it('fences reenabled holds even when the same revision and deadline recur', () =
 it('persists a room closure without a seat timer, and schedules its new boundary on renewal', () => {
     const initial = { revision: 1, activationId: 'lobby', expiresAtEpochMs: 2100, seats: [present] };
     const renewed = { ...initial, expiresAtEpochMs: 3100, revision: 2 };
-    for (const [before, after] of [[null, initial], [initial, renewed]] as const) {
+    const restored = { ...initial, revision: 3 };
+    const ids = [];
+    for (const [before, after] of [[null, initial], [initial, renewed], [renewed, restored]] as const) {
         const publication = computeRoomLobbyPublication({ ...facts, before, after });
         const deadlines = publication.outbox.map(row => decodePersistedALMessage(row.entry.resource))
             .filter(message => message.payload.typeId === AppOutboxType.ROOM_LOBBY_DEADLINE);
+        ids.push(...deadlines.map(message => message.id.msgId));
         expect(deadlines.map(message => JSON.parse(message.payload.resource))).toEqual([
-            { kind: 'room', roomRef, groupCreatedAtEpochMs: 1000, activationId: 'lobby', dueAtEpochMs: after.expiresAtEpochMs }
+            { kind: 'room', generation: after.revision, roomRef, groupCreatedAtEpochMs: 1000, activationId: 'lobby', dueAtEpochMs: after.expiresAtEpochMs }
         ]);
     }
+    expect(new Set(ids).size).toBe(3);
 });
