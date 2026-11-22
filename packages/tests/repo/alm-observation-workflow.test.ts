@@ -5,12 +5,14 @@ import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
-import {
-    ALM_CONFORMANCE_CARRIERS,
-    type AlmConformanceCarrier
-} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_LANE_FAMILIES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
-import { toEvaluatedWorkflowText } from './to-evaluated-workflow-text.ts';
+import type { AlmObservationMatrixEntry } from './alm-observation-matrix-entry.ts';
+import {
+    toEvaluatedActionInputs,
+    toEvaluatedWorkflowText,
+    type WorkflowActionInput
+} from './to-evaluated-workflow-text.ts';
 
 interface WorkflowStep {
     readonly name?: string;
@@ -20,11 +22,6 @@ interface WorkflowStep {
     readonly uses?: string;
     readonly env?: Readonly<Record<string, string>>;
     readonly with?: Readonly<Record<string, string | number>>;
-}
-
-interface MatrixEntry {
-    readonly carrier: AlmConformanceCarrier;
-    readonly families: string;
 }
 
 interface WorkflowService {
@@ -41,7 +38,7 @@ interface WorkflowJob {
     readonly services?: Readonly<Record<string, WorkflowService>>;
     readonly steps?: readonly WorkflowStep[];
     readonly strategy?: Readonly<{
-        matrix: Readonly<{ carrier?: readonly string[]; include?: readonly MatrixEntry[]; }>;
+        matrix: Readonly<{ carrier?: readonly string[]; include?: readonly AlmObservationMatrixEntry[]; }>;
     }>;
     readonly uses?: string;
     readonly with?: Readonly<Record<string, string>>;
@@ -68,10 +65,9 @@ interface WorkflowDocument {
     readonly on: WorkflowTriggers;
 }
 
-interface ActionInput {
+interface ActionInput extends WorkflowActionInput {
     readonly description: string;
     readonly required: boolean;
-    readonly default?: string;
 }
 
 interface ActionDocument {
@@ -113,6 +109,20 @@ describe('ALM conformance lane workflows', () => {
             carrier: '${{ matrix.carrier }}',
             scope: 'smoke'
         });
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('uploads the smoke lane over %s under names without a family suffix', (carrier) => {
+        const steps = readWorkflow('.github/workflows/release-gate.yml').jobs['alm-smoke'].steps ?? [];
+        const resultsStep = steps.find((step) => step.uses === ALM_LANE_RESULTS_ACTION);
+        const inputs = toEvaluatedActionInputs(resultsAction.inputs, resultsStep?.with ?? {}, {
+            'matrix.carrier': carrier
+        });
+        const values = { ...inputs, 'github.sha': 'abc123' };
+
+        expect(resultSteps.map((step) => toEvaluatedWorkflowText(String(step.with?.name), values))).toEqual([
+            `alm-conformance-lane-${carrier}-smoke-abc123`,
+            `alm-lane-result-${carrier}-smoke-abc123`
+        ]);
     });
 
     it('starts itself on main pushes, ready pull requests and dispatch, beside no other workflow', () => {
@@ -168,20 +178,6 @@ describe('ALM conformance lane workflows', () => {
         // One job runs every family with an empty list; split jobs each name theirs.
         expect(familyLists.includes('')).toBe(familyLists.length === 1);
         expect([...namedFamilies].sort()).toEqual(familyLists.length === 1 ? [] : [...ALM_CONFORMANCE_LANE_FAMILIES].sort());
-    });
-
-    it.each(
-        [
-            { entry: { carrier: 'ws', families: '' }, jobName: 'ALM conformance observation (ws)' },
-            {
-                entry: { carrier: 'rtc', families: 'two-agent,addressed,same-context' },
-                jobName: 'ALM conformance observation (rtc, two-agent,addressed,same-context)'
-            }
-        ] satisfies readonly { entry: MatrixEntry; jobName: string; }[]
-    )('names the job $jobName', ({ entry, jobName }) => {
-        const values = { 'matrix.carrier': entry.carrier, 'matrix.families': entry.families };
-
-        expect(toEvaluatedWorkflowText(observationLane.name ?? '', values)).toBe(jobName);
     });
 
     it('detects the pull request\'s ALM changes from its base and head with the selection command', () => {
