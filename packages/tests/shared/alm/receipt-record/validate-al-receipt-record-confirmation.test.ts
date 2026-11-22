@@ -50,7 +50,7 @@ describe('validateALReceiptRecordConfirmation', () => {
         ]);
     });
 
-    // The deadline is exclusive: an ACK at the deadline instant is already late.
+    // The deadline instant is already past: an ACK arriving at it is late, one a millisecond earlier counts.
     it('refuses a confirmation at the deadline and accepts one a millisecond before it', () => {
         expect(validateALReceiptRecordConfirmation(openHead, toConfirmation('r1'), NOW + 5_000)).toEqual([
             { code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' }

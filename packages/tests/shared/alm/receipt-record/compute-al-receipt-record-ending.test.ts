@@ -49,7 +49,7 @@ describe('computeALReceiptRecordEnding', () => {
         expect(toEnding(partialTally, NOW + 4_999)).toBe('not-due');
     });
 
-    // The deadline is exclusive, as for a confirmation: at that instant the receipt times out with what it has.
+    // The deadline instant is already past, as for a confirmation: at it the receipt times out with what it has.
     it('times out an incomplete receipt at its deadline with the partial sets', () => {
         expect(toEnding(partialTally, NOW + 5_000)).toEqual({
             phase: 'timed-out',

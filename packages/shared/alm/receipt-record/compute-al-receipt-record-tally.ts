@@ -25,7 +25,7 @@ export function computeALReceiptRecordTally(
             recipientPeerId
         );
     const receipt = {
-        expectedPeerIds: head.opening.expectedRecipientPeerIds,
+        expectedPeerIds: [...new Set(head.opening.expectedRecipientPeerIds)],
         ackedPeerIds: toRecipientPeerIds('confirmed'),
         outsideAudiencePeerIds: toRecipientPeerIds('outside')
     };

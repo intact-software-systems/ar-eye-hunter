@@ -49,13 +49,31 @@ describe('computeALReceiptRecordTally', () => {
         });
     });
 
-    // A repeated id in the frozen audience must not leave the receipt owing a second confirmation.
-    it('completes an audience that names one recipient twice once that recipient confirms', () => {
+    // A repeated id in the frozen audience must not leave the receipt owing a second confirmation, and a
+    // terminal set built from the tally must name that recipient once, as the in-memory aggregate does.
+    it('completes an audience that names one recipient twice once that recipient confirms, listing it once', () => {
         const head: ALReceiptRecordOpenHead = {
             phase: 'open',
             opening: { ...opening, expectedRecipientPeerIds: ['r1', 'r1'] }
         };
-        expect(computeALReceiptRecordTally(head, toRows(['r1', 'confirmed'])).complete).toBe(true);
+        expect(computeALReceiptRecordTally(head, toRows(['r1', 'confirmed']))).toEqual({
+            confirmedRecipientPeerIds: ['r1'],
+            outsideAudienceRecipientPeerIds: [],
+            complete: true
+        });
+    });
+
+    // The mirror case: a repeated id answering outside the audience is listed once in the outside set.
+    it('lists a repeated recipient once in the outside set', () => {
+        const head: ALReceiptRecordOpenHead = {
+            phase: 'open',
+            opening: { ...opening, expectedRecipientPeerIds: ['r1', 'r1', 'r2'] }
+        };
+        expect(computeALReceiptRecordTally(head, toRows(['r1', 'outside'], ['r2', 'confirmed']))).toEqual({
+            confirmedRecipientPeerIds: ['r2'],
+            outsideAudienceRecipientPeerIds: ['r1'],
+            complete: true
+        });
     });
 
     // An ended head is the final word: a row written after the ending (r3) must not change it.
