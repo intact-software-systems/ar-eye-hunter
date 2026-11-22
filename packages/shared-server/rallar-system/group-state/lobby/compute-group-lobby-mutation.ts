@@ -3,6 +3,7 @@ import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guar
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group } from '@shared/api/group-types.ts';
+import { readRoomLobbyRegistration } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { changeRoomLobby, configureRoomLobby, createRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { configureRoomLobbyCapacityClaims } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
@@ -74,7 +75,10 @@ function computeGroupLobbyRoster(input: GroupMutationWriteInput, group: Group, s
         throw new RuntimeStateWriteConflictError();
     }
     if (!lobby || command.operation === 'createGroup') {
+        const registration = readRoomLobbyRegistration(group.metadata);
+        if (!registration) throw new TypeError('A managed room requires a registration definition');
         lobby = createRoomLobby({
+            registrationRevision: registration.revision,
             roomRef: command.aggregateRef,
             capacity: group.maxMembers,
             policy,

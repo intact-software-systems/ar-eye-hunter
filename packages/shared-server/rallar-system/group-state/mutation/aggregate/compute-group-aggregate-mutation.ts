@@ -1,13 +1,9 @@
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
-    createRallarGroupDirectorAppointment,
     isRallarGroupDirectorForSession,
-    mergeRallarGroupDirectorMetadata,
     RALLAR_GROUP_DIRECTOR_METADATA_KEY,
-    readRallarGroupDirectorAppointment,
-    readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility
+    readRallarGroupDirectorAppointment
 } from '@shared/api/group-director.ts';
 import {
     GROUP_DIRECTORY_LISTING_METADATA_KEY,
@@ -21,13 +17,15 @@ import {
 } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectating.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
+import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
-import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 
+import { computeGroupRegistrationUpdate } from '../../lobby/compute-group-registration-update.ts';
 import { toGroupCapacityRefusal } from './to-group-capacity-refusal.ts';
 
 import { canGovernGroupMember } from '../../policy/group-governance-policy.ts';
@@ -159,7 +157,8 @@ export function computeUpdate(
         if (lobbyChange.policy) {
             metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
             if (!Object.hasOwn(current.metadata, ROOM_LOBBY_METADATA_KEY)) {
-                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: 0, atEpochMs: null };
+                // Every registration edit advances the room metadata version. Seed a new activation above all earlier registration revisions.
+                metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY] = { revision: next.metadataVersion, atEpochMs: null };
             }
         }
         else {
@@ -167,51 +166,6 @@ export function computeUpdate(
             delete metadata[ROOM_LOBBY_REGISTRATION_METADATA_KEY];
         }
         next = { ...next, metadata };
-    }
-    if (lobbyChange?.operation === 'set-registration-cutoff') {
-        const observed = read.lobbyState?.lobby?.value;
-        if (!observed) {
-            return rejected({
-                command,
-                read,
-                facts,
-                rejectionCode: 'group-mutation-rejected',
-                message: 'Registration requires a managed room.'
-            });
-        }
-        const updated = changeRoomLobby(observed, {
-            kind: 'set-registration-cutoff',
-            expectedRevision: lobbyChange.expectedRevision,
-            atEpochMs: lobbyChange.atEpochMs
-        }, facts.attemptAtEpochMs);
-        if (updated.rejection) {
-            const rejectionCode = updated.rejection === 'revision-conflict'
-                ? 'room-lobby-registration-revision-conflict'
-                : 'group-mutation-rejected';
-            return rejected({
-                command,
-                read,
-                facts,
-                rejectionCode,
-                message: 'The registration cutoff has changed or closed.'
-            });
-        }
-        if (updated.lobby === observed) {
-            return noOp(command, read, facts);
-        }
-        const { revision, atEpochMs } = updated.lobby.registration;
-        next = {
-            ...next,
-            metadata: { ...next.metadata, [ROOM_LOBBY_REGISTRATION_METADATA_KEY]: { revision, atEpochMs } }
-        };
-        return groupWrite({
-            command,
-            read,
-            facts,
-            group: next,
-            eventType: 'group-updated',
-            revisedLobby: updated.lobby
-        });
     }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
@@ -229,6 +183,19 @@ export function computeUpdate(
         }
         next = updated;
     }
+    const registration = computeGroupRegistrationUpdate({
+        group: next,
+        lobby: read.lobbyState?.lobby?.value,
+        change: lobbyChange,
+        clockName: clockCommand?.name,
+        nowEpochMs: facts.attemptAtEpochMs
+    });
+    if (registration && 'rejectionCode' in registration) {
+        return rejected({ command, read, facts, ...registration });
+    }
+    if (registration) {
+        next = registration.group;
+    }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
@@ -241,6 +208,7 @@ export function computeUpdate(
         read,
         facts,
         group: next,
+        revisedLobby: registration?.lobby,
         eventType: next.status === 'archived'
             ? 'group-archived'
             : next.status === 'deleted'
@@ -278,58 +246,6 @@ function computePrivateLobbyUpdate(
     }
     // Serialize with room access changes while keeping the account, trace and request out of public room events.
     return groupWrite({ command, read, facts, group, eventType: null });
-}
-
-export function computeDirector(
-    command: Extract<GroupMutationCommand, { operation: 'appointDirector'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts
-): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.attemptAtEpochMs });
-    if (!active.allowed) {
-        return rejectedByGroupPolicy({ command, read, facts, denial: active });
-    }
-    const principalId = command.input.actorPrincipalId;
-    const sessionId = command.input.actorSessionId;
-    if (!principalId || !sessionId) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Forbidden: Cannot appoint a director without a local session.'
-        });
-    }
-    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
-    const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
-        snapshot,
-        principalId,
-        sessionId
-    });
-    if (!eligibility.allowed) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`
-        });
-    }
-    const appointment = createRallarGroupDirectorAppointment({
-        session: { clientId: principalId, sessionId },
-        previous: readRallarGroupDirectorFromSnapshot(snapshot),
-        now: facts.attemptAtEpochMs,
-        heartbeatTtlMs: command.input.heartbeatTtlMs
-    });
-    const next: Group = {
-        ...stored.value,
-        metadata: mergeRallarGroupDirectorMetadata(stored.value.metadata, appointment),
-        snapshotVersion: stored.value.snapshotVersion + 1,
-        metadataVersion: stored.value.metadataVersion + 1,
-        updated: auditStamp(command, facts, principalId)
-    };
-    return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
 }
 
 export function computeRotateJoinCode(
@@ -380,7 +296,7 @@ export function computeRotateJoinCode(
     return groupWrite({ command, read, facts, group: next, eventType: 'group-updated' });
 }
 
-function groupWrite(input: GroupWriteInput): GroupMutationComputed {
+export function groupWrite(input: GroupWriteInput): GroupMutationComputed {
     const { command, eventType, facts, group, read } = input;
     const stored = requireGroup(read, command.aggregateRef);
     return computeGroupMutationWriteResult({
@@ -531,10 +447,14 @@ function computeUpdatedGroupMetadata(
     if (schedule !== null) {
         metadata[GROUP_SESSION_SCHEDULE_METADATA_KEY] = { ...schedule };
     }
+    if (Object.hasOwn(current, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY)) {
+        metadata[ROOM_DIRECTOR_SUCCESSION_METADATA_KEY] = current[ROOM_DIRECTOR_SUCCESSION_METADATA_KEY];
+    }
     delete metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     if (
         Object.hasOwn(current, RALLAR_GROUP_DIRECTOR_METADATA_KEY) &&
-        !isDirectorResignation({ current, replacement, actor })
+        (Object.hasOwn(current, ROOM_DIRECTOR_SUCCESSION_METADATA_KEY) ||
+            !isDirectorResignation({ current, replacement, actor }))
     ) {
         metadata[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = current[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     }

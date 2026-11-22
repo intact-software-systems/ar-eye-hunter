@@ -8,7 +8,6 @@ import {
     type RoomDeadlineChange
 } from '@shared/api/group-deadlines/room-deadline.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { assertValidRallarGroupRef, assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
@@ -22,13 +21,11 @@ import {
 } from '@shared/api/group-deadlines/room-clock.ts';
 import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
-import { parseGroupStateDeltaEnvelope } from '../../state-cache/group-state-delta-application.ts';
-import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import { captureRoomSession } from '../room-session-fence.ts';
 import { acknowledgedProgram, acknowledgedTimeline, acknowledgedSchedule, acknowledgedClock, acknowledgedDeadline } from './room-time-acknowledgements.ts';
-import { watchRoomTime } from './watch-room-time.ts';
+import { explicitRoomRef, readObservedRoom, watchRoomRevision } from '../../state-read/watch-room-revision.ts';
 
 export interface RoomDeadlineObservation {
     readonly status: 'current' | 'stale';
@@ -115,21 +112,14 @@ interface WriteRoomTimeline extends WriteRoomTime {
 }
 
 export function createRoomTimeOperations(
-    { requireSession, roomEvents, ws, auth }: Pick<
+    services: Pick<
         CreateBrowserRallarRoomsInput,
         'requireSession' | 'roomEvents' | 'ws' | 'auth'
     >
 ): RoomTimeOperations {
-    async function readMetadata(roomRef: GroupRef, signal?: AbortSignal) {
-        const room = toExplicitRoomRef(roomRef);
-        const fence = captureRoomSession(requireSession, signal);
-        fence.assertCurrent();
-        const result = await readStateGroupSnapshot(room.groupId, room, { authSession: fence.session, signal });
-        fence.assertCurrent();
-        if (result.source !== 'durable') {
-            throw new Error('Room time reads require a durable group snapshot.');
-        }
-        return result.snapshot.group.metadata;
+    const { requireSession } = services;
+    async function readMetadata(room: GroupRef, signal?: AbortSignal) {
+        return (await readObservedRoom(room, requireSession, signal)).metadata;
     }
     function watch<T extends { readonly revision: number; }>(
         roomRef: GroupRef,
@@ -139,44 +129,12 @@ export function createRoomTimeOperations(
         regresses: (previous: T, next: T) => boolean,
         signal?: AbortSignal
     ) {
-        const room = toExplicitRoomRef(roomRef);
         assertRoomDeadlineName(name);
-        const fence = captureRoomSession(requireSession, signal);
-        return watchRoomTime<T>({
-            regresses,
-            signal,
-            listener,
-            ws,
-            onSessionEnd: (stop) =>
-                auth.onChange(({ session }) => {
-                    if (
-                        session?.sessionId !== fence.session.sessionId ||
-                        session?.clientId !== fence.session.clientId
-                    ) {
-                        stop();
-                    }
-                }, { emitCurrent: false }),
-            subscribe: (changed) =>
-                roomEvents.onEvent((_event, message) => {
-                    if (message.transport === 'ws') {
-                        const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
-                        if (delta) {
-                            changed(decode(delta.group.metadata, name)?.revision ?? 0);
-                        }
-                    }
-                }, {
-                    roomRef: room,
-                    scope: room,
-                    eventTypes: ['group-updated']
-                }),
-            read: async (readSignal) => {
-                fence.assertCurrent();
-                return decode(await readMetadata(room, readSignal), name);
-            }
-        });
+        return watchRoomRevision<T>({ room: roomRef, services, regresses, listener, signal, eventTypes: ['group-updated'],
+            project: group => decode(group.metadata, name) });
     }
     async function write({ roomRef, change, requestId, signal }: WriteRoomTime) {
-        const room = toExplicitRoomRef(roomRef);
+        const room = explicitRoomRef(roomRef);
         const fence = captureRoomSession(requireSession, signal);
         fence.assertCurrent();
         const snapshot = await roomGroupStateHttpApi.updateGroup({
@@ -289,10 +247,4 @@ export function createRoomTimeOperations(
             return acknowledgedDeadline(metadata, roomDeadline);
         }
     };
-}
-
-function toExplicitRoomRef(roomRef: GroupRef): GroupRef {
-    assertValidRallarGroupRef(roomRef, '$.roomRef');
-    assertValidRallarRouteId(roomRef.workspaceId, '$.roomRef.workspaceId', 'Workspace ID');
-    return { ...roomRef };
 }

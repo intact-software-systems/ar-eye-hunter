@@ -1,3 +1,6 @@
+import { observeRoomDirectorLoss, observeRoomDirectorPresence } from '@shared/api/room-directors/room-director-succession-presence.ts';
+import { readRoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
+import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.ts';
 import type { GroupEventType, GroupPresenceSession } from '@shared/api/group-types.ts';
 
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
@@ -61,6 +64,20 @@ export function computeGroupPresenceWrite({
                 expectedRevision: predecessor.entry.revision
             };
     }
+    const current = stored.value;
+    const appointment = readRallarGroupDirectorAppointment(current.metadata);
+    let metadata = current.metadata;
+    if (appointment?.principalId === session.principalId && appointment.sessionId === session.sessionId && readRoomDirectorSuccession(metadata)) {
+        if (command.operation === 'disconnectPresence') {
+            const lostAt = Math.min(facts.attemptAtEpochMs, session.expiresAtEpochMs);
+            metadata = observeRoomDirectorLoss(metadata, lostAt);
+        } else {
+            metadata = observeRoomDirectorPresence(metadata, session, facts.attemptAtEpochMs);
+        }
+    }
+    const revised = metadata === current.metadata ? undefined : {
+        ...current, metadata, snapshotVersion: current.snapshotVersion + 1, metadataVersion: current.metadataVersion + 1
+    };
     return computeGroupMutationWriteResult({
         command,
         read,
@@ -69,12 +86,13 @@ export function computeGroupPresenceWrite({
         members: [],
         initialPresenceSummary: null,
         eventType,
-        eventGroup: stored.value,
+        eventGroup: revised ?? current,
+        directorPresenceGroup: revised,
         lifecyclePolicy: null,
         publicationGrantEffects: [],
         subscriptionEffects: [],
         subscriptionOutcome: null,
         presenceAdmission,
-        presenceSummaryWork
+        presenceSummaryWork: revised ? 'enqueue' : presenceSummaryWork
     });
 }

@@ -1,3 +1,4 @@
+import { readRoomDirectorSuccession } from './room-directors/room-director-succession-record.ts';
 import type { AuthSession } from './api-config.ts';
 import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from './api-json-value.ts';
 import type { GroupMember, GroupMemberStatus, GroupRef, GroupRole, GroupSnapshot } from './group-types.ts';
@@ -128,9 +129,18 @@ export function isRallarGroupDirectorSessionActive(
         return false;
     }
 
+    const succession = readRoomDirectorSuccession(snapshot.group.metadata);
+    if (succession) {
+        const current = readRallarGroupDirectorFromSnapshot(snapshot);
+        if (current?.epoch !== appointment.epoch || current.sessionId !== appointment.sessionId ||
+            current.principalId !== appointment.principalId || succession.loss?.directorEpoch === appointment.epoch) return false;
+        if (nowEpochMs !== undefined && succession.directorLeaseExpiresAtEpochMs !== null &&
+            succession.directorLeaseExpiresAtEpochMs <= nowEpochMs) return false;
+    }
     if (
         !snapshot.members.some((member) =>
-            member.principalId === appointment.principalId && member.status === 'active' && member.role !== 'spectator'
+            member.principalId === appointment.principalId && member.status === 'active' &&
+            (member.role !== 'spectator' || succession?.spectatorDirectorEpoch === appointment.epoch)
         )
     ) {
         return false;
