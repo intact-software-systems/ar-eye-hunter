@@ -8,7 +8,7 @@ import {
     type AlmConformanceTag
 } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
-import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
+import { isAlmLaneCellSelected, isAlmLaneFamilySelected } from './is-alm-lane-cell-selected.ts';
 
 const ALM_LANE_ORDERS = ['declared', 'shuffled'] as const;
 
@@ -204,7 +204,7 @@ function resolveOnlyRefusal(key: string, input: AlmLaneOnlySelection): string | 
     if (inScope.length === 0) {
         return `it is not in the ${input.selection.scope} scope`;
     }
-    if (!inScope.some((cell) => input.selection.families.includes(cell.family))) {
+    if (!inScope.some((cell) => isAlmLaneFamilySelected(input.selection.families, cell.family))) {
         return `it runs in ${[...new Set(inScope.map((cell) => cell.family))].join(', ')}, which ` +
             'RALLAR_BLACK_BOX_ALM_FAMILIES does not select';
     }

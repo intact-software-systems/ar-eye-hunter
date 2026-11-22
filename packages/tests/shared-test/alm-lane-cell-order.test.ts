@@ -253,8 +253,8 @@ describe('the ALM lane parameters', () => {
         ]);
     });
 
-    // subscription-delivery is a full-scope cell of the four-role family alone.
-    it('a named cell that runs only in families the run does not select is refused, naming its families', () => {
+    // subscription-delivery is a full-scope scenario of the four-role family alone.
+    it('a named scenario key that runs only in families the run does not select is refused, naming its families', () => {
         const refused = toIssues(toDecodeInput({ only: 'subscription-delivery', families: 'two-agent,three-agent' }));
 
         expect(refused[0]).toBe(
@@ -392,6 +392,7 @@ describe('the ALM lane plan', () => {
             expect(resolveAlmLanePlan(input).cells.length, family).toBeGreaterThan(0);
         }
     });
+
     // The lane resolves a family's plan once and both skips and announces from it, so the seed printed is the one used.
     it('a shuffled family plan that names no seed mints one seed, the one its cell order records', () => {
         const minted: number[] = [];

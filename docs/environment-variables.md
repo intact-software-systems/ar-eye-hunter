@@ -584,7 +584,7 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_ALM_ORDER`                | No       | `declared`                       | ALM lane cell order. Supported values: `declared`, `shuffled`.                                        |
 | `RALLAR_BLACK_BOX_ALM_SEED`                 | No       | Minted per family                | Seed of a shuffled ALM lane order, an integer from 0 to 4294967295; only with `shuffled`.             |
 | `RALLAR_BLACK_BOX_ALM_ROOMS`                | No       | `family`                         | ALM lane room per `family` or per `cell`; a declared own-room cell `cell`, same-context `family`.     |
-| `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins, a key no selected scope or carrier runs is refused.  |
+| `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins; each must run in a selected scope, carrier, family.  |
 | `RALLAR_BLACK_BOX_ALM_FAMILIES`             | No       | All families                     | Comma-separated ALM lane families whose tests run; the plan file names every family; others refused.  |
 | `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                                               |
 | `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke.                           |
@@ -611,10 +611,9 @@ outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and `RALLAR_BLACK_BOX_ALM
 a `RALLAR_BLACK_BOX_ALM_SEED` without `RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a
 `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key
 that no cell of the selected scope, carriers and families runs throws a `RangeError` that names the
-value and what is accepted, before any browser starts. `RALLAR_BLACK_BOX_ALM_FAMILIES` composes with
-`RALLAR_BLACK_BOX_ALM_ONLY` as the scope and carriers do: a family test it does not select is
-skipped with that reason, and a named key must run in a selected family or the run is refused with
-the families the key runs in. A `shuffled` family shuffles its cells with the seed; a family that
+value and what is accepted, before any browser starts. `RALLAR_BLACK_BOX_ALM_FAMILIES` selects
+which family tests run; a key `RALLAR_BLACK_BOX_ALM_ONLY` names must run in at least one selected
+family, or the run is refused. A `shuffled` family shuffles its cells with the seed; a family that
 names none mints one in `0` to `2147483647`. The same seed gives the same order of the
 same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell whose definition
 declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
