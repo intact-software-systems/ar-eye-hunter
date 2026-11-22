@@ -102,6 +102,24 @@ const FROZEN_LEAF_PEER: ReceivingPeer = {
     canForward: false
 };
 
+/** The relay of the sender's room that carries its RTC copies to the frozen leaf. */
+const RELAY_PEER_ID = 'relay-1';
+
+/** A frozen leaf whose RTC copies come through the relay and whose WS copies come from the sender. */
+const RELAYED_FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID, RELAY_PEER_ID]
+        }),
+    canForward: false
+};
+
+const RTC_FROM_RELAY: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: RELAY_PEER_ID };
+
 /** The same leaf holding no active token: its RTC carrier plans a granted copy forward-not-subscribed. */
 const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
     planner: (msg, source, observations) => {
@@ -163,10 +181,10 @@ function createRelayedMessage(msgId: string): ALMessage {
 async function computeArrival(
     store: ALInboundAdmissionStore,
     msg: ALMessage,
-    arrival: Readonly<{ peer: ReceivingPeer; carrier: ALDeliveryCarrier; }>
+    arrival: Readonly<{ peer: ReceivingPeer; carrier: ALDeliveryCarrier; source?: ALInboundMessageRuntime.Source; }>
 ): Promise<ALInboundCommitBundle> {
     const { peer } = arrival;
-    const source = SOURCES[arrival.carrier];
+    const source = arrival.source ?? SOURCES[arrival.carrier];
     const nowMs = Date.now();
     const read = await store.readIncomingMessage({
         selfPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -399,6 +417,31 @@ describe('a frozen recipient whose first copy waits on a gap', () => {
             ackedMsgId: 'buffered-on-both',
             status: 'delivered'
         })));
+    });
+
+    it('answers each carrier on release to the peer that carrier\'s copy came from', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-two-peers', 2);
+        const fromRelay = { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'rtc', source: RTC_FROM_RELAY } as const;
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, fromRelay))).toBe('committed');
+        const wsCopy = await computeArrival(admissionStore, msg, { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toBufferedCopyCarriers(wsCopy)).toEqual([[
+            { carrier: 'rtc', ackToPeerId: RELAY_PEER_ID },
+            { carrier: 'ws', ackToPeerId: INBOUND_TEST_SENDER_PEER_ID }
+        ]]);
+        expect(await admissionStore.commitBundle(wsCopy)).toBe('committed');
+        const secondWsCopy = await computeArrival(admissionStore, msg, { peer: RELAYED_FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toBufferedCopyCarriers(secondWsCopy)).toEqual([]);
+        expect(secondWsCopy.durableEffects).toEqual([]);
+        const predecessor = createFrozenReceiverMessage('buffered-two-peers-predecessor', 1);
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, predecessor, fromRelay))).toBe('committed');
+
+        const release = await computeBufferedRelease(admissionStore, msg, RELAYED_FROZEN_LEAF_PEER);
+
+        expect(toRepeatedAcks(release).map(({ carrier, toPeerId, status }) => ({ carrier, toPeerId, status }))).toEqual([
+            { carrier: 'rtc', toPeerId: RELAY_PEER_ID, status: 'delivered' },
+            { carrier: 'ws', toPeerId: INBOUND_TEST_SENDER_PEER_ID, status: 'delivered' }
+        ]);
     });
 
     it('records nothing more for a same-carrier copy of a message it holds buffered: its carrier is already on the slot', async () => {

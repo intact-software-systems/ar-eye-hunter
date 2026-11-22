@@ -634,12 +634,16 @@ when the lane claims it (a hint names its number exactly when it names a missing
 requests refused `unsupported` on `rtc` and by the server on `ws` until it reloads, and refuses this build's
 symmetrically.
 
-**The copy-carriers window.** The buffered slot's `copyCarriers` is required. A buffered-slot row the previous build
-wrote carries none and fails strict decoding until it expires, as the slot's `carrier` did when it was added: the
-message's own TTL, or `bufferedMessageTtlMs` (the repository TTL of 60 minutes by default) when it has none. Until
-then every admission on that ordered track, which reads every buffered slot of the track, stalls on
-`ALAdmissionCorruptionError`. Nothing is migrated and `AL_ADMISSION_SCHEMA_ID` is not bumped, since a different schema
-identity refuses a returning browser's durable store rather than resetting it.
+**The copy-carriers window.** The buffered slot's `copyCarriers` is required. No store resets for it, and
+`AL_ADMISSION_SCHEMA_ID` is not bumped: since #652 a different schema identity refuses a returning browser's durable
+store rather than resetting it, and the slot's `carrier` field (#588) gave no precedent for a bump, since #588 bumped
+the identity for the one-inbound-store-per-session namespace it introduced. A buffered-slot row the previous build wrote
+carries no `copyCarriers` and fails strict decoding until the expiry sweep removes it, not merely until it expires:
+both the server's PostgreSQL store and a browser's IndexedDB pair decode a row before they apply its expiry. Its expiry
+is the message's own TTL, or `bufferedMessageTtlMs` (the repository TTL of 60 minutes by default) when it has none.
+Until the sweep runs, every admission on that ordered track, which reads every buffered slot of the track, stalls on
+`ALAdmissionCorruptionError`; other tracks and every other row are untouched. Memory pairs start empty after a reload or
+a restart, so they hold no such row. Nothing is migrated.
 
 **The envelope-version window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
 (D147) made older browser schemas incompatible, which current opening refuses without resetting them.

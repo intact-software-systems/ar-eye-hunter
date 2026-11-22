@@ -5,7 +5,6 @@ import {
     type ALDedupOptions,
     type ALEffectiveAlgorithm
 } from '../../../al-contracts/al-policy.ts';
-import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type {
     ALInboundAdmissionMutation,
@@ -13,6 +12,7 @@ import type {
     ALInboundMessageReadDto
 } from '../al-inbound-admission-store.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { toALInboundRecordedCopyMutation } from './al-inbound-buffered-copy-carriers.ts';
 import { isALInboundDeliveringPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ComputeALInboundDedupExpiryInput {
@@ -122,22 +122,20 @@ export function toALInboundDeliveryMutations(
     }
     // Retain the existing ordered-message record until application delivery completes,
     // not merely until admission advances the contiguous sequence.
-    mutations.push({
-        kind: 'set-buffered',
-        snapshot: {
-            trackKey: plan.orderingRuntime.trackKey,
-            seq: plan.orderingRuntime.seq,
-            msg: read.msg,
-            plan,
-            carrier: toALDeliveryCarrier(read.source),
-            copyCarriers: [{ carrier: toALDeliveryCarrier(read.source), ackToPeerId: plan.ack.toPeerId ?? null }]
-        },
-        expireAtTimestamp: resolveExpireAtTimestampWithFallback(
-            resolveALMessageExpireAtMs(read.msg, plan.effective),
-            read.retention.bufferedMessageTtlMs,
-            read.nowMs
-        )
-    });
+    const slot = {
+        trackKey: plan.orderingRuntime.trackKey,
+        seq: plan.orderingRuntime.seq,
+        msg: read.msg,
+        plan,
+        carrier: toALDeliveryCarrier(read.source),
+        copyCarriers: []
+    };
+    mutations.push(
+        toALInboundRecordedCopyMutation(read, slot, {
+            ackToPeerId: plan.ack.toPeerId ?? null,
+            retainUntilMs: Number.POSITIVE_INFINITY
+        })
+    );
     return mutations;
 }
 
