@@ -221,6 +221,11 @@ export class ALOutboundStoreLane<TPrepared> {
         this.work.committed(rows);
     }
 
+    /** Whether this lane holds the message an end must reach: stored, or retained by this page as an admission. */
+    async holdsMessageForEnd(msgId: string): Promise<boolean> {
+        return await this.messageEnd.holdsMessage(msgId);
+    }
+
     /** A memory read on the volatile lane: whether this lane admitted the message. */
     async ownsMessage(msgId: string): Promise<boolean> {
         return await this.input.stores.admissionStore.hasSentMessageAdmission(msgId);
@@ -541,7 +546,10 @@ export class ALOutboundStoreLane<TPrepared> {
         }
         switch (effect.payload.kind) {
             case 'admit-message':
-                return await this.effects.admitPendingMessage(effect, evidence);
+                return await this.messageEnd.runAdmissionUnlessEnding(
+                    effect.payload.message.msgId,
+                    () => this.effects.admitPendingMessage(effect, evidence)
+                );
             case 'dequeue-message':
                 return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence, observed);
             case 'admit-control':
@@ -570,7 +578,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 });
                 return { status: 'completed' };
             case 'end-message':
-                return await this.messageEnd.runEnd(effect.payload.msgId);
+                return await this.messageEnd.runEnd(effect.payload);
         }
     }
 

@@ -17,7 +17,8 @@ export namespace ALOutboundPageMessageEnds {
         readonly sendControls: Pick<ALOutboundSendControls, 'isEnded'>;
         /** Every lane's storage readiness: an end waits for the lane it ends the message in. */
         readonly ready: () => Promise<ALStorageReadiness.Outcome>;
-        readonly readLaneForMessage: (msgId: string) => Promise<Lane>;
+        /** The lane holding the message in either form: its stored row, or an admission this page retained. */
+        readonly readLaneForMessageEnd: (msgId: string) => Promise<Lane>;
     }
 }
 
@@ -68,6 +69,6 @@ export class ALOutboundPageMessageEnds {
             return;
         }
         await this.input.ready();
-        await (await this.input.readLaneForMessage(msgId)).endMessage(msgId);
+        await (await this.input.readLaneForMessageEnd(msgId)).endMessage(msgId);
     }
 }

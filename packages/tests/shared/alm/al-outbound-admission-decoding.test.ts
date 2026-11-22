@@ -343,8 +343,10 @@ describe('outbound admission persisted-record validation', () => {
         const admission = createAdmission();
         const { backend, store } = admission;
         const msg = createMessage();
-        const payload = kind === 'ack-timeout' || kind === 'end-message'
+        const payload = kind === 'ack-timeout'
             ? { kind, msgId: msg.id.msgId }
+            : kind === 'end-message'
+            ? { kind, msgId: msg.id.msgId, admissionEffectId: null }
             : kind === 'nack-retry'
             ? { kind, msgId: msg.id.msgId, reason: 'not-yet-in-sync' }
             : { kind, msgId: msg.id.msgId, request: { trigger: 'repair', failedPeerIds: [], missingRanges: [] } };

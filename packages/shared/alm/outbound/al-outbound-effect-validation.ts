@@ -115,7 +115,8 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'preparedMessages',
         'msg',
         'source',
-        'expiresAtMs'
+        'expiresAtMs',
+        'admissionEffectId'
     ]);
     switch (payload.kind) {
         case 'admit-control':
@@ -150,15 +151,29 @@ export function decodeALOutboundEffectPayload<TPrepared>(
             requireALOutboundNotYetInSyncRetryEffectIdentity(effectId, msgId);
             return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'nack-retry'; }>;
         case 'end-message':
-            decodeALAdmissionRecord(value, ['kind', 'msgId']);
-            requirePersistedALNonEmptyString(payload.msgId, 'message end message id');
-            if (effectId !== toALOutboundEndMessageEffectId(payload.msgId as string)) {
-                throw new TypeError('Persisted AL message end identity does not match its message');
-            }
-            return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'end-message'; }>;
+            return decodeALOutboundEndMessage(value, effectId);
         default:
             throw new TypeError('Persisted AL outbound effect kind is invalid');
     }
+}
+
+function decodeALOutboundEndMessage(
+    value: unknown,
+    effectId: string
+): Extract<ALOutboundDurableEffect<never>, { kind: 'end-message'; }> {
+    const end = decodeALAdmissionRecord(value, ['kind', 'msgId', 'admissionEffectId']);
+    requirePersistedALNonEmptyString(end.msgId, 'message end message id');
+    if (effectId !== toALOutboundEndMessageEffectId(end.msgId as string)) {
+        throw new TypeError('Persisted AL message end identity does not match its message');
+    }
+    if (
+        end.admissionEffectId !== null &&
+        !(typeof end.admissionEffectId === 'string' &&
+            end.admissionEffectId.startsWith(`${toALOutboundEffectId(['admit-message'])}:`))
+    ) {
+        throw new TypeError('Persisted AL message end admission is invalid');
+    }
+    return value as Extract<ALOutboundDurableEffect<never>, { kind: 'end-message'; }>;
 }
 
 function decodeALOutboundPendingControl(

@@ -143,7 +143,7 @@ describe('an end-message row that cannot run harms nothing', () => {
         await page.stores.workQueue.enqueueIfAbsent(computeALOutboundWorkEntry({
             namespace: NAMESPACE,
             effectId: toALOutboundEndMessageEffectId(message.id.msgId),
-            payload: { kind: 'end-message', msgId: message.id.msgId },
+            payload: { kind: 'end-message', msgId: message.id.msgId, admissionEffectId: null },
             observedAtMs: Date.now() - 2,
             retryAtMs: 0,
             expireAtTimestamp: Date.now() - 1
@@ -165,7 +165,7 @@ describe('an end-message row that cannot run harms nothing', () => {
         await page.stores.workQueue.enqueueIfAbsent(computeALOutboundWorkEntry({
             namespace: NAMESPACE,
             effectId,
-            payload: { kind: 'end-message', msgId: message.id.msgId },
+            payload: { kind: 'end-message', msgId: message.id.msgId, admissionEffectId: null },
             observedAtMs: Date.now(),
             retryAtMs: 0,
             expireAtTimestamp: Date.now() + 30_000

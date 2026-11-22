@@ -39,6 +39,8 @@ export interface OutboundTestSession {
     readonly checkpointStorage: ALStorageEvent[];
     /** Counts the checkpoint stores' IndexedDB operations, every runtime's together. */
     readonly checkpointObserver: CountingIndexedDbOperationObserver;
+    /** Counts the durable stores' IndexedDB operations, every runtime's together. */
+    readonly durableObserver: CountingIndexedDbOperationObserver;
 }
 
 export interface SessionOutboundTestRuntime<TOwnership extends ALDurableWorkOwnership> {
@@ -61,7 +63,8 @@ export function createOutboundTestSession(): OutboundTestSession {
         namespace: 'session-outbound',
         storage: [],
         checkpointStorage: [],
-        checkpointObserver: createCountingIndexedDbOperationObserver()
+        checkpointObserver: createCountingIndexedDbOperationObserver(),
+        durableObserver: createCountingIndexedDbOperationObserver()
     };
 }
 
@@ -81,6 +84,7 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
         dbName: session.dbName,
         namespace: session.namespace,
         decodePrepared: decodeOutboundTestPayload,
+        observer: session.durableObserver,
         storageHealth: new ALStorageHealth({ storeId: session.namespace, storage: (event) => session.storage.push(event) })
     });
     const checkpointStores = createSessionCheckpointTestStores(session, ownership);

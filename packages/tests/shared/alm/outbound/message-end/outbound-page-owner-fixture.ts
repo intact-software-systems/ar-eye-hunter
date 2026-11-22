@@ -1,5 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundMessageRuntime,
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEndMessageEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import {
@@ -25,6 +29,7 @@ export interface PageOwner {
     readonly namespace: string;
     readonly observer: CountingIndexedDbOperationObserver;
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    readonly volatileStores: ALVolatileOutboundRuntimeStores<OutboundTestPayload>;
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     /** The msgId of every frame this owner's carrier was handed, in send order. */
     readonly sent: string[];
@@ -38,9 +43,10 @@ export function openPageOwner(dbName: string, namespace: string): PageOwner {
     const observer = createCountingIndexedDbOperationObserver();
     const stores = createIndexedDbOutboundTestStores({ observer, namespace, dbName });
     const sent: string[] = [];
+    const volatileStores = createVolatileOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
         stores,
-        volatileStores: createVolatileOutboundTestStores(),
+        volatileStores,
         queueEngine: new InboxOutboxEngine(),
         planOutgoingMessage: (msg, authority) => ({
             ...OUTBOUND_TEST_SEND_PLANNER(msg, authority),
@@ -51,7 +57,7 @@ export function openPageOwner(dbName: string, namespace: string): PageOwner {
             return { status: 'sent', submissionAttempted: true };
         }
     });
-    return { dbName, namespace, observer, stores, runtime, sent };
+    return { dbName, namespace, observer, stores, volatileStores, runtime, sent };
 }
 
 /** The page reloads: its owner is gone with every in-memory send control, and a new one opens the same database. */

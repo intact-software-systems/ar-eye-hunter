@@ -241,7 +241,8 @@ export function isPendingALOutboundWork(entry: ResourceEntry): boolean {
         entry.status === EntityStatus.RESERVED;
 }
 
-function resolveALOutboundWorkReadyAt(entry: ResourceEntry): number {
+/** When a pending row can next be claimed: its lease's end while reserved, else its due time. */
+export function resolveALOutboundWorkReadyAt(entry: ResourceEntry): number {
     if (entry.status === EntityStatus.RESERVED) {
         return computeALWorkLeaseUntilMs(entry, AL_OUTBOUND_WORK_LEASE_MS);
     }

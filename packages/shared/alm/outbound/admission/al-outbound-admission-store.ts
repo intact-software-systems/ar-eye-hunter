@@ -369,6 +369,11 @@ export type ALOutboundDurableEffect<TPrepared> =
     | Readonly<{
         kind: 'end-message';
         msgId: string;
+        /**
+         * The retained `admit-message` row the end could not complete, which its run completes first (D751); `null`
+         * when the end held none.
+         */
+        admissionEffectId: string | null;
     }>
     | Readonly<{
         kind: 'admit-control';

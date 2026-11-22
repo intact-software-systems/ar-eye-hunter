@@ -757,7 +757,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.messageEnds = new ALOutboundPageMessageEnds({
             sendControls: this.sendControls,
             ready: () => this.ready(),
-            readLaneForMessage: (msgId) => this.readLaneForMessage(msgId)
+            readLaneForMessageEnd: (msgId) => this.readMemoryLaneOrDurable((lane) => lane.holdsMessageForEnd(msgId))
         });
     }
 
@@ -999,8 +999,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     /** Memory reads, so a control about a message in memory never reaches IndexedDB. */
     private async readLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
+        return await this.readMemoryLaneOrDurable((lane) => lane.ownsMessage(msgId));
+    }
+
+    /** The first memory lane that holds what the caller asks about, else the durable lane; never an IndexedDB read. */
+    private async readMemoryLaneOrDurable(
+        holds: (lane: ALOutboundStoreLane<TPrepared>) => Promise<boolean>
+    ): Promise<ALOutboundStoreLane<TPrepared>> {
         for (const lane of [this.volatile, this.checkpoint]) {
-            if (lane !== undefined && await lane.ownsMessage(msgId)) {
+            if (lane !== undefined && await holds(lane)) {
                 return lane;
             }
         }
