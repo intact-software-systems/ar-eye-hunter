@@ -188,7 +188,7 @@ function createInternalMutationIngressCapture(
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority,
-            capacity: dependencies.capacity ?? { defaultMaxMembers: null },
+            capacity: { defaultMaxMembers: dependencies.capacity?.defaultMaxMembers ?? null },
             authenticatedAuthority: null
         };
         // Run the capability matrix during ingress capture: a command a mode cannot
@@ -331,9 +331,12 @@ async function readGroupMutationAttempt(
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationRead> {
     const { read, authSession } = await readGroupMutation(
-        owners.repositoryFor(owners.dependencies.runtimeRepository),
-        ingress.command,
-        resolveGroupMutationAuthSessionId(ingress)
+        {
+        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        command: ingress.command,
+        authSessionId: resolveGroupMutationAuthSessionId(ingress),
+        lobbyDefault: ingress.facts.lobbyDefault !== undefined
+    }
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return await readGroupMutationFences(owners, ingress, read);
@@ -344,9 +347,12 @@ async function readGroupMutationAttemptWithSnapshot(
     ingress: GroupStateMutationCommand
 ): Promise<GroupMutationSnapshotRead> {
     const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
-        owners.repositoryFor(owners.dependencies.runtimeRepository),
-        ingress.command,
-        resolveGroupMutationAuthSessionId(ingress)
+        {
+        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        command: ingress.command,
+        authSessionId: resolveGroupMutationAuthSessionId(ingress),
+        lobbyDefault: ingress.facts.lobbyDefault !== undefined
+    }
     );
     await verifyGroupMutationAttemptSession(owners, ingress, authSession);
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };

@@ -18,11 +18,15 @@ export interface CreateApiV1CapturedRecipientEligibilityFiltersInput {
     readonly nowEpochMs: () => number;
 }
 
-/** Durable presence judges a captured row at the dequeue and the retry; this instance's open sockets judge it at send. */
+/**
+ * Durable presence judges a captured row at the dequeue and the retry; this instance's open sockets judge it at send,
+ * re-reading a granted row's subscriptions only for a send its dequeue did not judge.
+ */
 export function createApiV1CapturedRecipientEligibilityFilters(
     input: CreateApiV1CapturedRecipientEligibilityFiltersInput
 ): WsCapturedRecipientEligibilityFilters {
-    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalSessions } = input;
+    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalSessions, nowEpochMs } =
+        input;
     return {
         durable: async (captured) =>
             await filterDurablyLiveWsSessionIds({
@@ -31,22 +35,24 @@ export function createApiV1CapturedRecipientEligibilityFilters(
                 serverPeerId,
                 readPublicationAuthority,
                 readPrincipalSessions,
-                nowEpochMs: input.nowEpochMs()
+                nowEpochMs: nowEpochMs()
             }),
         local: async (captured) => {
-            const nowEpochMs = input.nowEpochMs();
+            const nowMs = nowEpochMs();
             return await filterGrantedWsRecipientSessionIds({
                 ...captured,
-                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
-                    ...captured,
-                    socketServer,
-                    nowMs: nowEpochMs
-                }),
+                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({ ...captured, socketServer, nowMs }),
                 grantedTopics,
                 serverPeerId,
                 readPublicationAuthority,
-                nowEpochMs
+                nowEpochMs: nowMs
             });
-        }
+        },
+        socket: (captured) =>
+            Promise.resolve(filterEligibleDurableWsSessionIds({
+                ...captured,
+                socketServer,
+                nowMs: nowEpochMs()
+            }))
     };
 }

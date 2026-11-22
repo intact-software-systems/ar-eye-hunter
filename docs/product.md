@@ -100,6 +100,45 @@ room changes, director replacement and server restarts leave a pause intact. Los
 running clock. The [scoreboard](../examples/room-scoreboard/README.md) demonstrates these controls.
 Deploy clock-aware writers before creating clocks and before permitting raw room metadata replacement.
 
+## Director-controlled room timelines
+
+Use `rooms.advanceTimeline(roomRef, { name: 'match', phase: 'halftime', durationMs: 180000, expectedRevision, expectedDirectorEpoch }, requestId)`
+to start a phase and its countdown in one durable group update. Revision zero starts a new name. An advance can replace a running,
+paused or expired phase. Reusing a phase label creates a new occurrence. The director chooses the label and when to advance.
+A phase is an application-defined identifier of 1–64 ASCII letters, digits, dots, underscores or hyphens. The application supplies display text.
+
+`rooms.readTimeline` and `rooms.watchTimeline` accept the room and clock name. Each observation combines the phase identifier,
+its `startedAtRevision`, the current clock revision and either `endsAtEpochMs` or `remainingMs` from one room snapshot.
+A missing timeline returns null. A fresh watch on returning to the room recovers changes missed while away. Live updates reuse
+the room WebSocket. Idle watches make no periodic reads. Use the existing clock pause/resume commands with the same name.
+The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
+
+Use `rooms.extendTimeline(roomRef, { name: 'match', durationMs, expectedRevision, expectedDirectorEpoch }, requestId)`
+to add a positive whole number of milliseconds to a running or paused phase. A running phase extends from its existing end.
+A paused phase stays paused with a larger balance. Both keep the phase label and starting revision. An expired running phase
+requires an explicit advance. Retry the original request unchanged with the same ID to recover its receipt.
+
+Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
+its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
+`room-director-changed`. Upgrade group writers and clock readers before enabling timelines.
+The server stores phase and starting revision on the named `rallarRoomClocks` record. Clock-only records remain valid.
+
+## Fixed room schedules
+
+An appointed director publishes a named sequence of 1–32 strictly increasing UTC starts in one room revision.
+Use `rooms.publishSchedule(room, { name, expectedDirectorEpoch, expectedRevision, phases }, requestId)`,
+where each phase contains `phase` and `startsAtEpochMs`. Revision zero creates the schedule; retry the same
+publication with its original request ID. A later revision may edit future boundaries. Boundaries already reached
+at the server, including those reached at any earlier accepted publication, must match the previous revision, including their labels. A schedule and a manually controlled clock
+have separate names and share the room's existing capacity. Upgrade room clock readers and writers before publishing schedules.
+
+`rooms.readSchedule` reads the durable revision. `rooms.watchSchedule` recovers it on entry and WebSocket invalidation.
+On each local display update call `rallar.schedulePosition(schedule, authority?)`. It uses one calibrated time window.
+A current position supplies `current` and `next` with their UTC starts. Before the first start, current is null.
+At a start the new phase applies inclusively, and the final phase continues. A window crossing a start returns
+`uncertain`; loss of calibration returns `unavailable`. The app displays recovery while a watch is stale.
+A boundary crossing requires no server write or network read and triggers no gameplay side effects.
+
 ## Sharing rooms
 
 AR Eye Hunter and Relic Hunters let hosts create code-protected or invite-only
@@ -222,6 +261,24 @@ A future session survives an empty room until the reservation deadline, then rec
 reconnect grace. Live presence keeps the room active. Normal temporary-room archival and seven-day
 deletion apply afterward, including private session records and room-owned game saves.
 
+## Keep a seat while visiting another room
+
+For a finite-capacity player lobby, set `roomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 }`
+at creation or use the lobby owner's `configure(roomRef, policy)`. Ordinary room entry is the default.
+An account can hold one lobby commitment per application and workspace. Its seat survives a room switch
+or disconnect. When the last player arrives, absent holders get a return deadline. When the roster drops
+below capacity their countdowns stop. A new fill gives them a fresh window. An accepted arrival in the
+original room secures the seat before its deadline. The room directory counts occupied player seats, including
+provisional arrivals, and reports how many seat holders are online. Quick Join uses the same ordering
+and checks live capacity when admitting a player. Seat holder identities stay private.
+
+Use `RallarRoomLobby` from `@shared-web/browser/rooms/lobby/rallar-room-lobby.ts`. Create
+`new RallarRoomLobby(rallar, scope)` at application scope and call `start()`. Subscribe with
+`onChange(listener)` or inspect `getState().view`. Its private seat identifies the room, arrival or
+presence status, and current deadline. Scoped account WebSocket changes and returning to the foreground
+wake a durable read. Use `release(roomRef)` for an explicit release, `retry()` for an uncertain command,
+and `stop()` when the application ends observation. Stopping observation preserves the commitment.
+
 ## Find players and start together
 
 AR Eye's Find a game and Relic's Find an expedition form a new group in the current game and
@@ -230,6 +287,11 @@ to find a group and thirty seconds for everyone to confirm; operators can config
 Nobody enters until all players confirm and the server admits the whole group to one unlisted,
 temporary room. Each player then chooses Enter matched room and uses the normal game lobby;
 the director or Keeper starts gameplay explicitly.
+
+A player can switch rooms while searching and confirm from the room they are visiting. Confirmation
+leaves that room selected. The SDK listens for private WebSocket updates scoped to the account,
+application and workspace. It reads the current search on notification, reconnect or foreground
+return, including restoration from the browser's back/forward cache. Idle searches require no HTTP polling.
 
 Cancel, decline and timeout end the whole pending group. They never automatically requeue players.
 A new search is always an explicit choice, including after a successful match. Reload recovers the

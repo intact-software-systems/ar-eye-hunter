@@ -1,3 +1,4 @@
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import {
     Hono,
     type Context,
@@ -5,7 +6,7 @@ import {
 } from 'hono';
 import { etag, RETAINED_304_HEADERS } from 'hono/etag';
 
-import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
+import { computeGroupDirectoryPage, matchesGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
 import {
     decodeGroupDirectoryQuery,
     type GroupDirectoryQuery
@@ -181,7 +182,10 @@ async function readGroupDirectoryPage(
     const measurements = request.query.order === 'peer-rtt' && request.requesterSessionId !== null && listed.length > 0
         ? await readGroupDirectoryRttMeasurements(dependencies.rtcRttRepository, request.requesterSessionId)
         : [];
+    const managed = listed.filter(snapshot => matchesGroupDirectoryQuery(snapshot, request.query) && readRoomLobbyPolicy(snapshot.group.metadata));
+    const lobbyOccupancy = managed.length ? await dependencies.readLobbyOccupancy(managed, nowEpochMs) : undefined;
     return computeGroupDirectoryPage(listed, {
+        lobbyOccupancy,
         query: request.query,
         defaultMaxMembers: dependencies.groupDefaultMaxMembers,
         requesterSessionId: request.requesterSessionId,

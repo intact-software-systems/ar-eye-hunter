@@ -77,6 +77,8 @@ export interface ALOutboundDequeueAuthority {
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly accountView?: ALAccountViewAuthority;
     readonly admittedAudience: readonly string[] | undefined;
+    /** Whether a re-check judged `admittedAudience` at this attempt; false: the reader passed the captured audience through. */
+    readonly audienceJudged: boolean;
     readonly recipientScope: StateScope | undefined;
     readonly principalTargetId?: string;
 }
@@ -606,6 +608,14 @@ export namespace ALOutboundMessageRuntime {
         readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
+    /** What a committed dequeue hands its after-admission beside the row. */
+    export interface DequeuedAdmission {
+        /** The captured policy the row's own commit wrote; absent when the commit wrote none. */
+        readonly committedPolicy: ALOutboundCapturedPolicy | undefined;
+        /** The authority this attempt's dequeue read planned from, when the plan applied it; absent otherwise. */
+        readonly dequeueAuthority: ALOutboundDequeueAuthority | undefined;
+    }
+
     export interface DequeueSource {
         /** Foreign queue types whose rows this owner admits and dispatches. */
         readonly types: ReadonlySet<string>;
@@ -641,12 +651,12 @@ export namespace ALOutboundMessageRuntime {
          */
         readonly signAdmittedMessage?: (msg: ALMessage) => Promise<Either<string, ALMessage>>;
         readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
-        /** Runs in global row order once the row committed, with the captured policy that commit wrote. */
+        /** Runs in global row order once the row committed, with what that commit and its dequeue read decided. */
         readonly afterDequeueAdmission:
             | ((
                 msg: ALMessage,
                 entry: ResourceEntry,
-                committedPolicy: ALOutboundCapturedPolicy | undefined
+                admission: DequeuedAdmission
             ) => void | Promise<void>)
             | undefined;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;

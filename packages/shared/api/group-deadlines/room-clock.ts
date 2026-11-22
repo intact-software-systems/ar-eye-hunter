@@ -2,6 +2,9 @@ import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
+import { assertSchedulePhases, type RoomSchedule } from './room-schedule.ts';
+import type { RoomTimeline, RoomTimelineAdvance, RoomTimelineExtension } from './room-timeline.ts';
+
 export const ROOM_CLOCKS_METADATA_KEY = 'rallarRoomClocks';
 export const MAX_ROOM_CLOCKS = 32;
 
@@ -23,12 +26,25 @@ export type RoomClockCommand =
         | { readonly operation: 'pause' | 'resume'; }
     );
 
-export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
+export type RoomClockMutation = RoomClockCommand
+    | (RoomTimelineAdvance & { readonly operation: 'advance-phase'; })
+    | (RoomSchedule.Publication & { readonly operation: 'publish-schedule'; })
+    | (RoomTimelineExtension & { readonly operation: 'extend-phase'; });
+
+export function assertRoomClockMutation(value: unknown): asserts value is RoomClockMutation {
     const command = requireRecord(value, 'Room clock command');
     const keys = ['name', 'expectedRevision', 'expectedDirectorEpoch', 'operation'];
-    if (command.operation === 'start') {
+    if (command.operation === 'advance-phase') {
+        keys.push('phase');
+        assertRoomDeadlineName(command.phase);
+    }
+    if (command.operation === 'start' || command.operation === 'advance-phase' || command.operation === 'extend-phase') {
         keys.push('durationMs');
         requirePositiveInteger(command.durationMs, 'Clock duration');
+    }
+    else if (command.operation === 'publish-schedule') {
+        keys.push('phases');
+        assertSchedulePhases(command.phases);
     }
     else if (command.operation !== 'pause' && command.operation !== 'resume') {
         throw new TypeError('Invalid clock operation.');
@@ -39,7 +55,14 @@ export function assertRoomClockCommand(value: unknown): asserts value is RoomClo
     requirePositiveInteger(command.expectedDirectorEpoch, 'Expected director epoch');
 }
 
-export function readRoomClocks(metadata: ApiJsonObject): RoomClock[] {
+export function assertRoomClockCommand(value: unknown): asserts value is RoomClockCommand {
+    assertRoomClockMutation(value);
+    if (value.operation === 'advance-phase' || value.operation === 'extend-phase' || value.operation === 'publish-schedule') {
+        throw new TypeError('Use a timeline command to change a phase.');
+    }
+}
+
+export function readRoomTimeRecords(metadata: ApiJsonObject): (RoomClock | RoomTimeline | RoomSchedule)[] {
     if (!Object.hasOwn(metadata, ROOM_CLOCKS_METADATA_KEY)) {
         return [];
     }
@@ -57,24 +80,52 @@ export function readRoomClocks(metadata: ApiJsonObject): RoomClock[] {
         }
         names.add(record.name);
         const identity = { name: record.name, revision: record.revision };
+        if (record.status === 'scheduled') {
+            requireExactKeys(record, ['name', 'revision', 'status', 'elapsedThroughEpochMs', 'phases'], 'Room schedule');
+            requireEpoch(record.elapsedThroughEpochMs, 'Elapsed schedule boundary');
+            assertSchedulePhases(record.phases);
+            return { ...identity, status: 'scheduled', elapsedThroughEpochMs: record.elapsedThroughEpochMs, phases: record.phases };
+        }
+        let occurrence: { phase: string; startedAtRevision: number; } | undefined;
+        const keys = ['name', 'revision', 'status'];
+        if (Object.hasOwn(record, 'phase')) {
+            assertRoomDeadlineName(record.phase);
+            requireEpoch(record.startedAtRevision, 'Phase starting revision');
+            if (!record.startedAtRevision || record.startedAtRevision > record.revision) {
+                throw new TypeError('Invalid phase starting revision.');
+            }
+            keys.push('phase', 'startedAtRevision');
+            occurrence = { phase: record.phase, startedAtRevision: record.startedAtRevision };
+        }
+        const clock = occurrence ? { ...identity, ...occurrence } : identity;
         if (record.status === 'running') {
-            requireExactKeys(record, ['name', 'revision', 'status', 'endsAtEpochMs'], 'Running clock');
+            requireExactKeys(record, [...keys, 'endsAtEpochMs'], 'Running clock');
             requireEpoch(record.endsAtEpochMs, 'Clock end');
             if (record.endsAtEpochMs > 8_640_000_000_000_000) {
                 throw new TypeError('Invalid clock end.');
             }
-            return { ...identity, status: 'running', endsAtEpochMs: record.endsAtEpochMs };
+            return { ...clock, status: 'running', endsAtEpochMs: record.endsAtEpochMs };
         }
-        requireExactKeys(record, ['name', 'revision', 'status', 'remainingMs'], 'Paused clock');
+        requireExactKeys(record, [...keys, 'remainingMs'], 'Paused clock');
         requireEpoch(record.remainingMs, 'Clock balance');
         if (record.status !== 'paused' || !record.remainingMs) {
             throw new TypeError('Invalid paused clock.');
         }
-        return { ...identity, status: 'paused', remainingMs: record.remainingMs };
+        return { ...clock, status: 'paused', remainingMs: record.remainingMs };
     });
 }
 
-export function readRoomClock(metadata: ApiJsonObject, name: string): RoomClock | null {
+export function readRoomClocks(metadata: ApiJsonObject): (RoomClock | RoomTimeline)[] {
+    return readRoomTimeRecords(metadata).filter(record => record.status !== 'scheduled');
+}
+
+export function readRoomSchedule(metadata: ApiJsonObject, name: string): RoomSchedule | null {
+    assertRoomDeadlineName(name);
+    const record = readRoomTimeRecords(metadata).find(value => value.name === name);
+    return record?.status === 'scheduled' ? record : null;
+}
+
+export function readRoomClock(metadata: ApiJsonObject, name: string): RoomClock | RoomTimeline | null {
     assertRoomDeadlineName(name);
     return readRoomClocks(metadata).find((clock) => clock.name === name) ?? null;
 }

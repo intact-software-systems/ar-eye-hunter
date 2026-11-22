@@ -120,6 +120,7 @@ function assembleExactGroupMutationRead(
                 .sort() ?? null
             : null,
         activeMembers,
+        lobbyState: null,
         connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null

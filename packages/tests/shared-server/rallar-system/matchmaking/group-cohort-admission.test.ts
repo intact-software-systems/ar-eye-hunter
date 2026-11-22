@@ -1,3 +1,6 @@
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { readNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/read-new-group-cohort-admission.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { computeGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
 import { computeNewGroupCohortAdmission } from '@shared-server/rallar-system/group-state/mutation/membership/compute-new-group-cohort-admission.ts';
@@ -86,4 +89,67 @@ describe('shared cohort admission', () => {
             await fixture.storage.close();
         }
     });
+});
+
+it('carries the application lobby default and all three private seats through the atomic room creation', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const roomRef = { ...DESTINATION, groupId: 'managed-match' };
+        const participants = ['alice', 'bob', 'carol'].map(principalId => ({ principalId, sessionId: 's-' + principalId, requestId: 'r-' + principalId }));
+        const input = await readNewGroupCohortAdmission({
+            groups: fixture.repository, roomRef, participants, lobbyDefault: { returnWindowMs: 5000, claimWindowMs: 1000 },
+            displayName: 'Managed match', maxSpectators: null, reconnectGraceMs: 60000, capturedAtEpochMs: fixture.nowEpochMs,
+            serviceId: 'cohort-test', nowEpochMs: fixture.nowEpochMs, attemptCount: 1, traceId: 'cohort-test', finishedRetentionMs: 60000
+        });
+        const computed = computeNewGroupCohortAdmission(input);
+        if (computed.status !== 'admitted') throw new Error('Expected ready cohort');
+        await fixture.storage.sql.begin(async transaction => {
+            for (const mutation of computed.mutations) await writeGroupMutation(transaction, mutation);
+        });
+        expect((await fixture.repository.findGroupLobbyEntry(roomRef))?.value.seats.map(seat => seat.principalId)).toEqual(['alice', 'bob', 'carol']);
+        for (const { principalId } of participants) {
+            expect((await fixture.repository.findLobbyCommitmentEntry(roomRef, principalId))?.value.seat?.roomRef).toEqual(roomRef);
+        }
+    } finally { await fixture.storage.close(); }
+});
+
+it('rolls back the losing room when two writers reserve the same account from an empty predecessor', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const create = async (groupId: string) => {
+            const prepared = await fixture.prepare(mutationDescriptor({
+                operation: 'createGroup', scope: DESTINATION, groupId, request: {
+                    groupId, displayName: groupId, requestId: groupId, createdByPrincipalId: 'participant',
+                    joinMode: 'open', kind: 'room', maxMembers: 2, roomLobby: { returnWindowMs: 5000, claimWindowMs: 1000 }
+                }
+            }), 'participant');
+            return computeNewGroupCohortAdmission({ creation: prepared, participants: [] });
+        };
+        const one = await create('first-court');
+        const two = await create('second-court');
+        if (one.status !== 'admitted' || two.status !== 'admitted') throw new Error('Expected both candidates');
+        await fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, one.mutations[0]));
+        await expect(fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, two.mutations[0]))).rejects.toThrow();
+        expect(await fixture.repository.readSnapshot({ ...DESTINATION, groupId: 'second-court' })).toBeUndefined();
+        expect((await fixture.repository.findLobbyCommitmentEntry(DESTINATION, 'participant'))?.value.seat?.roomRef.groupId).toBe('first-court');
+    } finally { await fixture.storage.close(); }
+});
+
+it('retries a mixed room and lobby read instead of recreating a disabled lobby during admission', async () => {
+    const fixture = await createGroupMoveTestDatabase();
+    try {
+        const configure = await fixture.prepare(mutationDescriptor({
+            operation: 'updateGroup', scope: DESTINATION, groupId: DESTINATION.groupId, request: {
+                requestId: 'enable', actorPrincipalId: 'alice',
+                roomLobby: { operation: 'configure', policy: { returnWindowMs: 3000, claimWindowMs: 2000 } }
+            }
+        }), 'alice');
+        const updated = computeGroupMutation(configure);
+        if (updated.outcome !== 'write') throw new Error('Expected managed room');
+        await fixture.storage.sql.begin(transaction => writeGroupMutation(transaction, updated));
+        const before = await fixture.join('bob');
+        if (!before.read.lobbyState) throw new Error('Expected lobby read');
+        const afterDisable = { ...before.read.lobbyState, lobby: null };
+        expect(() => computeGroupMutation({ ...before, read: { ...before.read, lobbyState: afterDisable } })).toThrow(RuntimeStateWriteConflictError);
+    } finally { await fixture.storage.close(); }
 });

@@ -1,10 +1,15 @@
-import { rallar, type RoomClockCommand, type RoomClockObservation } from '@shared-web/browser/rallar.ts';
+import { renderCourtProgram } from './render-court-program.ts';
+import { rallar, type RoomSchedule, type RoomClockCommand, type RoomClockObservation, type RoomTimelineAdvance } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 const entry = document.querySelector<HTMLFormElement>('#entry')!;
 const board = document.querySelector<HTMLElement>('#board')!;
 const output = board.querySelector('output')!;
 const phase = board.querySelector<HTMLElement>('#phase')!;
+const program = board.querySelector<HTMLElement>('#program')!;
+const period = board.querySelector<HTMLElement>('#period')!;
+const advance = board.querySelector<HTMLButtonElement>('#advance')!;
+const switchCourt = board.querySelector<HTMLButtonElement>('#switch')!;
 const appoint = board.querySelector<HTMLButtonElement>('#appoint')!;
 const change = board.querySelector<HTMLButtonElement>('#change')!;
 const error = document.querySelector<HTMLElement>('[role="alert"]')!;
@@ -13,8 +18,11 @@ rallar.configure({ apiBaseUrl: import.meta.env.VITE_RALLAR_API_BASE_URL ?? 'http
 rallar.setDefaults(scope);
 let room: GroupRef | undefined;
 let state: RoomClockObservation = { status: 'stale', clock: null };
+let schedule: RoomSchedule.Observation = { status: 'stale', schedule: null };
 let busy = false;
-let retry: { command: RoomClockCommand; id: string; } | undefined;
+let observation: AbortController | undefined;
+type ScoreboardCommand = RoomClockCommand | (RoomTimelineAdvance & { operation: 'advance-phase'; });
+let retry: { command: ScoreboardCommand; id: string; } | undefined;
 
 function display(ms: number): string {
     const seconds = Math.ceil(ms / 1000);
@@ -50,8 +58,15 @@ function render() {
         return;
     }
     const director = rallar.director.status(room);
+    renderCourtProgram(program, schedule);
     const face = clockFace();
+    const periodName = state.clock && 'phase' in state.clock ? state.clock.phase : undefined;
+    period.textContent = periodName ?? '';
     phase.textContent = face.label;
+    advance.hidden = state.status !== 'current' || !state.clock ||
+        (periodName !== undefined && periodName !== 'period-1');
+    advance.disabled = busy || !director.active || !director.isDirector;
+    switchCourt.disabled = busy;
     output.value = face.time;
     appoint.hidden = director.isDirector;
     appoint.disabled = busy;
@@ -104,12 +119,27 @@ entry.onsubmit = (event) => {
         entry.hidden = true;
         board.hidden = false;
         board.querySelector('h2')!.textContent = groupId;
-        rallar.rooms.watchClock(target, 'period', (current) => {
+        observation = new AbortController();
+        rallar.rooms.watchSchedule(target, 'program', current => {
+            schedule = current;
+            render();
+        }, { signal: observation.signal });
+        rallar.rooms.watchClock(target, 'match', (current) => {
             state = current;
             render();
-        });
-        window.setInterval(render, 250);
+        }, { signal: observation.signal });
+        render();
     });
+};
+window.setInterval(render, 250);
+switchCourt.onclick = () => {
+    observation?.abort();
+    room = undefined;
+    state = { status: 'stale', clock: null };
+    schedule = { status: 'stale', schedule: null };
+    retry = undefined;
+    entry.hidden = false;
+    board.hidden = true;
 };
 appoint.onclick = () => {
     if (room) {
@@ -118,30 +148,43 @@ appoint.onclick = () => {
         });
     }
 };
-change.onclick = () => {
-    const action = render();
-    if (!room || !action) {
+function updatePeriod(action: 'start' | 'pause' | 'resume' | 'halftime') {
+    if (!room || state.status !== 'current') {
         return;
     }
     const target = room;
     const director = rallar.director.status(target);
-    if (!director.appointment || !director.isDirector) {
+    if (!director.appointment || !director.active || !director.isDirector) {
         return;
     }
-    const clock = state.clock;
     const base = {
-        name: 'period',
-        expectedRevision: clock?.revision ?? 0,
+        name: 'match',
+        expectedRevision: state.clock?.revision ?? 0,
         expectedDirectorEpoch: director.appointment.epoch
     };
-    const command: RoomClockCommand = action === 'start'
-        ? { ...base, operation: action, durationMs: 600_000 }
+    const command: ScoreboardCommand = action === 'start' || action === 'halftime'
+        ? { ...base, operation: 'advance-phase', phase: action === 'start' ? 'period-1' : 'halftime',
+            durationMs: action === 'start' ? 600_000 : 180_000 }
         : { ...base, operation: action };
     if (!retry || JSON.stringify(command) !== JSON.stringify(retry.command)) {
         retry = { command, id: crypto.randomUUID() };
     }
     const request = retry;
     void perform(async () => {
-        await rallar.rooms.changeClock(target, request.command, request.id);
+        if (command.operation === 'advance-phase') {
+            const { operation: _operation, ...advance } = command;
+            await rallar.rooms.advanceTimeline(target, advance, request.id);
+        }
+        else {
+            await rallar.rooms.changeClock(target, command, request.id);
+        }
     });
+}
+
+change.onclick = () => {
+    const action = render();
+    if (action) updatePeriod(action);
+};
+advance.onclick = () => {
+    if (!advance.hidden && !advance.disabled) updatePeriod('halftime');
 };

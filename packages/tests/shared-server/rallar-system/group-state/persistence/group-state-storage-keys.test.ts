@@ -359,6 +359,7 @@ function createMutationRead(): GroupMutationRead {
         activeMemberPrincipalIds: null,
         activeMembers: null,
         plannedLayoutRow: null,
+        lobbyState: null,
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;

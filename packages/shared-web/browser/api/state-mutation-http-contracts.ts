@@ -36,7 +36,10 @@ export type PutStateGroupTopologyOverrideBody = Omit<PutGroupTopologyOverrideReq
 export type ReconfigureStateGroupTopologyBody = Omit<ReconfigureGroupTopologyRequest, 'requestId'>;
 
 export type CreateStateGroupBody = Omit<CreateGroupRequest, 'requestId'>;
-export type UpdateStateGroupBody = Omit<UpdateGroupRequest, 'requestId'>;
+export interface UpdateStateGroupBody extends Omit<UpdateGroupRequest, 'requestId' | 'roomLobby'> {
+    /** Account participation writes acknowledge only the room and use the private lobby owner. */
+    readonly roomLobby?: Extract<NonNullable<UpdateGroupRequest['roomLobby']>, { operation: 'configure' }>;
+}
 export type AppointStateGroupDirectorBody = Omit<AppointGroupDirectorRequest, 'requestId'>;
 export type JoinStateGroupBody = Omit<JoinGroupRequest, 'requestId'>;
 export type CreateStateGroupInviteBody = Omit<CreateGroupInviteRequest, 'requestId'>;

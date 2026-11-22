@@ -1,3 +1,5 @@
+import { settleDueSeats } from '@shared/api/room-lobbies/room-lobby-windows.ts';
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryPage } from '@shared/api/group-directory/group-directory-types.ts';
 import { readGroupRetentionState } from '@shared/api/group-retention.ts';
@@ -17,6 +19,7 @@ import {
 
 export interface ComputeGroupDirectoryPageInput {
     readonly query: GroupDirectoryQuery;
+    readonly lobbyOccupancy?: ReadonlyMap<string, Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'>>;
     /** Admission's cap for groups without their own `maxMembers`; null means uncapped. */
     readonly defaultMaxMembers: number | null;
     readonly requesterSessionId: string | null;
@@ -28,6 +31,7 @@ export interface ComputeGroupDirectoryPageInput {
 interface GroupDirectoryCandidate {
     readonly snapshot: GroupSnapshot;
     readonly position: GroupDirectoryCursor;
+    readonly playerCount: number;
 }
 
 const PEER_RTT_MAX_SAMPLE_AGE_MS = 60_000;
@@ -40,17 +44,21 @@ export function computeGroupDirectoryPage(
     const peerRtt = computeRecentPeerRtt(input);
     const ordered = snapshots
         .filter((snapshot) => matchesGroupDirectoryQuery(snapshot, query))
-        .map((snapshot): GroupDirectoryCandidate => ({
-            snapshot,
-            position: {
-                order: query.order,
-                groupId: snapshot.group.groupId,
-                onlineMemberCount: countOnlineGroupPlayers(snapshot),
-                peerRttMs: query.order === 'peer-rtt'
-                    ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
-                    : null
-            }
-        }))
+        .map((snapshot): GroupDirectoryCandidate => {
+            const occupancy = input.lobbyOccupancy?.get(snapshot.group.groupId);
+            return {
+                snapshot,
+                playerCount: occupancy?.playerCount ?? countGroupPlayers(snapshot),
+                position: {
+                    order: query.order,
+                    groupId: snapshot.group.groupId,
+                    onlineMemberCount: occupancy?.onlinePlayerCount ?? countOnlineGroupPlayers(snapshot),
+                    peerRttMs: query.order === 'peer-rtt'
+                        ? computeGroupPeerRtt(snapshot, peerRtt, input.nowEpochMs)
+                        : null
+                }
+            };
+        })
         .toSorted((left, right) => compareDirectoryPositions(left.position, right.position))
         .filter((candidate) => query.after === null || compareDirectoryPositions(candidate.position, query.after) > 0);
     const page = ordered.slice(0, query.limit);
@@ -74,18 +82,20 @@ export function matchesGroupDirectoryQuery(
             (query.includeEmpty && readGroupRetentionState(snapshot.group.metadata) === null));
 }
 
-/**
- * Online counts change between page requests, so a room can move across the cursor and be repeated
- * or skipped. Pages are a best-effort view of a live lobby, not a consistent snapshot.
- */
-export function compareGroupDirectoryOrder(left: GroupSnapshot, right: GroupSnapshot): number {
-    if (countOnlineGroupPlayers(left) !== countOnlineGroupPlayers(right)) {
-        return countOnlineGroupPlayers(right) - countOnlineGroupPlayers(left);
-    }
-    return left.group.groupId < right.group.groupId ? -1 : left.group.groupId > right.group.groupId ? 1 : 0;
+export function projectGroupLobbyOccupancy(
+    snapshot: GroupSnapshot, lobby: RoomLobby, nowEpochMs: number
+): Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'> {
+    const seats = settleDueSeats(lobby, nowEpochMs);
+    const online = new Set(snapshot.activeSessions.filter(session =>
+        session.status === 'active' && session.expiresAtEpochMs > nowEpochMs).map(session => session.principalId));
+    return {
+        playerCount: seats.length,
+        onlinePlayerCount: seats.filter(seat => seat.present && online.has(seat.principalId)).length
+    };
 }
 
-function compareDirectoryPositions(left: GroupDirectoryCursor, right: GroupDirectoryCursor): number {
+/** Online counts can change between requests. A room can move across a previously issued cursor. */
+export function compareDirectoryPositions(left: GroupDirectoryCursor, right: GroupDirectoryCursor): number {
     if (left.onlineMemberCount !== right.onlineMemberCount) {
         return right.onlineMemberCount - left.onlineMemberCount;
     }
@@ -147,7 +157,7 @@ function toGroupDirectoryEntry(
     candidate: GroupDirectoryCandidate,
     defaultMaxMembers: number | null
 ): GroupDirectoryEntry {
-    const { snapshot, position } = candidate;
+    const { snapshot, position, playerCount } = candidate;
     const group = snapshot.group;
     const maxMembers = group.maxMembers ?? defaultMaxMembers;
     return {
@@ -156,13 +166,13 @@ function toGroupDirectoryEntry(
         kind: group.kind,
         joinMode: group.joinMode,
         memberCount: snapshot.memberCount,
-        playerCount: countGroupPlayers(snapshot),
-        onlinePlayerCount: countOnlineGroupPlayers(snapshot),
+        playerCount,
+        onlinePlayerCount: position.onlineMemberCount,
         spectatorCount: snapshot.members.filter(isGroupSpectator).length,
         maxSpectators: readGroupSpectatorCapacity(group.metadata),
         onlineMemberCount: snapshot.onlineMemberCount,
         maxMembers,
-        isFull: maxMembers !== null && countGroupPlayers(snapshot) >= maxMembers,
+        isFull: maxMembers !== null && playerCount >= maxMembers,
         lifecycleState: group.lifecycleState,
         peerRttMs: position.peerRttMs
     };

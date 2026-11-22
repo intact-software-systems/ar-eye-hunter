@@ -31,6 +31,7 @@ const ALLOWED_ORIGIN = 'http://localhost:5176';
 interface ReadDirectoryOptions {
     readonly path?: string;
     readonly headers?: HeadersInit;
+    readonly readLobbyOccupancy?: GroupStateRouteDependencies['readLobbyOccupancy'];
     readonly strict?: boolean;
     readonly authenticated?: boolean;
     readonly principalId?: string;
@@ -63,6 +64,7 @@ function readDirectory(
     const nowEpochMs = options.nowEpochMs;
     const dependencies = createGroupStateRouteTestDependencies({
         strictReadAuthorization: strict,
+        readLobbyOccupancy: options.readLobbyOccupancy,
         groupService: {
             listSnapshots: (scope) =>
                 Promise.resolve(snapshots.filter((snapshot) =>
@@ -122,6 +124,24 @@ test('group directory lists open groups the caller is not a member of as entries
         'playerCount',
         'spectatorCount'
     ]);
+});
+
+test('managed room directory counts held seats independently of membership and never returns their identities', async () => {
+    const snapshot = openSnapshot('courts', ['owner', 'released']);
+    const group = { ...snapshot.group, maxMembers: 2, metadata: { ...snapshot.group.metadata,
+        rallarRoomLobby: { returnWindowMs: 120000, claimWindowMs: 60000 } } };
+    const page = await readPage(await readDirectory([{ ...snapshot, group }], {
+        readLobbyOccupancy: async (rooms) => {
+            assert.deepEqual(rooms.map(room => room.group.groupId), ['courts']);
+            return new Map([['courts', { playerCount: 1, onlinePlayerCount: 0 }]]);
+        }
+    }));
+    const [room] = page.entries;
+    assert.equal(room.memberCount, 2);
+    assert.equal(room.playerCount, 1);
+    assert.equal(room.onlinePlayerCount, 0);
+    assert.equal(room.isFull, false);
+    assert.doesNotMatch(JSON.stringify(page), /released|owner/);
 });
 
 test('group directory omits groups the caller already reads in full', async () => {

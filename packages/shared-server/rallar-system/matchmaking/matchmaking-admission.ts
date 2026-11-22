@@ -1,3 +1,4 @@
+import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { readNewGroupCohortAdmission } from '../group-state/mutation/membership/read-new-group-cohort-admission.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
@@ -6,6 +7,7 @@ import type { MatchmakingCommand } from './matchmaking-command.ts';
 import type { MatchmakingProposal } from './matchmaking-pool.ts';
 
 export interface MatchmakingAdmissionReadInput {
+    readonly lobbyDefault?: RoomLobby.Policy;
     readonly groups: GroupStateRepository;
     readonly proposal: MatchmakingProposal;
     readonly command: MatchmakingCommand;
@@ -26,6 +28,7 @@ export async function readMatchmakingAdmission(
     const { roomRef } = input.proposal;
     return await readNewGroupCohortAdmission({
         groups: input.groups,
+        lobbyDefault: input.lobbyDefault,
         roomRef,
         displayName: 'Matched room',
         maxSpectators: null,

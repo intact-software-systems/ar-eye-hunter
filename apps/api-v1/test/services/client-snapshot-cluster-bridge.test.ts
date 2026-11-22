@@ -14,6 +14,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -112,15 +113,16 @@ for (
             try {
                 const bridged = placement === 'unbridged' ? [] : [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const;
                 for (const [service, socket, id] of bridged) {
+                    const socketFilter: WsCapturedRecipientEligibilityFilter = (captured) =>
+                        Promise.resolve(
+                            filterEligibleDurableWsSessionIds({ ...captured, socketServer: socket, nowMs: Date.now() })
+                        );
                     await installQueueBoxPubSubBridge({
                         wsQBoxServerService: service,
                         bridge,
                         channel: 'snapshot',
                         publisherId: id,
-                        filterEligibleCapturedSessionIds: (captured) =>
-                            Promise.resolve(
-                                filterEligibleDurableWsSessionIds({ ...captured, socketServer: socket, nowMs: Date.now() })
-                            )
+                        capturedRecipientEligibilityFilters: { local: socketFilter, socket: socketFilter }
                     });
                 }
                 await stores.workQueue.enqueue(entry);

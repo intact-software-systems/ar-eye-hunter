@@ -1,3 +1,6 @@
+import type { GroupDirectoryEntry } from '@shared/api/group-directory/group-directory-types.ts';
+import { projectGroupLobbyOccupancy } from '../directory/compute-group-directory-page.ts';
+import { GROUP_LOBBIES_NAMESPACE, GROUP_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey, decodeStoredLobby, decodeStoredCommitment } from '../lobby/group-lobby-storage.ts';
 import type { GroupPublicationGrant } from '@shared/api/group-publication/group-publication-grants.ts';
 import type {
     Group,
@@ -7,6 +10,7 @@ import type {
     GroupPresenceSummary,
     GroupRef,
     GroupScope,
+    GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import {
@@ -363,6 +367,30 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             groupSessionIntentKey(ref, principalId)
         );
         return stored ? canonicalStoredGroupSessionIntent(stored, ref) : undefined;
+    }
+
+    /** Project only counts for the directory. Held seats can outlive presence or be released while membership remains. */
+    async readLobbyOccupancy(snapshots: readonly GroupSnapshot[], nowEpochMs: number) {
+        const byKey = new Map(snapshots.map(snapshot => [groupStateGroupStorageKey(snapshot.group), snapshot]));
+        const rows = await this.listJsonEntryValuesByKeys(GROUP_LOBBIES_NAMESPACE, [...byKey.keys()]);
+        const counts = new Map<string, Pick<GroupDirectoryEntry, 'playerCount' | 'onlinePlayerCount'>>();
+        for (const row of rows) {
+            const snapshot = byKey.get(row.entry.key);
+            if (!snapshot) throw new TypeError('Unexpected snapshot in lobby occupancy read');
+            const { value } = decodeStoredLobby(row, snapshot.group);
+            counts.set(snapshot.group.groupId, projectGroupLobbyOccupancy(snapshot, value, nowEpochMs));
+        }
+        return counts;
+    }
+
+    async findGroupLobbyEntry(ref: GroupRef) {
+        const stored = await this.getJsonEntryValue(GROUP_LOBBIES_NAMESPACE, groupStateGroupStorageKey(ref));
+        return stored ? decodeStoredLobby(stored, ref) : undefined;
+    }
+
+    async findLobbyCommitmentEntry(scope: GroupScope, principalId: string) {
+        const stored = await this.getJsonEntryValue(GROUP_LOBBY_COMMITMENTS_NAMESPACE, lobbyCommitmentKey(scope, principalId));
+        return stored ? decodeStoredCommitment(stored, scope, principalId) : undefined;
     }
 
     async findSessionReservationsEntry(

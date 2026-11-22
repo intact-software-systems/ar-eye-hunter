@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
     chmod,
     mkdir,
@@ -88,7 +89,8 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const operatorUsername = 'synthetic workflow user';
 const operatorPassword = 'synthetic "password" $HOME `literal` $(literal) \\';
 const writerPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
-const osEnvironment = { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' };
+// macOS keeps `sha256sum`, which the writer names registered users with, in /sbin.
+const osEnvironment = { PATH: '/usr/bin:/bin:/sbin', LANG: 'C', LC_ALL: 'C' };
 const workflowPorts = [
     { file: 'hetzner-distributed-recipe-runner.yml', step: 'Render remote run env', output: 'rallar-distributed-recipe.env' },
     { file: 'hetzner-headless-browsers.yml', step: 'Render remote headless env', output: 'rallar-headless-action.env' }
@@ -297,6 +299,59 @@ describe('headless worker EnvironmentFile', () => {
         expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
     });
 
+    it('names each registered agent\'s user after its agent id and its room: one room, the same users; another room, other users', async (context) => {
+        const writeRoomAgents = async (roomId: string): Promise<Readonly<Record<string, string>>> => {
+            const fixture = await createHeadlessEnvironmentFixture(context);
+            const result = await writeWorkerEnvironment(context, fixture, {
+                ...existingWorkerValues,
+                RALLAR_BLACK_BOX_REGISTER: 'true',
+                RALLAR_BLACK_BOX_ROOM_ID: roomId
+            });
+            expect(result).toEqual({ status: 0, stdout: '', stderr: '' });
+            return toAgentCredentials(await readEnvironmentFile(context, fixture.destination));
+        };
+
+        const firstRun = await writeRoomAgents('run-room-a');
+        expect(firstRun).toEqual({
+            RALLAR_BLACK_BOX_AGENT_1_PASSWORD: 'synthetic-global-password',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: toRoomUsername('synthetic-08', 'run-room-a'),
+            RALLAR_BLACK_BOX_AGENT_2_PASSWORD: 'synthetic-global-password',
+            RALLAR_BLACK_BOX_AGENT_2_USERNAME: toRoomUsername('synthetic-09', 'run-room-a')
+        });
+        expect(await writeRoomAgents('run-room-a')).toEqual(firstRun);
+        expect((await writeRoomAgents('run-room-b')).RALLAR_BLACK_BOX_AGENT_1_USERNAME).toBe(toRoomUsername('synthetic-08', 'run-room-b'));
+        expect(toRoomUsername('synthetic-08', 'run-room-b')).not.toBe(toRoomUsername('synthetic-08', 'run-room-a'));
+    });
+
+    it('refuses registered agents without a room before writing the destination', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const result = await writeWorkerEnvironment(context, fixture, {
+            ...existingWorkerValues,
+            RALLAR_BLACK_BOX_REGISTER: 'true',
+            RALLAR_BLACK_BOX_ROOM_ID: ''
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('RALLAR_BLACK_BOX_ROOM_ID');
+        expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
+    });
+
+    it('refuses registered agents when the room digest is not twelve hex digits, before writing the destination', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const brokenTools = path.join(fixture.directory, 'broken-tools');
+        await mkdir(brokenTools);
+        await writeFile(path.join(brokenTools, 'sha256sum'), '#!/bin/bash\ncat >/dev/null\n', { mode: 0o755 });
+        const result = await writeWorkerEnvironment(context, fixture, {
+            ...existingWorkerValues,
+            PATH: `${brokenTools}:${osEnvironment.PATH}`,
+            RALLAR_BLACK_BOX_REGISTER: 'true'
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('sha256sum');
+        expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
+    });
+
     it('preserves the destination on pre-rename filesystem refusal, cleans its private temp and preserves caller traps', async (context) => {
         const fixture = await createHeadlessEnvironmentFixture(context);
         await writeFile(fixture.destination, 'prior sentinel\n');
@@ -413,7 +468,9 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
         }
         expect((await writeRemoteWorkerEnvironment(context, fixture, remotePath)).status).toBe(0);
         expect(await readEnvironmentFile(context, fixture.destination)).toMatchObject({
-            RALLAR_BLACK_BOX_AGENT_1_USERNAME: file === 'hetzner-distributed-recipe-runner.yml' ? 'actions-agent-01' : 'actions-agent-08',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: file === 'hetzner-distributed-recipe-runner.yml'
+                ? toRoomUsername('actions-agent-01', 'materialized-room')
+                : toRoomUsername('actions-agent-08', 'input-room'),
             RALLAR_BLACK_BOX_AGENT_1_PASSWORD: operatorPassword,
             RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.synthetic.invalid/control',
             RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: 'debug',
@@ -424,7 +481,7 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
 });
 
 describe('Hetzner runner headless agent principals', () => {
-    it('signs each registered agent in as its own controller-NN user while the remote env keeps the operator credential', async (context) => {
+    it('signs each registered agent in as its own user of the run\'s room while the remote env keeps the operator credential', async (context) => {
         const fixture = await createHeadlessEnvironmentFixture(context);
         const remotePath = await renderRunnerControllerAgents(context, fixture, 'true');
 
@@ -436,11 +493,11 @@ describe('Hetzner runner headless agent principals', () => {
         const worker = await readEnvironmentFile(context, fixture.destination);
         expect(toAgentCredentials(worker)).toEqual({
             RALLAR_BLACK_BOX_AGENT_1_PASSWORD: operatorPassword,
-            RALLAR_BLACK_BOX_AGENT_1_USERNAME: 'controller-01',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: toRoomUsername('controller-01', 'materialized-room'),
             RALLAR_BLACK_BOX_AGENT_2_PASSWORD: operatorPassword,
-            RALLAR_BLACK_BOX_AGENT_2_USERNAME: 'controller-02',
+            RALLAR_BLACK_BOX_AGENT_2_USERNAME: toRoomUsername('controller-02', 'materialized-room'),
             RALLAR_BLACK_BOX_AGENT_3_PASSWORD: operatorPassword,
-            RALLAR_BLACK_BOX_AGENT_3_USERNAME: 'controller-03'
+            RALLAR_BLACK_BOX_AGENT_3_USERNAME: toRoomUsername('controller-03', 'materialized-room')
         });
         expect(worker).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
         expect(worker).not.toHaveProperty('RALLAR_BLACK_BOX_PASSWORD');
@@ -545,8 +602,8 @@ describe('GitHub Free headless shard process environment', () => {
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
             RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN: 'synthetic-local-token-1',
             RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN: 'synthetic-local-token-2',
-            RALLAR_BLACK_BOX_AGENT_1_USERNAME: 'actions-agent-08',
-            RALLAR_BLACK_BOX_AGENT_2_USERNAME: 'actions-agent-09',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: toRoomUsername('actions-agent-08', 'input-room'),
+            RALLAR_BLACK_BOX_AGENT_2_USERNAME: toRoomUsername('actions-agent-09', 'input-room'),
             RALLAR_BLACK_BOX_AGENT_1_PASSWORD: 'synthetic-local-password'
         });
         expect(record.environment).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
@@ -715,6 +772,11 @@ async function renderRunnerControllerAgents(context: TestContext, fixture: Headl
     return path.join(fixture.runnerDirectory, 'rallar-distributed-recipe.env');
 }
 
+/** Derived apart from the writer: twelve hex digits of the room id's SHA-256 after the agent id. */
+function toRoomUsername(agentId: string, roomId: string): string {
+    return `${agentId}-${createHash('sha256').update(roomId).digest('hex').slice(0, 12)}`;
+}
+
 function toAgentCredentials(values: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
     return Object.fromEntries(Object.entries(values).filter(([key]) => /^RALLAR_BLACK_BOX_AGENT_\d+_(?:USERNAME|PASSWORD)$/u.test(key)));
 }
@@ -813,8 +875,8 @@ async function writeSyntheticShardTokens(fixture: HeadlessEnvironmentFixture): P
         [
             'RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN=synthetic-local-token-1',
             'RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN=synthetic-local-token-2',
-            'RALLAR_BLACK_BOX_AGENT_1_USERNAME=actions-agent-08',
-            'RALLAR_BLACK_BOX_AGENT_2_USERNAME=actions-agent-09',
+            `RALLAR_BLACK_BOX_AGENT_1_USERNAME=${toRoomUsername('actions-agent-08', 'input-room')}`,
+            `RALLAR_BLACK_BOX_AGENT_2_USERNAME=${toRoomUsername('actions-agent-09', 'input-room')}`,
             'RALLAR_BLACK_BOX_AGENT_1_PASSWORD=synthetic-local-password',
             'RALLAR_BLACK_BOX_AGENT_2_PASSWORD=synthetic-local-password',
             ''

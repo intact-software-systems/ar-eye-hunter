@@ -94,6 +94,7 @@ export interface RallarCreateRoomInput extends
         | 'joinMode'
         | 'directoryListing'
         | 'retention'
+        | 'roomLobby'
         | 'maxMembers'
         | 'maxSpectators'
         | 'maxSessionsPerMember'

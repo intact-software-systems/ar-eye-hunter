@@ -80,7 +80,7 @@ describe('auth logout exact-session cluster delivery', () => {
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(() => fixture.bridge.published.length).toBe(1);
-        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry }));
+        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry, droppedSessionIds: undefined }));
         expect(fixture.target.sent).toHaveLength(1);
         expect(fixture.outsider.sent).toEqual([]);
         expect(await fixture.sessions.findBySessionId(fixture.session.sessionId)).toBeUndefined();
@@ -102,7 +102,7 @@ describe('auth logout exact-session cluster delivery', () => {
             attachTestWebSocket(fixture.remoteSocket, new ConnectionContext({ id: fixture.session.sessionId, socket: replacement }));
             return encode(message);
         });
-        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry }));
+        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry, droppedSessionIds: undefined }));
         expect(fixture.target.sent).toEqual([]);
         expect(replacement.sent).toEqual([]);
         expect(fixture.outsider.sent).toEqual([]);
@@ -119,7 +119,7 @@ describe('auth logout exact-session cluster delivery', () => {
         await fixture.engine.executeOnce();
         await expect.poll(() => fixture.bridge.published.length).toBe(1);
         await fixture.repository.deleteByKey(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key));
-        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry }));
+        await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry, droppedSessionIds: undefined }));
         expect(fixture.target.sent).toHaveLength(1);
         expect(fixture.outsider.sent).toEqual([]);
     });

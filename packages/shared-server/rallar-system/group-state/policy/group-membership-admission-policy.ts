@@ -1,3 +1,5 @@
+import { readRoomLobbyPolicy } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
@@ -20,6 +22,7 @@ import { denyGroupPolicy, GROUP_POLICY_ALLOWED, type GroupPolicyActor } from './
 
 export interface GroupPolicyCapacityConfig {
     readonly defaultMaxMembers: number | null;
+    readonly lobbyPoliciesByApplication?: Readonly<Record<string, RoomLobby.Policy>>;
 }
 
 export interface CanJoinGroupInput {
@@ -261,6 +264,9 @@ function denyGroupParticipationCapacity(
     }
     if (spectator && (member?.role === 'owner' || member?.role === 'admin')) {
         return denyGroupPolicy('forbidden-role', 'Transfer ownership or demote before watching.');
+    }
+    if (!spectator && readRoomLobbyPolicy(snapshot.group.metadata)) {
+        return undefined; // The private lobby seats are checked in the admitting transaction.
     }
     const cap = spectator
         ? readGroupSpectatorCapacity(snapshot.group.metadata)

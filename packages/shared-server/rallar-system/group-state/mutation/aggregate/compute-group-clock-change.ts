@@ -1,4 +1,7 @@
-import { MAX_ROOM_CLOCKS, type RoomClock, type RoomClockCommand } from '@shared/api/group-deadlines/room-clock.ts';
+import { MAX_ROOM_CLOCKS, readRoomTimeRecords, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
+import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
+import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
+import type { Group } from '@shared/api/group-types.ts';
 
 interface ClockRefusal {
     readonly rejectionCode: 'room-clock-revision-conflict' | 'group-mutation-rejected';
@@ -7,10 +10,10 @@ interface ClockRefusal {
 
 /** Evaluated against the same group revision and server time as director authorization. */
 export function computeGroupClockChange(
-    clocks: readonly RoomClock[],
-    command: RoomClockCommand,
+    clocks: readonly (RoomClock | RoomTimeline | RoomSchedule)[],
+    command: RoomClockMutation,
     now: number
-): RoomClock | ClockRefusal {
+): RoomClock | RoomTimeline | RoomSchedule | ClockRefusal {
     const previous = clocks.find((clock) => clock.name === command.name);
     if ((previous?.revision ?? 0) !== command.expectedRevision) {
         return { rejectionCode: 'room-clock-revision-conflict', message: 'Clock revision has changed.' };
@@ -19,19 +22,58 @@ export function computeGroupClockChange(
     if (!Number.isSafeInteger(identity.revision) || (!previous && clocks.length >= MAX_ROOM_CLOCKS)) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock capacity exhausted.' };
     }
+    if (command.operation === 'publish-schedule') {
+        if (previous && previous.status !== 'scheduled') {
+            return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
+        }
+        const elapsedThroughEpochMs = Math.max(now, previous?.elapsedThroughEpochMs ?? now);
+        if (previous && !sameSchedulePhases(previous.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs),
+            command.phases.filter(phase => phase.startsAtEpochMs <= elapsedThroughEpochMs))) {
+            return { rejectionCode: 'group-mutation-rejected', message: 'Elapsed boundaries must be preserved.' };
+        }
+        return { ...identity, status: 'scheduled', elapsedThroughEpochMs, phases: command.phases };
+    }
+    if (previous?.status === 'scheduled') {
+        return { rejectionCode: 'group-mutation-rejected', message: 'Use a schedule revision to change this name.' };
+    }
+    let occurrence: Pick<RoomTimeline, 'phase' | 'startedAtRevision'> | undefined;
+    if (previous && 'phase' in previous) {
+        occurrence = { phase: previous.phase, startedAtRevision: previous.startedAtRevision };
+    }
     let durationMs: number;
     switch (command.operation) {
         case 'start':
+            if (occurrence) {
+                return { rejectionCode: 'group-mutation-rejected', message: 'Advance the timeline to start its next phase.' };
+            }
             if (previous && (previous.status === 'paused' || previous.endsAtEpochMs > now)) {
                 return { rejectionCode: 'group-mutation-rejected', message: 'This clock is already in use.' };
             }
             durationMs = command.durationMs;
             break;
+        case 'advance-phase':
+            occurrence = { phase: command.phase, startedAtRevision: identity.revision };
+            durationMs = command.durationMs;
+            break;
+        case 'extend-phase': {
+            if (!previous || !('phase' in previous) || (previous.status === 'running' && previous.endsAtEpochMs <= now)) {
+                return { rejectionCode: 'group-mutation-rejected', message: 'Only a live or paused phase can be extended.' };
+            }
+            if (previous.status === 'paused') {
+                const remainingMs = previous.remainingMs + command.durationMs;
+                if (now + remainingMs > 8_640_000_000_000_000) {
+                    return { rejectionCode: 'group-mutation-rejected', message: 'Extended balance exceeds the supported UTC range.' };
+                }
+                return { ...previous, revision: identity.revision, remainingMs };
+            }
+            durationMs = previous.endsAtEpochMs - now + command.durationMs;
+            break;
+        }
         case 'pause':
             if (previous?.status !== 'running' || previous.endsAtEpochMs <= now) {
                 return { rejectionCode: 'group-mutation-rejected', message: 'Only a live clock can pause.' };
             }
-            return { ...identity, status: 'paused', remainingMs: previous.endsAtEpochMs - now };
+            return { ...identity, ...occurrence, status: 'paused', remainingMs: previous.endsAtEpochMs - now };
         case 'resume':
             if (previous?.status !== 'paused') {
                 return { rejectionCode: 'group-mutation-rejected', message: 'Only a paused clock can resume.' };
@@ -43,5 +85,24 @@ export function computeGroupClockChange(
     if (endsAtEpochMs > 8_640_000_000_000_000) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock end exceeds the supported UTC range.' };
     }
-    return { ...identity, status: 'running', endsAtEpochMs };
+    return { ...identity, ...occurrence, status: 'running', endsAtEpochMs };
+}
+
+/** Publish phase identity and time together in the one authoritative group write. */
+export function computeGroupClockUpdate(group: Group, command: RoomClockMutation, now: number): Group | ClockRefusal {
+    if (group.kind !== 'room' || group.status !== 'active') {
+        return { rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' };
+    }
+    const clocks = readRoomTimeRecords(group.metadata);
+    const clock = computeGroupClockChange(clocks, command, now);
+    if (!('status' in clock)) {
+        return clock;
+    }
+    const records = [...clocks.filter(previous => previous.name !== clock.name), clock];
+    return { ...group, metadata: {
+        ...group.metadata,
+        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => record.status === 'scheduled'
+            ? { ...record, phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs })) }
+            : record)
+    } };
 }

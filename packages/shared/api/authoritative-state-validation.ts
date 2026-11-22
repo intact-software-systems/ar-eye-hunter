@@ -1,3 +1,4 @@
+import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
@@ -425,7 +426,8 @@ export function validateAuthoritativeGroupSnapshot(
     nullablePositiveInteger(group.maxMembers, 'GroupSnapshot.group.maxMembers');
     nullablePositiveInteger(group.maxSessionsPerMember, 'GroupSnapshot.group.maxSessionsPerMember');
     nonEmptyString(group.ownerPrincipalId, 'GroupSnapshot.group.ownerPrincipalId');
-    decodeRecord(group.metadata, 'GroupSnapshot.group.metadata');
+    const metadata = decodeRecord(group.metadata, 'GroupSnapshot.group.metadata');
+    const roomLobby = Object.hasOwn(metadata, ROOM_LOBBY_METADATA_KEY) ? decodeRoomLobbyPolicy(metadata[ROOM_LOBBY_METADATA_KEY]) : null;
     nonNegativeInteger(group.activeMemberCount, 'GroupSnapshot.group.activeMemberCount');
     for (const key of ['snapshotVersion', 'metadataVersion', 'rosterVersion'] as const) {
         positiveInteger(group[key], `GroupSnapshot.group.${key}`);
@@ -567,7 +569,7 @@ export function validateAuthoritativeGroupSnapshot(
     ) {
         fail('GroupSnapshot aggregate counts are inconsistent');
     }
-    if (typeof group.maxMembers === 'number' && playerCount > group.maxMembers) {
+    if (!roomLobby && typeof group.maxMembers === 'number' && playerCount > group.maxMembers) {
         fail('GroupSnapshot player count exceeds maxMembers');
     }
     if (group.status !== 'active' && sessions.length !== 0) {

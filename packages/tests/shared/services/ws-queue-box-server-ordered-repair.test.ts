@@ -595,7 +595,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         return captured.candidateSessionIds;
     };
     const service = createDefaultWsQueueBoxServerService({
-        capturedRecipientEligibilityFilters: !rechecksAudience ? undefined : { durable: recheck, local: recheck },
+        capturedRecipientEligibilityFilters: !rechecksAudience ? undefined : { durable: recheck, local: recheck, socket: recheck },
         inboundVolatileStores: undefined,
         outbox,
         socket: socketServer,

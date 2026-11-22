@@ -14,6 +14,10 @@ interface PublicSurfaceSnapshot {
 
 const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
+        filePath: 'packages/shared-web/browser/rooms/lobby/rallar-room-lobby.ts',
+        expected: { values: ['RallarRoomLobby'], types: [], starExports: [], namespaceExports: [] }
+    },
+    {
         filePath: 'packages/shared-web/browser/parties/rallar-party.ts',
         expected: { values: ['RallarParty'], types: [], starExports: [], namespaceExports: [] }
     },
@@ -341,7 +345,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
-                'RoomDeadlineObservation'
+                'RoomDeadlineObservation',
+                'RoomSchedule',
+                'RoomTimeline',
+                'RoomTimelineAdvance',
+                'RoomTimelineExtension',
+                'RoomTimelineObservation'
             ],
             starExports: [],
             namespaceExports: []
@@ -508,7 +517,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomClockObservation',
                 'RoomDeadline',
                 'RoomDeadlineChange',
-                'RoomDeadlineObservation'
+                'RoomDeadlineObservation',
+                'RoomSchedule',
+                'RoomTimeline',
+                'RoomTimelineAdvance',
+                'RoomTimelineExtension',
+                'RoomTimelineObservation'
             ],
             starExports: [],
             namespaceExports: []

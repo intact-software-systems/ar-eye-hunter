@@ -226,6 +226,7 @@ function createGroupSetupApp(mutation: ApiV1MutationRuntime, groupInbox: GroupSt
     registerGroupStateRoutes(app, {
         groupStateService: mutation.groupStateService,
         sessionDirectory: mutation.groupStateService.sessionDirectory,
+        readLobbyOccupancy: (rooms, now) => mutation.groupsRepository.readLobbyOccupancy(rooms, now),
         rtcRttRepository: new RtcRttRepository(mutation.runtimeStateRepository),
         requireApiAuthSession: (request) => requireApiAuthSession(request, mutation.authSessionRepository),
         processGroupAppInbox: async (authority, enqueue) => {

@@ -42,8 +42,12 @@ fast path:
 The dispatch helper and the workflow input both default `register_before_login=true`
 so first-run disposable auth users are created; an existing user signs in with
 the same credentials. A full rollout preserves the controller API's Postgres store.
-With registration on, each headless agent gets its own
-`<prefix>-NN` user. Override it with `--register-before-login false` only for
+With registration on, each headless agent gets its own user, named after its
+agent id and the run's room (`<prefix>-NN-<room digest>`), so a run in a room of
+its own signs in as users that carry no earlier room's membership. Only a
+spawned run with a blank `room_id` has such a room; a mixed or external run, or
+one with an explicit `room_id`, signs in as its room's users again. Override it
+with `--register-before-login false` only for
 persistent pre-provisioned users signing in as the shared account.
 
 ```sh
@@ -105,9 +109,12 @@ TLS requirement.
 - `ready_timeout_seconds`: agent and distributed readiness timeout.
 - `terminal_timeout_seconds`: distributed recipe terminal-state timeout.
 - `register_before_login`: the helper and workflow default this to `true`, and each agent
-  then registers its own `<prefix>-NN` user.
+  then registers its own `<prefix>-NN-<room digest>` user.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected. Default: `true`.
+- `server_timing`: roll the API out with its timing and AppInbox phase timing
+  logs for this run; `api-journal.log` then has a line per HTTP request and per
+  AppInbox phase. Default: `false`. The helper flag is `--server-timing`.
 
 Manual fast-iteration dispatch:
 

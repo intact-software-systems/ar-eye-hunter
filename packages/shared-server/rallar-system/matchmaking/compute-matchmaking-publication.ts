@@ -26,7 +26,7 @@ export function computeMatchmakingPublication(input: MatchmakingPublicationInput
         ...input.publication,
         resource: 'matchmaking',
         scope: input.before.scope,
-        principalIds,
+        principalIds: [...principalIds, ...input.transition.finished.map(search => search.principalId)],
         changeId: computeSha256CanonicalJson({
             scope: input.before.scope,
             previousRevision: input.previousRevision,

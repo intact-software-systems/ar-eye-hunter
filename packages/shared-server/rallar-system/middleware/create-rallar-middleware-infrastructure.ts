@@ -86,7 +86,7 @@ export function createRallarMiddlewareInfrastructure(
                     messageId: crypto.randomUUID(),
                     createdAtEpochMs: (options.now ?? Date.now)()
                 }),
-            filterEligibleCapturedSessionIds: options.capturedRecipientEligibilityFilters?.local,
+            capturedRecipientEligibilityFilters: options.capturedRecipientEligibilityFilters,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite(PUB_SUB_REQUEUE_TYPES)

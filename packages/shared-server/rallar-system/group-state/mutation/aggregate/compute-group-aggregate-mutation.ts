@@ -1,4 +1,5 @@
-import { readRoomClocks, ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
+import { readRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
 import {
     createRallarGroupDirectorAppointment,
@@ -47,7 +48,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeGroupClockChange } from './compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from './compute-group-clock-change.ts';
 import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
@@ -68,6 +69,14 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
+    const lobbyChange = command.input.roomLobby;
+    if (lobbyChange && Object.entries(command.input).some(([key, value]) =>
+        !['roomLobby', 'actorPrincipalId', 'actorSessionId', 'reason'].includes(key) && value != null)) {
+        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'A room lobby change must be a separate update.' });
+    }
+    if (lobbyChange?.operation === 'release' && !command.input.actorPrincipalId) {
+        return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Releasing a seat requires its account.' });
+    }
     const directorEpoch = command.input.roomClock?.expectedDirectorEpoch ?? command.input.roomDeadline?.expectedDirectorEpoch;
     if (directorEpoch !== undefined) {
         const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
@@ -81,7 +90,7 @@ export function computeUpdate(
             return rejected({ command, read, facts, ...refusal });
         }
     }
-    else {
+    else if (lobbyChange?.operation !== 'release') {
         const authorityDenial = toUpdateAuthorityDenial(command, read);
         if (authorityDenial) {
             return rejectedByGroupPolicy({ command, read, facts, denial: authorityDenial });
@@ -110,6 +119,12 @@ export function computeUpdate(
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
     let next = computeUpdatedGroup(command, current, audit);
+    if (lobbyChange?.operation === 'configure') {
+        const metadata = { ...next.metadata };
+        if (lobbyChange.policy) metadata[ROOM_LOBBY_METADATA_KEY] = { ...lobbyChange.policy };
+        else delete metadata[ROOM_LOBBY_METADATA_KEY];
+        next = { ...next, metadata };
+    }
     const change = command.input.roomDeadline;
     if (change !== undefined) {
         const deadline = computeGroupDeadlineChange({ current, next, change, nowEpochMs: facts.attemptAtEpochMs });
@@ -118,21 +133,19 @@ export function computeUpdate(
         }
         next = deadline;
     }
-    if (command.input.roomClock) {
-        if (current.kind !== 'room' || current.status !== 'active') {
-            return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: 'Clocks require an active room.' });
+    const clockCommand = command.input.roomClock;
+    if (clockCommand) {
+        const updated = computeGroupClockUpdate(next, clockCommand, facts.attemptAtEpochMs);
+        if ('rejectionCode' in updated) {
+            return rejected({ command, read, facts, ...updated });
         }
-        const clocks = readRoomClocks(current.metadata);
-        const updated = computeGroupClockChange(clocks, command.input.roomClock, facts.attemptAtEpochMs);
-        if ('rejectionCode' in updated) return rejected({ command, read, facts, ...updated });
-        const records = [...clocks.filter(clock => clock.name !== updated.name), updated];
-        next = { ...next, metadata: { ...next.metadata, [ROOM_CLOCKS_METADATA_KEY]: records } };
+        next = updated;
     }
     const capacityRefusal = toGroupCapacityRefusal(next, read, facts.attemptAtEpochMs);
     if (capacityRefusal !== null) {
         return rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message: capacityRefusal });
     }
-    if (sameGroupIgnoringVersions(current, next)) {
+    if (sameGroupIgnoringVersions(current, next) && !(lobbyChange?.operation === 'release' && read.lobbyState?.lobby?.value.seats.some(seat => seat.principalId === command.input.actorPrincipalId))) {
         return noOp(command, read, facts);
     }
     return groupWrite({
@@ -150,12 +163,14 @@ export function computeUpdate(
 
 /** Capacity changes preserve occupied players, outstanding reservations and spectators. */
 function toGroupCapacityRefusal(next: Group, read: GroupMutationRead, nowEpochMs: number): string | null {
+    const lobby = readRoomLobbyPolicy(next.metadata);
+    if (lobby && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers < 1)) return 'A lobby requires finite room capacity.';
     const schedule = readGroupSessionSchedule(next.metadata);
     if (schedule !== null && (next.kind !== 'room' || next.maxMembers === null || next.maxMembers > 64)) {
         return 'Scheduled rooms require a player capacity of 1 to 64.';
     }
     const snapshot = toPolicySnapshot(read, next, nowEpochMs);
-    const occupiedSeats = schedule === null
+    const occupiedSeats = lobby ? 0 : schedule === null
         ? countGroupPlayers(snapshot)
         : countGroupSessionOccupiedSeats({
             schedule,
@@ -439,6 +454,7 @@ function computeUpdatedGroupMetadata(
     if (spectatorCapacity !== undefined) {
         metadata[GROUP_SPECTATOR_CAPACITY_METADATA_KEY] = spectatorCapacity;
     }
+    if (Object.hasOwn(current, ROOM_LOBBY_METADATA_KEY)) metadata[ROOM_LOBBY_METADATA_KEY] = current[ROOM_LOBBY_METADATA_KEY];
     delete metadata[GROUP_RETENTION_METADATA_KEY];
     const retention = readGroupRetentionState(current);
     if (retention !== null) {
