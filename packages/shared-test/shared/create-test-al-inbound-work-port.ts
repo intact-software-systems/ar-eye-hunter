@@ -42,6 +42,9 @@ export function createTestALInboundControlAdmission(
         receiptProofs: { kind: 'carrier-authenticated' },
         diagnostics: undefined,
         planRetriedCopyNextHops: undefined,
-        readGapNackParent: undefined
+        readGapNackParent: undefined,
+        readUpstreamPeerId: () => undefined,
+        isRoomPeerPresent: undefined,
+        isLayoutChildPeer: undefined
     });
 }

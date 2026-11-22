@@ -1,10 +1,17 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOverlayAdjacency } from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { RtcOutboundObservation } from '@shared/multicast/read-rtc-outbound-observation.ts';
-import { isRtcRoutedPeerReady, resolveRtcRelayParentPeerId } from '@shared/multicast/resolve-rtc-upstream-peer-id.ts';
+import {
+    createRtcInboundRoutes,
+    isRtcLayoutChildPeer,
+    isRtcRoutedPeerReady,
+    resolveRtcRelayParentPeerId
+} from '@shared/multicast/resolve-rtc-upstream-peer-id.ts';
 
 import { toAcceptedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
 import { createOriginOverlay, createOriginSnapshot, ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
@@ -64,6 +71,76 @@ describe('the parent a relay forwards a child\'s gap NACK to when it holds nothi
         expect(resolveRtcRelayParentPeerId(toRelayRoutes([['room', BELOW_B]], ['c']), 'a', 'c')).toBeUndefined();
     });
 });
+
+describe('whether a peer is this relay\'s child in the accepted layout of the message\'s room', () => {
+    it.each([
+        { name: 'its neighbour away from the origin', origin: 'a', peerId: 'c', child: true },
+        { name: 'not its neighbour toward the origin', origin: 'a', peerId: 'a', child: false },
+        { name: 'not a peer that is no neighbour', origin: 'a', peerId: 'r', child: false },
+        { name: 'not under an origin the layout does not place', origin: 'g', peerId: 'c', child: false }
+    ])('$name', ({ origin, peerId, child }) => {
+        expect(isRtcLayoutChildPeer(toALOverlayAdjacency('b', BELOW_B), origin, peerId)).toBe(child);
+    });
+
+    it('not without a layout', () => {
+        expect(isRtcLayoutChildPeer(undefined, 'a', 'c')).toBe(false);
+    });
+
+    it('reads only the message\'s room: a child in another room\'s layout is none here', () => {
+        const relayRoutes = toRelayRoutes([['room', BELOW_R], ['room-2', BELOW_X]], ['a', 'c', 'x']);
+        const routes = createRtcInboundRoutes(
+            {
+                groupCache: relayRoutes.rooms,
+                overlayCache: relayRoutes.acceptedOverlays,
+                connectionService: { input: { sessionId: 'b' }, readyPeerIdsForLane: () => relayRoutes.connectedPeerIds }
+            },
+            () => toRelayObservation(BELOW_R, relayRoutes.connectedPeerIds)
+        );
+        const nack = { originPeerId: 'a', fromPeerId: 'c' } as const;
+
+        expect(routes.readGapNackParent?.({ ...toTestNack(), ...nack })).toEqual({ kind: 'rtc-peer', peerId: 'x' });
+        expect(routes.isLayoutChildPeer?.(toRoomMessage(), 'c')).toBe(false);
+    });
+});
+
+/** A message `a` sent in the room `room`. */
+function toRoomMessage() {
+    return newALMulticastMessage({
+        createdAtEpochMs: REPLACED_AT_MS,
+        senderId: 'a',
+        route: { topicId: 'room.feed', resourceId: 'subject', contextId: ORIGIN_ROOM.groupId },
+        groupRef: ORIGIN_ROOM,
+        typeId: 'room.feed.v1',
+        resource: {},
+        options: { ttlMs: 60_000 }
+    });
+}
+
+function toTestNack() {
+    return {
+        msgId: 'subject',
+        fromPeerId: 'c',
+        toPeerId: 'b',
+        logicalRecipientPeerId: 'c',
+        originPeerId: 'a',
+        reason: 'gap',
+        observedAtEpochMs: REPLACED_AT_MS,
+        proof: null
+    } as const;
+}
+
+/** The relay `b` holding `tree` accepted in the room `room`. */
+function toRelayObservation(tree: SessionNextHops, connectedPeerIds: readonly string[]): RtcOutboundObservation {
+    const accepted = toAcceptedLayout(createOriginSnapshot(SESSION_IDS, 3), { tree, version: 2 }, 'b');
+    return {
+        overlayId: 'room',
+        room: accepted.snapshot,
+        overlay: accepted.overlay,
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: OVERLAP_MS, planned: null },
+        connectedPeerIds,
+        nowMs: REPLACED_AT_MS
+    };
+}
 
 /** The leaf `c`, `elapsedMs` after it promoted `BELOW_B` over `BELOW_R`. */
 function toLeafObservation(connectedPeerIds: readonly string[], elapsedMs: number): RtcOutboundObservation {

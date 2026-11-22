@@ -28,10 +28,10 @@ const MISSING_GAP_ORDERING_HINTS: ALMessageRejection = {
 
 /**
  * Every reason this NACK may not be forwarded: it must come from a child hop the row waits on, or, as the child's own
- * word, from a child the relay's accepted layout names (6d), and name a recipient of the frozen audience the origin counts that no stored
- * control of the same statement recorded outside or confirmed (PL9, PL16, S8ii-R1). An outside-audience NACK must also
- * fit the row's outside list and its NACK history; a gap NACK, which writes no row, must carry the ordering hints it
- * forwards.
+ * word, from a child the accepted layout of the message's room names (6d), and name a recipient of the frozen audience
+ * the origin counts that no stored control of the same statement recorded outside or confirmed (PL9, PL16, S8ii-R1).
+ * An outside-audience NACK must also fit the row's outside list and its NACK history; a gap NACK, which writes no row,
+ * must carry the ordering hints it forwards.
  */
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
@@ -75,16 +75,15 @@ export function validateALInboundNackAdmission(
 }
 
 /**
- * A relay's child, on every relay path: a peer the plan its copy went down named (the hops its row waits on, or the next
- * hops it passes a retried copy to), or one its current accepted layout names below it, which the lane shows by
- * resolving this relay's upstream peer for that sender's gap NACK (6d).
+ * A relay's child, on the row path and on 6c: a peer the plan its copy went down named (the hops its row waits on, or
+ * the next hops it passes a retried copy to), or one the accepted layout of the message's room names below it (6d).
  */
 export function isALInboundRelayChild(
     fromPeerId: string,
     plannedChildPeerIds: readonly string[],
-    layoutParentPeerId: string | undefined
+    isLayoutChild: boolean
 ): boolean {
-    return plannedChildPeerIds.includes(fromPeerId) || layoutParentPeerId !== undefined;
+    return plannedChildPeerIds.includes(fromPeerId) || isLayoutChild;
 }
 
 /**
@@ -92,9 +91,9 @@ export function isALInboundRelayChild(
  * must be the child's own word, the row is left as it was, and the origin judges it (6d).
  */
 function isRowChild(candidate: ALInboundNackAdmissionCandidate): boolean {
-    const { nack, pending, layoutParentPeerId } = candidate.read;
+    const { nack, pending, gapRoute } = candidate.read;
     const waitedOn = pending?.expectedFromPeerIds ?? [];
-    return isALInboundRelayChild(nack.fromPeerId, waitedOn, layoutParentPeerId) &&
+    return isALInboundRelayChild(nack.fromPeerId, waitedOn, gapRoute?.isLayoutChild === true) &&
         (waitedOn.includes(nack.fromPeerId) || isALOwnWord(nack));
 }
 
@@ -113,7 +112,7 @@ export function validateALInboundUnreceiptedGapNackAdmission(
     if (nack.fromPeerId === read.arrivalPeerId) {
         issues.push(rejectInboundNack('Inbound NACK comes from the peer the message arrived from'));
     }
-    if (!isALInboundRelayChild(nack.fromPeerId, read.childPeerIds, read.layoutParentPeerId)) {
+    if (!isALInboundRelayChild(nack.fromPeerId, read.childPeerIds, read.route.isLayoutChild)) {
         issues.push(rejectInboundNack('Inbound NACK comes from no child this relay forwards the message to'));
     }
     if (frozenPeerIds !== undefined && !frozenPeerIds.includes(nack.logicalRecipientPeerId)) {
@@ -133,16 +132,14 @@ export function validateALInboundUnreceiptedGapNackAdmission(
 
 /**
  * Every reason a child's gap NACK about a message this relay holds nothing of may not be forwarded (6d): it is the
- * recipient's own word, as only its own report reaches a parent it has no history with, and it carries the ordering hints
- * the origin repairs by. The lane named this relay's parent only for a sender that is its child in its accepted layout.
+ * recipient's own word, as only its own report reaches a parent it has no history with, and it carries the ordering
+ * hints the origin repairs by. The lane named this relay's parent only for a sender that is its child in its accepted
+ * layout.
  */
 export function validateALInboundUnheldGapNackAdmission(
     read: ALInboundUnheldGapNackAdmissionRead
 ): readonly ALMessageRejection[] {
     return [
-        ...(isALInboundRelayChild(read.nack.fromPeerId, [], read.parent.peerId)
-            ? []
-            : [rejectInboundNack('Inbound NACK comes from no child of this relay')]),
         ...(isALOwnWord(read.nack)
             ? []
             : [rejectInboundNack('Inbound NACK speaks for another recipient than its sender')]),

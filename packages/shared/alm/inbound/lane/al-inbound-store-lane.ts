@@ -698,7 +698,10 @@ function createALInboundLaneControlAdmission(
         receiptProofs: dependencies.receiptProofs,
         diagnostics: dependencies.diagnostics,
         planRetriedCopyNextHops: resolveALInboundRetriedCopyNextHops(dependencies),
-        readGapNackParent: dependencies.readGapNackParent
+        readGapNackParent: dependencies.readGapNackParent,
+        readUpstreamPeerId: dependencies.readUpstreamPeerId,
+        isRoomPeerPresent: dependencies.isRoomPeerPresent,
+        isLayoutChildPeer: dependencies.isLayoutChildPeer
     });
 }
 

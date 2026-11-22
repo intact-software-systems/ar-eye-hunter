@@ -1,5 +1,6 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
+    resolveALChildPeerIdsTowardRecipients,
     resolveALUpstreamPeerId,
     toALOverlayAdjacency,
     type ALOverlayAdjacency
@@ -17,7 +18,7 @@ import { resolveRtcRoomRoutingEdges } from './room-authority/resolve-rtc-room-ro
 /** The inbound runtime's route capabilities on an RTC lane (6d). */
 export type RtcInboundRoutes = Pick<
     ALInboundMessageRuntime.Dependencies,
-    'readUpstreamPeerId' | 'isRoutedPeerReady' | 'readGapNackParent'
+    'readUpstreamPeerId' | 'isRoutedPeerReady' | 'isLayoutChildPeer' | 'readGapNackParent'
 >;
 
 /** What the route capabilities read of an RTC lane: its rooms, its accepted layouts and its connected peers. */
@@ -57,6 +58,23 @@ export function resolveRtcUpstreamPeerId(
         originPeerId,
         observation.connectedPeerIds
     );
+}
+
+/**
+ * Whether `peerId` is this session's child in the layout: a neighbour on no route toward `originPeerId`, connected or
+ * not. No peer is one without a layout, or in a layout that does not place the origin.
+ */
+export function isRtcLayoutChildPeer(
+    adjacency: ALOverlayAdjacency | undefined,
+    originPeerId: string,
+    peerId: string
+): boolean {
+    if (adjacency === undefined || !Object.hasOwn(adjacency.nextHopsBySessionId, originPeerId)) {
+        return false;
+    }
+    const neighborPeerIds = adjacency.nextHopsBySessionId[adjacency.selfPeerId] ?? [];
+    return neighborPeerIds.includes(peerId) &&
+        !resolveALChildPeerIdsTowardRecipients(neighborPeerIds, adjacency, [originPeerId]).includes(peerId);
 }
 
 /**
@@ -112,6 +130,12 @@ export function createRtcInboundRoutes(
     return {
         readUpstreamPeerId: (msg) => resolveRtcUpstreamPeerId(readObservation(msg), selfPeerId, msg.id.senderId),
         isRoutedPeerReady: (msg, peerId) => isRtcRoutedPeerReady(readObservation(msg), peerId),
+        isLayoutChildPeer: (msg, peerId) =>
+            isRtcLayoutChildPeer(
+                toRtcAcceptedOverlayAdjacency(readObservation(msg), selfPeerId),
+                msg.id.senderId,
+                peerId
+            ),
         readGapNackParent: (nack) => {
             const routes = {
                 rooms: lane.groupCache,

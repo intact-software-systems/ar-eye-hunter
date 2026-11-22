@@ -341,10 +341,11 @@ to its parent as the recipient signed it, so the origin repairs that recipient t
 that asks for no receipt leaves no relay row: on a lane that passes a copy down again (it supplies
 `forwardRetriedCopy`, as the RTC relay's does; the WS server's lane does not, so the server relays no such NACK), the
 relay forwards a child's gap NACK about such a stored message without one, each time it admits it, and records
-nothing (6c). It sends it to its current upstream peer when its accepted layout names the child its own, as a 6d new
-parent does, since a reshape may have removed the peer the message arrived from, and otherwise toward that peer. It
-admits one from a child (one it forwards the message to, or one its accepted layout names), never that peer, naming a recipient of the message's frozen audience (with none frozen, only the child itself) and the message's
-own track; the origin answers a repeat of a numbered request `duplicate`. A sequence the relay already forwarded and
+nothing (6c). It sends it to the peer the message arrived from while that peer is a ready room peer, and to its
+current upstream peer only once that peer is gone. It admits one from a child (one it forwards the message to, or
+one the accepted layout of the message's room names), never that peer, naming a recipient of the message's frozen
+audience (with none frozen, only the child itself) and the message's own track; the origin answers a repeat of a
+numbered request `duplicate`. A sequence the relay already forwarded and
 its child lost is repaired too: on the same lane, a duplicate of such a message from the peer it first arrived from,
 naming this relay a next hop, is passed down again as a retried forward to the next hops it would go to were it new,
 and a child that holds it reads a duplicate and answers nothing. Nothing tells a repair copy from another copy of the
@@ -710,17 +711,22 @@ layout it replaced while that one is still forwarded over
 ([`isRtcRoutedPeerReady`](../../multicast/resolve-rtc-upstream-peer-id.ts)), so during a reshape's overlap the old
 relay, which still forwards to the leaf, is asked. A direct link wins over that: once the accepted layout links the
 leaf to the origin, the run asks the origin, whose copies no longer pass through the old relay. Once the recorded peer
-is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward the origin
-([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves (a WS runtime,
-a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again. Every run arms
-the next number. A relay never forwards a repair request. Every relay path takes one child rule
-(`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one its current accepted layout
-names below it. It forwards a child's gap NACK toward the origin while it holds a pending row that waits on that
-child; about a stored message that asked for no receipt (6c); and, while the NACK is the child's own word, from a
-layout child its row does not wait on or about a message it holds nothing of (6d). On every path the NACK goes to
-the relay's current upstream peer ([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)),
-not a parent a reshape may have removed, and to the row's parent or the peer the message arrived from only when none
-resolves. The forwards of 6c and 6d record nothing, and a row is left as it was. The origin admits a gap NACK such a relay re-sends for a room send once its repair authority planned a
+is gone the run asks the track's current upstream peer, the one connected neighbour the accepted layout routes toward
+the origin ([`resolveALUpstreamPeerId`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)); when none resolves
+(a WS runtime, a layout without an adjacency, the revealing message no longer kept) it asks the recorded peer again.
+Every run arms the next number. A relay never forwards a repair request. The row path and 6c take one child rule
+(`isALInboundRelayChild`): a child is a peer the plan its copy went down named, or one the accepted layout of the
+message's room names below it ([`isRtcLayoutChildPeer`](../../multicast/resolve-rtc-upstream-peer-id.ts)). A relay
+forwards a child's gap NACK toward the origin while it holds a pending row that waits on that child; about a stored
+message that asked for no receipt (6c); and, while the NACK is the child's own word, from a layout child its row does
+not wait on or about a message it holds nothing of (6d). It keeps the parent it knows, then passes upward: the NACK
+goes to the row's parent, or on 6c the peer the message arrived from, while that peer is a ready room peer, and to
+the relay's current upstream peer only once it is gone. The arrival tree the known parents follow cannot cycle, and
+a gone peer is on no cycle, so relays whose accepted layouts disagree pass one NACK at most once each. A relay that
+holds nothing of the message knows no parent: it sends to the upstream peer its accepted layouts name
+([`resolveRtcRelayParentPeerId`](../../multicast/resolve-rtc-upstream-peer-id.ts)), which admits only a child's own
+word. The forwards of 6c and 6d record nothing, and a row is left as it was. The origin admits a gap NACK such a
+relay re-sends for a room send once its repair authority planned a
 repair to the relay, a ready room neighbour, and while the receipt still owes the recipient (or, with no receipt, the
 audience names it); the repair copy reaches the relay as a first arrival, which it forwards down its own layout. A
 sequence past the window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the

@@ -37,6 +37,7 @@ import {
     computeALInboundUnheldGapNackAdmission,
     computeALInboundUnreceiptedGapNackAdmission,
     toALInboundNackCommitBundle,
+    type ALInboundGapNackRoute,
     type ALInboundNackAdmissionCandidate,
     type ALInboundNackAdmissionRead,
     type ALInboundUnheldGapNackAdmissionRead,
@@ -84,12 +85,33 @@ export interface ALInboundControlAdmissionDependencies {
     readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
     /** `undefined` on a lane that relays no gap NACK about a message it holds nothing of (6d). */
     readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
+    readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    readonly isRoomPeerPresent: ALInboundMessageRuntime.Dependencies['isRoomPeerPresent'];
+    readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 }
 
 /** A gap NACK the relay keeps no row for, by what the relay holds of the message it names. */
 type ALInboundRowlessGapNack =
     | Readonly<{ kind: 'unreceipted'; read: ALInboundUnreceiptedGapNackAdmissionRead; }>
     | Readonly<{ kind: 'unheld'; read: ALInboundUnheldGapNackAdmissionRead; }>;
+
+type ALInboundGapNack = ALInboundUnreceiptedGapNackAdmissionRead['nack'];
+
+type ALInboundRowSurface = ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; };
+
+/** A child's NACK about a message whose row this relay holds, and what the message's room says of a gap NACK. */
+interface ALInboundRowNack {
+    readonly nack: ALInboundNackAdmissionRead['nack'];
+    readonly surface: ALInboundRowSurface;
+    readonly gapRoute: ALInboundGapNackRoute | undefined;
+    readonly nowMs: number;
+}
+
+/** The message a child's gap NACK names, as this relay stores it, and whether the sender is its child in that room. */
+interface ALInboundStoredGapNackMessage {
+    readonly msg: ALMessage;
+    readonly isLayoutChild: boolean;
+}
 
 export type ALInboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -141,6 +163,9 @@ export class ALInboundControlAdmission {
     private readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     private readonly planRetriedCopyNextHops: ALInboundRetriedCopyNextHops | undefined;
     private readonly readGapNackParent: ALInboundMessageRuntime.Dependencies['readGapNackParent'];
+    private readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
+    private readonly isRoomPeerPresent: ALInboundMessageRuntime.Dependencies['isRoomPeerPresent'];
+    private readonly isLayoutChildPeer: ALInboundMessageRuntime.Dependencies['isLayoutChildPeer'];
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
         this.admissionStore = dependencies.admissionStore;
@@ -152,6 +177,9 @@ export class ALInboundControlAdmission {
         this.diagnostics = dependencies.diagnostics;
         this.planRetriedCopyNextHops = dependencies.planRetriedCopyNextHops;
         this.readGapNackParent = dependencies.readGapNackParent;
+        this.readUpstreamPeerId = dependencies.readUpstreamPeerId;
+        this.isRoomPeerPresent = dependencies.isRoomPeerPresent;
+        this.isLayoutChildPeer = dependencies.isLayoutChildPeer;
     }
 
     async admit(
@@ -226,18 +254,70 @@ export class ALInboundControlAdmission {
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
-        const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId }) ??
-            await this.readLayoutChildSurface(nack);
-        // Only a receipted message's relay row writes a control-owner index, so a surface rules the row-less path out.
-        const rowless = surface === undefined && nack.reason === 'gap'
-            ? await this.readRowlessGapNack(arrival, { ...nack, reason: 'gap' }, nowMs)
-            : undefined;
-        if (rowless !== undefined) {
-            return await this.admitRowlessGapNack(arrival, rowless, evidence);
+        const indexed = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
+        if (nack.reason === 'gap' && this.routesGapNack()) {
+            return await this.admitGapNack(arrival, { nack: { ...nack, reason: 'gap' }, indexed, nowMs }, evidence);
         }
-        if (surface === undefined) {
-            return { kind: 'not-handled' };
+        return indexed === undefined
+            ? { kind: 'not-handled' }
+            : await this.admitRowNack(arrival, { nack, surface: indexed, gapRoute: undefined, nowMs }, evidence);
+    }
+
+    /** The lane relays a gap NACK without a row (6c, 6d), or names a layout child in the message's room. */
+    private routesGapNack(): boolean {
+        return this.planRetriedCopyNextHops !== undefined || this.readGapNackParent !== undefined ||
+            this.isLayoutChildPeer !== undefined;
+    }
+
+    /**
+     * A child's gap NACK: about a message this relay holds nothing of (6d); about one whose row waits on the sender or,
+     * in the room's accepted layout, has the sender as its child; or about a stored message that asked for no receipt
+     * (6c). The provenance row is read first, so a message without one costs no canonical read, and the stored message
+     * once, for the room that decides the sender's place and the known parent's readiness.
+     */
+    private async admitGapNack(
+        arrival: ALInboundControlArrival,
+        input: Readonly<{ nack: ALInboundGapNack; indexed: ALInboundRowSurface | undefined; nowMs: number; }>,
+        evidence: ALInboundAcknowledgementEvidence | undefined
+    ): Promise<ALInboundControlAdmissionResult> {
+        const { nack, indexed, nowMs } = input;
+        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
+        const owner = indexed?.owner ?? await this.admissionStore.readMessageProvenance(reference);
+        if (owner === undefined) {
+            const unheld = this.readUnheldGapNack(arrival, nack, nowMs);
+            return unheld === undefined
+                ? { kind: 'not-handled' }
+                : await this.admitRowlessGapNack(arrival, { kind: 'unheld', read: unheld }, evidence);
         }
+        const stored = await this.readStoredGapNackMessage(nack, nowMs);
+        const surface = indexed ?? (stored?.isLayoutChild === true
+            ? await this.readDecisionSurface({
+                msgId: nack.msgId,
+                fromPeerId: nack.fromPeerId,
+                senderId: nack.originPeerId
+            })
+            : undefined);
+        if (surface !== undefined) {
+            const knownParentPeerId = surface.pendingAck?.toPeerId;
+            const gapRoute = stored === undefined || knownParentPeerId === undefined
+                ? undefined
+                : this.readGapNackRoute(stored, nack, knownParentPeerId);
+            return await this.admitRowNack(arrival, { nack, surface, gapRoute, nowMs }, evidence);
+        }
+        const unreceipted = stored === undefined
+            ? undefined
+            : this.readUnreceiptedGapNack(arrival, { nack, owner, stored, nowMs });
+        return unreceipted === undefined
+            ? { kind: 'not-handled' }
+            : await this.admitRowlessGapNack(arrival, { kind: 'unreceipted', read: unreceipted }, evidence);
+    }
+
+    private async admitRowNack(
+        arrival: ALInboundControlArrival,
+        rowNack: ALInboundRowNack,
+        evidence: ALInboundAcknowledgementEvidence | undefined
+    ): Promise<ALInboundControlAdmissionResult> {
+        const { nack, surface, gapRoute, nowMs } = rowNack;
         const candidate = computeALInboundNackAdmission({
             namespace: this.admissionStore.namespace,
             nack,
@@ -246,7 +326,7 @@ export class ALInboundControlAdmission {
             pending: surface.pendingAck,
             acks: surface.acks,
             nacks: surface.nacks,
-            layoutParentPeerId: this.readLayoutParentPeerId(nack),
+            gapRoute,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -289,56 +369,70 @@ export class ALInboundControlAdmission {
         }, evidence);
     }
 
-    /**
-     * A gap NACK the relay keeps no row for: about a stored message that asked for no receipt, on a lane that passes the
-     * repair copy down (6c), or about a message it holds nothing of, on a lane that names its parent for one (6d);
-     * absent for any other, which the row's rules decide as before. The provenance row is read first, so a message
-     * without one costs no canonical read.
-     */
-    private async readRowlessGapNack(
+    /** A gap NACK about a message this relay holds nothing of, on a lane that names its parent for one (6d). */
+    private readUnheldGapNack(
         arrival: ALInboundControlArrival,
-        nack: ALInboundUnreceiptedGapNackAdmissionRead['nack'],
+        nack: ALInboundGapNack,
         nowMs: number
-    ): Promise<ALInboundRowlessGapNack | undefined> {
-        if (this.planRetriedCopyNextHops === undefined && this.readGapNackParent === undefined) {
-            return undefined;
-        }
-        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
-        const owner = await this.admissionStore.readMessageProvenance(reference);
-        if (owner === undefined) {
-            const parent = this.readGapNackParent?.(nack);
-            return parent === undefined ? undefined : {
-                kind: 'unheld',
-                read: {
-                    namespace: this.admissionStore.namespace,
-                    nack,
-                    parent,
-                    nowMs,
-                    controlMsgId: this.newControlId(),
-                    traceId: arrival.msg.id.traceId
-                }
-            };
-        }
-        const read = await this.readUnreceiptedGapNack(arrival, nack, owner, nowMs);
-        return read === undefined ? undefined : { kind: 'unreceipted', read };
+    ): ALInboundUnheldGapNackAdmissionRead | undefined {
+        const parent = this.readGapNackParent?.(nack);
+        return parent === undefined ? undefined : {
+            namespace: this.admissionStore.namespace,
+            nack,
+            parent,
+            nowMs,
+            controlMsgId: this.newControlId(),
+            traceId: arrival.msg.id.traceId
+        };
+    }
+
+    /** The stored message a gap NACK names, read once; absent when the relay keeps no copy of it. */
+    private async readStoredGapNackMessage(
+        nack: ALInboundGapNack,
+        nowMs: number
+    ): Promise<ALInboundStoredGapNackMessage | undefined> {
+        const stored = await this.admissionStore.readDeliverySurface(
+            { senderId: nack.originPeerId, msgId: nack.msgId },
+            nowMs
+        );
+        return stored === undefined
+            ? undefined
+            : { msg: stored.msg, isLayoutChild: this.isLayoutChildPeer?.(stored.msg, nack.fromPeerId) === true };
+    }
+
+    /** What the message's room says of a child's gap NACK, for the parent this relay knows of the message (6d). */
+    private readGapNackRoute(
+        stored: ALInboundStoredGapNackMessage,
+        nack: ALInboundGapNack,
+        knownParentPeerId: string
+    ): ALInboundGapNackRoute {
+        const upstreamPeerId = this.readUpstreamPeerId(stored.msg);
+        return {
+            isLayoutChild: stored.isLayoutChild,
+            knownParentReady: this.isRoomPeerPresent?.(stored.msg, knownParentPeerId) ?? true,
+            upstreamPeerId: upstreamPeerId === nack.fromPeerId ? undefined : upstreamPeerId
+        };
     }
 
     /**
-     * Its parent is this relay's current upstream peer, else the peer the message arrived from; its children the next hops
-     * the lane passes a copy down to; absent for a message that asked for a receipt, or on a lane that passes no copy down.
+     * Its parent is the peer the message arrived from, else, once that one is gone, this relay's current upstream peer;
+     * its children the next hops the lane passes a copy down to; absent for a message that asked for a receipt, or on a
+     * lane that passes no copy down.
      */
-    private async readUnreceiptedGapNack(
+    private readUnreceiptedGapNack(
         arrival: ALInboundControlArrival,
-        nack: ALInboundUnreceiptedGapNackAdmissionRead['nack'],
-        owner: ALInboundMessageOwner,
-        nowMs: number
-    ): Promise<ALInboundUnreceiptedGapNackAdmissionRead | undefined> {
-        if (this.planRetriedCopyNextHops === undefined || owner.source.kind === 'trusted-server') {
-            return undefined;
-        }
-        const reference = { senderId: nack.originPeerId, msgId: nack.msgId };
-        const stored = await this.admissionStore.readDeliverySurface(reference, nowMs);
-        if (stored === undefined || resolveALDeliveryReceiptAlgo(stored.msg) !== 'none') {
+        held: Readonly<{
+            nack: ALInboundGapNack;
+            owner: ALInboundMessageOwner;
+            stored: ALInboundStoredGapNackMessage;
+            nowMs: number;
+        }>
+    ): ALInboundUnreceiptedGapNackAdmissionRead | undefined {
+        const { nack, owner, stored, nowMs } = held;
+        if (
+            this.planRetriedCopyNextHops === undefined || owner.source.kind === 'trusted-server' ||
+            resolveALDeliveryReceiptAlgo(stored.msg) !== 'none'
+        ) {
             return undefined;
         }
         return {
@@ -347,7 +441,7 @@ export class ALInboundControlAdmission {
             msg: stored.msg,
             owner,
             arrivalPeerId: owner.source.peerId,
-            layoutParentPeerId: this.readLayoutParentPeerId(nack),
+            route: this.readGapNackRoute(stored, nack, owner.source.peerId),
             childPeerIds: this.planRetriedCopyNextHops(stored.msg, owner.source),
             nowMs,
             controlMsgId: this.newControlId(),
@@ -434,31 +528,8 @@ export class ALInboundControlAdmission {
         };
     }
 
-    /**
-     * A new parent's row for a message it forwarded to other children, read for the gap NACK of a child its accepted
-     * layout names but its row does not wait on (6d); none for any other NACK.
-     */
-    private async readLayoutChildSurface(
-        nack: ALInboundNackAdmissionRead['nack']
-    ): Promise<(ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; }) | undefined> {
-        return this.readLayoutParentPeerId(nack) !== undefined
-            ? await this.readDecisionSurface({
-                msgId: nack.msgId,
-                fromPeerId: nack.fromPeerId,
-                senderId: nack.originPeerId
-            })
-            : undefined;
-    }
-
-    /** This relay's current upstream peer for a gap NACK from its layout child (6d); none for any other NACK. */
-    private readLayoutParentPeerId(nack: ALInboundNackAdmissionRead['nack']): string | undefined {
-        return nack.reason === 'gap' ? this.readGapNackParent?.(nack)?.peerId : undefined;
-    }
-
     /** The surface of a child's control: none for a peer that owes no tracked message, never one without provenance. */
-    private async readDecisionSurface(
-        subject: ALInboundControlSubject
-    ): Promise<(ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; }) | undefined> {
+    private async readDecisionSurface(subject: ALInboundControlSubject): Promise<ALInboundRowSurface | undefined> {
         const surface = await this.admissionStore.readControlDecisionSurface(subject);
         if (surface === undefined) {
             return undefined;
