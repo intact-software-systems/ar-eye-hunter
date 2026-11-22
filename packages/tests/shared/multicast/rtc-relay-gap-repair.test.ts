@@ -763,10 +763,17 @@ describe('a renewal of a gap below a relay after a reshape (6d)', () => {
                 await drainUntil(async () => (await secondRelay.readSent('c')).length > 1);
                 await deliverEach((await secondRelay.readSent('c')).slice(1), gap.leaf, 'b');
                 await confirmThroughRelays(gap);
-                // Every sequence the leaf delivered is confirmed once, by the leaf, and no receipt is left owing it.
+                // Every sequence the leaf delivered is confirmed by the leaf, and no receipt is left owing it. A relay's
+                // hop-end that follows states the hop it completed, the receipt's classes unchanged.
                 for (const frame of gap.frames) {
-                    expect(gap.chain.origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.msgId === frame.id.msgId))
-                        .toEqual([expect.objectContaining({ confirmedRecipientPeerIds: ['c'], complete: true })]);
+                    const acknowledgements = gap.chain.origin.settlements.filter((settlement) =>
+                        settlement.kind === 'acknowledgement' && settlement.msgId === frame.id.msgId
+                    );
+                    expect(acknowledgements[0]).toMatchObject({ confirmedRecipientPeerIds: ['c'], complete: true });
+                    expect(acknowledgements.map((settlement) => settlement.kind === 'acknowledgement' && settlement.confirmedRecipientPeerIds))
+                        .toEqual(acknowledgements.map(() => ['c']));
+                    expect(acknowledgements.map((settlement) => settlement.kind === 'acknowledgement' && settlement.complete))
+                        .toEqual(acknowledgements.map(() => true));
                     expect(await readOriginUnconfirmed(gap, frame)).toBeUndefined();
                 }
             }

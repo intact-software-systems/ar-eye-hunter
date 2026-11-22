@@ -296,12 +296,6 @@ and it has no status list.
   `granted-rtc-ordered-relay`'s probe loop), and the WS server's receipt
   aggregation refuses a repeated confirmation as a refusal under its guard
   `already-confirmed`, with no `duplicate` label.
-- An origin refuses an honest ACK just before it counts it (D733): in one
-  `granted-rtc-ordered-relay` run over `rtc` the origin's `control-admission`
-  read 4 `rejected` "AL acknowledgement confirms no peer of the pending
-  outbound receipt", one per message, each 1–2 ms before that message's
-  committed ACK, and no `duplicate`. Not classified: whether it is a relayed
-  copy of the same confirmation racing its own, or an early arrival.
 - The inbound work engine's idle busy poll (found while building the relay
   statement rules; on `main` at `d70f2f165`): an idle relay's two inbound
   rotation lanes report ready from rotation progress, not from a row, so its
@@ -315,9 +309,6 @@ and it has no status list.
   refused `missing-proof`, and a relayed one for a recipient the room no longer
   keys is refused `unknown-key`, so such a leaf behind a relay recovers only
   through resync or the track's expiry.
-- A kept complete receipt row admits a next hop's late hop ACK, which states
-  the acknowledgement `complete` again with a later expiry (pre-existing; seen
-  while building D727).
 - `apps/api-v1/test/db/native-receiver-receipts.test.ts` ("automatic
   fourteen-receiver receipts complete through native API WebSockets after held
   ACK release") times out at 5 s, alone and under `bun test`, at `d70f2f165`

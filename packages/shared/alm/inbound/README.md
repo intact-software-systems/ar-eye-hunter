@@ -414,9 +414,9 @@ does not record yet adds it, and the release sends `delivered` to each recorded 
 message over (D56) holds its receipt on the carrier it moved to, and a parent a reshape gave this peer while the gap
 held holds its own on the same carrier as the first, so each receipt is confirmed once the message is delivered.
 
-No retried copy is delivered locally twice. A hop outside the frozen audience
-never reads complete at the origin, so every retry resends to it, bounded by
-the attempt cap.
+No retried copy is delivered locally twice. A next hop outside the frozen audience reads complete at the origin once
+its own terminal hop-end arrives, which confirms no recipient but completes its hop in the origin's hop view, so a
+retry resends into its subtree no more; until then every retry resends to it, bounded by the attempt cap.
 
 **Who may confirm a recipient over RTC.** Over WS a session speaks only for
 itself (S2c-i). Over RTC, under `receiver` and `leader`, a counted recipient (a

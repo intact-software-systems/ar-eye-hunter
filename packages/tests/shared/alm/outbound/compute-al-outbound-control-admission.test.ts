@@ -294,6 +294,54 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
     });
 });
 
+// The granted-rtc-ordered-relay shape: the relay is the origin's one next hop and no recipient of the receipt.
+describe('a relay\'s own hop-end at the origin, from a relay outside the audience', () => {
+    const RELAY_HOP_END: OwnAck = { fromPeerId: 'relay', status: 'subtree-complete' };
+
+    it('admits it, and the one fact it causes names the hop confirmed with the receipt class unchanged', async () => {
+        const origin = await createOriginFixture('relay-hop-end');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'relay', RELAY_HOP_END))).toBe('committed');
+
+        expect(toAcknowledgements(origin.facts)).toEqual([
+            { confirmed: ['r1'], unconfirmed: ['r2'], outside: [], confirmedHops: [], complete: false },
+            { confirmed: ['r1'], unconfirmed: ['r2'], outside: [], confirmedHops: ['relay'], complete: false }
+        ]);
+    });
+
+    it('admits it after the receipt completed, and the one fact it causes names the hop confirmed', async () => {
+        const origin = await createOriginFixture('relay-hop-end-late');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+        await origin.accept(toRelayedAck(origin.msg, 'r2'));
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'relay', RELAY_HOP_END))).toBe('committed');
+
+        expect(toAcknowledgements(origin.facts).slice(-2)).toEqual([
+            { confirmed: ['r1', 'r2'], unconfirmed: [], outside: [], confirmedHops: [], complete: true },
+            { confirmed: ['r1', 'r2'], unconfirmed: [], outside: [], confirmedHops: ['relay'], complete: true }
+        ]);
+    });
+
+    it('states no fact for an exact repeat of a counted ACK, which moves neither a class nor the hop view', async () => {
+        const origin = await createOriginFixture('counted-ack-repeat');
+        await origin.accept(toRelayedAck(origin.msg, 'r1'));
+        const stated = origin.facts.length;
+
+        expect((await origin.admit(toRelayedAck(origin.msg, 'r1'))).kind).toBe('duplicate');
+
+        expect(origin.facts).toHaveLength(stated);
+    });
+
+    it('refuses a hop-end from a peer that is no next hop of the message', async () => {
+        const origin = await createOriginFixture('forged-hop-end');
+
+        expect(await origin.accept(toRelayedAck(origin.msg, 'x', { fromPeerId: 'x', status: 'subtree-complete' })))
+            .toBe('AL acknowledgement confirms no peer of the pending outbound receipt');
+        expect(origin.facts).toEqual([]);
+    });
+});
+
 describe('a before-entry NACK at the origin', () => {
     it('records the recipient outside the audience as a not-subscribed NACK does, without ending the receipt', async () => {
         const origin = await createOriginFixture('before-entry-recorded');

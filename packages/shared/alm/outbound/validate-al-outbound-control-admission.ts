@@ -113,10 +113,11 @@ function validateRepairRequest(
 /**
  * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
  * would move nothing is refused rather than committed, so it costs no write and no version bump. The
- * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms
- * nobody, having answered `not-subscribed`: it completes that hop, which the hop view records, so a retry never
- * resends into its subtree. A hop-end that confirms nobody, which a relay forwards for a recipient the receipt still
- * owes, moves that recipient outside the audience when it comes from a peer a relayed NACK may come from.
+ * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms no
+ * expected peer: one that answered `not-subscribed`, or a relay's own hop-end when the relay is no recipient. It
+ * completes that hop, which the hop view records, so a retry never resends into its subtree. A hop-end that confirms
+ * nobody, which a relay forwards for a recipient the receipt still owes, moves that recipient outside the audience when
+ * it comes from a peer a relayed NACK may come from.
  */
 function validateAcknowledgedReceipt(
     read: ALControlAdmissionRead,
@@ -125,7 +126,7 @@ function validateAcknowledgedReceipt(
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
     if (
-        pending && countedPeerId === undefined &&
+        pending && (countedPeerId === undefined || !pending.expectedPeerIds.includes(countedPeerId)) &&
         (isOpenNextHopCompletion(read, ack) || isForwardedOutsideHopEnd(read, pending, ack))
     ) {
         return [];

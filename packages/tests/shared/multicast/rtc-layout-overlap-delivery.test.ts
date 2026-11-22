@@ -743,7 +743,8 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
         const retry = await exchangeUntilQuiet(mesh);
 
         expect(readDataEdges(first, message).toSorted()).toEqual(['a>b']);
-        expect(readDataEdges(retry, message).toSorted()).toEqual(['a>b', 'a>c']);
+        // `b`'s own hop-end completed its hop, so the retry resends into its subtree no more.
+        expect(readDataEdges(retry, message).toSorted()).toEqual(['a>c']);
         expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
     });
 
