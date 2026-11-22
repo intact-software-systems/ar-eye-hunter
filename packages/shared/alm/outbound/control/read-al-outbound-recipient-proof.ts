@@ -11,12 +11,27 @@ import {
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { GroupPresencePublicationKey } from '../../../api/group-types.ts';
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
+import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import { isALOutboundRelayedGapNack } from './is-al-outbound-relayed-gap-nack.ts';
 
 // This file also holds the control-admission refusal vocabulary: an issue's class, its constructors and the result.
+
+export type ALOutboundControlAdmissionResult =
+    | Readonly<{ kind: 'not-handled'; }>
+    | Readonly<{ kind: 'committed'; }>
+    | Readonly<{ kind: 'pending-control'; }>
+    | Readonly<{
+        kind: 'rejected';
+        reason: string;
+        /** Present exactly when a proof was refused. */
+        proofRefusal?: ALReceiptProofRefusal;
+    }>
+    /** Every issue repeats what the receipt already holds: an honest repeat, refused without a write. */
+    | Readonly<{ kind: 'duplicate'; reason: string; }>
+    /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
+    | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
 /** A refusal's class beside its message: a `duplicate` repeats what the receipt already holds. */
 export interface ALOutboundControlIssue extends ALMessageRejection {

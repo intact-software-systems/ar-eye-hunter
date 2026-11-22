@@ -20,7 +20,7 @@ import {
     toALOutboundControlSettlements,
     type ALControlAdmissionRead
 } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '@shared/alm/outbound/first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';

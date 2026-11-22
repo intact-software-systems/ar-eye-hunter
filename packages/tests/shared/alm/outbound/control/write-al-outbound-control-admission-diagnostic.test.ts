@@ -7,7 +7,7 @@ import {
     parseALControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/control/write-al-outbound-control-admission-diagnostic.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';

@@ -46,7 +46,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
-import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { writeALOutboundRelayForwardDiagnostic } from '../alm/outbound/lane/write-al-outbound-relay-forward-diagnostic.ts';
 import { toProofPreservingALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {

@@ -8,7 +8,7 @@ import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-mes
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundFirstHopTimeoutEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { acceptWsQueueBoxClientControlMessage } from '@shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';

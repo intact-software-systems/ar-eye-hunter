@@ -28,7 +28,7 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { isALOutboundReceiptComplete } from '../../alm/outbound/transition-al-outbound-pending-ack.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';

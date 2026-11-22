@@ -24,7 +24,7 @@ import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { ALOutboundMessageRuntime, type ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';

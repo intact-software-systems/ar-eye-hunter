@@ -24,12 +24,9 @@ import { computeALOutboundAttemptDeadline } from './attempt-deadline/compute-al-
 import { readALOutboundSendAttemptHeld } from './attempt-deadline/read-al-outbound-send-attempt-held.ts';
 import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAdmissionVerdict } from './compute-al-outbound-dispatch.ts';
-import type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult,
-    ALOutboundPendingControl
-} from './control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmission, ALOutboundPendingControl } from './control/al-outbound-control-admission.ts';
 import { isALOutboundRepairAuthorityControl } from './control/is-al-outbound-expected-repair-peer.ts';
+import type { ALOutboundControlAdmissionResult } from './control/read-al-outbound-recipient-proof.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';

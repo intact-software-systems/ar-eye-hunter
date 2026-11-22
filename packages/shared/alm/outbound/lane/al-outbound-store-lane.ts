@@ -57,11 +57,9 @@ import {
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
-import type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult
-} from '../control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmission } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../control/read-al-outbound-recipient-proof.ts';
 import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';

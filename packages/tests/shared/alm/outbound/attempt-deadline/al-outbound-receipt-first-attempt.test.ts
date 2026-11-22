@@ -11,7 +11,7 @@ import type {
     ALOutboundPreparedSendResult,
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 
 import {
     createOutboundMessage,

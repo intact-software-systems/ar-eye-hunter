@@ -50,7 +50,7 @@ import type { ALSessionInvalidationAuthority } from './admission/al-session-inva
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
-import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundRecipientAuthentication } from './control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundReceiptConfirmationDiagnostic } from './control/to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
@@ -64,10 +64,8 @@ import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
 
-export type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult
-} from './control/al-outbound-control-admission.ts';
+export type { ALOutboundControlAdmission } from './control/al-outbound-control-admission.ts';
+export type { ALOutboundControlAdmissionResult } from './control/read-al-outbound-recipient-proof.ts';
 export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';

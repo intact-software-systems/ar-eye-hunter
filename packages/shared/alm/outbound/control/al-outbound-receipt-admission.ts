@@ -11,11 +11,7 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
-import type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult,
-    ALOutboundPendingControl
-} from './al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmission, ALOutboundPendingControl } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
     isALOutboundTerminalReceipt,
@@ -26,6 +22,7 @@ import {
     type ALOutboundReceiptAdmissionRead,
     type ALOutboundReceiptWrite
 } from './compute-al-outbound-receipt-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
 import { toALOutboundEndedTimeoutEffectIds } from './write-al-outbound-timeout-completions.ts';

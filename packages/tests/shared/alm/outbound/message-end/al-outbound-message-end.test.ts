@@ -19,7 +19,7 @@ import type {
     ALOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import {
     toALOutboundAckTimeoutEffectId,
@@ -574,7 +574,10 @@ function toSendPlanner(maxRepairs: number): ALOutboundPlanner<OutboundTestPayloa
     });
 }
 
-/** Moves the clock to `ms` after the start in 25 ms steps, draining the work due at each. */
+/**
+ * Moves the clock to `ms` after the start, stopping at each instant work falls due and draining it there; it steps
+ * 25 ms only while a fake timer is pending.
+ */
 async function advanceTo(fixture: EndedMessageFixture, ms: number): Promise<void> {
     await advanceOutboundClockTo(fixture, START_MS + ms);
 }

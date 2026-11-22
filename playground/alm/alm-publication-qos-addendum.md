@@ -1171,8 +1171,8 @@ relays: no peer can confirm, exclude or end a receipt for another recipient,
 since a relay forwards every distinct statement a child makes about a recipient
 and the origin judges each (S8-ii); a child that floods its relay with distinct
 forged statements, and the two of its effects that need no flood, remain the
-limits there (below), and under `hop` and
-`subtree` a hop can still exclude another hop (a limit below). The premise is
+limits there (below); under `hop` and `subtree` a hop speaks only for itself,
+so no hop excludes another (D706). The premise is
 corrected (S8-C0b): the candidates survey said the slice replaces the trust in
 an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
 client-only, and the code corrects all three. No game-lane room relays: below 5
@@ -1298,8 +1298,9 @@ bytes, so a peer adjacent to a recipient can deliver other content under the
 origin's id first: the recipient signs a true `delivered` and the origin reads
 `acknowledged` (a granted publication is not affected, since its recipient
 verifies the publisher); `hop` and `subtree` receipts rest on channel trust,
-which is what they count, and a hop can still exclude another hop with an
-unsigned outside-audience NACK, as before the slice; a signed terminal NACK from
+which is what they count, and a hop could still exclude another hop with an
+unsigned outside-audience NACK, as before the slice (closed since by D706, under
+which a hop speaks only for itself); a signed terminal NACK from
 one counted recipient still ends everyone's receipt, now under its own
 signature; a page without SubtleCrypto (an insecure origin) cannot be a counted
 recipient or the origin of receipted RTC, and the fallback takes such a leg; a

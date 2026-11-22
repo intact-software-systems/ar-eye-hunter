@@ -10,7 +10,7 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlSource } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundRecipientAuthentication } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { RtcReceiptProofVerifier } from '@shared/multicast/receipt-proof/rtc-receipt-proof-verifier.ts';
 

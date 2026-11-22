@@ -332,9 +332,13 @@ describe('WS server ACK relay across instances', () => {
 });
 
 describe('the server own ACK for a session it sent nothing', () => {
-    /** An aggregation that holds the receipt of `a`'s `room-message-1` to `b` and `c`, or none. */
+    /**
+     * An aggregation that holds the receipt of `a`'s `room-message-1` to `b` and `c`, or none; it sent the message to
+     * none of `neverSentRecipientPeerIds`.
+     */
     function createRelay(
-        holdsReceipt: boolean
+        holdsReceipt: boolean,
+        neverSentRecipientPeerIds: readonly string[] = []
     ): { readonly relay: WsQueueBoxServerAckRelay; readonly published: ALMessage[]; readonly receipts: ALMessage[]; } {
         const published: ALMessage[] = [];
         const receipts: ALMessage[] = [];
@@ -360,7 +364,7 @@ describe('the server own ACK for a session it sent nothing', () => {
                 expectedRecipientPeerIds: ['b', 'c'],
                 snapshotVersion: 1,
                 deadlineAtMs: 30_000,
-                neverSentRecipientPeerIds: []
+                neverSentRecipientPeerIds
             });
         }
         const relay = new WsQueueBoxServerAckRelay({
@@ -419,6 +423,37 @@ describe('the server own ACK for a session it sent nothing', () => {
 
         expect(published.map((message) => message.id.msgId)).toEqual(['outside-c']);
     });
+
+    // The cluster path: another instance received the ACK and handed it to the one that aggregates the receipt.
+    it('refuses a relayed ACK from a recipient the aggregating instance never sent the message, counting nothing', async () => {
+        const { relay, receipts } = createRelay(true, ['c']);
+
+        await relay.acceptRelayedAck(toRecipientAck('c'), 'other-instance');
+        await relay.acceptRelayedAck(toRecipientAck('b'), 'other-instance');
+        await relay.writeServerAck(toServerAck('c'));
+
+        expect(receipts.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+            phase: 'complete',
+            confirmedRecipientPeerIds: ['b'],
+            outsideAudienceRecipientPeerIds: ['c']
+        }]);
+    });
+
+    function toRecipientAck(recipient: string): ALMessage {
+        return newALAckControlMessage(
+            { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: 1_000, traceId: 'trace-room-message-1' },
+            toTestALAckPayload({
+                ackedMsgId: 'room-message-1',
+                fromPeerId: recipient,
+                toPeerId: 'a',
+                originPeerId: 'a',
+                logicalRecipientPeerId: recipient,
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: 1_000
+            })
+        );
+    }
 });
 
 function createSharedInboundStores(): ALInboundRuntimeStores {

@@ -5,7 +5,6 @@ import {
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
-import type { ALReceiptProofRefusal } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -16,7 +15,6 @@ import type {
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
-import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -67,24 +65,10 @@ import {
 import {
     readALOutboundRecipientProof,
     toALOutboundRefusedControlAdmission,
+    type ALOutboundControlAdmissionResult,
     type ALOutboundRecipientAuthentication
 } from './read-al-outbound-recipient-proof.ts';
 import { writeALOutboundTimeoutCompletions } from './write-al-outbound-timeout-completions.ts';
-
-export type ALOutboundControlAdmissionResult =
-    | Readonly<{ kind: 'not-handled'; }>
-    | Readonly<{ kind: 'committed'; }>
-    | Readonly<{ kind: 'pending-control'; }>
-    | Readonly<{
-        kind: 'rejected';
-        reason: string;
-        /** Present exactly when a proof was refused. */
-        proofRefusal?: ALReceiptProofRefusal;
-    }>
-    /** Every issue repeats what the receipt already holds: an honest repeat, refused without a write. */
-    | Readonly<{ kind: 'duplicate'; reason: string; }>
-    /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
-    | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
 export interface ALOutboundPendingControl {
     readonly kind: 'admit-control';

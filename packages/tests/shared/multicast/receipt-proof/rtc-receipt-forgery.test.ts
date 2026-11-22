@@ -813,21 +813,7 @@ describe('a relay whose outside recorder is gone (D601)', () => {
         );
 
         await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forgedHopEnd), 'forged-hop-end'), 'm');
-        await relay.receiveEach(
-            Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => {
-                const payload = toTestALAckPayload({
-                    ackedMsgId: message.id.msgId,
-                    fromPeerId: 'm',
-                    toPeerId: 'r',
-                    originPeerId: 'a',
-                    logicalRecipientPeerId: 'c',
-                    observedAtEpochMs: Date.now(),
-                    proof: toTestSignatureProof(index + 1)
-                });
-                return toControlMessage({ type: 'ack', payload }, `flood-${index + 1}`);
-            }),
-            'm'
-        );
+        await relay.receiveEach(toForgedAckFlood(message), 'm');
         await relay.receive(toControlMessage(own, 'own'), 'c');
         await acceptEach(origin, await relay.readSent('a'));
 
@@ -853,7 +839,52 @@ describe('a relay whose outside recorder is gone (D601)', () => {
         });
         expect((await readReceipt(origin, message))?.ackedPeerIds).not.toContain('c');
     });
+
+    it('a stale control the relay forwards once its recorder is gone costs one more forward, which the origin refuses', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('stale-after-eviction');
+        const hopEnd = toChildAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'c',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+        const stale = await signTestALReceiptControl(
+            chain.keys.c!,
+            toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' })
+        );
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, hopEnd), 'own-hop-end'), 'c');
+        await relay.receiveEach(toForgedAckFlood(message), 'm');
+        await acceptEach(origin, await relay.readSent('a'));
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+        const before = (await relay.readSent('a')).length;
+
+        await relay.receive(toControlMessage(stale, 'stale'), 'c');
+        const forwarded = (await relay.readSent('a')).slice(before);
+
+        expect(forwarded).toHaveLength(1);
+        expect(await origin.manager.acceptControlMessage(forwarded[0]!)).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        });
+        expect((await readReceipt(origin, message))?.ackedPeerIds).not.toContain('c');
+    });
 });
+
+/** `collectionEntries` distinct unsigned ACKs `m` sends about `c`: enough to evict every earlier child ACK at the relay. */
+function toForgedAckFlood(message: ALMessage): readonly ALMessage[] {
+    return Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => {
+        const payload = toTestALAckPayload({
+            ackedMsgId: message.id.msgId,
+            fromPeerId: 'm',
+            toPeerId: 'r',
+            originPeerId: 'a',
+            logicalRecipientPeerId: 'c',
+            observedAtEpochMs: Date.now(),
+            proof: toTestSignatureProof(index + 1)
+        });
+        return toControlMessage({ type: 'ack', payload }, `flood-${index + 1}`);
+    });
+}
 
 describe('a logical receipt never expects a peer its message does not count (S8-R1)', () => {
     beforeEach(() => {

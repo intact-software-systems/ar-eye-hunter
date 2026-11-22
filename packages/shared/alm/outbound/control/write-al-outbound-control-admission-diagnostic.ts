@@ -6,7 +6,7 @@ import {
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
 import { controlTargetMsgId } from '../compute-al-outbound-control-admission.ts';
-import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './read-al-outbound-recipient-proof.ts';
 
 export interface ALOutboundControlAdmissionDiagnosticInput {
     /** The control message itself: its id is the join key to the inbound `admission-outcome` that routed it. */

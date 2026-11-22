@@ -13,7 +13,7 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm/al-admission-backend.ts';
 import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
-import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
