@@ -3,6 +3,14 @@ import { requireEpoch, requireExactKeys, requireExactOptionalKeys, requireRecord
 
 export const ROOM_DIRECTOR_SUCCESSION_METADATA_KEY = 'rallarDirectorSuccession';
 
+// Both windows can follow any JavaScript Date. Reserve enough integer range for both cutoffs.
+const maxWindowMs = Math.floor((Number.MAX_SAFE_INTEGER - 8_640_000_000_000_000) / 2);
+
+function requireWindow(value: unknown, label: string): asserts value is number {
+    requireEpoch(value, label);
+    if (value > maxWindowMs) throw new TypeError(`${label} exceeds the supported succession duration`);
+}
+
 export namespace RoomDirectorSuccession {
     export interface Policy {
         readonly reconnectWindowMs: number;
@@ -40,8 +48,8 @@ export function decodeRoomDirectorSuccessionCommand(value: unknown): RoomDirecto
             optional: ['reconnectWindowMs', 'deputyWindowMs'], label: 'Director succession policy command' });
         const { deputyPrincipalId, reconnectWindowMs, deputyWindowMs } = record;
         if (deputyPrincipalId !== null) requireString(deputyPrincipalId, 'Designated deputy');
-        if (reconnectWindowMs !== undefined) requireEpoch(reconnectWindowMs, 'Reconnect window');
-        if (deputyWindowMs !== undefined) requireEpoch(deputyWindowMs, 'Deputy window');
+        if (reconnectWindowMs !== undefined) requireWindow(reconnectWindowMs, 'Reconnect window');
+        if (deputyWindowMs !== undefined) requireWindow(deputyWindowMs, 'Deputy window');
         requireEpoch(record.expectedRevision, 'Expected succession revision');
         return { operation, expectedDirectorEpoch, expectedRevision: record.expectedRevision, deputyPrincipalId,
             ...(reconnectWindowMs !== undefined && { reconnectWindowMs }), ...(deputyWindowMs !== undefined && { deputyWindowMs }) };
@@ -85,8 +93,8 @@ export function readRoomDirectorSuccession(metadata: ApiJsonObject | undefined):
         if (!spectatorDirectorEpoch) throw new TypeError('Invalid spectator epoch');
     }
     const { reconnectWindowMs, deputyWindowMs, deputyPrincipalId } = record;
-    requireEpoch(reconnectWindowMs, 'Reconnect window');
-    requireEpoch(deputyWindowMs, 'Deputy window');
+    requireWindow(reconnectWindowMs, 'Reconnect window');
+    requireWindow(deputyWindowMs, 'Deputy window');
     if (deputyPrincipalId !== null) requireString(deputyPrincipalId, 'Designated deputy');
     return { revision: record.revision, reconnectWindowMs, deputyWindowMs, deputyPrincipalId, directorLeaseExpiresAtEpochMs, spectatorDirectorEpoch, loss: decodeDirectorLoss(record.loss) };
 }

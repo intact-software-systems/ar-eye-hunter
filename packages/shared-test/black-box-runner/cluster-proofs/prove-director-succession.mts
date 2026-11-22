@@ -38,6 +38,13 @@ export async function proveDirectorSuccession({ api, room, owner, deputy }: Dire
     assert.equal(requireRecord(unchanged.rallarDirector, 'current director').epoch, 1);
     await appoint(owner, { succession: { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0,
         reconnectWindowMs: 250, deputyWindowMs: 10000, deputyPrincipalId: deputy.clientId } });
+    await appoint(owner, { succession: { ...startingPolicy, expectedRevision: 1, deputyWindowMs: Number.MAX_SAFE_INTEGER } }, 400);
+    const retained = await requestJson(deputy.apiBaseUrl, path, { method: 'GET', session: deputy });
+    const retainedMetadata = requireRecord(requireRecord(retained.group, 'group').metadata, 'metadata');
+    const retainedPolicy = requireRecord(retainedMetadata.rallarDirectorSuccession, 'retained policy');
+    assert.equal(retainedPolicy.revision, 1);
+    assert.equal(retainedPolicy.reconnectWindowMs, 250);
+    assert.equal(retainedPolicy.deputyWindowMs, 10000);
     const namedClock = { name: 'game', expectedDirectorEpoch: 1 };
     await clock(owner, { ...namedClock, expectedRevision: 0, operation: 'start', durationMs: 600000 });
     const paused = await clock(owner, { ...namedClock, expectedRevision: 1, operation: 'pause' });

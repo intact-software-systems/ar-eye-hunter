@@ -578,7 +578,7 @@ function isSnapshotCoveredByDeltaBatch(
     summaryPredecessor: GroupPresenceSummary | null
 ): boolean {
     const writtenGroupRevisions = new Set(
-        coalescedEvents.filter((event) => !isGroupSessionEvent(event)).map((event) =>
+        coalescedEvents.filter((event) => !isGroupSessionEvent(event) || event.payload.directorPresenceChanged === true).map((event) =>
             event.causalRevision.groupRevision
         )
     );
@@ -623,8 +623,8 @@ function toGroupStateDeltaSessionPrincipalIds(events: readonly GroupEvent[]): Re
 }
 
 /**
- * A presence write's event: it keeps the group revision it read. Every other group event is the write that advanced
- * the group to its revision.
+ * Presence events identify the principal whose session records belong in the delta. A director presence
+ * event can also carry the group metadata write for its revision.
  */
 export function isGroupSessionEvent(event: GroupEvent): boolean {
     return event.eventType === 'session-connected' ||

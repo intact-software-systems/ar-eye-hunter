@@ -93,6 +93,6 @@ export function computeGroupPresenceWrite({
         subscriptionEffects: [],
         subscriptionOutcome: null,
         presenceAdmission,
-        presenceSummaryWork
+        presenceSummaryWork: revised ? 'enqueue' : presenceSummaryWork
     });
 }

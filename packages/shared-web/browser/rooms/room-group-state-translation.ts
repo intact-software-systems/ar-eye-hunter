@@ -11,6 +11,13 @@ import {
 } from '@shared/api/group-client-views.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { ROOM_DEADLINES_METADATA_KEY } from '@shared/api/group-deadlines/room-deadline.ts';
+import { GROUP_DIRECTORY_LISTING_METADATA_KEY } from '@shared/api/group-directory/group-directory-listing.ts';
+import { GROUP_RETENTION_METADATA_KEY } from '@shared/api/group-retention.ts';
+import { GROUP_SESSION_SCHEDULE_METADATA_KEY } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { GROUP_SPECTATOR_CAPACITY_METADATA_KEY } from '@shared/api/group-spectating.ts';
+import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-directors/room-director-succession-record.ts';
+import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
+import { ROOM_LOBBY_REGISTRATION_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-registration.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
@@ -280,19 +287,30 @@ export function toRoomLifecycleGroupStateRequest(
     };
 }
 
+// The appointment itself has separate resignation semantics when omitted from a replacement.
+const serverOwnedRoomMetadata = new Map<string, string>([
+    [ROOM_CLOCKS_METADATA_KEY, 'rooms.changeClock'],
+    [ROOM_DEADLINES_METADATA_KEY, 'rooms.setDeadline'],
+    [ROOM_LOBBY_METADATA_KEY, 'lobby.configure'],
+    [ROOM_LOBBY_REGISTRATION_METADATA_KEY, 'lobby.setRegistrationCutoff'],
+    [ROOM_DIRECTOR_SUCCESSION_METADATA_KEY, 'rooms.changeDirector'],
+    [GROUP_SESSION_SCHEDULE_METADATA_KEY, 'the room schedule commands'],
+    [GROUP_RETENTION_METADATA_KEY, 'room creation retention options'],
+    [GROUP_DIRECTORY_LISTING_METADATA_KEY, 'rooms.update with directoryListing'],
+    [GROUP_SPECTATOR_CAPACITY_METADATA_KEY, 'rooms.update with maxSpectators']
+]);
+
 /** A top-level `null` in the patch removes its key, as a JSON merge patch does; any other value replaces it. */
 export function toRoomMetadataGroupStateRequest(
     input: ToRoomMetadataGroupStateRequestInput
 ): UpdateStateGroupBody {
-    if (Object.hasOwn(input.patch, ROOM_CLOCKS_METADATA_KEY)) {
-        throw new TypeError('Use rooms.changeClock to change a room clock.');
-    }
-    if (Object.hasOwn(input.patch, ROOM_DEADLINES_METADATA_KEY)) {
-        throw new TypeError('Use rooms.setDeadline to change a room deadline.');
-    }
     const merged = { ...input.currentMetadata, ...input.patch };
-    delete merged[ROOM_CLOCKS_METADATA_KEY];
-    delete merged[ROOM_DEADLINES_METADATA_KEY];
+    for (const [key, operation] of serverOwnedRoomMetadata) {
+        if (Object.hasOwn(input.patch, key)) {
+            throw new TypeError(`Use ${operation} to change ${key}.`);
+        }
+        delete merged[key];
+    }
     return {
         metadata: Object.fromEntries(
             Object.entries(merged).filter(([key, value]) => value !== null || !Object.hasOwn(input.patch, key))

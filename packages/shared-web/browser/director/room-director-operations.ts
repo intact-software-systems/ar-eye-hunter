@@ -74,7 +74,12 @@ export function createRoomDirectorOperations(services:
         },
         watchDirector(room, listener, options = {}) {
             return watchRoomRevision({ room, services, signal: options.signal, listener, project: directorView,
-                meaningful: (previous, next) => previous.appointment?.epoch !== next.appointment?.epoch || previous.succession?.revision !== next.succession?.revision,
+                onDelta(previous, next) {
+                    if (previous.appointment?.epoch !== next.appointment?.epoch ||
+                        previous.succession?.revision !== next.succession?.revision) return 'refresh';
+                    return previous.succession?.directorLeaseExpiresAtEpochMs === next.succession?.directorLeaseExpiresAtEpochMs
+                        ? 'ignore' : 'publish';
+                },
                 regresses: (previous, next) => (next.appointment?.epoch ?? 0) < (previous.appointment?.epoch ?? 0) ||
                     (next.succession?.revision ?? 0) < (previous.succession?.revision ?? 0) });
         }

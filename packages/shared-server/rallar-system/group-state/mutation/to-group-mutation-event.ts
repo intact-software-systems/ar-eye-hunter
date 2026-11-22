@@ -17,6 +17,7 @@ import { GroupMutationRejectedError } from './group-mutation-contracts.ts';
 
 export interface GroupMutationEventInput {
     readonly eventType: GroupEventType;
+    readonly directorPresenceChanged: boolean;
     readonly group: Group;
     readonly causalRevision: GroupStateCausalRevision;
     readonly command: GroupMutationCommand;
@@ -80,8 +81,9 @@ export function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent
 // member it is about itself: a manager's grant emits member-joined with the
 // manager as actor and the admitted member only here.
 function toGroupEventPayload(
-    { eventType, members, command, publicationGrantEffects }: GroupMutationEventInput
+    { eventType, members, command, publicationGrantEffects, directorPresenceChanged }: GroupMutationEventInput
 ): GroupEvent['payload'] {
+    if (directorPresenceChanged) return { directorPresenceChanged: true };
     if (command.operation === 'reconfigureGroup' || command.operation === 'resetGroupFormation') {
         return { topologyReplanOrigin: 'commanded' };
     }

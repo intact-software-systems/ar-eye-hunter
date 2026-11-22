@@ -1,5 +1,5 @@
 import { ROOM_DIRECTOR_SUCCESSION_METADATA_KEY } from '@shared/api/room-directors/room-director-succession-record.ts';
-import { isRoomLobbyRegistrationClosed } from '@shared/api/room-lobbies/room-lobby-registration.ts';
+import { allocateLobbyPlaces } from '@shared/api/room-lobbies/room-lobby-allocation.ts';
 import { mergeJoinCode } from '../../policy/group-join-code.ts';
 import { ROOM_LOBBY_METADATA_KEY } from '@shared/api/room-lobbies/room-lobby-policy.ts';
 import { changeRoomLobby, type RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
@@ -117,17 +117,7 @@ export function computeUpdate(
         }
     }
     if (privateParticipation) {
-        const roster = read.lobbyState?.lobby?.value;
-        const principalId = command.input.actorPrincipalId;
-        const hasSeat = roster?.seats.some(seat => seat.principalId === principalId);
-        if (lobbyChange.operation === 'wait' && roster && !hasSeat && isRoomLobbyRegistrationClosed(roster.registration, facts.attemptAtEpochMs)) {
-            return rejectedByGroupPolicy({command, read, facts, denial:{allowed:false, code:'group-admission-closed', message:'Lobby registration has closed.'}});
-        }
-        const committed = hasSeat ||
-            roster?.waiters.some(waiter => waiter.principalId === principalId);
-        if (lobbyChange.operation === 'wait' ? committed : !committed) return noOp(command, read, facts);
-        // Serialize with room access changes while keeping the account, trace and request out of public room events.
-        return groupWrite({ command, read, facts, group: stored.value, eventType: null });
+        return computePrivateLobbyUpdate(command, read, facts, stored.value, lobbyChange.operation);
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -192,6 +182,34 @@ export function computeUpdate(
             ? 'group-deleted'
             : 'group-updated'
     });
+}
+
+function computePrivateLobbyUpdate(
+    command: Extract<GroupMutationCommand, { operation: 'updateGroup' }>,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    group: Group,
+    operation: 'wait' | 'release'
+): GroupMutationComputed {
+    const roster = read.lobbyState?.lobby?.value;
+    const principalId = command.input.actorPrincipalId;
+    // A delayed expiry delivery may leave an old offer or waiter in storage. A new wait observes the current places.
+    const places = roster && operation === 'wait'
+        ? allocateLobbyPlaces(roster, facts.attemptAtEpochMs, roster.revision + 1)
+        : roster;
+    const committed = places?.seats.some(seat => seat.principalId === principalId) ||
+        places?.waiters.some(waiter => waiter.principalId === principalId);
+    if (operation === 'wait' ? committed : !committed) {
+        return noOp(command, read, facts);
+    }
+    if (operation === 'wait' && places?.registration.closed) {
+        return rejectedByGroupPolicy({
+            command, read, facts,
+            denial: { allowed: false, code: 'group-admission-closed', message: 'Lobby registration has closed.' }
+        });
+    }
+    // Serialize with room access changes while keeping the account, trace and request out of public room events.
+    return groupWrite({ command, read, facts, group, eventType: null });
 }
 
 export function computeRotateJoinCode(

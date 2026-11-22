@@ -71,11 +71,22 @@ test('a guest watches the same director renew the room lease', async ({ page, br
         try {
             await expect.poll(() => watch.evaluate(state => state.leases.length)).toBeGreaterThan(0);
             const firstLease = await watch.evaluate(state => state.leases[0]!);
+            await expect.poll(() => watch.evaluate(state => state.leases.at(-1))).toBeGreaterThan(firstLease);
+            const previousLease = await watch.evaluate(state => state.leases.at(-1)!);
+            const pointReadPath = '/api/state/apps/room-scoreboard/workspaces/default/groups/' + court;
+            const roomReads: string[] = [];
+            guest.on('request', request => {
+                if (request.method() === 'GET' && new URL(request.url()).pathname === pointReadPath) {
+                    roomReads.push(request.url());
+                }
+            });
             await page.waitForResponse(response => {
                 const path = new URL(response.url()).pathname;
                 return path.includes('/groups/' + court + '/sessions/') && path.includes('/heartbeat/requests/') &&
                     response.request().method() === 'POST' && response.ok();
             });
+            await expect.poll(() => watch.evaluate(state => state.leases.at(-1))).toBeGreaterThan(previousLease);
+            expect(roomReads).toHaveLength(0);
             const renewed = await guest.evaluate(async ({ sdkUrl, room }) => {
                 const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
                 return rallar.rooms.readDirector(room);
@@ -83,7 +94,7 @@ test('a guest watches the same director renew the room lease', async ({ page, br
             expect(renewed.appointment).toEqual(configured.appointment);
             expect(renewed.succession?.revision).toBe(configured.succession?.revision);
             const renewedLease = renewed.succession?.directorLeaseExpiresAtEpochMs;
-            expect(renewedLease).toBeGreaterThan(firstLease);
+            expect(renewedLease).toBeGreaterThan(previousLease);
             await expect.poll(() => watch.evaluate(state => state.leases.at(-1)), {
                 timeout: 15_000,
                 message: 'The guest watch must deliver the renewed lease while the same director stays connected'

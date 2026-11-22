@@ -1,5 +1,7 @@
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { RallarRoomEventOptions } from '../rooms/rallar-room-contracts.ts';
@@ -22,7 +24,7 @@ interface WatchRoomRevisionInput<T> extends Pick<RallarRoomEventOptions, 'eventT
     project(group: ObservedRoomMetadata): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
     regresses(previous: T, next: T): boolean;
-    meaningful?(previous: T, next: T): boolean;
+    onDelta?(previous: T, next: T): 'ignore' | 'publish' | 'refresh';
 }
 
 export function explicitRoomRef(room: GroupRef): GroupRef {
@@ -41,7 +43,7 @@ export async function readObservedRoom(roomRef: GroupRef, requireSession: Create
     return result.snapshot.group;
 }
 
-/** Socket events invalidate the durable read. A connected idle room generates no reads. */
+/** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
 export function watchRoomRevision<T extends { readonly revision: number; }>(input: WatchRoomRevisionInput<T>): () => void {
     input.signal?.throwIfAborted();
     const room = explicitRoomRef(input.room);
@@ -146,14 +148,25 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(inpu
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = roomEvents.onEvent((_event, message) => {
-        if (message.transport !== 'ws') return;
+        if (message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
+            message.typeId !== AppTopics.groupStateEvent) return;
+        const target = readALTargetGroupRef(message.raw);
+        if (!target || !isSameGroupRef(target, room)) return;
         const delta = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room);
         if (!delta) return;
         const announced = input.project(delta.group);
-        if (announced && observed && input.meaningful && !input.meaningful(observed, announced)) return;
         const revision = announced?.revision ?? 0;
         if (revision > Math.max(announcedRevision, observed?.revision ?? 0)) {
+            const action = observed && announced ? input.onDelta?.(observed, announced) : 'refresh';
+            if (action === 'ignore') return;
             announcedRevision = revision;
+            if (action === 'publish' && observed && announced && status === 'current' && !request &&
+                !pageSuspended && !socketLost && document.visibilityState !== 'hidden' && navigator.onLine !== false &&
+                !input.regresses(observed, announced)) {
+                fence.assertCurrent();
+                publish('current', announced);
+                return;
+            }
             publish('stale');
             wake();
         }

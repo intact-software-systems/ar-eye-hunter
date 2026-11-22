@@ -89,10 +89,17 @@ it('configures succession when the acting director reconnects between authority 
         await reconnect;
         return read.call(this, ref);
     });
+    const configure = () => service.appointDirector(SCOPE, 'court', { ...actor, requestId: 'configure', succession: {
+        operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0, deputyPrincipalId: 'deputy'
+    } });
     try {
-        await service.appointDirector(SCOPE, 'court', { ...actor, requestId: 'configure', succession: {
-            operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0, deputyPrincipalId: 'deputy'
-        } });
+        // The service test driver executes one inbox delivery. Redeliver only an optimistic conflict.
+        try {
+            await configure();
+        } catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+            await configure();
+        }
         expect(first).toBe(false);
         const snapshot = await requireSnapshot(runtime, 'court');
         expect(snapshot.group.metadata.rallarDirectorSuccession).toMatchObject({ revision: 1, deputyPrincipalId: 'deputy' });
