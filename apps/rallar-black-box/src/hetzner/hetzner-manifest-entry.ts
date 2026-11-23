@@ -144,10 +144,10 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
 }
 
 /**
- * A multicast entry whose terminal timeout is what its ack, its barrier and its slowest recipe add up to when every
- * command uses its whole budget, so the control's terminal wait never ends a run still inside its own budgets.
+ * An entry whose terminal timeout is what its ack, its barrier and its slowest recipe add up to when every command uses
+ * its whole budget, so the control's terminal wait never ends a run still inside its own budgets.
  */
-export function createMulticastManifestEntry(input: ManifestCatalogInput): HetznerDistributedManifestEntry {
+export function createBudgetedManifestEntry(input: ManifestCatalogInput): HetznerDistributedManifestEntry {
     return createManifestEntry({
         ...input,
         metadata: {

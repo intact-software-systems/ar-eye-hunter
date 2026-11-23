@@ -3,7 +3,7 @@ import { RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS } from '@shared-test/rallar-b
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
-    createMulticastManifestEntry,
+    createBudgetedManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP,
     toControllerAgentIds,
@@ -44,7 +44,7 @@ function createAlmScaleManifestEntry(input: AlmScaleManifestInput): HetznerDistr
         readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
         almDiagnostics: input.diagnostic
     });
-    return createMulticastManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: input.filePath,
         title: `ALM conformance ${input.participantCount}-agent 30s${input.diagnostic ? ' diagnostic' : ''}`,
         description:
