@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand
+} from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toVerdictTimeoutMs } from '../../alm-conformance-diagnostic-waits.ts';
@@ -11,11 +14,11 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { computeCommandsTimeoutMs } from '../../alm-recipe-run-extension.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import {
-    computeCommandsTimeoutMs,
     computeCuedArrivalsWaitMs,
-    toArrivalsCueCommands,
+    toCuedArrivalsCueCommands,
     toCuedArrivalsReceiverCommands,
     toCuedArrivalsSenderCommands,
     type AlmCuedArrivals
@@ -29,6 +32,7 @@ import { computeSendLoopBudgetMs, FAIRNESS_SEND_INTERVAL_MS } from './to-send-lo
  * iteration of a loop holds them all, so they share the budget of 64 loop sends.
  */
 const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 3);
+const BUFFERED_SENDS_BUDGET_MS = computeSendLoopBudgetMs(BUFFERED_SEQS.length);
 const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /** The receiver counts the 66 once the sender cued that seq 2 is released and admitted. */
@@ -69,17 +73,18 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
 };
 
 function toBufferedSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const ttlMs = computeBufferedTrackTtlMs(sender);
     return [
-        toTrackSend(sender, 1),
+        { ...toTrackSend(sender, 1), ttlMs },
         ...toSentCommands({ ...sender, index: 1 }),
-        ...toHeldSendCommands({ ...sender, index: HELD_SEQ }, [toTrackSend(sender, HELD_SEQ)]),
+        ...toHeldSendCommands({ ...sender, index: HELD_SEQ }, [{ ...toTrackSend(sender, HELD_SEQ), ttlMs }]),
         {
             kind: 'loop',
             commandId: toCommandId(sender, 'buffered-sends'),
             count: 1,
-            timeoutMs: computeSendLoopBudgetMs(BUFFERED_SEQS.length),
+            timeoutMs: BUFFERED_SENDS_BUDGET_MS,
             commands: BUFFERED_SEQS.flatMap((seq) => [
-                toTrackSend(sender, seq),
+                { ...toTrackSend(sender, seq), ttlMs },
                 toPauseCommand(sender, `pause-${seq}`, FAIRNESS_SEND_INTERVAL_MS)
             ])
         },
@@ -96,18 +101,23 @@ function toReleaseCommands(sender: AlmConformanceStepInput): readonly RallarBlac
 }
 
 /**
- * Every send's lifetime. The first buffered send must outlive the rest of the loop, seq 2's release and admission, the
- * cue, and the receiver's count, which opens at the cue; the count's window is a verdict's.
+ * Every send's lifetime. Seq 2 is the earliest send still live at the drain: it must outlive its own send, the faults
+ * that move its hold from the type to its message id, the buffered sends' loop, its release and admission, the cue, and
+ * the receiver's count, which opens at the cue; the count's window is a verdict's.
  */
 function computeBufferedTrackTtlMs(sender: AlmConformanceStepInput): number {
+    const heldSend = toTrackSend(sender, HELD_SEQ);
+    const heldSendCommands = toHeldSendCommands({ ...sender, index: HELD_SEQ }, [heldSend]);
+    const fromHeldSendMs = computeCommandsTimeoutMs(heldSendCommands.slice(heldSendCommands.indexOf(heldSend)));
     const afterLoopMs = computeCommandsTimeoutMs([
         ...toReleaseCommands(sender),
-        ...toArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
+        ...toCuedArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
     ]);
-    return computeSendLoopBudgetMs(BUFFERED_SEQS.length) + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
+    return fromHeldSendMs + BUFFERED_SENDS_BUDGET_MS + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
 }
 
-function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackBoxTestCommand {
+/** A track send without its lifetime: its command timeout reads none, so the lifetime can be sized from it. */
+function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackBoxTestMessagesSendCommand {
     return toSendCommand({
         ...sender,
         index: seq,
@@ -115,7 +125,6 @@ function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackB
         delivery: {
             reliability: 'at-least-once',
             ack: 'none',
-            ttlMs: computeBufferedTrackTtlMs(sender),
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
             orderingKey: toOrderingKey(sender),
             seq

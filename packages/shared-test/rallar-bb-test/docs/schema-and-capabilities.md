@@ -962,28 +962,35 @@ the bound, so its own room send, which asks for a receiver receipt, is admitted 
 reconnects without the field. `buffered-track-drains` (`ws` and `rtc`) sends seq 1 on one ordering key and observes it
 `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the message id its send returned (the
 type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare send commands (a loop index counts
-from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, and releases seq 2, which
-alone is observed admitted. The sends leave in sequence order, since a stated sequence at or below the track's head is
+from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, all in one iteration of a
+`loop` whose budget is that of 64 loop sends (1,500 ms each), and releases seq 2, which alone is observed admitted; it
+then cues `released-2`. The sends leave in sequence order, since a stated sequence at or below the track's head is
 refused `unsupported`; the hold reorders their arrival. A receiver enters a recorded track at its first copy, so seq 1
-goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`,
-since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and a 90 s `ttlMs`, and the receiver
-receives all 66 in a 90 s window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real
-runtime). Over `rtc` the receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted`
-count is above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading
-digit per iteration, against the page's event history. Over `ws` the WS server is the hop that buffers the track and
-releases it when seq 2 arrives, so the receiver reads the 66 arrivals and no promotion: the server NACKs the gap at
-each later frame's arrival; those reports are one attempt per requester, charged once (D573), so the held seq 2 does
-not settle `repair-exhausted` and the release delivers it.
-`churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
-sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
-in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
-256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
-receives the 280, waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction
-pass a newly opened track runs after its admission commit states it, not the delivery the arrivals count), and its
-`stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
-the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
-memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
-withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
+goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`, since
+the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and one `ttlMs` derived from the sender's
+commands: seq 2, the earliest send still live at the drain, must outlive its own send, the faults that move its hold to
+its message id, the loop's budget, its release and admission, the cue, and the receiver's count. The receiver waits for
+the sender's `released-2` cue, with a wait that covers the sender's body up to the cue, and then counts the 66 in a
+verdict's window; the count reads every arrival its page logged, those before the count started too. Each role's recipe
+runs that cue wait longer than an ordinary one. Over `rtc` the receiver buffered the track, so it also waits for an
+inbound `effect-drain` whose `promoted` count is above zero (D190): a `loop` with `until: 'first-success'` tries
+`"promoted":1` to `"promoted":9`, one leading digit per iteration, against the page's event history. Over `ws` the WS
+server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver reads the 66 arrivals and
+no promotion: the server NACKs the gap at each later frame's arrival; those reports are one attempt per requester,
+charged once (D573), so the held seq 2 does not settle `repair-exhausted` and the release delivers it.
+`churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and reconnects
+it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its own ledger,
+sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256 and a margin)
+in a `loop` with `intervalMs: 75` whose budget is that of 280 loop sends (1,500 ms each), observes the last one
+`transport-accepted`, cues `tracks-sent` and closes; the receiver waits for that cue, with a wait that covers the
+sender's body up to the cue (each role's recipe runs that much longer than an ordinary one), then counts the 280 in a
+verdict's window, which reads the arrivals logged before the count started too, waits in its cell's history for the
+memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track runs after its admission
+commit states it, not the delivery the arrivals count), and its `stats` reads `rallar.alm.orderingTracks` both `lte` and
+`gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile
+tracks fill the memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted
+manifest 18 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in
+`conformance/alm/scenarios/fairness/`.
 
 The paced cells prove the live channel's publication stage over every carrier, in the smoke scope, on the two agents
 (D469, D472, D477–D479) and, for `paced-isolation-lists`, on the three, before the congestion and fairness cells. Each

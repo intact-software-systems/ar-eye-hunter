@@ -23,13 +23,15 @@ import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/c
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
     AL_VOLATILE_SESSION_MAX_BYTES
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
-import { RECIPE_RUN_TIMEOUT_MS } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
+/** Any ordinary run budget: a cell's extension adds to whichever one the lane passes. */
+const ORDINARY_RUN_MS = 5_000;
 const FAIRNESS_SCENARIO_IDS = ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'] as const;
 const SENDER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect', 'storage-counters-connected'] as const;
 const RECEIVER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
@@ -296,19 +298,28 @@ describe('buffered-track-drains', () => {
             const prefix = `${scenario.sender.recipeId}-`;
             expect(loop.commands.map((command) => command.commandId?.replace(prefix, '')))
                 .toEqual(bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]));
-            // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives). The first
-            // buffered send must outlive the loop, the release and the count, so its lifetime covers all three.
+            // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives). Seq 2 is the
+            // earliest send still live at the drain, so every lifetime covers the sender's commands from seq 2's send to
+            // its cue, the loop by its budget, then the count's window, and stays within a volatile session's age bound.
             const sends = [
                 findCommand(scenario.sender, 'send-1'),
                 findCommand(scenario.sender, 'send-2'),
                 ...loop.commands.filter((command) => command.kind === 'messages.send')
             ];
             const received = findCommand(scenario.receiver, 'received-1');
+            if (received.kind !== 'messages.received' || received.windowMs === undefined) {
+                throw new Error('received-1 is not a windowed count.');
+            }
+            const senderNames = toCommandNames(scenario.sender);
+            const fromHeldSendMs = scenario.sender.commands
+                .slice(senderNames.indexOf('send-2'), senderNames.indexOf(`${toCues(carrier)}-sender-cue-released-2-sent`) + 1)
+                .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
             expect(sends).toHaveLength(66);
             const ttls = new Set(sends.map((send) => 'ttlMs' in send ? send.ttlMs : undefined));
             expect(ttls.size).toBe(1);
             const [ttlMs] = [...ttls];
-            expect(ttlMs).toBeGreaterThanOrEqual(computeSendLoopBudgetMs(64) + (received.kind === 'messages.received' ? received.windowMs : Infinity));
+            expect(ttlMs).toBe(fromHeldSendMs + received.windowMs);
+            expect(ttlMs).toBeLessThanOrEqual(AL_VOLATILE_SESSION_MAX_AGE_MS);
             for (const [index, send] of sends.entries()) {
                 expect(send).toMatchObject({
                     reliability: 'at-least-once',
@@ -347,8 +358,8 @@ describe('buffered-track-drains', () => {
         expect(scenario.receiver.commands[cueWait]?.timeoutMs).toBe(senderBodyMs);
         expect(senderBodyMs).toBeGreaterThan(computeSendLoopBudgetMs(64));
         for (const recipe of [scenario.sender, scenario.receiver]) {
-            expect(computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS), recipe.recipeId)
-                .toBe(RECIPE_RUN_TIMEOUT_MS + senderBodyMs);
+            expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
+                .toBe(ORDINARY_RUN_MS + senderBodyMs);
         }
     });
 
@@ -398,7 +409,7 @@ describe('computeAlmRecipeRunTimeoutMs', () => {
     it('keeps the ordinary budget for a recipe whose metadata states no extension', () => {
         const scenario = findScenario('rtc', 'own-share-under-inbound');
 
-        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, RECIPE_RUN_TIMEOUT_MS)).toBe(RECIPE_RUN_TIMEOUT_MS);
+        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, ORDINARY_RUN_MS)).toBe(ORDINARY_RUN_MS);
         expect(computeAlmRecipeRunTimeoutMs({ ...scenario.sender, metadata: undefined }, 5_000)).toBe(5_000);
     });
 
@@ -547,8 +558,8 @@ describe('churn-bounded-tracks', () => {
         // track's observation (10 s), its assertion (2 s) and the cue's send and observation (5 s each).
         expect(cueWait?.timeoutMs).toBe(45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
         for (const recipe of [scenario.sender, scenario.receiver]) {
-            expect(computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS), recipe.recipeId)
-                .toBe(RECIPE_RUN_TIMEOUT_MS + (cueWait?.timeoutMs ?? 0));
+            expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
+                .toBe(ORDINARY_RUN_MS + (cueWait?.timeoutMs ?? 0));
         }
     });
 });

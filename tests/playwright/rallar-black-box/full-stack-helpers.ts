@@ -272,13 +272,13 @@ export interface ReadControlRunUntilNarrowingInput<T, A extends T> extends ReadC
     readonly accept: (value: T) => value is A;
 }
 
-/** A root the lane reads, and the cancel that stops it on its agent once it outlived its deadline and grace. */
 /** A recipe and the run timeout both its recipe.run command and the lane's own deadline for its result name. */
 interface RecipeRunRequest {
     readonly recipe: RallarBlackBoxTestRecipe;
     readonly timeoutMs: number;
 }
 
+/** A root the lane reads, and the cancel that stops it on its agent once it outlived its deadline and grace. */
 interface RecipeRunRoot {
     readonly agentId: string;
     readonly commandId: string;
@@ -347,7 +347,7 @@ const RUNNER_PANEL_TARGETS: Partial<Readonly<Record<ExhaustiveTabId, RunnerPanel
 const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
 const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 /** A recipe's ordinary run budget; a recipe whose metadata states a longer step extends its own. */
-export const RECIPE_RUN_TIMEOUT_MS = 180_000;
+const RECIPE_RUN_TIMEOUT_MS = 180_000;
 /** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
 const RECIPE_RESULT_GRACE_MS = 30_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;

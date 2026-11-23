@@ -2,6 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
+import { computeCommandsTimeoutMs } from '../../alm-recipe-run-extension.ts';
 import { toCueStep } from '../receipted-audience.ts';
 import {
     toCueListenCommands,
@@ -16,7 +17,7 @@ import {
 export interface AlmCuedArrivals {
     readonly cue: string;
     readonly count: number;
-    /** The sender's body up to its cue; every command in it names its own timeout, except a close. */
+    /** The sender's body up to its cue; every command in it but a close names its own timeout, which sizes the wait. */
     readonly toSends: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
 }
 
@@ -25,11 +26,11 @@ export function toCuedArrivalsSenderCommands(
     sender: AlmConformanceStepInput,
     arrivals: AlmCuedArrivals
 ): readonly RallarBlackBoxTestCommand[] {
-    return [...arrivals.toSends(sender), ...toArrivalsCueCommands(sender, arrivals)];
+    return [...arrivals.toSends(sender), ...toCuedArrivalsCueCommands(sender, arrivals)];
 }
 
 /** The sender's cue that its sends are done; it has left the page once its handle reads `transport-accepted`. */
-export function toArrivalsCueCommands(
+export function toCuedArrivalsCueCommands(
     sender: AlmConformanceStepInput,
     arrivals: AlmCuedArrivals
 ): readonly RallarBlackBoxTestCommand[] {
@@ -58,15 +59,4 @@ export function toCuedArrivalsReceiverCommands(
  */
 export function computeCuedArrivalsWaitMs(step: AlmConformanceStepInput, arrivals: AlmCuedArrivals): number {
     return computeCommandsTimeoutMs(toCuedArrivalsSenderCommands({ ...step, role: 'sender' }, arrivals));
-}
-
-/**
- * The longest `commands` may take one after another: each command's own timeout, and a connect's readiness wait after
- * it; a close names none and adds none.
- */
-export function computeCommandsTimeoutMs(commands: readonly RallarBlackBoxTestCommand[]): number {
-    return commands.reduce((sum, command) => {
-        const readinessMs = command.kind === 'rtc.connect' ? command.readiness?.timeoutMs ?? 0 : 0;
-        return sum + (command.timeoutMs ?? 0) + readinessMs;
-    }, 0);
 }
