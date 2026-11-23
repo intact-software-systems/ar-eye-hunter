@@ -99,9 +99,27 @@ export function createPostgresSqlClient(
         getExecutorCounters: (): PSqlExecutorCounters => ({ ...recording.counters }),
         notify: (channel: string, payload: string) => client.notify(channel, payload),
         listen: (channel: string, onMessage: (payload: string) => void | Promise<void>, onSubscribed?: () => void) =>
-            client.listen(channel, onMessage, onSubscribed),
+            client.listen(channel, (payload) => {
+                // postgres.js ignores returned promises. A failed delivery must stay local to this notification.
+                void deliverPostgresNotification(channel, onMessage, payload);
+            }, onSubscribed),
         end: () => client.end()
     });
+}
+
+async function deliverPostgresNotification(
+    channel: string,
+    onMessage: (payload: string) => void | Promise<void>,
+    payload: string
+): Promise<void> {
+    try {
+        await onMessage(payload);
+    }
+    catch (error) {
+        // Database errors may carry complete queries and their bound parameters.
+        const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+        console.error('PostgreSQL notification handler failed', { channel, name: error instanceof Error ? error.name : 'Error', code });
+    }
 }
 
 function createTransactionSql(

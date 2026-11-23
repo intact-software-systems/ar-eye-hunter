@@ -259,7 +259,8 @@ describe('group move service', () => {
         const deadline = computed.outbox.find((write) => JSON.parse(write.entry.resource).payload.typeId === 'GROUP_MOVE_DEADLINE');
         expect(deadline?.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(computed.result.expiresAtEpochMs);
         await fixture.storage.sql.begin((transaction) => fixture.moveService.write(transaction, computed));
-        const rows = await fixture.storage.sql<{ count: string; }[]>`select count(*)::text as count from resource_inbox where ri_topic_id = 'view.invalidated'`;
+        const rows = await fixture.storage.sql<{ count: string; }[]>`select count(*)::text as count from resource_inbox
+            where ri_topic_id = 'view.invalidated' and (ri_resource::jsonb->'payload'->>'resource')::jsonb->>'resource' = 'room-move'`;
         expect(Number(rows[0].count)).toBe(2);
     });
 

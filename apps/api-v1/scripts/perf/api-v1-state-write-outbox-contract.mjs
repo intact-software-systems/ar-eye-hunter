@@ -6,7 +6,7 @@ export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
         'principal-state:snapshot',
         'principal-state:event'
     ]),
-    membership: Object.freeze(['group-presence-summary']),
+    membership: Object.freeze(['group-presence-summary', 'room-access']),
     'presence-connect': Object.freeze(['group-presence-summary']),
     'presence-heartbeat': Object.freeze(['group-presence-summary']),
     'presence-disconnect': Object.freeze(['group-presence-summary']),

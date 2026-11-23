@@ -116,6 +116,14 @@ describe('GroupStateService guarded runtime-state batch', () => {
                         expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
                     },
                     {
+                        effectId: expect.stringMatching(/^view:/),
+                        operation: 'insert',
+                        namespace: 'ws-outbox-provenance',
+                        key: expect.any(String),
+                        value: expect.stringContaining('"principalId":"alice"'),
+                        expireAtTimestamp: 1_000 + TEST_APP_INBOX_FINISHED_RETENTION_MS
+                    },
+                    {
                         effectId: 'receipt',
                         operation: 'insert',
                         namespace: 'group-state:idempotent',

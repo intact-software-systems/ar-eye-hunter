@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { waitForProofCondition } from './cluster-proof-socket.mts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
-import { ApiV1RtcTopologyProofApi, requestJson, requireRecord, type ProofGroupInput, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { ApiV1RtcTopologyProofApi, requestJson, requireRecord, type ProofGroupInput, type ProofSession, type ProofCausalRevision } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
 interface PlayerSuccessionScenario {
     readonly api: ApiV1RtcTopologyProofApi;
@@ -21,7 +22,7 @@ export async function provePlayerSuccession({ api, room, owner, player, observer
     await requestJson(owner.apiBaseUrl, appointmentPath(), { method: 'POST', session: owner, body: {} });
     // The organizer is also the current director: both authority roles refer to the same admission.
     const reconnectId = crypto.randomUUID();
-    const [configured] = await Promise.all([
+    const [configured, floor] = await Promise.all([
         requestJson(owner.apiBaseUrl, appointmentPath(), { method: 'POST', session: owner,
             body: { succession: { operation: 'configure', expectedDirectorEpoch: 1, expectedRevision: 0,
                 reconnectWindowMs: 100, deputyWindowMs: 30000, deputyPrincipalId: null } } }),
@@ -29,12 +30,7 @@ export async function provePlayerSuccession({ api, room, owner, player, observer
     ]);
     const configuredMetadata = requireRecord(requireRecord(configured.group, 'group').metadata, 'metadata');
     assert.equal(requireRecord(configuredMetadata.rallarDirectorSuccession, 'configured policy').revision, 1);
-    const afterReconnect = await requestJson(observerOrigin, group, { method: 'GET', session: owner });
-    assert.ok(Array.isArray(afterReconnect.activeSessions));
-    assert.ok(afterReconnect.activeSessions.some(row => {
-        const session = requireRecord(row, 'room session');
-        return session.sessionId === owner.sessionId && session.generationId === reconnectId + '-generation-' + owner.label;
-    }));
+    await waitForReconnectedSession({ observerOrigin, group, owner, floor, generationId: reconnectId + '-generation-' + owner.label });
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), { method: 'PUT', session: owner, body: { roomClock: clock } });
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/sessions/' + owner.sessionId + '/disconnect', crypto.randomUUID()), {
         method: 'POST', session: owner, body: { principalId: owner.clientId, generationId: reconnectId + '-generation-' + owner.label }
@@ -65,4 +61,26 @@ export async function provePlayerSuccession({ api, room, owner, player, observer
     }
     await requestJson(winner.actor.apiBaseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), { method: 'PUT', session: winner.actor,
         body: { roomClock: pause } });
+}
+
+interface ReconnectedSessionRead {
+    readonly observerOrigin: string;
+    readonly group: string;
+    readonly owner: ProofSession;
+    readonly generationId: string;
+    readonly floor: ProofCausalRevision;
+}
+
+export async function waitForReconnectedSession({ observerOrigin, group, owner, generationId, floor }: ReconnectedSessionRead): Promise<void> {
+    const path = group + '?minGroupRevision=' + floor.groupRevision + '&minPresenceRevision=' + floor.presenceRevision;
+    // Presence summaries are projected after commit. The floor and the exact session must both be visible.
+    await waitForProofCondition(async () => {
+        const snapshot = await requestJson(observerOrigin, path, { method: 'GET', session: owner, expectedStatus: [200, 409] });
+        if (snapshot.code === 'state-revision-floor-not-satisfied') return false;
+        assert.ok(Array.isArray(snapshot.activeSessions), 'Expected the group presence summary');
+        return snapshot.activeSessions.some(row => {
+            const session = requireRecord(row, 'room session');
+            return session.sessionId === owner.sessionId && session.generationId === generationId;
+        });
+    }, 'the accepted room session generation', 10_000);
 }

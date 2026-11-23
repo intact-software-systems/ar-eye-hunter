@@ -102,6 +102,7 @@ export function createBrowserRoomsComposition(
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
         connect: input.session.acquireConnection,
+        readEarliestServerEpochMs: () => input.session.readMiddleware()?.serverTime.readWindow().right?.earliestEpochMs,
         requireSession: input.session.requireSession,
         readPublicationKey: input.session.readPublicationKey,
         readSession,

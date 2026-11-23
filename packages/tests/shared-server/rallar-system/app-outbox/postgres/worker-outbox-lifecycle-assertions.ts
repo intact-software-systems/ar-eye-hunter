@@ -4,12 +4,16 @@ import {
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     assertDirectResourceOutboxLifecycle,
+    assertPrivateRoomAccessNotice,
+    readDirectResourceOutboxEntries,
     type DirectResourceOutboxEntry,
     type DirectResourceOutboxLifecycleExpectation
 } from '../direct-resource-outbox-lifecycle.ts';
@@ -65,6 +69,22 @@ export function assertWorkerOutboxLifecycle(input: AssertWorkerOutboxLifecycleIn
     assertDirectResourceOutboxLifecycle(entries, {
         entries: expectedEntries,
         appToWsLinks: []
+    });
+}
+
+export async function assertMembershipWorkerOutbox(
+    sql: PSqlSql, room: GroupRef, principalId: string, output: WorkerOutboxReceipt
+): Promise<void> {
+    const entries = await readDirectResourceOutboxEntries(sql, output.outboxIds);
+    const notice = entries.find(entry => entry.topicId === AppTopics.viewInvalidated);
+    if (output.outboxIds.length !== 2 || !notice || notice.typeId !== EnqueuedType.WS_OUTBOX || notice.status !== EntityStatus.NEW) {
+        throw new Error('Expected one pending private room-access notice alongside the membership summary.');
+    }
+    assertPrivateRoomAccessNotice(decodePersistedALMessage(notice.resource), room, principalId);
+    assertWorkerOutboxLifecycle({
+        entries: entries.filter(entry => entry !== notice),
+        outputs: [{ outboxIds: output.outboxIds.filter(id => id !== notice.resourceId), domainStatus: output.domainStatus }],
+        kind: 'group', effects: ['group-presence-summary']
     });
 }
 

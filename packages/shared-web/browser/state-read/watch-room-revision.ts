@@ -1,4 +1,9 @@
-import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, type ObservedRoomMetadata } from './observed-room.ts';
+import { observeRoomReadLifecycle } from './observe-room-read-lifecycle.ts';
+import { RoomPurgeWakeup } from './room-purge-wakeup.ts';
+import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, validateReadRevision, type ObservedRoomMetadata } from './observed-room.ts';
+import { isRetryableApiViewFailure } from '../api/read-api-view.ts';
+import { toExponentialBackoffMs } from '@shared/resilience/ComputeAsyncTask.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
@@ -12,24 +17,13 @@ interface WatchRoomRevisionInput<T> extends Pick<RallarRoomEventOptions, 'eventT
     readonly services: Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'ws' | 'auth' | 'roomEvents'>;
     subscribeInvalidation?(room: GroupRef, invalidate: (reason: 'program-changed' | 'access-changed') => void): () => void;
     readonly signal?: AbortSignal;
+    readEarliestServerEpochMs?(): number | undefined;
+    read?(room: GroupRef, signal: AbortSignal): Promise<ObservedRoomMetadata>;
+    onDenied?(error: ApiHttpError): void;
     project(group: ObservedRoomMetadata): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
     regresses(previous: T, next: T): boolean;
     onDelta?(previous: T, next: T): 'ignore' | 'publish' | 'refresh';
-}
-
-function validateReadRevision<T extends { readonly revision: number; }>(
-    next: T | null,
-    previous: T | null,
-    announcedRevision: number,
-    regresses: WatchRoomRevisionInput<T>['regresses']
-): void {
-    if ((next?.revision ?? 0) < announcedRevision) {
-        throw new Error('Room read predates the server notification.');
-    }
-    if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
-        throw new Error('Room read regressed.');
-    }
 }
 
 /** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
@@ -46,8 +40,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
     let retry: ReturnType<typeof setTimeout> | undefined;
     let retries = 0;
     let announcedRevision = 0;
-    let pageSuspended = false;
-    let socketLost = !ws.status().isOpen;
+    const purge = input.readEarliestServerEpochMs && new RoomPurgeWakeup(input.readEarliestServerEpochMs, wake);
     let queued = false;
     let status: 'current' | 'stale' = 'stale';
     let observed: T | null = null;
@@ -62,14 +55,11 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
     }
     function suspend(): void {
         clearTimeout(retry);
+        purge?.observe(null);
         request?.abort();
         request = undefined;
         queued = false;
         publish('stale');
-    }
-    function isInactive(): boolean {
-        return signal.aborted || pageSuspended || socketLost || document.visibilityState === 'hidden' ||
-            navigator.onLine === false;
     }
     async function refresh(): Promise<void> {
         clearTimeout(retry);
@@ -84,69 +74,54 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         queued = false;
         const attempt = new AbortController();
         request = attempt;
+        let group: ObservedRoomMetadata;
         let next: T | null;
+        const readSignal = AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]);
         try {
             fence.assertCurrent();
-            next = input.project(
-                await readObservedRoom(
-                    room,
-                    requireSession,
-                    AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])
-                )
-            );
+            group = input.read ? await input.read(room, readSignal) : await readObservedRoom(room, requireSession, readSignal);
+            next = input.project(group);
             validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
         catch (error) {
-            const accessLost = error instanceof ApiHttpError && [401, 403, 404].includes(error.status);
-            handleReadFailure(attempt, accessLost);
+            handleReadFailure(attempt, toError(error), readSignal);
             return;
         }
         if (request !== attempt) {
             return;
         }
         request = undefined;
+        retries = 0;
+        purge?.observe(group.purgeAfterEpochMs);
         publish('current', next);
         if (queued) {
             void refresh();
         }
     }
-    function handleReadFailure(attempt: AbortController, accessLost: boolean): void {
+    function handleReadFailure(attempt: AbortController, error: Error, readSignal: AbortSignal): void {
         if (request !== attempt) {
             return;
         }
         request = undefined;
-        if (accessLost) {
+        if (error instanceof ApiHttpError && [401, 403, 404].includes(error.status)) {
+            purge?.observe(null);
             queued = false;
             announcedRevision = 0;
             publish('stale', null);
+            if (!signal.aborted) input.onDenied?.(error);
             return;
         }
         publish('stale');
-        // One bounded retry burst per external wakeup, including when the server stays unavailable.
-        if (!signal.aborted && retries < 3) {
-            retry = setTimeout(() => void refresh(), 1000 * 2 ** retries++);
+        const transient = readSignal.aborted || isRetryableApiViewFailure(error);
+        if (!signal.aborted && (transient || retries < 3)) {
+            retry = setTimeout(() => void refresh(), toExponentialBackoffMs(++retries, 30_000, 1_000));
         }
     }
     function wake(): void {
         retries = 0;
         void refresh();
     }
-    function resume(): void {
-        pageSuspended = false;
-        wake();
-    }
-    function hide(): void {
-        pageSuspended = true;
-        suspend();
-    }
-    const options = { signal };
-    window.addEventListener('pagehide', hide, options);
-    window.addEventListener('pageshow', resume, options);
-    document.addEventListener('freeze', hide, options);
-    document.addEventListener('resume', resume, options);
-    document.addEventListener('visibilitychange', wake, options);
-    window.addEventListener('offline', suspend, options);
-    window.addEventListener('online', wake, options);
+    const { isInactive } = observeRoomReadLifecycle(ws, signal, wake, suspend);
     const unsubscribeRoom = input.subscribeInvalidation?.(room, (reason) => {
         if (reason === 'access-changed') {
             request?.abort();
@@ -160,12 +135,8 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         }
         wake();
     }) ?? roomEvents.onEvent((_event, message) => {
-        const group = readObservedRoomDelta(message, room);
-        if (!group) {
-            return;
-        }
-        const announced = input.project(group);
-        if (!announced || announced.revision <= Math.max(announcedRevision, observed?.revision ?? 0)) {
+        const announced = readObservedRoomDelta(message, room, input.project, Math.max(announcedRevision, observed?.revision ?? 0));
+        if (!announced) {
             return;
         }
         const action = observed && input.onDelta?.(observed, announced);
@@ -184,10 +155,6 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         publish('stale');
         wake();
     }, { roomRef: room, scope: room, eventTypes: input.eventTypes });
-    const unsubscribeSocket = ws.onLifecycle((event) => {
-        socketLost = ['close', 'disconnected', 'error'].includes(event.kind);
-        wake();
-    }, { emitCurrent: false });
     const unsubscribeAuth = auth.onChange(({ session }) => {
         if (session?.sessionId === fence.session.sessionId && session?.clientId === fence.session.clientId) {
             return;
@@ -204,7 +171,6 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         suspend();
         unsubscribeAuth();
         unsubscribeRoom();
-        unsubscribeSocket();
         input.signal?.removeEventListener('abort', dispose);
     }
     input.signal?.addEventListener('abort', dispose, { once: true });

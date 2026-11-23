@@ -33,7 +33,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const view = new PollView(root);
     const { yes, no, extend } = view;
     let submitting = false;
-    let refreshing = false;
+    let activeRefresh: AbortController | undefined;
     let retryAt = 0;
     let deadlineStale = false;
     let watchedRevision = 0;
@@ -41,27 +41,26 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let unacknowledged: PollAuthority.Choice | undefined;
     let checkingReceipt = false;
     let away = document.visibilityState === 'hidden';
-    let generation = away ? 1 : 0;
-    let restored = 0;
+    let needsRoomEntry = away;
+    function invalidateRoomEntry(): void {
+        needsRoomEntry = true;
+        activeRefresh?.abort();
+        activeRefresh = undefined;
+    }
     async function refreshSnapshot(): Promise<void> {
-        refreshing = true;
-        const current = generation;
+        const attempt = new AbortController();
+        activeRefresh = attempt;
+        const refreshSignal = AbortSignal.any([signal, attempt.signal]);
         try {
-            if (restored !== current) {
-                const options = { signal };
+            if (needsRoomEntry) {
+                const options = { signal: refreshSignal };
                 await rallar.connect(options);
-                signal.throwIfAborted();
-                if (current !== generation) {
-                    return;
-                }
+                refreshSignal.throwIfAborted();
                 await rallar.rooms.enter(roomRef, options);
             }
-            const snapshot = await requestPollSnapshot(input, signal, { previous: record });
-            signal.throwIfAborted();
-            if (current !== generation) {
-                return;
-            }
-            restored = current;
+            const snapshot = await requestPollSnapshot(input, refreshSignal, { previous: record });
+            refreshSignal.throwIfAborted();
+            needsRoomEntry = false;
             extensionUnconfirmed = false;
             record = snapshot;
             checkingReceipt = false;
@@ -73,32 +72,34 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             // A failed read leaves the receipt or closing tally unresolved.
         }
         finally {
-            refreshing = false;
-            retryAt = performance.now() + 2_000;
+            if (activeRefresh === attempt) {
+                activeRefresh = undefined;
+                retryAt = performance.now() + 2_000;
+            }
         }
     }
     function render(): void {
         if (signal.aborted) {
             return;
         }
-        let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || restored !== generation
+        let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || needsRoomEntry
             ? 'Recovering room poll'
             : pollPhase(record, rallar, input.authority);
         if (currentPhase === 'Waiting for server time') {
-            generation++;
+            invalidateRoomEntry();
             currentPhase = 'Recovering room poll';
         }
         const restoring = currentPhase === 'Recovering room poll';
         const revisionDue = watchedRevision > (record.revision ?? 0);
         const needsSnapshot = restoring || checkingReceipt || extensionUnconfirmed ||
             currentPhase === 'Voting closed' || revisionDue;
-        if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
+        if (!away && needsSnapshot && !submitting && !activeRefresh && performance.now() >= retryAt) {
             void refreshSnapshot();
         }
         if (deadlineStale || revisionDue || extensionUnconfirmed) {
             currentPhase = 'Recovering room poll';
         }
-        view.render({ record, currentPhase, checkingReceipt, refreshing, submitting, unacknowledged, retryAt });
+        view.render({ record, currentPhase, checkingReceipt, refreshing: activeRefresh !== undefined, submitting, unacknowledged, retryAt });
     }
     async function submit(choice: PollAuthority.Choice): Promise<void> {
         render();
@@ -126,8 +127,8 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function suspend(): void {
-        generation++;
         away = true;
+        invalidateRoomEntry();
         render();
     }
     function resume(): void {

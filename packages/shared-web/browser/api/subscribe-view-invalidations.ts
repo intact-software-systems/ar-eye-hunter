@@ -12,13 +12,14 @@ import { subscribeViewRecovery, type SubscribeViewRecovery } from './subscribe-v
 export namespace SubscribeViewInvalidations {
     export interface Input extends SubscribeViewRecovery.Input {
         readonly scope: StateScope;
-        readonly resource: ViewInvalidation['resource'];
+        readonly resource: ViewInvalidation['resource'] | readonly ViewInvalidation['resource'][];
         readonly changed: (notice?: ViewInvalidation) => void;
     }
 }
 
 /** Reserved server topics wake canonical reads; account authority is sampled on every delivery. */
 export function subscribeViewInvalidations(input: SubscribeViewInvalidations.Input): () => void {
+    const resources = typeof input.resource === 'string' ? [input.resource] : input.resource;
     const subscriptions = new SubscriptionScope();
     subscriptions.add(input.browser.messages.ws.onMessage({ topicId: AppTopics.viewInvalidated }, (message) => {
         if (message.transport !== 'ws' || message.topicId !== AppTopics.viewInvalidated) {
@@ -33,7 +34,7 @@ export function subscribeViewInvalidations(input: SubscribeViewInvalidations.Inp
         }
         const session = input.browser.session();
         if (
-            notice.resource === input.resource &&
+            resources.includes(notice.resource) &&
             (notice.scope === null || isSameGroupScope(notice.scope, input.scope)) &&
             session !== undefined &&
             (notice.principalId === null || notice.principalId === session.clientId)

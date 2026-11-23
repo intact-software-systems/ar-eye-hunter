@@ -62,7 +62,7 @@ export async function collectApiV1StateWriteEvidenceFromSql(
     const outboxRows = await readOutboxRows(sql, [
         spec.match,
         ...commandEvidence.flatMap((evidence) => evidence.commandIds)
-    ]);
+    ], commandEvidence.flatMap(evidence => evidence.roomAccessIdentity ? [evidence.roomAccessIdentity.physicalKey.resourceId] : []));
     const finalEvidence = deriveApiV1StateWriteEvidence({
         spec: spec,
         rawRows: finalRows,
@@ -86,7 +86,8 @@ export async function collectApiV1StateWriteEvidenceFromSql(
 
 async function readOutboxRows(
     sql: ApiV1StateWriteEvidenceQuery,
-    matches: readonly string[]
+    matches: readonly string[],
+    roomAccessIds: readonly string[]
 ): Promise<readonly OutboxRow[]> {
     const rows = await Promise.all(
         [...new Set(matches)].map(async (match) =>
@@ -99,6 +100,14 @@ async function readOutboxRows(
             `
         )
     );
+    if (roomAccessIds.length) {
+        rows.push(await sql<OutboxRow[]>`
+            select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_type_id, ri_status, ri_resource
+            from resource_inbox
+            where ri_type_id = 'WS_OUTBOX' and ri_topic_id = 'view.invalidated'
+              and ri_resource_id = any(string_to_array(${roomAccessIds.join(',')}, ','))
+        `);
+    }
     return [...new Map(rows.flatMap((batch) =>
         batch.map((row) =>
             [
