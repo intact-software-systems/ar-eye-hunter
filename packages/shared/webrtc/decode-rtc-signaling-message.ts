@@ -96,12 +96,8 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
     if (value.candidate !== null) {
         throw new RtcSignalingDecodeError('Unexpected description candidate');
     }
-    if (signal.signalType === 'Answer' && !('offerGeneration' in signal)) {
-        return {
-            signalType: 'Answer',
-            offerId: decodeOfferId(signal),
-            payload: { description: decodeSessionDescription(value.description, 'answer'), candidate: null }
-        };
+    if (signal.signalType === 'Answer') {
+        return decodeAnswerSignal(signal, value.description);
     }
     if (signal.signalType !== 'Offer') {
         throw new RtcSignalingDecodeError('Invalid RTC description signal');
@@ -122,6 +118,17 @@ function decodeIceCandidateSignal(signal: object, description: unknown, candidat
         throw new RtcSignalingDecodeError('Unexpected RTC ICE offer identity');
     }
     return { signalType: 'IceCandidate', payload: { description: null, candidate: decodeIceCandidate(candidate) } };
+}
+
+function decodeAnswerSignal(signal: object, description: unknown): QRtcSignal {
+    if ('offerGeneration' in signal) {
+        throw new RtcSignalingDecodeError('Unexpected RTC answer offer generation');
+    }
+    return {
+        signalType: 'Answer',
+        offerId: decodeOfferId(signal),
+        payload: { description: decodeSessionDescription(description, 'answer'), candidate: null }
+    };
 }
 
 function decodeOfferId(signal: object): string {
