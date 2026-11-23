@@ -967,6 +967,22 @@ describe('owned native signaling projection', () => {
         expect(requiredJsonRecord(events[2], 'started')).not.toHaveProperty('appliedOfferGeneration');
     });
 
+    it('carries the dropped candidate and the remote description generation of a superseded candidate, and only of one', () => {
+        const history = toNotificationHistory([
+            '{"name":"superseded","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"ice-superseded","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"IceCandidate","capturedPeerConnection":true,"currentPeerConnection":true,"signalingState":"stable","candidateGeneration":19,"remoteDescriptionGeneration":20}}}}',
+            '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"ice-superseded","signalType":"IceCandidate","candidateGeneration":"19","remoteDescriptionGeneration":-20}}}}',
+            '{"name":"queued","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"ice-queued","signalType":"IceCandidate","candidateGeneration":19,"remoteDescriptionGeneration":20}}}}'
+        ].join('\n'));
+        const events = requiredJsonArray(requiredJsonRecord(history, 'history').events, 'events');
+        expect(events).toMatchObject([
+            { disposition: 'ice-superseded', signalingState: 'stable', candidateGeneration: 19, remoteDescriptionGeneration: 20 },
+            { disposition: 'ice-superseded', candidateGeneration: null, remoteDescriptionGeneration: null },
+            { disposition: 'ice-queued' }
+        ]);
+        expect(requiredJsonRecord(events[2], 'queued')).not.toHaveProperty('candidateGeneration');
+        expect(requiredJsonRecord(events[2], 'queued')).not.toHaveProperty('remoteDescriptionGeneration');
+    });
+
     it('keeps absent invalid and nonfinite native facts unavailable instead of inventing success', () => {
         const history = toNotificationHistory([
             '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"answer-ineligible","atEpochMs":1e999,"currentPeerConnection":"false","offerMatches":0,"signalingState":"private-sentinel","signalType":"private-sentinel","offerId":"private-offer-sentinel"}}}}',

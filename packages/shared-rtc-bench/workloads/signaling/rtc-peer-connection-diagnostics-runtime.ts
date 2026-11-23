@@ -228,7 +228,7 @@ class RtcPeerConnectionDiagnosticsPeerAdapter implements RtcPeerConnectionDiagno
                 peerSessionId: `peer-${input.id}`,
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
                 isPolite: input.isPolite,
-                offerGeneration: 1
+                connectionGeneration: 1
             },
             { createOfferId: () => crypto.randomUUID() }
         );
@@ -245,6 +245,7 @@ class RtcPeerConnectionDiagnosticsPeerAdapter implements RtcPeerConnectionDiagno
     receiveIceCandidate(index: number): Promise<void> {
         return this.peer.handleSignal({
             signalType: QRtcSignalingType.IceCandidate,
+            connectionGeneration: 1,
             payload: {
                 description: null,
                 candidate: {
@@ -260,7 +261,7 @@ class RtcPeerConnectionDiagnosticsPeerAdapter implements RtcPeerConnectionDiagno
         return this.peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: `remote-offer-${this.input.id}`,
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: `remote-offer-${this.input.id}` }, candidate: null }
         });
     }
@@ -273,7 +274,7 @@ class RtcPeerConnectionDiagnosticsPeerAdapter implements RtcPeerConnectionDiagno
         return this.peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: `collision-${this.input.id}-${index}`,
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: `colliding-offer-${this.input.id}-${index}` },
                 candidate: null

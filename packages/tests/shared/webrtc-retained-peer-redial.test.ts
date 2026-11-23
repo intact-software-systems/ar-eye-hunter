@@ -186,6 +186,24 @@ function withOfferSdp(
     return { ...offer, payload: { description: { type: 'offer', sdp }, candidate: null } };
 }
 
+/** A candidate the offering connection gathered: it travels to the offer's recipient under the offer's generation. */
+function toCandidateOfOffer(
+    offer: Extract<QRtcSignalingMessage, { signalType: typeof QRtcSignalingType.Offer; }>,
+    candidate: string
+): QRtcSignalingMessage {
+    return {
+        channel: offer.channel,
+        type: offer.type,
+        fromId: offer.fromId,
+        toId: offer.toId,
+        sessionId: offer.sessionId,
+        token: offer.token,
+        signalType: QRtcSignalingType.IceCandidate,
+        connectionGeneration: offer.connectionGeneration,
+        payload: { description: null, candidate: { candidate } }
+    };
+}
+
 async function establishPair(
     offerer: SimulatedNativeRtcPeerConnection,
     answerer: SimulatedNativeRtcPeerConnection
@@ -326,6 +344,36 @@ describe('WebRtcGroupManager retained peer redial', () => {
         expect(offerer.connection.service.readyPeerIdsForLane('reliable')).toEqual(['a-peer']);
         expect(reloaded.service.readyPeerIdsForLane('reliable')).toEqual(['z-self']);
         expect(Date.now() - redialAt).toBeLessThan(ESTABLISHMENT_TIMEOUT_MS);
+    });
+
+    it('applies the redial candidate that overtook its offer to that offer, not to the retired one', async () => {
+        const offerer = await createEstablishedSide('z-self', 'a-peer');
+        await endRemotePage(offerer);
+        const lostDial = offerer.connection.nativePeer('a-peer');
+        await negotiate(lostDial);
+        await acceptPresence(offerer, 2, ['z-self']);
+        await vi.advanceTimersByTimeAsync(2_000);
+        const reloaded = await createConnection('a-peer');
+        await acceptPresence(offerer, 3, ['z-self', 'a-peer']);
+        const redial = offerer.connection.nativePeer('a-peer');
+        await negotiate(redial);
+        const [retiredOffer, currentOffer] = sentSignalsOfType(offerer.connection, QRtcSignalingType.Offer);
+
+        await reloaded.receive(withOfferSdp(retiredOffer, 'retired-offer-sdp'));
+        const answering = reloaded.nativePeer('z-self');
+        await reloaded.receive(toCandidateOfOffer(currentOffer, 'redial-candidate'));
+        expect(answering.receivedCandidates).toEqual([]);
+        await reloaded.receive(withOfferSdp(currentOffer, 'current-offer-sdp'));
+
+        expect(answering.receivedDescriptions.map((description) => description.sdp)).toEqual([
+            'retired-offer-sdp',
+            'current-offer-sdp'
+        ]);
+        expect(answering.receivedCandidates).toEqual([{ candidate: 'redial-candidate' }]);
+        const answers = sentSignalsOfType(reloaded, QRtcSignalingType.Answer);
+        expect(answers.map((answer) => answer.offerId)).toEqual(['offer-1', 'offer-2']);
+        await offerer.connection.receive(answers[1]);
+        expect(redial.signalingState).toBe('stable');
     });
 
     it('keeps an established peer that becomes desired again', async () => {

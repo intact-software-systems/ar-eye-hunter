@@ -368,13 +368,17 @@ describe('original native owner evidence', () => {
             }
         });
         for (const candidate of ['first', 'last']) {
-            await peer.connection.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate: { candidate } } });
+            await peer.connection.handleSignal({
+                signalType: 'IceCandidate',
+                connectionGeneration: 1,
+                payload: { description: null, candidate: { candidate } }
+            });
         }
         events.length = 0;
         await peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         expect(attempted).toEqual(['first', 'last']);
@@ -446,7 +450,7 @@ describe('original native owner evidence', () => {
                 await expect(peer.connection.handleSignal({
                     signalType: 'Offer',
                     offerId: 'offer',
-                    offerGeneration: 1,
+                    connectionGeneration: 1,
                     payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
                 })).rejects.toBe(failure);
             }
@@ -455,6 +459,7 @@ describe('original native owner evidence', () => {
                 vi.spyOn(native, 'addIceCandidate').mockRejectedValue(failure);
                 await expect(peer.connection.handleSignal({
                     signalType: 'IceCandidate',
+                    connectionGeneration: 1,
                     payload: { description: null, candidate: { candidate: 'private-candidate' } }
                 })).rejects.toBe(failure);
             }
@@ -494,7 +499,7 @@ describe('original native owner evidence', () => {
         await expect(peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         })).rejects.toBe(failure);
         await native.channels[0].fail();
@@ -697,7 +702,7 @@ describe('original native owner evidence', () => {
             peer.connection.handleSignal({
                 signalType: 'Offer',
                 offerId: 'offer',
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
             })
         ).rejects.toBe(failure);
@@ -736,7 +741,7 @@ describe('original native owner evidence', () => {
         const applying = peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
-            offerGeneration: 1,
+            connectionGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         await entered.promise;
@@ -974,6 +979,7 @@ describe('original native owner evidence', () => {
         await native.setRemoteDescription({ type: 'offer', sdp: 'private-sdp' });
         await peer.connection.handleSignal({
             signalType: 'IceCandidate',
+            connectionGeneration: 1,
             payload: { description: null, candidate: { candidate: 'private-address', usernameFragment: 'private-fragment' } }
         });
         const candidates = events.filter((row) => row.kind === 'native-candidate-application');

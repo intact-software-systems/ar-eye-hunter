@@ -63,7 +63,7 @@ it.each(cases)('observes $name at the real direct and spliced-drain invocations 
             token: 'test',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 },
             isPolite: true,
-            offerGeneration: 1
+            connectionGeneration: 1
         }, { createOfferId: () => 'offer', signalingDiagnostics: { nativeObservation: capability, nowEpochMs: () => 1, record: (row) => events.push(row) } });
         onTestFinished(() => {
             peer.reset();
@@ -107,7 +107,7 @@ it.each(cases)('observes $name at the real direct and spliced-drain invocations 
             await native.setRemoteDescription({ type: 'offer' });
         }
         for (let index = 0; index < 3; index++) {
-            const applying = peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate } });
+            const applying = peer.handleSignal({ signalType: 'IceCandidate', connectionGeneration: 1, payload: { description: null, candidate } });
             if (source === 'direct' && index === 1) {
                 await expect(applying).rejects.toBe(failure);
             }
@@ -120,7 +120,7 @@ it.each(cases)('observes $name at the real direct and spliced-drain invocations 
             await peer.handleSignal({
                 signalType: 'Offer',
                 offerId: 'offer',
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
             });
         }
@@ -180,7 +180,7 @@ it.each(
         token: 'test',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 },
         isPolite: true,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, {
         createOfferId: () => 'offer',
         signalingDiagnostics: {
@@ -231,13 +231,13 @@ it.each(
         return index === 1 ? Promise.reject(rejection) : Promise.resolve();
     };
     for (const candidate of candidates) {
-        await peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate } });
+        await peer.handleSignal({ signalType: 'IceCandidate', connectionGeneration: 1, payload: { description: null, candidate } });
     }
     expect(original.receivedCandidates).toEqual([]);
     await peer.handleSignal({
         signalType: 'Offer',
         offerId: 'offer',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'offer' }, candidate: null }
     });
     expect(original.connectionState).toBe('closed');
@@ -298,7 +298,7 @@ it.each(['observed', 'unavailable'] as const)('restores synchronous context whil
         token: 'test',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 },
         isPolite: true,
-        offerGeneration: 1
+        connectionGeneration: 1
     }, {
         createOfferId: () => 'offer',
         signalingDiagnostics: {
@@ -332,12 +332,12 @@ it.each(['observed', 'unavailable'] as const)('restores synchronous context whil
         entered();
         return pending;
     };
-    await peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate } });
+    await peer.handleSignal({ signalType: 'IceCandidate', connectionGeneration: 1, payload: { description: null, candidate } });
     awaitingOriginalCompletion = true;
     const applying = peer.handleSignal({
         signalType: 'Offer',
         offerId: 'offer',
-        offerGeneration: 1,
+        connectionGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'offer' }, candidate: null }
     });
     await invocation;

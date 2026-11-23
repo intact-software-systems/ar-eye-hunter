@@ -149,8 +149,8 @@ function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): n
  * Drops a desired peer's dial that is still in flight under an `overlay-transition` retention, on the offering side,
  * with its own offer unanswered, so the peer is dialled again. The rule keys on the retention reason, not on whether
  * the remote side went away. A late answer to the dropped offer is discarded by its offer id, and the dropped offer,
- * should it reach the answering side after the redial's, is refused by its lower offer generation. The attempt budget
- * is kept, so the redial counts as an attempt.
+ * should it reach the answering side after the redial's, is refused by its lower connection generation. The attempt
+ * budget is kept, so the redial counts as an attempt.
  */
 export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
     for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {
@@ -163,8 +163,8 @@ export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDials
  * Signaling is live-only, so the departed session's next connection never answers it; the peer is dialled again when
  * its presence returns. The answering side keeps its setup: no signal tells the offerer it was dropped, and the
  * offerer's next offer reaches the kept setup. Signals may arrive out of order, so that setup can see the dropped dial's
- * offer after the redial's; it refuses it because each new dial carries a higher offer generation than the ones before.
- * The rule does not wait for the local offer, which may not be sent yet. Established edges are kept.
+ * offer after the redial's; it refuses it because each new dial carries a higher connection generation than the ones
+ * before. The rule does not wait for the local offer, which may not be sent yet. Established edges are kept.
  */
 export function disconnectAbsentPeerDials(input: AbsentPeerDialsInput): void {
     for (const peerId of input.rtcQBox.inFlightPeerIds()) {

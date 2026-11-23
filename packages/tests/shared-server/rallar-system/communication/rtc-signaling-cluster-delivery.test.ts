@@ -301,7 +301,7 @@ function signalingMessage(
                 token: 'fixture-ticket',
                 signalType: 'Offer',
                 offerId,
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp }, candidate: null }
             },
             options: { traceId }

@@ -175,8 +175,8 @@ export namespace QRtcPeerConnection {
         readonly peerSessionId: string;
         readonly iceCandidates: IceConfig;
         readonly isPolite: boolean;
-        /** Carried on every offer this connection sends; the offering runtime raises it for each new connection. */
-        readonly offerGeneration: number;
+        /** Carried on every signal this connection sends; the owning runtime raises it for each new connection. */
+        readonly connectionGeneration: number;
     }
 
     export interface Diagnostics {
@@ -995,7 +995,7 @@ export class QRtcPeerConnection {
             await this.sendSignal(pc, {
                 signalType: 'Offer',
                 offerId,
-                offerGeneration: this.input.offerGeneration,
+                connectionGeneration: this.input.connectionGeneration,
                 payload: {
                     description: { type: 'offer', sdp: description.sdp },
                     candidate: null
@@ -1022,6 +1022,7 @@ export class QRtcPeerConnection {
         try {
             await this.sendSignal(pc, {
                 signalType: 'IceCandidate',
+                connectionGeneration: this.input.connectionGeneration,
                 payload: { description: null, candidate: event.candidate }
             });
         }
@@ -1336,7 +1337,7 @@ export class QRtcPeerConnection {
             await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
             this.observeNativeSignal('remote-description-returned', capture, signal);
         }
-        this.highestAppliedOfferGeneration = signal.offerGeneration;
+        this.highestAppliedOfferGeneration = signal.connectionGeneration;
         if (this.status.pc !== pc) {
             this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
@@ -1362,7 +1363,7 @@ export class QRtcPeerConnection {
         signal: Extract<QRtcSignal, { signalType: 'Offer'; }>
     ): boolean {
         const appliedOfferGeneration = this.highestAppliedOfferGeneration;
-        if (appliedOfferGeneration === undefined || signal.offerGeneration >= appliedOfferGeneration) {
+        if (appliedOfferGeneration === undefined || signal.connectionGeneration >= appliedOfferGeneration) {
             return false;
         }
         recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
@@ -1377,7 +1378,7 @@ export class QRtcPeerConnection {
             currentPeerConnection: true,
             offerMatches: undefined,
             signalingState: capture.pc.signalingState,
-            offerGeneration: signal.offerGeneration,
+            offerGeneration: signal.connectionGeneration,
             appliedOfferGeneration
         });
         return true;
@@ -1426,6 +1427,7 @@ export class QRtcPeerConnection {
             await this.sendSignal(pc, {
                 signalType: 'Answer',
                 offerId,
+                connectionGeneration: this.input.connectionGeneration,
                 payload: {
                     description: { type: 'answer', sdp: description.sdp },
                     candidate: null

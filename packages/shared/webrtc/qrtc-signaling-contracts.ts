@@ -20,15 +20,16 @@ export const QRtcSignalingMsgType = {
 
 export type QRtcSignalingMsgType = (typeof QRtcSignalingMsgType)[keyof typeof QRtcSignalingMsgType];
 
+/**
+ * Every signal carries `connectionGeneration`, the sending connection's generation: it rises with each new
+ * connection a runtime opens to one peer, so a receiver can tell a signal of a superseded remote connection, or of one
+ * whose description it has not applied yet, from one of the remote description it holds.
+ */
 export type QRtcSignal =
     | {
         readonly signalType: 'Offer';
         readonly offerId: string;
-        /**
-         * The offering connection's generation: rises with each new connection the offering runtime
-         * opens to one peer. An answerer refuses an offer below the highest generation it has applied.
-         */
-        readonly offerGeneration: number;
+        readonly connectionGeneration: number;
         readonly payload: {
             readonly description: { readonly type: 'offer'; readonly sdp: string; };
             readonly candidate: null;
@@ -37,6 +38,7 @@ export type QRtcSignal =
     | {
         readonly signalType: 'Answer';
         readonly offerId: string;
+        readonly connectionGeneration: number;
         readonly payload: {
             readonly description: { readonly type: 'answer'; readonly sdp: string; };
             readonly candidate: null;
@@ -44,6 +46,7 @@ export type QRtcSignal =
     }
     | {
         readonly signalType: 'IceCandidate';
+        readonly connectionGeneration: number;
         readonly payload: { readonly description: null; readonly candidate: RTCIceCandidateInit; };
     };
 

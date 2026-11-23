@@ -69,7 +69,7 @@ function signal(sdp: string): ALMessage {
                 token: 'fixture-ticket',
                 signalType: 'Offer',
                 offerId: 'offer-1',
-                offerGeneration: 1,
+                connectionGeneration: 1,
                 payload: { description: { type: 'offer', sdp }, candidate: null }
             }
         }

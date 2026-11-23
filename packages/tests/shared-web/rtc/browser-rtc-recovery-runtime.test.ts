@@ -726,6 +726,7 @@ describe('Rallar RTC recovery', () => {
             {
                 peerSessionId: 'peer-1',
                 signalType: QRtcSignalingType.Answer,
+                connectionGeneration: 1,
                 admission: {
                     outcome: 'rejected',
                     verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
