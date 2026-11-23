@@ -100,7 +100,7 @@ export function readRoomTimeRecords(metadata: ApiJsonObject): (RoomClock | RoomT
             assertSchedulePhases(record.phases);
             return { ...identity, status: record.status, elapsedThroughEpochMs: record.elapsedThroughEpochMs, phases: record.phases };
         }
-        const occurrence = Object.hasOwn(record, 'phase') ? readTimelineOccurrence(record, record.revision) : undefined;
+        const occurrence = Object.hasOwn(record, 'phase') ? readTimelineOccurrence(value, record.revision) : undefined;
         const keys = ['name', 'revision', 'status', ...Object.keys(occurrence ?? {})];
         const clock = occurrence ? { ...identity, ...occurrence } : identity;
         if (record.status === 'running') {

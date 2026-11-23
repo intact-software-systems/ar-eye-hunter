@@ -1,6 +1,6 @@
 import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState } from '@shared/api/group-retention.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
-import { computeEmptyRoomLifetime } from './compute-empty-room-lifetime.ts';
+import { computeEmptyGroupLifetime, type GroupRetentionObservation } from './compute-empty-group-lifetime.ts';
 import { computeGroupRetentionWrite, toGroupRetentionReceipt } from './compute-group-retention-write.ts';
 import type { GroupRetentionService } from './group-retention-service.ts';
 
@@ -20,7 +20,7 @@ export function computeGroupRetention(read: GroupRetentionService.Read): GroupRe
     if (group.status !== 'active' || policy === null) {
         return noChange(read, group);
     }
-    const lifetime = computeEmptyRoomLifetime(read.authority, policy, read.attemptAtEpochMs);
+    const lifetime = computeEmptyGroupLifetime(read.authority, policy, read.attemptAtEpochMs);
     if (lifetime !== 'expired') {
         return lifetime.atEpochMs === group.emptySinceEpochMs && policy.emptyPresenceFingerprint === lifetime.fingerprint
             ? noChange(read, group)
@@ -65,7 +65,7 @@ function noChange(read: GroupRetentionService.Read, group: Group): GroupRetentio
 function updateObservation(
     read: GroupRetentionService.Read,
     group: Group,
-    observation: Readonly<{ atEpochMs: number | null; fingerprint: string | null; }>
+    observation: GroupRetentionObservation
 ): Group {
     const policy = readGroupRetentionState(group.metadata);
     if (policy === null) {

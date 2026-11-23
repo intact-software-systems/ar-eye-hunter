@@ -1,4 +1,4 @@
-import { computeRoomTimelineSettlement } from '../../schedule/compute-room-timeline-settlement.ts';
+import { computeGroupTimelineSettlement } from '../../schedule/compute-group-timeline-settlement.ts';
 import { computeGroupDirectorAppointment } from '../aggregate/compute-group-director-appointment.ts';
 import { requiresGroupLobbyRead } from '../../lobby/requires-group-lobby-read.ts';
 import { computeGroupSessionMutation } from '../../schedule/compute-group-session-mutation.ts';
@@ -88,7 +88,7 @@ function computeFreshGroupMutation(
 ): GroupMutationComputed {
     switch (command.operation) {
         case 'settleTimeline':
-            return computeRoomTimelineSettlement(command, read, facts);
+            return computeGroupTimelineSettlement(command, read, facts);
         case 'changeGroupSession':
             return computeGroupSessionMutation(command, read, facts);
         case 'createGroup':

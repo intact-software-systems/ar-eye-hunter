@@ -20,10 +20,15 @@ export function readPausedTimelineRetention(group: Group): GroupRetentionState |
         ? policy : null;
 }
 
+export interface GroupRetentionObservation {
+    readonly atEpochMs: number | null;
+    readonly fingerprint: string | null;
+}
+
 /** One decision for both archival and a player's arrival while the archival worker is delayed. */
-export function computeEmptyRoomLifetime(
+export function computeEmptyGroupLifetime(
     authority: GroupPresenceSummaryStoredRead, policy: GroupRetentionState, nowEpochMs: number
-): { atEpochMs: number | null; fingerprint: string | null; } | 'expired' {
+): GroupRetentionObservation | 'expired' {
     const stored = authority.group;
     if (!stored) throw new TypeError('Temporary room lifetime requires the room predecessor');
     const group = stored.value;

@@ -1,7 +1,4 @@
-import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { isExactlyAdmitted } from './mutation/aggregate/group-aggregate-mutation-policy.ts';
-import { GroupMutationRejectedError } from './mutation/group-mutation-contracts.ts';
-import { computeEmptyRoomLifetime, readPausedTimelineRetention } from './retention/compute-empty-room-lifetime.ts';
+import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { PartyRepository } from '../parties/persistence/party-repository.ts';
@@ -81,12 +78,11 @@ export function createGroupStateRuntime(
     const runtime = dependencies.runtimeRepository;
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
-    const repositoryFor: GroupStateRepositoryFactory = (target) =>
-        new GroupStateRepository(target, dependencies.groupStateEventStore);
+    const repository = new GroupStateRepository(runtime, dependencies.groupStateEventStore);
     const authSessions = new AuthSessionPersistence(runtime);
     const owners: GroupStateRuntimeOwners = {
         dependencies,
-        repositoryFor,
+        repository,
         authSessions,
         authorityDependencies: createAuthorityDependencies({ dependencies, authSessions, now, randomId }),
         captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
@@ -99,9 +95,9 @@ export function createGroupStateRuntime(
         now
     };
     const service: GroupStateService = {
-        sessionDirectory: new GroupSessionDirectory({ repository: repositoryFor(runtime), now }),
+        sessionDirectory: new GroupSessionDirectory({ repository, now }),
         move: new GroupMoveService({
-            groups: repositoryFor(runtime),
+            groups: repository,
             moves: new GroupMoveRepository(runtime, now),
             parties: new PartyRepository(runtime, now),
             authSessions,
@@ -112,7 +108,7 @@ export function createGroupStateRuntime(
         }, mutationConfig),
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
-            { repository: repositoryFor(runtime), authSessions },
+            { repository, authSessions },
             {
                 ...mutationConfig,
                 capacity: dependencies.capacity ?? { defaultMaxMembers: null }
@@ -120,7 +116,7 @@ export function createGroupStateRuntime(
         ),
         retention: new GroupRetentionService({
             runtime,
-            repository: repositoryFor(runtime),
+            repository,
             groupOwnedAppData: dependencies.groupOwnedAppData ?? { read: async () => [] }
         }, mutationConfig),
         ...ingressOperations,
@@ -136,10 +132,6 @@ export function createGroupStateRuntime(
     };
 }
 
-type GroupStateRepositoryFactory = (
-    target: GroupStateServiceDependencies['runtimeRepository']
-) => GroupStateRepository;
-
 type InternalMutationIngressCapture = (
     command: GroupMutationCommand,
     authority: Exclude<GroupMutationFacts['internalAuthority'], 'none'>,
@@ -148,7 +140,7 @@ type InternalMutationIngressCapture = (
 
 interface GroupStateRuntimeOwners {
     readonly dependencies: GroupStateServiceDependencies;
-    readonly repositoryFor: GroupStateRepositoryFactory;
+    readonly repository: GroupStateRepository;
     /** The live-session rows the batch read selects live in the same store, so one persistence reads both. */
     readonly authSessions: AuthSessionPersistence;
     readonly authorityDependencies: GroupMutationAuthorityDependencies;
@@ -226,8 +218,7 @@ function createIngressCaptureOperations(
     | 'captureTimelineDeadlineMutationIngress'
     | 'captureActivationStatusMutationIngress'
 > {
-    const { dependencies, repositoryFor, authorityDependencies, captureInternalMutationIngress } = owners;
-    const runtime = dependencies.runtimeRepository;
+    const { repository, authorityDependencies, captureInternalMutationIngress } = owners;
     return {
         authorizeMutation: async (descriptor, authority) =>
             await authorizeGroupMutation(authorityDependencies, descriptor, authority),
@@ -236,7 +227,7 @@ function createIngressCaptureOperations(
         captureAppInboxMutationIngress: async (descriptor, authority) =>
             await captureAppInboxGroupMutationIngress(authorityDependencies, descriptor, authority),
         captureExpiredPresenceMutationIngresses: async (atEpochMs) => {
-            const candidates = (await repositoryFor(runtime).listAllPresenceSessions()).filter(
+            const candidates = (await repository.listAllPresenceSessions()).filter(
                 (session) => session.disconnectedAtEpochMs === null && session.expiresAtEpochMs <= atEpochMs
             );
             return candidates.map((session) =>
@@ -254,7 +245,7 @@ function createIngressCaptureOperations(
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'activation-status', atEpochMs),
         captureSessionCleanupMutationIngresses: async (input) => {
-            const candidates = await readGroupSessionCleanupCandidates(repositoryFor(runtime), input);
+            const candidates = await readGroupSessionCleanupCandidates(repository, input);
             return candidates.map((session) =>
                 captureInternalMutationIngress(
                     toSessionCleanupCommand(session, input.disconnectedAtEpochMs),
@@ -282,13 +273,13 @@ function createQueryOperations(
     | 'listEventPage'
     | 'observeSnapshot'
 > {
-    const { dependencies, repositoryFor, authorityDependencies } = owners;
+    const { dependencies, repository, authorityDependencies } = owners;
     const runtime = dependencies.runtimeRepository;
     return {
-        listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
-        listSnapshotsPage: async (scope, options) => await repositoryFor(runtime).listSnapshotsPage(scope, options),
-        readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
-        readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
+        listSnapshots: async (scope) => await repository.listSnapshots(scope),
+        listSnapshotsPage: async (scope, options) => await repository.listSnapshotsPage(scope, options),
+        readSnapshot: async (ref) => await repository.readSnapshot(ref),
+        readCausalRevision: async (ref) => await repository.readCausalRevision(ref),
         readGroupSessionTopicSubscriptions: async (ref, sessionId) =>
             await readGroupSessionTopicSubscriptions(runtime, {
                 ref,
@@ -302,9 +293,9 @@ function createQueryOperations(
                 observedAtEpochMs: authorityDependencies.now()
             }),
         readIssuedAuthSession: async (sessionId) => await owners.authSessions.findBySessionId(sessionId),
-        listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
-        listRecentEvents: async (ref, query) => await repositoryFor(runtime).listRecentEvents(ref, query),
-        listEventPage: async (ref, query) => await repositoryFor(runtime).listEventPage(ref, query),
+        listEvents: async (ref) => await repository.listEvents(ref),
+        listRecentEvents: async (ref, query) => await repository.listRecentEvents(ref, query),
+        listEventPage: async (ref, query) => await repository.listEventPage(ref, query),
         observeSnapshot: (snapshot) => Promise.resolve(snapshot)
     };
 }
@@ -339,7 +330,7 @@ async function readGroupMutationAttempt(
 ): Promise<GroupMutationRead> {
     const { read, authSession } = await readGroupMutation(
         {
-        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        repository: owners.repository,
         command: ingress.command,
         authSessionId: resolveGroupMutationAuthSessionId(ingress),
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
@@ -355,7 +346,7 @@ async function readGroupMutationAttemptWithSnapshot(
 ): Promise<GroupMutationSnapshotRead> {
     const { read, currentSnapshot, authSession } = await readGroupMutationWithSnapshot(
         {
-        repository: owners.repositoryFor(owners.dependencies.runtimeRepository),
+        repository: owners.repository,
         command: ingress.command,
         authSessionId: resolveGroupMutationAuthSessionId(ingress),
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
@@ -410,10 +401,7 @@ async function readGroupMutationFences(
     const { dependencies } = owners;
     const runtime = dependencies.runtimeRepository;
     const command = ingress.command;
-    if (command.operation === 'connectPresence' || command.operation === 'heartbeatPresence' ||
-        command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
-        await verifyPausedRoomAdmission(owners, ingress, initialRead);
-    }
+    await verifyPausedGroupAdmission(owners.repository, ingress, initialRead);
     const connectTriggerLatch = command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null
         ? await new GroupConnectTriggerLatchRepository(runtime).read({
             groupRef: command.aggregateRef,
@@ -442,24 +430,4 @@ async function readGroupMutationFences(
             : null
     ]);
     return { ...read, plannedLayoutRow, acceptedLayoutRow };
-}
-
-async function verifyPausedRoomAdmission(
-    owners: GroupStateRuntimeOwners, ingress: GroupStateMutationCommand, read: GroupMutationRead
-): Promise<void> {
-    if (!read.group || read.idempotency) return;
-    const now = ingress.facts.attemptAtEpochMs;
-    const target = read.targetPresence?.value;
-    if (target?.status === 'active' && target.expiresAtEpochMs > now && read.targetMember?.status === 'active' &&
-        isExactlyAdmitted(read.targetAdmission?.value, target)) return;
-    const policy = readPausedTimelineRetention(read.group.value);
-    if (!policy) return;
-    const repository = owners.repositoryFor(owners.dependencies.runtimeRepository);
-    const authority = await repository.readPresenceSummaryEntries(ingress.command.aggregateRef);
-    if (authority.group?.entry.revision !== read.group.entry.revision) {
-        throw new RuntimeStateWriteConflictError();
-    }
-    if (computeEmptyRoomLifetime(authority, policy, now) === 'expired') {
-        throw new GroupMutationRejectedError('This room is no longer available.');
-    }
 }

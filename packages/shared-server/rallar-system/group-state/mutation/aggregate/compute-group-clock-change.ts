@@ -14,6 +14,7 @@ import {
 } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
+import { computeGroupPhaseRevision } from './compute-group-phase-revision.ts';
 import { computeGroupProgramChange } from './compute-group-program-change.ts';
 
 export interface ClockRefusal {
@@ -84,41 +85,9 @@ export function computeGroupClockChange(
             };
             durationMs = command.durationMs;
             break;
-        case 'set-successor': {
-            if (!timeline || (timeline.status === 'running' && timeline.endsAtEpochMs <= now)) {
-                return {
-                    rejectionCode: 'group-mutation-rejected',
-                    message: 'Only a live or paused phase can change its successor.'
-                };
-            }
-            const boundary = timeline.status === 'paused' ? now + timeline.remainingMs : timeline.endsAtEpochMs;
-            if (!roomClockFitsRange(boundary, identity.revision, command.successor)) {
-                return { rejectionCode: 'group-mutation-rejected', message: 'The successor exceeds the clock range.' };
-            }
-            return { ...timeline, revision: identity.revision, successor: command.successor };
-        }
-        case 'extend-phase': {
-            if (
-                !previous || !('phase' in previous) || (previous.status === 'running' && previous.endsAtEpochMs <= now)
-            ) {
-                return {
-                    rejectionCode: 'group-mutation-rejected',
-                    message: 'Only a live or paused phase can be extended.'
-                };
-            }
-            if (previous.status === 'paused') {
-                const remainingMs = previous.remainingMs + command.durationMs;
-                if (!roomClockFitsRange(now + remainingMs, identity.revision, previous.successor)) {
-                    return {
-                        rejectionCode: 'group-mutation-rejected',
-                        message: 'Extended balance exceeds the supported UTC range.'
-                    };
-                }
-                return { ...previous, revision: identity.revision, remainingMs };
-            }
-            durationMs = previous.endsAtEpochMs - now + command.durationMs;
-            break;
-        }
+        case 'set-successor':
+        case 'extend-phase':
+            return computeGroupPhaseRevision(timeline, command, now);
         case 'pause':
             if (previous?.status !== 'running' || previous.endsAtEpochMs <= now) {
                 return { rejectionCode: 'group-mutation-rejected', message: 'Only a live clock can pause.' };
@@ -157,10 +126,10 @@ export function computeGroupClockUpdate(group: Group, command: RoomClockMutation
     if (!('status' in clock)) {
         return clock;
     }
-    return withRoomTimeRecord(group, clock, clocks);
+    return withGroupTimeRecord(group, clock, clocks);
 }
 
-export function withRoomTimeRecord(
+export function withGroupTimeRecord(
     group: Group,
     clock: RoomClock | RoomTimeline | RoomSchedule,
     clocks = readRoomTimeRecords(group.metadata)

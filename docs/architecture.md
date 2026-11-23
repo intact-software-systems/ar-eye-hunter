@@ -158,11 +158,11 @@ Director commands enter through the [browser time operations](../packages/shared
 The [group clock policy](../packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts)
 applies the command against the observed revision. When a running occurrence has a successor, the
 [group mutation result](../packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts)
-includes a [durable deadline](../packages/shared-server/rallar-system/group-state/schedule/room-timeline-deadline.ts)
+includes a [durable deadline](../packages/shared-server/rallar-system/group-state/schedule/group-timeline-deadline.ts)
 in the same transaction as the updated room. An extension or resume produces a new deadline.
 
 The [API runtime](../apps/api-v1/src/composition/create-api-v1-runtime.ts) connects deadline delivery to the
-internal group AppInbox. The [settlement policy](../packages/shared-server/rallar-system/group-state/schedule/compute-room-timeline-settlement.ts)
+internal group AppInbox. The [settlement policy](../packages/shared-server/rallar-system/group-state/schedule/compute-group-timeline-settlement.ts)
 checks the room, occurrence revision and boundary again. The [group writer](../packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts)
 conditionally persists the successor, receipt and publication together. Authorized observers receive a named
 room-program WebSocket notice and read the current occurrence. [Retention](../packages/shared-server/rallar-system/group-state/retention/compute-group-retention.ts)

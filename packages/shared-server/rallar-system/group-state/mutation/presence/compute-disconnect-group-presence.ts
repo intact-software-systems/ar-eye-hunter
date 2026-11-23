@@ -1,4 +1,4 @@
-import { readPausedTimelineRetention } from '../../retention/compute-empty-room-lifetime.ts';
+import { readPausedTimelineRetention } from '../../retention/compute-empty-group-lifetime.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 
 import type {

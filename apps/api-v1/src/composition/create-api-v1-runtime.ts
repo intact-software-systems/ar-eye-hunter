@@ -1,6 +1,6 @@
 import { installDurableDeadline } from '@shared-server/rallar-system/app-outbox/install-durable-deadline.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { decodeRoomTimelineDeadline, ROOM_TIMELINE_DEADLINE_TOPIC, roomTimelineDeadlineRoute, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/room-timeline-deadline.ts';
+import { decodeGroupTimelineDeadline, GROUP_TIMELINE_DEADLINE_TOPIC, groupTimelineDeadlineRoute, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/group-timeline-deadline.ts';
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
@@ -250,9 +250,9 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     });
     lobbyExpiry.listen(runtime.outboxQueueReader);
     installDurableDeadline({
-        typeId: AppOutboxType.ROOM_TIMELINE_DEADLINE, topicId: ROOM_TIMELINE_DEADLINE_TOPIC,
+        typeId: AppOutboxType.ROOM_TIMELINE_DEADLINE, topicId: GROUP_TIMELINE_DEADLINE_TOPIC,
         outboxQueueReader: runtime.outboxQueueReader, database: input.database, retentionMs: input.appInboxFinishedRetentionMs,
-        nowEpochMs: input.nowEpochMs, route: roomTimelineDeadlineRoute, decode: decodeRoomTimelineDeadline,
+        nowEpochMs: input.nowEpochMs, route: groupTimelineDeadlineRoute, decode: decodeGroupTimelineDeadline,
         enqueue: (deadline, traceId) => runtime.groupStateInboxService.enqueueTimelineSettlement({
             command: toTimelineSettlementCommand(deadline), atEpochMs: input.nowEpochMs(), traceId
         })

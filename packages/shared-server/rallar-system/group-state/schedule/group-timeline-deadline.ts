@@ -17,7 +17,7 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface RoomTimelineDeadline {
+export interface GroupTimelineDeadline {
     readonly roomRef: GroupRef;
     readonly groupCreatedAtEpochMs: number;
     readonly publishedAtGroupRevision: number;
@@ -26,9 +26,9 @@ export interface RoomTimelineDeadline {
     readonly dueAtEpochMs: number;
 }
 
-export const ROOM_TIMELINE_DEADLINE_TOPIC = 'room-timeline.deadline';
+export const GROUP_TIMELINE_DEADLINE_TOPIC = 'room-timeline.deadline';
 
-export function decodeRoomTimelineDeadline(value: unknown): RoomTimelineDeadline {
+export function decodeGroupTimelineDeadline(value: unknown): GroupTimelineDeadline {
     const row = requireRecord(value, 'Timeline deadline');
     requireExactKeys(row, [
         'roomRef',
@@ -56,17 +56,17 @@ export function decodeRoomTimelineDeadline(value: unknown): RoomTimelineDeadline
     };
 }
 
-export function roomTimelineDeadlineRoute(deadline: RoomTimelineDeadline) {
+export function groupTimelineDeadlineRoute(deadline: GroupTimelineDeadline) {
     return toAppQueueKey({
-        topicId: ROOM_TIMELINE_DEADLINE_TOPIC,
+        topicId: GROUP_TIMELINE_DEADLINE_TOPIC,
         resourceId: computeSha256CanonicalJson(deadline),
         contextId: groupStateGroupStorageKey(deadline.roomRef)
     });
 }
 
-export function toTimelineSettlementCommand(deadline: RoomTimelineDeadline): GroupMutationCommand {
+export function toTimelineSettlementCommand(deadline: GroupTimelineDeadline): GroupMutationCommand {
     const { roomRef, name, revision, dueAtEpochMs, groupCreatedAtEpochMs } = deadline;
-    const commandId = 'timeline-deadline:' + roomTimelineDeadlineRoute(deadline).resourceId;
+    const commandId = 'timeline-deadline:' + groupTimelineDeadlineRoute(deadline).resourceId;
     return {
         operation: 'settleTimeline',
         aggregateRef: roomRef,
@@ -84,7 +84,7 @@ export function toTimelineSettlementCommand(deadline: RoomTimelineDeadline): Gro
     };
 }
 
-export function computeRoomTimelineDeadlines(input: {
+export function computeGroupTimelineDeadlines(input: {
     readonly before: Group | null;
     readonly after: Group;
     readonly createdAtEpochMs: number;
@@ -115,7 +115,7 @@ export function computeRoomTimelineDeadlines(input: {
         };
         wakes.push(
             computeAppOutboxSignal({
-                ...roomTimelineDeadlineRoute(deadline),
+                ...groupTimelineDeadlineRoute(deadline),
                 typeId: AppOutboxType.ROOM_TIMELINE_DEADLINE,
                 resource: JSON.stringify(deadline),
                 createdAtEpochMs,

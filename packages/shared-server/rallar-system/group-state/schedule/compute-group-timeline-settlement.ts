@@ -1,7 +1,7 @@
 import { readRoomTimeline, settleRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import { requireActiveGroup } from '../policy/group-policy-primitives.ts';
 import { groupWrite } from '../mutation/aggregate/compute-group-aggregate-mutation.ts';
-import { withRoomTimeRecord } from '../mutation/aggregate/compute-group-clock-change.ts';
+import { withGroupTimeRecord } from '../mutation/aggregate/compute-group-clock-change.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -11,7 +11,7 @@ import type {
 import { auditStamp, noOp, requireGroup } from '../mutation/group-mutation-result.ts';
 
 /** The aggregate predecessor guards both the winning occurrence and the publication of its private member notices. */
-export function computeRoomTimelineSettlement(
+export function computeGroupTimelineSettlement(
     command: Extract<GroupMutationCommand, { operation: 'settleTimeline'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
@@ -45,7 +45,7 @@ export function computeRoomTimelineSettlement(
         facts: publicationFacts,
         eventType: 'group-updated',
         group: {
-            ...withRoomTimeRecord(group, next),
+            ...withGroupTimeRecord(group, next),
             snapshotVersion: group.snapshotVersion + 1,
             metadataVersion: group.metadataVersion + 1,
             updated: auditStamp(command, publicationFacts, undefined)

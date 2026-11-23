@@ -8,6 +8,8 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { writeResourceInboxRetainedReservationFinish } from '../../queuebox/postgres/resource-inbox-reservation-write.ts';
 
+import { decodeJsonWireText, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+
 export interface DurableDeadlineDelivery<Deadline> {
     readonly outboxQueueReader: OutboxQueueReader;
     readonly database: PSqlSql;
@@ -20,13 +22,13 @@ export function installDurableDeadline<Deadline extends { readonly dueAtEpochMs:
     input: DurableDeadlineDelivery<Deadline> & {
         readonly typeId: string;
         readonly topicId: string;
-        readonly decode: (value: unknown) => Deadline;
+        readonly decode: (value: JsonWireValue) => Deadline;
         readonly route: (deadline: Deadline) => Key;
     }
 ): void {
     input.outboxQueueReader.onOutboxMessageDo(input.typeId, {
         onMessage: async (message, entry) => {
-            const deadline = input.decode(JSON.parse(message.payload.resource));
+            const deadline = input.decode(decodeJsonWireText(message.payload.resource, 'Durable deadline'));
             const route = input.route(deadline);
             if (
                 !jsonEquals(message.route, route) || message.id.msgId !== route.resourceId ||

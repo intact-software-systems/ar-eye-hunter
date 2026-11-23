@@ -1,4 +1,4 @@
-import { computeRoomTimelineDeadlines } from '../schedule/room-timeline-deadline.ts';
+import { computeGroupTimelineDeadlines } from '../schedule/group-timeline-deadline.ts';
 import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
@@ -433,7 +433,7 @@ function computeScheduledMutationWrites(
     const publication = computeGroupSessionViewPublication({ command, read, facts, group, members, reservations });
     const observation = computeGroupObservationPublication(input, group);
     const timelineDeadlines = command.operation === 'updateGroup' && (command.input.roomClock || read.group?.value.status !== group.status)
-        ? computeRoomTimelineDeadlines({ before: read.group?.value ?? null, after: group, createdAtEpochMs: facts.nowEpochMs,
+        ? computeGroupTimelineDeadlines({ before: read.group?.value ?? null, after: group, createdAtEpochMs: facts.nowEpochMs,
             serviceId: facts.serviceId, traceId: facts.traceId })
         : [];
     const deadlines = computeGroupSessionDeadlines({

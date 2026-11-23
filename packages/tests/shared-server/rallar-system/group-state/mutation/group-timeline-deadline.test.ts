@@ -1,4 +1,4 @@
-import { computeRoomTimelineDeadlines, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/room-timeline-deadline.ts';
+import { computeGroupTimelineDeadlines, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/group-timeline-deadline.ts';
 import { ROOM_CLOCKS_METADATA_KEY } from '@shared/api/group-deadlines/room-clock.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -32,18 +32,18 @@ describe('automatic timeline deadline publication', () => {
     const input = { before: null, after: group, createdAtEpochMs: 100, serviceId: 'api', traceId: 'start' };
 
     it('persists a wake for the revised deadline, suppressing unchanged and paused clocks', () => {
-        const original = computeRoomTimelineDeadlines(input);
+        const original = computeGroupTimelineDeadlines(input);
         expect(original.map((row) => Number(row.entry.dequeueAudit.nextTs?.epochMilliseconds))).toEqual([200]);
-        expect(computeRoomTimelineDeadlines({ ...input, before: group })).toEqual([]);
+        expect(computeGroupTimelineDeadlines({ ...input, before: group })).toEqual([]);
         // The original delivery may already have settled as obsolete while the room was archived.
-        const reactivated = computeRoomTimelineDeadlines({
+        const reactivated = computeGroupTimelineDeadlines({
             ...input,
             before: { ...group, status: 'archived', archived: group.updated, deleted: null },
             after: { ...group, snapshotVersion: group.snapshotVersion + 2 }
         });
         expect(reactivated[0].entry.key).not.toEqual(original[0].entry.key);
         const revised = { ...group, metadata: { [ROOM_CLOCKS_METADATA_KEY]: [{ ...clock, revision: 2, endsAtEpochMs: 400 }] } };
-        const extended = computeRoomTimelineDeadlines({ ...input, before: group, after: revised });
+        const extended = computeGroupTimelineDeadlines({ ...input, before: group, after: revised });
         expect(extended.map((row) => Number(row.entry.dequeueAudit.nextTs?.epochMilliseconds))).toEqual([400]);
         expect(extended[0].entry.key).not.toEqual(original[0].entry.key);
         const { endsAtEpochMs, ...rest } = clock;
@@ -51,7 +51,7 @@ describe('automatic timeline deadline publication', () => {
             ...group,
             metadata: { [ROOM_CLOCKS_METADATA_KEY]: [{ ...rest, revision: 3, status: 'paused', pausedAtEpochMs: 125, remainingMs: endsAtEpochMs - 125 }] }
         };
-        expect(computeRoomTimelineDeadlines({ ...input, before: revised, after: paused })).toEqual([]);
+        expect(computeGroupTimelineDeadlines({ ...input, before: revised, after: paused })).toEqual([]);
     });
 });
 

@@ -3,13 +3,9 @@ import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord }
 import { readRoomClock, type RoomClock } from './room-clock.ts';
 import { assertRoomDeadlineName } from './room-deadline.ts';
 
-export type RoomTimelineSuccessor = { readonly phase: string; readonly durationMs: number; };
-
-export function assertRoomTimelineSuccessor(value: unknown): asserts value is RoomTimelineSuccessor {
-    const successor = requireRecord(value, 'Timeline successor');
-    requireExactKeys(successor, ['phase', 'durationMs'], 'Timeline successor');
-    assertRoomDeadlineName(successor.phase);
-    requirePositiveInteger(successor.durationMs, 'Successor duration');
+export interface RoomTimelineSuccessor extends ApiJsonObject {
+    readonly phase: string;
+    readonly durationMs: number;
 }
 
 export interface RoomTimelineSuccessorChange {
@@ -38,16 +34,23 @@ export interface RoomTimelineExtension {
 /** The clock and phase come from the same durable group revision. */
 export type RoomTimeline = RoomClock & RoomTimelineOccurrence;
 
-export type RoomTimelineOccurrence = {
+export interface RoomTimelineOccurrence {
     readonly phase: string;
     readonly startedAtRevision: number;
     readonly startedAtEpochMs?: number;
     readonly startedBy?: 'director' | 'automatic';
     readonly pausedAtEpochMs?: number;
     readonly successor?: RoomTimelineSuccessor | null;
-};
+}
 
-export function readTimelineOccurrence(record: Record<string, unknown>, revision: number): RoomTimelineOccurrence {
+export function assertRoomTimelineSuccessor(value: unknown): asserts value is RoomTimelineSuccessor {
+    const successor = requireRecord(value, 'Timeline successor');
+    requireExactKeys(successor, ['phase', 'durationMs'], 'Timeline successor');
+    assertRoomDeadlineName(successor.phase);
+    requirePositiveInteger(successor.durationMs, 'Successor duration');
+}
+
+export function readTimelineOccurrence(record: ApiJsonObject, revision: number): RoomTimelineOccurrence {
     assertRoomDeadlineName(record.phase);
     requireEpoch(record.startedAtRevision, 'Phase starting revision');
     if (!record.startedAtRevision || record.startedAtRevision > revision) {
