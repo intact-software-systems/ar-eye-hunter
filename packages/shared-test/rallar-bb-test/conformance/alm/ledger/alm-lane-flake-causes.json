@@ -1,1 +1,67 @@
-[]
+[
+  {
+    "key": "rtc-with-ws-fallback/four-role/subscription-ordered-entry",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Over rtc and the fallback carrier the failures were publish loops that never converged because acknowledgements were admitted after the 3 s observe; an attempt now observes for 15 s.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc-with-ws-fallback/four-role/subscription-ordered-omission",
+    "cause": "The sibling's first election ended `refused`, not `lapsed`, when its 20 s renewal landed inside the window in which the grant was revoked, which is specified behaviour the scenario did not accept; it now accepts either. Over rtc the fifth publication could also precede the producer's own application of the re-grant, which the producer now applies first. The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc-with-ws-fallback/four-role/subscription-ordered-reconnect",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Publish loops also failed to converge when acknowledgements were admitted after the 3 s observe (now 15 s), and a role's continuation started after its first recipe had failed, hiding the first failure (it no longer starts).",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc-with-ws-fallback/two-agent/checkpoint-recovery",
+    "cause": "The scenario's recipes passed; one status read of the control server failed with a reset connection and the thrown error ended the family. Why the connection was reset is not established. An idempotent control read is now retried a bounded number of times.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc/four-role/subscription-ordered-entry",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Over rtc and the fallback carrier the failures were publish loops that never converged because acknowledgements were admitted after the 3 s observe; an attempt now observes for 15 s.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc/four-role/subscription-ordered-omission",
+    "cause": "The sibling's first election ended `refused`, not `lapsed`, when its 20 s renewal landed inside the window in which the grant was revoked, which is specified behaviour the scenario did not accept; it now accepts either. Over rtc the fifth publication could also precede the producer's own application of the re-grant, which the producer now applies first. The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc/four-role/subscription-ordered-reconnect",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Publish loops also failed to converge when acknowledgements were admitted after the 3 s observe (now 15 s), and a role's continuation started after its first recipe had failed, hiding the first failure (it no longer starts).",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "rtc/two-agent/churn-bounded-tracks",
+    "cause": "The receiver had to count its arrivals inside a fixed window that opened before the sender's send loop, and the loop, which awaits each send and then pauses, ran several times slower on a GitHub runner than the window assumed; no message was lost. The receiver now counts after the sender's cue and the loop's budget is derived from its send count.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "ws/four-role/subscription-ordered-entry",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Over rtc and the fallback carrier the failures were publish loops that never converged because acknowledgements were admitted after the 3 s observe; an attempt now observes for 15 s.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "ws/four-role/subscription-ordered-omission",
+    "cause": "The sibling's first election ended `refused`, not `lapsed`, when its 20 s renewal landed inside the window in which the grant was revoked, which is specified behaviour the scenario did not accept; it now accepts either. Over rtc the fifth publication could also precede the producer's own application of the re-grant, which the producer now applies first. The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "ws/four-role/subscription-ordered-reconnect",
+    "cause": "The shared publish loop re-sent an ordered publication after 3 s, which minted a further sequence on the track and left the abandoned attempt to a timer's retransmission that the no-repair wait counted as a repair. Ordered publications are now published once, and the wait asserts that no receiver asked a producer for a repair. Publish loops also failed to converge when acknowledgements were admitted after the 3 s observe (now 15 s), and a role's continuation started after its first recipe had failed, hiding the first failure (it no longer starts).",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "ws/two-agent/buffered-track-drains",
+    "cause": "The receiver had to count its arrivals inside a fixed window that opened before the sender's send loop, and the loop, which awaits each send and then pauses, ran several times slower on a GitHub runner than the window assumed; no message was lost. The receiver now counts after the sender's cue and the loop's budget is derived from its send count. The buffered sends' lifetime, a flat 90 s, is now derived to cover the loop and the drain.",
+    "fixedByPullRequest": 882
+  },
+  {
+    "key": "ws/two-agent/seeded-jitter-stream",
+    "cause": "The scenario requires the seeded jitter to make the server see a later frame before an earlier one, and whether that happens depends on the runner's pace: the same seed produced gap NACKs on different sequences in three passing runs and none in the failing one. The frames' departure times are not recorded, so the trigger is not shown. Not fixed.",
+    "fixedByPullRequest": null
+  }
+]

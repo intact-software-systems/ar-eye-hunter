@@ -20,8 +20,8 @@ function toIssues<T>(decoded: Either<readonly string[], T>): readonly string[] {
 }
 
 describe('decodeAlmLaneFlakeCauses', () => {
-    it('decodes the committed causes file to an empty list', () => {
-        expect(decodeAlmLaneFlakeCauses(committedCauses).right).toEqual([]);
+    it('decodes the committed causes file without an issue', () => {
+        expect(toIssues(decodeAlmLaneFlakeCauses(committedCauses))).toEqual([]);
     });
 
     it('decodes a valid entry, with an open cause and a family-wide key', () => {
