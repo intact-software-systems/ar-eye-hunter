@@ -79,7 +79,19 @@ export function decodeALReceiptRecordConfirmation(value: unknown, key: string): 
     return { recipientPeerId, kind, countedAtEpochMs: decodeALAdmissionNumber(confirmation.countedAtEpochMs) };
 }
 
-function decodeALReceiptRecordOpening(value: unknown, key: string): ALReceiptRecordOpening {
+/** The opening as stored: its named fields only, never the caller's object or array. */
+export function toALReceiptRecordStoredOpening(opening: ALReceiptRecordOpening): ALReceiptRecordOpening {
+    return {
+        originPeerId: opening.originPeerId,
+        msgId: opening.msgId,
+        traceId: opening.traceId,
+        expectedRecipientPeerIds: [...opening.expectedRecipientPeerIds],
+        snapshotVersion: opening.snapshotVersion,
+        deadlineAtMs: opening.deadlineAtMs
+    };
+}
+
+export function decodeALReceiptRecordOpening(value: unknown, key: string): ALReceiptRecordOpening {
     const opening = decodeALAdmissionRecord(value, [
         'originPeerId',
         'msgId',

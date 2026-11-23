@@ -198,13 +198,17 @@ async function createPostgresScope(opened: OpenedPostgresScope[]): Promise<Postg
     };
 }
 
-/** Deletes every run's rows before asserting any, so one run's leftover rows cannot keep a later run's rows. */
+/**
+ * Deletes every run's rows before asserting any, so one run's leftover rows cannot keep a later run's rows, and one
+ * run's failed delete cannot skip a later run's delete; the clients are ended whatever happened.
+ */
 async function closePostgresScopes(scopes: readonly OpenedPostgresScope[]): Promise<void> {
     try {
         const written = scopes.flatMap(({ runId, clients }) => clients[0] === undefined ? [] : [{ runId, client: clients[0] }]);
-        for (const { runId, client } of written) {
-            await deletePostgresRunRows(client, runId);
-        }
+        const deletes = await Promise.allSettled(
+            written.map(async ({ runId, client }) => await deletePostgresRunRows(client, runId))
+        );
+        expect(deletes.filter(({ status }) => status === 'rejected')).toEqual([]);
         const counts = await Promise.all(
             written.map(async ({ runId, client }) => await readPostgresRunRowCounts(client, runId))
         );

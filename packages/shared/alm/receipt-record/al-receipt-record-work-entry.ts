@@ -5,7 +5,7 @@ import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../al-admission-value-validation.ts';
 import { computeALWorkEntry } from '../work/compute-al-work-entry.ts';
 
-import type { ALReceiptRecordRef } from './al-receipt-record-keys.ts';
+import { toALReceiptRecordRefToken, type ALReceiptRecordRef } from './al-receipt-record-keys.ts';
 
 export type ALReceiptRecordWorkKind = 'deadline' | 'ended';
 
@@ -39,7 +39,7 @@ export function toALReceiptRecordWorkKey(
     return toAppQueueKey({
         topicId: WORK_TOPICS[kind],
         resourceId: encodeURIComponent(namespace),
-        contextId: encodeURIComponent(JSON.stringify([ref.originPeerId, ref.msgId]))
+        contextId: encodeURIComponent(toALReceiptRecordRefToken(ref))
     });
 }
 

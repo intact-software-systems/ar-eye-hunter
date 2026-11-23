@@ -15,6 +15,7 @@ import {
 import {
     decodeALReceiptRecordConfirmation,
     decodeALReceiptRecordHead,
+    toALReceiptRecordStoredOpening,
     type ALReceiptRecordConfirmation,
     type ALReceiptRecordEndedHead,
     type ALReceiptRecordHead,
@@ -63,6 +64,10 @@ export namespace ALReceiptRecord {
         readonly kind: 'not-due';
         readonly view: View;
     }
+    /**
+     * `counted` does not mean the row is in `view.tally`, and `view` may carry an ended head: a caller may act only on
+     * an open head whose `tally.complete` is true, and only `end`'s result is authoritative.
+     */
     export interface Counted {
         readonly disposition: 'counted' | 'repeated';
         readonly view: View;
@@ -78,11 +83,11 @@ interface ConfirmationWrite {
 
 type ConfirmationWriteResult = ConfirmationWrite | ALReceiptRecord.InvalidConfirmation | ALReceiptRecord.Conflict;
 
-interface HeadWrite {
-    readonly head: ALReceiptRecordHead;
+/** The work a head's write causes, when that work comes due, and when the head and its work expire. */
+interface HeadSchedule {
     readonly work: ALReceiptRecordWorkKind;
-    readonly nowMs: number;
-    readonly readyAtMs: number;
+    readonly dueAtMs: number;
+    readonly expireAtTimestamp: number;
 }
 
 const CONFLICT: ALReceiptRecord.Conflict = { kind: 'conflict' };
@@ -103,16 +108,16 @@ export class ALReceiptRecord {
         opening: ALReceiptRecordOpening
     ): Promise<Either<ALReceiptRecord.InvalidOpening | ALReceiptRecord.Conflict, ALReceiptRecord.View>> {
         const nowMs = this.nowMs();
-        const issues = validateALReceiptRecordOpening(opening, nowMs);
+        const head = { phase: 'open', opening: toALReceiptRecordStoredOpening(opening) } as const;
+        const issues = validateALReceiptRecordOpening(head.opening, nowMs);
         if (issues.length > 0) {
             return Either.ofLeft({ kind: 'invalid-opening', issues });
         }
-        const head = { phase: 'open', opening } as const;
         const opened = await this.writeUnlessConflict(async (transaction) => {
-            if ((await this.readHead(transaction, opening)) !== undefined) {
+            if ((await this.readHead(transaction, head.opening)) !== undefined) {
                 throw new ALAdmissionBackendConflictError('AL receipt record is already open');
             }
-            await this.writeHead(transaction, { head, work: 'deadline', nowMs, readyAtMs: opening.deadlineAtMs });
+            await this.writeHead(transaction, head, nowMs);
             return head;
         });
         return 'kind' in opened ? Either.ofLeft(opened) : Either.ofRight(await this.readView(opened));
@@ -177,12 +182,7 @@ export class ALReceiptRecord {
             if (ending.right === undefined) {
                 return { kind: 'not-due', view: { head, tally } } as const;
             }
-            await this.writeHead(transaction, {
-                head: ending.right,
-                work: 'ended',
-                nowMs,
-                readyAtMs: ending.right.endedAtEpochMs
-            });
+            await this.writeHead(transaction, ending.right, nowMs);
             return ending.right;
         });
         return 'kind' in ended ? Either.ofLeft(ended) : Either.ofRight(ended);
@@ -242,17 +242,21 @@ export class ALReceiptRecord {
         return repeated === undefined ? CONFLICT : { disposition: 'repeated', head: undefined };
     }
 
-    private async writeHead(transaction: ALAdmissionWorkWriteContext, write: HeadWrite): Promise<void> {
-        const { opening } = write.head;
-        const expireAtTimestamp = computeALReceiptRetentionExpiryMs(Math.max(opening.deadlineAtMs, write.readyAtMs));
+    private async writeHead(
+        transaction: ALAdmissionWorkWriteContext,
+        head: ALReceiptRecordHead,
+        nowMs: number
+    ): Promise<void> {
+        const schedule = computeHeadSchedule(head);
         const entry = computeALReceiptRecordWorkEntry({
             namespace: this.namespace,
-            work: { kind: write.work, ref: opening },
-            observedAtMs: write.nowMs,
-            readyAtMs: write.readyAtMs,
-            expireAtTimestamp
+            work: { kind: schedule.work, ref: head.opening },
+            observedAtMs: nowMs,
+            readyAtMs: schedule.dueAtMs,
+            expireAtTimestamp: schedule.expireAtTimestamp
         });
-        await transaction.setFence(toALReceiptRecordHeadKey(this.namespace, opening), write.head, expireAtTimestamp);
+        const key = toALReceiptRecordHeadKey(this.namespace, head.opening);
+        await transaction.setFence(key, head, schedule.expireAtTimestamp);
         await transaction.readWork(entry.key);
         transaction.writeWork(entry);
     }
@@ -288,6 +292,22 @@ export class ALReceiptRecord {
             throw error;
         }
     }
+}
+
+function computeHeadSchedule(head: ALReceiptRecordHead): HeadSchedule {
+    const { deadlineAtMs } = head.opening;
+    if (head.phase === 'open') {
+        return {
+            work: 'deadline',
+            dueAtMs: deadlineAtMs,
+            expireAtTimestamp: computeALReceiptRetentionExpiryMs(deadlineAtMs)
+        };
+    }
+    return {
+        work: 'ended',
+        dueAtMs: head.endedAtEpochMs,
+        expireAtTimestamp: computeALReceiptRetentionExpiryMs(Math.max(deadlineAtMs, head.endedAtEpochMs))
+    };
 }
 
 /**

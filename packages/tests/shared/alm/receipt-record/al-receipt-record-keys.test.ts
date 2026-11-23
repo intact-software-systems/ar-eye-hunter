@@ -3,6 +3,7 @@ import {
     toALReceiptRecordConfirmationPrefix,
     toALReceiptRecordHeadKey,
     toALReceiptRecordNamespace,
+    toALReceiptRecordRefToken,
     type ALReceiptRecordRef
 } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +13,7 @@ describe('receipt record keys', () => {
     it('builds the namespace and each state key in the stored form', () => {
         const ref = { originPeerId: 'o', msgId: 'm' };
         expect(toALReceiptRecordNamespace('server-ws-qbox:*')).toBe('server-ws-qbox:*:receipt:record');
+        expect(toALReceiptRecordRefToken(ref)).toBe('["o","m"]');
         expect(toALReceiptRecordHeadKey('ns', ref)).toBe('ns:receipt:["o","m"]');
         expect(toALReceiptRecordConfirmationPrefix('ns', ref)).toBe('ns:receipt-ack:["o","m"]:');
         expect(toALReceiptRecordConfirmationKey('ns', ref, 'r1')).toBe('ns:receipt-ack:["o","m"]:r1');

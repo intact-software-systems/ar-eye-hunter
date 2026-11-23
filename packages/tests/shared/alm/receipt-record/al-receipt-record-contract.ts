@@ -618,5 +618,20 @@ export function describeALReceiptRecordContract(
             expect(ended.right?.phase).toBe('timed-out');
             expect(ended.right?.confirmedRecipientPeerIds).toEqual([]);
         });
+
+        // A head every later read refuses as corruption could never be counted or ended. An opening the stored-head
+        // decoder would refuse is refused before any row exists; a field the head does not name is not stored at all.
+        it('refuses an opening it could not read back', async () => {
+            const f = await fixture();
+            const refused = await f.a.record.open({ ...f.opening, traceId: '' });
+            expect(refused.left?.kind === 'invalid-opening' ? refused.left.issues.map(({ code }) => code) : [])
+                .toEqual(['malformed-opening']);
+            expect((await f.b.record.read(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await readWork(f, 'deadline')).toBeUndefined();
+
+            const withExtraField = { ...f.opening, carrier: 'ws' };
+            expect((await f.a.record.open(withExtraField)).right?.head).toEqual({ phase: 'open', opening: f.opening });
+            expect((await f.b.record.read(f.ref)).right?.head).toEqual({ phase: 'open', opening: f.opening });
+        });
     });
 }

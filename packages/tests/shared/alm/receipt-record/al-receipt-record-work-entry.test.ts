@@ -67,11 +67,14 @@ describe('al-receipt-record work entry', () => {
 
         // A kind no record writes is not a scope mismatch: the refusal must name the kind, so an operator reading
         // the corruption looks at the row's kind rather than at its namespace.
-        const unknownKind = { ...deadline, resource: JSON.stringify({ namespace: 'ns', kind: 'later', ...ref }) };
-        const refusal = captureRefusal(() => decodeALReceiptRecordWorkEntry(unknownKind, 'ns'));
-        expect(refusal).toBeInstanceOf(ALAdmissionCorruptionError);
-        expect(refusal?.cause instanceof Error ? refusal.cause.message : '').toContain('later');
-        expect(refusal?.cause instanceof Error ? refusal.cause.message : '').not.toContain('record scope');
+        // 'toString' is a name every object inherits: a kind check by `in` would take it for a kind the record writes.
+        for (const kind of ['later', 'toString']) {
+            const unknownKind = { ...deadline, resource: JSON.stringify({ namespace: 'ns', kind, ...ref }) };
+            const refusal = captureRefusal(() => decodeALReceiptRecordWorkEntry(unknownKind, 'ns'));
+            expect(refusal).toBeInstanceOf(ALAdmissionCorruptionError);
+            expect(refusal?.cause instanceof Error ? refusal.cause.message : '').toContain(kind);
+            expect(refusal?.cause instanceof Error ? refusal.cause.message : '').not.toContain('record scope');
+        }
     });
 
     // Joining the two ids with a separator would give both refs the context 'o:m:x'; the JSON pair keeps them apart.
