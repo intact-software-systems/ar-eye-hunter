@@ -208,6 +208,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.publicApi.apiBaseUrl = value
     },
     {
+        name: 'RALLAR_SERVER_CLOCK_PEER_ID',
+        decode: decodeString,
+        apply: (source, value) => source.publicApi.clockPeerId = value
+    },
+    {
         name: 'RALLAR_WS_BASE_URL',
         decode: decodeString,
         apply: (source, value) => source.publicApi.wsBaseUrl = value

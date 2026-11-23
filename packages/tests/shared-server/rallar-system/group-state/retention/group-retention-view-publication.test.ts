@@ -15,6 +15,10 @@ it('archives and retires scheduled rooms with redacted notices to retained priva
             maxMembers: 4,
             metadata: {
                 ...group.value.metadata,
+                rallarRoomClocks: [{
+                    name: 'court', status: 'scheduled', revision: 1, elapsedThroughEpochMs: 100,
+                    phases: [{ phase: 'first', startsAtEpochMs: 100 }]
+                }],
                 rallarSessionSchedule: {
                     revision: 2,
                     startsAtEpochMs: fixture.nowEpochMs,
@@ -44,7 +48,10 @@ it('archives and retires scheduled rooms with redacted notices to retained priva
         >`select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated'`;
         const notices = rows.map(({ ri_resource }) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(ri_resource))));
         expect(notices.filter((notice) => notice.principalId === 'needs-confirmation')).toHaveLength(2);
-        expect(notices.every((notice) => notice.resource === 'sessions' && !('groupId' in notice))).toBe(true);
+        expect(notices.filter(notice => notice.resource === 'sessions').every(notice => !('groupId' in notice))).toBe(true);
+        expect(notices.filter(notice => notice.resource === 'room-program')).toEqual([
+            expect.objectContaining({ principalId: 'owner', groupId: RETENTION_REF.groupId, reason: 'access-changed' })
+        ]);
     }
     finally {
         await fixture.storage.close();

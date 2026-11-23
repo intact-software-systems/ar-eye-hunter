@@ -149,7 +149,12 @@ publication with its original request ID. A later revision may edit future bound
 at the server, including those reached at any earlier accepted publication, must match the previous revision, including their labels. A schedule and a manually controlled clock
 have separate names and share the room's existing capacity. Upgrade room clock readers and writers before publishing schedules.
 
-`rooms.readSchedule` reads the durable revision. `rooms.watchSchedule` recovers it on entry and WebSocket invalidation.
+A member can follow A’s program while staying in B. Pass A’s full room reference to
+`rooms.watchSchedule(roomA, name, listener)` and keep the returned unsubscribe function.
+Retain membership in A when switching to B with `rooms.enter(roomB, { preserveCurrentMembership: true })`.
+The observer reads A on startup, on a scoped WebSocket notification, and on reconnect. It makes no
+periodic HTTP requests. During a disconnect it marks the last schedule stale. When access is
+revoked it clears that schedule. `rooms.readSchedule` reads the durable revision directly.
 On each local display update call `rallar.schedulePosition(schedule, authority?)`. It uses one calibrated time window.
 A current position supplies `current` and `next` with their UTC starts. Before the first start, current is null.
 At a start the new phase applies inclusively, and the final phase continues. A window crossing a start returns

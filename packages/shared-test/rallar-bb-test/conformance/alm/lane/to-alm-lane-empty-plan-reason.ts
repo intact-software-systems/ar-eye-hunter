@@ -22,9 +22,9 @@ export interface ToAlmLaneEmptyPlanReasonInput {
  * but only when the family would have run cells without `only`; a family empty for another cause keeps its own reason.
  */
 export function toAlmLaneEmptyPlanReason(input: ToAlmLaneEmptyPlanReasonInput): string {
-    const selection = { scope: input.scope, carriers: [input.carrier], skip: input.skip };
+    const selection = { scope: input.scope, carriers: [input.carrier], families: [input.family], skip: input.skip };
     const runsWithoutOnly = input.scenarios.some((scenario) =>
-        isAlmLaneCellSelected({ ...scenario, carrier: input.carrier }, selection)
+        isAlmLaneCellSelected({ ...scenario, carrier: input.carrier, family: input.family }, selection)
     );
     return input.only.length > 0 && runsWithoutOnly
         ? `RALLAR_BLACK_BOX_ALM_ONLY=${input.only.join(',')} plans no cell of ${input.family} over ${input.carrier}`

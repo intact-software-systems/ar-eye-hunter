@@ -102,7 +102,13 @@ function createTypecheckProject(): string {
     mkdirSync(path.join(root, 'scripts'), { recursive: true });
     mkdirSync(path.join(root, 'packages/tests/nested'), { recursive: true });
     symlinkSync(path.join(repositoryRoot, 'node_modules'), path.join(root, 'node_modules'), 'junction');
-    for (const file of ['scripts/check-tests-typecheck.mjs', 'packages/tests/tsconfig.json']) {
+    for (
+        const file of [
+            'scripts/check-tests-typecheck.mjs',
+            'scripts/command-output-max-buffer.mjs',
+            'packages/tests/tsconfig.json'
+        ]
+    ) {
         writeFileSync(path.join(root, file), readFileSync(path.join(repositoryRoot, file)));
     }
     writeFileSync(path.join(root, 'packages/tests/typecheck-debt.json'), JSON.stringify({ files: {} }));

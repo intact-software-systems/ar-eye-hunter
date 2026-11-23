@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoRepairRequestWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -10,10 +10,12 @@ import {
 import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import {
+    computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
+    toUnsubscribeAfterRevokeCommands,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
@@ -27,7 +29,6 @@ import {
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
 import {
-    computeUnelectedOutsideCount,
     toCueListenCommands,
     toCueSendCommands,
     toCueWait
@@ -44,7 +45,7 @@ const RESUBSCRIBED = 'resubscribed';
  * each producer's track; the receiver then revokes the sender principal's `subscribe` alone (D492), so the sibling is
  * outside the audience of `p3` and `p4` on every carrier and witnesses neither. Once the receiver grants it back, the
  * sibling elects anew and receives `p5`, whose record names the sibling's prior `2`: an omission, with no gap NACK and
- * no repair. The receiver receives all five; each loop holds the count identity.
+ * no repair request. The receiver receives all five; each publication's receipt holds the count identity.
  */
 export const subscriptionOrderedOmission: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-ordered-omission',
@@ -64,6 +65,10 @@ export const subscriptionOrderedOmission: AlmConformanceScenarioDefinition = {
 /**
  * Over RTC the other producer, unelected, is frozen into each copy. While the sender principal holds no `subscribe`,
  * neither the sibling nor the sender's page is: the sender's copy freezes in publisher-b alone, publisher-b's nobody.
+ * Over RTC a copy freezes the live sessions whose principal holds `subscribe` in the producer's own snapshot, so each
+ * producer applies the head that carries the revoke before `p3` and the head that carries the re-grant before `p5`;
+ * the receiver's cue that it applied the sibling's new election follows the re-grant's commit. Over ws the server
+ * decides the audience; the producer applies both heads there too, so every carrier publishes from the same snapshot.
  */
 function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const subscribed = { step: producer, confirmations: 2, outsideAudience: computeUnelectedOutsideCount(producer, 1) };
@@ -82,13 +87,14 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         ...toElectionAppliedCueWaitCommands(producer, RESUBSCRIBED, 'held'),
+        ...toGrantAppliedHeadCommands(producer, 'regrant-head'),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
-        ...toNoGapRepairWaits(producer)
+        ...toNoRepairRequestWaits(producer)
     ];
 }
 
 /**
- * Each grant change waits for both producers' loops before it. The revoke's delta reaches the receiver, which wrote it,
+ * Each grant change waits for both producers' publications before it. The revoke's delta reaches the receiver, which wrote it,
  * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`. The
  * sibling's new election reaches the receiver before its cue lets the producers publish `p5`.
  */
@@ -127,9 +133,11 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
 }
 
 /**
- * The page keeps its election of the topic until its last token is released, the server's revoke notwithstanding,
- * and a further token joins it with no request of its own; so the sibling releases its first election before it elects
- * anew, and its new election is active at the server before it lets the producers publish `p5`.
+ * The page keeps its election of the topic until a renewal is refused or its last token is released, the server's
+ * revoke notwithstanding, and a further token joins a held election with no request of its own; so the sibling
+ * releases its first election before it elects anew, and its new election is active at the server before it lets the
+ * producers publish `p5`. The first election ends `refused` when a 20 s renewal fell inside the revoke window, else
+ * `lapsed` by the release; either way the first election is over before the sibling elects anew.
  */
 function toExcludedSubscriberCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -137,7 +145,7 @@ function toExcludedSubscriberCommands(sibling: AlmConformanceStepInput): readonl
         toSubscribeCommand(sibling, 'sibling'),
         ...toOrderedArrivalWaits(sibling, [1, 2]),
         toCueWait(sibling, 'regranted'),
-        ...toUnsubscribeCommands(sibling, 'sibling'),
+        ...toUnsubscribeAfterRevokeCommands(sibling, 'sibling'),
         toSubscribeCommand(sibling, REGRANTED_SUBSCRIPTION),
         ...toCueSendCommands(sibling, RESUBSCRIBED),
         ...toOrderedArrivalWaits(sibling, [5]),

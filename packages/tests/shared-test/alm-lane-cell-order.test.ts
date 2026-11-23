@@ -17,6 +17,7 @@ import {
     type AlmLaneRooms,
     type DecodeAlmLaneParametersInput
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
+import { toAlmLaneUnselectedFamilyReason } from '@shared-test/rallar-bb-test/conformance/alm/lane/is-alm-lane-cell-selected.ts';
 import { resolveAlmLaneCellOrder } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-cell-order.ts';
 import {
     isAlmLaneRoomLeftAfter,
@@ -35,6 +36,7 @@ const KEYS = ['a', 'b', 'c', 'd', 'e', 'f'].map((scenarioKey) => ({ scenarioKey 
 const DECLARED: AlmLaneParameters = {
     scope: 'full',
     carriers: ALM_CONFORMANCE_CARRIERS,
+    families: ALM_CONFORMANCE_LANE_FAMILIES,
     order: 'declared',
     seed: null,
     rooms: 'family',
@@ -44,6 +46,7 @@ const DECLARED: AlmLaneParameters = {
 const NO_VALUES = {
     scope: undefined,
     carriers: undefined,
+    families: undefined,
     order: undefined,
     seed: undefined,
     rooms: undefined,
@@ -52,8 +55,9 @@ const NO_VALUES = {
 };
 const TOPOLOGY_RESHAPING_KEYS = ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay'];
 const CATALOG: readonly AlmLaneCatalogCell[] = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-    createAlmConformanceRecipes(toConformanceInput(carrier)).map(({ scenarioId, scenarioKey, tags }) => ({
+    createAlmConformanceRecipes(toConformanceInput(carrier)).map(({ scenarioId, scenarioKey, tags, laneFamily }) => ({
         carrier,
+        family: laneFamily,
         scenarioId,
         scenarioKey,
         tags
@@ -177,6 +181,7 @@ describe('the ALM lane parameters', () => {
         ).toEqual({
             scope: 'full',
             carriers: ALM_CONFORMANCE_CARRIERS,
+            families: ALM_CONFORMANCE_LANE_FAMILIES,
             order: 'shuffled',
             seed: 42,
             rooms: 'cell',
@@ -225,6 +230,39 @@ describe('the ALM lane parameters', () => {
             'RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: tcp, udp; accepted values: ws, rtc, ' +
             'rtc-with-ws-fallback.'
         ]);
+    });
+
+    it('unset or empty families run every family, in declared order', () => {
+        for (const unset of [undefined, '', ' ']) {
+            expect(toDecoded(toDecodeInput({ families: unset }))?.families, String(unset)).toEqual(
+                ALM_CONFORMANCE_LANE_FAMILIES
+            );
+        }
+    });
+
+    it('keeps the named families in declared order, whatever order and spacing the value used, each once', () => {
+        expect(toDecoded(toDecodeInput({ families: ' four-role,two-agent , four-role,same-context' }))?.families)
+            .toEqual(['two-agent', 'same-context', 'four-role']);
+    });
+
+    it('refuses an unknown family with every other refused value, naming the families the lane accepts', () => {
+        expect(toIssues(toDecodeInput({ families: 'two-agent,five-role,baseline', order: 'random' }))).toEqual([
+            'RALLAR_BLACK_BOX_ALM_FAMILIES names unknown families: five-role, baseline; accepted values: two-agent, ' +
+            'addressed, three-agent, same-context, same-principal, four-role.',
+            'RALLAR_BLACK_BOX_ALM_ORDER=random is not accepted; accepted values: declared, shuffled.'
+        ]);
+    });
+
+    // subscription-delivery is a full-scope scenario of the four-role family alone.
+    it('a named scenario key that runs only in families the run does not select is refused, naming its families', () => {
+        const refused = toIssues(toDecodeInput({ only: 'subscription-delivery', families: 'two-agent,three-agent' }));
+
+        expect(refused[0]).toBe(
+            'RALLAR_BLACK_BOX_ALM_ONLY names subscription-delivery, which this run cannot run: it runs in four-role, ' +
+                'which RALLAR_BLACK_BOX_ALM_FAMILIES does not select.'
+        );
+        expect(toDecoded(toDecodeInput({ only: 'subscription-delivery', families: 'four-role' }))?.only)
+            .toEqual(['subscription-delivery']);
     });
 
     it('refuses a seed for the declared order, which takes none', () => {
@@ -296,32 +334,37 @@ describe('the ALM lane parameters', () => {
             { scope: 'full', carriers: ['ws'], skip: [] },
             { scope: 'full', carriers: ['rtc'], skip: [] },
             { scope: 'full', carriers: ['ws', 'rtc'], skip: ['volatile-default', 'delivery-baseline'] },
-            { scope: 'smoke', carriers: ['rtc'], skip: ['delivery-baseline'] }
+            { scope: 'smoke', carriers: ['rtc'], skip: ['delivery-baseline'] },
+            { scope: 'full', carriers: ['rtc'], skip: [], families: ['two-agent', 'addressed', 'same-context'] },
+            { scope: 'full', carriers: ['ws'], skip: [], families: ['three-agent', 'same-principal', 'four-role'] }
         ] as const
-    )('the decoder accepts a key exactly when a plan of the selection contains it: $scope $carriers skip $skip', ({ scope, carriers, skip }) => {
-        const keys = [...new Set(CATALOG.map((cell) => cell.scenarioKey))];
-        const selection = { scope, carriers };
+    )(
+        'the decoder accepts a key exactly when a plan of the selection contains it: $scope $carriers skip $skip families $families',
+        ({ scope, carriers, skip, families = ALM_CONFORMANCE_LANE_FAMILIES }) => {
+            const keys = [...new Set(CATALOG.map((cell) => cell.scenarioKey))];
+            const selection = { scope, carriers };
 
-        for (const key of keys) {
-            const accepted = decodeAlmLaneParameters(
-                toDecodeInput({ only: key, skip: skip.join(',') }, selection)
-            ).fold(() => false, () => true);
-            const planned = carriers.some((carrier) =>
-                ALM_CONFORMANCE_LANE_FAMILIES.some((family) =>
-                    resolveAlmLanePlan({
-                        family,
-                        carrier,
-                        scenarios: FAMILY_CATALOGS.get(`${family}/${carrier}`)!,
-                        scope,
-                        parameters: { ...DECLARED, only: [key], skip },
-                        mintSeed: refuseMint
-                    }).cells.length > 0
-                )
-            );
+            for (const key of keys) {
+                const accepted = decodeAlmLaneParameters(
+                    toDecodeInput({ only: key, skip: skip.join(','), families: families.join(',') }, selection)
+                ).fold(() => false, () => true);
+                const planned = carriers.some((carrier) =>
+                    families.some((family) =>
+                        resolveAlmLanePlan({
+                            family,
+                            carrier,
+                            scenarios: FAMILY_CATALOGS.get(`${family}/${carrier}`)!,
+                            scope,
+                            parameters: { ...DECLARED, only: [key], skip },
+                            mintSeed: refuseMint
+                        }).cells.length > 0
+                    )
+                );
 
-            expect(accepted, `${key} over ${carriers.join('+')} in ${scope}`).toBe(planned);
+                expect(accepted, `${key} over ${carriers.join('+')} in ${scope}`).toBe(planned);
+            }
         }
-    });
+    );
 
     it('a named cell any selected carrier runs in the scope is accepted', () => {
         const decoded = decodeAlmLaneParameters(toDecodeInput({ only: 'forged-recipient-ack' }, { scope: 'full', carriers: ['ws', 'rtc'] }));
@@ -338,6 +381,18 @@ describe('the ALM lane parameters', () => {
 });
 
 describe('the ALM lane plan', () => {
+    // The plan file names every family with the keys it plans, whichever families RALLAR_BLACK_BOX_ALM_FAMILIES runs.
+    it('plans a family the same whichever families the run selects', () => {
+        for (const family of ALM_CONFORMANCE_LANE_FAMILIES) {
+            const input = { ...toPlanInput(family, {}), scenarios: toFamilyCatalog(family, 'rtc'), carrier: 'rtc' } as const;
+            const unselected = ALM_CONFORMANCE_LANE_FAMILIES.filter((other) => other !== family);
+
+            expect(resolveAlmLanePlan({ ...input, parameters: { ...DECLARED, families: unselected } }), family)
+                .toEqual(resolveAlmLanePlan(input));
+            expect(resolveAlmLanePlan(input).cells.length, family).toBeGreaterThan(0);
+        }
+    });
+
     // The lane resolves a family's plan once and both skips and announces from it, so the seed printed is the one used.
     it('a shuffled family plan that names no seed mints one seed, the one its cell order records', () => {
         const minted: number[] = [];
@@ -507,6 +562,20 @@ describe('the ALM lane plan', () => {
             .toEqual({ ...group, groupId: 'room-alm-family-2' });
         expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family' }))
             .toBe(group);
+    });
+});
+
+describe('the reason a family the run does not select is skipped', () => {
+    it('is none for a selected family', () => {
+        for (const family of ALM_CONFORMANCE_LANE_FAMILIES) {
+            expect(toAlmLaneUnselectedFamilyReason(ALM_CONFORMANCE_LANE_FAMILIES, family)).toBeUndefined();
+        }
+        expect(toAlmLaneUnselectedFamilyReason(['addressed'], 'addressed')).toBeUndefined();
+    });
+
+    it('names the decoded families and the family it does not select', () => {
+        expect(toAlmLaneUnselectedFamilyReason(['two-agent', 'addressed', 'same-context'], 'four-role'))
+            .toBe('RALLAR_BLACK_BOX_ALM_FAMILIES=two-agent,addressed,same-context does not select four-role');
     });
 });
 

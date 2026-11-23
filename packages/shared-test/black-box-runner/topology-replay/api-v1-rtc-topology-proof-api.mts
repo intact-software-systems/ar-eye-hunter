@@ -298,6 +298,7 @@ export async function requestJson(
     options: RequestOptions
 ): Promise<ProofJsonObject> {
     const response = await fetch(`${baseUrl}${path}`, {
+        redirect: 'error',
         method: options.method,
         headers: {
             ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),

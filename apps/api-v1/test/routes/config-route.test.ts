@@ -2,7 +2,7 @@ import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { toApiV1PublicConfiguration } from '../../src/configuration/to-api-v1-public-configuration.ts';
-import { createConfigRouteTestApp } from './config-route-test-runtime.ts';
+import { createConfigRouteTestApp, createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 test('/api/time observes the server clock for each uncached response', async () => {
     let now = 1_800_000_000_000;
@@ -47,4 +47,12 @@ test('/api/config serves the configured replaced-layout overlap', async () => {
         rtcReplacedLayoutOverlapMs: 7_000,
         serverPeerId: 'default-qbox-server'
     });
+});
+
+test('clock reads identify the configured node while messaging keeps its shared peer', async () => {
+    const { publicConfiguration } = createConfigRouteTestDependencies();
+    const app = createConfigRouteTestApp({ publicConfiguration: { ...publicConfiguration, clockPeerId: 'node-a' } });
+
+    assert.deepEqual(await (await app.request('/api/config')).json(), { ...publicConfiguration, clockPeerId: 'node-a' });
+    assert.deepEqual(await (await app.request('/api/time')).json(), { serverPeerId: 'node-a', serverNowEpochMs: 2_000 });
 });

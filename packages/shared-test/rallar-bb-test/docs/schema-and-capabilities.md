@@ -598,7 +598,8 @@ second producer. The owner's grants name each grantee as `{principal:<role>}`, w
 creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;
 a placeholder no entry resolves throws). A grant is retried until its grantee has joined, and an
 election until it is `active`. A producer publishes until one copy is confirmed by every
-subscriber, or probes so before a publication it sends once; a role tells another it reached a
+subscriber, or probes so before a publication it sends once, whose one send waits 15 s for the page's
+durable outbound lane to admit it, where a probe's and a cue's sends wait 5 s; a role tells another it reached a
 step with a cue, a members-topic send under the cell's type that the waiting role hears through
 the channel its own first cue send opened. Connection generations are compared with `wait`s on
 the result events of `messages.subscriptions` and of the subscription rows read, whose
@@ -627,12 +628,13 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   cell (no `seq`) that the receiver alone confirms; the receiver relays that both were confirmed, and only then
   does the unelected sibling elect and receive `p3` of each, never `p1` or `p2`. Its inbound `ordering-position`
   event reads `entered` with prior `0` per track over `ws`, and `witnessed` for `p1` and `p2` over the RTC
-  carriers, which freeze it into those copies. No producer dispatches a repair.
+  carriers, which freeze it into those copies. No receiver asks a producer for a repair: no gap NACK and no
+  repair control reaches either producer; a timer's retransmission of an unacknowledged copy is no such request.
 - `subscription-ordered-omission` (`ws`, `rtc`, `rtc-with-ws-fallback`): an exclusion reads as an omission. The
   sibling receives `p1` and `p2`; the receiver revokes the sender principal's `subscribe` alone, so `p3` and
   `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
   elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
-  no gap NACK and no repair dispatch.
+  no gap NACK and no repair control at either producer.
 - In these three cells the receiver, which a copy must find current, writes nothing after the sibling's
   election, so the sibling's cue that it elected (`entered`, `resubscribed`, `reentered`) is its ordering
   point: the receiver reads the room's head after that cue, waits until it applied that head, then cues
@@ -644,8 +646,11 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   the room's head, waits until it applied it and cues `reentered-applied-by-sibling`; and each producer, once it
   heard both cues, reads the room's head and waits until its own page applied it. In `subscription-ordered-entry`
   and `-omission` the sibling keeps its socket and its presence, so the layout does not change, and its page holds
-  its own election from the response its subscribe asserts `active` before it cues. No cell waits a fixed margin for
-  the election's delta.
+  its own election from the response its subscribe asserts `active` before it cues. Over the RTC carriers a copy
+  freezes the live sessions whose principal holds `subscribe` in the producer's own snapshot, so in
+  `subscription-ordered-omission` each producer also reads the room's head after the receiver's cue and waits until
+  its own page applied it (`regrant-head`), which carries the re-grant, before it publishes `p5`; it does so over `ws`
+  too, as it does for the revoke's head before `p3`. No cell waits a fixed margin for the election's delta.
 - `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
   producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
   socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
@@ -655,8 +660,8 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   under the new connection generation, for its subscription row and for its own room presence under that
   generation (the page restored it) and cues `reentered`; the producers probe
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
-  without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
-  dispatches a repair or admits a gap NACK about the cell's tracks.
+  without `p3` or `p4`. The sibling holds its election until both producers' `p5` publications end, and no receiver
+  asks a producer for a repair: no gap NACK and no repair control reaches either producer.
 - `server-ordered-entry` (`ws`, same-principal, full): a principal's second session reads its first client-state event
   as `entered`, prior 0, on the server's producer track.
 
@@ -953,37 +958,49 @@ the sender waits for with one readiness budget in its window. The receiver repea
 sender's 30 s connect readiness and its 10 s send), since a message that arrives before the sender's connect has
 subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can finish first); the repeats and its
 own send stay under the share. The sender then sends 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs`
-in a `loop` with `intervalMs: 75` (about 13 a second, under the RTC lane's 20 a second limiter, which the receiver's own
-ACKs share), each naming its own handle by `{loop.index}`; they ask for no receipt, so all 20 arrive within the
-arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals alone then hold the receiver's total at
-the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
-`acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
-`rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
-reconnects without the field. `buffered-track-drains` (`ws` and `rtc`) sends seq 1 on one ordering key and observes it
-`transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the message id its send returned (the
-type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare send commands (a loop index counts
-from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, and releases seq 2, which
-alone is observed admitted. The sends leave in sequence order, since a stated sequence at or below the track's head is
-refused `unsupported`; the hold reorders their arrival. A receiver enters a recorded track at its first copy, so seq 1
-goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`,
-since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and a 90 s `ttlMs`, and the receiver
-receives all 66 in a 90 s window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real
-runtime). Over `rtc` the receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted`
-count is above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading
-digit per iteration, against the page's event history. Over `ws` the WS server is the hop that buffers the track and
-releases it when seq 2 arrives, so the receiver reads the 66 arrivals and no promotion: the server NACKs the gap at
-each later frame's arrival; those reports are one attempt per requester, charged once (D573), so the held seq 2 does
-not settle `repair-exhausted` and the release delivers it.
-`churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
-sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
-in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
-256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
-receives the 280, waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction
-pass a newly opened track runs after its admission commit states it, not the delivery the arrivals count), and its
-`stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
-the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
-memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
-withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
+in a `loop` with `intervalMs: 75` (at most about 13 a second, under the RTC lane's 20 a second limiter, which the
+receiver's own ACKs share) whose budget is that of 20 loop sends (1,500 ms each), each naming its own handle by
+`{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of each
+waiting out an ACK. The budget is that lifetime: a flood that outlasts it could not hold all 20 counted at once.
+Arrivals alone then hold the receiver's total at the bound, so its own room send, which asks for a receiver receipt, is
+admitted only under the share: it is `acknowledged`, and its `stats`, read once the receiver has counted all 20
+arrivals, reads `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and
+`rallar.alm.overloaded` false; it then reconnects without the field. `buffered-track-drains` (`ws` and `rtc`) sends seq
+1 on one ordering key and observes it `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the
+message id its send returned (the type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare
+send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as
+the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (1,500 ms each), and releases seq 2,
+which alone is observed admitted; it then cues `released-2`. The sends leave in sequence order, since a stated sequence
+at or below the track's head is refused `unsupported`; the hold reorders their arrival. A receiver enters a recorded
+track at its first copy, so seq 1 goes first: holding it instead would make the receiver enter at seq 2 and refuse
+seq 1. All carry `ack: 'none'`, since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and one
+`ttlMs` derived from the sender's commands: seq 2, the earliest send still live at the drain, must outlive the held
+block that carries its own send and the faults that move its hold to its message id, the loop's budget, its release and
+admission, the cue, and the receiver's count. The lifetime is the harness's budget, not a drain time: a 64-message
+buffer drains within the default 30 s lifetime on the real runtime
+(`packages/tests/shared-web/websocket/browser-web-socket-buffered-track.test.ts`). The receiver waits for the sender's
+`released-2` cue, with a wait that covers the sender's body up to the cue, its storage baseline included, and then
+counts the 66 in a verdict's window; the count reads every arrival its page logged, those before the count started too.
+Each role's recipe runs that cue wait longer than an ordinary one. Over `rtc` the receiver buffered the track, so it
+also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190): a `loop` with `until:
+'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against the page's event
+history. Over `ws` the WS server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
+reads the 66 arrivals and no promotion: the server NACKs the gap at each later frame's arrival; those reports are one
+attempt per requester, charged once (D573), so the held seq 2 does not settle `repair-exhausted` and the release
+delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
+reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its own
+ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256 and a
+margin) in a `loop` with `intervalMs: 75` whose budget is that of 280 loop sends (1,500 ms each), observes the last one
+`transport-accepted`, cues `tracks-sent` and closes; the receiver waits for that cue, with a wait that covers the
+sender's body up to the cue, its storage baseline included (each role's recipe runs that much longer than an ordinary
+one), then counts the 280 in a verdict's window, which reads the arrivals logged before the count started too, waits in
+its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
+runs after its admission commit states it, not the delivery the arrivals count), and its `stats` reads
+`rallar.alm.orderingTracks` both `lte` and
+`gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile
+tracks fill the memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted
+manifest 18 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in
+`conformance/alm/scenarios/fairness/`.
 
 The paced cells prove the live channel's publication stage over every carrier, in the smoke scope, on the two agents
 (D469, D472, D477–D479) and, for `paced-isolation-lists`, on the three, before the congestion and fairness cells. Each

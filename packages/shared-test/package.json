@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "alm:lane:ledger": "bun run rallar-bb-test/conformance/alm/ledger/alm-lane-ledger.mts",
     "bb:api-v1:recipes": "bun run black-box-runner/api-v1-black-box-run.mts --recipes-only --artifact-dir=../../.artifacts/api-v1-black-box/recipes",
     "bb:api-v1:postgres": "RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{\"documentType\":\"black-box-map\",\"rollout\":\"production\"}]' bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --artifact-dir=../../.artifacts/api-v1-black-box/postgres",
     "bb:api-v1:postgres:crdt": "RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON='[{\"documentType\":\"black-box-map\",\"rollout\":\"production\"}]' bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --cluster-only --cluster-profile=api-v1-black-box-crdt --artifact-dir=../../tmp/api-v1-black-box/postgres-crdt",
@@ -12,6 +13,7 @@
     "bb:api-v1:postgres:formation-large": "bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --cluster-only --cluster-profile=api-v1-black-box-formation-large --artifact-dir=../../tmp/api-v1-black-box/postgres-formation-large",
     "bb:api-v1:postgres:topology-replay": "bun run black-box-runner/api-v1-black-box-run.mts --backend=postgres --secondary-port=18081 --tertiary-port=18082 --profile=api-v1-black-box-topology-replay --artifact-dir=../../tmp/api-v1-black-box/postgres-topology-replay",
     "bb:api-v1:postgres:room-deadlines": "bun run black-box-runner/cluster-proofs/api-v1-room-deadline-proof.mts --backend=postgres --port=19080 --secondary-port=19081 --tertiary-port=19082 --artifact-dir=../../tmp/api-v1-black-box/room-deadlines",
+    "bb:api-v1:postgres:seat-deadline": "bun run black-box-runner/cluster-proofs/api-v1-seat-deadline-proof.mts --backend=postgres --port=19680 --secondary-port=19681 --tertiary-port=19682 --artifact-dir=../../tmp/api-v1-black-box/seat-qualification",
     "bb:api-v1:postgres:room-lobbies": "bun run black-box-runner/cluster-proofs/api-v1-room-lobby-proof.mts --backend=postgres --port=19080 --secondary-port=19081 --tertiary-port=19082 --artifact-dir=../../tmp/api-v1-black-box/room-lobbies",
     "bb:api-v1:postgres:group-delta": "bun run black-box-runner/cluster-proofs/api-v1-group-delta-cluster-proof.mts --backend=postgres --port=18480 --secondary-port=18481 --tertiary-port=18482 --artifact-dir=../../tmp/api-v1-black-box/postgres-group-delta",
     "bb:api-v1:postgres:auth-logout": "bun run black-box-runner/cluster-proofs/api-v1-auth-logout-cluster-proof.mts --backend=postgres --port=18580 --secondary-port=18581 --tertiary-port=18582 --artifact-dir=../../tmp/api-v1-black-box/postgres-auth-logout",

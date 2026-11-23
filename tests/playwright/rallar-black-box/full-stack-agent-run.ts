@@ -83,7 +83,10 @@ export async function createAgentRun(input: CreateAgentRunInput): Promise<AgentR
     }
 }
 
-/** Each role's recipe outcome, and the outcome of a role's continuation when the scenario holds one back. */
+/**
+ * Each role's recipe outcome, and the outcome of a role's continuation when the scenario holds one back and the role's
+ * first recipe passed: a continuation after a failed first recipe never starts, so the role's failure is its own.
+ */
 export interface AgentRunOutcomes {
     readonly roles: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>;
     readonly continuation: RecipeRunOutcome | undefined;
@@ -100,7 +103,7 @@ const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
  * never its only owner, whose leave is refused, and the owner's grants name a room that exists. Every other recipient
  * starts once the one before it connected, and the sender last. The order only keeps that ownership: a barriered
  * cell's roles start their bodies once the cell's settle passed, whatever order they started in. A continuation starts
- * on its role's agent after that role's first recipe, once its gate passed.
+ * on its role's agent after that role's first recipe passed, once its gate passed.
  */
 export async function runRecipesOnAgents(
     run: AgentRecipeRun,
@@ -134,16 +137,20 @@ function requireSettled<T>(settled: PromiseSettledResult<T>): T {
 }
 
 /**
- * The continuation is its role's later steps, so it starts once that role's first recipe ended, whatever its outcome,
- * and the gate passed: a page runs its recipes side by side, and a gate that passes early must not let the later steps
- * overtake the first.
+ * The continuation is its role's later steps, so it starts once that role's first recipe passed and the gate passed: a
+ * page runs its recipes side by side, and a gate that passes early must not let the later steps overtake the first.
+ * After a failed, cancelled or timed-out first recipe it does not start, since its steps would fail for that reason
+ * alone and hide it.
  */
 async function startContinuation(
     run: AgentRecipeRun,
     continuation: AlmConformanceContinuation,
     started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
-): Promise<StartedRecipeRun> {
-    await requireRoleValue(started, continuation.role).readOutcome();
+): Promise<StartedRecipeRun | undefined> {
+    const first = await requireRoleValue(started, continuation.role).readOutcome();
+    if (!first.ok) {
+        return undefined;
+    }
     await waitForRecipeGate(run, {
         commandId: continuation.gate.commandId,
         gatingRun: requireRoleValue(started, continuation.gate.role),

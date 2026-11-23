@@ -31,6 +31,15 @@ import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-confor
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 
 /**
+ * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
+ * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
+ * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ */
+export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
+    return step.input.carrier === 'ws' ? 0 : unelected;
+}
+
+/**
  * Both producers hold `publish` and `subscribe` and the receiver `subscribe`; the sibling shares the sender's
  * principal, so it holds what the sender does.
  */
@@ -51,7 +60,6 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 kind: 'messages.subscribe',
@@ -72,9 +80,39 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
     });
 }
 
+/** Releases the election under `subscriptionId`, which the page's own release ends `lapsed`. */
 export function toUnsubscribeCommands(
     step: AlmConformanceStepInput,
     subscriptionId: string
+): readonly RallarBlackBoxTestCommand[] {
+    return toReleaseCommands(step, subscriptionId, { name: 'lapsed', operator: 'equals', expected: 'lapsed' });
+}
+
+/**
+ * Releases an election whose principal's `subscribe` was revoked while it was held. A renewal inside the revoke window
+ * is refused, which ends the election `refused`; with no renewal there the release ends it `lapsed`.
+ */
+export function toUnsubscribeAfterRevokeCommands(
+    step: AlmConformanceStepInput,
+    subscriptionId: string
+): readonly RallarBlackBoxTestCommand[] {
+    return toReleaseCommands(step, subscriptionId, {
+        name: 'lapsed-or-refused',
+        operator: 'matches',
+        expected: '^(lapsed|refused)$'
+    });
+}
+
+interface ReleasedStatusFact {
+    readonly name: string;
+    readonly operator: 'equals' | 'matches';
+    readonly expected: string;
+}
+
+function toReleaseCommands(
+    step: AlmConformanceStepInput,
+    subscriptionId: string,
+    released: ReleasedStatusFact
 ): readonly RallarBlackBoxTestCommand[] {
     const unsubscribe = toCommandId(step, `unsubscribe-${subscriptionId}`);
     return [
@@ -88,10 +126,10 @@ export function toUnsubscribeCommands(
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
-            name: `unsubscribe-${subscriptionId}-lapsed`,
+            name: `unsubscribe-${subscriptionId}-${released.name}`,
             source: `resultCache.${unsubscribe}.value.status`,
-            operator: 'equals',
-            expected: 'lapsed'
+            operator: released.operator,
+            expected: released.expected
         })
     ];
 }

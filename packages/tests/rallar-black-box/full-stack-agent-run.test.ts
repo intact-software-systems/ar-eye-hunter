@@ -212,91 +212,60 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
-    it('starts the sibling\'s continuation on its own agent only once its first recipe ended and the gate passed in the receiver\'s still running recipe', async () => {
-        const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
-        const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
-        const continuation = {
-            role: 'sibling',
-            gate: { role: 'receiver', commandId: 'receiver-p4-confirmed' },
-            recipe: { ...sibling, recipeId: `${sibling.recipeId}-continuation` }
-        } as const;
-        const receiverRunId = `${baseline.receiver.recipeId}-run`;
-        const siblingRunId = `${sibling.recipeId}-run`;
-        const continuationRunId = `${continuation.recipe.recipeId}-run`;
-        // The sibling copies the receiver's recipe, so one passed connect releases both barriers.
-        const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+    it('starts the sibling\'s continuation on its own agent only once its first recipe passed and the gate passed in the receiver\'s still running recipe', async () => {
         let gateOpen = false;
         let siblingDone = false;
-        const control = await openRecordingControlRequest('gated-run');
-        const request = control.request;
-        const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
-        const toPassedEvent = (agentId: string, commandId: string) => ({
-            kind: 'event' as const,
-            protocolVersion: 1 as const,
-            runId: 'gated-run',
-            agentId,
-            atEpochMs: 1,
-            eventId: `event-${agentId}-${commandId}`,
-            commandId,
-            payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
-        });
-        const run: AgentRecipeRun = {
-            request,
-            runId: 'gated-run',
-            agents: new Map([
-                ['sender', { agentId: 'sender-agent' }],
-                ['receiver', { agentId: 'receiver-agent' }],
-                ['sibling', { agentId: 'sibling-agent' }]
-            ]),
-            startedRoots: [],
-            readSnapshot: async () => ({
-                runId: 'gated-run',
-                createdAtEpochMs: 1,
-                updatedAtEpochMs: 2,
-                agents: [],
-                commands: [],
-                // The receiver runs on until the gate opens; the sibling's first recipe until it is done.
-                events: [
-                    toPassedEvent('receiver-agent', connect),
-                    ...(gateOpen ? [toPassedEvent('receiver-agent', 'receiver-p4-confirmed')] : [])
-                ],
-                stats: [],
-                reports: [],
-                heartbeats: [],
-                results: posted().filter((commandId) => (gateOpen || commandId !== receiverRunId) && (siblingDone || commandId !== siblingRunId)).map((
-                    commandId
-                ) => ({
-                    kind: 'result',
-                    protocolVersion: 1,
-                    runId: 'gated-run',
-                    agentId: 'observed-agent',
-                    commandId,
-                    ok: true
-                }))
-            })
-        };
+        // The receiver runs on until the gate opens; the sibling's first recipe until it is done.
+        const fixture = await createSiblingContinuationFixture('gated-run', (posted, runIds) => ({
+            gateOpen,
+            results: posted
+                .filter((commandId) => (gateOpen || commandId !== runIds.receiver) && (siblingDone || commandId !== runIds.sibling))
+                .map((commandId) => ({ commandId, ok: true }))
+        }));
+        const { control, runIds } = fixture;
         try {
-            const running = runRecipesOnAgents(
-                run,
-                new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
-                continuation
-            );
-            await vi.waitFor(() => expect(posted()).toContain(siblingRunId));
+            const running = runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
+            await vi.waitFor(() => expect(fixture.posted()).toContain(runIds.sibling));
             await new Promise((resolve) => setTimeout(resolve, 600));
-            expect(posted()).not.toContain(continuationRunId);
+            expect(fixture.posted()).not.toContain(runIds.continuation);
 
-            // The gate passed, but the continuation is the sibling's later steps: its first recipe must end first.
+            // The gate passed, but the continuation is the sibling's later steps: its first recipe must pass first.
             gateOpen = true;
             await new Promise((resolve) => setTimeout(resolve, 600));
-            expect(posted()).not.toContain(continuationRunId);
+            expect(fixture.posted()).not.toContain(runIds.continuation);
 
             siblingDone = true;
             const outcome = await running;
 
-            expect(posted().at(-1)).toBe(continuationRunId);
-            expect(control.posted.find(({ commandId }) => commandId === continuationRunId)?.agentId).toBe('sibling-agent');
-            expect(outcome.continuation).toEqual({ commandId: continuationRunId, ok: true, summary: 'ok' });
+            expect(fixture.posted().at(-1)).toBe(runIds.continuation);
+            expect(control.posted.find(({ commandId }) => commandId === runIds.continuation)?.agentId).toBe('sibling-agent');
+            expect(outcome.continuation).toEqual({ commandId: runIds.continuation, ok: true, summary: 'ok' });
             expect([...outcome.roles.keys()].toSorted()).toEqual(['receiver', 'sender', 'sibling']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it.each([
+        { first: 'failed', ok: false, continued: false },
+        { first: 'passed', ok: true, continued: true }
+    ])('starts a continuation only after its role\'s first recipe passed: the first recipe $first', async ({ ok, continued }) => {
+        // The gate passed and every recipe ended; only the sibling's first recipe may have failed.
+        const fixture = await createSiblingContinuationFixture('failed-first-run', (posted, runIds) => ({
+            gateOpen: true,
+            results: posted.map((commandId) => ({ commandId, ok: commandId !== runIds.sibling || ok }))
+        }));
+        const { control, runIds } = fixture;
+        try {
+            const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
+
+            expect(fixture.posted().includes(runIds.continuation)).toBe(continued);
+            expect(outcome.continuation).toEqual(
+                continued ? { commandId: runIds.continuation, ok: true, summary: 'ok' } : undefined
+            );
+            expect(outcome.roles.get('sibling')).toMatchObject({ commandId: runIds.sibling, ok });
         }
         finally {
             vi.restoreAllMocks();
@@ -420,6 +389,33 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
+    it('fails the family without starting the continuation when the role holding it is still live after its cancel', async () => {
+        let nowEpochMs = 1_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        // Each read moves the clock 30 s. The sibling's first recipe never ends, cancelled or not.
+        const fixture = await createSiblingContinuationFixture('stale-continuation-run', (posted, runIds) => {
+            nowEpochMs += 30_000;
+            return {
+                gateOpen: true,
+                results: posted.filter((commandId) => commandId !== runIds.sibling && !commandId.startsWith('cancel-'))
+                    .map((commandId) => ({ commandId, ok: true }))
+            };
+        });
+        const { control, runIds } = fixture;
+        try {
+            await expect(runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation)).rejects.toThrow(
+                `${runIds.sibling} is still running after its deadline and cancellation`
+            );
+
+            expect(fixture.posted()).toContain(`cancel-${runIds.sibling}`);
+            expect(fixture.posted()).not.toContain(runIds.continuation);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('throws when an agent\'s close has not passed within the close timeout, reading no snapshot after it', async () => {
         const control = await openRecordingControlRequest('close-timeout-run');
         const request = control.request;
@@ -472,3 +468,98 @@ describe('ALM run on an agent per role', () => {
         }
     });
 });
+
+interface SiblingContinuationRunIds {
+    readonly receiver: string;
+    readonly sibling: string;
+    readonly continuation: string;
+}
+
+/** What a snapshot read of the sibling-continuation run states: whether the receiver passed the gate, and the results. */
+interface SiblingContinuationSnapshot {
+    readonly gateOpen: boolean;
+    readonly results: readonly Readonly<{ commandId: string; ok: boolean; }>[];
+}
+
+type ReadSiblingContinuationSnapshot = (
+    posted: readonly string[],
+    runIds: SiblingContinuationRunIds
+) => SiblingContinuationSnapshot;
+
+/** The cell's recipes: the sibling copies the receiver's, and holds a continuation gated on `receiver-p4-confirmed`. */
+function toSiblingContinuationRecipes() {
+    const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+    const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
+    const continuation = {
+        role: 'sibling',
+        gate: { role: 'receiver', commandId: 'receiver-p4-confirmed' },
+        recipe: { ...sibling, recipeId: `${sibling.recipeId}-continuation` }
+    } as const;
+    const runIds: SiblingContinuationRunIds = {
+        receiver: `${baseline.receiver.recipeId}-run`,
+        sibling: `${sibling.recipeId}-run`,
+        continuation: `${continuation.recipe.recipeId}-run`
+    };
+    const recipes = new Map<AlmConformanceRole, typeof sibling>([
+        ['sender', baseline.sender],
+        ['receiver', baseline.receiver],
+        ['sibling', sibling]
+    ]);
+    const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+    return { recipes, continuation, runIds, connect };
+}
+
+/** The control snapshot `snapshot` states: the receiver's connect passed, and its gate once open. */
+function toSiblingContinuationSnapshot(runId: string, connect: string, snapshot: SiblingContinuationSnapshot) {
+    const toPassedEvent = (commandId: string) => ({
+        kind: 'event' as const,
+        protocolVersion: 1 as const,
+        runId,
+        agentId: 'receiver-agent',
+        atEpochMs: 1,
+        eventId: `event-receiver-agent-${commandId}`,
+        commandId,
+        payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
+    });
+    return {
+        runId,
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 2,
+        agents: [],
+        commands: [],
+        events: [toPassedEvent(connect), ...(snapshot.gateOpen ? [toPassedEvent('receiver-p4-confirmed')] : [])],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+        results: snapshot.results.map(({ commandId, ok }) => ({
+            kind: 'result' as const,
+            protocolVersion: 1 as const,
+            runId,
+            agentId: 'observed-agent',
+            commandId,
+            ok
+        }))
+    };
+}
+
+/**
+ * A three-agent cell whose sibling holds a continuation. The sibling copies the receiver's recipe, so one passed
+ * connect releases both barriers; `read` states each snapshot.
+ */
+async function createSiblingContinuationFixture(runId: string, read: ReadSiblingContinuationSnapshot) {
+    const { recipes, continuation, runIds, connect } = toSiblingContinuationRecipes();
+    const control = await openRecordingControlRequest(runId);
+    const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
+    const run: AgentRecipeRun = {
+        request: control.request,
+        runId,
+        agents: new Map([
+            ['sender', { agentId: 'sender-agent' }],
+            ['receiver', { agentId: 'receiver-agent' }],
+            ['sibling', { agentId: 'sibling-agent' }]
+        ]),
+        startedRoots: [],
+        readSnapshot: async () => toSiblingContinuationSnapshot(runId, connect, read(posted(), runIds))
+    };
+    return { control, posted, run, recipes, continuation, runIds };
+}

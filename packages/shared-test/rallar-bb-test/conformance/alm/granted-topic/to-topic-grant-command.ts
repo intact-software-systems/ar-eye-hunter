@@ -36,7 +36,6 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [toTopicGrantRequest({
             grant,
             commandId: toCommandId(step, `${name}-request`),

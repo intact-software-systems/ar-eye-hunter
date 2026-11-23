@@ -11,7 +11,7 @@ export interface ReadServerClockSampleInput {
 }
 
 export interface ServerClockSampleDependencies {
-    readonly fetch: typeof globalThis.fetch;
+    readonly fetch: (url: string, init: RequestInit) => Promise<Response>;
     readonly nowMonotonicMs: () => number;
 }
 

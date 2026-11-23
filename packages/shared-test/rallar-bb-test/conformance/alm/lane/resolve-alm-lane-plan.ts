@@ -67,12 +67,16 @@ const ALM_LANE_FAMILY_ROOM = 'family' as const;
  */
 export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan {
     const { parameters } = input;
+    // The plan selects its own family whichever families the run executes, so the plan file names every family's keys.
+    const selection = {
+        scope: input.scope,
+        carriers: [input.carrier],
+        families: [input.family],
+        skip: parameters.skip
+    };
     const ordered = resolveAlmLaneCellOrder({
         scenarios: input.scenarios.filter((scenario) =>
-            isAlmLaneCellSelected(
-                { ...scenario, carrier: input.carrier },
-                { scope: input.scope, carriers: [input.carrier], skip: parameters.skip }
-            )
+            isAlmLaneCellSelected({ ...scenario, carrier: input.carrier, family: input.family }, selection)
         ),
         order: parameters.order,
         seed: parameters.seed,
