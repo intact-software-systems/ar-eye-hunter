@@ -44,6 +44,7 @@ import type {
     ALOutboundSettlementEmitter,
     ALOutboundSettlementFact
 } from '../al-outbound-message-runtime.ts';
+import { toALOutboundPendingControlId } from '../al-outbound-pending-admission.ts';
 import { ALOutboundRepairAdmission } from '../al-outbound-repair-admission.ts';
 import { ALOutboundRepairRetransmission } from '../al-outbound-repair-retransmission.ts';
 import {
@@ -51,6 +52,7 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
+    toALOutboundWorkKey,
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral,
     type ALOutboundWorkDeferral
@@ -291,8 +293,11 @@ export class ALOutboundStoreLane<TPrepared> {
             (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         // A foreign control and a rejected one write nothing, so they owe no batch.
-        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
+        if (admitted.kind === 'committed') {
             this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+        }
+        else if (admitted.kind === 'pending-control') {
+            this.expeditePendingControl(msg);
         }
         return admitted;
     }
@@ -303,9 +308,19 @@ export class ALOutboundStoreLane<TPrepared> {
             (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         if (admitted.kind === 'pending-control') {
-            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+            this.expeditePendingControl(control);
         }
         return admitted;
+    }
+
+    /**
+     * A control whose commit lost to this owner's own writes is replayed ahead of the running batch's remaining
+     * claims: those claims are the writes it lost to, and a page of them can outlast the deadline it answers.
+     */
+    private expeditePendingControl(control: ALMessage): void {
+        const { namespace } = this.input.stores.admissionStore;
+        this.work.expedite([toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))]);
+        this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
     }
 
     /**

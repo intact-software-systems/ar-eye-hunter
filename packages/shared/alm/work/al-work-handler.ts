@@ -1,5 +1,5 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type Key } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -234,6 +234,8 @@ export class ALWorkHandler {
     private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
+    /** Rows `expedite()` named while a batch runs, which that batch claims before its next claim. */
+    private readonly expedited: Key[] = [];
     private readonly shutdown = new AbortController();
     private readonly engine: ALWorkEngineMembership;
 
@@ -303,6 +305,17 @@ export class ALWorkHandler {
         }
         else {
             this.commitPending = true;
+        }
+    }
+
+    /**
+     * Called before `committed()` for rows of that commit that must not wait for the running batch's remaining claims:
+     * the batch claims each one still pending before its next claim, so such a row waits for the claim in flight at
+     * most. With no batch running, the batch `committed()` starts claims them as it claims any due row.
+     */
+    expedite(keys: readonly Key[]): void {
+        if (this.batch !== undefined) {
+            this.expedited.push(...keys);
         }
     }
 
@@ -397,6 +410,8 @@ export class ALWorkHandler {
         primaryFailure: Error | undefined
     ): Promise<void> {
         this.batch = undefined;
+        // A row named after the batch's last claim is claimed by the batch its commit owes.
+        this.expedited.length = 0;
         let following: Promise<void> | undefined;
         try {
             following = this.runPendingCommit();
@@ -515,7 +530,11 @@ export class ALWorkHandler {
             : this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
         // Groups start together; a later rejection must be observed while an earlier attempt settles.
         grouped?.forEach((attempt) => void attempt.catch(() => undefined));
-        for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
+        for (
+            let claim = await this.shiftClaim(queued, progress);
+            claim !== undefined;
+            claim = await this.shiftClaim(queued, progress)
+        ) {
             const attempt = grouped?.get(claim);
             if (this.shutdown.signal.aborted && attempt === undefined) {
                 // Selection or successor reservation may finish after disposal. Release unstarted
@@ -537,6 +556,35 @@ export class ALWorkHandler {
             progress.claimedCount += successors.length;
         }
         return this.shutdown.signal.aborted ? undefined : run;
+    }
+
+    /** The batch's next claim: an expedited row still pending goes before every claim the batch already holds. */
+    private async shiftClaim(queued: ALWorkClaim[], progress: ALWorkBatchProgress): Promise<ALWorkClaim | undefined> {
+        const expedited = await this.claimExpedited();
+        progress.claimedCount += expedited.length;
+        queued.unshift(...expedited);
+        return queued.shift();
+    }
+
+    /**
+     * Each expedited row still new or retrying as read. One that cannot be claimed is left to the batch its commit owes,
+     * and the failure is stated as a batch failure is, as a successor's is.
+     */
+    private async claimExpedited(): Promise<readonly ALWorkClaim[]> {
+        if (this.expedited.length === 0 || this.shutdown.signal.aborted) {
+            return [];
+        }
+        const { port } = this.dependencies;
+        const keys = this.expedited.splice(0);
+        try {
+            const entries = await Promise.all(keys.map((key) => port.readEntry(key)));
+            const observed = entries.filter((entry) => entry !== undefined);
+            return observed.length === 0 ? [] : await port.claimObserved(observed);
+        }
+        catch (error) {
+            this.reportBatchFailure(toError(error));
+            return [];
+        }
     }
 
     /**
