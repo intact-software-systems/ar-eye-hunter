@@ -4,7 +4,7 @@ A sender's receipt on WebSocket stays exact when the server instance that admitt
 restarts. The count of who confirmed a receipted room send moves out of one instance's memory into a
 durable record every instance reads and writes.
 
-Status: approved by the maintainer on 2026-11-22; slices 1 to 3 built.
+Status: approved by the maintainer on 2026-11-22; slices 1 to 4 built.
 
 ## Why
 
@@ -108,8 +108,9 @@ The built record was measured again in the same sustained shape; see "Measured o
 - The write rule of `convergent-service-writing.md` holds: the conditional guard is the first write, the
   state and the work it causes commit in one transaction, and nothing is repaired after a commit.
 - `packages/shared/services/ws-queue-box-server` holds 22 production files. Two leave it
-  (`ws-queue-box-server-receipt-deadline-index.ts`, `ws-queue-box-server-ack-relay.ts`) and none is added:
-  the record is its own feature folder, and the aggregation file is rewritten in place.
+  (`ws-queue-box-server-receipt-deadline-index.ts`, `ws-queue-box-server-ack-relay.ts`) and none is added
+  beside them: the record is its own feature folder, the aggregation file is rewritten in place, and the
+  aggregation's pure translations go into the subfolder `receipt/` (slice 4, seven files).
 - Expected failure is a value (`Either`). A lost fence is a typed conflict, never a throw that escapes.
 - The files `packages/shared/alm/inbound/**` and `packages/shared/alm/outbound/control/**` are being
   rewritten by open pull requests #869 and #868. Slice 1 touches neither. Slice 2 makes two changes in
@@ -220,8 +221,9 @@ aggregate. With the record it awaits a store read, so the hook is asynchronous; 
 one of two changes this work makes in `alm/inbound`; the other moves `al-inbound-work-entry.ts`, which open
 pull request #868 changes, onto `computeALWorkEntry`.
 
-The server's own ACK for a recipient it sent nothing (`writeServerAck`) becomes a `count` of an `outside`
-confirmation on the instance that dropped the recipient. Nothing is handed to another instance.
+The server's own ACK for a recipient it sent nothing (`writeServerAck` on `main`, the track order's
+`writeOutsideAudience` here) becomes a `count` of an `outside` confirmation on the instance that dropped the
+recipient. Nothing is handed to another instance.
 
 The inbound authority no longer keeps a control message for admission while its room view is behind. This is a
 change of the authorizer contract; the production authorizer authorizes every control, so no ACK took that path
@@ -306,23 +308,90 @@ whose receipt could not be encoded (section 2) opens nothing.
 ### 7. The server's own receipted publications
 
 The server's own receipted publications, of which the group-state delta is the production one, count in
-the record too (ruling 4). Today their ACKs, addressed to the server, are admitted into the server's
-fenced `receiver` pending row, every one a commit on the server's one version row.
+the record too (ruling 4). Before slice 4 their ACKs, addressed to the server, were admitted into the server's
+fenced `receiver` pending row, every one a commit on the server's one version row. As built in slice 4:
 
-- The record is opened when the server enqueues a receipted publication of its own, under the server's
-  peer id as origin, with the audience the publication was admitted for.
-- An ACK addressed to the server is counted in the record when its message opened one; any other control
-  addressed to the server goes to the server's outbound owner as today.
-- A recipient the server sent nothing, on its own rows as on a client's, is one `outside` confirmation in
-  the record. The fenced `commitOutsideAudience` on the pending row, with its three tries and its
-  diagnostic, goes.
-- Ending writes the ended work as for a client's send. The work has no origin to answer; it settles the
-  server's pending row with the terminal receipt and states the settlement the admin read shows.
+- **Where the head opens, and from what.** Not when the server enqueues: the delta and Relic's game
+  notifications are producer rows that never pass the service at enqueue, and at enqueue an awaited route
+  expects nobody. The head opens at the dequeue admission, first in `afterDequeueAdmission`, for a message
+  the server sent whose ACK mode is logical, under the server's peer id as origin. It opens from the
+  server's pending receipt row (`readPendingAck`), which the dequeue commit writes before any copy is
+  sent: the row's expected recipients (the dequeue's judged audience), no recipient recorded never sent,
+  snapshot version 0 (a producer's audience carries none), and the message's trace. Not from the policy
+  the dequeue hands the hook: a sent message keeps its first dispatch's policy, which for everything sent
+  through `enqueueOutboxIfAbsent` expects nobody. The opening writes no `admitted` receipt, since the
+  server is the origin. A record failure in the hook propagates after the hook has published this
+  attempt's cluster copies; the outbound work then dequeues the row again, which sends every copy again and
+  rewrites the pending row with its attempts reset.
+- **Its deadline.** The end of the row's retransmission budget less half an ACK window, in the row's own
+  terms: `deadlineAtMs + timeoutMs × (maxAttempts − attempts) − floor(timeoutMs / 2)`, never beyond the
+  message's own expiry or the record's window. A delta's head so ends 7 s after its first dequeue; its row's
+  budget ends at about 8 s. The row keeps a terminator of its own: at the end of its budget it ends the
+  message, states `receipt-exhausted` from sets that no longer learn of confirmations, and refuses a terminal
+  receipt that arrives afterwards. Half a window is the time the record has to end the receipt and settle the
+  row first.
+- **The routing of an ACK addressed to the server.** It reaches no refusal hook (the inbound authorization
+  admits a control addressed to its own receiver before the hook) and no inbound control-owner read (the
+  origin bypass). One that names another origin goes to the server's outbound owner, as before. The server's
+  own `not-sent` is counted, and counted ahead unproven when it finds no head: without a cluster publisher a
+  send-time skip can overtake the head. A session's ACK is counted (`count`), and the receipt is ended when
+  the view is complete.
+- **The proof by the pending row.** A session's ACK that finds no head has overtaken it: without a cluster
+  publisher the copies leave with the dequeue commit, before the hook runs. It is proven by the server's
+  pending row. When that row's opening would open (the record's opening validator and the receipt control's
+  encodability check, called on the opening the row gives), the ACK is counted ahead if the row expects its
+  sender and refused, writing nothing, if not. With no logically receipted row (a `hop` receipt, a live-only
+  send, a row already complete), or a row whose opening would not open (more than 256 expected sessions, or a
+  receipt the control cannot carry), the ACK goes to the outbound owner, which counts it in the row per ACK as
+  before.
+- **The head opened at the next window.** A head the dequeue did not open (the record store failed, or the
+  instance was lost between the dequeue commit and the `open`) opens at the row's next `ack-timeout` window.
+  The retry hook reads the record for every logically receipted retry; when it finds no head of a server
+  publication it opens one from the pending row, and that `open` tallies what was counted ahead. At each
+  window it also ends an open head whose view is complete and plans nothing, counts `outside` every recipient
+  the row places outside that the record holds no row for, and otherwise narrows the retransmission to the
+  recipients the record has not answered. An ended head, or one past its deadline, plans no retransmission.
+- **A recipient the server sent nothing**, on its own rows as on a client's, is one `outside` confirmation in
+  the record, written through the aggregation's count. The fenced `commitOutsideAudience` on the pending row,
+  with its three tries and its diagnostic, is gone (section 9). A session's outside-audience NACK that the
+  row admits is also one `outside` confirmation, proven by the row naming that recipient outside: a
+  `before-entry` NACK has no hop-end ACK behind it, so without it the receipt would wait for its deadline.
+- **What the ended work does.** It has no origin to answer. It builds the terminal receipt control under the
+  control id every ended work's delivery derives, admits it into the server's pending row
+  (`acceptServerReceipt`), enqueues nothing and writes no `receipt-outbox` observation. A row the store could
+  not reach (`storage-unavailable`) throws, so the work retries. That admission states the settlement the
+  admin read shows.
+- **The admin read learns at the end.** It learns of a server publication's receipt when the receipt ends,
+  not after each ACK. A publication everyone confirms reads `acknowledgement` within milliseconds of its last
+  ACK; one somebody never confirms reads it at its deadline, ended `timed-out` rather than
+  `receipt-exhausted`, with `receiptExhausted: false` and the unconfirmed recipients named.
 
 The pending row stays, on `outbox` topics for a client's send (D38) and for the server's own rows, as the
 record of what is still to be retransmitted. It no longer learns of a confirmation until the receipt ends,
-so the WS server's repair plan leaves out the recipients the record has confirmed. A retransmission then
+so the WS server's repair plan leaves out the recipients the record has answered. A retransmission then
 reaches the recipients that have not confirmed, as it does today.
+
+Its stated limits:
+
+- _A stall longer than half an ACK window._ When the record's end and its ended work together take longer
+  than half a window (a stalled instance; a survivor that learns of the row only at its next readiness read,
+  up to 3 s), the row's budget ends first and the process-local admin read says `receipt-exhausted` naming
+  nobody confirmed for a publication some recipients confirmed. The record's head stays exact. Both levers
+  change `alm/outbound`: the aggregation stating the record's settlement when the row refuses the terminal
+  receipt, which duplicates the runtime's settlement stamping, or a pending row that says its receipt is
+  counted elsewhere, a stored shape #869 is rewriting.
+- _A refused opening._ A publication whose opening the record or the codec refuses keeps the per-ACK count in
+  the row. `commitOutsideAudience` is gone, so the server's own `not-sent` for it is counted ahead in a record
+  no head reads: a recipient the server skipped stays expected in the row and keeps it open until its budget
+  ends, and the publication then reads `receipt-exhausted`.
+- _No window._ A publication with no retry (`maxAttempts` 0) has no window, so a head its dequeue failed to
+  open is never opened by one; its ACKs are counted ahead and never read, and its row reads
+  `receipt-exhausted`. The dequeue's own retry usually opens it. The same holds from the window on which the
+  row exhausts, since only a window that still retries reaches the hook.
+- _A lost `end` no window reaches_ (after the budget's last hint, or a window that writes no hint) waits for
+  the deadline worker. For a client's send the origin still receives the receipt, and the row may then refuse
+  it.
+- _A failed dequeue attempt re-sends every copy_, bounded by the outbound work's attempts (20).
 
 ### 8. The record under the mutation doctrine
 
@@ -335,7 +404,13 @@ runtime's inbound and outbound stores are; D740 states it.
 - The memory count, cap and sweep in `ws-queue-box-server-receipt-aggregation.ts`; what remains there is
   the translation from an admission or an ACK to the record's operations.
 - The counting of ACKs in the server's own pending row, and `commitOutsideAudience` with its caller in
-  `ws-queue-box-server-track-order.ts`.
+  `ws-queue-box-server-track-order.ts`. Built in slice 4: a server publication's ACKs count in the record,
+  and only one whose opening is refused is still counted per ACK in the row (section 7). The track order
+  lost its own-outside commit, its three tries and its diagnostics dependency; then `commitOutsideAudience`
+  went with its declaration, implementation and result table in `al-outbound-admission-store.ts`, its
+  translation `alm/outbound/control/to-al-outbound-outside-audience-commit.ts`, the `outside-audience-commit`
+  outbound diagnostic kind, its test file `al-outbound-outside-audience-commit.test.ts`, the track order's
+  cases of the fenced writer, and their six entries in `docs/test-structure-coupling-exceptions.md`.
 - `ws-queue-box-server-receipt-deadline-index.ts`.
 - `ws-queue-box-server-ack-relay.ts`, `relayed-ack-notice.ts`, `relayed-ack-notice-subscriber.ts`,
   `create-postgres-relayed-ack-notice-transport.ts`, their notice channel, the `ack-relay` observation
@@ -396,8 +471,9 @@ runtime's inbound and outbound stores are; D740 states it.
    refusal owner and count source. The relay class itself left in slice 2, since it read the memory aggregate. The
    middleware option `keepsVolatileMessageInMemory` replaces the relay option as the switch that keeps a cluster's
    volatile messages in the shared store.
-4. The server's own receipted publications count in the record; the repair plan reads the record's
-   confirmations; `commitOutsideAudience` deleted.
+4. Built. The server's own receipted publications count in the record, opened at the dequeue admission
+   from the server's pending receipt row; the repair plan reads the record's confirmations and opens a head
+   the dequeue did not open; `commitOutsideAudience` deleted.
 5. Proofs, recipes, documents: the backlog lines this closes removed, decision rows D740 onward, the
    outbound and WS server READMEs, the product description.
 
@@ -514,6 +590,35 @@ machine's 1-minute load average at the end of the run. Test-only code, not kept 
   api-v1 passes the PostgreSQL stores (`create-p-sql-al-receipt-record-stores.ts`), and
   `create-api-v1-runtime.test.ts` fails if the runtime stops counting in the shared repository's record.
 
+## Established in slice 4
+
+- **The server's version row moves once per publication from the settled dequeue to the end.** On PostgreSQL,
+  three instances and fifty sessions spread over them: ten sessions moved it once and fifty once, the terminal
+  receipt's admission into the server's row; the dequeue's own commit is the other move per publication. Before
+  slice 4 it moved once per ACK plus once per recipient the server sent nothing: 51 times for a delta to 50
+  sessions. Fifty sessions confirming at once complete the head, all fifty confirmed, one head row, the row ended
+  (`ws-own-publication-receipt.test.ts`).
+- **A server publication's ACK costs 5 round trips, none fenced.** An ACK that finds its head open and does not
+  complete the set is `select`, `insert` in one transaction, `select`, against about 15 fenced round trips
+  before. It is fewer than a client's ACK (8): an ACK addressed to the server reaches no relayed-ACK hook and
+  no control-owner read (the origin bypass). An instance's first inbound message also runs the inbound work
+  handler's one bootstrap batch (a finalization sweep in its own transaction and a page read), which is not a
+  per-ACK cost (`ws-own-publication-receipt.test.ts`).
+- **A survivor's window opens a head its lost instance never opened.** An instance lost between the dequeue
+  commit and the head's `open` (PostgreSQL rolled the `open` back; no copy left it): a survivor charged the row's
+  window, opened the head from the pending row, retransmitted to its sessions, and the receipt completed on
+  their confirmations. A retransmission inside the window reaches only the session that has not confirmed, and
+  an instance disposed after its dequeue opened the head leaves the survivors to count and end it.
+- **A failed dequeue hook is retried.** A throw in `afterDequeueAdmission` is retried by the outbound work port's
+  backoff (up to 20 attempts), and each attempt dispatches the row again: new send effects, a second copy to every
+  session without a cluster publisher, a pending row rewritten with its attempts at 0. So a record failure at the
+  dequeue is usually healed by the next dequeue; the window heals it when the window comes first
+  (`ws-queue-box-server-own-receipt.test.ts`).
+- **A `before-entry` NACK comes alone.** A recipient below a frozen copy's position answers with the
+  outside-audience NACK and no ACK, so the record counts it `outside` from the server's row; a `not-subscribed`
+  recipient also ends its hop with the ACK `subtree-complete-not-subscribed`, which the record counts `outside`
+  by itself.
+
 ## Not established
 
 - The hosted statement latency itself: 5 ms is one attributed run.
@@ -530,6 +635,9 @@ machine's 1-minute load average at the end of the run. Test-only code, not kept 
   resolved.
 - A survivor taking over a work row whose lease a lost instance held: "lost" in the PostgreSQL cluster cases is a
   disposed instance, not a killed process. The black-box cluster recipe kills a process.
+- The stall of section 7: no test holds an instance between a server publication's record end and its
+  ended work for longer than half an ACK window, so the admin read's `receipt-exhausted` after such a stall is
+  derived from the code, not shown.
 
 ## Decision rows drafted
 
@@ -545,3 +653,4 @@ Appended to `playground/alm/alm-improvement-plan.md` in slice 5.
 | D745 | **The receipt record's namespace in the growth proof.** The `runtime_state_store` namespace `<store>:receipt:record` (sampled as `server-ws-qbox:*:receipt:record`) is growth surface 85, class `ttl-within-run`, ttl `AL_RECEIPT_RECORD_WINDOW_MS + 2 × AL_RECEIPT_DEADLINE_GRACE_MS` = 1 860 000 ms, sweep 60 000 ms. The longest-lived rows are a confirmation under a head, which expires two graces after its head's deadline, and an ended head, which expires one grace after an end that comes at most one grace after the deadline; that deadline is at most one window after opening. Open heads and confirmations written with no head live at most window plus one grace. The record's work rows are expiring `resource_inbox` rows under surface 1. In `growth-surfaces.ts`, tied to `toALReceiptRecordNamespace` by `growth-surfaces.test.ts`. Cost if wrong: the growth gate reads a bound the rows can exceed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | D746 | **The WS server counts in the record.** Deleted: the memory aggregate, its cap, window constant and sweep, `ws-queue-box-server-receipt-deadline-index.ts`, the ACK relay class `ws-queue-box-server-ack-relay.ts`, `createRelayedAckPublisher`, `publishRelayedAck` and `acceptRelayedAck`; the relayed-ACK notice, its subscriber, transport and channel leave in slice 3. `WsQueueBoxServerReceiptAggregation` now translates admissions, ACKs and re-sent copies to `ALReceiptRecord`: an admission opens the head (its deadline clamped to the window) and answers `admitted`; `acceptControlMessage` counts a receiver ACK (`count`, or `countAhead` when the head is absent, without a second proof) and calls `end` when the view is complete; only `end`'s result is authoritative, and a losing `end` does nothing. `ALReceiptRecordWorker` (`${serverPeerId}:receipt-record`, on the service's engine, lease 10 s, page 16) ends receipts at their deadline and delivers each terminal receipt at least once under `al-receipt-ended:${fnv1a64(ref token)}`, then settles the server's pending row. The refusal hook `readRelayedAckRejection` in `alm/inbound` is asynchronous and keeps its name: at ingress it checks only that the ACK addresses the origin it names; in the inbound runtime it reads the head once and refuses with the record's validator, or, with no head, proves the sender against the raw admitted audience of the inbound admission row (volatile store first, then the durable one), not the frozen audience. Refusals, all `unauthorized`: a misaddressed ACK; the unproven sender ("names no message its origin admitted to this sender"); the ended receipt ("names no receipt this server aggregates"); the record's own issues joined. Admission opens no receipt whose largest possible terminal receipt the control codec could not encode (`receipt-not-encodable`, one warning: 249 recipients of 128 characters open, 250 do not; the check costs under 1 % of an admission), the same check answers the empty-audience branch for an over-long message id, and the record refuses an identity a receipt control cannot carry (`decodeALReceiptIdentifier`, `malformed-opening`). Copies accepted `duplicate` or `pending-admission`: an open head is answered `admitted` with its confirmations and an ended head with its terminal phase and sets, under a fresh control id; a copy that finds no head opens the record from the admission row's audience, the message's own deadline, no never-sent recipient and the copy's snapshot version, and is answered `admitted`, except for a copy with no admission row (one still kept for admission, the commonest case), a message with no deadline, a deadline beyond the window, an age of the window by its own stamp, a row that freezes to nobody, or a receipt that could not be encoded. The middleware option `receiptRecordStores` is required (api-v1 passes `create-p-sql-al-receipt-record-stores.ts`), and `create-api-v1-runtime.test.ts` fails if the runtime stops counting in the shared repository's record. The inbound authority no longer keeps a control message for admission while its room view is behind, a change of the authorizer contract (the production authorizer authorizes every control). The cluster recipe `api-v1-cluster-publisher-instance-loss` now reads `complete` for the broadcast its lost server admitted. Absorbed from #869 (D708): the `never-sent` guard and refusal, `neverSentRecipientPeerIds` on the admitted message, `isALOwnWord` for the sender rule, the safe projection's guard list, and the kept-send restatement. Measured: a non-completing ACK is 8 round trips through the server (hook 2, the inbound control-owner read 1, the count 5), pinned in `ws-receipt-record-cluster.test.ts`. Limits: a room member outside a send's frozen audience (a unicast's addressee, a broadcast's except or recipient list) can write one confirmation row per message, which the tally ignores, since it counts only the expected set, and which expires with the record's window plus one grace; a send to more than 256 recipients is admitted and gets no receipt; a cluster's instances must share one server name, since the record's namespace derives from it; the outbox may deliver one terminal receipt more than once under the same control id until the origin acknowledges it; the receipts' own enqueue stays fenced on the server's outbound version row (about 18 enqueues/s estimated at +5 ms against 20 offered by five publishers), which slice 5 measures. Cost if wrong: the lever for the ACK's cost is to count at `admitAuthorizedMessage`, which makes the count's refusal the answer and the hook store-free again. |
 | D747 | **The ACK relay deleted (slice 3).** Deleted: the relayed-ACK notice, its subscriber, api-v1's PostgreSQL transport and its `ws-relayed-ack` channel, the middleware option `relayedAckNotices`, the `ack-relay` observation kind and refusal owner, the count's `source` and `relayPublisherId`, and their safe projection, which now refuses a record of that kind or owner. The relay's per-publisher budgets left with the relay class in slice 2: they bounded NOTIFY publications, and none is published now. An ACK that finds no head costs two reads and writes a row only when its sender is in the audience its admission ran under, reads as a refused repair request already costs; growth surface 38 stays, restated as empty. `keepsVolatileMessageInMemory` replaces the relay option as the explicit volatile-store switch: absent, a WS server keeps every volatile message in its memory pair; on a cluster only an instance-local one, since another instance proves an ACK and reads an oversized live notice's message from the shared store. api-v1 passes `isInstanceLocalRtcSignal` on PostgreSQL pub/sub, guarded by the black-box recipe `api-v1-websocket-live-only-cluster`. The hook `readRelayedAckRejection` keeps its name: it names the server's relay of the origin's message. Prose naming the deleted relay remains in files open pull requests own, rewritten in slice 5: `alm/outbound/README.md`, `alm/inbound/README.md`, `runtime-diagnostic-contract.md`, `plans/backlog.md`, `playground/alm/`. Cost if wrong: a relay restored would be a second count path beside the record.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| D748 | **The WS server's own receipted publications count in the record (slice 4; the maintainer's "Yes, include them" of 2026-11-22).** The head opens at the dequeue admission, first in `afterDequeueAdmission`, from the server's pending receipt row (`readPendingAck`: its expected set, no never-sent recipient, `snapshotVersion` 0), not from the policy the dequeue hands the hook, which is the first dispatch's and expects nobody for an enqueued publication; no `admitted` receipt. Its deadline is the row's retransmission budget less half an ACK window (`deadlineAtMs + timeoutMs × (maxAttempts − attempts) − floor(timeoutMs / 2)`, bounded by the message's expiry and the window): 7 s for a delta against the row's 8 s, so the record's terminal receipt ends the row first. An ACK addressed to the server is counted (`count`); one that finds no head is proven by the pending row (counted ahead when the row's opening would open and expects the sender, refused when it expects another), and the server's own `not-sent` is counted ahead unproven; no logical row, or a refused opening (over 256 sessions, an unencodable receipt), keeps the per-ACK fenced count in the row. An outside-audience NACK the row admits is one `outside` confirmation (a `before-entry` NACK has no hop-end ACK). The retry window reads the record: it opens a head the dequeue did not open, counts the row's outside recipients the record lacks, ends a complete open head, and narrows the retransmission to the unanswered. The ended work admits the terminal receipt into the server's row and enqueues nothing; the admin read learns of the receipt at its end, and a partly confirmed one ends `timed-out`. Deleted: `commitOutsideAudience`, its control file and its `outside-audience-commit` diagnostic. Measured on PostgreSQL: the server's version row moves once from the settled dequeue to the end, for ten sessions and for fifty (51 times for 50 before); a non-completing ACK is 5 round trips, none fenced (about 15 fenced before); a survivor's window opened the head of a publication whose dequeuing instance was lost before its `open`. Limits: under a stall longer than half a window the row's budget ends first and the process-local admin read says `receipt-exhausted` naming nobody confirmed while the head stays exact (both levers change `alm/outbound`); a publication with no retry has no window to open a head its dequeue failed to open; a refused opening's skipped recipient keeps its row open until its budget ends; a lost `end` no window reaches waits for the deadline worker; a failed dequeue attempt re-sends every copy. Cost if wrong: the ACKs go back to the row's fenced count; the stall's levers are a settlement stated from the record's view or a pending row that says its receipt is counted elsewhere.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

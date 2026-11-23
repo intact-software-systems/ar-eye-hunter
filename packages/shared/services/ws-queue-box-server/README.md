@@ -6,17 +6,19 @@ outbound ALM resources. The constructor creates live delivery, outbound planning
 and dequeue authority, then the outbound runtime, receipt aggregation, control
 delivery, track order, inbound authority and delivery, and the inbound runtime.
 It builds no ACK relay: every instance counts in the receipt record they share.
+The track order holds no diagnostics sink: a recipient the server sends nothing
+is an ACK the aggregation counts in the record, for every origin.
 Socket ingress registration is last; every captured dependency exists first.
 `dispose` unregisters ingress, stops the receipt record's worker and disposes both
 ALM runtimes. A supplied engine retains its other tasks.
 
-| Entry and family                            | Decision owner                                                                                                                                                                                                                                                                                                                          | Effect and result owner                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `acceptIncomingMessage`                     | [inbound authority](./ws-queue-box-server-inbound-authority.ts): live connection, peer, scope, protocol, application authorization, then current-connection/scope recheck                                                                                                                                                               | Existing inbound ALM runtime admits or retains; service returns the existing rejection/acceptance. [Inbound delivery](./ws-queue-box-server-inbound-delivery.ts) runs queued recipient effects later.                                                                                                                                                                                                                        |
-| `enqueueOutboxIfAbsent` and outbound worker | [outbound planning](./ws-queue-box-server-outbound-planning.ts), [dequeue authority](./ws-queue-box-server-dequeue-authority.ts) and [prepared-message decoder](./decode-ws-queue-box-server-prepared-message.ts)                                                                                                                       | Existing outbound ALM runtime owns admission, work and settlement. Service sends the prepared recipient or [cluster publication](./ws-queue-box-server-cluster-publication.ts) publishes the owned row.                                                                                                                                                                                                                      |
-| Tracked outbound row order                  | [track order](./ws-queue-box-server-track-order.ts): a dequeued tracked row waits for the pending lower sequences of its track that its batch did not claim                                                                                                                                                                             | Track order reads the positions every copy takes its entry from, judges a captured session from durable presence at the dequeue and records a dropped one outside, and records a skipped or dropped recipient outside the origin's receipt: the server's own receipt through a fenced commit, a relayed origin's through an outside-audience ACK. The outbound README is the account of positions.                           |
-| Receiver ACK and receipt                    | [receipt aggregation](./ws-queue-box-server-receipt-aggregation.ts) translates admissions, ACKs and re-sent copies to the [receipt record](../../alm/receipt-record/al-receipt-record.ts) every instance shares, and proves an ACK that finds no head against the ingress audience; the record owns the count, the deadline and the end | Aggregation enqueues admitted receipts and answers to copies through the existing outbound owner; the record's [worker](../../alm/receipt-record/al-receipt-record-worker.ts) claims the deadline work on any instance and delivers every terminal receipt through the aggregation's `writeEndedReceipt`, which then settles the server's pending row. Enqueue is separate from later publication or sender acknowledgement. |
-| Direct/live/control send                    | [target resolution](./ws-queue-box-server-target-resolution.ts) and [recipient selection](./ws-queue-box-server-recipient-selection.ts)                                                                                                                                                                                                 | [Live delivery](./ws-queue-box-server-live-delivery.ts) checks the current recipient and sends; [control delivery](./ws-queue-box-server-control-delivery.ts) uses the live target or owned cluster outbox. [Delivery reporting](./ws-queue-box-server-delivery-reporting.ts) exposes existing outcome ports.                                                                                                                |
+| Entry and family                            | Decision owner                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Effect and result owner                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acceptIncomingMessage`                     | [inbound authority](./ws-queue-box-server-inbound-authority.ts): live connection, peer, scope, protocol, application authorization, then current-connection/scope recheck                                                                                                                                                                                                                                                                                                          | Existing inbound ALM runtime admits or retains; service returns the existing rejection/acceptance. [Inbound delivery](./ws-queue-box-server-inbound-delivery.ts) runs queued recipient effects later.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `enqueueOutboxIfAbsent` and outbound worker | [outbound planning](./ws-queue-box-server-outbound-planning.ts), [dequeue authority](./ws-queue-box-server-dequeue-authority.ts) and [prepared-message decoder](./decode-ws-queue-box-server-prepared-message.ts)                                                                                                                                                                                                                                                                  | Existing outbound ALM runtime owns admission, work and settlement. Service sends the prepared recipient or [cluster publication](./ws-queue-box-server-cluster-publication.ts) publishes the owned row.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Tracked outbound row order                  | [track order](./ws-queue-box-server-track-order.ts): a dequeued tracked row waits for the pending lower sequences of its track that its batch did not claim                                                                                                                                                                                                                                                                                                                        | Track order reads the positions every copy takes its entry from, judges a captured session from durable presence at the dequeue and records a dropped one outside, and records a skipped or dropped recipient outside the origin's receipt as the server's outside-audience ACK, which the receipt aggregation counts in the record for a relayed origin and for the server's own publications alike. The outbound README is the account of positions.                                                                                                                                                                                                                                                                                                |
+| Receiver ACK and receipt                    | [receipt aggregation](./ws-queue-box-server-receipt-aggregation.ts) translates admissions, the server's own receipted publications, ACKs and re-sent copies to the [receipt record](../../alm/receipt-record/al-receipt-record.ts) every instance shares. It proves an ACK that finds no head: a client send's against the ingress audience, a session's ACK of a server publication against the server's pending receipt row. The record owns the count, the deadline and the end | Aggregation enqueues admitted receipts and answers to copies through the existing outbound owner; the record's [worker](../../alm/receipt-record/al-receipt-record-worker.ts) claims the deadline work on any instance and delivers every terminal receipt through the aggregation's `writeEndedReceipt`, which then settles the server's pending row. A server publication's terminal receipt is enqueued nowhere: the ended work only settles the server's pending row, which keeps the retransmission schedule, and the admin read learns of the receipt at that end. Only a publication whose opening the record or the codec refuses is still counted per ACK in that row. Enqueue is separate from later publication or sender acknowledgement. |
+| Direct/live/control send                    | [target resolution](./ws-queue-box-server-target-resolution.ts) and [recipient selection](./ws-queue-box-server-recipient-selection.ts)                                                                                                                                                                                                                                                                                                                                            | [Live delivery](./ws-queue-box-server-live-delivery.ts) checks the current recipient and sends; [control delivery](./ws-queue-box-server-control-delivery.ts) uses the live target or owned cluster outbox. [Delivery reporting](./ws-queue-box-server-delivery-reporting.ts) exposes existing outcome ports.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Account-wide view notices have a distinct `accountView` authority decoded by
 [`ALAccountViewAuthority`](../../alm/outbound/admission/al-outbound-scope-authority.ts).
@@ -33,6 +35,16 @@ Supporting translations remain beside their owner: [inbound planning](./ws-queue
 [inbound recipient projection](./ws-queue-box-server-inbound-recipients.ts),
 [addressee authorization](./to-ws-queue-box-server-addressee-authorization.ts), and
 [receipt row recognition/republish delay](./ws-queue-box-server-receipt-row.ts).
+The `receipt/` subfolder holds the aggregation's pure translations, one decision
+each: [a client's send and a re-sent copy as an opening](./receipt/to-ws-queue-box-server-receipt-opening.ts)
+with the frozen audience; [a server publication's opening](./receipt/to-ws-queue-box-server-own-receipt-opening.ts)
+from the server's pending receipt row; [a receipt as a control](./receipt/to-ws-queue-box-server-receipt-control.ts),
+its encodability and the ended receipt's derived control id;
+[which ACKs the record counts](./receipt/to-ws-queue-box-server-counted-ack.ts) and the count's
+observation; [where an ACK that finds no head goes](./receipt/resolve-ws-queue-box-server-head-absent-ack.ts);
+[an outside-audience NACK as an `outside` confirmation](./receipt/to-ws-queue-box-server-outside-audience-confirmation.ts)
+and the retry window's reconciliation from the row; and
+[a retry narrowed by the record](./receipt/to-ws-queue-box-server-unconfirmed-repair-request.ts).
 [Contracts](./ws-queue-box-server-contracts.ts) declare the external authority,
 target, scope and delivery ports. The `scope/` translations prove producer and
 recipient scope at their current admission/send boundaries; they add no second
@@ -65,10 +77,13 @@ guards); a count names no source, since every instance counts the ACKs it receiv
 and none is relayed to another. The authority carries its already-read
 peer/scope/clock facts; the service reports its final actual socket result.
 
-`acceptControlMessage`, the one count path, reports what its count read (the
-outcome, and the view a counted ACK returned) in `finally` after any `end`; a
-count the store failed reports nothing. The ended work's terminal receipt reports
-its outbox observation in `finally` after the settlement.
+`acceptControlMessage`, the one path that counts an ACK, reports what its count
+read (the outcome, and the view a counted ACK returned) in `finally` after any
+`end`; a count the store failed reports nothing. The `outside` confirmations the
+record takes from a server publication's outside-audience NACK, or from its
+pending row at a retry window, report no count. The ended work's terminal receipt
+reports its outbox observation in `finally` after the settlement; a server
+publication's enqueues nothing and reports none.
 A thrown enqueue exposes no enqueue verdict; an actual returned enqueue verdict
 is captured before the settlement consumer and remains observable if settlement
 throws. Sink failures are guarded. Diagnostics have no authority over delivery.
@@ -153,10 +168,45 @@ Follow these production paths directly when reviewing a change:
    settlement and observations as in probe 2. A store failure in any of
    these reads or writes propagates; a refused or conflicting count is a typed
    outcome. No relay path remains: an ACK counts on the instance it reaches.
-4. Queued send: outbound runtime → service `sendPreparedMessage` → dequeue
+4. Server publication. Opening: the dequeue commit writes the server's pending
+   receipt row → service `afterDequeueAdmission` → service `writeOwnReceiptOpening`
+   (the server's own message, a logical ACK mode) → admission store
+   `readPendingAck` → aggregation `writeOwnReceiptOpening` → `openOwnReceipt` →
+   `toWsQueueBoxServerOwnReceiptOpening` (the row's expected set; a deadline half
+   an ACK window before the row's retransmission budget ends) → `isEncodable` →
+   `ALReceiptRecord.open` (the absent head is its guard) → worker `committed`; a
+   view already complete is ended at once. The hook's `finally` publishes the
+   cluster copies; a record failure then propagates and the outbound work dequeues
+   the row again, which sends every copy again.
+   Its ACK: a session's ACK addressed to the server passes no refusal hook (the
+   inbound authorization admits a control addressed to its own receiver before the
+   hook, and the origin bypass `isALOriginAcknowledgement` skips the control-owner
+   read) → aggregation `acceptControlMessage` →
+   `acceptAck` → `writeConfirmation` → `ALReceiptRecord.count`; on `head-absent`,
+   `readHeadAbsentAck` reads the pending row (`readOwnPendingReceipt`) and
+   `resolveWsQueueBoxServerHeadAbsentAck` routes it: `countAhead` when the row's
+   opening would open and expects the sender, refused when it expects another,
+   the outbound owner's per-ACK count when it would not open or no logical row
+   exists. The server's own `not-sent` is counted ahead unproven. A complete view →
+   `endReceipt` → `end` → worker `committed` → ended work → `writeEndedReceipt` →
+   `admitServerReceipt` → `acceptServerReceipt`, which settles the pending row.
+   An outside-audience NACK reaches the outbound owner first; `writeOutsideAudienceNack`
+   then counts it `outside` when the row names that recipient outside.
+   Its retry: the row's `ack-timeout` window → service `planRepairMessage` →
+   `readRepairView` → aggregation `readRepairView`. A missing head opens from the
+   pending row (`openOwnRepairView` → `readOwnPendingReceipt` → `openOwnReceipt`,
+   as at the dequeue; on `conflict` the winning head is read); an open head first
+   counts `outside` each recipient the row places outside and the record does not
+   name (`writeUnrecordedOutside`). A complete open view is ended (`endReceipt`)
+   and plans nothing; otherwise `toWsQueueBoxServerUnconfirmedRepairRequest`
+   narrows the retransmission to the recipients the record has not answered, and
+   an ended head, or one past its deadline, plans none.
+   A re-sent copy is answered under a fresh control id (`newControlId`); only the
+   ended work's deliveries share `toWsQueueBoxServerEndedReceiptControlId`.
+5. Queued send: outbound runtime → service `sendPreparedMessage` → dequeue
    authority and cluster publication or actual recipient scope/identity check →
    socket send/owned settled result. Receipt-row retries are separate from enqueue.
-5. Evidence: each owner → private union → API adapter → stdout → safe JSONL and
+6. Evidence: each owner → private union → API adapter → stdout → safe JSONL and
    summary. Unsafe exact sets and oversized lines are rejected, never truncated
    into a claimed complete set. Default-off skips diagnostic copies and clocks.
 
