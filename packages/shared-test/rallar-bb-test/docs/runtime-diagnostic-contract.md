@@ -939,19 +939,22 @@ publication succeed. The event's `data` is the event itself:
   `claimedCount` is a ceiling on the `claim-settled` events of one drain, never a
   guarantee of the count, and silence establishes no claim outcome
 - `rotation-alive` carries `workerId`, `rotationCount`, `durationMs` and
-  `longestRotationMs`, built from completed rotations, each one a walk from the
-  head of NEW through RETRY and RESERVED back to it, whichever probes and
-  batches read its pages. It is stated at most once per
-  `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS` (3 s) window: the first rotation that
+  `longestRotationReadMs`, built from completed rotations, each one a walk from
+  the head of NEW through RETRY and RESERVED back to it, whichever probes and
+  batches read its pages. It is stated at most once per window of the idle
+  ceiling less the engine's 20 % jitter, `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS × (1 −
+  INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO)` (2.4 s): the first rotation that
   completes at least that long after the window opened states it, and the next
   window opens there. `rotationCount` is the rotations of the window,
-  `durationMs` its wall time, and `longestRotationMs` the slowest single rotation
-  from its first page read to its wrap, so one crawling scan is not averaged away
-  by the rest. An idle engine passes at least once per idle ceiling and every
-  pass walks the rotation, so a live owner states one about every 3 to 3.6 s, and
-  silence well beyond that means its rotation stopped. It is the liveness witness
-  the suppression above costs: without it a rotation that keeps finding nothing
-  and a rotation that stopped running both report nothing at all
+  `durationMs` its wall time, and `longestRotationReadMs` the slowest single
+  rotation's own page reads, summed, each timed from before its read to its
+  settlement, so the engine's time between reads is not in it and one crawling
+  scan is not averaged away by the rest. An idle engine passes 2.4 to 3.6 s apart
+  at its jittered ceiling and every pass walks the rotation, so a live idle owner
+  states one on every idle pass, and silence well beyond 3.6 s means its rotation
+  stopped. It is the liveness witness the suppression above costs: without it a
+  rotation that keeps finding nothing and a rotation that stopped running both
+  report nothing at all
 - `rotation-alive` also carries `deferredRotationCount`, how many of the
   window's rotations held back at least one due row, and `latestDeferred`, the
   `{ effectId, dueAtMs }` rows the latest such rotation held back, oldest first,
@@ -1016,12 +1019,13 @@ identity and independently retained storage/native evidence.
 After a submission's `admission-outcome`, the receiver's events say where its
 delivery waited:
 
-| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                          |
-| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                       |
-| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rotations read it and held it back (eligibility), or the port left it unreserved |
-| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                      |
-| None of the three, and no `rotation-alive` after the admission                                       | No later rotation is captured; alone this cannot prove a blocked or stopped one  |
+| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                         |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                      |
+| The dispatch effect id in an `effect-drain.deferred`                                                 | That batch's page held it back (eligibility), or the port left it unreserved    |
+| The dispatch effect id in a `rotation-alive.latestDeferred`                                          | Rotations read it and held it back (eligibility)                                |
+| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                     |
+| None of these, and no `rotation-alive` after the admission                                           | No later rotation is captured; alone this cannot prove a blocked or stopped one |
 
 `commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
 writes that field, on this topic or the outbound one, so no reader may depend on

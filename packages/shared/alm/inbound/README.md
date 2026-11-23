@@ -1071,12 +1071,14 @@ warning. A throw in the WS server's round sends the messages before it a second 
 receivers drop by message id.
 
 The probe walks the rotation. It reads pages back to back until one holds work it can claim, and
-then answers due now and holds that page for the batch that follows; or until the stored rotation is
-back at the head of NEW, and then answers the earliest readiness it scanned, or no work. The next
-probe continues after the claimed page, so one status never hides work on the next. A head read
-stores no position, a rotation read stores its position only from the position it was read at, and
-a read a commit or a batch took from the probe mid-read ends the walk as due — that commit owes a
-head read, and the batch it starts runs it — so a walk ends within one rotation. A batch therefore
+then answers due now and holds that page for the batch that follows; or until a rotation it read
+from the head of NEW wraps, and then answers the earliest readiness it scanned, its head reads'
+included, or no work. A walk that starts mid-rotation finishes that rotation and reads one more
+whole, so it never answers without having read every status. The next probe continues after the
+claimed page, so one status never hides work on the next. A head read stores no position, a
+rotation read stores its position only from the position it was read at, and a read a commit or a
+batch took from the probe mid-read ends the walk as due — that commit owes a head read, and the
+batch it starts runs it — so a walk reads at most about two rotations. A batch therefore
 runs only for a page it can claim from, or for a commit, and the engine's own idle backoff, 100 ms
 doubling to the 3 s idle ceiling, paces an idle lane
 ([`al-inbound-idle-engine-pass-rate.test.ts`](../../../tests/shared/alm/inbound/al-inbound-idle-engine-pass-rate.test.ts)).
@@ -1089,8 +1091,9 @@ owners use, so every engine pass walks the rotation again and re-reads it: at on
 refresh), and otherwise on the engine's idle backoff, within the idle ceiling plus its jitter.
 Measured over a hundred engine passes of an idle owner — `al-indexeddb-operation-counts.test.ts`,
 both an empty queue and one holding a row no consumer claims — each pass walks NEW, RETRY and
-RESERVED once, 299 page reads in all (the first pass finishes the rotation the bootstrap batch
-began), and no batch runs.
+RESERVED once, 302 page reads in all (the first pass also finishes, at RETRY and RESERVED, the
+rotation the bootstrap batch began), and no batch runs. Over a held backlog an idle pass reads one
+rotation's pages and makes one eligibility read per held row.
 
 The runtime relays no `readiness-probe` for it. One event per engine round is cheap in
 storage and expensive in the conformance lane, where every relayed diagnostic is a round
@@ -1108,11 +1111,12 @@ claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ra
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
 decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
 Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
-`rotation-alive` from completed rotations, at most once per `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS`
-window: the first rotation that completes at least that long after the window opened states it
-(`rotationCount`, and the window's `durationMs`) and opens the next, and `longestRotationMs`, from a
-rotation's first page read to its wrap, keeps one crawling scan from being averaged away by the
-rest. Each `claim-settled`
+`rotation-alive` from completed rotations, at most once per `AL_INBOUND_ROTATION_WINDOW_MS` window,
+the idle ceiling less its 20 % jitter (2.4 s): the first rotation that completes at least that long
+after the window opened states it (`rotationCount`, and the window's `durationMs`) and opens the
+next, so every idle pass, 2.4 to 3.6 s apart, states one. `longestRotationReadMs`, the slowest
+rotation's own page reads summed, each from before its read to its settlement, keeps one crawling
+scan from being averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
 acts on) and the three instants a delivery's wait splits at — `dueAtMs`, when its row became
 due; `batchStartedAtMs`, when its batch's run loop started, after that batch's selection and
