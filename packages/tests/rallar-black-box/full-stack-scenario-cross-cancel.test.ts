@@ -33,6 +33,8 @@ const receiverConnectId = baseline.receiver.commands.find((command) => command.k
 const ROLE_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the role\'s wait failed' };
 /** What an agent reports for a recipe the lane cancelled. */
 const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'cancelled by the lane' };
+const ROLE_FAILURE_SUMMARY = `${ROLE_FAILURE.code}: ${ROLE_FAILURE.message}`;
+const LANE_CANCELLED_SUMMARY = `${LANE_CANCELLED.code}: ${LANE_CANCELLED.message}`;
 
 /** How a root started on the run ends: failing at once, passing at once, or only once the lane cancels it. */
 type RootEnd = 'fails' | 'passes' | 'runs-until-cancelled';
@@ -92,6 +94,10 @@ function toCrossCancelRun(
     };
 }
 
+function toPostedRuns(posted: readonly RecordedControlCommand[]): readonly string[] {
+    return posted.filter(({ command }) => command.kind === 'recipe.run').map(({ commandId }) => commandId);
+}
+
 function toPostedCancels(posted: readonly RecordedControlCommand[]) {
     return posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ agentId, commandId, command }) => ({
         agentId,
@@ -103,6 +109,16 @@ function toPostedCancels(posted: readonly RecordedControlCommand[]) {
 describe('a scenario role that ends not ok cancels its peers', () => {
     const senderRunId = `${baseline.sender.recipeId}-run`;
     const receiverRunId = `${baseline.receiver.recipeId}-run`;
+    const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
+    const successorRunId = `${successor.recipeId}-run`;
+    // The owner's page ends by a close and nothing else of it is read.
+    const ownerPage = { close: async () => undefined } as Playwright.Page;
+    const runTrio = async (run: RecipePairRun, successorGate: string | undefined) =>
+        await runRecipeTrioOnSameContext(
+            run,
+            { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate },
+            { sender: baseline.sender, receiver: baseline.receiver, successor }
+        );
 
     it('leaves a passing pair as it was: no cancel, and neither role cancelled', async () => {
         const control = await openRecordingControlRequest('cross-cancel-run');
@@ -186,42 +202,70 @@ describe('a scenario role that ends not ok cancels its peers', () => {
         }
     });
 
-    it('cancels the same-context receiver and the successor started after the owner failed, each as cancelled after the owner', async () => {
-        const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
-        const successorRunId = `${successor.recipeId}-run`;
+    it('cancels the same-context receiver once the owner failed, and never starts the successor', async () => {
         const control = await openRecordingControlRequest('cross-cancel-run');
         const run = toCrossCancelRun(
             control,
             new Map([
                 [senderRunId, 'fails'],
                 [receiverRunId, 'runs-until-cancelled'],
-                [successorRunId, 'runs-until-cancelled']
+                [successorRunId, 'passes']
             ])
         );
-        // The owner's page ends by a close and nothing else of it is read.
-        const ownerPage = { close: async () => undefined } as Playwright.Page;
         try {
-            const outcome = await runRecipeTrioOnSameContext(
-                run,
-                {
-                    owner: { ...run.sender, page: ownerPage },
-                    successor: { agentId: 'successor-agent' },
-                    ownerEnd: 'close',
-                    successorGate: undefined
-                },
-                { sender: baseline.sender, receiver: baseline.receiver, successor }
-            );
+            const outcome = await runTrio(run, undefined);
 
-            expect(toPostedCancels(control.posted).map(({ commandId }) => commandId).toSorted()).toEqual(
-                [`cancel-${receiverRunId}`, `cancel-${successorRunId}`].toSorted()
-            );
-            expect(outcome.sender).toMatchObject({ ok: false, cancelledAfter: undefined });
-            expect(outcome.receiver).toMatchObject({ ok: false, cancelledAfter: senderRunId });
-            expect(outcome.successor).toMatchObject({ ok: false, cancelledAfter: senderRunId });
+            expect(toPostedRuns(control.posted)).toEqual([receiverRunId, senderRunId]);
+            expect(toPostedCancels(control.posted).map(({ commandId }) => commandId)).toEqual([`cancel-${receiverRunId}`]);
+            expect(outcome).toStrictEqual({
+                sender: { commandId: senderRunId, ok: false, summary: ROLE_FAILURE_SUMMARY, cancelledAfter: undefined },
+                receiver: { commandId: receiverRunId, ok: false, summary: LANE_CANCELLED_SUMMARY, cancelledAfter: senderRunId },
+                successor: { commandId: successorRunId, ok: false, summary: 'not started', cancelledAfter: senderRunId }
+            });
         }
         finally {
             vi.restoreAllMocks();
             await control.close();
         }
     });
+
+    it.each([undefined, 'owner-gate'])(
+        'cancels the same-context owner while it runs once the receiver failed, and never starts the successor, with gate %s',
+        async (successorGate) => {
+            const control = await openRecordingControlRequest('cross-cancel-run');
+            const run = toCrossCancelRun(
+                control,
+                new Map([
+                    [senderRunId, 'runs-until-cancelled'],
+                    [receiverRunId, 'fails'],
+                    [successorRunId, 'passes']
+                ])
+            );
+            try {
+                const outcome = await runTrio(run, successorGate);
+
+                expect(toPostedRuns(control.posted)).toEqual([receiverRunId, senderRunId]);
+                expect(toPostedCancels(control.posted)).toEqual([{
+                    agentId: 'sender-agent',
+                    commandId: `cancel-${senderRunId}`,
+                    command: {
+                        kind: 'recipe.cancel',
+                        targetCommandId: senderRunId,
+                        reason: `${senderRunId} cancelled after ${receiverRunId} ended not ok.`
+                    }
+                }]);
+                expect(outcome).toStrictEqual({
+                    sender: { commandId: senderRunId, ok: false, summary: LANE_CANCELLED_SUMMARY, cancelledAfter: receiverRunId },
+                    receiver: { commandId: receiverRunId, ok: false, summary: ROLE_FAILURE_SUMMARY, cancelledAfter: undefined },
+                    successor: { commandId: successorRunId, ok: false, summary: 'not started', cancelledAfter: receiverRunId }
+                });
+            }
+            finally {
+                vi.restoreAllMocks();
+                await control.close();
+            }
+        },
+        // Before the fix the owner waits out its deadline and grace; a few polls are enough with it.
+        10_000
+    );
 });

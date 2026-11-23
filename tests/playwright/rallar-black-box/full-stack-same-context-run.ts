@@ -9,6 +9,7 @@ import {
     readFullStackConfig,
     startRecipeRun,
     startRecipientRecipeRun,
+    toNotStartedRecipeRunOutcome,
     uniqueAgentId,
     waitForControlRunAgent,
     type FullStackTestIdentity,
@@ -106,7 +107,8 @@ export async function openSuccessorPage(input: OpenSuccessorPageInput): Promise<
  * The server keeps one socket per auth session and a second one replaces the first. Without a gate the two pages never
  * connect at once: the owner runs the sender recipe and ends, and only then does the successor run. With one, the
  * successor's connect replaces the running owner's socket, which stays closed, as a replaced tab's does. The three roots
- * are one scenario's: a root that ends not ok cancels the others once they are read, and a successor started after it.
+ * are one scenario's, each read from its start: a root that ends not ok cancels the others still running, and the
+ * successor does not start after it. A failure of the pages' own steps cancels the receiver before it is thrown.
  */
 export async function runRecipeTrioOnSameContext(
     run: RecipePairRun,
@@ -115,27 +117,26 @@ export async function runRecipeTrioOnSameContext(
 ): Promise<SameContextOutcome> {
     const scenario = createScenarioRoots();
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
-    const pageRuns = pages.successorGate === undefined
-        ? await runOwnerThenSuccessor(run, { pages, recipes, scenario })
-        : await runSuccessorBesideOwner(run, {
-            pages: { ...pages, successorGate: pages.successorGate },
-            recipes,
-            scenario
+    const receiver = scenario.readOutcome(receiverRun);
+    const input = { pages, recipes, scenario };
+    const pageRuns = (pages.successorGate === undefined
+        ? runOwnerThenSuccessor(run, input)
+        : runSuccessorBesideOwner(run, { ...input, pages: { ...pages, successorGate: pages.successorGate } }))
+        .catch((error: unknown) => {
+            receiverRun.cancelAfter(toPageStepsFailure(recipes.sender, error));
+            throw error;
         });
-    const [sender, successor, receiver] = await Promise.allSettled([
-        pageRuns.sender,
-        scenario.readOutcome(pageRuns.successor),
-        scenario.readOutcome(receiverRun)
-    ]);
+    const [pageOutcomes, receiverOutcome] = await Promise.allSettled([pageRuns, receiver]);
+    const { sender, successor } = requireOutcome(pageOutcomes);
     if (pages.successorGate !== undefined) {
         await endOwnerPage(pages.owner.page, pages.ownerEnd);
     }
-    return { sender: requireOutcome(sender), receiver: requireOutcome(receiver), successor: requireOutcome(successor) };
+    return { sender, receiver: requireOutcome(receiverOutcome), successor };
 }
 
-interface SameContextPageRuns {
-    readonly sender: Promise<RecipeRunOutcome>;
-    readonly successor: StartedRecipeRun;
+interface SameContextPageOutcomes {
+    readonly sender: RecipeRunOutcome;
+    readonly successor: RecipeRunOutcome;
 }
 
 interface SameContextPageRunInput<P extends SameContextPages> {
@@ -146,35 +147,75 @@ interface SameContextPageRunInput<P extends SameContextPages> {
 
 async function runOwnerThenSuccessor(
     run: RecipePairRun,
-    { pages, recipes, scenario }: SameContextPageRunInput<SameContextPages>
-): Promise<SameContextPageRuns> {
+    input: SameContextPageRunInput<SameContextPages>
+): Promise<SameContextPageOutcomes> {
+    const { pages, recipes, scenario } = input;
     const sender = await scenario.readOutcome(await startRecipeRun(run, pages.owner, recipes.sender));
     await endOwnerPage(pages.owner.page, pages.ownerEnd);
-    return {
-        sender: Promise.resolve(sender),
-        successor: await startRecipeRun(run, pages.successor, recipes.successor)
-    };
+    return { sender, successor: await readSuccessorOutcome(run, input) };
 }
 
 /**
  * The successor starts once the owner's gate command passed, or at once when the owner's recipe already ended; a gate
- * that does neither within its timeout fails the cell before the successor starts.
+ * that does neither within its timeout fails the cell before the successor starts, the owner cancelled first.
  */
 async function runSuccessorBesideOwner(
     run: RecipePairRun,
-    { pages, recipes, scenario }: SameContextPageRunInput<SameContextPages & Readonly<{ successorGate: string; }>>
-): Promise<SameContextPageRuns> {
-    const ownerRun = await startRecipeRun(run, pages.owner, recipes.sender);
-    await waitForRecipeGate(run, {
-        commandId: pages.successorGate,
-        gatingRun: ownerRun,
-        timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
-    });
-    const successor = await startRecipeRun(run, pages.successor, recipes.successor);
-    return { sender: scenario.readOutcome(ownerRun), successor };
+    input: SameContextPageRunInput<SameContextPages & Readonly<{ successorGate: string; }>>
+): Promise<SameContextPageOutcomes> {
+    const ownerRun = await startRecipeRun(run, input.pages.owner, input.recipes.sender);
+    const [successor, sender] = await Promise.allSettled([
+        readGatedSuccessorOutcome(run, { ...input, ownerRun }),
+        input.scenario.readOutcome(ownerRun)
+    ]);
+    const successorOutcome = requireOutcome(successor);
+    return { sender: requireOutcome(sender), successor: successorOutcome };
 }
 
-function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {
+async function readGatedSuccessorOutcome(
+    run: RecipePairRun,
+    input:
+        & SameContextPageRunInput<SameContextPages & Readonly<{ successorGate: string; }>>
+        & Readonly<{
+            ownerRun: StartedRecipeRun;
+        }>
+): Promise<RecipeRunOutcome> {
+    try {
+        await waitForRecipeGate(run, {
+            commandId: input.pages.successorGate,
+            gatingRun: input.ownerRun,
+            timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
+        });
+    }
+    catch (error) {
+        input.ownerRun.cancelAfter(toPageStepsFailure(input.recipes.sender, error));
+        throw error;
+    }
+    return await readSuccessorOutcome(run, input);
+}
+
+/** The successor starts while no root of the scenario ended not ok; after one did, it is reported not started. */
+async function readSuccessorOutcome(
+    run: RecipePairRun,
+    { pages, recipes, scenario }: SameContextPageRunInput<SameContextPages>
+): Promise<RecipeRunOutcome> {
+    const failure = scenario.getFailure();
+    return failure === undefined
+        ? await scenario.readOutcome(await startRecipeRun(run, pages.successor, recipes.successor))
+        : toNotStartedRecipeRunOutcome(recipes.successor, failure);
+}
+
+/** What a root cancelled after the pages' own steps failed is cancelled after: the owner's recipe, whose steps they are. */
+function toPageStepsFailure(owner: RallarBlackBoxTestRecipe, error: unknown): RecipeRunOutcome {
+    return {
+        commandId: owner.recipeId,
+        ok: false,
+        summary: error instanceof Error ? error.message : String(error),
+        cancelledAfter: undefined
+    };
+}
+
+function requireOutcome<T>(outcome: PromiseSettledResult<T>): T {
     if (outcome.status === 'rejected') {
         throw outcome.reason;
     }

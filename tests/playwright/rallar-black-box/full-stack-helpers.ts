@@ -1259,6 +1259,19 @@ async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Prom
     return toRecipeRunOutcome(root.commandId, result, result.ok === true ? undefined : peer?.commandId);
 }
 
+/** A recipe the lane held back because a root of its scenario ended not ok first: it never ran, so it never passed. */
+export function toNotStartedRecipeRunOutcome(
+    recipe: RallarBlackBoxTestRecipe,
+    peer: RecipeRunOutcome
+): RecipeRunOutcome {
+    return {
+        commandId: toRecipeRunCommandId(recipe),
+        ok: false,
+        summary: 'not started',
+        cancelledAfter: peer.commandId
+    };
+}
+
 function toRecipeRunOutcome(
     commandId: string,
     result: ControlResultEnvelope,

@@ -219,7 +219,7 @@ it('closes a newly opened successor page when registration fails, keeping its sh
     }
 });
 
-it('rejects without starting the successor when the owner\'s gate neither passes nor ends within its timeout', async () => {
+it('rejects without starting the successor, the owner cancelled, when the owner\'s gate neither passes nor ends within its timeout', async () => {
     const baseline = createAlmConformanceRecipes({
         group,
         carrier: 'ws',
@@ -274,7 +274,8 @@ it('rejects without starting the successor when the owner\'s gate neither passes
             { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
         )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
-        expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
+        // The owner's recipe is read from its start, so it is cancelled rather than left running past the failed gate.
+        expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId, `cancel-${ownerRunId}`]);
     }
     finally {
         vi.restoreAllMocks();
