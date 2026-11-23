@@ -304,6 +304,81 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
+    it.each([
+        { first: 'failed', ok: false, continued: false },
+        { first: 'passed', ok: true, continued: true }
+    ])('does not start a continuation after its role\'s first recipe failed: the first recipe $first', async ({ ok, continued }) => {
+        const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+        const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
+        const continuation = {
+            role: 'sibling',
+            gate: { role: 'receiver', commandId: 'receiver-p4-confirmed' },
+            recipe: { ...sibling, recipeId: `${sibling.recipeId}-continuation` }
+        } as const;
+        const siblingRunId = `${sibling.recipeId}-run`;
+        const continuationRunId = `${continuation.recipe.recipeId}-run`;
+        const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+        const control = await openRecordingControlRequest('failed-first-run');
+        const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
+        const toPassedEvent = (commandId: string) => ({
+            kind: 'event' as const,
+            protocolVersion: 1 as const,
+            runId: 'failed-first-run',
+            agentId: 'receiver-agent',
+            atEpochMs: 1,
+            eventId: `event-${commandId}`,
+            commandId,
+            payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
+        });
+        // The gate passed and every recipe ended; only the sibling's first recipe may have failed.
+        const run: AgentRecipeRun = {
+            request: control.request,
+            runId: 'failed-first-run',
+            agents: new Map([
+                ['sender', { agentId: 'sender-agent' }],
+                ['receiver', { agentId: 'receiver-agent' }],
+                ['sibling', { agentId: 'sibling-agent' }]
+            ]),
+            startedRoots: [],
+            readSnapshot: async () => ({
+                runId: 'failed-first-run',
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 2,
+                agents: [],
+                commands: [],
+                events: [toPassedEvent(connect), toPassedEvent('receiver-p4-confirmed')],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+                results: posted().map((commandId) => ({
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'failed-first-run',
+                    agentId: 'observed-agent',
+                    commandId,
+                    ok: commandId !== siblingRunId || ok
+                }))
+            })
+        };
+        try {
+            const outcome = await runRecipesOnAgents(
+                run,
+                new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
+                continuation
+            );
+
+            expect(posted().includes(continuationRunId)).toBe(continued);
+            expect(outcome.continuation).toEqual(
+                continued ? { commandId: continuationRunId, ok: true, summary: 'ok' } : undefined
+            );
+            expect(outcome.roles.get('sibling')).toMatchObject({ commandId: siblingRunId, ok });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('closes every agent\'s room connection before the next cell, and returns once each close passed', async () => {
         const control = await openRecordingControlRequest('four-role-run');
         const request = control.request;
