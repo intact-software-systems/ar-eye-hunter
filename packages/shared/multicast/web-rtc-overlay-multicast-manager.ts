@@ -98,9 +98,9 @@ import {
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from './publication/compute-rtc-granted-publication-refusal.ts';
-import { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
 import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
+import { RtcSignedPublicationCarrier } from './publication/rtc-signed-publication-carrier.ts';
 import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscription-reader.ts';
 import {
     readRtcGroupSnapshotByRef,
@@ -241,7 +241,7 @@ export class WebRtcOverlayMulticastManager {
     private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
     /** An ES private field: the advanced middleware hands app code this manager, never its signing carrier. */
-    readonly #publications: RtcGrantedPublicationCarrier;
+    readonly #publications: RtcSignedPublicationCarrier;
     private readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
@@ -262,7 +262,7 @@ export class WebRtcOverlayMulticastManager {
         this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
-        this.#publications = new RtcGrantedPublicationCarrier({
+        this.#publications = new RtcSignedPublicationCarrier({
             groupCache: dependencies.groupCache,
             grantedTopics: dependencies.grantedTopics,
             publicationCrypto: dependencies.publicationCrypto,
@@ -392,7 +392,8 @@ export class WebRtcOverlayMulticastManager {
      * One sender carrier leg. A granted publication is frozen to its subscribers and signed once, in its first
      * admission, after that admission's read stamped it; or refused as unsupported before admission, the refusal a
      * fallback carrier takes over. Every fallback verdict its carried leg reaches (a signer that cannot sign in the
-     * admission among them) names the leg its sender gave, as those refusals do.
+     * admission among them) names the leg its sender gave, as those refusals do. A receipted room send is signed by
+     * its carrier's signer in the first dispatch that holds its frozen audience and its room snapshot.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
@@ -613,7 +614,7 @@ export class WebRtcOverlayMulticastManager {
             qos: this.readForwardingQosInput(msg, context, fromPeerId)
         });
         const planned = this.planOutboundDispatch(
-            this.#publications.toForwardedMessage(msg, dispatchPlan.handlingPlan.effective),
+            toProofPreservingALOutboundMessage(msg, dispatchPlan.handlingPlan.effective),
             dispatchPlan
         );
         return {
@@ -1229,7 +1230,7 @@ export class WebRtcOverlayMulticastManager {
     private planRepairMessage(
         msg: ALMessage,
         request: ALOutboundRepairRequest,
-        isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
+        isRepairTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
         if (request.requestedByPeerId) {
             return toRtcFrozenAudienceRepairPlan(

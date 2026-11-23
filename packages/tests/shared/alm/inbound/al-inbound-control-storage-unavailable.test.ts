@@ -165,7 +165,7 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
         observations: read.observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId: 'acked-msg', senderId: 'peer-1', source, supersedenceKey: null, deliveredLocally: true },
+            value: { msgId: 'acked-msg', senderId: 'peer-1', source, supersedenceKey: null, deliveredLocally: true, originAuthenticated: false },
             expireAtTimestamp
         }, {
             kind: 'set-control-pending',

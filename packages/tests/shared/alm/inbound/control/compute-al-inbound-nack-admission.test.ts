@@ -82,7 +82,8 @@ function computeArrival(
             senderId: 'origin',
             source: { kind: 'rtc-peer', peerId: 'parent' },
             supersedenceKey: null,
-            deliveredLocally: false
+            deliveredLocally: false,
+            originAuthenticated: false
         },
         pending: row,
         acks,

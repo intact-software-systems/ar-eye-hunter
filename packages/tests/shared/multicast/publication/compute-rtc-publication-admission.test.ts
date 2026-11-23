@@ -34,6 +34,12 @@ const ROOM: PublicationRoomInput = {
     grants: { a: PUBLISH_AND_SUBSCRIBE, b: PUBLISH_AND_SUBSCRIBE }
 };
 
+/** A frame whose topic the page does not grant and that asks no logical receipt: it needs no proof. */
+const NEEDS_NO_PROOF = { topicGranted: false, proofRequired: false } as const;
+
+/** A receipted room send on a topic the page does not grant: it needs a proof and no grant (D756). */
+const RECEIPTED_ROOM_SEND = { topicGranted: false, proofRequired: true } as const;
+
 describe('computeRtcPublicationAdmission', () => {
     it.each<[string, Partial<RtcPublicationAdmissionInput>, RtcPublicationRefusalCode]>([
         ['no readable snapshot', { snapshot: null }, 'no-authority'],
@@ -82,25 +88,25 @@ describe('computeRtcPublicationAdmission', () => {
         ['a snapshot older than the frame', 'authority-ahead', {
             snapshot: createPublicationRoomSnapshot({ ...ROOM, snapshotVersion: 2 })
         }],
-        ['a snapshot as new as the frame', 'proof-on-ungranted-topic', {}],
-        ['a snapshot newer than the frame', 'proof-on-ungranted-topic', {
+        ['a snapshot as new as the frame', 'proof-not-required', {}],
+        ['a snapshot newer than the frame', 'proof-not-required', {
             snapshot: createPublicationRoomSnapshot({ ...ROOM, snapshotVersion: 4 })
         }]
-    ])('judges a proof on a topic the page does not grant by snapshot freshness first: %s answers %s', (_name, code, override) => {
-        const admission = computeRtcPublicationAdmission({ ...toAdmissionInput(), topicGranted: false, ...override });
+    ])('judges a proof on a frame that needs none by snapshot freshness first: %s answers %s', (_name, code, override) => {
+        const admission = computeRtcPublicationAdmission({ ...toAdmissionInput(), ...NEEDS_NO_PROOF, ...override });
 
         expect(admission.left).toEqual({ code });
     });
 
-    it('refuses a proof on a topic the page does not grant on a frame naming no room before anything else: no snapshot can grant it', () => {
+    it('refuses a proof on a frame that needs none and names no room before anything else: no snapshot can grant it', () => {
         const admission = computeRtcPublicationAdmission({
             ...toAdmissionInput(),
-            topicGranted: false,
+            ...NEEDS_NO_PROOF,
             snapshot: null,
             message: { ...createSignedLookingMulticast(), targets: { mode: 'broadcast', scope: 'world' } }
         });
 
-        expect(admission.left).toEqual({ code: 'proof-on-ungranted-topic' });
+        expect(admission.left).toEqual({ code: 'proof-not-required' });
     });
 
     it('fails closed on a null snapshot before it reads anything else of the frame', () => {
@@ -159,6 +165,31 @@ describe('computeRtcPublicationAdmission', () => {
         expect([revoked.left?.code, subscribed.right]).toEqual(['no-publish-grant', { delivery: 'deliver' }]);
     });
 
+    it.each<[string, Partial<RtcPublicationAdmissionInput>, RtcPublicationRefusalCode]>([
+        ['no proof', { message: createSignedLookingMulticast({ proof: undefined }) }, 'missing-proof'],
+        ['a forged senderId naming a member whose key differs', {
+            message: createSignedLookingMulticast({ senderId: 'b', keyId: 'key-a' })
+        }, 'unknown-key'],
+        ['a proof the verifier did not verify', { signatureValid: false }, 'invalid-signature'],
+        ['no readable snapshot', { snapshot: null }, 'no-authority']
+    ])('refuses a receipted room send with %s as %s, as it refuses a granted frame', (_name, override, code) => {
+        const admission = computeRtcPublicationAdmission({ ...toAdmissionInput(), ...RECEIPTED_ROOM_SEND, ...override });
+
+        expect(admission.left).toEqual({ code });
+    });
+
+    it('delivers a verified receipted room send by its room plan alone: it reads no grant and no token', () => {
+        const admission = computeRtcPublicationAdmission({
+            ...toAdmissionInput(),
+            ...RECEIPTED_ROOM_SEND,
+            snapshot: createPublicationRoomSnapshot({ ...ROOM, grants: {} }),
+            ownSubscriptionActive: false,
+            frozenRecipient: false
+        });
+
+        expect(admission.right).toEqual({ delivery: 'deliver' });
+    });
+
     it('carries no payload resource in any refusal it returns', () => {
         const message = createSignedLookingMulticast({ text: 'secret-resource-text' });
         const refusals = [
@@ -203,6 +234,7 @@ function toAdmissionInput(): RtcPublicationAdmissionInput {
     return {
         message: createSignedLookingMulticast(),
         topicGranted: true,
+        proofRequired: true,
         snapshot: createPublicationRoomSnapshot(ROOM),
         selfPrincipalId: 'b',
         signatureValid: true,

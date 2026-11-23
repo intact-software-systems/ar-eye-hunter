@@ -304,5 +304,5 @@ async function readOrderingStatus(
     nowMs: number
 ): Promise<string | undefined> {
     const read = await readInboundTestDecisionSurface(admissionStore, message, nowMs);
-    return computeALInboundPlanningObservations(read).orderingObservation?.status;
+    return computeALInboundPlanningObservations(read, false).orderingObservation?.status;
 }

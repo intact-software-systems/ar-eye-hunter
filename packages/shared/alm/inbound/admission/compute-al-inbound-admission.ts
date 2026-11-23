@@ -74,6 +74,10 @@ export interface ComputeALInboundAdmissionInput {
     readonly canForward: boolean;
     /** Whether the parent a relay row of this message records is still a member of the room and reachable. */
     readonly recordedParentPresent: boolean;
+    /** Whether the arriving copy is origin-authenticated, which its owner row records. */
+    readonly originAuthenticated: boolean;
+    /** Whether it is admitted as new over an unauthenticated first admission (`isALInboundOriginAuthenticatedReadmission`). */
+    readonly readmission: boolean;
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -172,7 +176,8 @@ function computeALInboundAdmissionChanges(
         msg: read.msg,
         plan: read.plan,
         carrier: toALDeliveryCarrier(read.source),
-        fromPeerId: read.fromPeerId
+        fromPeerId: read.fromPeerId,
+        readmission: input.readmission
     };
     if (read.plan.dropReason) {
         const duplicate = computeALInboundDuplicateChanges(read, {
@@ -189,7 +194,8 @@ function computeALInboundAdmissionChanges(
         };
     }
 
-    const shouldForward = input.canForward && read.plan.forwarding.enabled;
+    // A readmission is not forwarded: this peer's outbound already holds the first admission's copy under its id.
+    const shouldForward = input.canForward && read.plan.forwarding.enabled && !input.readmission;
     const acknowledgements = computeIncomingAcknowledgements(read, shouldForward);
     const delivery = read.plan.localDelivery.deferred || isALInboundNotSubscribedPlan(read.plan)
         ? toALInboundNegativeControlEffects(controls)
@@ -197,7 +203,7 @@ function computeALInboundAdmissionChanges(
     return {
         read,
         mutations: [
-            ...toALInboundAdmittedMessageMutations(read),
+            ...toALInboundAdmittedMessageMutations(read, input.originAuthenticated),
             ...toALInboundDeliveryMutations(read),
             ...acknowledgements.mutations
         ],
@@ -227,7 +233,13 @@ export function computeALInboundBufferedRelease(
         ? computeBufferedAcknowledgements(read, read.snapshot.plan, supersedenceAcceptance)
         : { mutations: [], immediateEffects: [], completedEffects: [] };
     const intent = deliverable
-        ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan, carrier: read.snapshot.carrier })[0]?.payload
+        ? toALInboundLocalDeliveryEffects({
+            msg: read.snapshot.msg,
+            plan,
+            carrier: read.snapshot.carrier,
+            readmission: false
+        })[0]
+            ?.payload
         : undefined;
     const expiresAtMs = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective);
     const expireAtTimestamp = expiresAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
@@ -243,7 +255,8 @@ export function computeALInboundBufferedRelease(
                     senderId: read.snapshot.msg.id.senderId,
                     source: read.source,
                     supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
-                    deliveredLocally: isALInboundDeliveringPlan(plan)
+                    deliveredLocally: isALInboundDeliveringPlan(plan),
+                    originAuthenticated: read.observations.messageOwner?.originAuthenticated === true
                 },
                 expireAtTimestamp: Math.max(
                     computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),

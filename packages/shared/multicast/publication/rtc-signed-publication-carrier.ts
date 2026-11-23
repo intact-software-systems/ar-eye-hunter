@@ -1,6 +1,6 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALAckAlgo, ALMessageHandlingPlan, ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { assertALPublicationProofSigningInputKept } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -8,7 +8,6 @@ import type {
     ALOutboundRepairRequest
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage, toProofPreservingALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import type { ReadableKeyedValues } from '../../cache/RepositoryInterfaces.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -18,18 +17,20 @@ import {
     toRtcPublicationHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from '../room-authority/rtc-room-snapshot-admission.ts';
-import { computeRtcFrozenAudienceRefusal } from '../web-rtc-overlay-frozen-audience.ts';
+import { computeRtcFrozenAudienceRefusal, isRtcUnfrozenRoomMessage } from '../web-rtc-overlay-frozen-audience.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
     computeRtcGrantedPublicationRefusal,
     resolveRtcGrantedLeaderRefusal,
     resolveRtcGrantedPublicationShapeRefusal,
     RTC_GRANTED_PUBLICATION_REFUSALS,
+    toRtcOriginShapeRefusal,
     type RtcGrantedPublicationRefusalInput
 } from './compute-rtc-granted-publication-refusal.ts';
 import { computeRtcPublicationAdmission } from './compute-rtc-publication-admission.ts';
 import { computeRtcRepairRefusal, type RtcRepairRefusal } from './compute-rtc-repair-refusal.ts';
 import { computeRtcRepairTargetAdmission } from './compute-rtc-repair-target-admission.ts';
+import { isRtcPublisherProofRequired, resolveRtcReceiptedRoomShapeRefusal } from './is-rtc-publisher-proof-required.ts';
 import type { RtcGrantedTopicReader } from './rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from './rtc-topic-subscription-reader.ts';
@@ -46,13 +47,13 @@ import { toRtcGrantedListedLeg } from './to-rtc-granted-listed-leg.ts';
  */
 type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
-export namespace RtcGrantedPublicationCarrier {
+export namespace RtcSignedPublicationCarrier {
     export interface Dependencies {
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
-        /** A publication on a granted topic is carried only signed by the page's key. */
+        /** Which topics are granted: who may publish and subscribe on one, and that its frames are carried signed. */
         readonly grantedTopics: RtcGrantedTopicReader;
         readonly publicationCrypto: PublicationCrypto;
-        /** A granted frame is forwarded or delivered only once this page's own verifier verified its proof. */
+        /** A frame that must carry a proof is forwarded or delivered only once this page's verifier verified it. */
         readonly publicationVerifier: RtcPublicationProofVerifierPort;
         /** A granted frame is delivered only while this tab's token for its room and topic is active. */
         readonly topicSubscriptions: RtcTopicSubscriptionReader;
@@ -79,15 +80,17 @@ export namespace RtcGrantedPublicationCarrier {
 }
 
 /**
- * The RTC carrier's granted publications: an origin admits one as a leg and signs it in its first admission, and a
- * relay or receiver verifies its proof before it plans it, forwarding or delivering only an admitted frame.
+ * The RTC carrier's signed frames: granted publications, and room sends that ask a `receiver` or `leader` receipt
+ * (`isRtcPublisherProofRequired`). An origin admits one as a leg and signs it in the first dispatch that holds its
+ * frozen audience and its room snapshot, and a relay or receiver verifies its proof before it plans it, forwarding or
+ * delivering only an admitted frame. Only a granted publication also answers to its topic's grants.
  */
-export class RtcGrantedPublicationCarrier {
-    readonly #dependencies: Omit<RtcGrantedPublicationCarrier.Dependencies, 'publicationCrypto'>;
+export class RtcSignedPublicationCarrier {
+    readonly #dependencies: Omit<RtcSignedPublicationCarrier.Dependencies, 'publicationCrypto'>;
     /** An ES private field: the advanced middleware hands app code the manager owning this carrier, never the page key. */
     readonly #publicationCrypto: PublicationCrypto;
 
-    constructor({ publicationCrypto, ...dependencies }: RtcGrantedPublicationCarrier.Dependencies) {
+    constructor({ publicationCrypto, ...dependencies }: RtcSignedPublicationCarrier.Dependencies) {
         this.#dependencies = dependencies;
         this.#publicationCrypto = publicationCrypto;
     }
@@ -97,13 +100,18 @@ export class RtcGrantedPublicationCarrier {
         return this.#dependencies.grantedTopics.isGrantedTopic(readALTargetGroupRef(msg), msg.route.topicId);
     }
 
+    /** Whether RTC carries the frame only with its origin's proof: a granted publication, or a receipted room send. */
+    isProofRequired(msg: ALMessage): boolean {
+        return isRtcPublisherProofRequired({ message: msg, topicGranted: this.isGrantedPublication(msg) });
+    }
+
     /**
-     * A granted leg -- a room multicast, a listed or principal room broadcast, or a room unicast -- is refused for the
-     * shape its sender gave before any freezing work, then for a `group-leader` leg whose leader holds no `subscribe`,
-     * then when its origin cannot sign at all; else a unicast is listed as a broadcast of one and the leg is frozen to
-     * the live sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries it, then refused
-     * when that frozen audience passes the RTC room limit. Its admission signs that narrowed audience (`signAdmitted`).
-     * Left: the refusal's detail, which a fallback carrier takes over.
+     * A granted leg -- a room multicast, a listed or principal room broadcast, or a room unicast -- is
+     * refused for the shape its sender gave before any freezing work, then for a `group-leader` leg whose leader holds
+     * no `subscribe`, then when its origin cannot sign at all; else a unicast is listed as a broadcast of one and the
+     * leg is frozen to the live sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries
+     * it, then refused when that frozen audience passes the RTC room limit. Its admission signs that narrowed audience
+     * (`signAdmitted`). Left: the refusal's detail, which a fallback carrier takes over.
      */
     admitLeg(
         msg: ALMessage,
@@ -140,13 +148,14 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * Signs the session's own granted publication as its first admission carries it, after the read stamped its
-     * sequence and record; any other frame -- not granted, or a relayed one that keeps its origin's proof -- passes.
-     * Left: why it could not sign, which drops the frame `unsupported`.
+     * Signs the session's own frame that must carry a proof and carries none yet, as the dispatch that admits or first
+     * freezes it carries it, after the read stamped its sequence and record. Any other frame passes as it is: one that
+     * needs no proof, one already signed, a relayed one that keeps its origin's proof, and a receipted room send still
+     * held unfrozen, which the dequeue that freezes it signs. Left: why it could not sign, which drops it `unsupported`.
      */
     async signAdmitted(msg: ALMessage): Promise<Either<string, ALMessage>> {
         const { selfSessionId, clock } = this.#dependencies;
-        if (!this.isGrantedPublication(msg) || msg.id.senderId !== selfSessionId) {
+        if (msg.proof !== undefined || msg.id.senderId !== selfSessionId || !this.isSignableNow(msg)) {
             return Either.ofRight(msg);
         }
         const signed = await signRtcPublication({
@@ -160,6 +169,16 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
+     * A granted frame its leg froze is signed at once. A receipted room send is signed by the dispatch that holds both
+     * its frozen audience and the room snapshot that attests the key; until then it is held unsigned, as a send without
+     * its room snapshot is held (D585), and never sent.
+     */
+    private isSignableNow(msg: ALMessage): boolean {
+        return this.isGrantedPublication(msg) ||
+            (this.isProofRequired(msg) && !isRtcUnfrozenRoomMessage(msg) && this.readRoomSnapshot(msg) !== null);
+    }
+
+    /**
      * A repair of a granted publication: the origin serves its own only while it holds `publish`, and a repair serves
      * only targets the responder still admits; `plan` reads the same admission for the recipients it retries. A refused
      * requester gets no copy, never a widened one. Any other repair is planned as it is.
@@ -167,9 +186,9 @@ export class RtcGrantedPublicationCarrier {
     planRepair(
         msg: ALMessage,
         request: ALOutboundRepairRequest,
-        plan: (isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission) => RtcRepairPlan
+        plan: (isTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission) => RtcRepairPlan
     ): RtcRepairPlan {
-        const isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission = (peerId, receiptMode) =>
+        const isTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission = (peerId, receiptMode) =>
             this.isRepairTargetAdmitted({ msg, targetPeerId: peerId, receiptMode });
         return this.readOwnRepairRefusal(msg).fold(
             (refusal) => refusal,
@@ -214,24 +233,26 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * Awaited on each message object before it is planned, so the planner reads a granted frame's verdict
-     * synchronously; any other frame carries no verdict the planner reads.
+     * Awaited on each message object before it is planned, so the planner reads the verdict of a frame that must carry
+     * a proof synchronously; any other frame costs no verify and carries no verdict the planner reads.
      */
     async verifyPublicationProof(msg: ALMessage): Promise<boolean> {
-        return this.isGrantedPublication(msg) &&
+        return this.isProofRequired(msg) &&
             await this.#dependencies.publicationVerifier.verifyPublicationProof(msg, this.#dependencies.clock);
     }
 
     /**
-     * A frame its room refused keeps the room's refusal, granted or not. A granted frame, and a proof on an ungranted
-     * topic, is judged by the publication admission on a plan its room authorized, or with no readable snapshot (a
-     * granted frame then fails closed; an ungranted proof is held while the page's snapshot is behind the frame's and
-     * refused once it is not). Any other frame keeps its room plan.
+     * A frame its room refused keeps the room's refusal. A frame that must carry a proof, and a proof on a frame that
+     * needs none, is judged by the publication admission on a plan its room authorized, or with no readable snapshot (a
+     * granted frame then fails closed, while a receipted room send keeps its room's not-yet-in-sync hold; a proof that
+     * is not needed is held while the page's snapshot is behind the frame's and refused once it is not). Any other
+     * frame keeps its room plan.
      */
-    planIncomingPublication(input: RtcGrantedPublicationCarrier.IncomingPlanInput): ALMessageHandlingPlan {
+    planIncomingPublication(input: RtcSignedPublicationCarrier.IncomingPlanInput): ALMessageHandlingPlan {
         const { msg, snapshot, admission } = input;
         const topicGranted = this.isGrantedPublication(msg);
-        if ((!topicGranted && msg.proof === undefined) || (snapshot !== undefined && admission.kind !== 'authorized')) {
+        const proofRequired = isRtcPublisherProofRequired({ message: msg, topicGranted });
+        if (keepsRoomPlan({ msg, snapshot, admission, topicGranted, proofRequired })) {
             return input.roomPlan;
         }
         const groupRef = readALTargetGroupRef(msg);
@@ -241,6 +262,7 @@ export class RtcGrantedPublicationCarrier {
             computeRtcPublicationAdmission({
                 message: msg,
                 topicGranted,
+                proofRequired,
                 snapshot: snapshot ?? null,
                 selfPrincipalId,
                 signatureValid: publicationVerifier.getVerifiedSignature(msg),
@@ -251,13 +273,6 @@ export class RtcGrantedPublicationCarrier {
             }),
             input.fromPeerId
         );
-    }
-
-    /** Only a granted frame, which its incoming plan verified, keeps its signed fields; any other is normalized. */
-    toForwardedMessage(msg: ALMessage, effective: ALQosEffectivePolicy): ALMessage {
-        return this.isGrantedPublication(msg)
-            ? toProofPreservingALOutboundMessage(msg, effective)
-            : toALOutboundMessage(msg, effective);
     }
 
     /** A programmer invariant: a plan that carries a signed message keeps every field its origin signed. */
@@ -275,20 +290,45 @@ export class RtcGrantedPublicationCarrier {
     /**
      * The origin carries a granted publication only as a room multicast, a listed or principal room broadcast, or a
      * room unicast, re-sends a stored one only signed, only as the multicast its leg admission froze and only while it
-     * holds `publish`; any other message passes.
+     * holds `publish`. A receipted room broadcast it never freezes, one naming only its exclusions, is refused as
+     * unsupported, since it could never be signed (D756); any other message passes.
      */
     computeOriginRefusal(
         input: RtcGrantedPublicationRefusalInput
     ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
         const { carried } = input;
         if (!this.isGrantedPublication(carried)) {
-            return Either.ofRight(carried);
+            return toRtcOriginShapeRefusal(
+                carried,
+                input.original,
+                resolveRtcReceiptedRoomShapeRefusal(input.original)
+            );
         }
         return computeRtcGrantedPublicationRefusal(input).flatMap(
             (refusal) => Either.ofLeft(refusal),
             (signed) => input.storedSend ? this.readOwnRepairRefusal(signed) : Either.ofRight(signed)
         );
     }
+}
+
+interface RoomPlanKeepingInput {
+    readonly msg: ALMessage;
+    readonly snapshot: GroupSnapshot | undefined;
+    readonly admission: RtcRoomSnapshotAdmission;
+    readonly topicGranted: boolean;
+    readonly proofRequired: boolean;
+}
+
+/**
+ * The room's plan stands for a frame that neither needs nor carries a proof, for one its readable room refused, and
+ * for a receipted room send with no readable snapshot, which the room holds not yet in sync until it can judge the key.
+ */
+function keepsRoomPlan(input: RoomPlanKeepingInput): boolean {
+    const { snapshot, proofRequired } = input;
+    if (!proofRequired && input.msg.proof === undefined) {
+        return true;
+    }
+    return snapshot === undefined ? proofRequired && !input.topicGranted : input.admission.kind !== 'authorized';
 }
 
 /** A shape refusal reads as its own text; a signing failure names its kind first. */
@@ -313,7 +353,7 @@ interface RtcRepairTargetInput {
 function toRequesterAdmittedPlan(
     planned: RtcRepairPlan,
     request: ALOutboundRepairRequest,
-    isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
+    isTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission
 ): RtcRepairPlan {
     const { requestedByPeerId, logicalRecipientPeerId } = request;
     return planned === undefined || requestedByPeerId === undefined ||

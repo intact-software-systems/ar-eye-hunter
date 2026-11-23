@@ -174,6 +174,17 @@ receipted: the WS copy meets the first admission in the shared session store, is
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
 its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
+The message-owner row also records whether its admission was origin-authenticated (`originAuthenticated`, stored
+only when true, so a row written before the field existed reads as not authenticated): the copy's publisher proof
+verified here, or the WS server delivered it. A room copy that asks a `receiver` or `leader` receipt and is
+origin-authenticated is admitted as new over an admission without that mark
+([`isALInboundOriginAuthenticatedReadmission`](./admission/is-al-inbound-origin-authenticated-readmission.ts), D758):
+a member's forged unreceipted copy under the origin's id cannot make the origin's own copy a confirmed duplicate. The
+application then receives the forged content and afterwards the origin's, each once; the readmission waits while the
+first delivery is still queued. Every other second copy is a duplicate as before: an unreceipted, `hop` or `subtree`
+copy, a unicast, and any copy that meets an authenticated admission. A readmission whose ordering sequence the
+forged copy already released is dropped `ordering-rejected` and answered nothing, and a relay delivers a readmitted
+copy locally and forwards nothing, since its stored canonical row is an immutable fact.
 The message-owner row records whether the recipient delivers the message, at once or on its ordered release
 (`deliveredLocally`; a row written
 before the field existed reads as delivered), so a WS copy that meets the RTC admission of a frozen recipient that
@@ -191,7 +202,8 @@ delivered them.
 
 An admitted message writes one dedup row, whose expiry
 [`computeALInboundDedupExpiryMs`](./admission/al-inbound-delivery-mutations.ts) computes; a copy that meets it is
-`duplicate`, is never delivered again, and is answered as the duplicate answers below describe. Identity dedup
+`duplicate`, is never delivered again, and is answered as the duplicate answers below describe, except the
+origin-authenticated readmission above. Identity dedup
 (`msg-id`, `msg-id+sender`) keeps the row for the longer of the dedup window (60 s by default, at most 5 min) and
 the message's own deadline plus the 30 s receipt grace, so a replay inside the deadline meets its first admission
 (D125). The deadline term is capped at the message-owner lifetime (`msgOwnerTtlMs`,
@@ -1196,8 +1208,8 @@ them does not by itself prove native RTC connection readiness.
 ## Replies and their diagnostics
 
 A message whose `actions.replyToMsgId` is set is a reply. The inbound runtime admits and deduplicates it like any
-message: a copy that meets the first admission's dedup row is never delivered, so a cross-carrier duplicate or a
-retransmission of one reply reaches a consumer once. Matching a reply to its request is not inbound-runtime work.
+message: a copy that meets the first admission's dedup row is never delivered (the origin-authenticated readmission
+apart), so a cross-carrier duplicate or a retransmission of one reply reaches a consumer once. Matching a reply to its request is not inbound-runtime work.
 In the browser, [`BrowserMessageReplyInbox`](../../../shared-web/browser/messages/reply/browser-message-reply-inbox.ts)
 is a handler of the WS any-message inbox (`message-replies`, order 15), and the messaging subscriptions skip replies,
 so a reply never reaches an `onMessage` subscriber of its type. The inbox hands the reply to the delivery registry,

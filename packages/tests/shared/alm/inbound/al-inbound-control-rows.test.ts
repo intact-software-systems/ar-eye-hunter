@@ -69,8 +69,10 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
         prePlan: planner(msg, RTC_ARRIVAL, { nowMs })
     });
     const bundle = computeALInboundAdmission({
+        originAuthenticated: false,
+        readmission: false,
         read,
-        plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read)),
+        plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read, false)),
         facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
         canForward: true,
         recordedParentPresent: true

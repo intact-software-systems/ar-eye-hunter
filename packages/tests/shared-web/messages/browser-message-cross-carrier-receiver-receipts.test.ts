@@ -40,6 +40,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -49,10 +50,12 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { toPublicationVerificationCrypto } from '@shared/signature/publication-crypto.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { advanceUntil } from '../../shared/advance-until.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
@@ -137,10 +140,30 @@ class ReceiptLoopClock {
     private closed = false;
 
     async advanceBy(milliseconds: number): Promise<void> {
+        await this.advanceWith(async () => {
+            await vi.advanceTimersByTimeAsync(milliseconds);
+        });
+    }
+
+    /** Moves the clock on until `condition` holds, for work that waits on real WebCrypto, which fake time alone does not run. */
+    async advanceUntil(condition: () => boolean): Promise<void> {
+        await this.advanceWith(() => advanceUntil(condition));
+    }
+
+    cancel(): void {
+        this.closed = true;
+    }
+
+    async close(): Promise<void> {
+        this.cancel();
+        await this.advance;
+    }
+
+    private async advanceWith(start: () => Promise<void>): Promise<void> {
         if (this.closed || this.advance !== undefined) {
             throw new Error('Receipt loop clock cannot advance concurrently or after closing');
         }
-        const advance = vi.advanceTimersByTimeAsync(milliseconds).then(() => undefined);
+        const advance = start();
         this.advance = advance;
         try {
             await advance;
@@ -151,15 +174,6 @@ class ReceiptLoopClock {
         finally {
             this.advance = undefined;
         }
-    }
-
-    cancel(): void {
-        this.closed = true;
-    }
-
-    async close(): Promise<void> {
-        this.cancel();
-        await this.advance;
     }
 }
 
@@ -496,6 +510,10 @@ async function createReceiptLoopReceiver(
             businessDelivery.resolve();
         }
     });
+    const verifier = new RtcPublicationProofVerifier({
+        crypto: toPublicationVerificationCrypto(ROOM_PUBLICATION_CRYPTO.subtle),
+        findGroupSnapshot: () => snapshot
+    });
     const rtc = new ALInboundMessageRuntime({
         // The room key every fixture session registers, so the origin verifies what this recipient signs.
         receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: ROOM_PUBLICATION_CRYPTO }) },
@@ -507,6 +525,8 @@ async function createReceiptLoopReceiver(
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'rtc-inbox', Temporal.Now.instant())
         }),
         carrier: 'rtc',
+        // As the browser's RTC carrier does, it verifies the origin's publisher proof of a receipted room send (D756).
+        verifyPublicationProof: async (message) => await verifier.verifyPublicationProof(message, { nowMs: Date.now }),
         planIncomingMessage: (message, source, observations) => {
             const fromPeerId = source.kind === 'trusted-server' ? undefined : source.peerId;
             return toRtcRoomSnapshotHandlingPlan(
@@ -586,7 +606,13 @@ function createReceiptLoopOrigin(
         onStorageUnavailable: 'refuse',
         publication: undefined
     };
-    return { ...owners, dispatch, delivery, handle: owners.registry.open({ message: delivery.message, carrier: 'rtc', readDeadlineEpochMs: Date.now }), rtcAdmissions };
+    return {
+        ...owners,
+        dispatch,
+        delivery,
+        handle: owners.registry.open({ message: delivery.message, carrier: 'rtc', readDeadlineEpochMs: Date.now }),
+        rtcAdmissions
+    };
 }
 
 function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessage {
@@ -635,7 +661,8 @@ async function deliverRtcThenWs(loop: ReceiptLoop): Promise<void> {
 
 async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
     loop.origin.dispatch.send(loop.origin.delivery);
-    await loop.clock.advanceBy(100);
+    // The origin's first admission signs this receipted send with real WebCrypto (D758).
+    await loop.clock.advanceUntil(() => (['b', 'c'] as const).every((peerId) => loop.origin.rtc.channels[peerId]!.sent.length > 0));
     for (const peerId of ['b', 'c'] as const) {
         const message = loop.origin.rtc.channels[peerId]!.sent[0]!;
         expect(message).toBeDefined();

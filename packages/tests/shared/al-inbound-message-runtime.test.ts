@@ -322,7 +322,8 @@ describe('ALInboundMessageRuntime', () => {
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp
             }, {

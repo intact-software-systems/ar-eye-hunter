@@ -13,6 +13,9 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter } from '@shared/resilience/rate-limiter.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 
 import {
     createOriginReceiverMulticast,
@@ -21,6 +24,25 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
+/**
+ * The fixture page key with a `sign` that answers at once. Every send of a receipted stream is signed (D758), and the
+ * stream runs its ten seconds of quota time back to back, so real signatures would add up in wall time; nothing here
+ * verifies one.
+ */
+function createInstantSigningCrypto(): PublicationCrypto {
+    const signature = new ArrayBuffer(64);
+    const subtle = new Proxy(ROOM_PUBLICATION_CRYPTO.subtle, {
+        get: (target, property) => {
+            if (property === 'sign') {
+                return async () => signature;
+            }
+            const member = Reflect.get(target, property, target) as SubtleCrypto[keyof SubtleCrypto];
+            return typeof member === 'function' ? member.bind(target) : member;
+        }
+    });
+    return { ...ROOM_PUBLICATION_CRYPTO, subtle };
+}
 
 function createAck(sequence: number) {
     return newALAckControlMessage(
@@ -129,7 +151,8 @@ describe('RTC enqueue protection', () => {
             snapshot: createOriginSnapshot(['a', 'b'], 1),
             nextHopPeerIds: ['b'],
             quotaNow: () => quotaAtMs,
-            rateLimiter: RateLimiter.initWithTs(1_000, 20, quotaStartMs)
+            rateLimiter: RateLimiter.initWithTs(1_000, 20, quotaStartMs),
+            publicationCrypto: createInstantSigningCrypto()
         });
         const lateJitterMs = [0, 7, 25, 3, 18, 11, 0, 22, 5, 14];
 

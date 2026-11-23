@@ -63,7 +63,11 @@ import {
 } from './al-inbound-ordering-validation.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import type { ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts';
-import { readALInboundMessageOwner, toALInboundMessageOwnerKey } from './al-inbound-source-validation.ts';
+import {
+    readALInboundMessageOwner,
+    toALInboundMessageOwnerKey,
+    toALStoredInboundMessageOwnerRow
+} from './al-inbound-source-validation.ts';
 import type { ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import type { ALInboundPendingControl } from './control/al-inbound-control-admission.ts';
 import {
@@ -84,9 +88,12 @@ export interface ALInboundMessageOwner {
     readonly supersedenceKey: string | null;
     /**
      * Whether the admission that wrote the row delivers the message here, now or on its release from a gap's buffer;
-     * a later copy is never delivered again.
+     * a later copy is never delivered again, unless it is an origin-authenticated readmission over an admission that
+     * was not (`isALInboundOriginAuthenticatedReadmission`).
      */
     readonly deliveredLocally: boolean;
+    /** Whether the admission that wrote the row was origin-authenticated (`isALInboundOriginAuthenticated`). */
+    readonly originAuthenticated: boolean;
 }
 
 export interface ALInboundControlOwnerIndex {
@@ -978,7 +985,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             case 'set-msg-owner':
                 return await tx.set(
                     toALInboundMessageOwnerKey(this.namespace, mutation.value.msgId, mutation.value.senderId),
-                    mutation.value,
+                    toALStoredInboundMessageOwnerRow(mutation.value),
                     mutation.expireAtTimestamp
                 );
             case 'set-inbound-message':

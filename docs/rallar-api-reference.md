@@ -1131,7 +1131,11 @@ authority than it, is dropped `not-yet-in-sync` and the hop refreshes its
 snapshot once. A frame is delivered only to a session holding `subscribe` and an
 `active` subscription; a relay needs only membership to forward it. The proof
 authenticates the publisher, never the payload's confidentiality: relays read the
-payload bytes. Every other granted RTC send (an exclusions-only, `world` or
+payload bytes. An ordinary room send that asks a `receiver` or `leader` receipt
+is signed and verified the same way and needs no grant: a recipient neither
+delivers nor acknowledges one whose signature does not verify, a page that
+cannot sign yet has that send refused `unsupported` over RTC, and a send that
+asks no receipt stays unsigned. Every other granted RTC send (an exclusions-only, `world` or
 exclusive send, a `group-leader` send whose director holds no `subscribe` on the
 topic, one whose frozen audience passes the RTC room limit of 256 sessions, or
 one from a page whose key is absent or not yet in its snapshot) is refused

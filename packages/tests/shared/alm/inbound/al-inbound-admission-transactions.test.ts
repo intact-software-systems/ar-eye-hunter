@@ -146,7 +146,8 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                     senderId: message.id.senderId,
                     source: INBOUND_TEST_SOURCE,
                     supersedenceKey: null,
-                    deliveredLocally: true
+                    deliveredLocally: true,
+                    originAuthenticated: false
                 },
                 expireAtTimestamp
             }, {

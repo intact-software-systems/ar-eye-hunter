@@ -28,6 +28,7 @@ import {
     toRtcFrozenRoomMessage
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
+import { advanceUntil } from '../advance-until.ts';
 import {
     createOriginOverlay,
     createOriginPrincipalSnapshot,
@@ -475,7 +476,8 @@ describe('the RTC leg of a principal or listed room send', () => {
             expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
 
             fixture.groups.accept('room', createOriginPrincipalSnapshot());
-            await vi.advanceTimersByTimeAsync(200);
+            // The freezing dequeue signs this receiver send with real WebCrypto (D758), which fake time alone does not run.
+            await advanceUntil(() => fixture.channels.b!.sent.length > 0);
 
             expect(readSentTargets(fixture.channels.b!)).toEqual([toAudienceFrozenTargets(recipientPeerIds)]);
             expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
@@ -489,8 +491,11 @@ describe('the RTC leg of a principal or listed room send', () => {
         const admitted = await enqueueLegAndDrain(fixture, createAudienceBroadcast('list', ORIGIN_ROOM, 'local-outbox'));
         const held = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
         fixture.groups.accept('room', createOriginPrincipalSnapshot());
-        await vi.advanceTimersByTimeAsync(200);
-        const canonical = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+        // The freezing dequeue signs this receiver send with real WebCrypto (D758), which fake time alone does not run:
+        // wait until its commit replaced the held row before reading the canonical row.
+        const readCanonical = async () => await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+        await advanceUntil(async () => isFrozenRow(await readCanonical()));
+        const canonical = await readCanonical();
 
         const replayed = await enqueueLegAndDrain(fixture, JSON.parse(held!.resource));
 
@@ -673,17 +678,17 @@ describe('the sent positions an RTC origin records for its frozen audience', () 
         expect(fixture.manager['planOutgoingMessage'](stored, 'admission').recordsSentPositions).toEqual(['b', 'c']);
     });
 
-    it('stamps a keyed members-topic multicast with its record, carried unsigned to every frozen recipient', async () => {
+    it('stamps a keyed receiver members-topic multicast with its record, which its proof signs and every frozen recipient carries', async () => {
         const fixture = createFixture();
 
         const admitted = await enqueueLegAndDrain(fixture, toKeyedFrame(createOriginReceiverMulticast('members-keyed')));
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(admitted.message.ordering).toEqual({ orderingKey: 'chat', epoch: 1, seq: 1, priorSeqByRecipient: {} });
-        expect(admitted.message.proof).toBeUndefined();
-        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => sent.ordering)).toEqual([
-            admitted.message.ordering,
-            admitted.message.ordering
+        expect(admitted.message.proof).toBeDefined();
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => [sent.ordering, sent.proof])).toEqual([
+            [admitted.message.ordering, admitted.message.proof],
+            [admitted.message.ordering, admitted.message.proof]
         ]);
     });
 
@@ -709,4 +714,9 @@ function toMintingFrame(message: ALMessage): ALMessage {
 
 function toKeyedFrame(message: ALMessage): ALMessage {
     return { ...message, ordering: { orderingKey: 'chat', epoch: 1, seq: 1 } };
+}
+
+/** Whether an outbox row holds a frozen room multicast. */
+function isFrozenRow(entry: { readonly resource: string; } | null | undefined): boolean {
+    return entry !== undefined && entry !== null && (JSON.parse(entry.resource) as ALMessage).targets?.mode === 'multicast';
 }

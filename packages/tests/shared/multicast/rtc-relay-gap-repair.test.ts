@@ -13,12 +13,12 @@ import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inb
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 
+import { drainUntil } from '../advance-until.ts';
 import { PUBLICATION_TOPIC_ID, PUBLISH_AND_SUBSCRIBE, PUBLISH_ONLY, SUBSCRIBE_ONLY } from './rtc-publication-proof-fixtures.ts';
 import {
     createChainHop,
     createOriginRelayChain,
     deliverEach,
-    drainUntil,
     publishOrderedFromOrigin,
     readOrderingPositions,
     toControlTuples,

@@ -465,16 +465,18 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * A first admission signs its frame after the read stamped it, so the canonical row every later stage resends
-     * already carries the proof (D519); a re-admission keeps the envelope its row holds and a dropping plan signs
-     * nothing. A signer's refusal is the plan's `unsupported` drop of the request: the sequence and record this read
-     * added belong to positions it never committed, so a carrier that takes the refusal over gets the request alone.
+     * Every dispatch that plans to send asks the carrier's signer, which decides alone and returns a frame that needs
+     * no new proof as it is: a first admission signs its frame after the read stamped it, and a held row is signed at
+     * the dispatch that first freezes its audience, so the canonical row every later stage resends already carries the
+     * proof (D519, D756). A dropping plan signs nothing. A signer's refusal is the plan's `unsupported` drop of the
+     * request: the sequence and record this read added belong to positions it never committed, so a carrier that takes
+     * the refusal over gets the request alone, and a held row's dequeue ends it as any `unsupported` plan there does.
      */
     private async signAdmittedRead(
         read: ALOutboundMessageReadDto<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const sign = this.dependencies.signAdmittedMessage;
-        if (sign === undefined || read.storedMessage !== undefined || read.plan.dropReasonCode !== undefined) {
+        if (sign === undefined || read.plan.dropReasonCode !== undefined) {
             return read;
         }
         return (await sign(read.msg)).fold(

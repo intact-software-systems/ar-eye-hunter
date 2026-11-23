@@ -190,11 +190,15 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
         nowMs,
         prePlan: planALMessageHandling(message, context)
     });
-    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
+    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read, false) });
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
-    return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }) };
+    return {
+        read,
+        plan,
+        bundle: computeALInboundAdmission({ originAuthenticated: false, readmission: false, read, plan, facts, canForward: false, recordedParentPresent: true })
+    };
 }

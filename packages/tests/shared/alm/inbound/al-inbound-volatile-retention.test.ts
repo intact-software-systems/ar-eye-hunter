@@ -225,6 +225,19 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
         expect([...pairs.volatile.data.keys()].filter((key) => key.includes(':dedup:'))).toEqual([]);
     });
 
+    it('reclaims the provenance of a message the WS server delivered, whose owner row records it authenticated', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const message = createPermanentMessage('server-delivered-state');
+
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, { kind: 'trusted-server' })).right)
+            .toEqual({ kind: 'admitted' });
+        await expect.poll(() => pairs.fixture.delivered.length).toBe(1);
+        evictTerminalVolatileInboundMessages(new InMemoryAdmissionBackend(pairs.volatile, Date.now), NAMESPACE);
+
+        expect(readRowExpiries(pairs.volatile, message).owner).toBeUndefined();
+    });
+
     it('keeps a receipted message owner through a deadline beyond the repository horizon', async () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
@@ -505,7 +518,7 @@ async function seedRelayRow(
         observations: (await readInboundTestDecisionSurface(store, message)).observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true },
+            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true, originAuthenticated: false },
             expireAtTimestamp: rowExpiresAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
         }, {
             kind: 'set-control-pending',

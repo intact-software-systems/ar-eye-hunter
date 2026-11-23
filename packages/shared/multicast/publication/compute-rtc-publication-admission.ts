@@ -8,10 +8,12 @@ import { resolveRoomObservationDenial } from '../room-authority/rtc-room-snapsho
 export interface RtcPublicationAdmissionInput {
     readonly message: ALMessage;
     /**
-     * Whether the receiving page classifies the frame's topic as granted: only a granted frame may carry a proof, and a
-     * page whose snapshot is behind the frame's may not yet see the grant.
+     * Whether the receiving page classifies the frame's topic as granted: a granted frame is delivered only under the
+     * topic's grants, and a page whose snapshot is behind the frame's may not yet see the grant.
      */
     readonly topicGranted: boolean;
+    /** Whether the frame must carry its origin's proof (`isRtcPublisherProofRequired`); no other may carry one. */
+    readonly proofRequired: boolean;
     /** The receiver's readable room snapshot: `null` when absent, or unrenewed for its cache's TTL. */
     readonly snapshot: GroupSnapshot | null;
     /** The receiving session's principal: the one field of the receiver the admission reads. */
@@ -26,7 +28,7 @@ export interface RtcPublicationAdmissionInput {
 }
 
 export type RtcPublicationRefusalCode =
-    | 'proof-on-ungranted-topic'
+    | 'proof-not-required'
     | 'no-authority'
     | 'missing-proof'
     | 'unbound-target'
@@ -49,17 +51,18 @@ export interface RtcPublicationAdmitted {
 }
 
 /**
- * A granted publication a relay or receiver judges against its own readable snapshot: it forwards only an admitted
- * frame, and delivers one only to a principal that may subscribe and holds an active token. A proof on a topic the
- * page does not grant is judged first, since no rule of a granted topic may read it: by snapshot freshness (S3-R4), then
+ * A frame that must carry its origin's proof, as a relay or receiver judges it against its own readable snapshot: it
+ * forwards only an admitted frame. A granted publication is delivered only to a principal that may subscribe and holds
+ * an active token; a receipted room send, which needs no grant, keeps the delivery its room plan gives it. A proof on a
+ * frame that needs none is judged first, since no rule of a proof may read it: by snapshot freshness (S3-R4), then
  * refused. A frame naming no room is unbound next, since no snapshot of a room can attest it.
  */
 export function computeRtcPublicationAdmission(
     input: RtcPublicationAdmissionInput
 ): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
     const { message, snapshot } = input;
-    if (!input.topicGranted) {
-        return toRefusal(isUngrantedProofAhead(input) ? 'authority-ahead' : 'proof-on-ungranted-topic');
+    if (!input.proofRequired) {
+        return toRefusal(isUngrantedProofAhead(input) ? 'authority-ahead' : 'proof-not-required');
     }
     const roomRef = readALTargetGroupRef(message);
     if (roomRef === undefined) {
@@ -85,7 +88,7 @@ export function computeRtcPublicationAdmission(
     if (!input.signatureValid) {
         return toRefusal('invalid-signature');
     }
-    return toPublicationDelivery(input, snapshot);
+    return input.topicGranted ? toPublicationDelivery(input, snapshot) : Either.ofRight({ delivery: 'deliver' });
 }
 
 /**

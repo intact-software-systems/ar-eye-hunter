@@ -21,7 +21,7 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayTree } from '../alm/outbound/transition-al-outbound-pending-ack.ts';
-import type { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
+import type { RtcSignedPublicationCarrier } from './publication/rtc-signed-publication-carrier.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export interface OverlayRepairPlan {
@@ -44,7 +44,7 @@ export interface PlanRtcFailedPeerRepairInput {
     readonly adjacency: ALOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
     /** Whether a missing recipient may still get a copy: a recipient refused here is skipped, never replaced. */
-    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
+    readonly isRepairTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission;
 }
 
 export interface ToRtcTargetedRepairCopyInput {
@@ -60,7 +60,7 @@ interface RtcMissingRecipientRepairInput {
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
     readonly adjacency: ALOverlayAdjacency | undefined;
-    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
+    readonly isRepairTargetAdmitted: RtcSignedPublicationCarrier.RepairTargetAdmission;
 }
 
 /**

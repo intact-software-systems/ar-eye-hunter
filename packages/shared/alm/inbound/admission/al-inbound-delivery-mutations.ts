@@ -25,7 +25,8 @@ export interface ComputeALInboundDedupExpiryInput {
 
 /** The provenance, ordering, dedup and claim rows an admitted message owns; its claim lasts as long as the message. */
 export function toALInboundAdmittedMessageMutations(
-    read: ALInboundMessageReadDto
+    read: ALInboundMessageReadDto,
+    originAuthenticated: boolean
 ): readonly ALInboundAdmissionMutation[] {
     const messageDeadlineAtMs = resolveALMessageExpireAtMs(read.msg, read.plan.effective);
     const deadlineAtMs = messageDeadlineAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
@@ -37,7 +38,8 @@ export function toALInboundAdmittedMessageMutations(
                 senderId: read.msg.id.senderId,
                 source: read.source,
                 supersedenceKey: read.plan.supersedence.key ?? null,
-                deliveredLocally: isALInboundDeliveringPlan(read.plan)
+                deliveredLocally: isALInboundDeliveringPlan(read.plan),
+                originAuthenticated
             },
             expireAtTimestamp: computeALInboundMessageOwnerExpiryMs(read, deadlineAtMs)
         }

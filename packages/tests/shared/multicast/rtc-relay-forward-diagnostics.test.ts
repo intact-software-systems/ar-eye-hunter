@@ -4,14 +4,17 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import {
     createOriginOverlay,
     createOriginReceiverMulticast,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
-    ORIGIN_ROOM
+    ORIGIN_ROOM,
+    toOriginFrozenTargets
 } from './rtc-origin-overlay-fixture.ts';
+import { signPublication } from './rtc-publication-proof-fixtures.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 /** What a relay's own outbound diagnostics say about the copy it was asked to forward. */
@@ -36,6 +39,19 @@ function createFrame(reliability: Reliability, resourceId: string): ALMessage {
                 options: { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
             }
         );
+}
+
+/**
+ * The copy the origin `a` hands its relay `c`: a receipted one frozen to `c` and `d` and signed with `a`'s registered
+ * key, which a relay verifies before it forwards it (D756); a best-effort one as it is.
+ */
+async function createRelayedFrame(reliability: Reliability, resourceId: string): Promise<ALMessage> {
+    const frame = createFrame(reliability, resourceId);
+    return reliability === 'best-effort' ? frame : await signPublication(ROOM_PUBLICATION_CRYPTO, {
+        ...frame,
+        targets: toOriginFrozenTargets(['c', 'd'], 4),
+        constraints: { ...frame.constraints, expiresAtMs: frame.id.ts + 30_000 }
+    });
 }
 
 /** The deployment refuses a repair on the way out only: the relay admits the copy, and its forwarding plan has an unmet requirement. */
@@ -70,7 +86,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay whose forward the planner drops reports the drop with the message, its type and the reason', async () => {
         const relay = createRelay(CHAIN, NO_OUTBOUND_REPAIR);
-        const frame = createFrame('at-least-once', 'planner-drop');
+        const frame = await createRelayedFrame('at-least-once', 'planner-drop');
 
         await relay.forward(frame, 'a');
 
@@ -87,7 +103,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay whose forward has no route reports the refusal with the message, its type and the reason', async () => {
         const relay = createRelay(LEAF);
-        const frame = createFrame('at-least-once', 'no-route');
+        const frame = await createRelayedFrame('at-least-once', 'no-route');
 
         await relay.forward(frame, 'a');
 
@@ -104,7 +120,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay\'s retried forward that the planner drops is reported with the message, its type and the reason', async () => {
         const relay = createRelay(CHAIN, NO_OUTBOUND_REPAIR);
-        const frame = createFrame('at-least-once', 'retried-planner-drop');
+        const frame = await createRelayedFrame('at-least-once', 'retried-planner-drop');
 
         await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
 
@@ -121,7 +137,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay\'s retried forward that has no route is reported', async () => {
         const relay = createRelay(LEAF);
-        const frame = createFrame('at-least-once', 'retried-no-route');
+        const frame = await createRelayedFrame('at-least-once', 'retried-no-route');
 
         await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
 
@@ -130,7 +146,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay\'s retried forward that is admitted reports nothing', async () => {
         const relay = createRelay(CHAIN);
-        const frame = createFrame('at-least-once', 'retried-admitted');
+        const frame = await createRelayedFrame('at-least-once', 'retried-admitted');
 
         await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
 
@@ -142,7 +158,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
         'a relay whose %s forward is enqueued, or already present, reports nothing',
         async (reliability) => {
             const relay = createRelay(CHAIN);
-            const frame = createFrame(reliability, 'enqueued');
+            const frame = await createRelayedFrame(reliability, 'enqueued');
 
             await relay.forward(frame, 'a');
             await relay.forward(frame, 'a');
@@ -167,7 +183,7 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
 
     it('a relay whose forward has no route reports it once: the manager does not enqueue it again', async () => {
         const relay = createRelay(LEAF);
-        const frame = createFrame('at-least-once', 'refused-not-retried');
+        const frame = await createRelayedFrame('at-least-once', 'refused-not-retried');
 
         await relay.forward(frame, 'a');
 

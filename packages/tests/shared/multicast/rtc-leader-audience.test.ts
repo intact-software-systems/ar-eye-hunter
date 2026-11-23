@@ -22,6 +22,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { advanceUntil } from '../advance-until.ts';
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
 import {
@@ -134,7 +135,10 @@ describe('the RTC leg of a group-leader room send', () => {
         }
 
         const admitted = await Promise.all(messages.map((message) => bySession.get(message.id.senderId)!.multicast.enqueueIfAbsent(message)));
-        expect(admitted.every((result) => result.verdict.kind === 'admitted')).toBe(true);
+        // A first admission signs between its read and its commit (D758). During a slow sign another commit of the same
+        // sender can land first, so that admission's commit conflicts, it answers `pending` and its owner replays it;
+        // every send must still be delivered and receipted below.
+        expect(admitted.filter((result) => result.verdict.kind !== 'admitted' && result.verdict.kind !== 'pending')).toEqual([]);
         const completed = await Promise.all([
             ...[...deliveryWaiters.values()].map((waiter) => waiter.promise),
             ...[...receiptWaiters.values()].map((waiter) => waiter.promise)
@@ -548,7 +552,8 @@ describe('the RTC leg of a group-leader room send', () => {
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
 
         fixture.groups.accept('room', createDirectedSnapshot('d'));
-        await vi.advanceTimersByTimeAsync(200);
+        // The freezing dequeue signs this leader send with real WebCrypto (D758), which fake time alone does not run.
+        await advanceUntil(() => fixture.channels.b!.sent.length > 0 && fixture.channels.c!.sent.length > 0);
 
         expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d'])]);
         expect(readSentTargets(fixture.channels.c!)).toEqual([toLeaderFrozenTargets(['d'])]);

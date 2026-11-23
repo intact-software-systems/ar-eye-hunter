@@ -310,12 +310,16 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     const plan = planALMessageHandling(message, {
         selfPeerId: 'receiver',
         fromPeerId: 'sender',
-        ...computeALInboundPlanningObservations(read)
+        ...computeALInboundPlanningObservations(read, false)
     });
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     });
-    expect(await store.commitBundle(computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }))).toBe('committed');
+    expect(
+        await store.commitBundle(
+            computeALInboundAdmission({ originAuthenticated: false, readmission: false, read, plan, facts, canForward: false, recordedParentPresent: true })
+        )
+    ).toBe('committed');
 }
