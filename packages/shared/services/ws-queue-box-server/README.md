@@ -120,14 +120,21 @@ completion or native cross-instance behavior.
 
 Follow these production paths directly when reviewing a change:
 
-1. Socket ACK: service `acceptIncomingMessage` → authority `readSocketAdmission`
-   and `resolveAuthorizedSocketAdmission` → service `admitAuthorizedMessage` →
-   inbound runtime `admitIncomingMessage` → the receipt hook
+1. Socket ACK: service `acceptIncomingMessage` → authority `readSocketAdmission`,
+   whose `readALInboundMessageAuthorization` calls the receipt hook at the
+   ingress stage (`readIngressProtocolAckRejection`: aggregation
+   `readRelayedAckRejection` checks only that the ACK addresses the origin it
+   names), and `resolveAuthorizedSocketAdmission` → service
+   `admitAuthorizedMessage` → inbound runtime `admitIncomingMessage` →
+   `readALInboundMessageAuthorization` → the receipt hook at the runtime stage
    (`readRelayedAckRejection`, asynchronous: aggregation `readRecordRefusal` reads
    the head and applies `validateALReceiptRecordConfirmation`, or proves a sender
    that finds no head against the ingress audience) → inbound runtime control
    callback → aggregation `acceptControlMessage`. Refusal returns the same typed
-   rejection; an operational exception propagates.
+   rejection; an operational exception propagates. The hook's name
+   `readRelayedAckRejection` names the WS server's relay of the origin's message
+   (the server admits a recipient's ACK for a message it relayed), not the
+   deleted cross-instance notice.
 2. Count/completion: aggregation `acceptControlMessage` → `ALReceiptRecord.count`,
    or `countAhead` for an ACK the hook proved and that finds no head (the record's
    `writeConfirmation`: guard, then the confirmation `set`) → the `Counted` view →
@@ -136,9 +143,11 @@ Follow these production paths directly when reviewing a change:
    settlement → guarded outbox/count observations. A losing `end` does nothing;
    only `end`'s result is authoritative.
 3. Deadline: the record's worker task on the engine → worker `runClaim` on
-   whichever instance claims the deadline work → record `end`
-   (`computeALReceiptRecordEnding`, the head's `setFence`) → the ended head and
-   its ended work → `writeEndedReceipt` as in probe 2. A store failure in any of
+   whichever instance claims the deadline work → `claimCommitted()`, then record
+   `end` (`computeALReceiptRecordEnding`, the head's `setFence`) → the ended head
+   and its ended work → the worker's next claim finds the ended work (no
+   `committed` call on this path) → `writeEndedReceipt`, then the server receipt
+   settlement and observations as in probe 2. A store failure in any of
    these reads or writes propagates; a refused or conflicting count is a typed
    outcome. No relay path remains: an ACK counts on the instance it reaches.
 4. Queued send: outbound runtime → service `sendPreparedMessage` → dequeue

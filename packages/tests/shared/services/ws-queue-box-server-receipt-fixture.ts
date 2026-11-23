@@ -107,13 +107,13 @@ export interface SentReceipt {
     readonly receipt: ALReceiptPayload;
 }
 
-/** The peer id of the server the receipt suites build; a session's ACK names it. */
 /** One refusal, count or receipt the receipt aggregation recorded: `kind`, then the count's outcome or the receipt's phase and outbox verdict. */
 export type ReceiptAggregationVerdict =
     | 'ack-rejection'
     | `ack-count:${Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }>['outcome']}`
     | `receipt-outbox:${ALReceiptPayload['phase']}:${WsQueueBoxServerReceiptOutboxVerdict['kind']}`;
 
+/** The peer id of the server the receipt suites build; a session's ACK names it. */
 export const RECEIPT_SERVER_PEER_ID = 'server';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
