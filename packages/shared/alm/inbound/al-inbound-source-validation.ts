@@ -152,6 +152,8 @@ export interface ALInboundMessageOwnerSlot {
 
 /** The fields every stored inbound message owner row carries. */
 export const AL_INBOUND_MESSAGE_OWNER_FIELDS = ['msgId', 'senderId', 'source', 'supersedenceKey'] as const;
+/** The owner row's fields a row may leave out: every reader of the row decodes with these two lists. */
+export const AL_INBOUND_MESSAGE_OWNER_OPTIONAL_FIELDS = ['deliveredLocally', 'originAuthenticated'] as const;
 
 export function toALInboundMessageOwnerKey(namespace: string, msgId: string, senderId: string): string {
     return `${namespace}:msg-owner:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
@@ -194,10 +196,11 @@ export function toALStoredInboundMessageOwnerRow(owner: ALInboundMessageOwner): 
  * without `originAuthenticated` reads as an admission that was not origin-authenticated.
  */
 export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {
-    const owner = decodeALAdmissionRecord(value, AL_INBOUND_MESSAGE_OWNER_FIELDS, [
-        'deliveredLocally',
-        'originAuthenticated'
-    ]);
+    const owner = decodeALAdmissionRecord(
+        value,
+        AL_INBOUND_MESSAGE_OWNER_FIELDS,
+        AL_INBOUND_MESSAGE_OWNER_OPTIONAL_FIELDS
+    );
     const msgId = decodeALAdmissionString(owner.msgId);
     const senderId = decodeALAdmissionString(owner.senderId);
     if (
