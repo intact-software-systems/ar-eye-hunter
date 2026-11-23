@@ -200,9 +200,9 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         if (pending && !head) {
             this.headRead = 'none';
         }
-        const scan = head
-            ? { ...AL_INBOUND_SCAN_START, nextReadyAtMs: this.scan.nextReadyAtMs }
-            : this.scan;
+        // A head read answers for its own page only: the readiness the resting position carries is the
+        // partial rotation's, which the rotation read that resumes there still holds.
+        const scan = head ? AL_INBOUND_SCAN_START : this.scan;
         const { nowMs, readPage } = this.dependencies;
         const startedAtMs = nowMs();
         const selection = readPage(port, scan, pageSize)

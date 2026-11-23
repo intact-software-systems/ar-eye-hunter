@@ -253,6 +253,20 @@ describe('ALInboundWorkSelector probe walk', () => {
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS + 30_000);
     });
 
+    it('answers only what its head read itself scanned, not the readiness the position carried', async () => {
+        const fixture = createSelectorFixture();
+        const later = createPendingAdmissionEntry(fixture.namespace, NOW_MS + 30_000, 'gone-later');
+        await fixture.port.retainIfAbsent(later);
+        // The NEW page read past `gone-later`, so the position rests at RETRY carrying its readiness.
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        // The row leaves the queue, and a commit asks for a head read that finds nothing.
+        await fixture.workQueue.removeItem(later.key);
+        fixture.selector.requestHeadRead();
+
+        // The walk's own whole rotation saw no row, so it answers no work.
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBeUndefined();
+    });
+
     it('serves a head read the wrapping read turned due, in the same walk', async () => {
         const fixture = createSelectorFixture();
         // NEW and RETRY are empty: the rotation stands at RESERVED, its last page.
@@ -832,6 +846,8 @@ interface SelectorFixture {
     readonly selector: ALInboundWorkSelector;
     /** Every rotation the selector reported completed, in order. */
     readonly rotations: readonly ALInboundRotationPage.CompletedRotation[];
+    /** The queue behind the port, for a row that leaves it without the selector's knowledge. */
+    readonly workQueue: Pick<InMemoryQueueBox, 'removeItem'>;
 }
 
 /** The clock the selector reads, and the one its stores read. */
@@ -876,7 +892,8 @@ function createSelectorFixture(clock: SelectorClock = STILL_CLOCK): SelectorFixt
             lane: 'durable',
             onRotationCompleted: (rotation) => rotations.push(rotation)
         }),
-        rotations
+        rotations,
+        workQueue: state.workQueue
     };
 }
 
@@ -917,6 +934,7 @@ function createTimedSelectorFixture(): TimedSelectorFixture {
     return {
         namespace,
         rotations,
+        workQueue: state.workQueue,
         advance: (durationMs) => {
             nowMs += durationMs;
         },
