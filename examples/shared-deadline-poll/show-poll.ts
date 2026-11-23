@@ -41,29 +41,26 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let unacknowledged: PollAuthority.Choice | undefined;
     let checkingReceipt = false;
     let away = document.visibilityState === 'hidden';
-    let generation = away ? 1 : 0;
-    let restored = 0;
+    let needsRoomEntry = away;
+    function invalidateRoomEntry(): void {
+        needsRoomEntry = true;
+        activeRefresh?.abort();
+        activeRefresh = undefined;
+    }
     async function refreshSnapshot(): Promise<void> {
         const attempt = new AbortController();
         activeRefresh = attempt;
         const refreshSignal = AbortSignal.any([signal, attempt.signal]);
-        const current = generation;
         try {
-            if (restored !== current) {
+            if (needsRoomEntry) {
                 const options = { signal: refreshSignal };
                 await rallar.connect(options);
                 refreshSignal.throwIfAborted();
-                if (current !== generation) {
-                    return;
-                }
                 await rallar.rooms.enter(roomRef, options);
             }
             const snapshot = await requestPollSnapshot(input, refreshSignal, { previous: record });
             refreshSignal.throwIfAborted();
-            if (current !== generation) {
-                return;
-            }
-            restored = current;
+            needsRoomEntry = false;
             extensionUnconfirmed = false;
             record = snapshot;
             checkingReceipt = false;
@@ -85,11 +82,11 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         if (signal.aborted) {
             return;
         }
-        let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || restored !== generation
+        let currentPhase: ReturnType<typeof pollPhase> | 'Recovering room poll' = away || needsRoomEntry
             ? 'Recovering room poll'
             : pollPhase(record, rallar, input.authority);
         if (currentPhase === 'Waiting for server time') {
-            generation++;
+            invalidateRoomEntry();
             currentPhase = 'Recovering room poll';
         }
         const restoring = currentPhase === 'Recovering room poll';
@@ -130,10 +127,8 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function suspend(): void {
-        generation++;
         away = true;
-        activeRefresh?.abort();
-        activeRefresh = undefined;
+        invalidateRoomEntry();
         render();
     }
     function resume(): void {

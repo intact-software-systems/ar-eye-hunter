@@ -112,6 +112,31 @@ test('a restored page recovers while its previous connection attempt is still pe
     await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
 });
 
+test('a foreground clock loss supersedes an unfinished receipt read', async ({ page }) => {
+    const reading = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const final = { roomRef, schedule, revision: 1, canExtend: false, yes: 1, no: 0, closed: true, disposition: 'accepted' };
+    let readingStarted = false;
+    await page.route('**/poll-snapshot', async route => {
+        if (route.request().method() === 'POST') return await route.abort('failed');
+        if (!readingStarted) {
+            readingStarted = true;
+            reading.resolve();
+            await release.promise;
+        }
+        await route.fulfill({ json: final });
+    });
+    try {
+        await page.getByRole('button', { name: 'Yes' }).click();
+        await reading.promise;
+        await page.evaluate(() => { document.body.dataset.uncalibrated = 'true'; });
+        await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+    }
+    finally {
+        release.resolve();
+    }
+});
+
 test('a click crossing into an uncertain boundary sends no ballot', async ({ page }) => {
     const ballots: string[] = [];
     await page.route('**/poll-snapshot', async (route) => {
