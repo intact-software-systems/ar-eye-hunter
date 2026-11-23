@@ -39,6 +39,7 @@ const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /** The receiver counts the 66 once the sender cued that seq 2 is released and admitted. */
 const BUFFERED_ARRIVALS: AlmCuedArrivals = {
     cue: `released-${HELD_SEQ}`,
+    senderDepartsAfterCue: false,
     count: TRACK_LENGTH,
     toSends: toBufferedSends
 };

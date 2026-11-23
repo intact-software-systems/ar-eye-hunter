@@ -1300,7 +1300,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
             'cue-leaving',
-            'cue-leaving-sent',
+            'cue-leaving-acknowledged',
             'product-socket-close'
         ]);
         expect(toContinuationStepNames(scenario)).toEqual([
@@ -1374,10 +1374,10 @@ describe('ALM ordered subscription reconnect conformance', () => {
             const sibling = requireRoleRecipe(scenario, 'sibling');
             const siblingIds = sibling.commands.map(({ commandId }) => commandId);
             const leaving = findStep(sibling, 'cue-leaving');
-            // The cue has left the page before the socket closes.
-            expect(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-sent`), carrier).toBeGreaterThan(siblingIds.indexOf(leaving.commandId));
+            // The room acknowledged the cue before the socket closes, so no close-driven disconnect can fence it.
+            expect(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-acknowledged`), carrier).toBeGreaterThan(siblingIds.indexOf(leaving.commandId));
             expect(siblingIds.indexOf(`${sibling.recipeId}-product-socket-close`), carrier)
-                .toBeGreaterThan(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-sent`));
+                .toBeGreaterThan(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-acknowledged`));
             for (const [role] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(scenario, role);
                 const commandIds = producer.commands.map(({ commandId }) => commandId);

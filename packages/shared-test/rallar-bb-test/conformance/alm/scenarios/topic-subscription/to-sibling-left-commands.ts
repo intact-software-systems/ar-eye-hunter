@@ -12,14 +12,14 @@ import { SUBSCRIPTION_PHASE_MS } from '../../granted-topic/subscription-phase-bu
 import { toPollChildId, toPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toResultTextWait } from './topic-subscription-budgets.ts';
 import { toRoomSnapshotCommand } from './topic-subscription-generation-polls.ts';
-import { toCueSendCommands, toCueWait } from './topic-subscription-publications.ts';
+import { toCueWait, toDepartingCueSendCommands } from './topic-subscription-publications.ts';
 
 /** The cue the sibling sends before it closes its socket: the cue's sender is the sibling's own session. */
 const LEAVING_CUE = 'leaving';
 
-/** The sibling's leaving cue, which has left its page before its socket closes. */
+/** The sibling's leaving cue, which the room acknowledged before the sibling's socket closes. */
 export function toSiblingLeavingCueCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return toCueSendCommands(sibling, LEAVING_CUE);
+    return toDepartingCueSendCommands(sibling, LEAVING_CUE);
 }
 
 /**

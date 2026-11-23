@@ -8,7 +8,8 @@ import { toCueStep } from '../receipted-audience.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
-    toCueWait
+    toCueWait,
+    toDepartingCueSendCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 
 /**
@@ -17,6 +18,8 @@ import {
  */
 export interface AlmCuedArrivals {
     readonly cue: string;
+    /** Whether the sender's page departs right after its cue, so the room must acknowledge the cue first. */
+    readonly senderDepartsAfterCue: boolean;
     readonly count: number;
     /** The sender's body up to its cue; every command in it but a close names its own timeout, which sizes the wait. */
     readonly toSends: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
@@ -30,12 +33,14 @@ export function toCuedArrivalsSenderCommands(
     return [...arrivals.toSends(sender), ...toCuedArrivalsCueCommands(sender, arrivals)];
 }
 
-/** The sender's cue that its sends are done; it has left the page once its handle reads `transport-accepted`. */
+/** The sender's cue that its sends are done. */
 export function toCuedArrivalsCueCommands(
     sender: AlmConformanceStepInput,
     arrivals: AlmCuedArrivals
 ): readonly RallarBlackBoxTestCommand[] {
-    return toCueSendCommands(toCueStep(sender), arrivals.cue);
+    return arrivals.senderDepartsAfterCue
+        ? toDepartingCueSendCommands(toCueStep(sender), arrivals.cue)
+        : toCueSendCommands(toCueStep(sender), arrivals.cue);
 }
 
 /**
