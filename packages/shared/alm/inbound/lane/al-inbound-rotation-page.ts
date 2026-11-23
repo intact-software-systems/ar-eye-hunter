@@ -84,7 +84,7 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
     private rotation: ALInboundRotationProgress = AL_INBOUND_ROTATION_UNSTARTED;
     private held: ALInboundHeldRead<TRead> | undefined;
     private headRead: 'none' | 'pending' | 'deferred' = 'none';
-    /** A batch took a head read, and no rotation read has moved the position since. */
+    /** A head read ran, and no rotation read has moved the position since. */
     private headSinceRotation = false;
 
     constructor(dependencies: ALInboundRotationPage.Dependencies<TRead>) {
