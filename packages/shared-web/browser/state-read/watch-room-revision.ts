@@ -1,6 +1,9 @@
 import { observeRoomReadLifecycle } from './observe-room-read-lifecycle.ts';
 import { RoomPurgeWakeup } from './room-purge-wakeup.ts';
 import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, validateReadRevision, type ObservedRoomMetadata } from './observed-room.ts';
+import { isRetryableApiViewFailure } from '../api/read-api-view.ts';
+import { toExponentialBackoffMs } from '@shared/resilience/ComputeAsyncTask.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
@@ -73,45 +76,45 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         request = attempt;
         let group: ObservedRoomMetadata;
         let next: T | null;
+        const readSignal = AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]);
         try {
             fence.assertCurrent();
-            const readSignal = AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]);
             group = input.read ? await input.read(room, readSignal) : await readObservedRoom(room, requireSession, readSignal);
             next = input.project(group);
             validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
         catch (error) {
-            const accessLost = error instanceof ApiHttpError && [401, 403, 404].includes(error.status) ? error : undefined;
-            handleReadFailure(attempt, accessLost);
+            handleReadFailure(attempt, toError(error), readSignal);
             return;
         }
         if (request !== attempt) {
             return;
         }
         request = undefined;
+        retries = 0;
         purge?.observe(group.purgeAfterEpochMs);
         publish('current', next);
         if (queued) {
             void refresh();
         }
     }
-    function handleReadFailure(attempt: AbortController, accessLost: ApiHttpError | undefined): void {
+    function handleReadFailure(attempt: AbortController, error: Error, readSignal: AbortSignal): void {
         if (request !== attempt) {
             return;
         }
         request = undefined;
-        if (accessLost) {
+        if (error instanceof ApiHttpError && [401, 403, 404].includes(error.status)) {
             purge?.observe(null);
             queued = false;
             announcedRevision = 0;
             publish('stale', null);
-            if (!signal.aborted) input.onDenied?.(accessLost);
+            if (!signal.aborted) input.onDenied?.(error);
             return;
         }
         publish('stale');
-        // One bounded retry burst per external wakeup, including when the server stays unavailable.
-        if (!signal.aborted && retries < 3) {
-            retry = setTimeout(() => void refresh(), 1000 * 2 ** retries++);
+        const transient = readSignal.aborted || isRetryableApiViewFailure(error);
+        if (!signal.aborted && (transient || retries < 3)) {
+            retry = setTimeout(() => void refresh(), toExponentialBackoffMs(++retries, 30_000, 1_000));
         }
     }
     function wake(): void {

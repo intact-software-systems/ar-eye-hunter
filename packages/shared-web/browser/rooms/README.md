@@ -88,6 +88,6 @@ function or abort the signal when switching rooms.
 
 The initial durable read is followed by server WebSocket group events. A higher
 named revision triggers a durable read. Unchanged deadlines generate no periodic
-requests. Reconnect and page resume reread current authority. A failed read has
-three backoff retries per wakeup. Display countdowns locally using the calibrated
+requests. Reconnect and page resume reread current authority. Transient transport failures retry while the watcher is active, with delays capped at 30 seconds.
+Other read failures have three retries per wakeup. An authoritative denial ends the retry cycle. Display countdowns locally using the calibrated
 clock and enforce time-sensitive actions at their receiving authority.

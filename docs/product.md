@@ -188,7 +188,8 @@ explains the loss of access and leaves other rooms available. Leaving locally ne
 Both games use the SDK's `rooms.watchAccess(roomRef, listener)` to observe membership, including in ordinary
 rooms. It checks the authorized room snapshot on startup, private access notifications, and recovery.
 Idle observation makes no periodic access requests. For a room with a storage expiry time, the SDK
-rechecks access once when the earliest calibrated server time reaches the cutoff. A disconnect marks the observation stale.
+rechecks access when the earliest calibrated server time reaches the cutoff. If storage still reports the same cutoff,
+the SDK rechecks with backoff until storage confirms expiry or supplies a new cutoff. A disconnect marks the observation stale.
 An authoritative refusal distinguishes a ban, removal or unavailable access. Relic's existing Keeper
 takeover and round timeout preserve ongoing play; accepted plans and saved expedition progress remain.
 

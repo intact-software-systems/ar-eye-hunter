@@ -76,7 +76,7 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         expect(facade.rooms.selected()).toBeUndefined();
     });
 
-    it('recovers revocation on foreground through the public access watcher', async () => {
+    it.each(['resume', 'same socket'])('recovers revocation after a snapshot outage via %s', async recovery => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         respondToDeparture(code, 403);
@@ -98,14 +98,17 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         const stop = facade.rooms.watchAccess(destination.group, value => { observed = value; });
         try {
             await vi.waitFor(() => expect(observed).toEqual({ status: 'current' }));
+            vi.useFakeTimers();
             access = 503;
             page.dispatchEvent(new Event('pageshow'));
             await vi.waitFor(() => expect(observed).toEqual({ status: 'stale' }));
             expect(facade.rooms.selected()?.groupId).toBe('destination');
-            page.dispatchEvent(new Event('pagehide'));
+            await vi.advanceTimersByTimeAsync(8_000);
             expect(observed).toEqual({ status: 'stale' });
+            if (recovery === 'resume') page.dispatchEvent(new Event('pagehide'));
             access = 403;
-            page.dispatchEvent(new Event('pageshow'));
+            if (recovery === 'resume') page.dispatchEvent(new Event('pageshow'));
+            await vi.advanceTimersByTimeAsync(8_000);
             await vi.waitFor(() => expect(observed).toEqual({
                 status: 'denied', reason: code === 'member-banned' ? 'banned' : 'removed'
             }));
@@ -130,6 +133,7 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         }
         finally {
             stop();
+            vi.useRealTimers();
         }
     });
 

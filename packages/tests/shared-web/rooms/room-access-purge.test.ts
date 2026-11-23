@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('watchAccess room purge', () => {
-    it.each([true, false])('rechecks a far server cutoff once, server denies = %s', async denied => {
+    it.each([0, 50])('confirms a far purge cutoff with storage lag of %i ms', async lagMs => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const context = await facade.connect();
@@ -36,7 +36,7 @@ describe('watchAccess room purge', () => {
         });
         const room = createRoomSnapshot('temporary', ['session-1']);
         const snapshot = { ...room, group: { ...room.group, purgeAfterEpochMs: serverStart + delay } };
-        const fetch = vi.fn(async () => denied && performance.now() - monotonicStart >= delay
+        const fetch = vi.fn(async () => performance.now() - monotonicStart >= delay + lagMs
             ? Response.json({ error: 'not_found' }, { status: 404 })
             : Response.json(snapshot, { headers: {
                 'cache-control': 'no-store', 'rallar-state-source': 'durable',
@@ -52,9 +52,13 @@ describe('watchAccess room purge', () => {
             expect(fetch).toHaveBeenCalledTimes(1);
             await vi.advanceTimersByTimeAsync(1);
             expect(fetch).toHaveBeenCalledTimes(2);
-            expect(observed).toEqual(denied ? { status: 'denied', reason: 'unavailable' } : { status: 'current' });
+            if (lagMs) {
+                expect(observed).toEqual({ status: 'current' });
+                await vi.advanceTimersByTimeAsync(2_000);
+            }
+            expect(observed).toEqual({ status: 'denied', reason: 'unavailable' });
             await vi.advanceTimersByTimeAsync(60_000);
-            expect(fetch).toHaveBeenCalledTimes(2);
+            expect(fetch).toHaveBeenCalledTimes(lagMs ? 3 : 2);
         } finally {
             stop();
             vi.useRealTimers();

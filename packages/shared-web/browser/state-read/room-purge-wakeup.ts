@@ -1,9 +1,11 @@
+import { toExponentialBackoffMs } from '@shared/resilience/ComputeAsyncTask.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 
 /** A storage cutoff wakes an authorized read. Only the server decides whether the room remains accessible. */
 export class RoomPurgeWakeup {
     #cutoff: number | null = null;
+    #confirmations = 0;
     #cancel: (() => void) | undefined;
     readonly #readEarliestEpochMs: () => number | undefined;
     readonly #wake: () => void;
@@ -14,21 +16,28 @@ export class RoomPurgeWakeup {
     }
 
     observe(cutoff: number | null): void {
-        if (cutoff === this.#cutoff) return;
-        this.#cancel?.();
-        this.#cutoff = cutoff;
-        if (cutoff === null) return;
-        // Losing calibration retires the socket. Its recovery will read the room and arm a fresh deadline.
-        if (this.#readEarliestEpochMs() === undefined) {
-            this.#cutoff = null;
-            return;
+        if (cutoff !== this.#cutoff) {
+            this.#cancel?.();
+            this.#cancel = undefined;
+            this.#confirmations = 0;
+            this.#cutoff = cutoff;
         }
-        const timers = { ...createDefaultTimers(), nowMs: () => this.#readEarliestEpochMs() ?? cutoff };
+        if (cutoff === null || this.#cancel) return;
+        const now = this.#readEarliestEpochMs();
+        if (now === undefined) return;
+        // A successful read after the wake can mean the storage node is behind the clock node.
+        const deadline = this.#confirmations === 0 ? cutoff : now + toExponentialBackoffMs(this.#confirmations, 30_000, 1_000);
+        const timers = { ...createDefaultTimers(), nowMs: () => this.#readEarliestEpochMs() ?? deadline };
+        const arm = () => { this.#cancel = scheduleAtDeadline(timers, deadline, check); };
         const check = () => {
-            if (timers.nowMs() < cutoff) arm();
-            else this.#wake();
+            if (timers.nowMs() < deadline) {
+                arm();
+                return;
+            }
+            this.#cancel = undefined;
+            this.#confirmations++;
+            this.#wake();
         };
-        const arm = () => { this.#cancel = scheduleAtDeadline(timers, cutoff, check); };
         arm();
     }
 }
