@@ -115,8 +115,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly inboundStores?: ALInboundRuntimeStores;
     /**
      * The instance-local memory pair a volatile message is admitted and delivered from; `undefined` keeps every
-     * message in `inboundStores`. An instance relaying acknowledgements to other instances keeps only relay-only
-     * RTC signals here: the other instances' readers resolve every other message's canonical copy from the shared store.
+     * message in `inboundStores`. `keepsVolatileMessageInMemory` chooses which volatile messages stay here.
      */
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
     readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;

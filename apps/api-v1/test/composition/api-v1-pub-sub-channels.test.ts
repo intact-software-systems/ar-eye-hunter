@@ -26,14 +26,13 @@ function createChannelRoutingNotificationPort(): ApiV1DatabaseNotificationPort {
     };
 }
 
-test('the queue, live notice and AppInbox completion channels are distinct, and the relayed-ACK channel is gone', () => {
+test('each pub/sub notice kind has a channel of its own', () => {
     const channels = [
         API_V1_QUEUE_BOX_KEY_CHANNEL,
         API_V1_LIVE_WS_NOTICE_CHANNEL,
         API_V1_APP_INBOX_COMPLETION_CHANNEL
     ];
     assert.equal(new Set(channels).size, channels.length);
-    assert.ok(!channels.includes('ws-relayed-ack'));
 });
 
 test('a live signalling notice reaches the live subscriber of another server and never the QueueBox key listener', async () => {

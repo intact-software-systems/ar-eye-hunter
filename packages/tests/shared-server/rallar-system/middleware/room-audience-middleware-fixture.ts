@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { expect, onTestFinished } from 'vitest';
 
-import { isInstanceLocalRtcSignal } from '@shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts';
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
 import type {
     CreateRallarMiddlewareOptions,
@@ -35,9 +34,12 @@ const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1'
 const ROOM_SNAPSHOT_VERSION = 1;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 /** The wait the ALM scale recipe gives a shot's receipt read, given here to every receipt read across replicas. */
-export const RECIPE_RECEIPT_READ_WAIT_MS = 5_000;
+const RECIPE_RECEIPT_READ_WAIT_MS = 5_000;
 
-/** One API instance of a deployment with other instances: its WS service and the sockets of the sessions on it. */
+/**
+ * One API instance beside others: its WS service and the sockets of the sessions on it. It shares only the inbound
+ * admission store with them; its receipt record is its own, so a receipt is counted on the replica that admitted it.
+ */
 export interface RoomAudienceMiddlewareInstance {
     readonly service: WsQueueBoxServerService;
     readonly sockets: Readonly<Record<string, TestWebSocket>>;
@@ -105,8 +107,7 @@ export async function createRoomAudienceMiddlewareInstance(
                     scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId },
                     expiresAtEpochMs: Date.now() + 60_000
                 }
-                : undefined,
-        keepsVolatileMessageInMemory: isInstanceLocalRtcSignal
+                : undefined
     }, engine);
     authorizeRoomAudience(runtime, input);
     onTestFinished(async () => {
@@ -159,7 +160,7 @@ export async function runKeptSendReplayedElsewhere(input: KeptSendReplayedElsewh
     };
 }
 
-export function readReceiptPhases(socket: TestWebSocket, msgId: string): readonly string[] {
+function readReceiptPhases(socket: TestWebSocket, msgId: string): readonly string[] {
     return readSentReceipts(socket).filter((receipt) => receipt.msgId === msgId).map((receipt) => receipt.phase);
 }
 

@@ -28,7 +28,7 @@ export async function createPostgresWsReplica(input: PostgresWsReplicaInput): Pr
             mode: 'postgres',
             url: requirePostgresDatabaseUrl(),
             schemaInitialization: 'disabled',
-            pubSub: 'postgres',
+            pubSub: 'disabled',
             applicationPool: { maxConnections: 4, idleTimeoutSeconds: 1 },
             listenerPool: { maxConnections: 1, idleTimeoutSeconds: 0 }
         },
