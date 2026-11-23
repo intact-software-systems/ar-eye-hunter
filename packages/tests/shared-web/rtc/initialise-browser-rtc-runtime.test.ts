@@ -182,7 +182,7 @@ describe('browser RTC runtime composition', () => {
         });
         onTestFinished(() => queueBox.close());
         await expect(initialiseRtcConnectionService({
-        creationEpochMs: Date.now,
+            creationEpochMs: Date.now,
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -747,10 +747,15 @@ async function joinStartupRoom(
     return manager;
 }
 
-/** Publishes a room whose accepted layout names `startup-peer` to the startup's group peer ledger. */
+/**
+ * Publishes a room whose accepted layout names `startup-peer` to the startup's group peer ledger, then runs the
+ * release the browser's adoption of that layout runs, so the offer held for it is due at once and its admission
+ * waits on no retry delay.
+ */
 async function nameStartupPeerInRoom(startup: StartupRtcRuntime): Promise<void> {
     publishStartupPeerLayout(startup);
     await joinStartupRoom(startup, IGNORED_HELD_OFFER_RELEASES);
+    await createBrowserRtcHeldOfferReleases(startup.initialized.webRtcConnectionService).onOverlayAdopted();
 }
 
 /** A native peer connection to `peerId` whose channels are open, torn down with the test. */

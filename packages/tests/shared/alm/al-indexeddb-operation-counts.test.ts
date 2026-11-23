@@ -68,13 +68,10 @@ const INBOUND_NAMESPACE = 'al-inbound-counts';
 const INBOUND_WORKER_ID = 'al-inbound:counts';
 /** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
 const INBOUND_ROTATION_ROUND_LIMIT = 16;
-/**
- * A hundred engine passes at the engine's fixed 100 ms delay: ten idle seconds of a rotation with
- * nothing to claim, so a bound per round is also the bound per second the relay has to hold.
- */
+/** A hundred engine passes over a rotation with nothing to claim: each one walks the rotation once. */
 const INBOUND_IDLE_ROUNDS = 100;
-/** Far above the 4 per hundred rounds the outbound owner spends, whose probe answer stands for the idle ceiling. */
-const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
+/** The pages of one idle rotation: one each of NEW, RETRY and RESERVED. */
+const INBOUND_ROTATION_PAGES = 3;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 /** The resource inbox's timeout-claim and fairness rate-limit window, so the pin crosses at least one of each. */
 const IDLE_OWNER_RATE_WINDOW_MS = 60_000;
@@ -539,29 +536,28 @@ describe('inbound work owner IndexedDB scan volume', () => {
     });
 
     it.each(['empty-queue', 'deferred-row'] as const)(
-        'probes storage on every idle rotation round and relays nothing for it, scanning an %s',
+        'walks the whole rotation on every idle round and relays nothing for it, scanning an %s',
         async (scanned) => {
             const idle = await readIdleInboundRotation(scanned);
 
-            // The rotation carries its scan position inside the read, so no answer of its own can
-            // stand and every round reaches storage. That is also why the runtime relays no
-            // `readiness-probe`: one event per engine round is a round trip out of the page in the
-            // conformance lane, which doubled its per-operation cost and failed the RTC cell.
-            expect(idle.workPages).toBeGreaterThan(INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST);
-            expect(idle.workPages).toBeLessThanOrEqual(INBOUND_IDLE_ROUNDS);
-            // `rotation-alive` is the one thing an idle rotation may say, and it says it once per
-            // `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds rather than once per round.
+            // A held row turns eligible without a commit of this lane, so no answer can stand: every
+            // round walks NEW, RETRY and RESERVED once. The first round first finishes, at RETRY and
+            // RESERVED, the rotation the bootstrap batch began at NEW. That is also why the runtime
+            // relays no `readiness-probe`: one event per engine round is a round trip out of the page in
+            // the conformance lane, which doubled its per-operation cost and failed the RTC cell.
+            expect(idle.workPages).toBe(INBOUND_IDLE_ROUNDS * INBOUND_ROTATION_PAGES + 2);
+            // `rotation-alive` is the one thing an idle rotation may say, at most once per window.
             expect(idle.relayedKinds.filter((kind) => kind !== 'rotation-alive')).toEqual([]);
         }
     );
 
-    it('spends only probes on an idle rotation over an empty queue', async () => {
+    it('spends only page reads on an idle rotation over an empty queue', async () => {
         const idle = await readIdleInboundRotation('empty-queue');
 
-        // A claim that observed nothing opens no transaction, and an exhausted-retry finalization that
-        // finds nothing is the idle owner's probe: the non-probe window reads zero beside it.
+        // No page holds work to claim, so no batch runs: neither a reservation nor the exhausted-retry
+        // finalization a batch's claim sweeps with reaches storage.
         expect(idle.nonProbeWorkOperations).toBe(0);
-        expect(idle.workProbes).toBeGreaterThan(0);
+        expect(idle.workProbes).toBe(0);
     });
 });
 

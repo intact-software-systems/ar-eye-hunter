@@ -37,7 +37,7 @@ import {
     recordALInboundAdmissionOutcome,
     toALInboundClaimIdentity,
     toALInboundClaimTrace,
-    type ALInboundDeferredEffect
+    toOldestFirstALInboundDeferredEffects
 } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
@@ -63,14 +63,12 @@ import {
     type ALInboundClaimedControlSend,
     type ALInboundWorkSelector
 } from '../read-al-inbound-work-selection.ts';
-
-/**
- * How many empty rotation rounds one liveness event stands for. The rotation runs a batch every
- * engine round it still owes a page, so this is roughly one event every few seconds of scanning --
- * enough to separate a rotation that keeps finding nothing from one that stopped running, and far
- * too rare to bring back the per-round cost the empty batches were suppressed for.
- */
-export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
+import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
+import {
+    AL_INBOUND_ROTATION_WINDOW_UNOPENED,
+    computeALInboundRotationWindow,
+    type ALInboundRotationWindow
+} from './compute-al-inbound-rotation-window.ts';
 
 /** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
 interface ALInboundControlSendRound {
@@ -125,11 +123,7 @@ export class ALInboundStoreLane {
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
-    private emptyRoundCount = 0;
-    private emptyRoundsFromMs: number | undefined;
-    private longestEmptyRoundMs = 0;
-    private deferredRoundCount = 0;
-    private latestDeferred: readonly ALInboundDeferredEffect[] = [];
+    private rotationWindow: ALInboundRotationWindow = AL_INBOUND_ROTATION_WINDOW_UNOPENED;
     /** The effects the running batch has started, in run order: only this owner holds them decoded. */
     private batchRunOrder: ALInboundBatchRunOrder | undefined;
     private controlRound: ALInboundControlSendRound | undefined;
@@ -154,7 +148,8 @@ export class ALInboundStoreLane {
             namespace: input.stores.admissionStore.namespace,
             // Selection schedules work; delivery rechecks authority with the strict runtime clock.
             nowMs: () => this.dependencies.workClock.nowMs(),
-            lane: input.lane
+            lane: input.lane,
+            onRotationCompleted: (rotation) => this.recordCompletedRotation(rotation)
         });
         this.work = this.createWorkHandler(workPort, workType);
         this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(
@@ -332,6 +327,12 @@ export class ALInboundStoreLane {
         return selection;
     }
 
+    /** Every engine pass probes, so an idle lane still sweeps its memory pair on its own round. */
+    private async readNextReadyAtMs(port: ALWorkQueuePort, nowMs: number): Promise<number | undefined> {
+        this.evictWhenDue();
+        return await this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port, nowMs), undefined);
+    }
+
     /** The memory pair has no eviction loop of its own: its round sweeps it, at most once per interval. */
     private evictWhenDue(): void {
         const nowMs = this.readNowMs();
@@ -343,14 +344,14 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * A batch is relayed when it touched work; a probe is not relayed at all. The rotation's probe
-     * reads a page every engine round by construction, and in the conformance lane every relayed
-     * event is a round trip out of the page, so one event per round roughly doubled that page's
-     * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
-     * signaling far enough that the delivery baseline received nothing and the lane failed.
-     * Suppressed, the same cell passes at 10-13 ms/op (12.6 measured on the full lane here, 10.3 on
-     * the rtc-only run that isolated this relay). The probe's own `durationMs` is still measured and
-     * the outbound owners, whose probes are the invalidations they can name, still report theirs.
+     * A batch is relayed when it touched work; a probe is not relayed at all. Every engine pass probes
+     * every inbound lane, and in the conformance lane every relayed event is a round trip out of the
+     * page, so one event per pass roughly doubled that page's traffic and with it its measured
+     * per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC signaling far enough that the
+     * delivery baseline received nothing and the lane failed. Suppressed, the same cell passes at
+     * 10-13 ms/op (12.6 measured on the full lane here, 10.3 on the rtc-only run that isolated this
+     * relay). The probe's own `durationMs` is still measured and the outbound owners, whose probes are
+     * the invalidations they can name, still report theirs.
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
@@ -360,16 +361,14 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * The rotation runs a batch every engine round, so an empty one is its normal resting state: it
-     * claimed nothing, ran nothing and released nothing, and every number it could carry was already
-     * decided by the probe that preceded it. It is suppressed for the same reason the probe is, and
-     * `rotation-alive` below is what keeps a silent rotation distinguishable from a stopped one.
+     * A batch runs for a page the probe could claim from, or for a commit. One that claimed and
+     * rejected nothing -- a commit's page with nothing claimable, or a port that reserved nothing the
+     * page cleared -- ran nothing and relays nothing; `rotation-alive` is the rotation's witness.
      */
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
         const runOrder = this.batchRunOrder;
         this.batchRunOrder = undefined;
         if (event.claimedCount === 0 && event.rejectedCount === 0) {
-            this.recordEmptyRotationRound(event);
             return;
         }
         try {
@@ -397,44 +396,26 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * Suppressing the empty rounds left the rotation itself unobservable: a committed admission that
-     * no drain follows reads the same whether no consumer is registered for its typeId or the
-     * rotation stopped running. One event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` of them says
-     * which, and carries the wall time they spanned so a slowed rotation reads as a long gap. A due row
-     * those rounds held back rides on the same event rather than one of its own, because one event per
-     * round is exactly the relay cost the suppression removed.
+     * A committed admission that no drain follows reads the same whether no consumer is registered for
+     * its typeId or the rotation stopped running. Completed rotations say which, at most once per idle
+     * ceiling, which an idle lane reaches on its own, so the relay costs one event per lane per window;
+     * a due row the window's rotations held back rides on the same event rather than one of its own.
      */
-    private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
-        const nowMs = this.dependencies.workClock.nowMs();
-        this.emptyRoundCount += 1;
-        this.emptyRoundsFromMs ??= nowMs - event.durationMs;
-        this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
-        const unreservedDue = this.workSelector.getUnreservedDue();
-        if (unreservedDue.length > 0) {
-            this.deferredRoundCount += 1;
-            this.latestDeferred = toOldestFirstALInboundDeferredEffects(unreservedDue);
-        }
-        if (this.emptyRoundCount < AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS) {
+    private recordCompletedRotation(rotation: ALInboundRotationPage.CompletedRotation): void {
+        const recorded = computeALInboundRotationWindow(this.rotationWindow, rotation);
+        this.rotationWindow = recorded.window;
+        if (recorded.alive === undefined) {
             return;
         }
         try {
             this.dependencies.diagnostics?.({
                 kind: 'rotation-alive',
                 lane: this.input.lane,
-                workerId: event.workerId,
-                emptyRoundCount: this.emptyRoundCount,
-                durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs),
-                longestRoundMs: this.longestEmptyRoundMs,
-                deferredRoundCount: this.deferredRoundCount,
-                latestDeferred: this.latestDeferred
+                workerId: this.input.workerId,
+                ...recorded.alive
             });
         }
         catch { /* Optional diagnostics cannot change mandatory work. */ }
-        this.emptyRoundCount = 0;
-        this.emptyRoundsFromMs = undefined;
-        this.longestEmptyRoundMs = 0;
-        this.deferredRoundCount = 0;
-        this.latestDeferred = [];
     }
 
     /**
@@ -649,9 +630,9 @@ export class ALInboundStoreLane {
             clock: dependencies.workClock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
-            readNextReadyAtMs: (port, nowMs) =>
-                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port, nowMs), undefined),
-            // The rotation advances one status per probe, so an answer of its own never stands.
+            readNextReadyAtMs: (port, nowMs) => this.readNextReadyAtMs(port, nowMs),
+            // A held row turns eligible without a commit of this lane -- a consumer registers, a snapshot
+            // refreshes -- so every engine pass walks the rotation again: no answer stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
             claimSuccessor: (port, completed) => this.workSelector.claimPromotedRelease(port, completed),
@@ -715,12 +696,6 @@ function toALInboundRetryDueAt(entry: ResourceEntry, nowMs: number): ResourceEnt
         ...entry,
         dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(nowMs) }
     };
-}
-
-function toOldestFirstALInboundDeferredEffects(
-    deferred: readonly ALInboundDeferredEffect[]
-): readonly ALInboundDeferredEffect[] {
-    return [...deferred].sort((left, right) => left.dueAtMs - right.dueAtMs);
 }
 
 function toALInboundReplayOutcome(
