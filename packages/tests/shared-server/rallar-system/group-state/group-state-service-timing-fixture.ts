@@ -18,6 +18,7 @@ export const TIMED_ASYNC_OPERATIONS = [
     'captureFormationCriterionMutationIngress',
     'captureFormationAutomationMutationIngress',
     'captureTopologyPublicationMutationIngress',
+    'captureTimelineDeadlineMutationIngress',
     'captureActivationStatusMutationIngress',
     'listSnapshots',
     'listSnapshotsPage',
@@ -156,6 +157,7 @@ function createIngressCaptureFake(
     | 'captureFormationCriterionMutationIngress'
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
+    | 'captureTimelineDeadlineMutationIngress'
     | 'captureActivationStatusMutationIngress'
 > {
     return {
@@ -171,6 +173,8 @@ function createIngressCaptureFake(
             (await record({ operation: 'captureFormationAutomationMutationIngress', arguments: arguments_ })) as never,
         captureTopologyPublicationMutationIngress: async (...arguments_) =>
             (await record({ operation: 'captureTopologyPublicationMutationIngress', arguments: arguments_ })) as never,
+        captureTimelineDeadlineMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureTimelineDeadlineMutationIngress', arguments: arguments_ })) as never,
         captureActivationStatusMutationIngress: async (...arguments_) =>
             (await record({ operation: 'captureActivationStatusMutationIngress', arguments: arguments_ })) as never,
         captureSessionCleanupMutationIngresses: async (...arguments_) =>
@@ -323,6 +327,7 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     captureFormationCriterionMutationIngress: [{} as never, 1_000],
     captureFormationAutomationMutationIngress: [{} as never, 1_000],
     captureTopologyPublicationMutationIngress: [{} as never, 1_000],
+    captureTimelineDeadlineMutationIngress: [{} as never, 1_000],
     captureActivationStatusMutationIngress: [{} as never, 1_000],
     listSnapshots: [timingScope],
     listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
@@ -376,6 +381,10 @@ const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
     captureTopologyPublicationMutationIngress: async (service) =>
         await service.captureTopologyPublicationMutationIngress(
             ...TIMED_OPERATION_ARGUMENTS.captureTopologyPublicationMutationIngress
+        ),
+    captureTimelineDeadlineMutationIngress: async (service) =>
+        await service.captureTimelineDeadlineMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureTimelineDeadlineMutationIngress
         ),
     captureActivationStatusMutationIngress: async (service) =>
         await service.captureActivationStatusMutationIngress(

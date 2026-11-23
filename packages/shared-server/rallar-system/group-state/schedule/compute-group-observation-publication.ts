@@ -12,7 +12,7 @@ export function computeGroupObservationPublication(
     { command, read, facts, members }: GroupMutationWriteInput,
     group: Group
 ): ViewInvalidationPublication {
-    const clock = command.operation === 'updateGroup' ? command.input.roomClock : undefined;
+    const clock = command.operation === 'settleTimeline' ? command.input : command.operation === 'updateGroup' ? command.input.roomClock : undefined;
     const prior = read.group?.value;
     const groupAccessChanged = prior !== undefined &&
         (group.purgeAfterEpochMs !== prior.purgeAfterEpochMs || (group.status === 'deleted' && prior.status !== 'deleted'));

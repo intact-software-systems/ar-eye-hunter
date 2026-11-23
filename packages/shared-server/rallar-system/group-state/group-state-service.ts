@@ -219,6 +219,7 @@ function createIngressCaptureOperations(
     | 'captureFormationCriterionMutationIngress'
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
+    | 'captureTimelineDeadlineMutationIngress'
     | 'captureActivationStatusMutationIngress'
 > {
     const { dependencies, repositoryFor, authorityDependencies, captureInternalMutationIngress } = owners;
@@ -244,6 +245,8 @@ function createIngressCaptureOperations(
             captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
         captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
+        captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>
+            captureInternalMutationIngress(command, 'timeline-deadline', atEpochMs),
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'activation-status', atEpochMs),
         captureSessionCleanupMutationIngresses: async (input) => {

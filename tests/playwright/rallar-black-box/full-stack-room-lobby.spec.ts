@@ -9,7 +9,7 @@ const sdkUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/brow
 const observerUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rooms/lobby/rallar-room-lobby.ts', import.meta.url));
 const pageUrl = '/@fs' + fileURLToPath(new URL('../../../examples/room-scoreboard/index.html', import.meta.url));
 
-async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
+async function signIn(page: Page, user: FullStackUser, scope: StateScope, apiBaseUrl = config.apiBaseUrl) {
     await page.goto(pageUrl);
     return page.evaluateHandle(async ({ username, password, apiBaseUrl, scope, sdkUrl, observerUrl }) => {
         const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(sdkUrl);
@@ -21,7 +21,7 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
         const lobby = new RallarRoomLobby(rallar, scope);
         await lobby.start();
         return { lobby, rooms: rallar.rooms, rallar };
-    }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
+    }, { username: user.username, password: user.password, apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
 async function controlConnection(page: Page) {
@@ -354,5 +354,66 @@ test('a player keeps a private seat in another room and recovers a missed return
     }
     finally {
         await Promise.all([guestPage.close(), thirdPage.close()]);
+    }
+});
+
+test('an empty court advances once and a returning director sees the lounge observer’s phase and balance', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+    const court = { ...scope, groupId: 'court' };
+    const lounge = { ...scope, groupId: 'lounge' };
+    const guestPage = await browser.newPage({ baseURL });
+    try {
+        const host = await signIn(page, config.userA, scope);
+        const guest = await signIn(guestPage, config.userB, scope, process.env.VITE_RALLAR_API_BASE_URL_B);
+        const control = await host.evaluate(async ({ rooms, rallar }, { court, lounge }) => {
+            await rooms.createAndSwitch({ ...court, displayName: 'Court', joinMode: 'open' });
+            await rooms.create({ ...lounge, displayName: 'Lounge', joinMode: 'open' });
+            const { appointment } = await rallar.director.appoint(court);
+            return { name: 'match', expectedDirectorEpoch: appointment!.epoch };
+        }, { court, lounge });
+        const observer = await guest.evaluateHandle(async ({ rooms }, { court, lounge }) => {
+            await rooms.enter(court);
+            await rooms.enter(lounge, { preserveCurrentMembership: true });
+            let latest: RoomTimelineObservation | undefined;
+            const stop = rooms.watchTimeline(court, 'match', value => { latest = value; });
+            return { read: () => latest, stop };
+        }, { court, lounge });
+        const latest = () => observer.evaluate(state => state.read());
+        await expect.poll(latest).toEqual({ status: 'current', timeline: null });
+        const successor = { phase: 'period-one', durationMs: 600_000 };
+        const extended = await host.evaluate(async ({ rooms }, { court, lounge, control, successor }) => {
+            const pausedClock = { ...control, name: 'practice' };
+            const practice = await rooms.advanceTimeline(court, { ...pausedClock, expectedRevision: 0,
+                phase: 'practice-warmup', durationMs: 4000, successor }, crypto.randomUUID());
+            await rooms.changeClock(court, { ...pausedClock, expectedRevision: practice.revision,
+                operation: 'pause' }, crypto.randomUUID());
+            const warmup = await rooms.advanceTimeline(court, { ...control, expectedRevision: 0,
+                phase: 'warmup', durationMs: 4000, successor }, crypto.randomUUID());
+            const extended = await rooms.extendTimeline(court, { ...control, expectedRevision: warmup.revision,
+                durationMs: 3000 }, crypto.randomUUID());
+            await rooms.enter(lounge, { preserveCurrentMembership: true });
+            return extended;
+        }, { court, lounge, control, successor });
+        if (extended.status !== 'running') {
+            throw new Error('Expected a running warm-up after extension.');
+        }
+        await expect.poll(latest).toEqual({ status: 'current', timeline: extended });
+        const expected = { revision: extended.revision + 1, startedAtRevision: extended.revision + 1,
+            phase: successor.phase, status: 'running', startedAtEpochMs: extended.endsAtEpochMs,
+            endsAtEpochMs: extended.endsAtEpochMs + successor.durationMs };
+        await expect.poll(latest, { timeout: 20000 }).toMatchObject({ status: 'current', timeline: expected });
+        expect(await guest.evaluate(({ rooms }) => rooms.current()?.group.groupId)).toBe(lounge.groupId);
+        const returned = await host.evaluate(async ({ rooms }, court) => {
+            await rooms.enter(court, { preserveCurrentMembership: true });
+            return { match: await rooms.readTimeline(court, 'match'), practice: await rooms.readTimeline(court, 'practice') };
+        }, court);
+        expect(returned.match).toMatchObject(expected);
+        expect(returned.practice).toMatchObject({ phase: 'practice-warmup', revision: 2, status: 'paused', successor });
+        expect(await latest()).toEqual({ status: 'current', timeline: returned.match });
+        await observer.evaluate(state => state.stop());
+    }
+    finally {
+        await guestPage.close();
     }
 });

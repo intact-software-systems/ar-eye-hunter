@@ -1,3 +1,6 @@
+import { installDurableDeadline } from '@shared-server/rallar-system/app-outbox/install-durable-deadline.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { decodeRoomTimelineDeadline, ROOM_TIMELINE_DEADLINE_TOPIC, roomTimelineDeadlineRoute, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/room-timeline-deadline.ts';
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
@@ -246,6 +249,14 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
         serviceId: input.serviceId, retentionMs: input.appInboxFinishedRetentionMs
     });
     lobbyExpiry.listen(runtime.outboxQueueReader);
+    installDurableDeadline({
+        typeId: AppOutboxType.ROOM_TIMELINE_DEADLINE, topicId: ROOM_TIMELINE_DEADLINE_TOPIC,
+        outboxQueueReader: runtime.outboxQueueReader, database: input.database, retentionMs: input.appInboxFinishedRetentionMs,
+        nowEpochMs: input.nowEpochMs, route: roomTimelineDeadlineRoute, decode: decodeRoomTimelineDeadline,
+        enqueue: (deadline, traceId) => runtime.groupStateInboxService.enqueueTimelineSettlement({
+            command: toTimelineSettlementCommand(deadline), atEpochMs: input.nowEpochMs(), traceId
+        })
+    });
     const viewWatches = createViewWatchService(appInbox, mutation, input.nowEpochMs);
     return requireApiV1Runtime({
         runtime,

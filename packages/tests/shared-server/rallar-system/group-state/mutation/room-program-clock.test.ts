@@ -1,3 +1,4 @@
+import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';
 import { computeGroupClockChange, computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
 import { assertRoomClockCommand, assertRoomClockMutation, readRoomClocks, readRoomSchedule } from '@shared/api/group-deadlines/room-clock.ts';
@@ -90,6 +91,11 @@ it('keeps the pause across director loss and fences the former director’s dela
         phases: [{ phase: 'first', startsAtEpochMs: now - 1000 }, { phase: 'second', startsAtEpochMs: now + 1000 }]
     } });
     await writer.updateGroup(SCOPE, 'court', { ...alice, requestId: 'freeze', roomClock: pause });
+    const successor = { phase: 'play', durationMs: 600_000 };
+    await writer.updateGroup(SCOPE, 'court', { ...alice, requestId: 'start-warmup', roomClock: {
+        name: 'match', operation: 'advance-phase', phase: 'warmup', durationMs: 60000,
+        expectedDirectorEpoch: 1, expectedRevision: 0, successor
+    } });
     const before = readRoomSchedule((await requireSnapshot(runtime, 'court')).group.metadata, 'court');
     expect(before && pausedRoomSchedulePosition(before)?.remainingMs).toBe(1000);
     await writer.disconnectPresenceSession(SCOPE, 'court', alice.actorSessionId, {
@@ -97,6 +103,13 @@ it('keeps the pause across director loss and fences the former director’s dela
     });
     expect(readRoomSchedule((await requireSnapshot(runtime, 'court')).group.metadata, 'court')).toEqual(before);
     await writer.appointDirector(SCOPE, 'court', { ...bob, requestId: 'replacement' });
+    const cancel = { name: 'match', operation: 'set-successor' as const, successor: null, expectedDirectorEpoch: 2, expectedRevision: 1 };
+    await expect(writer.updateGroup(SCOPE, 'court', { ...alice, requestId: 'former-director-cancellation', roomClock: cancel }))
+        .rejects.toMatchObject({ code: 'room-director-changed' });
+    const match = async () => readRoomTimeline((await requireSnapshot(runtime, 'court')).group.metadata, 'match');
+    expect(await match()).toMatchObject({ revision: 1, successor });
+    await writer.updateGroup(SCOPE, 'court', { ...bob, requestId: 'replacement-cancellation', roomClock: cancel });
+    expect(await match()).toMatchObject({ revision: 2, successor: null });
     for (const actor of [alice, bob]) {
         await expect(writer.updateGroup(SCOPE, 'court', { ...actor, requestId: 'obsolete-' + actor.actorPrincipalId, roomClock: resume }))
             .rejects.toMatchObject({ code: 'room-director-changed' });
