@@ -7,6 +7,7 @@ import { Either } from '../../../resilience/Either.ts';
 import type { ALInboundCommitBundle } from '../al-inbound-admission-store.ts';
 import { validateALInboundBufferedMessages } from '../al-inbound-ordering-validation.ts';
 import { validateALInboundWorkWrites } from '../al-inbound-work-entry.ts';
+import { isALInboundMessageRetainingWork } from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
 import { validateALInboundAdmissionMutation } from './validate-al-inbound-admission-mutation.ts';
 
 export function validateALInboundCommitBundle(
@@ -84,10 +85,13 @@ function validateCanonicalMessages(bundle: ALInboundCommitBundle): readonly ALMe
     return issues;
 }
 
+/** The latest expiry of the bundle's work that retains its message: a held start range's timer retains none. */
 function computeDurableEffectsExpiry(bundle: ALInboundCommitBundle): number {
     let expireAtTimestamp = 0;
     for (const effect of bundle.durableEffects) {
-        expireAtTimestamp = Math.max(expireAtTimestamp, effect.expireAtTimestamp);
+        if (isALInboundMessageRetainingWork(effect.payload)) {
+            expireAtTimestamp = Math.max(expireAtTimestamp, effect.expireAtTimestamp);
+        }
     }
     return expireAtTimestamp;
 }

@@ -1,18 +1,17 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
+import { recordALInboundOrderingPosition } from './admission/record-al-inbound-ordering-position.ts';
 import {
     isALInboundOriginAuthenticated,
     isALInboundOriginAuthenticatedReadmission
 } from './admission/is-al-inbound-origin-authenticated-readmission.ts';
-import { toALInboundOrderingPosition } from './admission/to-al-inbound-ordering-position.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundLocalDeliveryEffectId } from './al-inbound-effect-intent.ts';
@@ -21,7 +20,6 @@ import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
 import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
-import { recordALInboundDiagnostic } from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey } from './al-inbound-work-entry.ts';
 import { toALInboundGapRenewalsDueAt } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
@@ -241,16 +239,12 @@ export class ALInboundMessageAdmission {
         source: ALInboundMessageRuntime.Source,
         plan: ALMessageHandlingPlan
     ): void {
-        const position = toALInboundOrderingPosition(plan);
-        if (position !== null) {
-            recordALInboundDiagnostic(this.dependencies.diagnostics, {
-                kind: 'ordering-position',
-                workerId: this.dependencies.effectWorkerId,
-                ...position,
-                carrier: toALDeliveryCarrier(source),
-                ...toALMessageTrace(msg)
-            });
-        }
+        recordALInboundOrderingPosition(this.dependencies.diagnostics, {
+            workerId: this.dependencies.effectWorkerId,
+            msg,
+            carrier: toALDeliveryCarrier(source),
+            plan
+        });
     }
 
     /** A message its ingress authority cannot judge yet, kept to the deadline its admission would carry. */

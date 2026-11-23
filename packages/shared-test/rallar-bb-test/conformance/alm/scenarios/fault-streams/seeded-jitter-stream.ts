@@ -5,10 +5,10 @@ import type {
 
 import { toBudgetMs } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { ALM_OUTBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
 import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import { toGapNackWait } from '../../alm-conformance-repair-waits.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -46,13 +46,7 @@ function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): re
         toJitterCommand(sender, 'arm'),
         ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, { ack: 'receiver' })),
         ...sequences.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
-        toDiagnosticWait({
-            step: sender,
-            name: 'gap-nack',
-            topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
-            historyFrom: 'cell',
-            contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(sender)}:`
-        }),
+        toGapNackWait({ step: sender, name: 'gap-nack', orderingKey: toOrderingKey(sender), absent: false }),
         toJitterCommand(sender, 'release'),
         toResultAssertion({
             step: sender,

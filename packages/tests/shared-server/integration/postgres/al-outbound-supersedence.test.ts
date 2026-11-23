@@ -148,7 +148,8 @@ async function readSupersedingDecision(
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
         }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: false
     });
     return computeALOutboundDispatch({
         read,

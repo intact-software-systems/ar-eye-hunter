@@ -570,8 +570,9 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
             const controls = receiver.messages().map(parseALControlMessage);
             if (scenario === 'ordered-latest') {
-                // The origin recorded the superseded sequence as sent, and the receiver holds no position on the
-                // track, so the replacement opens it there: nothing below it is a gap to ask for.
+                // The origin recorded the superseded sequence as sent, but the replacement carries the latest-wins
+                // supersedence its origin applied, so a receiver holding no position on the track enters it there:
+                // nothing below it is a gap to ask for.
                 expect(controls.filter((control) => control?.type === 'nack' || control?.type === 'repair')).toEqual([]);
                 // A receiver that held a position below the replacement would ask for seq 1: the repair of the
                 // superseded message commits as a repair and settles superseded, sending nothing.

@@ -14,6 +14,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
+import { isALInboundDeliveryReaching } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundDeliveryProgress,
@@ -35,6 +36,11 @@ export interface ALInboundDeliveryOwner {
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
     /** The carrier the buffered message arrived on: its release is claimed and dispatched by that runtime. */
     readonly carrier: ALDeliveryCarrier;
+    /**
+     * The sequence the copy's completed delivery moves the track's progress through: `seq`, or past the expired copies a
+     * bounded hold passed after the run this copy ends.
+     */
+    readonly completesThrough: number;
     readonly delivery?: ALInboundDeliveryOwner;
 }
 
@@ -50,6 +56,7 @@ export interface ALStoredInboundBufferedSnapshot {
     readonly message: ALInboundMessageReference;
     readonly plan: ALMessageHandlingPlan;
     readonly carrier: ALDeliveryCarrier;
+    readonly completesThrough: number;
     readonly delivery?: ALInboundDeliveryOwner;
 }
 
@@ -90,6 +97,7 @@ export function toALStoredInboundBufferedSnapshot(
         message: toALInboundMessageReference(snapshot.msg),
         plan: snapshot.plan,
         carrier: snapshot.carrier,
+        completesThrough: snapshot.completesThrough,
         ...(snapshot.delivery === undefined ? {} : { delivery: snapshot.delivery })
     };
 }
@@ -98,13 +106,21 @@ export function decodeALInboundBufferedSnapshot(
     value: unknown,
     slot: ALInboundBufferedSlot
 ): ALStoredInboundBufferedSnapshot {
-    const snapshot = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'message', 'plan', 'carrier'], ['delivery']);
+    const snapshot = decodeALAdmissionRecord(
+        value,
+        ['trackKey', 'seq', 'message', 'plan', 'carrier', 'completesThrough'],
+        ['delivery']
+    );
     const trackKey = decodeALAdmissionString(snapshot.trackKey);
     const seq = decodeALAdmissionNumber(snapshot.seq);
     const message = decodeALInboundMessageReference(snapshot.message);
     const plan = decodeALInboundPlan(snapshot.plan);
     const carrier = decodeALAdmissionCarrier(snapshot.carrier);
-    if (trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}`) {
+    const completesThrough = decodeALAdmissionNumber(snapshot.completesThrough);
+    if (
+        trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}` ||
+        !isALInboundDeliveryReaching({ seq, completesThrough }, seq)
+    ) {
         throw new TypeError('Persisted buffered message does not match its ordering slot');
     }
     if (plan.orderingRuntime.trackKey !== undefined && plan.orderingRuntime.trackKey !== trackKey) {
@@ -114,7 +130,7 @@ export function decodeALInboundBufferedSnapshot(
         throw new TypeError('Persisted buffered plan does not match its sequence');
     }
     if (snapshot.delivery === undefined) {
-        return { trackKey, seq, message, plan, carrier };
+        return { trackKey, seq, message, plan, carrier, completesThrough };
     }
     const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
     return {
@@ -123,6 +139,7 @@ export function decodeALInboundBufferedSnapshot(
         message,
         plan,
         carrier,
+        completesThrough,
         delivery: { effectId: decodeALAdmissionString(delivery.effectId) }
     };
 }
@@ -154,6 +171,7 @@ export async function readALInboundBufferedMessage(
         msg: owner.msg,
         plan: stored.plan,
         carrier: stored.carrier,
+        completesThrough: stored.completesThrough,
         ownerRetainUntilMs: owner.retainUntilMs,
         ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
     };

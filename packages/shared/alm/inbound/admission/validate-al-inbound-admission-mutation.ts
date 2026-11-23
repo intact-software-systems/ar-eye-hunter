@@ -6,8 +6,9 @@ import type {
 import { decodeALInboundDeliveryProgress } from '../al-inbound-ordering-validation.ts';
 import { decodeALInboundControlOwnerIndex, decodeALInboundSource } from '../al-inbound-source-validation.ts';
 import {
-    canALInboundDeliveryComplete,
-    computeALInboundWitnessedCompletedThrough
+    computeALInboundDeliveryCompletion,
+    computeALInboundWitnessedCompletedThrough,
+    isALInboundDeliveryReaching
 } from './al-inbound-delivery-progress.ts';
 
 /** Every reason one mutation may not be committed, in the order the bundle rejects them. */
@@ -29,6 +30,9 @@ export function validateALInboundAdmissionMutation(
         catch {
             issues.push('Inbound admission candidate has invalid delivery progress');
         }
+    }
+    if (mutation.kind === 'set-buffered' && !isALInboundDeliveryReaching(mutation.snapshot, mutation.snapshot.seq)) {
+        issues.push('Inbound admission candidate has a buffered slot whose completion reaches below its own sequence');
     }
     if (mutation.kind === 'set-msg-owner') {
         try {
@@ -105,17 +109,18 @@ function matchesOriginalObservation(mutation: ALInboundAdmissionMutation, bundle
 
 /**
  * The progress an admission retains as it stands, or moves past the copies it witnessed; a completed delivery moves it
- * to its own sequence once that delivery's predecessor, past any omission, had completed.
+ * through what its slot reaches once that delivery's predecessor, past any omission, had completed.
  */
 function isObservedProgressStep(completedThrough: number, bundle: ALInboundCommitBundle): boolean {
     const observed = bundle.observations;
     const observedCompletedThrough = observed.deliveryProgress?.value?.completedThrough ?? 0;
-    if (observed.buffered !== undefined && completedThrough === observed.buffered.seq) {
-        return canALInboundDeliveryComplete({
+    if (observed.buffered !== undefined && completedThrough === observed.buffered.completesThrough) {
+        return computeALInboundDeliveryCompletion({
             completedThrough: observedCompletedThrough,
-            seq: completedThrough,
-            observation: observed.buffered.plan.orderingRuntime
-        });
+            seq: observed.buffered.seq,
+            observation: observed.buffered.plan.orderingRuntime,
+            completesThrough: observed.buffered.completesThrough
+        }) === completedThrough;
     }
     if (observed.ordering === undefined || observed.deliveryProgress?.trackKey !== observed.ordering.trackKey) {
         return false;

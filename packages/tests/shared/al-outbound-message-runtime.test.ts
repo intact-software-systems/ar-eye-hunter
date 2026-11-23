@@ -263,7 +263,13 @@ describe('ALOutboundMessageRuntime', () => {
             lane: 'volatile' as const,
             preparedMessages: []
         });
-        const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const beforeAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
+        });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
@@ -280,7 +286,13 @@ describe('ALOutboundMessageRuntime', () => {
             ),
             'peer'
         );
-        const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const afterAck = await admissionStore.readOutgoingMessage({
+            msg: nextMessage,
+            planner: plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
+        });
         expect(afterAck.clientRecord?.senderId).toBe('self');
         expect(afterAck.clientRecord).not.toEqual(beforeAck.clientRecord);
 
@@ -289,7 +301,8 @@ describe('ALOutboundMessageRuntime', () => {
             msg: nextMessage,
             planner: plan,
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
@@ -311,7 +324,8 @@ describe('ALOutboundMessageRuntime', () => {
             msg: nextMessage,
             planner: plan,
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
     });

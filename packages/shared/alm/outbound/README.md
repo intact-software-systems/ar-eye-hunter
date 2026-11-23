@@ -1004,6 +1004,17 @@ route captured the receipt's audience; the send asked no logical receipt, so its
 expires; or the `admitted` receipt arrived after the `complete` one, which is refused as a repeat and writes no rows.
 The WS server's receipt admission has no shared head and writes none. A pair whose head is its own (the WS server)
 has no room-wide floor.
+A send whose latest-wins supersedence only the sender's QoS provider defaults applied carries it in its own signed `qos`:
+[`toALMessageWithAppliedSupersedence`](./supersedence/to-al-message-with-applied-supersedence.ts), called from
+`computeALOutboundDispatchPlan`, writes it as an admission addition of the sender's own enqueue, before the sequence is
+minted, the record stamped and the frame signed, so the proof covers it and every receiver plans the copy as latest-wins
+(the inbound entry rule does not hold such a copy for a lost first frame). A supersedence the app requested is kept, a
+message that already carries a proof is never rewritten, and an explicit plan (a relay forward, the WS server's queue
+box) never stamps. A retained admission's drain keeps the stamp its first admission decided and never stamps again.
+Request comparison strips the stamp. This is a delivery change for existing senders: a send whose latest-wins came only
+from provider defaults is now planned latest-wins by every hop and receiver, exactly as one the app requested is, where
+before only its sender planned it so. A server-originated send whose latest-wins comes only from the server's provider
+defaults is not stamped: its copies carry no supersedence of their own.
 On RTC the carrier then signs a frame that must carry a publisher proof, once, at the dispatch that first holds its
 frozen audience and its room snapshot: the first admission, or the dequeue that freezes a held send
 (`signAdmittedMessage`, `RtcSignedPublicationCarrier.signAdmitted`, which returns every other frame as it is). A frame
@@ -1015,8 +1026,9 @@ publication's refusals that `admitLeg` can know (shape, leader, a page that cann
 receipted room send's signer refusal is its first admission's (`key-not-registered`, a page without WebCrypto), and
 at a freezing dequeue it ends the held send `rejected`, as a keyless counted recipient does; an exclusions-only room
 broadcast that asks a logical receipt is never frozen and is refused `unsupported`. A signer that still cannot sign in
-the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported` like them. That drop names the request, never the stamped frame: its sequence and record belong to positions the
-aborted admission never committed, and it carries no proof. Under `rtc-with-ws-fallback` WS takes that request over and
+the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported` like them. That drop names the request without what the aborted admission added (`toALOutboundUnadmittedMessage`):
+no sequence and no record, which belong to positions it never committed, and no proof; a latest-wins supersedence the
+admission stamped stays on it, as on every retained request. Under `rtc-with-ws-fallback` WS takes that request over and
 stamps its own copy (D498); under `rtc` alone the send settles `rejected`. A granted publication enters only as a leg:
 `enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A planner's message is checked
 against its source with only a minted sequence removed (`validateALOutboundPlannedMessage`), so a planner that adds a

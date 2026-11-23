@@ -294,8 +294,8 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         expect(e.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
-    // A receiver with no state for a track enters it at the first frame it meets, so an older frame that arrives later
-    // by the other layout is stale.
+    // A best-effort frame repairs no gap, so a receiver with no state for its track enters it at the first frame it meets
+    // whatever the record names, and an older frame that arrives later by the other layout is stale.
     it('a receiver that first meets an ordered track by the new path enters it there, and its predecessor by the old path is not delivered', async () => {
         const mesh = createOverlapMesh({
             sessionIds: DIAMOND_SESSION_IDS,

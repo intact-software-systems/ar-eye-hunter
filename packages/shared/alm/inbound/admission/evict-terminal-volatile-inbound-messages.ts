@@ -177,7 +177,11 @@ function readCanonical(raw: ALAdmissionStoredValue, row: ALAdmissionStoredValue,
 
 function readBuffered(key: string, row: ALAdmissionStoredValue, namespace: string): ALStoredInboundBufferedSnapshot {
     return decodeALAdmissionValue(row.value, key, (value) => {
-        const record = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'message', 'plan', 'carrier'], ['delivery']);
+        const record = decodeALAdmissionRecord(
+            value,
+            ['trackKey', 'seq', 'message', 'plan', 'carrier', 'completesThrough'],
+            ['delivery']
+        );
         const trackKey = decodeALAdmissionString(record.trackKey);
         const seq = decodeALAdmissionNumber(record.seq);
         const prefix = `${namespace}:buffered:${trackKey}:`;

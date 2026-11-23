@@ -30,7 +30,7 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
-import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
+import { toALOutboundUnadmittedMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 import { toALOutboundCanonicalKey, toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import {
@@ -685,6 +685,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
             dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent,
+            // A retained admission's drain keeps what its first admission decided: an own send's request is stamped.
+            stampsAppliedSupersedence: dispatch.intent === 'enqueue' && dispatch.options.explicitPlan !== true &&
+                dispatch.options.pendingAdmission === undefined,
             repairAttempt: dispatch.options.repairBudget === undefined
                 ? undefined
                 : { attemptIdentity: toALOutboundAttemptIdentity(dispatch.options), phase: dispatch.phase }
@@ -852,24 +855,26 @@ export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, 
 }
 
 /**
- * The message as its sender asked for it: what this admission added -- a minted sequence, a recorded record, a proof
- * -- is not part of it until a commit lands.
+ * The message as its sender asked for it, with the supersedence its first admission applied: what this admission
+ * added -- a minted sequence, a recorded record, a proof -- is not part of it until a commit lands.
  */
 function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): ALMessage {
     return hasALOutboundAdmissionAdditions(read)
-        ? toALOutboundRequestComparableMessage(read.originalMsg, read.msg)
+        ? toALOutboundUnadmittedMessage(read.originalMsg, read.msg)
         : read.msg;
 }
 
 /**
- * Whether a first admission added to its request: it minted a sequence, stamped a record or signed the frame. A
- * recording that stamps nothing, a dequeue's, adds nothing to the message: its copy stays the row as admitted.
+ * Whether a first admission added to its request: it minted a sequence, stamped a record or the supersedence its plan
+ * applied, or signed the frame. A recording that stamps nothing, a dequeue's, adds nothing to the message: its copy
+ * stays the row as admitted.
  */
 function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
     const { originalMsg, msg } = read;
     return read.storedMessage === undefined && (
         (originalMsg.ordering?.seq === undefined && msg.ordering?.seq !== undefined) ||
         (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
+        (originalMsg.qos?.supersedence === undefined && msg.qos?.supersedence !== undefined) ||
         (originalMsg.proof === undefined && msg.proof !== undefined)
     );
 }

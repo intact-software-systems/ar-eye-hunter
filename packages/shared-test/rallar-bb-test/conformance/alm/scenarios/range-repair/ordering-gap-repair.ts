@@ -1,14 +1,11 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
-import {
-    ALM_INBOUND_DIAGNOSTICS_TOPIC,
-    toDiagnosticWait,
-    toRepairDispatchWait
-} from '../../alm-conformance-diagnostic-waits.ts';
+import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands } from '../../alm-conformance-fault-commands.ts';
 import { toHeldSecondSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
+import { toRepairDispatchWait } from '../../alm-conformance-repair-waits.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,

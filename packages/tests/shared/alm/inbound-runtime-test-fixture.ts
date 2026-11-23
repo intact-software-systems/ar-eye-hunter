@@ -178,8 +178,10 @@ export interface CreateInboundTestRuntimeInput {
     readonly effectWorkerId: string;
     /** Absent leaves the runtime's own default: every planned local delivery may be dispatched. */
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
-    /** Absent leaves the policy's plan as it stands. */
-    readonly plan?: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan;
+    /** Absent leaves the policy's plan as it stands; `msg` is the very object planned. */
+    readonly plan?: (plan: ALMessageHandlingPlan, msg: ALMessage) => ALMessageHandlingPlan;
+    /** Absent verifies no publication proof, as a carrier whose planner reads no proof verdict. */
+    readonly verifyPublicationProof?: ALInboundMessageRuntime.Dependencies['verifyPublicationProof'];
     /** Absent lets every dispatch complete; `retry` reschedules the claim that ran it. */
     readonly dispatchOutcome?: 'completed' | 'retry';
     /** Absent leaves a retained admission's replay authorized by the source it captured. */
@@ -235,9 +237,10 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         carrier: input.carrier,
         planIncomingMessage: (msg, source, observations) => {
             const plan = planner(msg, source, observations);
-            return input.plan?.(plan) ?? plan;
+            return input.plan?.(plan, msg) ?? plan;
         },
         canDispatchMessage: input.canDispatchMessage,
+        verifyPublicationProof: input.verifyPublicationProof,
         forwardMessage: input.forwardMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         onReplayAdmitted: input.onReplayAdmitted,

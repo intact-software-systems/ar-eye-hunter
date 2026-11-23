@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
+import { isALOrderingSnapshotLive } from '../../../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import {
@@ -124,8 +125,7 @@ function computeALInboundMessageRead(
         retention: read.retention,
         durability: read.durability,
         supersedence: read.supersedence,
-        orderingSnapshot: read.orderingSnapshot !== undefined &&
-                read.orderingSnapshot.updatedAtMs + read.orderingTrackTtlMs > read.nowMs
+        orderingSnapshot: isALOrderingSnapshotLive(read.orderingSnapshot, read.orderingTrackTtlMs, read.nowMs)
             ? read.orderingSnapshot
             : undefined,
         orderingAcceptance: computeALInboundOrderingAcceptance(read, true),

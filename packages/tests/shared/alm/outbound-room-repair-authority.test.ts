@@ -111,6 +111,7 @@ async function admitDirect(stores: OutboundTestStores, message: ALMessage, timeo
         msg: message,
         observedCanonicalEntry: entry,
         intent: 'dequeue',
+        stampsAppliedSupersedence: false,
         planner: (msg) => toPlan(msg, timeoutMs)
     });
     const computed = computeALOutboundDispatch({

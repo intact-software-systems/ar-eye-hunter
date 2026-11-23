@@ -13,6 +13,9 @@ describe('AL admission policy transitions', () => {
             role: 'recipient',
             selfPeerId: 'receiver',
             bufferedPriorSeqs: {},
+            evictedTrack: false,
+            latestWins: false,
+            repairsGaps: true,
             snapshot: {
                 lastContiguousSeq: 0,
                 bufferedSeqs: [2],

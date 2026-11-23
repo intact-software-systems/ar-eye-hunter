@@ -93,6 +93,7 @@ export type AlmConformanceScenarioId =
     | 'leader-confirms'
     | 'leader-outside-list'
     | 'lost-stream-start'
+    | 'lost-stream-start-bounded'
     | 'no-fallback-after-deadline'
     | 'no-leader-refused'
     | 'not-yet-in-sync'

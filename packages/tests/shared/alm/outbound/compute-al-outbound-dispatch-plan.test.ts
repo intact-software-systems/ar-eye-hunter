@@ -21,6 +21,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
             {
                 msg: message,
                 intent: 'dequeue',
+                stampsAppliedSupersedence: false,
                 observedCanonicalEntry: {
                     ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
                     key: CANONICAL_KEY
@@ -49,6 +50,7 @@ describe('the dispatch plan of a dequeued row whose authority re-checked its aud
             {
                 msg: message,
                 intent: 'dequeue',
+                stampsAppliedSupersedence: false,
                 observedCanonicalEntry: { ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()), key: otherKey },
                 dequeueAuthority: { admittedAudience: ['bob'], audienceJudged: true, recipientScope: undefined },
                 planner: (msg, authority) => {

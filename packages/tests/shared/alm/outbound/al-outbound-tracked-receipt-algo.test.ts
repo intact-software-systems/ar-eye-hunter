@@ -42,7 +42,8 @@ async function readTrackedReceiptAlgo(
             ackTracking
         }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     });
     return computeALOutboundDispatch({
         read,

@@ -179,7 +179,8 @@ function toTimerKey(stores: ALInboundRuntimeStores, revealing: ALMessage, reques
             toPeerId: 'sender',
             message: toALInboundMessageReference(revealing),
             traceId: revealing.id.traceId,
-            signsForRecipient: false
+            signsForRecipient: false,
+            heldStart: false
         })
     );
 }

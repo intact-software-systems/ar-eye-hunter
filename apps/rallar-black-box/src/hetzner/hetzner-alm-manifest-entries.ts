@@ -30,6 +30,7 @@ import { backpressureRefused } from '@shared-test/rallar-bb-test/conformance/alm
 import { bufferedTrackDrains } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/buffered-track-drains.ts';
 import { churnBoundedTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/own-share-under-inbound.ts';
+import { lostStreamStartBounded } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/lost-stream-start-bounded.ts';
 import { lostStreamStart } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/lost-stream-start.ts';
 import { seededJitterStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/seeded-jitter-stream.ts';
 import { seededLossStream } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fault-streams/seeded-loss-stream.ts';
@@ -111,6 +112,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'seeded-loss-stream', carriers: seededLossStream.carriers },
     { scenarioKey: 'seeded-loss-unreceipted-stream', carriers: seededLossUnreceiptedStream.carriers },
     { scenarioKey: 'lost-stream-start', carriers: lostStreamStart.carriers },
+    { scenarioKey: 'lost-stream-start-bounded', carriers: lostStreamStartBounded.carriers },
     { scenarioKey: 'seeded-jitter-stream', carriers: seededJitterStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },

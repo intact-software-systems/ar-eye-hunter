@@ -823,7 +823,13 @@ publication succeed. The event's `data` is the event itself:
   stated by the inbound admission after its commit, so a replayed pending
   admission states one too. `status` is `entered` (a recorded copy admitted
   while the recipient's runtime holds no live position on the track, opening
-  it at `seq`; a new connect's volatile lane holds none), `omitted` (a copy whose record
+  it at `seq`, unless the copy's record owes the recipient the track's start:
+  then the track opens at `0` and the copy waits as a gap until its start
+  arrives or the bounded hold ends; a new connect's volatile lane holds no
+  position; the hold's end states `entered` too, after its commit, for the
+  lowest live copy it enters at, with that copy's `seq`, `priorSeq` and
+  carrier, and states nothing when it passes every copy because all
+  expired), `omitted` (a copy whose record
   names the recipient's own position as its prior, delivered across the
   sequences never meant for it), `witnessed` (a frozen recipient that may not
   deliver, its position moved to `seq`; only a copy that moved it) or

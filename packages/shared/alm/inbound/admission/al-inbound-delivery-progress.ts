@@ -5,12 +5,28 @@ export interface ALInboundDeliveryCompletionInput {
     readonly seq: number;
     /** The observation the copy's admission recorded on its slot. */
     readonly observation: ALOrderingObservation;
+    /** What the copy's slot says its completion reaches: `seq`, or past the copies a bounded hold passed after it. */
+    readonly completesThrough: number;
 }
 
-/** A delivery completes the track through its own sequence once its predecessor completed. */
-export function canALInboundDeliveryComplete(input: ALInboundDeliveryCompletionInput): boolean {
+/**
+ * The progress a delivery moves its track to once its predecessor completed, past any omission: through its own
+ * sequence, or through the expired copies a bounded hold passed after the run this copy ends, which no delivery will
+ * complete. `undefined` while it cannot complete.
+ */
+export function computeALInboundDeliveryCompletion(input: ALInboundDeliveryCompletionInput): number | undefined {
     const predecessorSeq = computeALOrderingDeliveryPredecessorSeq(input.observation) ?? input.seq - 1;
-    return input.seq > input.completedThrough && predecessorSeq <= input.completedThrough;
+    return input.seq > input.completedThrough && predecessorSeq <= input.completedThrough
+        ? input.completesThrough
+        : undefined;
+}
+
+/** Whether a slot's completed delivery completes `seq`: its own sequence, or one its reach passes. */
+export function isALInboundDeliveryReaching(
+    slot: Readonly<{ seq: number; completesThrough: number; }>,
+    seq: number
+): boolean {
+    return slot.seq <= seq && seq <= slot.completesThrough;
 }
 
 export interface ALInboundWitnessedProgressInput {

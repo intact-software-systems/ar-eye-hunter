@@ -194,7 +194,13 @@ it('reads every member of a burst at once before committing in input order and a
         expect(results.map((result) => result.status === 'fulfilled' && result.value.computed.msg)).toEqual(messages);
         expect((await late).committed).toBe(true);
         for (const message of messages) {
-            const read = await readOutgoingMessage({ msg: message, planner: OUTBOUND_TEST_SEND_PLANNER, observedCanonicalEntry: undefined, intent: 'enqueue' });
+            const read = await readOutgoingMessage({
+                msg: message,
+                planner: OUTBOUND_TEST_SEND_PLANNER,
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue',
+                stampsAppliedSupersedence: true
+            });
             expect(read.storedMessage?.msgId).toBe(message.id.msgId);
             expect(read.msg).toEqual(message);
         }
