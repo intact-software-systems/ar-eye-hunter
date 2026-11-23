@@ -3,9 +3,9 @@ import { computeRtcConnectReadinessTimeoutMs } from '../../../recipe/compute-rtc
 
 /**
  * The sum of the timeouts `commands` name, one after another: each command's own timeout, and a connect's readiness
- * wait after it, which runs once the connect's own timeout ends. A close contributes the timeout it names, if any. Any
- * other command, and a connect's readiness, must name its own, or `coveredBy`, the wait or lifetime that must outlast
- * the commands, could not cover it.
+ * wait after it, which runs once the connect completed, under its own timeout. A close contributes the timeout it
+ * names, if any. Any other command, and a connect's readiness, must name its own, or `coveredBy`, the wait or lifetime
+ * that must outlast the commands, could not cover it.
  */
 export function computeCommandsTimeoutMs(commands: readonly RallarBlackBoxTestCommand[], coveredBy: string): number {
     return commands.reduce((sum, command) => {

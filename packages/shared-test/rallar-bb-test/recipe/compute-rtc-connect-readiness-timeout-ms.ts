@@ -5,7 +5,7 @@ import { decodePositiveInteger } from '../runtime/decode-runtime-result-values.t
 const RTC_CONNECT_READINESS_DEFAULT_TIMEOUT_MS = 5_000;
 
 /**
- * How long a command waits for RTC readiness after its own timeout: the runtime connects under the connect's timeout
+ * How long a connect waits for RTC readiness once it connected: the runtime connects under the connect's own timeout
  * and only then waits for readiness, under the readiness's timeout or, when it names no positive one, the default.
  * Any other command, and a connect that names no readiness, waits none.
  */
