@@ -24,8 +24,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const ALL_LOCAL_JOB_SETUP_MS = 10 * 60_000;
 
 function readSelectableManifest(manifestPath: string): RallarBlackBoxDistributedRunManifest {
-    const value: unknown = JSON.parse(readFileSync(path.join(repoRoot, manifestPath), 'utf8'));
-    return decodeDistributedRunManifest(value).fold(
+    return decodeDistributedRunManifest(JSON.parse(readFileSync(path.join(repoRoot, manifestPath), 'utf8'))).fold(
         () => {
             throw new Error(`${manifestPath} could not be decoded.`);
         },

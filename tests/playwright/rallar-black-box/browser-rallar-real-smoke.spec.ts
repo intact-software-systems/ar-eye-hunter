@@ -1,26 +1,20 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
+import type { ControlEventEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    decodeRecord,
+    decodeText
+} from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
-
-type ControlResult = Readonly<{
-    commandId?: string;
-    ok?: boolean;
-}>;
-
-type ControlEvent = Readonly<{
-    payload?: unknown;
-}>;
-
-type ControlRunSnapshot = Readonly<{
-    results?: readonly ControlResult[];
-    events?: readonly ControlEvent[];
-}>;
 
 const apiBaseUrl = process.env.VITE_RALLAR_API_BASE_URL?.trim();
 const roomId = process.env.VITE_RALLAR_ROOM_ID?.trim();
@@ -55,11 +49,8 @@ test.skip(
     'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and VITE_RALLAR_USERNAME/VITE_RALLAR_PASSWORD or a restorable VITE_RALLAR_* session to run the live browser-rallar smoke.'
 );
 
-function eventTopic(event: ControlEvent): string | undefined {
-    const payload = event.payload;
-    return payload && typeof payload === 'object' && 'topic' in payload
-        ? String((payload as { topic?: unknown; }).topic ?? '')
-        : undefined;
+function eventTopic(event: ControlEventEnvelope): string | undefined {
+    return decodeText(decodeRecord(event.payload).topic);
 }
 
 async function fetchRun(
@@ -70,7 +61,12 @@ async function fetchRun(
         `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as ControlRunSnapshot;
+    return decodeControlRunSnapshot(await response.json()).fold(
+        (issue) => {
+            throw new Error(`Control run ${runId} could not be decoded: ${issue}`);
+        },
+        (snapshot) => snapshot
+    );
 }
 
 async function enqueueCommand(
@@ -78,7 +74,7 @@ async function enqueueCommand(
     runId: string,
     agentId: string,
     commandId: string,
-    command: unknown
+    command: RallarBlackBoxTestCommand
 ): Promise<void> {
     const response = await request.post(
         `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${encodeURIComponent(agentId)}/commands`,
@@ -142,7 +138,7 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
 
     await expect.poll(async () => {
         const run = await fetchRun(request, runId);
-        return run.results?.some((result) => result.commandId === connectCommandId && result.ok === true) ?? false;
+        return run.results.some((result) => result.commandId === connectCommandId && result.ok === true);
     }, {
         timeout: 30_000
     }).toBe(true);
@@ -167,14 +163,14 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
 
     await expect.poll(async () => {
         const run = await fetchRun(request, runId);
-        return run.results?.some((result) => result.commandId === sendCommandId && result.ok === true) ?? false;
+        return run.results.some((result) => result.commandId === sendCommandId && result.ok === true);
     }, {
         timeout: 30_000
     }).toBe(true);
 
     await expect.poll(async () => {
         const run = await fetchRun(request, runId);
-        const topics = (run.events ?? [])
+        const topics = run.events
             .map(eventTopic)
             .filter((topic): topic is string => Boolean(topic));
         return {
