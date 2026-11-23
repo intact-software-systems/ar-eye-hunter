@@ -20,7 +20,10 @@ export const FAIRNESS_SEND_INTERVAL_MS = 75;
  */
 const SEND_LOOP_ITERATION_CEILING_MS = 1_500;
 
-/** The time a loop of `count` sends may take; the loop ends as soon as its sends are done. */
+/**
+ * The time a loop of `count` sends may take, for a cell whose lifetimes must cover the loop; the loop ends as soon as
+ * its sends are done.
+ */
 export function computeSendLoopBudgetMs(count: number): number {
     return count * SEND_LOOP_ITERATION_CEILING_MS;
 }
@@ -30,22 +33,24 @@ interface AlmFairnessSendLoopInput {
     readonly name: string;
     readonly count: number;
     readonly send: RallarBlackBoxTestMessagesSendCommand;
+    /** The longest the whole loop may take; each send's own timeout bounds its iteration. */
+    readonly timeoutMs: number;
 }
 
 /**
- * `count` sends of one template, each awaited and then followed by a pause of `FAIRNESS_SEND_INTERVAL_MS`, within the
- * budget of `count` loop sends. A loop substitutes `{loop.index}` (0-based) in every string of its template before the
- * send runs, so each send names a handle of its own, and a template may name its ordering key the same way.
+ * `count` sends of one template, each awaited and then followed by a pause of `FAIRNESS_SEND_INTERVAL_MS`, within
+ * `timeoutMs`. A loop substitutes `{loop.index}` (0-based) in every string of its template before the send runs, so
+ * each send names a handle of its own, and a template may name its ordering key the same way.
  */
 export function toSendLoopCommand(
-    { step, name, count, send }: AlmFairnessSendLoopInput
+    { step, name, count, send, timeoutMs }: AlmFairnessSendLoopInput
 ): RallarBlackBoxTestLoopCommand {
     return {
         kind: 'loop',
         commandId: toCommandId(step, name),
         count,
         intervalMs: FAIRNESS_SEND_INTERVAL_MS,
-        timeoutMs: computeSendLoopBudgetMs(count),
+        timeoutMs,
         commands: [{ ...send, commandId: toCommandId(step, `${name}-send`), handleId: `${send.handleId}-{loop.index}` }]
     };
 }

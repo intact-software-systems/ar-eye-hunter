@@ -1005,10 +1005,14 @@ attempt per requester, charged once (D573), so the held seq 2 does not settle `r
 delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
 reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its own
 ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256 and a
-margin) in a `loop` with `intervalMs: 75` whose budget is that of 280 loop sends (1,500 ms each), observes the last one
-`transport-accepted`, cues `tracks-sent` and closes; the receiver waits for that cue, with a wait that covers the
-sender's body up to the cue, its storage baseline included (each role's recipe runs that much longer than an ordinary
-one), then counts the 280 in a verdict's window, which reads the arrivals logged before the count started too, waits in
+margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes. The loop's pace is
+the runner's storage latency, so both roles are bounded by progress, not by a budget per send: each send's own 10 s
+timeout bounds its iteration and the loop's 600 s timeout is only a ceiling, and the receiver counts the 280 as they
+arrive with a `messages.received` whose window covers the sender's body up to its last track, its storage baseline
+included (each role's recipe runs that much longer than an ordinary one), and whose `stallMs` is the time the sender
+may take to reach its first track: its baseline, its reconnect and one send. The count reads the arrivals logged
+before it started too, and needs no cue from the sender, which leaves right after its last track. The receiver then
+waits in
 its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
 runs after its admission commit states it, not the delivery the arrivals count), and its `stats` reads
 `rallar.alm.orderingTracks` both `lte` and

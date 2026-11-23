@@ -401,8 +401,6 @@ describe('buffered-track-drains', () => {
     });
 });
 
-const CHURN_CUES = 'alm-rtc-churn-bounded-tracks-cues';
-
 describe('computeSendLoopBudgetMs', () => {
     it('gives each iteration of a send loop 1,500 ms', () => {
         expect(computeSendLoopBudgetMs(280)).toBe(420_000);
@@ -489,8 +487,6 @@ describe('churn-bounded-tracks', () => {
             'open-tracks',
             'observe-last-track',
             'assert-last-track-sent',
-            `${CHURN_CUES}-sender-cue-tracks-sent`,
-            `${CHURN_CUES}-sender-cue-tracks-sent-sent`,
             'close-departs',
             'stats'
         ]);
@@ -524,11 +520,9 @@ describe('churn-bounded-tracks', () => {
         });
         expect(findCommand(scenario.sender, 'close-departs')).toEqual({ kind: 'close', commandId: `${scenario.sender.recipeId}-close-departs` });
 
+        // The receiver counts the 280 as they arrive, with no cue from the sender, which leaves right after its last.
         expect(toCommandNames(scenario.receiver)).toEqual([
             ...RECEIVER_PROLOGUE,
-            `${CHURN_CUES}-receiver-cue-listen`,
-            `${CHURN_CUES}-receiver-cue-listen-sent`,
-            `${CHURN_CUES}-receiver-cue-tracks-sent-received`,
             'received-1',
             'ordering-tracks-cap-stated',
             'stats-ordering-tracks',
@@ -536,13 +530,6 @@ describe('churn-bounded-tracks', () => {
             'assert-ordering-tracks-at-the-cap',
             'stats'
         ]);
-        // The count opens once the sender cued that its last track is sent, so it owns one send's budget past the cue.
-        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({
-            count: 280,
-            absent: false,
-            windowMs: 27_000,
-            timeoutMs: 28_000
-        });
         // The memory store states its count at the end of a newly opened track's eviction pass, not at its delivery.
         expect(findCommand(scenario.receiver, 'ordering-tracks-cap-stated')).toEqual({
             kind: 'wait',
@@ -564,37 +551,38 @@ describe('churn-bounded-tracks', () => {
         }
         expect(results).toEqual([false, false, false]);
     });
-    it('counts the 280 arrivals only after the sender cued that its last track is sent', () => {
+    // Run 45258793437's runner read storage at 4 ms an operation, and its 280 sends would have taken about 370 s.
+    it('bounds the loop by a 600 s ceiling, not a budget per send: each send\'s own 10 s timeout is the check that it progresses', () => {
         const scenario = findScenario('rtc', 'churn-bounded-tracks');
-        const cue = { marker: 'churn-bounded-tracks-cues', carrier: 'rtc', cue: 'tracks-sent' };
-        const senderIds = scenario.sender.commands.map((command) => command.commandId);
-        const receiverIds = scenario.receiver.commands.map((command) => command.commandId);
-        const cueSend = senderIds.indexOf(`${CHURN_CUES}-sender-cue-tracks-sent`);
-        const cueWait = receiverIds.indexOf(`${CHURN_CUES}-receiver-cue-tracks-sent-received`);
 
-        expect(scenario.sender.commands[cueSend]).toMatchObject({ kind: 'messages.send', carrier: 'ws', payload: cue });
-        expect(cueSend).toBeGreaterThan(senderIds.indexOf(`${scenario.sender.recipeId}-assert-last-track-sent`));
-        expect(cueSend).toBeLessThan(senderIds.indexOf(`${scenario.sender.recipeId}-close-departs`));
-        expect(scenario.receiver.commands[cueWait]).toMatchObject({
-            kind: 'wait',
-            match: { kind: 'message', connection: 'receiver', payloadPath: 'data.payload', equals: cue }
+        expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({
+            kind: 'loop',
+            count: 280,
+            intervalMs: 75,
+            timeoutMs: 600_000,
+            commands: [{ kind: 'messages.send', timeoutMs: 10_000 }]
         });
-        expect(cueWait).toBeLessThan(receiverIds.indexOf(`${scenario.receiver.recipeId}-received-1`));
     });
 
-    it('gives the loop the shared budget for 280 tracks, and no timeout that wraps the loop is shorter', () => {
+    it('fails the receiver\'s count only when no track arrives for as long as the sender may take to reach its first track', () => {
         const scenario = findScenario('rtc', 'churn-bounded-tracks');
-        const loopBudgetMs = computeSendLoopBudgetMs(280);
-        const cueWait = scenario.receiver.commands.find((command) => command.commandId === `${CHURN_CUES}-receiver-cue-tracks-sent-received`);
+        // The sender's body up to its last track: its storage baseline (3 s), its reconnect (45 s and 30 s of
+        // readiness), the loop's ceiling, the last track's observation (10 s) and its assertion (2 s).
+        const senderBodyMs = 3_000 + 45_000 + 30_000 + 600_000 + 10_000 + 2_000;
 
-        expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({ kind: 'loop', timeoutMs: loopBudgetMs });
-        // The cue wait opens with the sender's body: its storage baseline (3 s), its reconnect (45 s and 30 s of
-        // readiness), the loop, the last track's observation (10 s), its assertion (2 s) and the cue's send and
-        // observation (5 s each).
-        expect(cueWait?.timeoutMs).toBe(3_000 + 45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
+        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({
+            kind: 'messages.received',
+            count: 280,
+            absent: false,
+            // The storage baseline, the reconnect and one send: the longest the sender may take to its first track,
+            // and longer than any later track takes after the one before it.
+            stallMs: 3_000 + 45_000 + 30_000 + 10_000,
+            windowMs: senderBodyMs,
+            timeoutMs: senderBodyMs + 1_000
+        });
         for (const recipe of [scenario.sender, scenario.receiver]) {
             expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
-                .toBe(ORDINARY_RUN_MS + (cueWait?.timeoutMs ?? 0));
+                .toBe(ORDINARY_RUN_MS + senderBodyMs);
         }
     });
 });

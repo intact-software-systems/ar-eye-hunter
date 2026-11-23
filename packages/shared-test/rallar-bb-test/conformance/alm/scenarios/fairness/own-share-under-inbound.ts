@@ -29,7 +29,7 @@ import {
     toBoundReconnectCommands,
     toReconnectedArrivalsCommand
 } from '../volatile-bound/volatile-bound-commands.ts';
-import { toSendLoopCommand } from './to-send-loop-command.ts';
+import { computeSendLoopBudgetMs, toSendLoopCommand } from './to-send-loop-command.ts';
 
 /** The receiver's lowered count bound; the byte bound keeps its constant, so the count alone decides. */
 const OWN_SHARE_LIMITS = { maxAdmissions: 20, maxBytes: AL_VOLATILE_SESSION_MAX_BYTES };
@@ -76,7 +76,13 @@ export const ownShareUnderInbound: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
         toReconnectedArrivalsCommand(sender, READY_INDEX, 0),
-        toSendLoopCommand({ step: sender, name: 'flood', count: FLOOD_COUNT, send: toRoomSend(sender, 0, 'none') })
+        toSendLoopCommand({
+            step: sender,
+            name: 'flood',
+            count: FLOOD_COUNT,
+            send: toRoomSend(sender, 0, 'none'),
+            timeoutMs: computeSendLoopBudgetMs(FLOOD_COUNT)
+        })
     ],
     toRecipientCommands: toOwnShareReceiverCommands
 };
