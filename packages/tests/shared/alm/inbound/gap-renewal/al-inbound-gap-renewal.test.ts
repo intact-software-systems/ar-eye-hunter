@@ -423,6 +423,87 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
     });
 
+    it('commits no end, states nothing and sends the last request when the copy it would enter at cannot be verified', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const commits: ALInboundCommitBundle[] = [];
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            verifyPublicationProof: async () => false,
+            planIncomingMessage: (msg, source, observations) => ({
+                ...planInboundTestMessage(msg, source, observations),
+                dropReason: 'unauthorized'
+            })
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+
+        expect(commits).toEqual([]);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect((await admissionStore.readOrderingSnapshot(timer.payload.trackKey, Date.now()))?.lastContiguousSeq).toBe(0);
+        expect((await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId))
+            .toEqual(expect.arrayContaining([expect.stringMatching(/^nack:.*:renewal:1:1:4/)]));
+    });
+
+    it('commits the very copy it verified and planned, in the entered slot of its bundle', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const verified = new Set<ALMessage>();
+        const planned = new Set<ALMessage>();
+        const commits: ALInboundCommitBundle[] = [];
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            // A durable store decodes each row into its own object: the track's copies are not the copy read for itself.
+            readIncomingMessage: async (input) => {
+                const read = await admissionStore.readIncomingMessage(input);
+                const ordering = read.observations.ordering;
+                const decoded = ordering?.buffered.map((buffered) => ({ ...buffered, msg: { ...buffered.msg, id: { ...buffered.msg.id } } }));
+                return ordering === undefined || decoded === undefined ? read : {
+                    ...read,
+                    bufferedSnapshots: decoded,
+                    observations: { ...read.observations, ordering: { ...ordering, buffered: decoded } }
+                };
+            },
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            verifyPublicationProof: async (msg) => {
+                verified.add(msg);
+                return true;
+            },
+            planIncomingMessage: (msg, source, observations) => {
+                planned.add(msg);
+                return planInboundTestMessage(msg, source, observations);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+
+        const entered = commits.flatMap((bundle) => bundle.mutations)
+            .flatMap((mutation) => mutation.kind === 'set-buffered' && mutation.snapshot.seq === 2 ? [mutation.snapshot.msg] : []);
+        expect(entered).toHaveLength(1);
+        expect(verified.has(entered[0]!)).toBe(true);
+        expect([...planned].every((msg) => verified.has(msg))).toBe(true);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
+    });
+
     it('refuses the late first copy as before its entry once the hold has ended', async () => {
         const fixture = createRenewalFixture('memory');
         for (const seq of [2, 3]) {
@@ -760,7 +841,8 @@ interface DirectRenewal {
 
 function createDirectRenewal(
     fixture: InboundTestRuntime,
-    store: Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage'>>
+    store: Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage'>>,
+    planning: Partial<Pick<ALInboundGapRenewal.Dependencies, 'planIncomingMessage' | 'verifyPublicationProof'>> = {}
 ): DirectRenewal {
     const admissionStore = fixture.stores.admissionStore;
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
@@ -776,7 +858,8 @@ function createDirectRenewal(
         diagnostics: (event) => {
             diagnostics.push(event);
         },
-        effectWorkerId: 'al-inbound:gap-renewal-direct'
+        effectWorkerId: 'al-inbound:gap-renewal-direct',
+        ...planning
     });
     return { renewal, diagnostics };
 }

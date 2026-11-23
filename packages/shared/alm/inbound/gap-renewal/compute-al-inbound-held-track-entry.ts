@@ -12,7 +12,10 @@ import { prepareALInboundCommitBundle, type ALInboundEffectFacts } from '../prep
 import type { ALOrderingHeldEntry } from './compute-al-ordering-held-entry.ts';
 
 export interface ComputeALInboundHeldTrackEntryInput {
-    /** The admission surface of the track's lowest live copy, planned as it was admitted. */
+    /**
+     * The admission surface of the track's lowest live copy, planned as it was admitted: its `msg` is the object the
+     * end verified and planned, which the bundle and the stated entry carry, never the track's own decode of it.
+     */
     readonly read: ALInboundAdmissionRead;
     readonly entry: Extract<ALOrderingHeldEntry, { readonly kind: 'entered'; }>;
     /**
@@ -45,7 +48,7 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
         kind: 'incoming',
         orderingTrackTtlMs: read.orderingTrackTtlMs,
         namespace: read.namespace,
-        msg: entry.msg,
+        msg: read.msg,
         fromPeerId: read.fromPeerId,
         source: read.source,
         nowMs: read.nowMs,
@@ -59,7 +62,7 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
                 completesThrough: entry.completesThrough[buffered.seq] ?? buffered.completesThrough
             };
             if (buffered.seq === entry.observation.seq) {
-                return { ...reached, plan };
+                return { ...reached, msg: read.msg, plan };
             }
             const priorSeq = entry.passedPriorSeqs[buffered.seq];
             // A copy released past expired ones waits on the released copy before it, as an omission waits on its prior.
@@ -87,7 +90,7 @@ export function computeALInboundHeldTrackEntry(input: ComputeALInboundHeldTrackE
             mutations: [{ kind: 'set-ordering', trackKey: entry.trackKey, snapshot: entry.nextSnapshot }],
             effects: toALInboundBufferedReleaseEffects(entered)
         }),
-        entered: { msg: entry.msg, carrier: slot.carrier, plan }
+        entered: { msg: read.msg, carrier: slot.carrier, plan }
     };
 }
 

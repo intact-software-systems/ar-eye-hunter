@@ -11,7 +11,7 @@ import type {
     ALInboundPlanner
 } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
-import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
+import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import { computeALInboundStoredPlanningObservations } from '../al-inbound-planner-snapshot.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
@@ -193,12 +193,13 @@ export class ALInboundGapRenewal {
         if (entry?.kind !== 'entered' || entry.msg.id.msgId !== surface.msg.id.msgId) {
             return entry === undefined ? undefined : HELD_ENTRY_RETRIED;
         }
-        const held = computeALInboundHeldTrackEntry({
-            read,
-            entry,
-            plan: planIncomingMessage(surface.msg, read.source, { nowMs, orderingObservation: entry.observation }),
-            facts
-        });
+        const plan = planIncomingMessage(surface.msg, read.source, { nowMs, orderingObservation: entry.observation });
+        // As an admission writes no position for a dropped plan, a copy the end may not deliver commits nothing.
+        const dropped = [read.prePlan, plan].find((candidate) => candidate.dropReason !== undefined);
+        if (dropped !== undefined) {
+            return shouldRetryALInboundDelivery(dropped) ? HELD_ENTRY_RETRIED : undefined;
+        }
+        const held = computeALInboundHeldTrackEntry({ read, entry, plan, facts });
         const ended = await this.commitHoldEnd(held.bundle);
         if (ended === HELD_END_COMMITTED) {
             recordALInboundOrderingPosition(this.dependencies.diagnostics, {
