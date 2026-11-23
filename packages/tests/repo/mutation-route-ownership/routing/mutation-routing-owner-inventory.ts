@@ -857,6 +857,19 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
     },
     {
         transport: 'MAINTENANCE',
+        entrypoint: 'automatic group timeline deadline',
+        type: 'GROUP_TIMELINE_SETTLE',
+        source: 'apiRuntime',
+        registrationMarker: 'enqueue',
+        enqueueSource: 'groupInbox',
+        enqueueMarker: 'AppInboxType.GROUP_TIMELINE_SETTLE',
+        ownerSource: 'groupHandler',
+        owner: 'GroupStateInboxHandler.processGroupStateMutation',
+        typeOwnerSource: 'groupContracts',
+        dispatchSource: 'groupInbox'
+    },
+    {
+        transport: 'MAINTENANCE',
         entrypoint: 'group presence expiry reconciliation',
         type: 'GROUP_PRESENCE_EXPIRE',
         source: 'presenceExpiry',
