@@ -23,8 +23,15 @@ import { openRecordingControlRequest } from './recording-control-request-fixture
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 const SENDER_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the sender\'s reconnect failed' };
-/** What an agent reports for a recipe the lane cancelled. */
-const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'cancelled by the lane' };
+/**
+ * What an agent's control client reports for a recipe the lane cancelled: the recipe's result is `cancelled` and
+ * carries no error, so the envelope's error is the client's default.
+ */
+const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' };
+
+function toLaneCancelledResult(commandId: string): SiblingContinuationResult {
+    return { commandId, ok: false, error: LANE_CANCELLED, cancelled: true };
+}
 
 function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
     return createAlmConformanceRecipes({
@@ -428,7 +435,7 @@ describe('ALM run on an agent per role', () => {
             results: [
                 ...posted.filter((commandId) => commandId === runIds.sender).map((commandId) => ({ commandId, ok: false, error: SENDER_FAILURE })),
                 ...posted.filter((commandId) => commandId === runIds.receiver).map((commandId) => ({ commandId, ok: true })),
-                ...(posted.includes(`cancel-${runIds.sibling}`) ? [{ commandId: runIds.sibling, ok: false, error: LANE_CANCELLED }] : [])
+                ...(posted.includes(`cancel-${runIds.sibling}`) ? [toLaneCancelledResult(runIds.sibling)] : [])
             ]
         }));
         const { control, runIds } = fixture;
@@ -458,7 +465,7 @@ describe('ALM run on an agent per role', () => {
                 sibling: {
                     commandId: runIds.sibling,
                     ok: false,
-                    summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: cancelled by the lane',
+                    summary: `${LANE_CANCELLED.code}: ${LANE_CANCELLED.message}`,
                     cancelledAfter: runIds.sender
                 }
             });
@@ -498,6 +505,36 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
+    it('does not start a continuation whose gate passed because the gating role\'s recipe failed, before that failure is read', async () => {
+        // Once the sender's root is posted, the roles' first reads run in start order, the receiver's, the sibling's and
+        // the sender's, and the gate's follows the sibling's pass. The receiver's own failure shows from the gate's first
+        // read on, so the gate sees the receiver's recipe ended a poll before the receiver's read does.
+        let readsAfterSenderPosted = 0;
+        const fixture = await createSiblingContinuationFixture('gating-failure-continuation-run', (posted, runIds) => {
+            readsAfterSenderPosted += posted.includes(runIds.sender) ? 1 : 0;
+            return {
+                gateOpen: false,
+                results: [
+                    ...posted.filter((commandId) => [runIds.sibling, runIds.sender, runIds.continuation].includes(commandId))
+                        .map((commandId) => ({ commandId, ok: true })),
+                    ...(readsAfterSenderPosted >= 4 ? [{ commandId: runIds.receiver, ok: false, error: SENDER_FAILURE }] : [])
+                ]
+            };
+        });
+        const { control, runIds } = fixture;
+        try {
+            const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
+
+            expect(fixture.posted()).not.toContain(runIds.continuation);
+            expect(outcome.continuation).toBeUndefined();
+            expect(outcome.roles.get('receiver')).toMatchObject({ ok: false, cancelledAfter: undefined });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('does not start a continuation once a peer of its role ended not ok', async () => {
         // The sibling's first recipe passes and the sender fails at once; the receiver, whose recipe holds the gate, runs
         // until the lane cancels it, so the gate passes only once the sender's failure is known.
@@ -506,7 +543,7 @@ describe('ALM run on an agent per role', () => {
             results: [
                 ...posted.filter((commandId) => commandId === runIds.sibling).map((commandId) => ({ commandId, ok: true })),
                 ...posted.filter((commandId) => commandId === runIds.sender).map((commandId) => ({ commandId, ok: false, error: SENDER_FAILURE })),
-                ...(posted.includes(`cancel-${runIds.receiver}`) ? [{ commandId: runIds.receiver, ok: false, error: LANE_CANCELLED }] : [])
+                ...(posted.includes(`cancel-${runIds.receiver}`) ? [toLaneCancelledResult(runIds.receiver)] : [])
             ]
         }));
         const { control, runIds } = fixture;
@@ -590,11 +627,12 @@ interface SiblingContinuationSnapshot {
     readonly results: readonly SiblingContinuationResult[];
 }
 
-/** A root's result; one that is not ok carries the agent's error, or none. */
+/** A root's result; one that is not ok carries the agent's error, or none, and a cancelled one says so. */
 interface SiblingContinuationResult {
     readonly commandId: string;
     readonly ok: boolean;
     readonly error?: RallarBlackBoxTestError;
+    readonly cancelled?: true;
 }
 
 type ReadSiblingContinuationSnapshot = (
@@ -648,14 +686,27 @@ function toSiblingContinuationSnapshot(runId: string, connect: string, snapshot:
         stats: [],
         reports: [],
         heartbeats: [],
-        results: snapshot.results.map(({ commandId, ok, error }) => ({
+        results: snapshot.results.map(({ commandId, ok, error, cancelled }) => ({
             kind: 'result' as const,
             protocolVersion: 1 as const,
             runId,
             agentId: 'observed-agent',
             commandId,
             ok,
-            ...(error === undefined ? {} : { error })
+            ...(error === undefined ? {} : { error }),
+            ...(cancelled === true
+                ? {
+                    result: {
+                        commandId,
+                        kind: 'recipe.run' as const,
+                        status: 'cancelled' as const,
+                        ok,
+                        startedAtEpochMs: 1,
+                        endedAtEpochMs: 1,
+                        durationMs: 0
+                    }
+                }
+                : {})
         }))
     };
 }

@@ -31,27 +31,39 @@ const reload = scenarios.find((scenario) => scenario.scenarioId === 'delivery-re
 const receiverConnectId = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
 
 const ROLE_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the role\'s wait failed' };
-/** What an agent reports for a recipe the lane cancelled. */
-const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'cancelled by the lane' };
+/**
+ * What an agent's control client reports for a recipe the lane cancelled: the recipe's result is `cancelled` and
+ * carries no error, so the envelope's error is the client's default.
+ */
+const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' };
 const ROLE_FAILURE_SUMMARY = `${ROLE_FAILURE.code}: ${ROLE_FAILURE.message}`;
 const LANE_CANCELLED_SUMMARY = `${LANE_CANCELLED.code}: ${LANE_CANCELLED.message}`;
 
-/** How a root started on the run ends: failing at once, passing at once, or only once the lane cancels it. */
-type RootEnd = 'fails' | 'passes' | 'runs-until-cancelled';
+/**
+ * How a root started on the run ends: failing at once, passing at once, only once the lane cancels it, or with its own
+ * failure that lands only after the lane's cancel went out, the cancel not having stopped it.
+ */
+type RootEnd = 'fails' | 'passes' | 'runs-until-cancelled' | 'fails-on-its-own-after-cancel';
+
+/** Whether the agent answers the lane's cancel; an accepted answer says it aborted its target. */
+type CancelAnswer = 'unanswered' | 'accepted';
 
 /**
- * A run whose snapshot holds each started root's result as `ends` states it, read by its run command id, and the
- * receiver's passed connect, which releases its barrier.
+ * A run whose snapshot holds each started root's result as `ends` states it, read by its run command id, each cancel's
+ * answer as `answer` states it, and the receiver's passed connect, which releases its barrier.
  */
 function toCrossCancelRun(
     control: Readonly<{ request: Playwright.APIRequestContext; posted: readonly RecordedControlCommand[]; }>,
-    ends: ReadonlyMap<string, RootEnd>
+    ends: ReadonlyMap<string, RootEnd>,
+    answer: CancelAnswer = 'unanswered'
 ): RecipePairRun {
     const toResult = (command: RecordedControlCommand): readonly ControlResultEnvelope[] => {
         const end = ends.get(command.commandId);
         const cancelled = control.posted.some(({ agentId, command: posted }) => posted.kind === 'recipe.cancel' && agentId === command.agentId);
-        const error = end === 'fails' ? ROLE_FAILURE : end === 'runs-until-cancelled' && cancelled ? LANE_CANCELLED : undefined;
-        if (end === undefined || (end === 'runs-until-cancelled' && !cancelled)) {
+        const failsOnItsOwn = end === 'fails' || end === 'fails-on-its-own-after-cancel';
+        const cancelledByTheLane = end === 'runs-until-cancelled' && cancelled;
+        const error = failsOnItsOwn ? ROLE_FAILURE : cancelledByTheLane ? LANE_CANCELLED : undefined;
+        if (end === undefined || (end !== 'fails' && end !== 'passes' && !cancelled)) {
             return [];
         }
         return [{
@@ -61,9 +73,36 @@ function toCrossCancelRun(
             agentId: command.agentId,
             commandId: command.commandId,
             ok: error === undefined,
+            result: {
+                commandId: command.commandId,
+                kind: 'recipe.run',
+                status: cancelledByTheLane ? 'cancelled' : error === undefined ? 'ok' : 'failed',
+                ok: error === undefined,
+                startedAtEpochMs: 1,
+                endedAtEpochMs: 1,
+                durationMs: 0
+            },
             ...(error === undefined ? {} : { error })
         }];
     };
+    const toAnswer = ({ agentId, commandId }: RecordedControlCommand): ControlResultEnvelope => ({
+        kind: 'result',
+        protocolVersion: 1,
+        runId: 'cross-cancel-run',
+        agentId,
+        commandId,
+        ok: true,
+        result: {
+            commandId,
+            kind: 'recipe.cancel',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 1,
+            endedAtEpochMs: 1,
+            durationMs: 0,
+            value: { cancelRequested: true }
+        }
+    });
     return {
         request: control.request,
         runId: 'cross-cancel-run',
@@ -89,7 +128,10 @@ function toCrossCancelRun(
             stats: [],
             reports: [],
             heartbeats: [],
-            results: control.posted.filter(({ command }) => command.kind === 'recipe.run').flatMap(toResult)
+            results: [
+                ...control.posted.filter(({ command }) => command.kind === 'recipe.run').flatMap(toResult),
+                ...(answer === 'accepted' ? control.posted.filter(({ command }) => command.kind === 'recipe.cancel').map(toAnswer) : [])
+            ]
         })
     };
 }
@@ -157,7 +199,7 @@ describe('a scenario role that ends not ok cancels its peers', () => {
                 sender: {
                     commandId: senderRunId,
                     ok: false,
-                    summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: cancelled by the lane',
+                    summary: LANE_CANCELLED_SUMMARY,
                     cancelledAfter: receiverRunId
                 },
                 receiver: {
@@ -173,6 +215,36 @@ describe('a scenario role that ends not ok cancels its peers', () => {
             await control.close();
         }
     });
+
+    it.each(
+        [
+            { answer: 'unanswered', cancelledAfter: undefined },
+            { answer: 'accepted', cancelledAfter: receiverRunId }
+        ] as const
+    )(
+        'names the receiver as what cancelled a sender whose own failure raced the cancel only when the cancel answer is $answer',
+        async ({ answer, cancelledAfter }) => {
+            const control = await openRecordingControlRequest('cross-cancel-run');
+            const run = toCrossCancelRun(
+                control,
+                new Map([[senderRunId, 'fails-on-its-own-after-cancel'], [receiverRunId, 'fails']]),
+                answer
+            );
+            try {
+                const outcome = await runRecipePairOnTwoAgents(run, baseline);
+
+                expect(toPostedCancels(control.posted).map(({ commandId }) => commandId)).toEqual([`cancel-${senderRunId}`]);
+                expect(outcome).toStrictEqual({
+                    sender: { commandId: senderRunId, ok: false, summary: ROLE_FAILURE_SUMMARY, cancelledAfter },
+                    receiver: { commandId: receiverRunId, ok: false, summary: ROLE_FAILURE_SUMMARY, cancelledAfter: undefined }
+                });
+            }
+            finally {
+                vi.restoreAllMocks();
+                await control.close();
+            }
+        }
+    );
 
     it('cancels a reload pair\'s receiver through its agent\'s untargeted cancel once the sender failed', async () => {
         const reloadSenderRunId = `${reload.sender.recipeId}-run`;

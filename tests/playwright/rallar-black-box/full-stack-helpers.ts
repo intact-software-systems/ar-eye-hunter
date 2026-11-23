@@ -23,6 +23,7 @@ import {
     isNonEmptyText
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CANCELLED } from '@shared-test/rallar-bb-test/runtime/runtime-command-outcomes.ts';
 import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -44,7 +45,7 @@ import { closeParticipantContext } from './close-participant-context.ts';
 import { createScenarioRoots } from './create-scenario-roots.ts';
 import { readControlGetResponse } from './read-control-get-response.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
-import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
+import { isRecipeCancelAccepted, resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
 export interface FullStackUser {
@@ -1255,8 +1256,14 @@ async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Prom
     }
     const peer = watch.getPeerFailure();
     const cancellation = peer === undefined ? toDeadlineCancellation(root) : toPeerCancellation(root, peer);
-    const result = await cancelRecipeRun(run, root, cancellation);
-    return toRecipeRunOutcome(root.commandId, result, result.ok === true ? undefined : peer?.commandId);
+    const { result, cancelAccepted } = await cancelRecipeRun(run, root, cancellation);
+    const cancelled = result.ok !== true && (cancelAccepted || isCancelledResult(result));
+    return toRecipeRunOutcome(root.commandId, result, cancelled ? peer?.commandId : undefined);
+}
+
+/** A cancelled recipe's result says so; an abort thrown out of it carries the cancellation's error code instead. */
+function isCancelledResult(result: ControlResultEnvelope): boolean {
+    return result.result?.status === 'cancelled' || result.error?.code === RALLAR_BLACK_BOX_COMMAND_CANCELLED;
 }
 
 /** A recipe the lane held back because a root of its scenario ended not ok first: it never ran, so it never passed. */
@@ -1297,11 +1304,15 @@ function toPeerCancellation(root: RecipeRunRoot, peer: RecipeRunOutcome): Recipe
     };
 }
 
+/**
+ * The root's result once its cancel went out, and whether the agent answered the cancel by aborting it: a root whose
+ * own failure raced the cancel ended for its own reason.
+ */
 async function cancelRecipeRun(
     run: RecipeRun,
     root: RecipeRunRoot,
     cancellation: RecipeRunCancellation
-): Promise<ControlResultEnvelope> {
+): Promise<Readonly<{ result: ControlResultEnvelope; cancelAccepted: boolean; }>> {
     const cancelCommandId = `cancel-${root.commandId}`;
     await enqueueControlCommand({
         request: run.request,
@@ -1312,18 +1323,18 @@ async function cancelRecipeRun(
     });
     const read = await readControlRunUntil(run, {
         timeoutMs: RECIPE_RESULT_GRACE_MS,
-        select: (snapshot) => ({
-            result: findControlResult(snapshot, root.commandId),
-            failure: resolveRecipeCancelFailure({
-                answer: findControlResult(snapshot, cancelCommandId),
-                cancelCommandId,
-                agentId: root.agentId
-            })
-        }),
+        select: (snapshot) => {
+            const answer = findControlResult(snapshot, cancelCommandId);
+            return {
+                result: findControlResult(snapshot, root.commandId),
+                cancelAccepted: isRecipeCancelAccepted(answer),
+                failure: resolveRecipeCancelFailure({ answer, cancelCommandId, agentId: root.agentId })
+            };
+        },
         accept: ({ result, failure }) => result !== undefined || failure !== undefined
     });
     if (read.kind === 'accepted' && read.value.result !== undefined) {
-        return read.value.result;
+        return { result: read.value.result, cancelAccepted: read.value.cancelAccepted };
     }
     if (read.kind === 'accepted') {
         throw new Error(read.value.failure);

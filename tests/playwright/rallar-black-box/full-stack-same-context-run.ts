@@ -184,6 +184,7 @@ async function readGatedSuccessorOutcome(
         await waitForRecipeGate(run, {
             commandId: input.pages.successorGate,
             gatingRun: input.ownerRun,
+            scenario: input.scenario,
             timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
         });
     }

@@ -179,12 +179,19 @@ describe('local paired reload enqueue', () => {
                 { commandId: `cancel-${senderRunId}`, agentId: 'actual-sender', targetCommandId: undefined },
                 { commandId: `cancel-${receiverRunId}`, agentId: 'actual-receiver', targetCommandId: undefined }
             ]);
-            const cancelled = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: Paired reload stopped.';
-            // Both roots pass their deadline together: the one cancelled first may cancel the other after its failure.
-            expect(outcome).toMatchObject({
-                sender: { commandId: senderRunId, ok: false, summary: cancelled },
-                receiver: { commandId: receiverRunId, ok: false, summary: cancelled }
-            });
+            const summary = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: Paired reload stopped.';
+            // Both roots pass their deadline together: the one cancelled first at its deadline, whichever it is, cancels
+            // the other after its failure.
+            expect([
+                {
+                    sender: { commandId: senderRunId, ok: false, summary, cancelledAfter: undefined },
+                    receiver: { commandId: receiverRunId, ok: false, summary, cancelledAfter: senderRunId }
+                },
+                {
+                    sender: { commandId: senderRunId, ok: false, summary, cancelledAfter: receiverRunId },
+                    receiver: { commandId: receiverRunId, ok: false, summary, cancelledAfter: undefined }
+                }
+            ]).toContainEqual(outcome);
         }
         finally {
             vi.restoreAllMocks();

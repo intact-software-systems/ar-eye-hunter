@@ -162,6 +162,7 @@ async function runContinuation(
     await waitForRecipeGate(run, {
         commandId: continuation.gate.commandId,
         gatingRun: requireRoleValue(started, continuation.gate.role),
+        scenario,
         timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
     });
     if (scenario.getFailure() !== undefined) {
