@@ -27,8 +27,8 @@ const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
 /**
- * The hosted lane serves about 1.5 joining players per second at 50 members, so the cohort's joins wait in line, and a
- * player's readiness waits on the same lane.
+ * The hosted lane serves about 1.5 joining players per second at 50 members, and a player's readiness waits for peers
+ * whose joins queue on that same lane, so it grows with the cohort.
  */
 const PLAYER_READINESS_TIMEOUT_PER_PARTICIPANT_MS = 650;
 
