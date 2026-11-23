@@ -486,7 +486,7 @@ describe('churn-bounded-tracks', () => {
             'connect-raised',
             'open-tracks',
             'observe-last-track',
-            'assert-last-track-sent',
+            'assert-last-track-acknowledged',
             'close-departs',
             'stats'
         ]);
@@ -512,11 +512,19 @@ describe('churn-bounded-tracks', () => {
                 handleId: 'alm-rtc-churn-bounded-tracks-send-0-{loop.index}'
             }]
         });
-        // The loop names each handle by its index, so the last track's handle ends in 279.
+        // The loop names each handle by its index, so the last track's handle ends in 279. The sender leaves only once the
+        // receiver acknowledged it, within its 30 s lifetime: RTC `transport-accepted` is the frame leaving the data
+        // channel, and a close then could lose it in the transport's buffer.
         expect(findCommand(scenario.sender, 'observe-last-track')).toMatchObject({
             kind: 'messages.observe',
             handleId: 'alm-rtc-churn-bounded-tracks-send-0-279',
-            state: ['transport-accepted']
+            state: ['acknowledged'],
+            timeoutMs: 30_000
+        });
+        expect(findCommand(scenario.sender, 'assert-last-track-acknowledged')).toMatchObject({
+            kind: 'assert',
+            operator: 'equals',
+            expected: 'acknowledged'
         });
         expect(findCommand(scenario.sender, 'close-departs')).toEqual({ kind: 'close', commandId: `${scenario.sender.recipeId}-close-departs` });
 
@@ -567,8 +575,8 @@ describe('churn-bounded-tracks', () => {
     it('fails the receiver\'s count only when no track arrives for as long as the sender may take to reach its first track', () => {
         const scenario = findScenario('rtc', 'churn-bounded-tracks');
         // The sender's body up to its last track: its storage baseline (3 s), its reconnect (45 s and 30 s of
-        // readiness), the loop's ceiling, the last track's observation (10 s) and its assertion (2 s).
-        const senderBodyMs = 3_000 + 45_000 + 30_000 + 600_000 + 10_000 + 2_000;
+        // readiness), the loop's ceiling, the last track's acknowledgement (30 s) and its assertion (2 s).
+        const senderBodyMs = 3_000 + 45_000 + 30_000 + 600_000 + 30_000 + 2_000;
 
         expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({
             kind: 'messages.received',

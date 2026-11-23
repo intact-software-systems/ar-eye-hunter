@@ -32,7 +32,7 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
-    toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
+    toRecipientCommands: toCrossCarrierDuplicateReceiverCommands
 }));
 
 /**
@@ -96,28 +96,18 @@ function toCrossCarrierDuplicateSenderCommands(
 }
 
 /**
- * The receiver refused the pair's second copy. rtc-then-ws pins that copy to WS: RTC `transport-accepted` is the
- * receiver's own hop ACK, so the RTC copy committed first. ws-then-rtc accepts either carrier, since WS
- * `transport-accepted` is only the server's: it reads the pair's latest `admission-outcome`, the second arrival's or,
- * when a copy's commit conflicted, its replay's verdict. Both run after the absence window, when the outcome is
- * already in the event buffer, so a short budget suffices. A receiver stays one linear transcript for the reload
- * identity join, so the either-carrier case is a wait and two assertions rather than a composite.
+ * The receiver refused the pair's second copy, on either carrier in both orders: neither carrier's
+ * `transport-accepted` is the receiver's admission (over RTC it is the frame leaving the sender's data channel, over WS
+ * the server's), so the replay may reach the receiver before the first copy commits. The receiver reads the pair's
+ * latest `admission-outcome`, the second arrival's or, when a copy's commit conflicted, its replay's verdict. It runs
+ * after the absence window, when the outcome is already in the event buffer, so a short budget suffices. A receiver
+ * stays one linear transcript for the reload identity join, so the either-carrier case is a wait and two assertions
+ * rather than a composite.
  */
 function toCrossCarrierDuplicateReceiverCommands(
-    receiver: AlmConformanceStepInput,
-    order: (typeof CROSS_CARRIER_ORDERS)[number]
+    receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     const arrivals = toSingleArrivalReceiverCommands(receiver);
-    if (order === 'rtc-then-ws') {
-        return [
-            ...arrivals,
-            toAdmissionOutcomeWait(receiver, {
-                name: 'duplicate-outcome-ws',
-                contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"',
-                timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
-            })
-        ];
-    }
     const latest = toAdmissionOutcomeWait(receiver, {
         name: 'duplicate-outcome-latest',
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)

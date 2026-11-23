@@ -782,11 +782,13 @@ A scenario definition's optional `connect.minReadyPeers` sets the readiness its 
 absent, each connect waits for every other agent of the cell.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
-`rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
-refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
-refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
-envelope, which the api-v1 WS server routes to the room's other members, so the
-receiver refuses it on carrier `ws`. The first send asks a `receiver` receipt and
+`rtc-with-ws-fallback`, and its receiver reads the pair's latest
+`admission-outcome`, which refuses the second copy as `not-handled`/`duplicate`
+on either carrier: neither carrier's `transport-accepted` is the receiver's
+admission (over RTC it is the frame leaving the sender's data channel), so the
+replay may overtake the first copy. In `rtc-then-ws` the replay is the
+WS-carried multicast room envelope, which the api-v1 WS server routes to the
+room's other members. The first send asks a `receiver` receipt and
 lists the receiver (`recipientPeers: ['receiver']`): RTC carries a receipted room
 send only as an audience its origin freezes and signs (D756), so in `ws-then-rtc`
 the RTC replay of a room-wide WS copy would be refused, while a listed one is frozen
@@ -1005,7 +1007,9 @@ attempt per requester, charged once (D573), so the held seq 2 does not settle `r
 delivers it. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the sender and
 reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts in its own
 ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of 256 and a
-margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes. The loop's pace is
+margin) in a `loop` with `intervalMs: 75`, observes the last one `acknowledged`, within its 30 s lifetime, and closes: over `rtc`
+`transport-accepted` is the frame leaving the data channel, and the receiver, the track's one hop, acknowledges it
+once admitted, so a close right after `transport-accepted` could lose the last frame. The loop's pace is
 the runner's storage latency, so both roles are bounded by progress, not by a budget per send: each send's own 10 s
 timeout bounds its iteration and the loop's 600 s timeout is only a ceiling, and the receiver counts the 280 as they
 arrive with a `messages.received` whose window covers the sender's body up to its last track, its storage baseline

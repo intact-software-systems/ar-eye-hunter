@@ -66,7 +66,7 @@ const RECEIVER_ORDERED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
  * The loop's pace is the runner's, so the cell bounds both roles by progress rather than by a budget per send: each
  * send's own timeout bounds its loop iteration, and the receiver's count fails once no track arrives for as long as
  * the sender may take to reach its first. The receiver counts the arrivals themselves, so it needs no cue from a
- * sender that leaves right after its last track.
+ * sender that leaves once its last track is acknowledged.
  */
 export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
     scenarioId: 'churn-bounded-tracks',
@@ -97,20 +97,31 @@ function toChurnSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxT
             send: toTrackSend(sender, '{loop.index}'),
             timeoutMs: CHURN_SEND_LOOP_CEILING_MS
         }),
-        {
-            ...toObserveCommand({ ...sender, index: 0, state: 'transport-accepted' }),
-            commandId: toCommandId(sender, 'observe-last-track'),
-            handleId: `${toSendHandleId({ ...sender, index: 0 })}-${CHURN_TRACK_COUNT - 1}`
-        },
+        toLastTrackAcknowledgedCommand(sender),
         toResultAssertion({
             step: sender,
-            name: 'assert-last-track-sent',
+            name: 'assert-last-track-acknowledged',
             resultName: 'observe-last-track',
             field: 'state',
-            operator: 'matches',
-            expected: '^(transport-accepted|acknowledged)$'
+            operator: 'equals',
+            expected: 'acknowledged'
         })
     ];
+}
+
+/**
+ * The sender leaves only once the receiver acknowledged its last track, within the track's lifetime. Over RTC
+ * `transport-accepted` is the frame leaving the page's data channel, not the receiver's admission, so a close right
+ * after it could lose the frame in the transport's buffer; the receiver is the track's one hop, so its receipt is its
+ * admission. The loop names each handle by its index, so the last one ends in 279.
+ */
+function toLastTrackAcknowledgedCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return {
+        ...toObserveCommand({ ...sender, index: 0, state: 'acknowledged' }),
+        commandId: toCommandId(sender, 'observe-last-track'),
+        handleId: `${toSendHandleId({ ...sender, index: 0 })}-${CHURN_TRACK_COUNT - 1}`,
+        timeoutMs: NON_EXPIRING_TTL_MS
+    };
 }
 
 function toChurnReconnectCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
