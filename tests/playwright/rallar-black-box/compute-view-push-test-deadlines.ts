@@ -1,6 +1,6 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
-import { toRecommendedTerminalTimeoutMs } from './compute-all-local-alm-observation-deadlines.ts';
+import { toRecommendedTerminalTimeoutMs } from './distributed-recipes/to-recommended-terminal-timeout-ms.ts';
 
 /** The operator waits for the staged run to become ready or start running. */
 const VIEW_PUSH_READINESS_TIMEOUT_MS = 90_000;

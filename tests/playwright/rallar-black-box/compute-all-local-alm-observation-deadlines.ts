@@ -1,5 +1,7 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
+import { toRecommendedTerminalTimeoutMs } from './distributed-recipes/to-recommended-terminal-timeout-ms.ts';
+
 /** The owned worker registers every agent of the cohort with the control server. */
 export const ALL_LOCAL_ALM_REGISTRATION_TIMEOUT_MS = 90_000;
 
@@ -31,13 +33,4 @@ export function computeAllLocalAlmObservationDeadlines(
         harnessTimeoutMs,
         testTimeoutMs: harnessTimeoutMs + ALL_LOCAL_ALM_CLEANUP_ALLOWANCE_MS
     };
-}
-
-/** The terminal wait a spec gives a run: what its manifest recommends. */
-export function toRecommendedTerminalTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
-    const seconds = manifest.metadata.recommendedTerminalTimeoutSeconds;
-    if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0) {
-        throw new Error(`Manifest ${manifest.distributedRunId} names no recommended terminal timeout.`);
-    }
-    return seconds * 1_000;
 }
