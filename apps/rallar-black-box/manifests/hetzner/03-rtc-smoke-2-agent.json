@@ -164,7 +164,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 263
   },
   "description": "Live RTC connect/send/stats smoke against the Hetzner headless room."
 }

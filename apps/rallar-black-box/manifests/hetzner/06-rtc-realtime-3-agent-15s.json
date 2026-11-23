@@ -220,7 +220,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 280
   },
   "description": "Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines."
 }

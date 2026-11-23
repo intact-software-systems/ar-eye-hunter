@@ -556,6 +556,39 @@ describe('Hetzner artifacts contracts and effects', () => {
         expect(recipe.commands).toHaveLength(2);
     });
 
+    // Run on the controller without the workflow's resolved value, the script waited 300 s even for manifest 17,
+    // whose worst case is 392 s.
+    it.for([
+        { label: 'the manifest recommendation', recommended: 392, explicit: undefined, expected: '392' },
+        { label: 'an explicit operator value', recommended: 392, explicit: '90', expected: '90' },
+        { label: 'the default without a recommendation', recommended: undefined, explicit: undefined, expected: '300' }
+    ])('waits for the terminal state as long as $label', async (input, context) => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-terminal-timeout-'));
+        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        const manifestPath = path.join(tmp, 'manifest.json');
+        await writeFile(
+            manifestPath,
+            JSON.stringify({
+                metadata: input.recommended === undefined ? {} : { recommendedTerminalTimeoutSeconds: input.recommended }
+            })
+        );
+        const { RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: _inherited, ...environment } = process.env;
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh')],
+            options: {
+                env: {
+                    ...environment,
+                    ...(input.explicit === undefined ? {} : { RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: input.explicit }),
+                    RALLAR_DISTRIBUTED_MANIFEST_PATH: manifestPath,
+                    RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'terminal-timeout'
+                }
+            }
+        });
+
+        expect(stdout.trim()).toBe(`terminalTimeoutSeconds=${input.expected}`);
+    });
+
     it('validates the remote manifest against the worker and run environment', async (context) => {
         const scriptPath = path.join(
             repoRoot,

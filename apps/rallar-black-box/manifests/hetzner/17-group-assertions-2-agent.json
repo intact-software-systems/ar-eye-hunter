@@ -283,7 +283,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 392
   },
   "description": "Coordinator-evaluated group assertions: allEqual convergence over the shared group snapshot and noneMatch isolation over per-agent absence windows."
 }

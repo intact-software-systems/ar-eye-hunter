@@ -208,7 +208,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 279
   },
   "description": "Same-room positive control delivery followed by absence waits proving no leak-probe frame and no silent rtc send failure."
 }

@@ -51,7 +51,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": true,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 45
   },
   "description": "Diagnostic run that validates synchronized barrier orchestration before start."
 }

@@ -470,7 +470,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 287
   },
   "description": "Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset."
 }

@@ -221,7 +221,8 @@
     "manifestSuite": "hetzner-distributed",
     "diagnostic": true,
     "expectedFailure": false,
-    "stress": true
+    "stress": true,
+    "recommendedTerminalTimeoutSeconds": 270
   },
   "description": "Strict 20 Hz RTC realtime stress run for stream pacing and in-flight backlog diagnostics."
 }

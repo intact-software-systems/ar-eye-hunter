@@ -1114,6 +1114,21 @@ describe('Hetzner workflow contracts and effects', () => {
         }
     });
 
+    // A hard-coded '300' overrode each manifest's own recommendation, which the runner reads when the input is blank.
+    it('lets every supported manifest\'s own recommended terminal timeout bound its run', async () => {
+        const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
+        for (const job of ['prepare', 'run']) {
+            expect(parsedWorkflow.jobs[job]?.with, job).not.toHaveProperty('terminal_timeout_seconds');
+        }
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        expect(runner.on.workflow_call?.inputs?.terminal_timeout_seconds?.default).toBe('');
+        const catalog = createHetznerDistributedManifestCatalog();
+        for (const manifestPath of supportedMainlineManifestPaths) {
+            const entry = catalog.find((candidate) => candidate.filePath === manifestPath);
+            expect(entry?.manifest.metadata.recommendedTerminalTimeoutSeconds, manifestPath).toEqual(expect.any(Number));
+        }
+    });
+
     it('rejects topology-specific manifests from the shared supported-suite preparation', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-topology-'));
         onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -1200,6 +1215,11 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
+        // The smoke manifest recommends its own terminal timeout, which the dispatch passes unless one is explicit.
+        const recommendedTerminalTimeoutSeconds = createHetznerDistributedManifestCatalog()
+            .find((entry) => entry.filePath === 'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json')
+            ?.manifest.metadata.recommendedTerminalTimeoutSeconds;
+        expect(recommendedTerminalTimeoutSeconds).toBe(263);
         const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toEqual([
             'workflow',
@@ -1232,7 +1252,7 @@ describe('Hetzner workflow contracts and effects', () => {
             '-f',
             'ready_timeout_seconds=120',
             '-f',
-            'terminal_timeout_seconds=300',
+            `terminal_timeout_seconds=${recommendedTerminalTimeoutSeconds}`,
             '-f',
             'stop_after_run=true',
             '-f',

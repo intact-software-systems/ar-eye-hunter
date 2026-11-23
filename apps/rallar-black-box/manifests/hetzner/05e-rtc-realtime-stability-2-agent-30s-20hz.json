@@ -393,7 +393,8 @@
     "rolePattern": "sender-receiver",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 295
   },
   "description": "Highest-rate 20 Hz RTC realtime stability stream with one sender and one receiver for sustained pacing evidence."
 }

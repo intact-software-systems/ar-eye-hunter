@@ -7,7 +7,9 @@ import {
 } from 'vitest';
 
 import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectCommand
@@ -19,6 +21,7 @@ import {
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
+import { createWorldFleetDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/world-fleet-distributed-manifests.ts';
 import { toHetznerManifestCommands, toHetznerRecipeCommands } from './hetzner-manifest-test-commands.ts';
 
 interface ExpectedStream {
@@ -42,6 +45,70 @@ const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
     'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json'
 ]);
+
+// The terminal wait the hosted runner workflow, the dispatch script and the controller script fall back to when a
+// manifest recommends none.
+const HOSTED_DEFAULT_TERMINAL_TIMEOUT_SECONDS = 300;
+
+// The ALM conformance entries keep their recorded terminal timeouts, which sit far below their worst-case sums
+// (15,615 s and 2,247 s): manifest 18's 1,800 s is also each combined root's execution budget, pinned by the hosted
+// reload tests, and both stay as recorded until the maintainer rules on them. Nothing else may be short.
+const RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS: readonly string[] = [
+    'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
+];
+
+function toWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
+    return computeDistributedRunTerminalTimeoutSeconds({
+        recipes: manifest.recipes.flatMap((selection) => selection.recipe === undefined ? [] : [selection.recipe]),
+        ackTimeoutMs: manifest.ackTimeoutMs,
+        barrier: manifest.barrier
+    });
+}
+
+function toHostedTerminalTimeoutSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
+    const recommended = manifest.metadata.recommendedTerminalTimeoutSeconds;
+    return typeof recommended === 'number' ? recommended : HOSTED_DEFAULT_TERMINAL_TIMEOUT_SECONDS;
+}
+
+describe('hosted distributed manifest terminal timeouts', () => {
+    // Manifest 17's worst case rose to 392 s against the 300 s default; 05b-05e sat 4 to 5 s under it.
+    it('covers every hosted manifest\'s worst-case sum by its recommendation or the default', () => {
+        const short = [...createHetznerDistributedManifestCatalog(), ...createWorldFleetDistributedManifestCatalog()]
+            .filter((entry) => toHostedTerminalTimeoutSeconds(entry.manifest) < toWorstCaseTerminalSeconds(entry.manifest))
+            .map((entry) => entry.filePath);
+
+        expect(short).toEqual(RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS);
+    });
+
+    // Every entry carries its derived recommendation, so no manifest relies on a default that may be short.
+    it('recommends every other Hetzner entry exactly the terminal timeout its budgets add up to', () => {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
+            if (RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS.includes(entry.filePath)) {
+                continue;
+            }
+            expect(entry.manifest.metadata.recommendedTerminalTimeoutSeconds, entry.filePath)
+                .toBe(toWorstCaseTerminalSeconds(entry.manifest));
+        }
+    });
+
+    it('recommends the rising RTC and group-assertion entries their derived values', () => {
+        const recommended = Object.fromEntries(
+            createHetznerDistributedManifestCatalog().map((entry) => [
+                path.basename(entry.filePath, '.json'),
+                entry.manifest.metadata.recommendedTerminalTimeoutSeconds
+            ])
+        );
+        expect(recommended).toMatchObject({
+            '01-health-2-agent': 30,
+            '03-rtc-smoke-2-agent': 263,
+            '05b-rtc-realtime-stability-2-agent-30s': 295,
+            '05d-rtc-realtime-stability-2-agent-30s-15hz': 296,
+            '17-group-assertions-2-agent': 392,
+            '24-view-push-2-agent': 175
+        });
+    });
+});
 
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {

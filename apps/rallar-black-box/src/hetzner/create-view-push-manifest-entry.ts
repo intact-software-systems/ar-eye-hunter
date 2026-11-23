@@ -1,12 +1,12 @@
 import { createViewPushRecipe } from '@shared-test/rallar-bb-test/fixtures/create-view-push-recipe.ts';
 import {
-    createManifestEntry,
+    createBudgetedManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP,
     type HetznerDistributedManifestEntry
 } from './hetzner-manifest-entry.ts';
 
 export function createViewPushManifestEntry(): HetznerDistributedManifestEntry {
-    return createManifestEntry({
+    return createBudgetedManifestEntry({
         filePath: 'apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json',
         title: 'Private view push and reconnect, two agents',
         description:

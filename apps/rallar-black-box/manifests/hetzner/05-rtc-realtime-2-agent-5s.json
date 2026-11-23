@@ -220,7 +220,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 270
   },
   "description": "Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline."
 }

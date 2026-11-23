@@ -222,7 +222,8 @@
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
-    "expectedFailure": false
+    "expectedFailure": false,
+    "recommendedTerminalTimeoutSeconds": 296
   },
   "description": "Higher-rate 15 Hz RTC realtime stability stream for sustained pacing evidence."
 }
