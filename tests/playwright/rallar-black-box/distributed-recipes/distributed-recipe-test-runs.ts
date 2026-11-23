@@ -64,106 +64,152 @@ export function createSimulatedAckManifest(input: DistributedRecipeTestRunInput)
 
 /** The live test's runs in the order it starts them, built before it opens an agent so its timeout covers them. */
 export function createLiveDistributedRecipeRuns(input: LiveDistributedRecipeRunsInput): LiveDistributedRecipeRuns {
-    const { suffix, controlRunId, group, agentIds } = input;
-    const everyAgent = { mode: 'selected-agents', agentIds, expectedParticipantCount: agentIds.length } as const;
-    const senderOnly = { mode: 'role-map', roles: { sender: [agentIds[0]] }, expectedParticipantCount: 1 } as const;
+    const targets = toLiveRunTargets(input.agentIds);
+    return {
+        ack: createLiveAckRun(input),
+        ...createLiveWsRuns(input, targets),
+        ...createLiveRtcRuns(input, targets),
+        ...createLiveRealtimeRun(input, targets)
+    };
+}
 
-    const ackRecipe = healthRecipe(`live-ack-${suffix}`);
-    const wsTypeId = `room.rallar-black-box.distributed.ws.${suffix}`;
-    const wsPrimerRecipe = wsSendRecipe(`live-ws-primer-${suffix}`, group, {
-        typeId: wsTypeId,
-        topicId: wsTypeId,
+interface LiveRunTargets {
+    readonly everyAgent: RallarBlackBoxDistributedRunManifest['targetPolicy'];
+    readonly senderOnly: RallarBlackBoxDistributedRunManifest['targetPolicy'];
+}
+
+function toLiveRunTargets(agentIds: readonly string[]): LiveRunTargets {
+    return {
+        everyAgent: { mode: 'selected-agents', agentIds, expectedParticipantCount: agentIds.length },
+        senderOnly: { mode: 'role-map', roles: { sender: [agentIds[0]] }, expectedParticipantCount: 1 }
+    };
+}
+
+function createLiveAckRun(input: LiveDistributedRecipeRunsInput): RallarBlackBoxDistributedRunManifest {
+    const recipe = healthRecipe(`live-ack-${input.suffix}`);
+    return createDistributedManifest({
+        distributedRunId: `dist-live-ack-${input.suffix}`,
+        controlRunId: input.controlRunId,
+        group: input.group,
+        recipes: [{ recipeId: recipe.recipeId, recipe, profile: 'live', variables: {} }],
+        targetPolicy: { mode: 'all-online-group-members', expectedParticipantCount: input.agentIds.length }
+    });
+}
+
+/** Every agent subscribes through the primer, then the sender alone sends the message the others receive. */
+function createLiveWsRuns(
+    input: LiveDistributedRecipeRunsInput,
+    targets: LiveRunTargets
+): Pick<LiveDistributedRecipeRuns, 'wsPrimer' | 'wsSend' | 'wsMessageId'> {
+    const { suffix, controlRunId, group } = input;
+    const typeId = `room.rallar-black-box.distributed.ws.${suffix}`;
+    const primer = wsSendRecipe(`live-ws-primer-${suffix}`, group, {
+        typeId,
+        topicId: typeId,
         messageId: `ws-primer-${suffix}`,
         role: 'primer'
     });
     const wsMessageId = `ws-sender-receiver-${suffix}`;
-    const wsDistributedRunId = `dist-live-ws-send-${suffix}`;
-    const wsSenderRecipe = wsSendRecipe(`live-ws-sender-${suffix}`, group, {
-        typeId: wsTypeId,
-        topicId: wsTypeId,
+    const distributedRunId = `dist-live-ws-send-${suffix}`;
+    const sender = wsSendRecipe(`live-ws-sender-${suffix}`, group, {
+        typeId,
+        topicId: typeId,
         messageId: wsMessageId,
         role: 'sender',
-        distributedRunId: wsDistributedRunId
+        distributedRunId
     });
-    const rtcConnect = rtcConnectRecipe(`live-rtc-connect-${suffix}`, group);
-    const rtcMessageId = `rtc-broadcast-${suffix}`;
-    const rtcDistributedRunId = `dist-live-rtc-send-${suffix}`;
-    const rtcSender = rtcSendRecipe({
-        recipeId: `live-rtc-send-${suffix}`,
-        group,
-        messageId: rtcMessageId,
-        distributedRunId: rtcDistributedRunId
-    });
-    const realtimeDistributedRunId = `dist-live-rtc-realtime-${suffix}`;
-    const realtimeConnection = `realtime-${realtimeDistributedRunId}`;
-    const realtimeRecipe = createPreprovisionedRealtimeRecipe({
-        recipeId: `live-rtc-realtime-${suffix}`,
-        group,
-        distributedRunId: realtimeDistributedRunId,
-        connection: realtimeConnection
-    });
-
     return {
-        ack: createDistributedManifest({
-            distributedRunId: `dist-live-ack-${suffix}`,
-            controlRunId,
-            group,
-            recipes: [{ recipeId: ackRecipe.recipeId, recipe: ackRecipe, profile: 'live', variables: {} }],
-            targetPolicy: { mode: 'all-online-group-members', expectedParticipantCount: agentIds.length }
-        }),
         wsPrimer: createDistributedManifest({
             distributedRunId: `dist-live-ws-primer-${suffix}`,
             controlRunId,
             group,
-            recipes: [{ recipeId: wsPrimerRecipe.recipeId, recipe: wsPrimerRecipe, profile: 'live-ws', variables: {} }],
-            targetPolicy: everyAgent
+            recipes: [{ recipeId: primer.recipeId, recipe: primer, profile: 'live-ws', variables: {} }],
+            targetPolicy: targets.everyAgent
         }),
-        wsSend: createDistributedManifest({
-            distributedRunId: wsDistributedRunId,
-            controlRunId,
-            group,
-            recipes: [{
-                recipeId: wsSenderRecipe.recipeId,
-                role: 'sender',
-                recipe: wsSenderRecipe,
-                profile: 'live-ws',
-                variables: {}
-            }],
-            targetPolicy: senderOnly
-        }),
-        wsMessageId,
+        wsSend: createSenderRun(input, { distributedRunId, recipe: sender, profile: 'live-ws' }, targets),
+        wsMessageId
+    };
+}
+
+/** Every agent connects, then the sender alone broadcasts the message the others receive. */
+function createLiveRtcRuns(
+    input: LiveDistributedRecipeRunsInput,
+    targets: LiveRunTargets
+): Pick<LiveDistributedRecipeRuns, 'rtcConnect' | 'rtcSend' | 'rtcMessageId'> {
+    const { suffix, controlRunId, group } = input;
+    const connect = rtcConnectRecipe(`live-rtc-connect-${suffix}`, group);
+    const rtcMessageId = `rtc-broadcast-${suffix}`;
+    const distributedRunId = `dist-live-rtc-send-${suffix}`;
+    const sender = rtcSendRecipe({
+        recipeId: `live-rtc-send-${suffix}`,
+        group,
+        messageId: rtcMessageId,
+        distributedRunId
+    });
+    return {
         rtcConnect: createDistributedManifest({
             distributedRunId: `dist-live-rtc-connect-${suffix}`,
             controlRunId,
             group,
-            recipes: [{ recipeId: rtcConnect.recipeId, recipe: rtcConnect, profile: 'live-rtc', variables: {} }],
-            targetPolicy: everyAgent
+            recipes: [{ recipeId: connect.recipeId, recipe: connect, profile: 'live-rtc', variables: {} }],
+            targetPolicy: targets.everyAgent
         }),
-        rtcSend: createDistributedManifest({
-            distributedRunId: rtcDistributedRunId,
-            controlRunId,
-            group,
-            recipes: [{
-                recipeId: rtcSender.recipeId,
-                role: 'sender',
-                recipe: rtcSender,
-                profile: 'live-rtc',
-                variables: {}
-            }],
-            targetPolicy: senderOnly
-        }),
-        rtcMessageId,
+        rtcSend: createSenderRun(input, { distributedRunId, recipe: sender, profile: 'live-rtc' }, targets),
+        rtcMessageId
+    };
+}
+
+interface LiveSenderRun {
+    readonly distributedRunId: string;
+    readonly recipe: RallarBlackBoxTestRecipe;
+    readonly profile: string;
+}
+
+function createSenderRun(
+    input: LiveDistributedRecipeRunsInput,
+    run: LiveSenderRun,
+    targets: LiveRunTargets
+): RallarBlackBoxDistributedRunManifest {
+    return createDistributedManifest({
+        distributedRunId: run.distributedRunId,
+        controlRunId: input.controlRunId,
+        group: input.group,
+        recipes: [{
+            recipeId: run.recipe.recipeId,
+            role: 'sender',
+            recipe: run.recipe,
+            profile: run.profile,
+            variables: {}
+        }],
+        targetPolicy: targets.senderOnly
+    });
+}
+
+/** Every agent runs the preprovisioned realtime stream over its own connection. */
+function createLiveRealtimeRun(
+    input: LiveDistributedRecipeRunsInput,
+    targets: LiveRunTargets
+): Pick<LiveDistributedRecipeRuns, 'realtime' | 'realtimeRecipe' | 'realtimeConnection'> {
+    const distributedRunId = `dist-live-rtc-realtime-${input.suffix}`;
+    const realtimeConnection = `realtime-${distributedRunId}`;
+    const realtimeRecipe = createPreprovisionedRealtimeRecipe({
+        recipeId: `live-rtc-realtime-${input.suffix}`,
+        group: input.group,
+        distributedRunId,
+        connection: realtimeConnection
+    });
+    return {
         realtime: createDistributedManifest({
-            distributedRunId: realtimeDistributedRunId,
-            controlRunId,
-            group,
+            distributedRunId,
+            controlRunId: input.controlRunId,
+            group: input.group,
             recipes: [{
                 recipeId: realtimeRecipe.recipeId,
                 recipe: realtimeRecipe,
                 profile: 'live-rtc-realtime',
                 variables: {}
             }],
-            targetPolicy: everyAgent
+            targetPolicy: targets.everyAgent
         }),
         realtimeRecipe,
         realtimeConnection
