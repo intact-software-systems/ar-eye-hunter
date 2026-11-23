@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoRepairRequestWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -45,7 +45,7 @@ const RESUBSCRIBED = 'resubscribed';
  * each producer's track; the receiver then revokes the sender principal's `subscribe` alone (D492), so the sibling is
  * outside the audience of `p3` and `p4` on every carrier and witnesses neither. Once the receiver grants it back, the
  * sibling elects anew and receives `p5`, whose record names the sibling's prior `2`: an omission, with no gap NACK and
- * no repair. The receiver receives all five; each loop holds the count identity.
+ * no repair request. The receiver receives all five; each publication's receipt holds the count identity.
  */
 export const subscriptionOrderedOmission: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-ordered-omission',
@@ -84,7 +84,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         ...toElectionAppliedCueWaitCommands(producer, RESUBSCRIBED, 'held'),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
-        ...toNoGapRepairWaits(producer)
+        ...toNoRepairRequestWaits(producer)
     ];
 }
 

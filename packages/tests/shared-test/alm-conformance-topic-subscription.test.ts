@@ -4,6 +4,15 @@ import {
     it
 } from 'vitest';
 
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALNackControlMessage,
+    newALRepairControlMessage,
+    parseALControlMessage
+} from '@shared/al-contracts/al-control.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/control/write-al-outbound-control-admission-diagnostic.ts';
+
 import { isAssertOperatorSatisfied } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
@@ -30,6 +39,7 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import {
     describeDeclaredStartStates,
@@ -40,6 +50,7 @@ import {
     type Permissions,
     type StartStateTable
 } from './describe-declared-start-states.ts';
+
 import { toNestedCommands } from './to-nested-commands.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
@@ -519,6 +530,31 @@ function findBarrieredReconnectScenario(carrier: (typeof ALM_CONFORMANCE_CARRIER
     return scenario;
 }
 
+/** The control id the diagnostic writer's own tests use for a control a recipient sent. */
+const CONTROL_ID = newALUnicastMessage({
+    createdAtEpochMs: 1,
+    senderId: 'peer-r',
+    route: newALRoute('control', 'room-1', 'nack'),
+    toPeerId: 'peer-a',
+    typeId: 'chat.v1',
+    resource: {}
+}).id;
+
+function toOutboundDiagnosticEvent(data: Readonly<Record<string, RallarBlackBoxTestJsonValue>>) {
+    return { kind: 'diagnostic' as const, topic: 'rallar.browser.alm.outbound_diagnostics', payload: { data } };
+}
+
+/** The producer's `control-admission` event for `control`, as its runtime's own writer states a committed one. */
+function toAdmittedControlEvent(control: ALMessage) {
+    const events: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    writeALOutboundControlAdmissionDiagnostic((event) => events.push(event), {
+        control,
+        parsed: parseALControlMessage(control)!,
+        admitted: { kind: 'committed' }
+    });
+    return toOutboundDiagnosticEvent(JSON.parse(JSON.stringify(events[0])));
+}
+
 /** Runs one wait on a page whose history holds `events` in order; the wait gets 1 ms, the history being complete. */
 async function runWaitAfterEvents(
     wait: RallarBlackBoxTestCommand,
@@ -645,8 +681,8 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...toPublishOnceSteps(`${track}-p2`),
                     'cue-entered-applied-by-receiver-received',
                     ...toPublishOnceSteps(`${track}-p3`),
-                    'no-repair-dispatch',
-                    'no-gap-nack'
+                    'no-gap-nack',
+                    'no-repair-control'
                 ]);
             }
             // Publisher-b may publish both before the sibling listens, so the receiver, listening first, relays them.
@@ -729,8 +765,8 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishOnceSteps(`${track}-p4`),
                 'cue-resubscribed-applied-by-receiver-received',
                 ...toPublishOnceSteps(`${track}-p5`),
-                'no-repair-dispatch',
-                'no-gap-nack'
+                'no-gap-nack',
+                'no-repair-control'
             ]);
         }
         expect(toStepNames(receiver)).toEqual([
@@ -1013,40 +1049,100 @@ describe('ALM ordered subscription entry conformance', () => {
         ]);
     });
 
-    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'] as const)(
-        'asserts in %s that no gap NACK about the cell\'s tracks reached either producer, from the history the repair wait kept',
+    it('the no-repair-request wait matches an admitted gap NACK on the track or an admitted repair control, and nothing a timer sends', async () => {
+        const scenario = findOrderedScenario('rtc', 'subscription-ordered-omission');
+        const producer = requireRoleRecipe(scenario, 'sender');
+        const waits = [findStep(producer, 'no-gap-nack'), findStep(producer, 'no-repair-control')];
+        const nack = (reason: 'gap' | 'not-subscribed', orderingKey: string | undefined) =>
+            toAdmittedControlEvent(newALNackControlMessage(
+                CONTROL_ID,
+                toTestALNackPayload({
+                    msgId: 'sent-3',
+                    fromPeerId: 'peer-r',
+                    toPeerId: 'peer-a',
+                    reason,
+                    ...(orderingKey === undefined ? {} : { orderingKey, expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] })
+                })
+            ));
+        const repair = toAdmittedControlEvent(newALRepairControlMessage(CONTROL_ID, {
+            msgId: 'sent-3',
+            fromPeerId: 'peer-r',
+            toPeerId: 'peer-a',
+            reason: 'missing-seq',
+            observedAtEpochMs: 1,
+            orderingKey: 'subscription-ordered-omission:peer-a:0',
+            expectedSeq: 2,
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1
+        }));
+        // A timer retransmission's commit as the rtc run 45068154152 stated it, under this cell's type.
+        const timerRepair = toOutboundDiagnosticEvent({
+            kind: 'commit-phases',
+            lane: 'volatile',
+            senderId: 'session-erQI2w2Prw7hwhgrKzguJ-qb',
+            msgId: 'c2e1a3ce-2df8-4aeb-8460-b1e4116c02ee',
+            typeId: 'alm.conformance.rtc.subscription-ordered-omission',
+            origin: 'repair',
+            readDurationMs: 2,
+            readOperationCount: 9,
+            commitDurationMs: 1,
+            commitOutcome: 'committed',
+            traceId: '1cb912c7-5f27-496a-aece-5d1fe837ce9a',
+            corrId: 'c2e1a3ce-2df8-4aeb-8460-b1e4116c02ee'
+        });
+
+        expect(waits).toMatchObject([
+            {
+                absent: true,
+                match: { contains: '"nackReason":"gap","nackOrderingKey":"subscription-ordered-omission:' }
+            },
+            {
+                absent: true,
+                match: { payloadFields: { 'data.kind': 'control-admission', 'data.typeId': 'al.control.repair.v3' } }
+            }
+        ]);
+        expect(producer.commands.map(({ commandId }) => commandId)).not.toContain(`${producer.recipeId}-no-repair-dispatch`);
+        expect(await runAfterEvents(waits, [nack('gap', 'subscription-ordered-omission:peer-a:0')])).toBe(false);
+        expect(await runAfterEvents(waits, [repair])).toBe(false);
+        expect(await runAfterEvents(waits, [timerRepair])).toBe(true);
+        expect(await runAfterEvents(waits, [nack('gap', 'subscription-ordered-entry:peer-a:0')])).toBe(true);
+        expect(await runAfterEvents(waits, [nack('not-subscribed', undefined)])).toBe(true);
+    });
+
+    it.each(ORDERED_SCENARIO_IDS)(
+        'asserts in %s that no gap NACK about the cell\'s tracks and no repair control reached either producer, listening one window',
         (cell) => {
-            const scenario = findOrderedScenario('rtc', cell);
-            for (const [role] of PRODUCER_TRACKS) {
-                expect(findStep(requireRoleRecipe(scenario, role), 'no-gap-nack')).toMatchObject({
-                    kind: 'wait',
-                    absent: true,
-                    timeoutMs: 0,
-                    match: {
-                        kind: 'diagnostic',
-                        topic: 'rallar.browser.alm.outbound_diagnostics',
-                        contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
-                    }
-                });
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                for (const [role] of PRODUCER_TRACKS) {
+                    const producer = requireRoleRecipe(findOrderedScenario(carrier, cell), role);
+                    expect(toStepNames(producer).slice(-2), `${carrier} ${role}`).toEqual(['no-gap-nack', 'no-repair-control']);
+                    expect([findStep(producer, 'no-gap-nack'), findStep(producer, 'no-repair-control')], `${carrier} ${role}`)
+                        .toMatchObject([
+                            {
+                                kind: 'wait',
+                                absent: true,
+                                timeoutMs: 5_000,
+                                match: {
+                                    kind: 'diagnostic',
+                                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                                    contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
+                                }
+                            },
+                            {
+                                kind: 'wait',
+                                absent: true,
+                                timeoutMs: 0,
+                                match: {
+                                    kind: 'diagnostic',
+                                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                                    payloadFields: { 'data.kind': 'control-admission', 'data.typeId': 'al.control.repair.v3' }
+                                }
+                            }
+                        ]);
+                }
             }
         }
     );
-
-    it('asserts no repair dispatch of the cell\'s type on either producer', () => {
-        const scenario = findOrderedScenario('rtc-with-ws-fallback', 'subscription-ordered-omission');
-        for (const [role] of PRODUCER_TRACKS) {
-            expect(findStep(requireRoleRecipe(scenario, role), 'no-repair-dispatch')).toMatchObject({
-                kind: 'wait',
-                absent: true,
-                timeoutMs: 5_000,
-                match: {
-                    kind: 'diagnostic',
-                    topic: 'rallar.browser.alm.outbound_diagnostics',
-                    contains: '"typeId":"alm.conformance.rtc-with-ws-fallback.subscription-ordered-omission","origin":"repair"'
-                }
-            });
-        }
-    });
 });
 
 /** The continuation's steps up to its stats read, named without its role's prefix, which its recipe id extends. */
@@ -1107,8 +1203,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
                 ...toPublishOnceSteps(`${track}-p5`),
-                'no-repair-dispatch',
-                'no-gap-nack'
+                'no-gap-nack',
+                'no-repair-control'
             ]);
         }
         expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([

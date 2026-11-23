@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoRepairRequestWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -49,7 +49,7 @@ const REENTERED = 'reentered';
  * A reconnect reads as an omission, never as loss. The sibling elects and receives `p1` and `p2` of each producer's
  * track, then drops its product socket, which closes its room presence: `p3` and `p4` reach the receiver alone. Its
  * reopened socket re-asserts its election and its room presence, and the sibling receives `p5`, whose record names the
- * sibling's prior `2`: an omission, with no gap NACK and no repair. A closed page hears no cue, so the sibling's steps
+ * sibling's prior `2`: an omission, with no gap NACK and no repair request. A closed page hears no cue, so the sibling's steps
  * from the reopen on are its continuation, which the lane starts once the receiver heard both producers' `p4`.
  */
 export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
@@ -96,7 +96,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toElectionAppliedCueWaitCommands(producer, REENTERED, 'reasserted'),
         ...toPublishUntilConfirmedCommands({ ...subscribed, name: 'probe-reentered', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
-        ...toNoGapRepairWaits(producer)
+        ...toNoRepairRequestWaits(producer)
     ];
 }
 

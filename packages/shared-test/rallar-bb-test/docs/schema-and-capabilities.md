@@ -627,12 +627,13 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   cell (no `seq`) that the receiver alone confirms; the receiver relays that both were confirmed, and only then
   does the unelected sibling elect and receive `p3` of each, never `p1` or `p2`. Its inbound `ordering-position`
   event reads `entered` with prior `0` per track over `ws`, and `witnessed` for `p1` and `p2` over the RTC
-  carriers, which freeze it into those copies. No producer dispatches a repair.
+  carriers, which freeze it into those copies. No receiver asks a producer for a repair: no gap NACK and no
+  repair control reaches either producer; a timer's retransmission of an unacknowledged copy is no such request.
 - `subscription-ordered-omission` (`ws`, `rtc`, `rtc-with-ws-fallback`): an exclusion reads as an omission. The
   sibling receives `p1` and `p2`; the receiver revokes the sender principal's `subscribe` alone, so `p3` and
   `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
   elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
-  no gap NACK and no repair dispatch.
+  no gap NACK and no repair control at either producer.
 - In these three cells the receiver, which a copy must find current, writes nothing after the sibling's
   election, so the sibling's cue that it elected (`entered`, `resubscribed`, `reentered`) is its ordering
   point: the receiver reads the room's head after that cue, waits until it applied that head, then cues
