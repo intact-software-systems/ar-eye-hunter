@@ -53,7 +53,6 @@ import {
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
-import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import { writeALOutboundTimeoutCompletions } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import type { ALOutboundEndedReason } from '../lane/al-outbound-send-controls.ts';
@@ -538,16 +537,6 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         input: { trackKey: string; seq: number; msgId: string; }
     ) => Promise<'deleted' | 'absent' | 'other-message' | 'conflict'>;
 
-    /**
-     * Records recipients the server sent its own message nothing outside the audience of its pending receipt, under the
-     * origin's version fence: `absent` when no receipt is pending (none, or one already complete), `committed` without
-     * a write when every recipient is already outside.
-     */
-    readonly commitOutsideAudience: (
-        receipt: ALOutboundPendingAckRef,
-        recipientPeerIds: readonly string[]
-    ) => Promise<'committed' | 'conflict' | 'absent'>;
-
     /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
@@ -608,13 +597,6 @@ export function createVolatileALOutboundAdmissionStore<TPrepared>(
 interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly durability: ALStoreDurability;
 }
-
-/** A message that expired before its receipt's outside class was written has no receipt left to record in. */
-const OUTSIDE_AUDIENCE_COMMIT_RESULTS = {
-    committed: 'committed',
-    conflict: 'conflict',
-    expired: 'absent'
-} as const satisfies Record<'committed' | 'conflict' | 'expired', 'committed' | 'conflict' | 'absent'>;
 
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
     readonly namespace: string;
@@ -826,29 +808,6 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             }
             throw error;
         }
-    }
-
-    async commitOutsideAudience(
-        receipt: ALOutboundPendingAckRef,
-        recipientPeerIds: readonly string[]
-    ): Promise<'committed' | 'conflict' | 'absent'> {
-        const surface = await this.backend.readWithin(async (session) => {
-            const [clientRecord, messageVersion] = await Promise.all([
-                this.reads.readClientRecord(session, receipt.originPeerId),
-                this.reads.readMessageVersion(session, receipt)
-            ]);
-            return {
-                clientRecord,
-                messageVersion,
-                pending: await this.reads.readPendingAck(session, receipt),
-                stored: await this.reads.readStoredMessage(session, receipt.msgId)
-            };
-        });
-        const commit = toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds });
-        if (commit.status !== 'write') {
-            return commit.status;
-        }
-        return OUTSIDE_AUDIENCE_COMMIT_RESULTS[await this.commitBundle(commit.bundle)];
     }
 
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
