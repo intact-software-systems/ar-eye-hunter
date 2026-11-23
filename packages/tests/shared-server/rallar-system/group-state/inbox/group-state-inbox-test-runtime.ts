@@ -55,6 +55,7 @@ export interface AuthorityHarness {
     queueEntries(): Promise<readonly ResourceEntry[]>;
 }
 interface HarnessOptions {
+    readonly now?: () => number;
     readonly wakeQueue?: () => void;
     readonly serviceOptions?: AppInboxOptions;
     /** Receives every timing event the inbox service and its group-state service emit. */
@@ -75,7 +76,7 @@ export async function createAuthorityHarness(
     principalIds: readonly string[],
     options: HarnessOptions = {}
 ): Promise<AuthorityHarness> {
-    const nowEpochMs = Date.now();
+    const nowEpochMs = options.now?.() ?? Date.now();
     const runtimeRepository = options.runtimeRepository ?? new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const sessions = await provisionAuthoritySessions(principalIds, authSessions, nowEpochMs);
@@ -90,7 +91,7 @@ export async function createAuthorityHarness(
         serviceId: 'server-12345678',
         readPlannedLayoutRow: options.readPlannedLayoutRow ?? (async () => null),
         readAcceptedLayoutRow: async () => null,
-        now: () => nowEpochMs,
+        now: options.now ?? (() => nowEpochMs),
         timing: options.timing
     });
     const repository = createTestGroupStateRepository(runtimeRepository, database.groupEventStore);
