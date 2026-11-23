@@ -292,6 +292,41 @@ describe('ALM fault stream cells', () => {
         );
     });
 
+    it('seeded-jitter-stream holds send 2 alone by its message id until send 3 left the page and the jitter\'s longest delay passed, then releases it, before the gap NACK it reveals', () => {
+        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
+        const places = toPlaces(sender, [
+            'jitter-arm',
+            'send-1',
+            'assert-sent-1',
+            'hold-ws',
+            'send-2',
+            'hold-message-2-ws',
+            'release-ws',
+            'send-3',
+            'assert-sent-3',
+            'frame-delay-3',
+            'release-message-2-ws',
+            'send-4',
+            'send-20',
+            'gap-nack',
+            'jitter-release'
+        ]);
+        const held = { msgId: `{resultCache.${sender.recipeId}-send-2.value.msgId}` };
+
+        expect(places.every((place) => place >= 0), JSON.stringify(places)).toBe(true);
+        expect([...places].sort((left, right) => left - right)).toEqual(places);
+        expect(findCommand(sender, 'hold-message-2-ws')).toMatchObject({
+            kind: 'fault.inject',
+            carrier: 'ws',
+            match: held,
+            action: 'not-ready',
+            remaining: 'until-cleared'
+        });
+        expect(findCommand(sender, 'release-message-2-ws')).toMatchObject({ kind: 'fault.inject', match: held, remaining: 0 });
+        // The jitter delays a frame by at most its longest delay, so send 3 reached the socket before send 2 can.
+        expect(findCommand(sender, 'frame-delay-3')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 80 });
+    });
+
     it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {
         const sender = requireCell('lost-stream-start', 'rtc').sender;
         const places = toPlaces(sender, [
