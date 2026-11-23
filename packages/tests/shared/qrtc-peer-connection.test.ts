@@ -538,7 +538,7 @@ describe('QRtcPeerConnection', () => {
 
     it('refuses an offer below the highest generation it applied, without applying or answering it', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { peer, native, sentSignals } = createPeerFixture(true, {}, createObservedOfferIds(events));
+        const { peer, native, sentSignals } = createPeerFixture(true, {}, createRecordingDependencies(events));
         await peer.handleSignal(createRemoteOffer('current-offer', 20, 'current-offer-sdp'));
         await peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
 
@@ -558,6 +558,47 @@ describe('QRtcPeerConnection', () => {
                 }),
                 expect.objectContaining({ disposition: 'application-returned' })
             ]);
+    });
+
+    it('refuses a lower generation before the collision logic, keeping its own pending offer', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native, sentSignals } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        await peer.handleSignal(createRemoteOffer('current-offer', 20, 'current-offer-sdp'));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        expect(native.signalingState).toBe('have-local-offer');
+        await peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
+
+        expect(native.signalingState).toBe('have-local-offer');
+        expect(native.localDescription).toMatchObject({ type: 'offer' });
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'current-offer-sdp' }]);
+        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
+            .toEqual([['Answer', 'current-offer'], ['Offer', 'offer-1']]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'superseded-offer'))
+            .toContainEqual(expect.objectContaining({
+                disposition: 'offer-superseded',
+                signalingState: 'have-local-offer',
+                offerGeneration: 19,
+                appliedOfferGeneration: 20
+            }));
+    });
+
+    it('refuses a generation below one it applied through a polite rollback', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native, sentSignals } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteOffer('current-offer', 20, 'current-offer-sdp'));
+        await peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
+
+        expect(peer.readDiagnostics().politeOfferRollbackCount).toBe(1);
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'current-offer-sdp' }]);
+        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
+            .toEqual([['Offer', 'offer-1'], ['Answer', 'current-offer']]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'superseded-offer'))
+            .toContainEqual(expect.objectContaining({
+                disposition: 'offer-superseded',
+                offerGeneration: 19,
+                appliedOfferGeneration: 20
+            }));
     });
 
     it('answers a renegotiation of the generation it applied', async () => {
@@ -1070,7 +1111,7 @@ function createPeerFixture(
     return { peer, native, sentSignals };
 }
 
-function createObservedOfferIds(events: RtcSignalingDiagnostics.Event[]): QRtcPeerConnection.Dependencies {
+function createRecordingDependencies(events: RtcSignalingDiagnostics.Event[]): QRtcPeerConnection.Dependencies {
     return {
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         signalingDiagnostics: { nowEpochMs: () => 1, record: (event) => events.push(event) }

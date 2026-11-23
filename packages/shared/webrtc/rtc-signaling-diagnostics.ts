@@ -353,7 +353,7 @@ export namespace RtcSignalingDiagnostics {
                     /** An offer below the highest generation this connection applied, refused unanswered. */
                     readonly disposition: 'offer-superseded';
                     readonly capturedPeerConnection: true;
-                    readonly currentPeerConnection: boolean;
+                    readonly currentPeerConnection: true;
                     readonly offerMatches: undefined;
                     readonly signalingState: RTCSignalingState;
                     /** The refused offer's generation. */

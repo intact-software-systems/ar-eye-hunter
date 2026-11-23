@@ -1310,9 +1310,7 @@ export class QRtcPeerConnection {
     ): Promise<void> {
         const pc = capture.pc;
         this.diagnostics.inboundOfferCount++;
-        const appliedOfferGeneration = this.highestAppliedOfferGeneration;
-        if (appliedOfferGeneration !== undefined && signal.offerGeneration < appliedOfferGeneration) {
-            this.observeSupersededOffer(capture, signal, appliedOfferGeneration);
+        if (this.refuseSupersededOffer(capture, signal)) {
             return;
         }
         const collision = this.status.makingOffer || pc.signalingState !== 'stable';
@@ -1359,11 +1357,14 @@ export class QRtcPeerConnection {
         await this.sendAnswer(pc, signal.offerId);
     }
 
-    private observeSupersededOffer(
+    private refuseSupersededOffer(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'Offer'; }>,
-        appliedOfferGeneration: number
-    ): void {
+        signal: Extract<QRtcSignal, { signalType: 'Offer'; }>
+    ): boolean {
+        const appliedOfferGeneration = this.highestAppliedOfferGeneration;
+        if (appliedOfferGeneration === undefined || signal.offerGeneration >= appliedOfferGeneration) {
+            return false;
+        }
         recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
             kind: 'native-signal-decision',
             disposition: 'offer-superseded',
@@ -1373,12 +1374,13 @@ export class QRtcPeerConnection {
             offerId: signal.offerId,
             nativeIdentity: capture.nativeIdentity,
             capturedPeerConnection: true,
-            currentPeerConnection: this.status.pc === capture.pc,
+            currentPeerConnection: true,
             offerMatches: undefined,
             signalingState: capture.pc.signalingState,
             offerGeneration: signal.offerGeneration,
             appliedOfferGeneration
         });
+        return true;
     }
 
     private async flushIceCandidates(
