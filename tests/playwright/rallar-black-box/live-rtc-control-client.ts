@@ -82,6 +82,9 @@ interface FirstMessageFailureCase {
 
 const MAX_RETAINED_MESSAGE_FAILURES = 2;
 
+/** How long a command's result is polled for when the caller names no wait of its own. */
+export const LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS = 45_000;
+
 export namespace LiveRtcControlClient {
     export interface FormationAgent {
         readonly prefix: 'A' | 'B' | 'C';
@@ -290,7 +293,7 @@ export class LiveRtcControlClient {
                     });
                 },
                 {
-                    timeout: input.timeoutMs ?? 45_000
+                    timeout: input.timeoutMs ?? LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
                 }
             )
             .toBe(true);

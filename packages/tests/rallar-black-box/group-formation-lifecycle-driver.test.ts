@@ -11,11 +11,15 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import { computeCommandResultWaitMs } from '../../../tests/playwright/rallar-black-box/compute-command-result-wait-ms.ts';
 import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import {
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    type LiveRtcControlClient
+} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
@@ -331,6 +335,26 @@ describe('group formation lifecycle driver', () => {
         const result = await driver.reconnectAndWaitForPeerReadiness({ ...replacementCaptureInput, control });
         expect(connectPayload).toMatchObject({ kind: 'rtc.connect', rallar: { almDiagnostics } });
         expect(result.rtcCapture).toMatchObject({ almDiagnostics });
+    });
+
+    // The driver waited 60 s for a Connect whose own timeout is a 135 s SDK connect and room join.
+    it('waits for a Connect result as long as the Connect may take, then the control client\'s poll', async () => {
+        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
+        const executeOk = control.executeOk;
+        const connects: LiveRtcControlClient.ExecuteInput[] = [];
+        control.executeOk = async (input) => {
+            connects.push(input);
+            return await executeOk(input);
+        };
+        const driver = createGroupFormationLifecycleDriver(replacementCaptureConfig);
+        await driver.reconnectAndWaitForPeerReadiness({ ...replacementCaptureInput, control });
+
+        expect(connects).toHaveLength(1);
+        expect(connects[0].command).toMatchObject({ kind: 'rtc.connect', roomId: 'group', timeoutMs: 135_000 });
+        expect(connects[0].timeoutMs).toBe(
+            computeCommandResultWaitMs(connects[0].command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS)
+        );
+        expect(connects[0].timeoutMs).toBe(135_000 + 45_000);
     });
 
     it.each(['missing', 'mismatch', 'foreign-command', 'foreign-agent'])('refuses %s ALM application before reconnect readiness', async (failure) => {

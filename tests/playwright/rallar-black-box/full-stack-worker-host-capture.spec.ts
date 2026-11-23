@@ -23,10 +23,15 @@ import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand,
+    RallarBlackBoxTestRtcSendCommand
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
-import { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS, LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
     optionalJsonArray,
@@ -34,6 +39,16 @@ import {
     requiredString,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+
+/** A worker connect joins the room under the establishment SDK timeout, then waits for its one peer to be ready. */
+const WORKER_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
+    kind: 'rtc.connect',
+    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
+    readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
+};
+
+/** A worker send opens the peer's channel and delivers within its own timeout. */
+const WORKER_SEND_TIMING: RallarBlackBoxTestRtcSendCommand = { kind: 'rtc.send', timeoutMs: 60_000 };
 
 interface WorkerCaptureRun {
     readonly control: LiveRtcControlClient;
@@ -136,6 +151,14 @@ test.describe('actual default headless worker HOST capture', () => {
         test(
             `applies HOST ${mode} with omitted RUN and delivers the exact scoped RTC payload`,
             async ({ request }, testInfo) => {
+                // The configured timeout covers the worker, the memberships, the receive and the retirement. The two
+                // agents connect side by side, so the connects add one recipe's wait, and the send adds its own; each
+                // recipe runs one command, so it may take what that command may take.
+                test.setTimeout(
+                    testInfo.timeout +
+                        computeCommandResultWaitMs(WORKER_CONNECT_TIMING, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS) +
+                        computeCommandResultWaitMs(WORKER_SEND_TIMING, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS)
+                );
                 const run = createDefaultWorkerCaptureRun(request, testInfo, mode);
                 const worker = new WorkerCaptureProcess(createDefaultWorkerEnvironment(run, mode));
                 const agents = [1, 2].map((ordinal) => ({
@@ -395,7 +418,7 @@ async function connectWorkerAgent(
 ): Promise<RtcNativeCapturedConnection> {
     const commandId = `connect-${agent.agentId}`;
     const connected = await executeWorkerRecipe(run, agent, {
-        kind: 'rtc.connect',
+        ...WORKER_CONNECT_TIMING,
         commandId,
         connection: agent.connection,
         actor: agent.agentId,
@@ -410,9 +433,7 @@ async function connectWorkerAgent(
             logoutOnClose: false,
             leaveRoomOnClose: false,
             timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-        },
-        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
-        readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
+        }
     });
     return toWorkerCapturedConnection(run, agent, { ...connected, mode, commandId });
 }
@@ -470,15 +491,13 @@ async function executeWorkerRecipe(
 ): Promise<WorkerRecipeResult> {
     const rootCommandId = `recipe-${requiredString(command.commandId, '$.command.commandId')}`;
     const recipe = { schemaVersion: 1 as const, recipeId: rootCommandId, commands: [command] };
+    const root: RallarBlackBoxTestCommand = { kind: 'recipe.run', recipe };
     const result = await run.control.executeOk({
         runId: run.runId,
         agentId: agent.agentId,
         commandId: rootCommandId,
-        command: {
-            kind: 'recipe.run',
-            recipe
-        },
-        timeoutMs: 60_000
+        command: root,
+        timeoutMs: computeCommandResultWaitMs(root, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS)
     });
     expect(result.commandId).toBe(rootCommandId);
     expect(result.agentId).toBe(agent.agentId);
@@ -515,14 +534,13 @@ async function executeWorkerRecipe(
 
 async function sendWorkerPayload(run: WorkerCaptureRun, send: WorkerCaptureSend): Promise<void> {
     await executeWorkerRecipe(run, send.agent, {
-        kind: 'rtc.send',
+        ...WORKER_SEND_TIMING,
         commandId: `send-${send.agent.agentId}`,
         connection: send.agent.connection,
         applicationId: run.group.applicationId,
         workspaceId: run.group.workspaceId,
         roomRef: { ...run.group },
         transport: 'realtime',
-        timeoutMs: 60_000,
         send: { roomId: run.group.groupId, peerIds: [send.targetSessionId], openTimeoutMs: 20_000, data: send.payload }
     });
 }

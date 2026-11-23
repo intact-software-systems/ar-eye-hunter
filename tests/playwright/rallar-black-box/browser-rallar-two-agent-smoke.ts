@@ -14,6 +14,7 @@ import {
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcConnectCommand,
     RallarBlackBoxTestRtcConnectReadiness
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
@@ -23,10 +24,28 @@ import type {
     SmokeAgentAuth,
     SmokeTransport
 } from './browser-rallar-smoke-config.ts';
+import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 
 const SPA_BASE_URL = 'http://127.0.0.1:5176';
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
+
+/** How long the smoke polls the run for a command's result once the command may have ended. */
+const RESULT_POLL_TIMEOUT_MS = 45_000;
+
+/** A connect joins the room under the establishment SDK timeout, then waits for its readiness. */
+function toConnectTiming(
+    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
+): RallarBlackBoxTestRtcConnectCommand {
+    return { kind: 'rtc.connect', readiness, timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS };
+}
+
+/** How long the smoke waits for one connect's result, so a test can cover each connect it waits for. */
+export function computeTwoAgentConnectResultWaitMs(
+    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
+): number {
+    return computeCommandResultWaitMs(toConnectTiming(readiness), RESULT_POLL_TIMEOUT_MS);
+}
 
 interface ControlResult {
     readonly commandId: string | undefined;
@@ -216,7 +235,7 @@ export class BrowserRallarTwoAgentSmoke {
             agent,
             commandId,
             command: {
-                kind: 'rtc.connect',
+                ...toConnectTiming(connectionConfig.readiness),
                 connection: agent.connection,
                 actor: agent.actor,
                 roomId: config.roomId,
@@ -226,9 +245,7 @@ export class BrowserRallarTwoAgentSmoke {
                 rallar: {
                     ...connectionConfig.rallar,
                     timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-                },
-                readiness: connectionConfig.readiness,
-                timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+                }
             }
         });
         const sessionId = toStringValue(toRecord(result.value).sessionId);
@@ -474,7 +491,7 @@ export class BrowserRallarTwoAgentSmoke {
             const run = await this.readRun();
             latest = run.results.find((result) => result.commandId === commandId);
             return latest?.ok === true;
-        }, { timeout: 45_000 }).toBe(true);
+        }, { timeout: computeCommandResultWaitMs(command, RESULT_POLL_TIMEOUT_MS) }).toBe(true);
         if (!latest) {
             throw new Error(`Command ${commandId} did not return a result.`);
         }

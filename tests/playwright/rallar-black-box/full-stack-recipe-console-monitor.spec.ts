@@ -49,6 +49,7 @@ import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
+import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
 import {
     cleanupRallarPage,
     decodeFullStackAuthSession,
@@ -100,6 +101,12 @@ interface ConsoleNativeAttachment {
     readonly proof: RtcNativeAcquisitionProof;
     readonly event: ApiJsonObject;
 }
+
+/** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
+const COMPOSITE_PASSED_WAIT_MS = 90_000;
+
+/** The Native console test's steps besides the started run, whose passed wait its visible manifest gives. */
+const CONSOLE_NATIVE_STEPS_TIMEOUT_MS = 240_000;
 
 const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
     recipeId: 'composite-evidence-recipe',
@@ -173,7 +180,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await assertLiveExecuteTargets(page, agentIds, COMPOSITE_RECIPE);
         const passedRunId = await createDraftThroughVisibleExecuteControls(page);
         await stageThroughVisibleExecuteControls(page);
-        await startThroughVisibleExecuteControls(page);
+        await startThroughVisibleExecuteControls(page, COMPOSITE_PASSED_WAIT_MS);
         await navigateToMonitor(page, passedRunId, 'passed');
         assertSchemaV2Artifact(
             await exportMonitorArtifact(page, passedRunId, testInfo.outputPath('lifecycle-artifact.json')),
@@ -244,7 +251,7 @@ test('applies Console Full native run intent through real browser agents', async
         (await configuredPostgresStackAvailability(request)) === 'unavailable',
         CONFIGURED_LIVE_SKIP_REASON
     );
-    test.setTimeout(240_000);
+    test.setTimeout(CONSOLE_NATIVE_STEPS_TIMEOUT_MS);
     await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
     const groupId = uniqueGroupId(testInfo);
     const controlRunId = uniqueRunId(testInfo);
@@ -295,6 +302,10 @@ test('applies Console Full native run intent through real browser agents', async
             throw new Error('Visible Stability selection omitted its authored recipe.');
         }
         assertAuthoredStabilityRecipe(authored, original);
+        // The started run joins the room under the stability recipe's connect, then streams; it may take its whole
+        // terminal budget on top of the test's other steps.
+        const passedWaitMs = computeDistributedRunPassedWaitMs(original);
+        test.setTimeout(CONSOLE_NATIVE_STEPS_TIMEOUT_MS + passedWaitMs);
         await writeFile(
             testInfo.outputPath('console-native-original-manifest.json'),
             JSON.stringify(original, null, 2)
@@ -322,7 +333,7 @@ test('applies Console Full native run intent through real browser agents', async
         const staged = await readDistributedRun(request, distributedRunId);
         expect(staged.manifest).toEqual(draft.manifest);
         assertConsolePhaseOwnership(staged, await readControlRun(request, controlRunId), 'stage');
-        await startThroughVisibleExecuteControls(page);
+        await startThroughVisibleExecuteControls(page, passedWaitMs);
         expect((await readVisibleExecuteManifest(page)).recipes).toEqual(original.recipes);
         await expect(capture).toBeDisabled();
         const completed = await readDistributedRun(request, distributedRunId);
@@ -874,7 +885,7 @@ async function stageThroughVisibleExecuteControls(page: Page): Promise<void> {
     );
 }
 
-async function startThroughVisibleExecuteControls(page: Page): Promise<void> {
+async function startThroughVisibleExecuteControls(page: Page, passedWaitMs: number): Promise<void> {
     const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: 'Review and start' }).click();
     await page.getByRole('dialog', { name: 'Start distributed run?' })
@@ -882,7 +893,7 @@ async function startThroughVisibleExecuteControls(page: Page): Promise<void> {
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'passed',
-        { timeout: 90_000 }
+        { timeout: passedWaitMs }
     );
 }
 

@@ -21,6 +21,7 @@ import {
     type LiveRtcLayoutSwitchEvidence,
     type LiveRtcLayoutSwitchStream
 } from './compute-live-rtc-layout-switch-evidence.ts';
+import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from './create-group-formation-lifecycle-driver.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -93,6 +94,9 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
     { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
 ];
 const REPORTED_RECORDS = 20;
+
+/** Opening the trio, the membership, the two switches with their streams, and the evidence reads. */
+const LAYOUT_SWITCH_STEPS_TIMEOUT_MS = 360_000;
 /** Slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
 const DIRECT_BOUND_SLACK_MS = 250;
 
@@ -172,7 +176,8 @@ test.describe('live RTC layout switch stream', () => {
             `three ${variant.label} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
                 'every receiver takes 20 messages a second',
             async ({ browser, request }, testInfo) => {
-                test.setTimeout(360_000);
+                // The room's formation connects the trio on top of the scenario's other steps.
+                test.setTimeout(LAYOUT_SWITCH_STEPS_TIMEOUT_MS + FORMATION_RUN_CONNECT_RESULT_WAIT_MS);
                 expectEvidenceSources();
                 const scenario = await openScenario(browser, request);
                 let failure: Error | undefined;

@@ -13,9 +13,13 @@ import {
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 import {
     cleanupRallarPage,
     enqueueControlCommand,
@@ -98,6 +102,18 @@ interface DirectorRoomFields {
 
 const config = readFullStackConfig();
 const directorEnabled = booleanEnv('RALLAR_BLACK_BOX_DIRECTOR');
+
+/** How long a command's result is polled for when the caller names no wait of its own. */
+const COMMAND_RESULT_POLL_TIMEOUT_MS = 45_000;
+
+/** Each agent joins the room under the establishment SDK timeout and waits for no readiness. */
+const DIRECTOR_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
+    kind: 'rtc.connect',
+    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+};
+
+/** Opening three agents, membership, readiness, the director's relays, snapshots and the stale marking. */
+const DIRECTOR_STEPS_TIMEOUT_MS = 300_000;
 const hasDirectorConfig = config.enabled && directorEnabled;
 
 test.describe('full-stack SPA-appointed director orchestration', () => {
@@ -110,7 +126,11 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
         browser,
         request
     }, testInfo) => {
-        test.setTimeout(300_000);
+        // The three agents connect side by side, so the connects add one connect's wait.
+        test.setTimeout(
+            DIRECTOR_STEPS_TIMEOUT_MS +
+                computeCommandResultWaitMs(DIRECTOR_CONNECT_TIMING, COMMAND_RESULT_POLL_TIMEOUT_MS)
+        );
 
         const runId = uniqueRunId(testInfo);
         const groupId = uniqueGroupId(testInfo);
@@ -520,7 +540,7 @@ function toDirectorGroupCreateCommand(
 }
 
 async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
-    const { request, runId, commandId, timeout = 45_000 } = input;
+    const { request, runId, commandId, timeout = COMMAND_RESULT_POLL_TIMEOUT_MS } = input;
     let latest: ControlResultEnvelope | undefined;
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
@@ -673,37 +693,37 @@ async function setupGroupMembership(
 async function connectAgent(input: ConnectAgentInput): Promise<DirectorConnection> {
     const { request, runId, agent, groupId } = input;
     const commandId = `director-connect-${agent.prefix.toLowerCase()}`;
+    const command: RallarBlackBoxTestCommand = {
+        ...DIRECTOR_CONNECT_TIMING,
+        connection: agent.connection,
+        actor: agent.actor,
+        roomId: groupId,
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        roomRef: {
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            groupId
+        },
+        transport: 'realtime',
+        rallar: {
+            apiBaseUrl: config.apiBaseUrl,
+            restoreSession: true,
+            logoutOnClose: false,
+            leaveRoomOnClose: false,
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            transport: 'realtime',
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+        }
+    };
     const result = await executeOk({
         request,
         runId,
         agentId: agent.agentId,
         commandId,
-        command: {
-            kind: 'rtc.connect',
-            connection: agent.connection,
-            actor: agent.actor,
-            roomId: groupId,
-            applicationId: config.applicationId,
-            workspaceId: config.workspaceId,
-            roomRef: {
-                applicationId: config.applicationId,
-                workspaceId: config.workspaceId,
-                groupId
-            },
-            transport: 'realtime',
-            rallar: {
-                apiBaseUrl: config.apiBaseUrl,
-                restoreSession: true,
-                logoutOnClose: false,
-                leaveRoomOnClose: false,
-                applicationId: config.applicationId,
-                workspaceId: config.workspaceId,
-                transport: 'realtime',
-                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-            },
-            timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-        },
-        timeout: 60_000
+        command,
+        timeout: computeCommandResultWaitMs(command, COMMAND_RESULT_POLL_TIMEOUT_MS)
     });
     const sessionId = stringValue(resultValue(result).sessionId);
     if (!sessionId) {

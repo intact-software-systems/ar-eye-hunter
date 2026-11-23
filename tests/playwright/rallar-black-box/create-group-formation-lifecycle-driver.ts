@@ -28,8 +28,9 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
+import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
-import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS, type LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
@@ -247,6 +248,21 @@ interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
     readonly connection: string;
     readonly transport: TransportUnderTest;
 }
+
+/** A formation connect joins the room under the establishment SDK timeout; the driver waits for readiness apart. */
+const FORMATION_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
+    kind: 'rtc.connect',
+    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+};
+
+/** How long the driver waits for one formation connect's result, so a test can cover each connect it runs. */
+export const FORMATION_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
+    FORMATION_CONNECT_TIMING,
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+);
+
+/** A formation run connects A, B and C one after another. */
+export const FORMATION_RUN_CONNECT_RESULT_WAIT_MS = 3 * FORMATION_CONNECT_RESULT_WAIT_MS;
 
 /**
  * The policy every live three-browser group is created with. The driver commands each boundary
@@ -641,7 +657,7 @@ async function connectFormationAgent(
         agentId: input.agent.agentId,
         commandId,
         command,
-        timeoutMs: 60_000
+        timeoutMs: computeCommandResultWaitMs(command, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS)
     };
     const result = await input.control.executeOk(execution);
     const appliedAlmDiagnostics = input.control.resultValue(result).almDiagnostics;
@@ -682,6 +698,7 @@ function toFormationConnectCommand(
     captureOptions: ReturnType<typeof toBrowserRtcCaptureIntent>['options']
 ): FormationConnectCommand {
     return {
+        ...FORMATION_CONNECT_TIMING,
         kind: 'rtc.connect',
         connection: `${input.agent.connection}-${input.transport.replace('.', '-')}`,
         actor: input.agent.actor,
@@ -701,8 +718,7 @@ function toFormationConnectCommand(
                 ? { typeId: config.messagesRtcTypeId, topicId: config.messagesRtcTopicId }
                 : {}),
             timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-        },
-        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+        }
     };
 }
 

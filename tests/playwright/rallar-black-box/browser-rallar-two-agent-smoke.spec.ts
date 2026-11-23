@@ -1,18 +1,28 @@
 import { expect, test } from '@playwright/test';
 
 import { readBrowserRallarSmokeConfig, type SmokeTransport } from './browser-rallar-smoke-config.ts';
-import { BrowserRallarTwoAgentSmoke } from './browser-rallar-two-agent-smoke.ts';
+import { BrowserRallarTwoAgentSmoke, computeTwoAgentConnectResultWaitMs } from './browser-rallar-two-agent-smoke.ts';
 
 const config = readBrowserRallarSmokeConfig();
 const hasTwoAgentConfig = Boolean(config.apiBaseUrl && config.roomId && config.agentAAuth && config.agentBAuth);
 const peerReadiness = { minReadyPeers: 1, timeoutMs: 30_000, intervalMs: 250 };
 const transports: readonly SmokeTransport[] = ['realtime', 'messages.rtc'];
 
+// Each test's own timeout covers its steps besides the connects; every connect stage it waits for comes on top. The
+// two agents of a stage connect side by side, so a stage takes one connect's wait.
+const CONNECT_STAGE_WAIT_MS = computeTwoAgentConnectResultWaitMs(peerReadiness);
+
+/** Opening, joining, two deliveries and finalizing both agents. */
+const DELIVERY_STEPS_TIMEOUT_MS = 120_000;
+
+/** Opening, joining, four deliveries, six health reads, a reload and finalizing both agents. */
+const RELOAD_STEPS_TIMEOUT_MS = 180_000;
+
 for (const transport of transports) {
     test(
         `browser-rallar provider delivers ${transport} payloads between two real agents`,
         async ({ browser, request }, testInfo) => {
-            test.setTimeout(120_000);
+            test.setTimeout(DELIVERY_STEPS_TIMEOUT_MS + CONNECT_STAGE_WAIT_MS);
             test.skip(
                 !hasTwoAgentConfig,
                 `Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent ${transport} smoke.`
@@ -71,7 +81,8 @@ for (const transport of transports) {
     test(
         `browser-rallar provider delivers ${transport} after reloading one real agent`,
         async ({ browser, request }, testInfo) => {
-            test.setTimeout(180_000);
+            // The pair connects, then agent B reconnects after its reload.
+            test.setTimeout(RELOAD_STEPS_TIMEOUT_MS + 2 * CONNECT_STAGE_WAIT_MS);
             test.skip(
                 !hasTwoAgentConfig,
                 `Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload ${transport} smoke.`
@@ -188,6 +199,8 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
     browser,
     request
 }, testInfo) => {
+    // The pair connects, then agent B reconnects after its close; the configured timeout covers the other steps.
+    test.setTimeout(testInfo.timeout + 2 * CONNECT_STAGE_WAIT_MS);
     test.skip(
         !hasTwoAgentConfig,
         'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live disconnect/reconnect smoke.'

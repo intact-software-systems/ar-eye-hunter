@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 
 import { type ControlResultEnvelope } from '../../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
@@ -6,6 +6,7 @@ import {
     type ControlDistributedRunSnapshot
 } from '../../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '../../../../packages/shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import {
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest
@@ -49,6 +50,9 @@ interface WaitForDistributedStateInput {
     readonly state: string;
     readonly timeout?: number;
 }
+
+/** How long a state wait polls when no recipe command runs before that state, such as a staged run becoming ready. */
+export const DISTRIBUTED_STATE_POLL_TIMEOUT_MS = 45_000;
 
 async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
     const { request, runId, commandId, timeout } = input;
@@ -103,7 +107,7 @@ async function readDistributedRun(
 export async function waitForDistributedState(
     input: WaitForDistributedStateInput
 ): Promise<ControlDistributedRunSnapshot> {
-    const { request, distributedRunId, state, timeout = 45_000 } = input;
+    const { request, distributedRunId, state, timeout = DISTRIBUTED_STATE_POLL_TIMEOUT_MS } = input;
 
     let latest: ControlDistributedRunSnapshot | undefined;
     try {
@@ -149,13 +153,34 @@ export async function readDistributedArtifact(
     return decodeControlDistributedRunArtifactBundle(await response.json()).fold(throwBoundaryError, (value) => value);
 }
 
+/** A started run passes at the latest once its ack, its barrier and its slowest recipe end, and the state poll reads it. */
+export function computeDistributedRunPassedWaitMs(manifest: RallarBlackBoxDistributedRunManifest): number {
+    const terminalTimeoutSeconds = computeDistributedRunTerminalTimeoutSeconds({
+        recipes: manifest.recipes.flatMap((selection) => selection.recipe === undefined ? [] : [selection.recipe]),
+        ackTimeoutMs: manifest.ackTimeoutMs,
+        barrier: manifest.barrier
+    });
+    return terminalTimeoutSeconds * 1_000 + DISTRIBUTED_STATE_POLL_TIMEOUT_MS;
+}
+
+/**
+ * Runs the manifest to passed. Its passed wait comes on top of the test's own timeout, which covers the test's other
+ * steps, so a test running several manifests is covered for every run it starts.
+ */
 export async function runToPassed(
     request: APIRequestContext,
     manifest: RallarBlackBoxDistributedRunManifest
 ): Promise<ControlDistributedRunSnapshot> {
+    const passedWaitMs = computeDistributedRunPassedWaitMs(manifest);
+    test.setTimeout(test.info().timeout + passedWaitMs);
     await createDistributedRun(request, manifest);
     await mutateDistributedRun(request, manifest.distributedRunId, 'stage');
     await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'ready' });
     await mutateDistributedRun(request, manifest.distributedRunId, 'start');
-    return await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'passed' });
+    return await waitForDistributedState({
+        request,
+        distributedRunId: manifest.distributedRunId,
+        state: 'passed',
+        timeout: passedWaitMs
+    });
 }
