@@ -1239,6 +1239,14 @@ diagnostic then carry `ascending`, a boolean, and neither is present when no
 order was claimed. An absence claim has no order: command validation refuses
 `ascendingBy` beside `absent: true`.
 
+`stallMs`, a positive integer of milliseconds, bounds a presence claim by its progress
+as well as by its window: the count also fails once `stallMs` passes with no new copy
+since the command started or since its latest copy, and its failure message names the
+stall window. A count whose copies keep arriving may then take its whole `windowMs`, so
+a slow runner lengthens the count without failing it while a stopped sender still fails
+it within `stallMs`. An absence claim holds its whole window: command validation refuses
+`stallMs` beside `absent: true`.
+
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
 (the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a

@@ -317,7 +317,21 @@ function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): rea
         ...validateIntegerField({ record: command, key: 'count', path, minimum: 0 }),
         ...validateBooleanField(command, 'absent', path),
         ...validateMessagesReceivedOrderField(command),
+        ...validateMessagesReceivedStallField(command),
         ...validateIntegerField({ record: command, key: 'windowMs', path, minimum: 0 })
+    ];
+}
+
+function validateMessagesReceivedStallField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const issues = validateIntegerField({ record: command, key: 'stallMs', path: 'messages.received', minimum: 1 });
+    if (issues.length > 0 || command.stallMs === undefined || command.absent !== true) {
+        return issues;
+    }
+    return [
+        toControlCommandIssue(
+            'messages.received.stallMs ends a count that stops arriving, which an absence claim (absent: true) never ' +
+                'ends early.'
+        )
     ];
 }
 

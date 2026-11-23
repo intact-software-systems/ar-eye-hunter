@@ -1446,6 +1446,63 @@ describe('ALM browser adapter execution', () => {
         expect(short.value).toMatchObject({ count: 2, observed: 1, ascending: true });
     });
 
+    it('fails a presence count once its stall window passes with no new copy, long before its window closes', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-1'));
+
+        const startedAt = Date.now();
+        const stalled = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-stalled',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 3,
+            stallMs: 40,
+            windowMs: 60_000
+        });
+
+        expect(Date.now() - startedAt).toBeLessThan(1_000);
+        expect(stalled.ok).toBe(false);
+        expect(stalled.value).toMatchObject({ count: 3, observed: 1, absent: false });
+        expect(stalled.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
+            message: 'messages.received observed 1 alm.conformance messages against count 3, no new copy arriving ' +
+                'within its 40 ms stall window.'
+        });
+    });
+
+    it('keeps a presence count open past its stall window while each copy arrives within it', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        const arrivals = (async () => {
+            for (const index of [1, 2, 3, 4]) {
+                await sleepMs(40);
+                runtime.receiveRallarBrowserEvent(inboundMessageEvent(`msg-${index}`));
+            }
+        })();
+
+        const startedAt = Date.now();
+        const counted = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-progressing',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 4,
+            stallMs: 120,
+            windowMs: 5_000
+        });
+        await arrivals;
+
+        expect(counted.ok, counted.error?.message).toBe(true);
+        expect(counted.value).toMatchObject({ count: 4, observed: 4 });
+        expect(Date.now() - startedAt).toBeGreaterThan(120);
+    });
+
     it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,

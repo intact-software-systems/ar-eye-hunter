@@ -1266,3 +1266,39 @@ schema-and-capabilities.md describes the claim and its failure code.
 Verification:
 npx vitest run packages/tests/shared-test/alm-received-order-contract.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
 ```
+
+```text
+Title: messages.received may bound a presence count by its progress
+Date: 2026-11-23
+Owner: ALM conformance lane
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.received branch)
+- validateRallarBlackBoxTestCommand messages.received
+
+Old shape:
+messages.received ended a presence count only when its count was met or its windowMs closed, so a recipe whose copies
+arrive at a runner-dependent pace had to size windowMs for the slowest runner and waited out that whole window when
+the copies stopped.
+
+New shape:
+messages.received may also name stallMs, a positive integer of milliseconds. A presence count then also fails once
+stallMs passes with no new copy since the command started or since its latest copy, with
+RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED and a message that names the stall window. A stallMs that is not a positive
+integer is refused by the schema and by command validation; stallMs beside absent: true by command validation.
+
+Migration:
+None: a command that names no stallMs validates, runs and reports as before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the stall window.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-received-stall-contract.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```

@@ -113,7 +113,16 @@ interface ObserveAlmMatchingMessagesInput {
     readonly count: number;
     readonly match: AlmReceivedMessageMatch;
     readonly deadlineEpochMs: number;
+    /** `undefined` when only the deadline ends the observation. */
+    readonly stallMs: number | undefined;
     readonly signal: AbortSignal | undefined;
+}
+
+interface AlmMatchingMessages {
+    /** Each matched inbound event's message `data`, in arrival order. */
+    readonly copies: readonly RallarBlackBoxTestRecord[];
+    /** Whether the stall window ended the observation before its deadline. */
+    readonly stalled: boolean;
 }
 
 interface AlmReceivedOutcomeInput {
@@ -123,6 +132,7 @@ interface AlmReceivedOutcomeInput {
     readonly received: readonly AlmReceivedMessageIdentity[];
     /** `undefined` when the command claims no order. */
     readonly ascending: boolean | undefined;
+    readonly stalled: boolean;
 }
 
 interface AlmReceivedFailure {
@@ -511,7 +521,7 @@ async function countAlmReceivedMessages(
     const connection = input.port.resolveConnection(command, input.context);
     const abort = input.port.commandAbortScope(command, input.context);
     try {
-        const matched = await observeAlmMatchingMessages({
+        const { copies, stalled } = await observeAlmMatchingMessages({
             port: input.port,
             context: input.context,
             holdFullWindow: command.absent === true,
@@ -521,9 +531,10 @@ async function countAlmReceivedMessages(
                 { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
                 input.port.now()
             ),
+            stallMs: command.stallMs,
             signal: abort.signal
         });
-        const received = matched.map((data) =>
+        const received = copies.map((data) =>
             decodeAlmReceivedMessageIdentity(data).fold(
                 (field) => {
                     throw toAlmInvalidRuntimeResultError(`messages.received event.data.${field}`);
@@ -533,8 +544,8 @@ async function countAlmReceivedMessages(
         );
         const ascending = command.ascendingBy === undefined
             ? undefined
-            : computeAlmPayloadFieldAscends(matched, command.ascendingBy);
-        return toAlmReceivedOutcome({ command, context: input.context, connection, received, ascending });
+            : computeAlmPayloadFieldAscends(copies, command.ascendingBy);
+        return toAlmReceivedOutcome({ command, context: input.context, connection, received, ascending, stalled });
     }
     catch (caught) {
         return toAlmFailureOutcome({
@@ -554,24 +565,29 @@ async function countAlmReceivedMessages(
  * Parity with the wait command: an absence claim holds the whole window and only then scans the
  * buffer, while a presence claim settles as soon as the recipe's count is on the log. Each poll
  * tick races the abort signal, so a recipe cancellation interrupts the hold instead of always
- * running the full window.
+ * running the full window. A stall window ends a presence claim early once that long passed with
+ * no new copy since the observation started or since its latest copy.
  */
-async function observeAlmMatchingMessages(
-    input: ObserveAlmMatchingMessagesInput
-): Promise<readonly RallarBlackBoxTestRecord[]> {
-    let matched = resolveAlmMatchingMessages(input.context.state().events, input.match);
+async function observeAlmMatchingMessages(input: ObserveAlmMatchingMessagesInput): Promise<AlmMatchingMessages> {
+    let copies = resolveAlmMatchingMessages(input.context.state().events, input.match);
+    let progressEpochMs = input.port.now();
     while (input.port.now() < input.deadlineEpochMs) {
-        if (!input.holdFullWindow && matched.length >= input.count) {
-            return matched;
+        if (!input.holdFullWindow && copies.length >= input.count) {
+            return { copies, stalled: false };
+        }
+        if (input.stallMs !== undefined && input.port.now() - progressEpochMs >= input.stallMs) {
+            return { copies, stalled: true };
         }
         const remainingMs = input.deadlineEpochMs - input.port.now();
         await input.port.withAbort(
             input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
             input.signal
         );
-        matched = resolveAlmMatchingMessages(input.context.state().events, input.match);
+        const observed = resolveAlmMatchingMessages(input.context.state().events, input.match);
+        progressEpochMs = observed.length > copies.length ? input.port.now() : progressEpochMs;
+        copies = observed;
     }
-    return matched;
+    return { copies, stalled: false };
 }
 
 /** Each matched inbound event's message `data`, in arrival order. */
@@ -639,14 +655,14 @@ function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTes
         : {
             status: 'failed',
             value,
-            error: { ...toAlmReceivedFailure(command, observed, counted), details: value },
+            error: { ...toAlmReceivedFailure(input, observed, counted), details: value },
             nextStatus: 'failed'
         };
 }
 
 /** A count that was met leaves the order as the claim that failed. */
 function toAlmReceivedFailure(
-    command: AlmReceivedOutcomeInput['command'],
+    { command, stalled }: AlmReceivedOutcomeInput,
     observed: number,
     counted: boolean
 ): AlmReceivedFailure {
@@ -661,7 +677,10 @@ function toAlmReceivedFailure(
         code: command.absent === true
             ? ALM_ERROR_CODES.messagesReceivedWhileAbsent
             : ALM_ERROR_CODES.messagesNotReceived,
-        message: `${observation} against count ${command.count}.`
+        message: stalled
+            ? `${observation} against count ${command.count}, no new copy arriving within its ${command.stallMs} ms ` +
+                'stall window.'
+            : `${observation} against count ${command.count}.`
     };
 }
 
