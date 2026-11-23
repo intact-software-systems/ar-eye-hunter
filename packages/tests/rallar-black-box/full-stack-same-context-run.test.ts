@@ -276,12 +276,12 @@ it('rejects without starting the successor, the owner cancelled, when the owner\
             { sender: baseline.sender, receiver: baseline.receiver, successor }
         )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
         // The owner's recipe is read from its start, so it is cancelled rather than left running past the failed gate,
-        // after the page steps that failed, not after itself.
+        // after the lane's steps beside it that failed, not after itself.
         expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId, `cancel-${ownerRunId}`]);
         expect(control.posted.find(({ commandId }) => commandId === `cancel-${ownerRunId}`)?.command).toEqual({
             kind: 'recipe.cancel',
             targetCommandId: ownerRunId,
-            reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-page-steps ended not ok.`
+            reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-side-steps ended not ok.`
         });
     }
     finally {
@@ -369,7 +369,7 @@ it('cancels the running owner after the page steps when the gated successor\'s e
             {
                 kind: 'recipe.cancel',
                 targetCommandId: ownerRunId,
-                reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-page-steps ended not ok.`
+                reason: `${ownerRunId} cancelled after ${baseline.sender.recipeId}-side-steps ended not ok.`
             },
             {
                 kind: 'recipe.cancel',

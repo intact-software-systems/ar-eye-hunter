@@ -141,7 +141,7 @@ async function runPagesCancellingReceiver(
             : await runSuccessorBesideOwner(run, { ...rest, pages: { ...pages, successorGate: pages.successorGate } });
     }
     catch (error) {
-        receiverRun.cancelAfter(toPageStepsFailure(input.recipes.sender, toError(error)));
+        receiverRun.cancelAfter(toOwnerSideStepsFailure(input.recipes.sender, toError(error)));
         throw error;
     }
 }
@@ -203,7 +203,7 @@ async function readGatedSuccessorOutcome(
         return await readSuccessorOutcome(run, input);
     }
     catch (error) {
-        input.ownerRun.cancelAfter(toPageStepsFailure(input.recipes.sender, toError(error)));
+        input.ownerRun.cancelAfter(toOwnerSideStepsFailure(input.recipes.sender, toError(error)));
         throw error;
     }
 }
@@ -220,11 +220,12 @@ async function readSuccessorOutcome(
 }
 
 /**
- * What a root cancelled after the pages' own steps failed is cancelled after: those steps, named for the owner's recipe
- * they run beside, and not that recipe, which may still be running when they fail.
+ * What a root cancelled after a failed lane step beside the owner's recipe is cancelled after: the lane's own steps
+ * there (its page steps, its gate wait, its start and read of the successor), named for the owner's recipe they run
+ * beside, and not that recipe, which may still be running when they fail.
  */
-function toPageStepsFailure(owner: RallarBlackBoxTestRecipe, error: Error): RecipeRunOutcome {
-    return { commandId: `${owner.recipeId}-page-steps`, ok: false, summary: error.message, cancelledAfter: undefined };
+function toOwnerSideStepsFailure(owner: RallarBlackBoxTestRecipe, error: Error): RecipeRunOutcome {
+    return { commandId: `${owner.recipeId}-side-steps`, ok: false, summary: error.message, cancelledAfter: undefined };
 }
 
 function requireOutcome<T>(outcome: PromiseSettledResult<T>): T {
