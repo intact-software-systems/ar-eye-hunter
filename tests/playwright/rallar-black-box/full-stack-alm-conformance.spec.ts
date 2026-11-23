@@ -133,6 +133,12 @@ interface PlannedScenario {
     readonly scenario: AlmConformanceScenario;
 }
 
+/** A recipe's outcome under the name a scenario's failure message gives it: its role, or its role's continuation. */
+interface LabelledRecipeRunOutcome {
+    readonly label: string;
+    readonly outcome: RecipeRunOutcome;
+}
+
 interface ScenarioRoleEvidence {
     readonly role: AlmConformanceRole;
     readonly agent: TwoAgentRunParticipant;
@@ -750,16 +756,14 @@ async function runAgentScenario(run: AgentRun, scenario: AlmConformanceScenario)
  * A recipe cancelled after a peer's failure reports after the recipes that ended on their own, so the scenario's first
  * failure is the one that caused the others.
  */
-function expectRecipeRunsPassed(
-    scenario: AlmConformanceScenario,
-    runs: readonly Readonly<{ label: string; outcome: RecipeRunOutcome; }>[]
-): void {
+function expectRecipeRunsPassed(scenario: AlmConformanceScenario, runs: readonly LabelledRecipeRunOutcome[]): void {
     const cancelledLast = [
         ...runs.filter(({ outcome }) => outcome.cancelledAfter === undefined),
         ...runs.filter(({ outcome }) => outcome.cancelledAfter !== undefined)
     ];
     for (const { label, outcome } of cancelledLast) {
-        expect.soft(outcome.ok, `${scenario.scenarioKey} ${label}: ${outcome.summary}`).toBe(true);
+        const cancelled = outcome.cancelledAfter === undefined ? '' : `, cancelled after ${outcome.cancelledAfter}`;
+        expect.soft(outcome.ok, `${scenario.scenarioKey} ${label}: ${outcome.summary}${cancelled}`).toBe(true);
     }
 }
 
