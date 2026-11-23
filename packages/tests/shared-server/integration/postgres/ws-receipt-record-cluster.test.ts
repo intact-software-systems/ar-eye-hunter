@@ -9,18 +9,14 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALReceiptRecordHeadKey, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import type { ALReceiptRecordEndedHead } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import { toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
-import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
-    INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
-    InboxOutboxEngine
-} from '@shared/services/inbox-outbox-engine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 import {
@@ -30,6 +26,7 @@ import {
     readOriginReceiptPhases,
     readOriginReceipts,
     readOriginTerminalReceipt,
+    readTerminalReceiptIdentities,
     RECEIPT_SERVER_PEER_ID,
     receiverAck,
     roomMessage,
@@ -46,7 +43,7 @@ import {
     NO_POSTGRES_RUN_ROWS,
     readPostgresRunRowCounts
 } from './test-support/delete-postgres-run-rows.ts';
-import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
+import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { awaitHoldArrival, racePastHeldCommit } from './test-support/race-past-held-commit.ts';
 import {
@@ -64,15 +61,6 @@ const LIFETIME_MS = 30_000;
 const DEADLINE_LIFETIME_MS = 2_000;
 const POLL = { timeout: 20_000 } as const;
 const CASE_TIMEOUT_MS = 60_000;
-/**
- * How long a second terminal receipt would take to reach the origin, so a case may assert there is none. A second
- * receipt is one under another control id: the outbox resends a receipt control the origin never acknowledges, under
- * the same id, so the readers count each control id once. The window is the next
- * readiness read of an instance that did not commit the end (the engine's idle interval stretched by its jitter), one
- * more idle interval for the outbox row's dequeue and send, and one second for their statements.
- */
-const TERMINAL_SETTLE_MS = AL_WORK_READINESS_MEMORY_MS * (1 + INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO) +
-    INBOX_OUTBOX_ENGINE_MAX_IDLE_MS + 1_000;
 
 /** One run: its rows carry `runId`, its instances share one store id, one bus and the test's own reader of the record. */
 interface ReceiptCluster {
@@ -81,6 +69,8 @@ interface ReceiptCluster {
     readonly clients: TerminablePostgresSql[];
     readonly bus: ReturnType<typeof createBridgeBus>;
     readonly originSockets: SimulatedWebSocket[];
+    /** What every instance's receipt observer recorded. */
+    readonly observations: WsQueueBoxServerReceiptObservation[];
     /** Reads the record every instance writes, through a client no instance uses. */
     readonly reader: ALReceiptRecord;
     /** The record's work queue, read through the reader's client. */
@@ -92,15 +82,15 @@ interface StartInstanceInput {
     /** The instance's cluster publisher id. */
     readonly name: string;
     readonly roomPeerIds: readonly string[];
-    /** When set, the record's stores sit on a client of their own whose every commit waits for this hold. */
-    readonly recordHold: WorkerHold | undefined;
+    /** When set, the record's stores sit on a client of their own, wrapped by this (a hold on its transactions). */
+    readonly toRecordSql: ((client: PSqlSql) => PSqlSql) | undefined;
     /** When set, every statement of the instance's one client is recorded here. */
     readonly log: PostgresStatementLog | undefined;
     readonly starts: boolean;
 }
 
 interface ReceiptInstance extends ClusterInstance {
-    /** The client the instance's record stores use: its own when they are held, else the instance's one client. */
+    /** The client the instance's record stores use: its own when they are wrapped, else the instance's one client. */
     readonly recordClient: TerminablePostgresSql;
 }
 
@@ -108,6 +98,8 @@ interface ReceiptInstance extends ClusterInstance {
 type StartAcceptance = () => ReturnType<ClusterInstance['service']['acceptIncomingMessage']>;
 
 type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
+
+type StoredEnd = Pick<ALReceiptRecordEndedHead, 'phase' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'>;
 
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS receipt record across instances', () => {
     // Pins an instance that counts on a record of its own: the receipt never completes, and the shared record holds
@@ -118,8 +110,8 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
 
         expect(phases(cluster, msgId)).toEqual(['admitted', 'complete']);
         expect(terminal(cluster, msgId)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
-        const stored = (await cluster.reader.read(toRef(msgId))).right?.head;
-        expect(stored).toMatchObject({ phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // Pins a receipt that dies with the instance that admitted it.
@@ -136,11 +128,10 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         expect((await b.service.acceptIncomingMessage(ackOf(msgId, 'r1'), 'r1')).left).toBeUndefined();
         expect((await c.service.acceptIncomingMessage(ackOf(msgId, 'r2'), 'r2')).left).toBeUndefined();
 
-        const completeOnB = () => readOriginReceipts([onB], msgId).filter(({ receipt }) => receipt.phase === 'complete');
-        await expect.poll(() => completeOnB().length, POLL).toBe(1);
-        await settleTerminalReceipts();
-        expect(completeOnB()).toHaveLength(1);
-        expect(completeOnB()[0]!.receipt.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+        await expect.poll(() => readOriginReceiptPhases([onB], msgId), POLL).toEqual(['complete']);
+        expect(readOriginTerminalReceipt([onB], msgId)?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+        expect(readTerminalReceiptIdentities([onB], msgId)).toHaveLength(1);
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // Pins deadline work that only the lost admitting instance would claim: the receipt is never ended.
@@ -158,12 +149,11 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         expect((await cluster.reader.read(toRef(msgId))).right?.head.phase).toBe('open');
         const onB = await connectOrigin(cluster, b);
 
-        const phasesOnB = () => readOriginReceiptPhases([onB], msgId);
-        await expect.poll(phasesOnB, POLL).toEqual(['timed-out']);
-        await settleTerminalReceipts();
-        expect(phasesOnB()).toEqual(['timed-out']);
+        await expect.poll(() => readOriginReceiptPhases([onB], msgId), POLL).toEqual(['timed-out']);
         expect(phases(cluster, msgId)).toEqual(['admitted', 'timed-out']);
         expect(terminal(cluster, msgId)).toMatchObject({ expectedRecipientPeerIds: ['r1', 'r2'], confirmedRecipientPeerIds: ['r1'] });
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
+        await expectStoredEnd(cluster, msgId, { phase: 'timed-out', confirmedRecipientPeerIds: ['r1'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // Pins a copy re-sent to another instance after the end going unanswered, or answered under the ended control id.
@@ -176,11 +166,10 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         expect((await trio.c.service.acceptIncomingMessage(sent, ORIGIN)).right).toEqual({ kind: 'duplicate' });
 
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete', 'complete']);
-        await settleTerminalReceipts();
-        expect(phases(cluster, msgId)).toEqual(['admitted', 'complete', 'complete']);
         const [ended, again] = readOriginReceipts(cluster.originSockets, msgId).filter(({ receipt }) => receipt.phase === 'complete');
         expect(again!.controlId).not.toBe(ended!.controlId);
         expect(toReceiptSets(again!.receipt)).toEqual(toReceiptSets(ended!.receipt));
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // Pins a receipt never started when the admitting instance died between its admission's commit and its `open`, and
@@ -189,7 +178,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
     it('opens the record from a re-sent copy when the admitting instance was lost between its admission and its open', async () => {
         const cluster = await createReceiptCluster();
         const hold = createWorkerHold();
-        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), recordHold: hold, starts: false });
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordSql: (sql) => holdPostgresCommit(sql, hold), starts: false });
         const { b, c } = await startTwo(cluster, WIDER_ROOM);
         const msgId = toMsgId(cluster, 'lost-open');
         const sent = message(msgId, LIFETIME_MS);
@@ -205,7 +194,9 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         expect(readOriginReceipts(cluster.originSockets, msgId)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
         expect(terminal(cluster, msgId)?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
         expect(await readHeadCount(cluster, msgId)).toBe(1);
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // The subject of the deleted ws-relayed-leader-ack.test.ts: pins a leader's ACK refused or left uncounted on an
@@ -224,13 +215,9 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         expect((await b.service.acceptIncomingMessage(ackOf(msgId, 'leader'), 'leader')).left).toBeUndefined();
 
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
-        await settleTerminalReceipts();
-        expect(phases(cluster, msgId)).toEqual(['admitted', 'complete']);
-        expect(terminal(cluster, msgId)).toMatchObject({
-            expectedRecipientPeerIds: ['leader'],
-            confirmedRecipientPeerIds: ['leader'],
-            outsideAudienceRecipientPeerIds: []
-        });
+        expect(terminal(cluster, msgId)).toMatchObject({ expectedRecipientPeerIds: ['leader'] });
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['leader'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
     // Memory serialises writes and cannot hold a count that read an open head until after another instance's `end`:
@@ -239,7 +226,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         const cluster = await createReceiptCluster();
         const hold = createWorkerHold();
         const a = await startInstance(cluster, instanceInput('a', ROOM));
-        const b = await startInstance(cluster, { ...instanceInput('b', ROOM), recordHold: hold, starts: false });
+        const b = await startInstance(cluster, { ...instanceInput('b', ROOM), toRecordSql: (sql) => holdPostgresCommit(sql, hold), starts: false });
         const c = await startInstance(cluster, instanceInput('c', ROOM));
         await connect(b, 'r2');
         await connect(c, 'r1');
@@ -261,25 +248,25 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
 
         expect(race.raced).toBe('finished');
         expect(race.heldResult.left).toBeUndefined();
-        await settleTerminalReceipts();
-        expect(phases(cluster, msgId)).toEqual(['admitted', 'timed-out']);
         expect(terminal(cluster, msgId)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
-        const stored = (await cluster.reader.read(toRef(msgId))).right?.head;
-        expect(stored).toMatchObject({ phase: 'timed-out', confirmedRecipientPeerIds: ['r1'] });
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
+        // Read after the held count returned: its late confirmation is not in the ended head.
+        await expectStoredEnd(cluster, msgId, { phase: 'timed-out', confirmedRecipientPeerIds: ['r1'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 
-    // Pins a losing `end` that delivers a second terminal receipt or surfaces as a failure: the last two ACKs commit
-    // together on two instances, so both may read a complete set and both call `end`.
+    // Pins a losing `end` that delivers a second terminal receipt or surfaces as a failure. Both counts commit before
+    // either reads its tally, so both read a complete set and both call `end`, as the memory case "a losing end is
+    // silent" arranges with its view gate.
     it('delivers one complete receipt when the last two ACKs are counted at once on two instances', async () => {
         const cluster = await createReceiptCluster();
         const holds = { b: createWorkerHold(), c: createWorkerHold() };
         const a = await startInstance(cluster, instanceInput('a', ROOM));
-        const b = await startInstance(cluster, { ...instanceInput('b', ROOM), recordHold: holds.b, starts: false });
-        const c = await startInstance(cluster, { ...instanceInput('c', ROOM), recordHold: holds.c, starts: false });
+        const b = await startInstance(cluster, { ...instanceInput('b', ROOM), toRecordSql: (sql) => holdPostgresAfterCommit(sql, holds.b), starts: false });
+        const c = await startInstance(cluster, { ...instanceInput('c', ROOM), toRecordSql: (sql) => holdPostgresAfterCommit(sql, holds.c), starts: false });
         await connect(b, 'r1');
         await connect(c, 'r2');
         const msgId = toMsgId(cluster, 'both-end');
-        const origin = await connectOrigin(cluster, a);
+        await connectOrigin(cluster, a);
         await a.service.acceptIncomingMessage(message(msgId, LIFETIME_MS), ORIGIN);
 
         const results = await countTogether([
@@ -288,16 +275,11 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         ]);
 
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
-        const endedWork = toALReceiptRecordWorkKey(cluster.recordNamespace, 'ended', toRef(msgId));
-        await expect.poll(async () => (await cluster.readerWorkQueue.getItem(endedWork))?.status, POLL).toBe(EntityStatus.COMPLETED);
-        await settleTerminalReceipts();
-        const answered = readOriginReceipts([origin], msgId);
-        expect(answered.map(({ receipt }) => receipt.phase)).toEqual(['admitted', 'complete']);
-        expect(answered[1]!.controlId).toBe(toWsQueueBoxServerEndedReceiptControlId(toRef(msgId)));
-        expect((await cluster.reader.read(toRef(msgId))).right?.head).toMatchObject({
-            phase: 'complete',
-            confirmedRecipientPeerIds: ['r1', 'r2']
-        });
+        expect(readCountOutcomes(cluster, msgId)).toEqual(['complete', 'complete']);
+        await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
+        expect(readCompleteOutboxVerdicts(cluster, msgId)).toEqual(['admitted']);
+        await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
+        expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
     }, CASE_TIMEOUT_MS);
 
     // Pins what one ACK costs the server when its head is open and it does not complete the set, the common case: the
@@ -352,6 +334,7 @@ async function createReceiptCluster(): Promise<ReceiptCluster> {
         clients,
         bus: createBridgeBus(),
         originSockets: [],
+        observations: [],
         reader: new ALReceiptRecord({ backend, namespace, nowMs: Date.now }),
         readerWorkQueue: backend.workQueue,
         recordNamespace: namespace
@@ -383,7 +366,7 @@ async function openClient(clients: TerminablePostgresSql[]): Promise<TerminableP
 }
 
 function instanceInput(name: string, roomPeerIds: readonly string[]): StartInstanceInput {
-    return { name, roomPeerIds, recordHold: undefined, log: undefined, starts: true };
+    return { name, roomPeerIds, toRecordSql: undefined, log: undefined, starts: true };
 }
 
 /**
@@ -393,8 +376,8 @@ function instanceInput(name: string, roomPeerIds: readonly string[]): StartInsta
 async function startInstance(cluster: ReceiptCluster, input: StartInstanceInput): Promise<ReceiptInstance> {
     const client = await openClient(cluster.clients);
     const sql: PSqlSql = input.log === undefined ? client : recordPostgresStatements(client, input.log, null);
-    const recordClient = input.recordHold === undefined ? client : await openClient(cluster.clients);
-    const recordSql = input.recordHold === undefined ? sql : holdPostgresCommit(recordClient, input.recordHold);
+    const recordClient = input.toRecordSql === undefined ? client : await openClient(cluster.clients);
+    const recordSql = input.toRecordSql === undefined ? sql : input.toRecordSql(recordClient);
     const repository = new PSqlRuntimeStateRepository(sql);
     const receiptRecordStores = createPSqlALReceiptRecordStores({
         repository: new PSqlRuntimeStateRepository(recordSql),
@@ -412,7 +395,7 @@ async function startInstance(cluster: ReceiptCluster, input: StartInstanceInput)
         inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository, namespace: cluster.storeId }),
         inboundVolatileStores: undefined,
         receiptRecordStores,
-        receiptObserver: undefined,
+        receiptObserver: (observation) => cluster.observations.push(observation),
         roomView: { inSync: true },
         bus: cluster.bus,
         publisherId: `${input.name}-${cluster.runId}`,
@@ -468,21 +451,41 @@ interface HeldCount {
     readonly count: StartAcceptance;
 }
 
-/** Holds each count's confirmation uncommitted until every one is written, then lets them all commit at once. */
-async function countTogether(counts: readonly HeldCount[]): Promise<Awaited<ReturnType<HeldCount['count']>>[]> {
+/**
+ * Starts every count and waits until each has reached its hold, then releases them all together. Every count is
+ * settled before this returns or throws, so none still runs while the case's cleanup deletes its rows.
+ */
+async function countTogether(counts: readonly HeldCount[]): Promise<Awaited<ReturnType<StartAcceptance>>[]> {
     const counting = counts.map(({ count }) => count());
     try {
         await Promise.all(counts.map(async ({ hold }, index) => await awaitHoldArrival(hold, counting[index]!)));
     }
     finally {
         counts.forEach(({ hold }) => hold.release());
+        await Promise.allSettled(counting);
     }
     return await Promise.all(counting);
 }
 
-/** Waits as long as a second terminal receipt would take to reach the origin (`TERMINAL_SETTLE_MS`). */
-async function settleTerminalReceipts(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, TERMINAL_SETTLE_MS));
+/** The stored head's terminal phase and sets, and its ended work row delivered. */
+async function expectStoredEnd(cluster: ReceiptCluster, msgId: string, ended: StoredEnd): Promise<void> {
+    expect((await cluster.reader.read(toRef(msgId))).right?.head).toMatchObject(ended);
+    const endedWork = toALReceiptRecordWorkKey(cluster.recordNamespace, 'ended', toRef(msgId));
+    await expect.poll(async () => (await cluster.readerWorkQueue.getItem(endedWork))?.status, POLL).toBe(EntityStatus.COMPLETED);
+}
+
+/** The outcome of each count the instances observed for the message's ACKs. */
+function readCountOutcomes(cluster: ReceiptCluster, msgId: string): readonly string[] {
+    return cluster.observations.flatMap((observation) => observation.kind === 'ack-count' && observation.ack.ackedMsgId === msgId ? [observation.outcome] : []);
+}
+
+/** The outbox verdict of each `complete` receipt the instances wrote for the message. */
+function readCompleteOutboxVerdicts(cluster: ReceiptCluster, msgId: string): readonly string[] {
+    return cluster.observations.flatMap((observation) =>
+        observation.kind === 'receipt-outbox' && observation.receipt.msgId === msgId && observation.receipt.phase === 'complete'
+            ? [observation.verdict.kind]
+            : []
+    );
 }
 
 async function connectOrigin(cluster: ReceiptCluster, instance: ClusterInstance): Promise<SimulatedWebSocket> {

@@ -388,6 +388,20 @@ export function readOriginTerminalReceipt(originSockets: readonly SimulatedWebSo
     return readOriginReceipts(originSockets, msgId).find(({ receipt }) => receipt.phase !== 'admitted')?.receipt;
 }
 
+/**
+ * Each distinct terminal receipt the sockets hold for the message, read from every frame without deduplication: its
+ * control id, phase and sets. "Exactly one terminal receipt" is exactly one entry, however often the outbox delivered
+ * it: the outbox resends a receipt control the origin never acknowledges, under the same id. A second `end`'s receipt
+ * would carry the same message-derived id, so the id alone cannot tell it apart; its phase or sets can, whatever
+ * order the frames arrived in.
+ */
+export function readTerminalReceiptIdentities(sockets: readonly SimulatedWebSocket[], msgId: string): readonly string[] {
+    const terminals = readSocketReceipts(sockets, msgId).filter(({ receipt }) => receipt.phase !== 'admitted');
+    return [
+        ...new Set(terminals.map(({ controlId, receipt }) => JSON.stringify({ controlId, phase: receipt.phase, ...toReceiptSets(receipt) })))
+    ];
+}
+
 export function toReceiptSets(
     receipt: ALReceiptPayload
 ): Pick<ALReceiptPayload, 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'> {

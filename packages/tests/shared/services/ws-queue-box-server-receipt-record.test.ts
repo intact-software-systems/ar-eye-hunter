@@ -33,6 +33,7 @@ import {
     readOriginReceipts,
     readOriginTerminalReceipt,
     readSocketReceipts,
+    readTerminalReceiptIdentities,
     RECEIPT_SERVER_PEER_ID,
     receiverAck,
     roomMessage,
@@ -218,6 +219,7 @@ describe('the WS server counts a receipt through the record every instance share
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
         await settleEngines([a, b, c]);
         expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'complete']);
+        expect(readTerminalReceiptIdentities(cluster.originSockets, MSG_ID)).toHaveLength(1);
     });
 
     // Pins the server's own `not-sent` from another instance being lost instead of recorded outside the audience.
@@ -473,6 +475,7 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines(Object.values(instances));
         expect(new Set(readSocketReceipts([origin], MSG_ID).filter(({ receipt }) => receipt.phase === 'complete').map((sent) => sent.controlId)))
             .toEqual(new Set([controlId]));
+        expect(readTerminalReceiptIdentities([origin], MSG_ID)).toHaveLength(1);
         expect(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o', msgId: 'm:x' }))
             .not.toBe(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o:m', msgId: 'x' }));
     });
@@ -614,6 +617,7 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines(Object.values(instances));
 
         expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'complete']);
+        expect(readTerminalReceiptIdentities(cluster.originSockets, MSG_ID)).toHaveLength(1);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
         expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
             .toBeUndefined();
@@ -642,6 +646,7 @@ describe('the WS server counts a receipt through the record every instance share
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
         await settleEngines([a, b, c]);
         expect(readOriginReceipts(cluster.originSockets, MSG_ID).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
+        expect(readTerminalReceiptIdentities(cluster.originSockets, MSG_ID)).toHaveLength(1);
         expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
         expect(new Set(readAckVerdicts(cluster))).toEqual(
             new Set([{ recipient: 'r1', outcome: 'complete', after: true }, { recipient: 'r2', outcome: 'complete', after: true }])

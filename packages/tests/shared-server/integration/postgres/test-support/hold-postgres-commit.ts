@@ -18,3 +18,18 @@ export function holdPostgresCommit(source: PSqlSql, hold: WorkerHold): PSqlSql {
             })
     });
 }
+
+/**
+ * Lets every transaction commit, then keeps its caller at the hold: each `begin` returns only once the hold is
+ * released, so a test can let several callers' commits all resolve before any of them reads what follows its own.
+ * Forwards neither optional member of the SQL port.
+ */
+export function holdPostgresAfterCommit(source: PSqlSql, hold: WorkerHold): PSqlSql {
+    return Object.assign(createPostgresSqlCall(source, source), {
+        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            const result = await source.begin(write);
+            await hold.arrive();
+            return result;
+        }
+    });
+}
