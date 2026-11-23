@@ -10,6 +10,7 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
@@ -94,6 +95,12 @@ export interface ReceiverAckInput {
     readonly originPeerId: string;
     readonly recipient: string;
     readonly nowMs: number;
+}
+
+/** One receipt control a socket was sent: its control id and its receipt. */
+export interface SentReceipt {
+    readonly controlId: string;
+    readonly receipt: ALReceiptPayload;
 }
 
 /** The peer id of the server the receipt suites build; a session's ACK names it. */
@@ -344,6 +351,48 @@ export function receiverAck(input: ReceiverAckInput): ALMessage {
             observedAtEpochMs: nowMs
         })
     );
+}
+
+/** Every receipt the sockets were sent for the message `msgId`, in the order each socket was sent them. */
+export function readSocketReceipts(sockets: readonly SimulatedWebSocket[], msgId: string): readonly SentReceipt[] {
+    return sockets.flatMap((socket) =>
+        socket.sent
+            .map((frame) => decodePersistedALMessage(frame))
+            .filter((control) => control.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+            .map((control) => ({ controlId: control.id.msgId, receipt: decodeALReceiptPayload(JSON.parse(control.payload.resource)) }))
+            .filter(({ receipt }) => receipt.msgId === msgId)
+    );
+}
+
+/**
+ * The origin's receipts for the message, each once whichever of its sockets carried it, in the order the server observed
+ * them: a receipt row released for a retry may arrive after a later one, and an `admitted` observed at the same instant
+ * as a terminal receipt precedes it.
+ */
+export function readOriginReceipts(originSockets: readonly SimulatedWebSocket[], msgId: string): readonly SentReceipt[] {
+    const unique = new Map(readSocketReceipts(originSockets, msgId).map((sent) => [sent.controlId, sent]));
+    const toOrder = ({ receipt }: SentReceipt) => [receipt.observedAtEpochMs, receipt.phase === 'admitted' ? 0 : 1] as const;
+    return [...unique.values()].sort((left, right) => {
+        const [leftAtMs, leftRank] = toOrder(left);
+        const [rightAtMs, rightRank] = toOrder(right);
+        return leftAtMs - rightAtMs || leftRank - rightRank;
+    });
+}
+
+export function readOriginReceiptPhases(originSockets: readonly SimulatedWebSocket[], msgId: string): readonly ALReceiptPayload['phase'][] {
+    return readOriginReceipts(originSockets, msgId).map(({ receipt }) => receipt.phase);
+}
+
+/** The origin's first terminal receipt for the message; undefined while it has read none. */
+export function readOriginTerminalReceipt(originSockets: readonly SimulatedWebSocket[], msgId: string): ALReceiptPayload | undefined {
+    return readOriginReceipts(originSockets, msgId).find(({ receipt }) => receipt.phase !== 'admitted')?.receipt;
+}
+
+export function toReceiptSets(
+    receipt: ALReceiptPayload
+): Pick<ALReceiptPayload, 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'> {
+    const { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds } = receipt;
+    return { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds };
 }
 
 /** Runs A's real dequeue task, then B's real send task; neither engine starts a timer loop. */

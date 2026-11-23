@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
@@ -32,9 +29,14 @@ import {
     createReceiptClusterState,
     createReceiptInstanceStores,
     installClock,
+    readOriginReceiptPhases,
+    readOriginReceipts,
+    readOriginTerminalReceipt,
+    readSocketReceipts,
     RECEIPT_SERVER_PEER_ID,
     receiverAck,
     roomMessage,
+    toReceiptSets,
     type ClusterInstance,
     type ReceiptClock,
     type ReceiptClusterState,
@@ -84,11 +86,6 @@ type AckVerdict =
     | { readonly refused: readonly string[]; }
     | { readonly recipient: string; readonly outcome: string; readonly after: boolean; };
 
-interface SentReceipt {
-    readonly controlId: string;
-    readonly receipt: ALReceiptPayload;
-}
-
 describe('the WS server counts a receipt through the record every instance shares', () => {
     // Pins an instance refusing or not counting an ACK for a receipt another instance admitted.
     it('completes a receipt admitted on one instance from ACKs counted on two others', async () => {
@@ -102,7 +99,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')).left).toBeUndefined();
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
     });
 
     // Pins a receipt that dies with the instance that admitted it.
@@ -118,8 +115,8 @@ describe('the WS server counts a receipt through the record every instance share
         await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
         await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
 
-        await expect.poll(() => readReceipts([onB]).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
-        expect(readReceipts([onB]).find(({ receipt }) => receipt.phase === 'complete')?.receipt.confirmedRecipientPeerIds)
+        await expect.poll(() => readSocketReceipts([onB], MSG_ID).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
+        expect(readSocketReceipts([onB], MSG_ID).find(({ receipt }) => receipt.phase === 'complete')?.receipt.confirmedRecipientPeerIds)
             .toEqual(['r1', 'r2']);
     });
 
@@ -137,7 +134,7 @@ describe('the WS server counts a receipt through the record every instance share
         cluster.clock.nowMs += LIFETIME_MS;
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'timed-out']);
-        expect(terminal(cluster)).toMatchObject({
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({
             expectedRecipientPeerIds: ['r1', 'r2'],
             confirmedRecipientPeerIds: ['r1']
         });
@@ -155,7 +152,7 @@ describe('the WS server counts a receipt through the record every instance share
 
         expect((await c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('duplicate');
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted']);
-        const [first, second] = readOriginReceipts(cluster);
+        const [first, second] = readOriginReceipts(cluster.originSockets, MSG_ID);
         expect(second!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
         expect(second!.controlId).not.toBe(first!.controlId);
 
@@ -166,9 +163,9 @@ describe('the WS server counts a receipt through the record every instance share
 
         // Ruling 5: an ended head answers a copy with its terminal phase, from the head's own sets.
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted', 'complete', 'complete']);
-        const [ended, again] = readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete');
+        const [ended, again] = readOriginReceipts(cluster.originSockets, MSG_ID).filter(({ receipt }) => receipt.phase === 'complete');
         expect(again!.controlId).not.toBe(ended!.controlId);
-        expect(toSets(again!.receipt)).toEqual(toSets(ended!.receipt));
+        expect(toReceiptSets(again!.receipt)).toEqual(toReceiptSets(ended!.receipt));
     });
 
     // Pins an ACK that overtakes its head being refused or lost instead of counted ahead.
@@ -187,7 +184,7 @@ describe('the WS server counts a receipt through the record every instance share
 
         expect((await admitting).right?.kind).toBe('admitted');
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-        expect(readOriginReceipts(cluster)[0]!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
+        expect(readOriginReceipts(cluster.originSockets, MSG_ID)[0]!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
     });
 
     // Pins a headless ACK counted from a sender the origin's admission row does not hold.
@@ -220,7 +217,7 @@ describe('the WS server counts a receipt through the record every instance share
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
         await settleEngines([a, b, c]);
-        expect(phases(cluster)).toEqual(['admitted', 'complete']);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'complete']);
     });
 
     // Pins the server's own `not-sent` from another instance being lost instead of recorded outside the audience.
@@ -234,7 +231,7 @@ describe('the WS server counts a receipt through the record every instance share
         await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-        expect(terminal(cluster)).toMatchObject({
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({
             confirmedRecipientPeerIds: ['r1'],
             outsideAudienceRecipientPeerIds: ['r2']
         });
@@ -294,7 +291,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
         await settleEngines([a]);
 
-        expect(phases(cluster)).toEqual([]);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
 
@@ -308,7 +305,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
         await settleEngines([a]);
 
-        expect(phases(cluster)).toEqual([]);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
         expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
@@ -325,7 +322,7 @@ describe('the WS server counts a receipt through the record every instance share
             expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
             await settleEngines([a]);
 
-            expect(phases(cluster)).toEqual([]);
+            expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
             expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
             expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
             expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
@@ -349,8 +346,8 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await a.service.acceptIncomingMessage(ackOf(cluster, last), last)).left).toBeUndefined();
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: [last] });
-        expect(terminal(cluster)?.outsideAudienceRecipientPeerIds).toHaveLength(248);
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: [last] });
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)?.outsideAudienceRecipientPeerIds).toHaveLength(248);
     });
 
     // Ruling R28: pins a message whose own id no receipt control can name, admitted to nobody, throwing from its answer.
@@ -430,7 +427,7 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines([a, c]);
 
         expect(cluster.observations.slice(answered)).toEqual([]);
-        expect(phases(cluster)).toEqual(['admitted']);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted']);
     });
 
     // Review Focus 5: a count that starts after another instance ended the receipt never turns it complete. Memory
@@ -455,8 +452,8 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines([a, b]);
 
         expect(readAckVerdicts(cluster).at(-1)).toEqual({ recipient: 'r2', outcome: 'rejected', after: false });
-        expect(phases(cluster)).toEqual(['admitted', 'timed-out']);
-        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'timed-out']);
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
     });
 
     // R21: ended work delivers at least once, so a second delivery must enqueue nothing new and end quietly.
@@ -474,7 +471,7 @@ describe('the WS server counts a receipt through the record every instance share
         await expect.poll(() => readEndedOutboxVerdicts(cluster, controlId)).toEqual(['admitted', 'duplicate']);
         await expect.poll(async () => (await cluster.state.record.workQueue.getItem(workKey))?.status).toBe(EntityStatus.COMPLETED);
         await settleEngines(Object.values(instances));
-        expect(new Set(readReceipts([origin]).filter(({ receipt }) => receipt.phase === 'complete').map((sent) => sent.controlId)))
+        expect(new Set(readSocketReceipts([origin], MSG_ID).filter(({ receipt }) => receipt.phase === 'complete').map((sent) => sent.controlId)))
             .toEqual(new Set([controlId]));
         expect(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o', msgId: 'm:x' }))
             .not.toBe(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o:m', msgId: 'x' }));
@@ -496,7 +493,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await restarted.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')).left).toBeUndefined();
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
         expect(readAckVerdicts(cluster).at(-1)).toEqual({ recipient: 'r2', outcome: 'complete', after: true });
     });
 
@@ -523,7 +520,7 @@ describe('the WS server counts a receipt through the record every instance share
             expect((await c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('duplicate');
 
             await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
-            const [admitted, complete] = readOriginReceipts(cluster);
+            const [admitted, complete] = readOriginReceipts(cluster.originSockets, MSG_ID);
             expect(admitted!.receipt).toMatchObject({ expectedRecipientPeerIds: ['r1', 'r2'], confirmedRecipientPeerIds: ['r1', 'r2'] });
             expect(complete!.receipt.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
             expect(readHeadKeys(cluster)).toHaveLength(1);
@@ -543,8 +540,8 @@ describe('the WS server counts a receipt through the record every instance share
         await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN);
 
         await expect.poll(() => tickPhases(cluster), { timeout: 2_000 }).toEqual(['admitted', 'complete', 'complete']);
-        const [first, again] = readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete');
-        expect(toSets(again!.receipt)).toEqual(toSets(first!.receipt));
+        const [first, again] = readOriginReceipts(cluster.originSockets, MSG_ID).filter(({ receipt }) => receipt.phase === 'complete');
+        expect(toReceiptSets(again!.receipt)).toEqual(toReceiptSets(first!.receipt));
         expect((await cluster.record.read(ref)).right?.head).toEqual(ended);
         expect([deadlineWork, undefined]).toContainEqual(await cluster.state.record.workQueue.getItem(deadlineKey));
 
@@ -553,7 +550,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('not-admitted');
         await settleEngines(Object.values(instances));
 
-        expect(phases(cluster)).toEqual(['admitted', 'complete', 'complete']);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'complete', 'complete']);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
         expect(await cluster.state.record.workQueue.getItem(deadlineKey)).toBeUndefined();
     });
@@ -569,14 +566,14 @@ describe('the WS server counts a receipt through the record every instance share
 
         expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('pending-admission');
         await settleEngines([a]);
-        expect(phases(cluster)).toEqual([]);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
 
         cluster.roomView.inSync = true;
         a.engine.start();
         cluster.clock.nowMs += 1_000;
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
-        expect(readOriginReceipts(cluster)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
+        expect(readOriginReceipts(cluster.originSockets, MSG_ID)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
     });
 
     // Pins a copy opening a head whose deadline the record's window cannot hold (R15).
@@ -592,7 +589,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await c.service.acceptIncomingMessage(longLived, ORIGIN)).right?.kind).toBe('duplicate');
         await settleEngines([a, c]);
 
-        expect(phases(cluster)).toEqual([]);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
         expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
             .toBeUndefined();
@@ -616,7 +613,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await instances.c.service.acceptIncomingMessage(longLived, ORIGIN)).right?.kind).toBe('duplicate');
         await settleEngines(Object.values(instances));
 
-        expect(phases(cluster)).toEqual(['admitted', 'complete']);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual(['admitted', 'complete']);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
         expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
             .toBeUndefined();
@@ -644,8 +641,8 @@ describe('the WS server counts a receipt through the record every instance share
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
         await settleEngines([a, b, c]);
-        expect(readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
-        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect(readOriginReceipts(cluster.originSockets, MSG_ID).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
+        expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
         expect(new Set(readAckVerdicts(cluster))).toEqual(
             new Set([{ recipient: 'r1', outcome: 'complete', after: true }, { recipient: 'r2', outcome: 'complete', after: true }])
         );
@@ -672,7 +669,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
             .toBeUndefined();
         expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
-        expect(phases(cluster)).toEqual([]);
+        expect(readOriginReceiptPhases(cluster.originSockets, MSG_ID)).toEqual([]);
     });
 });
 
@@ -909,31 +906,6 @@ async function settleEngines(instances: readonly ClusterInstance[]): Promise<voi
     }
 }
 
-function readReceipts(sockets: readonly SimulatedWebSocket[]): readonly SentReceipt[] {
-    return sockets.flatMap((socket) =>
-        socket.sent
-            .map((frame) => decodePersistedALMessage(frame))
-            .filter((control) => control.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-            .map((control) => ({ controlId: control.id.msgId, receipt: decodeALReceiptPayload(JSON.parse(control.payload.resource)) }))
-            .filter(({ receipt }) => receipt.msgId === MSG_ID)
-    );
-}
-
-/**
- * The origin's receipts for the message, each once whichever of its sockets carried it, in the order the server observed
- * them: a receipt row released for a retry may arrive after a later one, and an `admitted` observed at the same instant
- * as a terminal receipt precedes it.
- */
-function readOriginReceipts(cluster: RecordCluster): readonly SentReceipt[] {
-    const unique = new Map(readReceipts(cluster.originSockets).map((sent) => [sent.controlId, sent]));
-    const toOrder = ({ receipt }: SentReceipt) => [receipt.observedAtEpochMs, receipt.phase === 'admitted' ? 0 : 1] as const;
-    return [...unique.values()].sort((left, right) => {
-        const [leftAtMs, leftRank] = toOrder(left);
-        const [rightAtMs, rightRank] = toOrder(right);
-        return leftAtMs - rightAtMs || leftRank - rightRank;
-    });
-}
-
 /** Every refusal and every count the server observed for an ACK: refusals by their guards, counts by their outcome. */
 function readAckVerdicts(cluster: RecordCluster): readonly AckVerdict[] {
     return cluster.observations.flatMap((observation): AckVerdict[] => {
@@ -959,22 +931,7 @@ function readEndedOutboxVerdicts(cluster: RecordCluster, controlId: string): rea
  */
 function tickPhases(cluster: RecordCluster): readonly ALReceiptPayload['phase'][] {
     cluster.clock.nowMs += 5;
-    return phases(cluster);
-}
-
-function phases(cluster: RecordCluster): readonly ALReceiptPayload['phase'][] {
-    return readOriginReceipts(cluster).map(({ receipt }) => receipt.phase);
-}
-
-function terminal(cluster: RecordCluster): ALReceiptPayload | undefined {
-    return readOriginReceipts(cluster).find(({ receipt }) => receipt.phase !== 'admitted')?.receipt;
-}
-
-function toSets(
-    receipt: ALReceiptPayload
-): Pick<ALReceiptPayload, 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'> {
-    const { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds } = receipt;
-    return { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds };
+    return readOriginReceiptPhases(cluster.originSockets, MSG_ID);
 }
 
 function readConfirmationKeys(cluster: RecordCluster): readonly string[] {

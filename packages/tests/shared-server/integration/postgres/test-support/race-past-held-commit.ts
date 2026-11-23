@@ -29,10 +29,7 @@ export async function racePastHeldCommit<Held, Raced>(
     let raced: Promise<Raced> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-        await Promise.race([
-            race.hold.arrived,
-            held.then(() => Promise.reject(new Error('The held operation settled before it reached its hold')))
-        ]);
+        await awaitHoldArrival(race.hold, held);
         raced = race.startRaced();
         const blocked = new Promise<'blocked'>((resolve) => {
             timer = setTimeout(() => resolve('blocked'), race.blockedAfterMs);
@@ -46,4 +43,12 @@ export async function racePastHeldCommit<Held, Raced>(
         race.hold.release();
         await Promise.allSettled([held, raced]);
     }
+}
+
+/** Waits until `held` reaches `hold`; a held operation that fails or settles first fails the wait at once. */
+export async function awaitHoldArrival(hold: WorkerHold, held: Promise<unknown>): Promise<void> {
+    await Promise.race([
+        hold.arrived,
+        held.then(() => Promise.reject(new Error('The held operation settled before it reached its hold')))
+    ]);
 }
