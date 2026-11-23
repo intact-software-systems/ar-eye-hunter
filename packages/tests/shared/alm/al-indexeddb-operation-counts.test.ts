@@ -541,12 +541,12 @@ describe('inbound work owner IndexedDB scan volume', () => {
             const idle = await readIdleInboundRotation(scanned);
 
             // A held row turns eligible without a commit of this lane, so no answer can stand: every
-            // round walks NEW, RETRY and RESERVED once. The first round only finishes the rotation the
-            // bootstrap batch started at NEW. That is also why the runtime relays no
-            // `readiness-probe`: one event per engine round is a round trip out of the page in the
-            // conformance lane, which doubled its per-operation cost and failed the RTC cell.
-            expect(idle.workPages).toBe(INBOUND_IDLE_ROUNDS * INBOUND_ROTATION_PAGES - 1);
-            // `rotation-alive` is the one thing an idle rotation may say, at most once per idle ceiling.
+            // round walks NEW, RETRY and RESERVED once. The first round first finishes, at RETRY and
+            // RESERVED, the rotation the bootstrap batch began at NEW. That is also why the runtime
+            // relays no `readiness-probe`: one event per engine round is a round trip out of the page in
+            // the conformance lane, which doubled its per-operation cost and failed the RTC cell.
+            expect(idle.workPages).toBe(INBOUND_IDLE_ROUNDS * INBOUND_ROTATION_PAGES + 2);
+            // `rotation-alive` is the one thing an idle rotation may say, at most once per window.
             expect(idle.relayedKinds.filter((kind) => kind !== 'rotation-alive')).toEqual([]);
         }
     );

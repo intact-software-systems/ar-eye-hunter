@@ -196,12 +196,32 @@ describe('ALInboundWorkSelector probe walk', () => {
         // The only row left is the one the batch reserved, due again when its lease runs out.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS + AL_INBOUND_WORK_LEASE_MS);
 
-        // The batch claimed from the page the probe held, and the second probe read RESERVED alone.
-        expect(scanned).toEqual([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED]);
-        expect(fixture.rotations).toHaveLength(1);
+        // The batch claimed from the page the probe held. The second probe began at RESERVED, so it
+        // finished that rotation and then walked one whole rotation from the head of NEW.
+        expect(scanned).toEqual([
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.RESERVED,
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.RESERVED
+        ]);
+        expect(fixture.rotations).toHaveLength(2);
     });
 
-    it('walks on past a commit\'s head read and ends where the stored rotation wraps', async () => {
+    it('reads the rotation again from the head of NEW when it starts mid-way, before it answers', async () => {
+        const fixture = createSelectorFixture();
+        // An empty NEW page moves the rotation on to RETRY; a row then turns up in NEW that no commit announced.
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'behind'));
+        const scanned = recordScannedStatuses(fixture.port);
+
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
+        expect(scanned).toEqual([EntityStatus.RETRY, EntityStatus.RESERVED, EntityStatus.NEW]);
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toHaveLength(1);
+    });
+
+    it('walks on past a commit\'s head read and ends at the wrap of a rotation it read from the head', async () => {
         const fixture = createSelectorFixture();
         // An empty NEW page moves the rotation on to RETRY.
         await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
@@ -210,9 +230,68 @@ describe('ALInboundWorkSelector probe walk', () => {
 
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBeUndefined();
 
-        // The head read stored no position, so RETRY and RESERVED still ran before the wrap.
-        expect(scanned).toEqual([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED]);
-        expect(fixture.rotations).toHaveLength(1);
+        // The head read stored no position, so RETRY and RESERVED still ran before the first wrap; the
+        // walk then read one whole rotation from the head of NEW.
+        expect(scanned).toEqual([
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.RESERVED,
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.RESERVED
+        ]);
+        expect(fixture.rotations).toHaveLength(2);
+    });
+
+    it('answers the readiness of a commit\'s head read it passed', async () => {
+        const fixture = createSelectorFixture();
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        // A commit writes a row that is not due yet behind the rotation's position.
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS + 30_000, 'not-yet'));
+        fixture.selector.requestHeadRead();
+
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS + 30_000);
+    });
+
+    it('serves a head read the wrapping read turned due, in the same walk', async () => {
+        const fixture = createSelectorFixture();
+        // NEW and RETRY are empty: the rotation stands at RESERVED, its last page.
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        // A commit's batch runs its head read; the next commit then waits for the next rotation read.
+        fixture.selector.requestHeadRead();
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'deferred-commit'));
+        fixture.selector.requestHeadRead();
+        expect(fixture.selector.isHeadReadPending()).toBe(false);
+        const scanned = recordScannedStatuses(fixture.port);
+
+        // The RESERVED read wraps and turns that head read due; the walk's next read, at the head of NEW, serves it.
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
+        expect(scanned).toEqual([EntityStatus.RESERVED, EntityStatus.NEW]);
+        expect(fixture.selector.isHeadReadPending()).toBe(false);
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toHaveLength(1);
+    });
+
+    it('reads one rotation\'s pages and one eligibility per held row on an idle pass over a held backlog', async () => {
+        const heldRows = 40;
+        const fixture = await createDispatchPageFixture(heldRows);
+        const readReadiness = vi.spyOn(fixture.delivery, 'readReadiness')
+            .mockResolvedValue({ ready: false, observed: undefined });
+        const scanned = recordScannedStatuses(fixture.port);
+        // The first pass leaves the rotation at the head of NEW, where every idle pass after it starts.
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, Date.now())).toBeUndefined();
+        scanned.length = 0;
+        readReadiness.mockClear();
+
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, Date.now())).toBeUndefined();
+
+        expect(scanned).toEqual([
+            ...Array<EntityStatus>(Math.ceil(heldRows / AL_INBOUND_WORK_PAGE_SIZE)).fill(EntityStatus.NEW),
+            EntityStatus.RETRY,
+            EntityStatus.RESERVED
+        ]);
+        expect(readReadiness).toHaveBeenCalledTimes(heldRows);
     });
 
     it('ends its walk as due when a commit drops the page it reads, though commits keep landing', async () => {
@@ -252,22 +331,26 @@ describe('ALInboundWorkSelector probe walk', () => {
 });
 
 describe('ALInboundWorkSelector completed rotations', () => {
-    it('reports one rotation from its first page read to its wrap, across the probe a claimable page interrupted', async () => {
+    it('reports one rotation by its own page reads, across the probe a claimable page interrupted', async () => {
         const fixture = createTimedSelectorFixture();
         await fixture.port.retainIfAbsent(createRetryEntry(fixture.namespace, 'retry-row'));
+        const idleGapMs = 100;
 
         // NEW, then RETRY, which holds the row: one page read each.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
         expect(fixture.rotations).toEqual([]);
-        // The batch reserves from the held page; the next probe reads RESERVED and wraps.
+        // The batch reserves from the held page, the engine idles, and the next probe reads RESERVED and wraps.
         await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        fixture.advance(idleGapMs);
         await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS);
 
-        expect(fixture.rotations).toEqual([{
+        // The reservation and the idle gap between the probes are no part of the rotation's own reads.
+        expect(fixture.rotations[0]).toEqual({
             startedAtMs: NOW_MS,
-            completedAtMs: NOW_MS + 3 * PAGE_READ_MS + RESERVATION_MS,
+            completedAtMs: NOW_MS + 3 * PAGE_READ_MS + RESERVATION_MS + idleGapMs,
+            readDurationMs: 3 * PAGE_READ_MS,
             deferred: []
-        }]);
+        });
     });
 
     it('names the due rows a rotation held back, oldest first, at most one page of them', async () => {
@@ -805,8 +888,13 @@ interface CostBoundaryFixture {
     readonly selector: ALInboundWorkSelector;
 }
 
+interface TimedSelectorFixture extends SelectorFixture {
+    /** Moves the clock as time spent outside the selector does. */
+    readonly advance: (durationMs: number) => void;
+}
+
 /** The selector under a clock only its own two measured calls move, so each phase has one source. */
-function createTimedSelectorFixture(): SelectorFixture {
+function createTimedSelectorFixture(): TimedSelectorFixture {
     const namespace = 'inbound-selection-phases';
     let nowMs = NOW_MS;
     const state = createInMemoryALAdmissionState(
@@ -829,6 +917,9 @@ function createTimedSelectorFixture(): SelectorFixture {
     return {
         namespace,
         rotations,
+        advance: (durationMs) => {
+            nowMs += durationMs;
+        },
         port: {
             ...port,
             readPage: async (input) => {

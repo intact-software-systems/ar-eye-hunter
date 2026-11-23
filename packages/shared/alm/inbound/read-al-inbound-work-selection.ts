@@ -59,14 +59,11 @@ interface ALInboundWorkSelection {
     /** The decoded envelope of every claimable `send-control` row, by queue slot. */
     readonly controlSends: ReadonlyMap<ResourceEntryKeyString, ALInboundClaimedControlSend>;
     readonly scan: ALInboundWorkScan;
-    /** The clock reading this page's due checks used. */
-    readonly readAtMs: number;
     /** The page holds work a batch can claim: the only page a probe answers "ready now" for. */
     readonly readyNow: boolean;
     /**
      * What a batch that read this page advertises: `nowMs` when the page held work it could claim,
-     * otherwise the earliest readiness the rotation has scanned so far. The probe walks the rest of
-     * the rotation itself, so no page advertises the next status as due.
+     * otherwise the earliest readiness the rotation has scanned so far.
      */
     readonly nextReadyAtMs: number | undefined;
 }
@@ -201,7 +198,6 @@ async function readALInboundWorkSelection(
             statusIndex,
             nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
         },
-        readAtMs: input.nowMs,
         nextReadyAtMs: claimableNow ? input.nowMs : scannedReadyAtMs
     };
 }
@@ -312,8 +308,9 @@ function resolveALInboundScannedReadyAtMs(
  * page by page and stops at the first page it can claim from, which it holds for the batch that
  * follows, so advertised work is the work the batch claims; the next probe continues from the page
  * after it, so one status never hides work on the next. A probe that finds nothing claimable walks
- * on to the head of NEW and answers the earliest readiness it scanned. A commit asks for one read
- * from the head of NEW, which leaves the rotation's position where it stood.
+ * on until a rotation it read from the head of NEW wraps, and answers the earliest readiness it
+ * scanned. A commit asks for one read from the head of NEW, which leaves the rotation's position
+ * where it stood.
  */
 export function createALInboundWorkSelector(
     dependencies: ALInboundWorkSelectorDependencies
@@ -376,8 +373,8 @@ export function createALInboundWorkSelector(
 
 /**
  * The probe's own answer: `nowMs` for a page it can claim from, held for the batch that follows, or
- * for a read a commit took from it, and otherwise the earliest readiness the rotation scanned once it
- * is back at the head of NEW.
+ * for a read a commit took from it, and otherwise the earliest readiness the walk scanned once a
+ * rotation it read from the head of NEW wraps.
  */
 async function readALInboundNextReadyAtMs(
     page: ALInboundRotationPage<ALInboundWorkSelection>,
@@ -385,7 +382,7 @@ async function readALInboundNextReadyAtMs(
     nowMs: number
 ): Promise<number | undefined> {
     const walk = await page.walkToReadyPage(port, AL_INBOUND_WORK_PAGE_SIZE);
-    return walk.kind === 'wrapped' ? walk.read.nextReadyAtMs : nowMs;
+    return walk.kind === 'wrapped' ? walk.readyAtMs : nowMs;
 }
 
 /**

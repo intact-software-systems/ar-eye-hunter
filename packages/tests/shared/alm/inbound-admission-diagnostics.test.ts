@@ -519,14 +519,15 @@ it.each(['memory', 'indexeddb'] as const)(
 
         // The witness that separates "no consumer is registered for this typeId" from "the rotation
         // stopped": the row is still there, still scanned, and still claimed by nobody. One event per
-        // window, and every pass of a window walked one rotation; each rotation after the first read
-        // the held row, while the first began at the bootstrap read before the row was admitted.
+        // window, and every pass of a window walked one rotation from the head of NEW. The first pass
+        // also finished the rotation the bootstrap read began, before the row was admitted, so the
+        // first window holds one rotation more, and one that held nothing back.
         expect(rotationsOf(diagnostics).map((rotation) => [rotation.rotationCount, rotation.durationMs])).toEqual([
-            [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS],
+            [5, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS],
             [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS],
             [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS]
         ]);
-        expect(rotationsOf(diagnostics).map((rotation) => rotation.deferredRotationCount)).toEqual([3, 4, 4]);
+        expect(rotationsOf(diagnostics).map((rotation) => rotation.deferredRotationCount)).toEqual([4, 4, 4]);
         expect(rotationsOf(diagnostics)[0]).toMatchObject({ kind: 'rotation-alive', workerId: DIAGNOSTICS_WORKER_ID });
         // The slowest single rotation of each window: a rotation that crawls says so without stopping.
         for (const rotation of rotationsOf(diagnostics)) {

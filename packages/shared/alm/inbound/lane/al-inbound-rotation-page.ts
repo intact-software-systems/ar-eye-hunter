@@ -19,16 +19,23 @@ const AL_INBOUND_SCAN_START: ALInboundWorkScan = {
 
 export interface ALInboundRotationRead {
     readonly scan: ALInboundWorkScan;
-    /** The clock reading the page was read at. */
-    readonly readAtMs: number;
     /** Due rows the page held back. */
     readonly deferred: readonly ALInboundDeferredEffect[];
     /** The page holds work a batch can claim. */
     readonly readyNow: boolean;
+    /** The earliest readiness this page, and the rotation's pages before it, scanned. */
+    readonly nextReadyAtMs: number | undefined;
+}
+
+/** One page read, with when it started and what it cost from before `readPage` to its settlement. */
+interface ALInboundTimedRead<TRead extends ALInboundRotationRead> {
+    readonly read: TRead;
+    readonly startedAtMs: number;
+    readonly durationMs: number;
 }
 
 interface ALInboundHeldRead<TRead extends ALInboundRotationRead> {
-    readonly selection: Promise<TRead>;
+    readonly selection: Promise<ALInboundTimedRead<TRead>>;
     readonly head: boolean;
     /** The position a rotation read started from; it may store its own only while the rotation still stands there. */
     readonly from: ALInboundWorkScan;
@@ -37,10 +44,23 @@ interface ALInboundHeldRead<TRead extends ALInboundRotationRead> {
 /** The rotation walked since it last left the head of NEW. */
 interface ALInboundRotationProgress {
     readonly startedAtMs: number | undefined;
+    readonly readDurationMs: number;
     readonly deferred: readonly ALInboundDeferredEffect[];
 }
 
-const AL_INBOUND_ROTATION_UNSTARTED: ALInboundRotationProgress = { startedAtMs: undefined, deferred: [] };
+const AL_INBOUND_ROTATION_UNSTARTED: ALInboundRotationProgress = {
+    startedAtMs: undefined,
+    readDurationMs: 0,
+    deferred: []
+};
+
+/** What one walk has read so far: whether it began a rotation at the head of NEW, and its head reads' readiness. */
+interface ALInboundWalkProgress {
+    readonly fromHead: boolean;
+    readonly headReadyAtMs: number | undefined;
+}
+
+const AL_INBOUND_WALK_UNSTARTED: ALInboundWalkProgress = { fromHead: false, headReadyAtMs: undefined };
 
 export namespace ALInboundRotationPage {
     export interface Dependencies<TRead extends ALInboundRotationRead> {
@@ -59,24 +79,31 @@ export namespace ALInboundRotationPage {
 
     /** One rotation from its first page read to the read that wrapped it, whichever probes and batches read its pages. */
     export interface CompletedRotation {
+        /** When its first page read started. */
         readonly startedAtMs: number;
+        /** When the read that wrapped it settled. */
         readonly completedAtMs: number;
+        /** Its own page reads, summed, each from before `readPage` to its settlement: no time between them. */
+        readonly readDurationMs: number;
         /** The due rows its pages held back, oldest first, at most `deferredLimit` of them. */
         readonly deferred: readonly ALInboundDeferredEffect[];
     }
 
     /**
-     * Where a walk stopped: at a page a batch can claim from, now held for it; at the read that brought
-     * the rotation back to the head of NEW; or at a read a commit or a batch took from it meanwhile.
+     * Where a walk stopped: at a page a batch can claim from, held for it; at the wrap of a rotation it
+     * read from the head of NEW, with the earliest readiness it scanned; or at a read a commit or a
+     * batch took from it meanwhile.
      */
-    export type Walk<TRead> =
+    export type Walk =
         | Readonly<{ kind: 'ready'; }>
-        | Readonly<{ kind: 'wrapped'; read: TRead; }>
+        | Readonly<{ kind: 'wrapped'; readyAtMs: number | undefined; }>
         | Readonly<{ kind: 'dropped'; }>;
 }
 
-/** What passing a walked page did: moved the rotation on, wrapped it, served a head read, or stored nothing. */
-type ALInboundRotationPass = 'advanced' | 'wrapped' | 'head-read' | 'dropped';
+/** What a walked read did to the walk: ended it, or left it to read on. */
+type ALInboundWalkStep =
+    | Readonly<{ kind: 'ended'; walk: ALInboundRotationPage.Walk; }>
+    | Readonly<{ kind: 'continued'; progress: ALInboundWalkProgress; }>;
 
 /**
  * The one page held between a readiness probe and the batch that follows it, and the position the
@@ -101,32 +128,29 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
 
     /**
      * Reads pages back to back from the stored position until one holds work a batch can claim, or
-     * the rotation is back at the head of NEW. A read a commit or a batch took meanwhile ends the walk:
-     * that commit owes a head read, and the batch it starts runs it. Every other read moves the stored
-     * position on or is the one head read allowed between two of those, so a walk ends within one
-     * rotation of the position it started at.
+     * until a rotation the walk read from the head of NEW wraps: a walk that starts mid-way finishes
+     * that rotation and reads one more whole, so it never answers without having read every status.
+     * A read a commit or a batch took meanwhile ends the walk: that commit owes a head read, and the
+     * batch it starts runs it. Every other read moves the stored position on or is the one head read
+     * allowed between two of those, so a walk reads at most about two rotations.
      */
-    async walkToReadyPage(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundRotationPage.Walk<TRead>> {
+    async walkToReadyPage(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundRotationPage.Walk> {
+        let progress = AL_INBOUND_WALK_UNSTARTED;
         for (;;) {
             const read = this.readHeld(port, pageSize);
-            let selection: TRead;
+            let timed: ALInboundTimedRead<TRead>;
             try {
-                selection = await read.selection;
+                timed = await read.selection;
             }
             catch (error) {
                 this.dropSelection(read);
                 throw error;
             }
-            if (selection.readyNow) {
-                return { kind: 'ready' };
+            const step = this.passWalkedRead(read, timed, progress);
+            if (step.kind === 'ended') {
+                return step.walk;
             }
-            const pass = this.passSelection(read, selection);
-            if (pass === 'wrapped') {
-                return { kind: 'wrapped', read: selection };
-            }
-            if (pass === 'dropped') {
-                return { kind: 'dropped' };
-            }
+            progress = step.progress;
         }
     }
 
@@ -134,13 +158,13 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         const read = this.readHeld(port, pageSize);
         this.held = undefined;
         if (!read.head) {
-            const selection = await read.selection;
-            this.advance(read, selection);
-            return selection;
+            const timed = await read.selection;
+            this.advance(read, timed);
+            return timed.read;
         }
         this.consumeHeadRead();
         try {
-            return await read.selection;
+            return (await read.selection).read;
         }
         catch (error) {
             this.headRead = 'pending';
@@ -179,20 +203,42 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         const scan = head
             ? { ...AL_INBOUND_SCAN_START, nextReadyAtMs: this.scan.nextReadyAtMs }
             : this.scan;
-        this.held = { selection: this.dependencies.readPage(port, scan, pageSize), head, from: this.scan };
+        const { nowMs, readPage } = this.dependencies;
+        const startedAtMs = nowMs();
+        const selection = readPage(port, scan, pageSize)
+            .then((read) => ({ read, startedAtMs, durationMs: Math.max(0, nowMs() - startedAtMs) }));
+        this.held = { selection, head, from: this.scan };
         return this.held;
     }
 
-    private passSelection(read: ALInboundHeldRead<TRead>, selection: TRead): ALInboundRotationPass {
+    /** A read a commit or a batch took meanwhile is no longer held, and stores nothing. */
+    private passWalkedRead(
+        read: ALInboundHeldRead<TRead>,
+        timed: ALInboundTimedRead<TRead>,
+        progress: ALInboundWalkProgress
+    ): ALInboundWalkStep {
         if (this.held !== read) {
-            return 'dropped';
+            return { kind: 'ended', walk: { kind: 'dropped' } };
+        }
+        if (timed.read.readyNow) {
+            return { kind: 'ended', walk: { kind: 'ready' } };
         }
         this.held = undefined;
         if (read.head) {
             this.consumeHeadRead();
-            return 'head-read';
+            const headReadyAtMs = toEarliestALInboundReadyAtMs(progress.headReadyAtMs, timed.read.nextReadyAtMs);
+            return { kind: 'continued', progress: { ...progress, headReadyAtMs } };
         }
-        return this.advance(read, selection);
+        const advanced = this.advance(read, timed);
+        if (advanced === 'dropped') {
+            return { kind: 'ended', walk: { kind: 'dropped' } };
+        }
+        const fromHead = progress.fromHead || isALInboundScanStart(read.from);
+        if (advanced === 'wrapped' && fromHead) {
+            const readyAtMs = toEarliestALInboundReadyAtMs(progress.headReadyAtMs, timed.read.nextReadyAtMs);
+            return { kind: 'ended', walk: { kind: 'wrapped', readyAtMs } };
+        }
+        return { kind: 'continued', progress: { ...progress, fromHead } };
     }
 
     private dropSelection(read: ALInboundHeldRead<TRead>): void {
@@ -206,27 +252,36 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         this.headSinceRotation = true;
     }
 
-    private advance(read: ALInboundHeldRead<TRead>, selection: TRead): ALInboundRotationPass {
+    private advance(
+        read: ALInboundHeldRead<TRead>,
+        timed: ALInboundTimedRead<TRead>
+    ): 'advanced' | 'wrapped' | 'dropped' {
         if (read.from !== this.scan) {
             return 'dropped';
         }
-        this.scan = selection.scan;
+        this.scan = timed.read.scan;
         this.headSinceRotation = false;
         if (this.headRead === 'deferred') {
             this.headRead = 'pending';
         }
-        const wrapped = isALInboundScanStart(selection.scan);
-        this.recordRotationRead(selection, wrapped);
+        const wrapped = isALInboundScanStart(timed.read.scan);
+        this.recordRotationRead(timed, wrapped);
         return wrapped ? 'wrapped' : 'advanced';
     }
 
-    private recordRotationRead(selection: TRead, wrapped: boolean): void {
-        const startedAtMs = this.rotation.startedAtMs ?? selection.readAtMs;
-        const deferred = toOldestFirstALInboundDeferredEffects([...this.rotation.deferred, ...selection.deferred])
+    private recordRotationRead(timed: ALInboundTimedRead<TRead>, wrapped: boolean): void {
+        const startedAtMs = this.rotation.startedAtMs ?? timed.startedAtMs;
+        const readDurationMs = this.rotation.readDurationMs + timed.durationMs;
+        const deferred = toOldestFirstALInboundDeferredEffects([...this.rotation.deferred, ...timed.read.deferred])
             .slice(0, this.dependencies.deferredLimit);
-        this.rotation = wrapped ? AL_INBOUND_ROTATION_UNSTARTED : { startedAtMs, deferred };
+        this.rotation = wrapped ? AL_INBOUND_ROTATION_UNSTARTED : { startedAtMs, readDurationMs, deferred };
         if (wrapped) {
-            this.dependencies.onRotationCompleted({ startedAtMs, completedAtMs: this.dependencies.nowMs(), deferred });
+            this.dependencies.onRotationCompleted({
+                startedAtMs,
+                completedAtMs: timed.startedAtMs + timed.durationMs,
+                readDurationMs,
+                deferred
+            });
         }
     }
 }
@@ -234,4 +289,11 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
 /** A rotation at its start reads the head of NEW anyway, so a head read there is the rotation read. */
 function isALInboundScanStart(scan: ALInboundWorkScan): boolean {
     return scan.cursor === null && scan.statusIndex === 0;
+}
+
+function toEarliestALInboundReadyAtMs(left: number | undefined, right: number | undefined): number | undefined {
+    if (left === undefined || right === undefined) {
+        return left ?? right;
+    }
+    return Math.min(left, right);
 }

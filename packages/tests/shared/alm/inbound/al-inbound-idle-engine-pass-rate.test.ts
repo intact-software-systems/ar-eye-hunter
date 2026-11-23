@@ -84,6 +84,20 @@ describe('a row an idle inbound work engine holds back', () => {
         await fixture.queueEngine.stop();
     });
 
+    it('is delivered by the one pass a wake runs while the rotation rests mid-way', async () => {
+        let dispatchable = false;
+        const fixture = await createReadyTwoLaneRuntime(() => dispatchable);
+        // The bootstrap batch left the rotation at RETRY, and the commit's own batch read the row at
+        // the head of NEW without moving it: the rotation rests mid-way, past the held row.
+        await admitHeldMessage(fixture, 'held-mid-rotation');
+
+        dispatchable = true;
+        await fixture.queueEngine.executeOnce();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fixture.delivered).toEqual(['dispatched']);
+    });
+
     it('is delivered with no wake within the idle ceiling, while the engine keeps its pass bound', async () => {
         let dispatchable = false;
         const fixture = await createStartedTwoLaneRuntime(() => dispatchable);
@@ -116,6 +130,15 @@ async function admitHeldMessage(fixture: InboundTestRuntime, msgId: string): Pro
 async function createStartedTwoLaneRuntime(
     canDispatchMessage: (() => boolean) | undefined = undefined
 ): Promise<InboundTestRuntime> {
+    const fixture = await createReadyTwoLaneRuntime(canDispatchMessage);
+    fixture.queueEngine.start();
+    return fixture;
+}
+
+/** The same runtime with its engine left stopped, so the test runs each pass itself. */
+async function createReadyTwoLaneRuntime(
+    canDispatchMessage: (() => boolean) | undefined
+): Promise<InboundTestRuntime> {
     const fixture = createInboundTestRuntime({
         canDispatchMessage,
         carrier: 'ws',
@@ -128,7 +151,6 @@ async function createStartedTwoLaneRuntime(
         effectWorkerId: 'al-inbound:idle'
     });
     await fixture.runtime.ready();
-    fixture.queueEngine.start();
     return fixture;
 }
 
