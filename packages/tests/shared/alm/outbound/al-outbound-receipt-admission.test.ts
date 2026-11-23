@@ -116,6 +116,27 @@ describe('the WS leg\'s receipt admission on a head both carriers share', () => 
         expect(await readRoomFloor(fixture, trackKey)).toEqual({ unreceiptedSeq: 0, pendingReceiptSeqs: [1, 3] });
     });
 
+    it('keeps the higher sent position when a later sequence\'s receipt commits between an earlier one\'s read and its commit', async () => {
+        const fixture = createReceiptAdmissionFixture();
+        const sends = await sendRoomBroadcasts(fixture, ['first', 'second']);
+        // A later send with no receipt covers both sequences, so neither receipt moves the room floor: the sent position
+        // is the one row the two receipts share, and it carries no guard of its own.
+        await sendRoomBroadcasts(fixture, ['unreceipted'], 'none');
+        const trackKey = toALOrderingTrackKey(sends[0]!)!;
+        expect(await readRoomFloor(fixture, trackKey)).toEqual({ unreceiptedSeq: 3, pendingReceiptSeqs: [] });
+        fixture.beforeNextCommit.push(async () => {
+            expect(await fixture.ws.acceptReceipt(createServerReceipt(sends[1]!, 'admitted', ['a'])))
+                .toEqual({ kind: 'committed' });
+        });
+
+        expect(await fixture.ws.acceptReceipt(createServerReceipt(sends[0]!, 'admitted', ['a'])))
+            .toEqual({ kind: 'committed' });
+
+        // The earlier receipt read `a` at 0 and would write 1; the sender fence makes it read `a` at 2 again.
+        expect(await readSharedPositions(fixture, trackKey, ['a'])).toEqual({ a: 2 });
+        expect(fixture.commits.slice(-3).map((commit) => commit.status)).toEqual(['committed', 'conflict', 'committed']);
+    });
+
     it('writes no position for a complete receipt: only the admitted one carries the routed audience', async () => {
         const fixture = createReceiptAdmissionFixture();
         const [send] = await sendRoomBroadcasts(fixture, ['first']);

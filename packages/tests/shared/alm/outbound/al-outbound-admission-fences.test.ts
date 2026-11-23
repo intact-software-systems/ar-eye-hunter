@@ -47,7 +47,10 @@ import { computeALOutboundWorkEntry, toALOutboundWorkKey } from '@shared/alm/out
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '@shared/alm/outbound/control/al-outbound-receipt-admission.ts';
-import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
+import {
+    toALOutboundReadCommitFences,
+    toALOutboundReadMessageEndBundle
+} from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
@@ -346,6 +349,38 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             ...bundle,
             mutations: [...bundle.mutations, { kind: 'delete-pending-ack', ...toFenceReceipt(message) }]
         })).rejects.toThrow(`An outbound bundle of ${other.id.msgId} writes a delete-pending-ack row of another message`);
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('refuses a bundle without its sender fence that writes a row its sender\'s messages share, and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = await seedControlObligation(fixture.store);
+        const read = await fixture.store.readRepairMessage(message.id.msgId, (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: []
+        }));
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.store.commitBundle({
+            senderId: message.id.senderId,
+            ...toALOutboundReadCommitFences(toFenceReceipt(message), read),
+            fencesSender: false,
+            mutations: [{
+                kind: 'set-sent-position',
+                namespace: 'ordering-head',
+                trackKey: 'track',
+                recipientPeerId: 'peer-1',
+                seq: 1,
+                expireAtTimestamp: Date.now() + 30_000
+            }],
+            durableEffects: [],
+            endedTimeoutEffectIds: []
+        })).rejects.toThrow(
+            `An outbound bundle of ${message.id.msgId} writes a set-sent-position row its sender's messages share without its sender fence`
+        );
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });

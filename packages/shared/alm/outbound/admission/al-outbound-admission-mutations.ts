@@ -30,6 +30,7 @@ import {
     type ALOutboundPendingAckRef
 } from './al-outbound-admission-keys.ts';
 import type {
+    ALOutboundCommitBundle,
     ALOutboundMessageFence,
     ALOutboundMessageReadDto,
     ALOutboundOrderingHead,
@@ -355,19 +356,6 @@ export class ALOutboundAdmissionMutations {
         );
     }
 
-    /**
-     * A bundle writes the rows of its own message only, so that message's version fences every one of them: a row of
-     * another message would be written unfenced against that message's controls.
-     */
-    assertOwnMessageRows(message: ALOutboundPendingAckRef, mutations: readonly ALOutboundAdmissionMutation[]): void {
-        const foreign = mutations.find((mutation) => !isALOutboundMutationOfMessage(mutation, message));
-        if (foreign !== undefined) {
-            throw new TypeError(
-                `An outbound bundle of ${message.msgId} writes a ${foreign.kind} row of another message`
-            );
-        }
-    }
-
     private async readMessageIdentityIssue(
         transaction: ALAdmissionWorkWriteContext,
         mutation: ALOutboundAdmissionMutation
@@ -636,28 +624,46 @@ export class ALOutboundAdmissionMutations {
     }
 }
 
-/** Whether a mutation writes a row of `message`, or a row other messages share (a track's or a supersedence key's). */
-function isALOutboundMutationOfMessage(
-    mutation: ALOutboundAdmissionMutation,
-    message: ALOutboundPendingAckRef
-): boolean {
+/**
+ * A bundle writes the rows of its own message, which that message's version fences, and rows its sender's other
+ * messages share -- a track's head, sent positions and room floor, a supersedence key's rows -- only with its sender
+ * fence. A row of another message, or a shared row without the sender fence, would be written unfenced.
+ */
+export function assertALOutboundBundleRows(
+    bundle: Pick<ALOutboundCommitBundle<unknown>, 'message' | 'fencesSender' | 'mutations'>
+): void {
+    for (const mutation of bundle.mutations) {
+        const row = toALOutboundMutationRow(mutation);
+        if (row === 'shared' ? !bundle.fencesSender : !isALOutboundRowOfMessage(row, bundle.message)) {
+            const whose = row === 'shared'
+                ? 'its sender\'s messages share without its sender fence'
+                : 'of another message';
+            throw new TypeError(`An outbound bundle of ${bundle.message.msgId} writes a ${mutation.kind} row ${whose}`);
+        }
+    }
+}
+
+/** The message whose row a mutation writes, the origin where its key names one; `shared` for a row messages share. */
+function toALOutboundMutationRow(
+    mutation: ALOutboundAdmissionMutation
+): Readonly<{ msgId: string; originPeerId: string | undefined; }> | 'shared' {
     switch (mutation.kind) {
         case 'set-msg-owner':
-            return mutation.msgId === message.msgId && mutation.senderId === message.originPeerId;
+            return { msgId: mutation.msgId, originPeerId: mutation.senderId };
         case 'set-sent-message':
         case 'set-first-hop-wait':
         case 'set-repair-attempt':
-            return mutation.snapshot.msgId === message.msgId;
+            return { msgId: mutation.snapshot.msgId, originPeerId: undefined };
         case 'end-sent-message':
-            return mutation.stored.msgId === message.msgId;
+            return { msgId: mutation.stored.msgId, originPeerId: undefined };
         case 'delete-sent-message':
         case 'delete-first-hop-wait':
         case 'delete-repair-attempt':
-            return mutation.msgId === message.msgId;
+            return { msgId: mutation.msgId, originPeerId: undefined };
         case 'set-pending-ack':
-            return mutation.originPeerId === message.originPeerId && mutation.snapshot.msgId === message.msgId;
+            return { msgId: mutation.snapshot.msgId, originPeerId: mutation.originPeerId };
         case 'delete-pending-ack':
-            return mutation.originPeerId === message.originPeerId && mutation.msgId === message.msgId;
+            return { msgId: mutation.msgId, originPeerId: mutation.originPeerId };
         case 'set-ordering-message':
         case 'delete-ordering-message':
         case 'set-ordering-head':
@@ -665,8 +671,15 @@ function isALOutboundMutationOfMessage(
         case 'set-room-sent-floor':
         case 'set-supersedence-latest':
         case 'set-supersedence-replacement':
-            return true;
+            return 'shared';
     }
+}
+
+function isALOutboundRowOfMessage(
+    row: Readonly<{ msgId: string; originPeerId: string | undefined; }>,
+    message: ALOutboundPendingAckRef
+): boolean {
+    return row.msgId === message.msgId && (row.originPeerId === undefined || row.originPeerId === message.originPeerId);
 }
 
 /** The guarded row as the commit's transaction holds it now, read as the admission read it. */

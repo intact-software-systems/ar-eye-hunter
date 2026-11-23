@@ -49,6 +49,7 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
         bundle: {
             senderId: receipt.originPeerId,
             expectedVersion: input.clientRecord?.version,
+            // It reads and writes only rows of its message; it keeps the sender fence, which ruling 26 did not narrow.
             fencesSender: true,
             message: toALOutboundMessageFence(receipt, input.messageVersion, stored.reference.expiresAtMs),
             mutations: [{

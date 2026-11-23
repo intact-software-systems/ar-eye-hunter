@@ -68,6 +68,7 @@ import {
 import { toALOutboundVersionKey, type ALOutboundPendingAckRef } from './al-outbound-admission-keys.ts';
 import {
     ALOutboundAdmissionMutations,
+    assertALOutboundBundleRows,
     type ALOutboundAdmissionMutation,
     type ALOutboundStateWrite
 } from './al-outbound-admission-mutations.ts';
@@ -934,7 +935,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         observed: ALOutboundCommitObservation<TPrepared>,
         nowMs: number
     ): ALOutboundCommitCandidate<TPrepared> {
-        this.mutations.assertOwnMessageRows(bundle.message, bundle.mutations);
+        assertALOutboundBundleRows(bundle);
         const effects = this.effectStore.computeEffects(observed.effects, nowMs);
         const issues = this.effectStore.validateEffects(effects);
         if (issues.length > 0) {

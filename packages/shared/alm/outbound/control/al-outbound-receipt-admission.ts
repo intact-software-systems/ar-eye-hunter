@@ -46,7 +46,7 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
  * an outbox-fanned message. At a browser origin whose carriers share their heads, an `admitted` receipt
  * also moves the recipients it names on the shared head and resolves the room floor (S4ii-R7). One
  * conditional commit fenced on the message's version, and on the origin's version only when it reads those shared-head
- * rows (ruling 24); a conflict starts a fresh read, and the few attempts
+ * rows (ruling 26); a conflict starts a fresh read, and the few attempts
  * bound a receipt racing the origin's own writes. A receipt that runs out of them is retained as work and
  * replayed until its deadline, since the row would otherwise keep waiting on acknowledgements the receipt
  * already counted.
