@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
 import { toALReceiptRecordConfirmationPrefix } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import {
     decodeALReceiptRecordConfirmation,
     type ALReceiptRecordOpening
 } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 
 import {
     describeALReceiptRecordContract,
@@ -101,6 +103,50 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         expect(await readStoredRecipients(scope, opening)).toEqual(['r1', 'r2']);
     }, 60_000);
 
+    // A resent ACK counted on two servers at once: the second write meets the first's uncommitted row. It must be
+    // answered as a repeat, never as a conflict the sender retries or a second count, and one row must be stored.
+    it('answers a same-recipient race as a repeat', async () => {
+        const scope = await createScope();
+        const opening = toOpening(scope, ['r1', 'r2']);
+        expect((await scope.instances[0].record.open(opening)).right).toBeDefined();
+
+        const race = await racePastHeldCommit({
+            hold: scope.held.hold,
+            startHeld: () => scope.held.record.count({ ...opening, recipientPeerId: 'r1', kind: 'confirmed' }),
+            startRaced: () => scope.instances[1].record.count({ ...opening, recipientPeerId: 'r1', kind: 'confirmed' }),
+            blockedAfterMs: BLOCKED_AFTER_MS
+        });
+
+        // The second insert of one key waits on the first's uncommitted row, so it can finish only after the release.
+        expect(race.raced).toBe('blocked');
+        expect([race.heldResult.right?.disposition, race.racedResult.right?.disposition])
+            .toEqual(['counted', 'repeated']);
+        expect(await readStoredRecipients(scope, opening)).toEqual(['r1']);
+    }, 60_000);
+
+    // PostgreSQL keeps an expired row until a sweep deletes it. The record must read such rows as absent: an end
+    // finds no head, and a fresh early confirmation replaces the dead row instead of colliding with it.
+    it('ends and counts ahead over rows that expired and were not swept', async () => {
+        const scope = await createScope();
+        const opening = toOpening(scope, ['r1', 'r2']);
+        const [a, b] = scope.instances;
+        expect((await a.record.open(opening)).right).toBeDefined();
+        expect((await a.record.count({ ...opening, recipientPeerId: 'r1', kind: 'confirmed' })).right).toBeDefined();
+        // The confirmation expires two graces past the 30 s deadline, the last of the rows to die.
+        const pastExpiryMs = opening.deadlineAtMs + 2 * AL_RECEIPT_DEADLINE_GRACE_MS;
+        setClocks(scope, pastExpiryMs);
+
+        expect((await b.record.end(opening)).left).toEqual({ kind: 'head-absent' });
+        const ahead = await b.record.countAhead({ ...opening, recipientPeerId: 'r1', kind: 'confirmed' });
+        expect(ahead.right).toEqual({ disposition: 'ahead' });
+        expect(await readStoredRecipients(scope, opening)).toEqual(['r1']);
+        const noHeadExpiryMs = pastExpiryMs + AL_RECEIPT_RECORD_WINDOW_MS + AL_RECEIPT_DEADLINE_GRACE_MS;
+        setClocks(scope, noHeadExpiryMs - 1);
+        expect(await readStoredRecipients(scope, opening)).toEqual(['r1']);
+        setClocks(scope, noHeadExpiryMs);
+        expect(await readStoredRecipients(scope, opening)).toEqual([]);
+    }, 60_000);
+
     // Pins what one ACK costs when its head is open and it does not complete the set, the common case: the head and
     // the confirmation key in one autocommit read, the insert in one transaction, the prefix read for the tally; five
     // round trips with BEGIN and COMMIT. A change that adds a statement or a transaction to every ACK shows here.
@@ -147,7 +193,8 @@ async function createPostgresScope(opened: OpenedPostgresScope[]): Promise<Postg
         namespace,
         instances: [toInstance(clients[0]!), toInstance(clients[1]!), toInstance(clients[2]!)],
         held: { record: toInstance(holdPostgresCommit(clients[0]!, hold)).record, hold },
-        recorded: { record: toInstance(recordPostgresStatements(clients[2]!, log, null)).record, log }
+        recorded: { record: toInstance(recordPostgresStatements(clients[2]!, log, null)).record, log },
+        fencedWriteClock: 'database'
     };
 }
 
@@ -178,6 +225,12 @@ function toOpening(scope: PostgresReceiptRecordScope, expectedRecipientPeerIds: 
         snapshotVersion: 1,
         deadlineAtMs: scope.instances[0].clock.nowMs + 30_000
     };
+}
+
+function setClocks(scope: PostgresReceiptRecordScope, nowMs: number): void {
+    for (const instance of scope.instances) {
+        instance.clock.nowMs = nowMs;
+    }
 }
 
 async function readStoredRecipients(

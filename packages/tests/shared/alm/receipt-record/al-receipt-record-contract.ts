@@ -44,6 +44,11 @@ export interface ALReceiptRecordContractScope {
         ALReceiptRecordContractInstance,
         ALReceiptRecordContractInstance
     ];
+    /**
+     * The clock on which a fenced write takes an expired row that no sweep has deleted as gone. Reads expire rows on
+     * the instance clock; PostgreSQL's conditional inserts compare with the database clock, which no case can move.
+     */
+    readonly fencedWriteClock: 'instance' | 'database';
 }
 
 interface ContractFixture {
@@ -513,6 +518,91 @@ export function describeALReceiptRecordContract(
             const ended = await f.b.record.end(f.ref);
             expect(ended.right?.phase).toBe('timed-out');
             expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1']);
+        });
+
+        // Decision 5: a receipt past its grace is gone. Opening it again would write a head no row bounds and a
+        // deadline that has already passed, so the same opening is refused whole and writes nothing.
+        it('refuses to open again a receipt whose deadline has passed its grace', async () => {
+            const f = await fixture();
+            expect((await f.a.record.open(f.opening)).right).toBeDefined();
+            setClocks(f, f.startMs + 35_000);
+
+            const reopened = await f.b.record.open(f.opening);
+            expect(reopened.left?.kind === 'invalid-opening' ? reopened.left.issues.map(({ code }) => code) : [])
+                .toEqual(['receipt-expired']);
+            expect((await f.c.record.read(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await readWork(f, 'deadline')).toBeUndefined();
+        });
+
+        // A characterization the next slice must guard against, not a promise: once the head has expired, the same
+        // ref opens a second life under a later deadline, with a fresh tally and one deadline work row due then. Where
+        // fenced writes read the database clock, the first life's unswept rows still hold the slot for the instance
+        // clocks moved here, so the reopen conflicts; with real clocks it opens once the database clock passes them.
+        it('opens a second life only under a later deadline', async () => {
+            const f = await fixture();
+            expect((await f.a.record.open(f.opening)).right).toBeDefined();
+            setClocks(f, f.startMs + 35_000);
+
+            const reopened = await f.b.record.open(toOpening(f.ref, ['r1', 'r2'], f.startMs + 600_000));
+            const page = await f.a.backend.workQueue.readWorkPage({
+                typeId: toALReceiptRecordWorkType(f.scope.namespace),
+                status: EntityStatus.NEW,
+                maxToRead: 10,
+                order: 'key',
+                cursor: null
+            });
+            expect(page.entries.map((entry) => decodeALReceiptRecordWorkEntry(entry, f.scope.namespace)))
+                .toEqual([{ kind: 'deadline', ref: f.ref }]);
+            if (f.scope.fencedWriteClock === 'database') {
+                expect(reopened.left).toEqual({ kind: 'conflict' });
+                expect(page.entries[0]?.dequeueAudit.nextTs?.epochMilliseconds).toBe(f.startMs + 5_000);
+                return;
+            }
+            expect(toTally(reopened.right)).toEqual({ confirmed: [], outside: [], complete: false });
+            expect(page.entries[0]?.dequeueAudit.nextTs?.epochMilliseconds).toBe(f.startMs + 600_000);
+        });
+
+        // An end with no head to fence would have no frozen audience to end on; it must write no ended work, which a
+        // worker would otherwise send as a terminal receipt.
+        it('ends nothing when there is no head', async () => {
+            const f = await fixture();
+            expect((await f.a.record.end(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await readWork(f, 'ended')).toBeUndefined();
+
+            expect((await f.a.record.open(f.opening)).right).toBeDefined();
+            setClocks(f, f.startMs + 35_000);
+            expect((await f.b.record.end(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await readWork(f, 'ended')).toBeUndefined();
+        });
+
+        // Once the head is there `countAhead` is `count`: it validates against the head, and the row it writes takes
+        // the head's confirmation expiry (deadline plus two graces), not the half-hour expiry of a row with no head.
+        it('counts ahead as count does once the head is there', async () => {
+            const f = await fixture();
+            await f.a.record.open(f.opening);
+            const refusedAsCount = async (
+                instance: ALReceiptRecordContractInstance,
+                recipientPeerId: string,
+                code: string
+            ) => {
+                const ahead = await instance.record.countAhead(toConfirmation(f.ref, recipientPeerId));
+                expect(ahead.left?.kind === 'invalid-confirmation' ? ahead.left.issues.map((issue) => issue.code) : [])
+                    .toEqual([code]);
+                expect(ahead.left).toEqual((await confirm(f, instance, recipientPeerId)).left);
+            };
+
+            await refusedAsCount(f.a, 'stranger', 'outside-frozen-audience');
+            expect((await f.b.record.countAhead(toConfirmation(f.ref, 'r1'))).right?.disposition).toBe('counted');
+            setClocks(f, f.startMs + 5_000);
+            await refusedAsCount(f.c, 'r2', 'deadline-expired');
+            expect((await f.a.record.end(f.ref)).right?.phase).toBe('timed-out');
+            await refusedAsCount(f.b, 'r2', 'head-ended');
+            expect((await readStoredConfirmations(f)).map(({ value }) => value.recipientPeerId)).toEqual(['r1']);
+
+            setClocks(f, f.startMs + 64_999);
+            expect(await readStoredConfirmations(f)).toHaveLength(1);
+            setClocks(f, f.startMs + 65_000);
+            expect(await readStoredConfirmations(f)).toEqual([]);
         });
     });
 }

@@ -26,7 +26,11 @@ describeALReceiptRecordContract('memory', async () => {
         const backend = new InMemoryAdmissionBackend(state, () => clock.nowMs);
         return { record: new ALReceiptRecord({ backend, namespace, nowMs: () => clock.nowMs }), backend, clock };
     };
-    return { namespace, instances: [toInstance(clocks[0]), toInstance(clocks[1]), toInstance(clocks[2])] };
+    return {
+        namespace,
+        instances: [toInstance(clocks[0]), toInstance(clocks[1]), toInstance(clocks[2])],
+        fencedWriteClock: 'instance'
+    };
 });
 
 function createBackendWhoseWritesReject(error: Error): ALAdmissionWorkBackend {
@@ -60,5 +64,16 @@ describe('ALReceiptRecord at its storage boundary', () => {
         };
 
         expect((await record.open(opening)).left).toEqual({ kind: 'conflict' });
+    });
+
+    // A conflicting write is a repeat only when the row it lost to is there to read; with no row, nothing proves the
+    // recipient was counted, so the caller must be told to retry rather than told it was already counted.
+    it('returns a conflict when the confirmation it lost to is not there', async () => {
+        const backend = createBackendWhoseWritesReject(new ALAdmissionBackendConflictError('raced'));
+        const record = new ALReceiptRecord({ backend, namespace, nowMs: Date.now });
+
+        expect((await record.count({ ...ref, recipientPeerId: 'r1', kind: 'confirmed' })).left).toEqual({
+            kind: 'conflict'
+        });
     });
 });
