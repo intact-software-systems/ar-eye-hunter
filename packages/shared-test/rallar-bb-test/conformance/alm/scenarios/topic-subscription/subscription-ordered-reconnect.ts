@@ -7,7 +7,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toSiblingLeftWait } from './to-sibling-left-wait.ts';
+import { toSiblingLeavingCueCommands, toSiblingLeftCommands } from './to-sibling-left-commands.ts';
 import {
     computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
@@ -89,7 +89,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, subscribed.confirmations, outsideAudience),
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
-        toSiblingLeftWait(producer),
+        ...toSiblingLeftCommands(producer),
         ...toPublishUntilConfirmedCommands({ ...receiverAlone, name: 'probe-receiver-alone', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 3 }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 4 }),
@@ -115,7 +115,10 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
     ];
 }
 
-/** The sibling holds its election and its socket until both producers' `p2` confirmed, then drops the socket. */
+/**
+ * The sibling holds its election and its socket until both producers' `p2` confirmed, then tells the producers it
+ * leaves and drops the socket.
+ */
 function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(sibling),
@@ -123,6 +126,7 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
         toTokenReadCommand(sibling, 'tokens-before-drop'),
         ...toOrderedArrivalWaits(sibling, [1, 2]),
         ...toOrderedConfirmedCueWaits(sibling, 2),
+        ...toSiblingLeavingCueCommands(sibling),
         toProductSocketCommand(sibling, 'close')
     ];
 }

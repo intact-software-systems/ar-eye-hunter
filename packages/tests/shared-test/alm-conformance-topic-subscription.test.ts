@@ -1252,6 +1252,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-ready'),
                 ...toPublishOnceSteps(`${track}-p1`),
                 ...toPublishOnceSteps(`${track}-p2`),
+                'cue-leaving-received',
+                'sibling-session-gone',
                 'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishOnceSteps(`${track}-p3`),
@@ -1297,6 +1299,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
+            'cue-leaving',
+            'cue-leaving-sent',
             'product-socket-close'
         ]);
         expect(toContinuationStepNames(scenario)).toEqual([
@@ -1360,6 +1364,45 @@ describe('ALM ordered subscription reconnect conformance', () => {
                     }
                 });
                 expect(left).not.toHaveProperty('absent');
+            }
+        }
+    });
+
+    it('each producer reads the sibling\'s own session from its leaving cue and waits until the room no longer holds it, before its count and its alone-probe', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = findBarrieredReconnectScenario(carrier);
+            const sibling = requireRoleRecipe(scenario, 'sibling');
+            const siblingIds = sibling.commands.map(({ commandId }) => commandId);
+            const leaving = findStep(sibling, 'cue-leaving');
+            // The cue has left the page before the socket closes.
+            expect(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-sent`), carrier).toBeGreaterThan(siblingIds.indexOf(leaving.commandId));
+            expect(siblingIds.indexOf(`${sibling.recipeId}-product-socket-close`), carrier)
+                .toBeGreaterThan(siblingIds.indexOf(`${sibling.recipeId}-cue-leaving-sent`));
+            for (const [role] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+                const commandIds = producer.commands.map(({ commandId }) => commandId);
+                const cue = findStep(producer, 'cue-leaving-received');
+                const gone = findStep(producer, 'sibling-session-gone');
+                const order = [cue.commandId, gone.commandId, `${producer.recipeId}-sibling-left`, `${producer.recipeId}-probe-receiver-alone`]
+                    .map((commandId) => commandIds.indexOf(commandId));
+
+                expect(order.every((index) => index > -1), `${carrier} ${role}`).toBe(true);
+                expect(order, `${carrier} ${role}`).toEqual(order.toSorted((left, right) => left - right));
+                expect(leaving.kind === 'messages.send' ? leaving.payload : undefined, `${carrier} ${role}`).toEqual(
+                    cue.kind === 'wait' ? cue.match.equals : 'not a wait'
+                );
+                expect(cue).toMatchObject({ kind: 'wait', match: { kind: 'message', payloadPath: 'data.payload' } });
+                expect(cue).not.toHaveProperty('absent');
+                const children = gone.kind === 'loop' ? gone.commands : [];
+                expect(children.map(({ kind }) => kind), `${carrier} ${role}`).toEqual(['http.request', 'wait']);
+                expect(children[0]).toMatchObject({ request: { method: 'GET', path: '/api/state/apps/app/workspaces/ws/groups/room-alm' } });
+                expect(children[1]).toMatchObject({
+                    match: {
+                        topic: 'rallar.bb.http.response',
+                        contains: `"sessionId":"{resultCache.${cue.commandId}.value.event.payload.senderId}"`
+                    },
+                    absent: true
+                });
             }
         }
     });
