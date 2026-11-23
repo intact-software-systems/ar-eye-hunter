@@ -2,7 +2,6 @@ import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
-import type { ALOutboundDurableEffect } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
@@ -17,10 +16,27 @@ export interface ALOutboundClaimObservation {
     verdict?: ALDeliveryAdmissionVerdict['kind'];
 }
 
+/** The effects an outbound work row holds, as `ALOutboundDurableEffect` names them. */
+export type ALOutboundDurableEffectKind =
+    | 'admit-message'
+    | 'send-prepared'
+    | 'ack-timeout'
+    | 'first-hop-timeout'
+    | 'repair-hint'
+    | 'nack-retry'
+    | 'admit-control'
+    | 'dequeue-message';
+
 /** One claim of an outbound batch as its drain states it: the effect its row held and what running it cost. */
 export interface ALOutboundClaimRun {
-    readonly payloadKind: ALOutboundDurableEffect<never>['kind'];
+    readonly payloadKind: ALOutboundDurableEffectKind;
     readonly durationMs: number;
+}
+
+/** What a claim answered the work handler, and its run when its timing was wanted and its work decoded. */
+export interface ALOutboundSettledClaim {
+    readonly outcome: ALWorkAttemptResult;
+    readonly run: ALOutboundClaimRun | undefined;
 }
 
 /** The work attempt and physical claim identity handed from the lane or group to settlement. */
@@ -34,8 +50,8 @@ export interface ALOutboundClaimAttemptSettlement {
 export interface ALOutboundClaimSettlement<TPrepared> extends ALOutboundClaimAttemptSettlement {
     readonly capture: ALOutboundReceiptWorkEvidence.Capture<TPrepared> | undefined;
     readonly readNowMs: () => number;
-    /** The batch's settled claims, which this one joins once it settles. */
-    readonly runs: ALOutboundClaimRun[];
+    /** Whether anyone reads the claim's run: without a diagnostics sink the clock is not read for it. */
+    readonly timed: boolean;
 }
 
 /** A claim keeps stage details only when it is a timed foreign outbox row. */
@@ -84,12 +100,29 @@ export function createALOutboundClaimEvidence<TPrepared>(
     }
 }
 
-/** A claim's attempt as the work handler sees it, with its evidence published whatever it answered. */
+/**
+ * A claim runs from the moment its settlement is awaited: at once alone, and from the group's start in a group. A claim
+ * that threw states no run.
+ */
 export async function settleALOutboundClaim<TPrepared>(
+    settlement: ALOutboundClaimSettlement<TPrepared>
+): Promise<ALOutboundSettledClaim> {
+    const startedAtMs = settlement.timed ? settlement.readNowMs() : undefined;
+    const outcome = await settleALOutboundAttempt(settlement);
+    const { payloadKind } = settlement.observed;
+    return {
+        outcome,
+        run: startedAtMs === undefined || payloadKind === undefined
+            ? undefined
+            : { payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }
+    };
+}
+
+/** A claim's attempt as the work handler sees it, with its evidence published whatever it answered. */
+async function settleALOutboundAttempt<TPrepared>(
     settlement: ALOutboundClaimSettlement<TPrepared>
 ): Promise<ALWorkAttemptResult> {
     const { capture, observed } = settlement;
-    const startedAtMs = settlement.readNowMs();
     let result: ALWorkAttemptResult | undefined;
     try {
         result = await settlement.attempt;
@@ -104,7 +137,6 @@ export async function settleALOutboundClaim<TPrepared>(
         throw error;
     }
     finally {
-        recordALOutboundClaimRun(settlement, startedAtMs);
         try {
             if (capture !== undefined) {
                 observed.evidence?.publish(capture.observer, result);
@@ -119,19 +151,5 @@ export async function settleALOutboundClaim<TPrepared>(
                 });
             }
         }
-    }
-}
-
-/**
- * A claim runs from the moment its settlement is awaited: at once alone, and from the group's start in a group. A claim
- * whose work never decoded states no run.
- */
-function recordALOutboundClaimRun<TPrepared>(
-    settlement: ALOutboundClaimSettlement<TPrepared>,
-    startedAtMs: number
-): void {
-    const { payloadKind } = settlement.observed;
-    if (payloadKind !== undefined) {
-        settlement.runs.push({ payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) });
     }
 }

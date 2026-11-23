@@ -10,7 +10,7 @@ import {
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
@@ -185,10 +185,17 @@ it.each(
     }
 );
 
-// One lost commit is the inline admission's; each further one is a replay's inside the batch.
-it.each([{ lostCommits: 1 }, { lostCommits: 3 }])(
-    'commits a parked ACK that lost $lostCommits commits before the claims queued behind the in-flight one of its batch',
-    async ({ lostCommits }) => {
+// A peer ACK parks on its first lost commit and a server receipt on its third; each further one is a replay's in the batch.
+it.each(
+    [
+        { path: 'peer ACK', lostCommits: 1 },
+        { path: 'peer ACK', lostCommits: 3 },
+        { path: 'server receipt', lostCommits: 3 },
+        { path: 'server receipt', lostCommits: 5 }
+    ] as const
+)(
+    'commits a parked $path that lost $lostCommits commits before the claims queued behind the in-flight one of its batch',
+    async ({ path, lostCommits }) => {
         const nowMs = 10_000;
         const clock = () => nowMs;
         vi.spyOn(Date, 'now').mockImplementation(clock);
@@ -266,8 +273,10 @@ it.each([{ lostCommits: 1 }, { lostCommits: 3 }])(
             }
             return await write(operation, deadline);
         });
-        expect(await runtime.acceptControlMessage(toDeliveredAck(message, nowMs), 'peer'))
-            .toEqual({ kind: 'pending-control' });
+        const parked = path === 'peer ACK'
+            ? runtime.acceptControlMessage(toDeliveredAck(message, nowMs), 'peer')
+            : runtime.acceptReceipt(toCompleteServerReceipt(message, nowMs));
+        expect(await parked).toEqual({ kind: 'pending-control' });
         expect(handle.lifecycle().state).toBe('transport-accepted');
 
         gates.get('first')!();
@@ -280,6 +289,22 @@ it.each([{ lostCommits: 1 }, { lostCommits: 3 }])(
         expect(competingRepairs).toBe(lostCommits);
     }
 );
+
+function toCompleteServerReceipt(message: ALMessage, nowMs: number): ALMessage {
+    return newALReceiptControlMessage(
+        { v: 4, msgId: 'receipt', senderId: 'server', ts: nowMs, traceId: 'trace-outbound-ack-conflict-replay' },
+        {
+            msgId: message.id.msgId,
+            originPeerId: 'sender',
+            expectedRecipientPeerIds: ['receiver'],
+            confirmedRecipientPeerIds: ['receiver'],
+            outsideAudienceRecipientPeerIds: [],
+            snapshotVersion: 1,
+            phase: 'complete',
+            observedAtEpochMs: nowMs
+        }
+    );
+}
 
 function toDeliveredAck(message: ALMessage, nowMs: number): ALMessage {
     return newALAckControlMessage(

@@ -240,8 +240,8 @@ export class ALWorkHandler {
     private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
-    /** Rows `expedite()` named while a batch runs, which that batch claims before its next claim. */
-    private readonly expedited: ALWorkExpeditedRow[] = [];
+    /** Rows `expedite()` named while a batch runs, by queue key, which that batch claims before its next claim. */
+    private readonly expedited = new Map<string, ALWorkExpeditedRow>();
     /** The running batch's expedited claims, by queue key: the runs each has left when it answers `retry`. */
     private readonly expeditedRunsLeft = new Map<string, number>();
     private readonly shutdown = new AbortController();
@@ -321,11 +321,11 @@ export class ALWorkHandler {
      * the batch claims each one still pending before its next claim, so such a row waits for the claim in flight at
      * most, and runs it again at once while it answers `retry`, `maxRuns` runs in all; past them its retry waits for
      * the batch's release as any claim's does. With no batch running, the batch `committed()` starts claims them as it
-     * claims any due row.
+     * claims any due row. A row named again before the batch read it is read once.
      */
     expedite(keys: readonly Key[], maxRuns: number): void {
         if (this.batch !== undefined) {
-            this.expedited.push(...keys.map((key) => ({ key, maxRuns })));
+            keys.forEach((key) => this.expedited.set(toKeyAsString(key), { key, maxRuns }));
         }
     }
 
@@ -421,7 +421,7 @@ export class ALWorkHandler {
     ): Promise<void> {
         this.batch = undefined;
         // A row named after the batch's last claim is claimed by the batch its commit owes.
-        this.expedited.length = 0;
+        this.expedited.clear();
         this.expeditedRunsLeft.clear();
         let following: Promise<void> | undefined;
         try {
@@ -591,15 +591,17 @@ export class ALWorkHandler {
     }
 
     /**
-     * Each expedited row still new or retrying as read. One that cannot be claimed is left to the batch its commit owes,
-     * and the failure is stated as a batch failure is, as a successor's is.
+     * At most a page of the expedited rows, each still new or retrying as read; the rest wait for the claim after.
+     * One that cannot be claimed is left to the batch its commit owes, and the failure is stated as a batch failure
+     * is, as a successor's is.
      */
     private async claimExpedited(): Promise<readonly ALWorkClaim[]> {
-        if (this.expedited.length === 0 || this.shutdown.signal.aborted) {
+        if (this.expedited.size === 0 || this.shutdown.signal.aborted) {
             return [];
         }
-        const { port } = this.dependencies;
-        const rows = this.expedited.splice(0);
+        const { port, pageSize } = this.dependencies;
+        const rows = [...this.expedited.values()].slice(0, pageSize);
+        rows.forEach((row) => this.expedited.delete(toKeyAsString(row.key)));
         try {
             const entries = await Promise.all(rows.map((row) => port.readEntry(row.key)));
             const observed = entries.filter((entry) => entry !== undefined);

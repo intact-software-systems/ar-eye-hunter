@@ -874,11 +874,11 @@ publication succeed. The event's `data` is the event itself:
   `status` in `stats.rallar.alm.ordering`.
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
-  touched work, five fields the outbound topic's drains also carry. A batch that claimed and rejected nothing reports nothing: the
-  inbound rotation runs one every engine round, and recording its resting state
-  costs the page hundreds of events per session that say only what the probe
-  already decided — enough, measured, to move the very races this sink exists
-  to explain
+  touched work, five fields the outbound topic's drains also carry. A batch
+  that claimed and rejected nothing reports nothing: the inbound rotation runs
+  one every engine round, and recording its resting state costs the page
+  hundreds of events per session that say only what the probe already decided
+  — enough, measured, to move the very races this sink exists to explain
 - `effect-drain` also splits that `durationMs` into where the batch spent it, so
   a drain that takes seconds names the phase that took them rather than one
   opaque number: `selectionDurationMs` (the page read and every eligibility read

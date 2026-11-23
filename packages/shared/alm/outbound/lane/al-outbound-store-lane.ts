@@ -330,6 +330,7 @@ export class ALOutboundStoreLane<TPrepared> {
             [toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))],
             AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS
         );
+        // Harmless when the batch claims the row: the follow-up batch this owes finds it gone, a readiness probe.
         this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
     }
 
@@ -476,12 +477,16 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
-        return await settleALOutboundClaim({
+        const settled = await settleALOutboundClaim({
             ...settlement,
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.input.runtime.workClock.nowMs(),
-            runs: this.claimRuns
+            timed: this.input.runtime.diagnostics !== undefined
         });
+        if (settled.run !== undefined) {
+            this.claimRuns.push(settled.run);
+        }
+        return settled.outcome;
     }
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
