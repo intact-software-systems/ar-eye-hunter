@@ -21,9 +21,9 @@ export const QRtcSignalingMsgType = {
 export type QRtcSignalingMsgType = (typeof QRtcSignalingMsgType)[keyof typeof QRtcSignalingMsgType];
 
 /**
- * Every signal carries `connectionGeneration`, the sending connection's generation: it rises with each new
- * connection a runtime opens to one peer, so a receiver can tell a signal of a superseded remote connection, or of one
- * whose description it has not applied yet, from one of the remote description it holds.
+ * Every signal carries `connectionGeneration`, the generation of the sending peer connection instance: it rises with
+ * each new instance a runtime opens to one peer, so a receiver can tell a signal of a superseded remote connection, or
+ * of one whose description it has not applied yet, from one of the newest remote connection it applied.
  */
 export type QRtcSignal =
     | {
@@ -44,11 +44,13 @@ export type QRtcSignal =
             readonly candidate: null;
         };
     }
-    | {
-        readonly signalType: 'IceCandidate';
-        readonly connectionGeneration: number;
-        readonly payload: { readonly description: null; readonly candidate: RTCIceCandidateInit; };
-    };
+    | QRtcIceCandidateSignal;
+
+export interface QRtcIceCandidateSignal {
+    readonly signalType: 'IceCandidate';
+    readonly connectionGeneration: number;
+    readonly payload: { readonly description: null; readonly candidate: RTCIceCandidateInit; };
+}
 
 export type QRtcSignalingMessage = QRtcSignal & {
     channel: typeof QRtcSignalingChannel.RtcSignal;

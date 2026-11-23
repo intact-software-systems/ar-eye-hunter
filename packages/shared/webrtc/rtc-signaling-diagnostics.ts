@@ -354,30 +354,19 @@ export namespace RtcSignalingDiagnostics {
                 | {
                     readonly kind: 'native-signal-decision';
                     readonly nativeIdentity: NativeIdentity;
-                    /** An offer below the highest generation this connection applied, refused unanswered. */
-                    readonly disposition: 'offer-superseded';
+                    /**
+                     * An offer refused unanswered, or a candidate dropped unapplied, because it comes from a remote
+                     * connection older than the newest one whose description this connection applied.
+                     */
+                    readonly disposition: GenerationRefusal;
                     readonly capturedPeerConnection: true;
                     readonly currentPeerConnection: true;
                     readonly offerMatches: undefined;
                     readonly signalingState: RTCSignalingState;
-                    /** The refused offer's generation. */
-                    readonly offerGeneration: number;
-                    /** The highest offer generation this connection has applied. */
-                    readonly appliedOfferGeneration: number;
-                }
-                | {
-                    readonly kind: 'native-signal-decision';
-                    readonly nativeIdentity: NativeIdentity;
-                    /** A candidate older than the remote description the native connection holds, dropped unapplied. */
-                    readonly disposition: 'ice-superseded';
-                    readonly capturedPeerConnection: true;
-                    readonly currentPeerConnection: true;
-                    readonly offerMatches: undefined;
-                    readonly signalingState: RTCSignalingState;
-                    /** The dropped candidate's connection generation. */
-                    readonly candidateGeneration: number;
-                    /** The connection generation of the remote description the native connection holds. */
-                    readonly remoteDescriptionGeneration: number;
+                    /** The refused signal's connection generation. */
+                    readonly connectionGeneration: number;
+                    /** The highest remote connection generation this connection has applied. */
+                    readonly appliedRemoteGeneration: number;
                 }
                 | {
                     readonly kind: 'signal-caller-release';

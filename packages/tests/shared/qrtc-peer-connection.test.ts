@@ -567,8 +567,8 @@ describe('QRtcPeerConnection', () => {
                     capturedPeerConnection: true,
                     currentPeerConnection: true,
                     signalingState: 'stable',
-                    offerGeneration: 19,
-                    appliedOfferGeneration: 20
+                    connectionGeneration: 19,
+                    appliedRemoteGeneration: 20
                 }),
                 expect.objectContaining({ disposition: 'application-returned' })
             ]);
@@ -591,8 +591,8 @@ describe('QRtcPeerConnection', () => {
             .toContainEqual(expect.objectContaining({
                 disposition: 'offer-superseded',
                 signalingState: 'have-local-offer',
-                offerGeneration: 19,
-                appliedOfferGeneration: 20
+                connectionGeneration: 19,
+                appliedRemoteGeneration: 20
             }));
     });
 
@@ -610,8 +610,8 @@ describe('QRtcPeerConnection', () => {
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'superseded-offer'))
             .toContainEqual(expect.objectContaining({
                 disposition: 'offer-superseded',
-                offerGeneration: 19,
-                appliedOfferGeneration: 20
+                connectionGeneration: 19,
+                appliedRemoteGeneration: 20
             }));
     });
 
@@ -696,10 +696,10 @@ describe('QRtcPeerConnection', () => {
                     capturedPeerConnection: true,
                     currentPeerConnection: true,
                     signalingState: 'have-remote-offer',
-                    candidateGeneration: 10,
-                    remoteDescriptionGeneration: 20
+                    connectionGeneration: 10,
+                    appliedRemoteGeneration: 20
                 }),
-                expect.objectContaining({ signalingState: 'stable', candidateGeneration: 10, remoteDescriptionGeneration: 20 })
+                expect.objectContaining({ signalingState: 'stable', connectionGeneration: 10, appliedRemoteGeneration: 20 })
             ]);
     });
 
@@ -743,7 +743,7 @@ describe('QRtcPeerConnection', () => {
 
         expect(applications).toEqual([{ candidate: 'answering-candidate', remoteSdp: 'answer-sdp' }]);
         expect(events.filter((event) => event.kind === 'native-signal-decision' && event.disposition === 'ice-superseded'))
-            .toEqual([expect.objectContaining({ candidateGeneration: 40, remoteDescriptionGeneration: 50 })]);
+            .toEqual([expect.objectContaining({ connectionGeneration: 40, appliedRemoteGeneration: 50 })]);
 
         await peer.handleSignal(createRemoteOffer('replacement-offer', 60, 'replacement-offer-sdp'));
         expect(applications).toEqual([
@@ -754,6 +754,51 @@ describe('QRtcPeerConnection', () => {
             ['Offer', 7],
             ['Answer', 7]
         ]);
+    });
+
+    it('holds the answering connection candidates until its answer, then applies those of its generation to it', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native } = createPeerFixture(true, {}, createRecordingDependencies(events));
+        const applications = recordCandidateApplications(native);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteCandidate('first-answering-candidate', 50));
+        await peer.handleSignal(createRemoteCandidate('superseded-candidate', 49));
+        await peer.handleSignal(createRemoteCandidate('second-answering-candidate', 50));
+
+        expect(applications).toEqual([]);
+
+        await peer.handleSignal(createRemoteAnswer('offer-1', 50, 'answer-sdp'));
+        expect(applications).toEqual([
+            { candidate: 'first-answering-candidate', remoteSdp: 'answer-sdp' },
+            { candidate: 'second-answering-candidate', remoteSdp: 'answer-sdp' }
+        ]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.disposition === 'ice-superseded'))
+            .toEqual([expect.objectContaining({ connectionGeneration: 49, appliedRemoteGeneration: 50 })]);
+    });
+
+    it('refuses an older remote connection offer after a newer one answered, and applies the newer one candidates', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native, sentSignals } = createPeerFixture(false, {}, createRecordingDependencies(events));
+        const applications = recordCandidateApplications(native);
+        await peer.handleSignal(createRemoteOffer('first-offer', 1, 'first-offer-sdp'));
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        await peer.handleSignal(createRemoteOffer('third-offer', 3, 'third-offer-sdp'));
+        await peer.handleSignal(createRemoteAnswer('offer-1', 3, 'third-answer-sdp'));
+        await peer.handleSignal(createRemoteOffer('second-offer', 2, 'second-offer-sdp'));
+        await peer.handleSignal(createRemoteCandidate('third-candidate', 3));
+
+        expect(peer.readDiagnostics().ignoredOfferCollisionCount).toBe(1);
+        expect(native.receivedDescriptions.map((description) => description.sdp))
+            .toEqual(['first-offer-sdp', 'third-answer-sdp']);
+        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
+            .toEqual([['Answer', 'first-offer'], ['Offer', 'offer-1']]);
+        expect(applications).toEqual([{ candidate: 'third-candidate', remoteSdp: 'third-answer-sdp' }]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'second-offer'))
+            .toContainEqual(expect.objectContaining({
+                disposition: 'offer-superseded',
+                connectionGeneration: 2,
+                appliedRemoteGeneration: 3
+            }));
     });
 
     it('holds at most 64 candidates, displacing the oldest', async () => {

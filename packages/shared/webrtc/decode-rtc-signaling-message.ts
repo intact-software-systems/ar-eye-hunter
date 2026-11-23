@@ -8,6 +8,7 @@ import { validateALMessageResourceLimits } from '../al-contracts/al-message-reso
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 import {
+    QRtcIceCandidateSignal,
     QRtcSignal,
     QRtcSignalingMessage
 } from './qrtc-signaling-contracts.ts';
@@ -97,13 +98,20 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
         throw new RtcSignalingDecodeError('Invalid RTC signaling payload');
     }
     assertRtcSignalingFields(value, ['description', 'candidate']);
+    const connectionGeneration = decodeConnectionGeneration(signal);
     if (signal.signalType === 'IceCandidate') {
-        return decodeIceCandidateSignal(signal, value.description, value.candidate);
+        if ('offerId' in signal) {
+            throw new RtcSignalingDecodeError('Unexpected RTC ICE offer identity');
+        }
+        return {
+            signalType: 'IceCandidate',
+            connectionGeneration,
+            payload: decodeIceCandidatePayload(value.description, value.candidate)
+        };
     }
     if (value.candidate !== null) {
         throw new RtcSignalingDecodeError('Unexpected description candidate');
     }
-    const connectionGeneration = decodeConnectionGeneration(signal);
     if (signal.signalType === 'Answer') {
         return {
             signalType: 'Answer',
@@ -123,18 +131,11 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
     };
 }
 
-function decodeIceCandidateSignal(signal: object, description: unknown, candidate: unknown): QRtcSignal {
+function decodeIceCandidatePayload(description: unknown, candidate: unknown): QRtcIceCandidateSignal['payload'] {
     if (description !== null) {
         throw new RtcSignalingDecodeError('Unexpected ICE description');
     }
-    if ('offerId' in signal) {
-        throw new RtcSignalingDecodeError('Unexpected RTC ICE offer identity');
-    }
-    return {
-        signalType: 'IceCandidate',
-        connectionGeneration: decodeConnectionGeneration(signal),
-        payload: { description: null, candidate: decodeIceCandidate(candidate) }
-    };
+    return { description: null, candidate: decodeIceCandidate(candidate) };
 }
 
 function decodeOfferId(signal: object): string {

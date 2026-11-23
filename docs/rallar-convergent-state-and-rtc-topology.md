@@ -612,35 +612,42 @@ or allocate through a half-created peer record.
 
 Signals carry no ordering key, so one peer's signals can reach the other side
 out of order. Every Offer, Answer and IceCandidate signal therefore carries a
-required `connectionGeneration`, the sending connection's generation, a
-non-negative integer; the shared decoder used by the browser and the server
-route refuses a signal without it. Each runtime assigns each new peer
-connection it opens the generation `max(now, last + 1)` from its epoch clock,
-so a redial outranks the connection it replaced even when the clock repeats or
-steps back, and every signal that connection sends, an ICE restart's included,
-carries it. Generations from the two sides' clocks are never compared with each
-other: a receiver compares only generations the same remote runtime assigned.
+required `connectionGeneration`, a non-negative integer that identifies the
+sending peer connection instance; the shared decoder used by the browser and
+the server route refuses a signal without it. Each runtime gives each new peer
+connection instance it opens the generation `max(now, last + 1)` from its epoch
+clock, so a redial outranks the connection it replaced even when the clock
+repeats or steps back, and calls `connect()` once per instance; every signal
+the instance sends, an ICE restart's included, carries its generation.
+Generations from the two sides' clocks are never compared with each other: a
+receiver compares only generations the same remote runtime assigned.
 
-A connection keeps the highest offer generation it has applied, for its own
-lifetime, across native resets. It refuses an offer below that mark before the
-collision handling: no remote description, no answer, and a
-`native-signal-decision` row with disposition `offer-superseded` carrying the
-refused `offerGeneration` and the `appliedOfferGeneration`. An equal generation
-is the same connection renegotiating and is applied as before; a higher one is
-applied and raises the mark.
+A connection keeps one mark, the highest remote generation whose Offer or
+Answer it has applied, for the lifetime of the instance. It refuses an offer
+below that mark before the collision handling: no remote description, no
+answer, and a `native-signal-decision` row with disposition `offer-superseded`
+carrying the refused signal's `connectionGeneration` and the
+`appliedRemoteGeneration`. An equal generation is the same remote connection
+renegotiating and is applied as before; a higher one is applied and raises the
+mark, and so does an applied Answer, so a remote connection that answered this
+side's offer outranks an older one whose offer arrives later.
 
-A native connection also records the generation of the remote description it
-holds, from the applied Offer or Answer, and judges each remote candidate
-against it. A candidate of that generation is applied. A candidate of a newer
-generation belongs to a remote connection whose description has not arrived
-yet, so it is held, as a candidate before any remote description is, until a
-description of its generation is applied. A candidate of an older generation
-belongs to a superseded remote connection; it is dropped, held or not, with a
-`native-signal-decision` row with disposition `ice-superseded` carrying the
-`candidateGeneration` and the `remoteDescriptionGeneration`. At most 64
-candidates are held; a further one displaces the oldest, recorded as
-`ice-displaced`. Held candidates and the recorded generation belong to the
-native connection and end with it.
+Once its native connection holds a remote description, a connection judges
+each remote candidate against the same mark. A candidate of the marked
+generation is applied. A candidate of a newer generation belongs to a remote
+connection whose description has not arrived yet, so it is held, as a
+candidate before any remote description is, until a description of its
+generation is applied. A candidate of an older generation belongs to a
+superseded remote connection; it is dropped, held or not, with a
+`native-signal-decision` row with disposition `ice-superseded` carrying its
+`connectionGeneration` and the `appliedRemoteGeneration`. At most 64 candidates
+are held; a further one displaces the oldest, recorded as `ice-displaced`. Held
+candidates belong to the native connection and end with it. The rule cannot
+tell candidates of one connection apart: an ICE restart's candidate that
+overtakes the restart offer, and an answerer's candidate gathered under its
+earlier ICE credentials, carry the current generation, so they are applied to
+the description the native connection holds and refused natively, as before
+the generation existed.
 
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat

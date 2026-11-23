@@ -1,5 +1,4 @@
 import { IceConfig } from '../api/api-config.ts';
-import { retainNewest } from '../cache/retain-newest.ts';
 import { toExponentialBackoffMs } from '../resilience/ComputeAsyncTask.ts';
 import { toError } from '../resilience/to-error.ts';
 import { applyRtcMediaPolicy } from './apply-rtc-media-policy.ts';
@@ -9,12 +8,18 @@ import {
 } from './flush-rtc-ice-candidate-queue.ts';
 import { toQRtcSignalingAdmission, type QRtcSignalingAdmission } from './qrtc-signaling-admission.ts';
 import {
+    QRtcIceCandidateSignal,
     QRtcSignal,
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
     QRtcSignalingSender,
     QRtcSignalingType
 } from './qrtc-signaling-contracts.ts';
+import {
+    computeHeldRtcIceCandidates,
+    resolveRtcHeldIceCandidateRelease,
+    resolveRtcIceCandidateAdmission
+} from './rtc-held-ice-candidates.ts';
 import {
     attachRtcNativeListener,
     createRtcNativeBinding,
@@ -83,11 +88,6 @@ type QRtcPeerConnectionDiagnosticCounters = {
         >
     ]: QRtcPeerConnection.Diagnostics[Key];
 };
-
-type IceCandidateAdmission =
-    | { readonly kind: 'apply'; }
-    | { readonly kind: 'hold'; }
-    | { readonly kind: 'supersede'; readonly remoteDescriptionGeneration: number; };
 
 export namespace QRtcPeerConnection {
     export interface NativeObservationBatch {
@@ -181,7 +181,10 @@ export namespace QRtcPeerConnection {
         readonly peerSessionId: string;
         readonly iceCandidates: IceConfig;
         readonly isPolite: boolean;
-        /** Carried on every signal this connection sends; the owning runtime raises it for each new connection. */
+        /**
+         * Identifies this instance to the remote side: the owning runtime gives each new instance a generation above
+         * the ones before and calls `connect()` once per instance, and every signal the instance sends carries it.
+         */
         readonly connectionGeneration: number;
     }
 
@@ -233,9 +236,7 @@ export namespace QRtcPeerConnection {
         makingOffer: boolean;
         ignoreOffer: boolean;
         /** Remote candidates held until the native connection holds the remote description of their generation. */
-        iceCandidateQueue: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>[];
-        /** The connection generation of the remote description the native connection holds, once one is applied. */
-        remoteDescriptionGeneration: number | undefined;
+        iceCandidateQueue: QRtcIceCandidateSignal[];
         reconnectAttempts: number;
         reconnectTimer: ReturnType<typeof setTimeout> | undefined;
         disconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -247,14 +248,17 @@ export class QRtcPeerConnection {
     private readonly RECONNECT_BASE_DELAY_MS: number = 2_000;
     private readonly MAX_RECONNECT_DELAY_MS: number = 32_000;
     private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
-    private readonly MAX_HELD_ICE_CANDIDATES: number = 64;
 
     private signalingChain: Promise<void | RtcSignalingDiagnostics.CallerRelease> = Promise.resolve();
     private signalingLifetime = new AbortController();
     private outboundSignalingChain = Promise.resolve();
     private outstandingOfferId: string | undefined;
-    /** Kept across `reset()`: an offer from a superseded remote connection stays refused while this connection lives. */
-    private highestAppliedOfferGeneration: number | undefined;
+    /**
+     * The newest remote connection generation whose Offer or Answer this connection applied. It is kept across
+     * `reset()`, so a superseded remote connection's offer stays refused and its candidates dropped while this
+     * connection lives.
+     */
+    private highestAppliedRemoteGeneration: number | undefined;
 
     private nativeObservation: QRtcPeerConnection.NativeBinding | undefined;
     private nativeObservationBatch: QRtcPeerConnection.NativeObservationBatch | undefined;
@@ -340,7 +344,6 @@ export class QRtcPeerConnection {
             makingOffer: false,
             ignoreOffer: false,
             iceCandidateQueue: [],
-            remoteDescriptionGeneration: undefined,
             reconnectAttempts: 0,
             reconnectTimer: undefined,
             disconnectTimer: undefined
@@ -1302,17 +1305,15 @@ export class QRtcPeerConnection {
         }
         await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
         this.observeNativeSignal('remote-description-returned', capture, signal);
-        if (this.status.pc !== pc) {
+        if (!(await this.adoptAppliedRemoteGeneration(capture, signal.connectionGeneration))) {
             this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
         }
-        this.outstandingOfferId = undefined;
-        this.status.remoteDescriptionGeneration = signal.connectionGeneration;
-        await this.flushIceCandidates(capture, signal.connectionGeneration);
         if (this.status.pc !== pc) {
             this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
         }
+        this.outstandingOfferId = undefined;
         this.status.makingOffer = false;
         this.status.ignoreOffer = false;
     }
@@ -1349,13 +1350,10 @@ export class QRtcPeerConnection {
             await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
             this.observeNativeSignal('remote-description-returned', capture, signal);
         }
-        this.highestAppliedOfferGeneration = signal.connectionGeneration;
-        if (this.status.pc !== pc) {
+        if (!(await this.adoptAppliedRemoteGeneration(capture, signal.connectionGeneration))) {
             this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
         }
-        this.status.remoteDescriptionGeneration = signal.connectionGeneration;
-        await this.flushIceCandidates(capture, signal.connectionGeneration);
         if (this.status.pc !== pc) {
             this.observeNativeSignal('retired-after-ice-flush', capture, signal);
             return;
@@ -1375,34 +1373,41 @@ export class QRtcPeerConnection {
         capture: QRtcPeerConnection.NativeSignalCapture,
         signal: Extract<QRtcSignal, { signalType: 'Offer'; }>
     ): boolean {
-        const appliedOfferGeneration = this.highestAppliedOfferGeneration;
-        if (appliedOfferGeneration === undefined || signal.connectionGeneration >= appliedOfferGeneration) {
+        const appliedRemoteGeneration = this.highestAppliedRemoteGeneration;
+        if (appliedRemoteGeneration === undefined || signal.connectionGeneration >= appliedRemoteGeneration) {
             return false;
         }
-        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
-            kind: 'native-signal-decision',
-            disposition: 'offer-superseded',
-            localSessionId: this.input.sessionId,
-            peerSessionId: this.input.peerSessionId,
-            signalType: signal.signalType,
-            offerId: signal.offerId,
-            nativeIdentity: capture.nativeIdentity,
-            capturedPeerConnection: true,
-            currentPeerConnection: true,
-            offerMatches: undefined,
-            signalingState: capture.pc.signalingState,
-            offerGeneration: signal.connectionGeneration,
-            appliedOfferGeneration
-        });
+        this.observeGenerationRefusal(capture, signal, appliedRemoteGeneration);
+        return true;
+    }
+
+    /**
+     * Raises the applied remote generation for a description just applied and, while its native connection is
+     * current, releases the candidates held for it. Answers whether the native connection was still current.
+     */
+    private async adoptAppliedRemoteGeneration(
+        capture: QRtcPeerConnection.NativeSignalCapture,
+        connectionGeneration: number
+    ): Promise<boolean> {
+        const appliedRemoteGeneration = Math.max(this.highestAppliedRemoteGeneration ?? 0, connectionGeneration);
+        this.highestAppliedRemoteGeneration = appliedRemoteGeneration;
+        if (this.status.pc !== capture.pc) {
+            return false;
+        }
+        await this.flushIceCandidates(capture, appliedRemoteGeneration);
         return true;
     }
 
     private async flushIceCandidates(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        remoteDescriptionGeneration: number
+        appliedRemoteGeneration: number
     ): Promise<void> {
         const { pc, nativeBatch } = capture;
-        const released = this.releaseHeldIceCandidates(capture, remoteDescriptionGeneration);
+        const release = resolveRtcHeldIceCandidateRelease(this.status.iceCandidateQueue, appliedRemoteGeneration);
+        this.status.iceCandidateQueue = [...release.held];
+        for (const signal of release.superseded) {
+            this.observeGenerationRefusal(capture, signal, appliedRemoteGeneration);
+        }
         const binding = this.nativeObservation?.pc === pc ? this.nativeObservation : undefined;
         const operationOrdinal = binding ? ++this.nativeOperationOrdinal : 0;
         await flushRtcIceCandidateQueue({
@@ -1414,7 +1419,7 @@ export class QRtcPeerConnection {
                         observation
                     )
                 : undefined,
-            queue: released,
+            queue: [...release.applied],
             peerConnection: {
                 addIceCandidate: (candidate) =>
                     this.captureNativeInvocation(nativeBatch, () => pc.addIceCandidate(candidate))
@@ -1428,31 +1433,8 @@ export class QRtcPeerConnection {
         });
     }
 
-    /** Takes out the held candidates of the applied generation; drops the older ones and keeps the newer ones held. */
-    private releaseHeldIceCandidates(
-        capture: QRtcPeerConnection.NativeSignalCapture,
-        remoteDescriptionGeneration: number
-    ): RTCIceCandidateInit[] {
-        const held = this.status.iceCandidateQueue.splice(0).map((signal) => ({
-            signal,
-            admission: resolveIceCandidateAdmission(signal.connectionGeneration, remoteDescriptionGeneration)
-        }));
-        this.status.iceCandidateQueue.push(
-            ...held.filter(({ admission }) => admission.kind === 'hold').map(({ signal }) => signal)
-        );
-        for (const { signal, admission } of held) {
-            if (admission.kind === 'supersede') {
-                this.observeSupersededIceCandidate(capture, signal, admission.remoteDescriptionGeneration);
-            }
-        }
-        return held.filter(({ admission }) => admission.kind === 'apply').map(({ signal }) => signal.payload.candidate);
-    }
-
-    private holdIceCandidate(
-        capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>
-    ): void {
-        const held = retainNewest([...this.status.iceCandidateQueue, signal], this.MAX_HELD_ICE_CANDIDATES);
+    private holdIceCandidate(capture: QRtcPeerConnection.NativeSignalCapture, signal: QRtcIceCandidateSignal): void {
+        const held = computeHeldRtcIceCandidates(this.status.iceCandidateQueue, signal);
         this.status.iceCandidateQueue = [...held.retained];
         this.diagnostics.queuedIceCandidateCount++;
         this.observeNativeSignal('ice-queued', capture, signal);
@@ -1461,25 +1443,25 @@ export class QRtcPeerConnection {
         }
     }
 
-    private observeSupersededIceCandidate(
+    private observeGenerationRefusal(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>,
-        remoteDescriptionGeneration: number
+        signal: Extract<QRtcSignal, { signalType: 'Offer'; }> | QRtcIceCandidateSignal,
+        appliedRemoteGeneration: number
     ): void {
         recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
             kind: 'native-signal-decision',
-            disposition: 'ice-superseded',
+            disposition: signal.signalType === 'Offer' ? 'offer-superseded' : 'ice-superseded',
             localSessionId: this.input.sessionId,
             peerSessionId: this.input.peerSessionId,
             signalType: signal.signalType,
-            offerId: undefined,
+            offerId: signal.signalType === 'Offer' ? signal.offerId : undefined,
             nativeIdentity: capture.nativeIdentity,
             capturedPeerConnection: true,
             currentPeerConnection: true,
             offerMatches: undefined,
             signalingState: capture.pc.signalingState,
-            candidateGeneration: signal.connectionGeneration,
-            remoteDescriptionGeneration
+            connectionGeneration: signal.connectionGeneration,
+            appliedRemoteGeneration
         });
     }
 
@@ -1514,7 +1496,7 @@ export class QRtcPeerConnection {
 
     private async handleInboundIceCandidate(
         capture: QRtcPeerConnection.NativeSignalCapture,
-        signal: Extract<QRtcSignal, { signalType: 'IceCandidate'; }>
+        signal: QRtcIceCandidateSignal
     ): Promise<void> {
         const pc = capture.pc;
         this.diagnostics.inboundIceCandidateCount++;
@@ -1523,16 +1505,16 @@ export class QRtcPeerConnection {
             this.observeNativeSignal('ice-ignored', capture, signal);
             return;
         }
-        const admission = resolveIceCandidateAdmission(
-            signal.connectionGeneration,
-            this.status.remoteDescriptionGeneration
-        );
-        if (admission.kind === 'hold') {
+        const appliedRemoteGeneration = pc.remoteDescription ? this.highestAppliedRemoteGeneration : undefined;
+        const admission = appliedRemoteGeneration === undefined
+            ? 'hold'
+            : resolveRtcIceCandidateAdmission(signal.connectionGeneration, appliedRemoteGeneration);
+        if (admission === 'hold' || appliedRemoteGeneration === undefined) {
             this.holdIceCandidate(capture, signal);
             return;
         }
-        if (admission.kind === 'supersede') {
-            this.observeSupersededIceCandidate(capture, signal, admission.remoteDescriptionGeneration);
+        if (admission === 'supersede') {
+            this.observeGenerationRefusal(capture, signal, appliedRemoteGeneration);
             return;
         }
         try {
@@ -1849,23 +1831,6 @@ export class QRtcPeerConnection {
             applyRtcMediaPolicy(pc, policy);
         }
     }
-}
-
-/**
- * A remote candidate belongs to the remote connection that gathered it, so it applies only to that connection's
- * description: one from a connection whose description has not arrived waits for it, and one from a connection the
- * applied description superseded can never apply.
- */
-function resolveIceCandidateAdmission(
-    candidateGeneration: number,
-    remoteDescriptionGeneration: number | undefined
-): IceCandidateAdmission {
-    if (remoteDescriptionGeneration === undefined || candidateGeneration > remoteDescriptionGeneration) {
-        return { kind: 'hold' };
-    }
-    return candidateGeneration < remoteDescriptionGeneration
-        ? { kind: 'supersede', remoteDescriptionGeneration }
-        : { kind: 'apply' };
 }
 
 function createInitialDiagnostics(): QRtcPeerConnectionDiagnosticCounters {

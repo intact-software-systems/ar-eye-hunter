@@ -746,19 +746,12 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
 
 /** The two connection generations a refusal compared; other dispositions carry none. */
 function toRtcGenerationRefusalObservation(disposition: string, event: LiveRtcJsonRecord): LiveRtcJsonRecord {
-    if (disposition === 'offer-superseded') {
-        return {
-            offerGeneration: toFiniteNonnegativeObservation(event.offerGeneration),
-            appliedOfferGeneration: toFiniteNonnegativeObservation(event.appliedOfferGeneration)
-        };
-    }
-    if (disposition === 'ice-superseded') {
-        return {
-            candidateGeneration: toFiniteNonnegativeObservation(event.candidateGeneration),
-            remoteDescriptionGeneration: toFiniteNonnegativeObservation(event.remoteDescriptionGeneration)
-        };
-    }
-    return {};
+    return disposition === 'offer-superseded' || disposition === 'ice-superseded'
+        ? {
+            connectionGeneration: toFiniteNonnegativeObservation(event.connectionGeneration),
+            appliedRemoteGeneration: toFiniteNonnegativeObservation(event.appliedRemoteGeneration)
+        }
+        : {};
 }
 
 function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
