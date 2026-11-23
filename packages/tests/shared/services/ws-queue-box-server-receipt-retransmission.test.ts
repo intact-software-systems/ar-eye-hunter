@@ -136,6 +136,9 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         const copiesBeforeTheEnd = countCopies(server.sockets.r2, MSG);
         const attemptsBeforeTheTimer = (await server.store.readReceiptState(REF))?.attempts;
         expect(attemptsBeforeTheTimer).toBeDefined();
+        if (attemptsBeforeTheTimer === undefined) {
+            throw new Error('The server has no receipt row for the message');
+        }
 
         let arrived = false;
         void hold.arrived.then(() => {
@@ -154,7 +157,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
             await expect.poll(async () => {
                 await server.engine.executeOnce();
                 return (await server.store.readReceiptState(REF))?.attempts;
-            }).toBe(attemptsBeforeTheTimer! + 1);
+            }).toBe(attemptsBeforeTheTimer + 1);
             await pollRetrySettled(server);
             expect(countCopies(server.sockets.r2, MSG)).toBe(copiesBeforeTheEnd);
 
@@ -198,6 +201,10 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         await expect.poll(async () => {
             await server.engine.executeOnce();
             return (await server.record.read(REF)).right?.head.phase;
+        }).toBe('complete');
+        await expect.poll(async () => {
+            await server.engine.executeOnce();
+            return readOriginTerminalReceipt([server.sockets.o], MSG)?.phase;
         }).toBe('complete');
         await pollRowEnded(server);
         await pollRetrySettled(server);
