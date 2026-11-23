@@ -17,7 +17,7 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { toALOutboundMessageVersionKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundSentMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { computeALOutboundControlAdmission, type ALControlAdmissionRead } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
@@ -202,7 +202,7 @@ describe('outbound control version candidate', () => {
         vi.spyOn(backend, 'write').mockImplementationOnce(async (apply) => {
             await write(async (tx) => {
                 await tx.set(
-                    toALOutboundMessageVersionKey({ namespace, originPeerId: 'self', msgId: message.id.msgId }),
+                    toALOutboundOriginMessageKey({ row: 'msg-version', namespace, originPeerId: 'self', msgId: message.id.msgId }),
                     { msgId: message.id.msgId, version: 2 },
                     Date.now() + 60_000
                 );
@@ -215,7 +215,9 @@ describe('outbound control version candidate', () => {
         expect(injected).toBe(true);
         expect(await backend.read(`${namespace}:control:nacks:${message.id.msgId}`, (value) => value)).toBeUndefined();
         expect(await controlAdmission.admit(control, 'peer')).toEqual({ kind: 'committed' });
-        expect(await backend.read(toALOutboundMessageVersionKey({ namespace, originPeerId: 'self', msgId: message.id.msgId }), (value) => value))
+        expect(
+            await backend.read(toALOutboundOriginMessageKey({ row: 'msg-version', namespace, originPeerId: 'self', msgId: message.id.msgId }), (value) => value)
+        )
             .toEqual({ msgId: message.id.msgId, version: 3 });
         expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 1 });
     });

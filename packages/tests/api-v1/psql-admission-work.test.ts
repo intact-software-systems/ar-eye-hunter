@@ -23,7 +23,7 @@ import type {
     ALInboundAdmissionStore,
     ALInboundWriteRequest
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { toALOutboundMessageVersionKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -397,7 +397,7 @@ describe('PostgreSQL outbound admission', () => {
         expect(JSON.parse(versionEntry!.value)).toEqual({ senderId: 'self', version: 1 });
         const messageVersionEntry = await repository.findEntry(
             namespace,
-            toALOutboundMessageVersionKey({ namespace, originPeerId: 'self', msgId: msg.id.msgId })
+            toALOutboundOriginMessageKey({ row: 'msg-version', namespace, originPeerId: 'self', msgId: msg.id.msgId })
         );
         expect(JSON.parse(messageVersionEntry!.value)).toEqual({ msgId: msg.id.msgId, version: 2 });
 

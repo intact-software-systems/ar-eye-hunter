@@ -22,8 +22,7 @@ import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-out
 import {
     toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
-    toALOutboundMessageVersionKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
@@ -344,7 +343,8 @@ export class ALOutboundAdmissionMutations {
         nowMs: number
     ): Promise<void> {
         await transaction.setFence(
-            toALOutboundMessageVersionKey({
+            toALOutboundOriginMessageKey({
+                row: 'msg-version',
                 namespace: this.namespace,
                 originPeerId: fence.originPeerId,
                 msgId: fence.msgId
@@ -499,7 +499,8 @@ export class ALOutboundAdmissionMutations {
                 guard: undefined
             }
             : {
-                key: toALOutboundPendingAckKey({
+                key: toALOutboundOriginMessageKey({
+                    row: 'pending-ack',
                     namespace: this.namespace,
                     originPeerId: mutation.originPeerId,
                     msgId: mutation.snapshot.msgId
@@ -526,7 +527,8 @@ export class ALOutboundAdmissionMutations {
             case 'delete-sent-message':
                 return toALOutboundSentMessageKey(this.namespace, mutation.msgId);
             case 'delete-pending-ack':
-                return toALOutboundPendingAckKey({
+                return toALOutboundOriginMessageKey({
+                    row: 'pending-ack',
                     namespace: this.namespace,
                     originPeerId: mutation.originPeerId,
                     msgId: mutation.msgId

@@ -26,7 +26,7 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
     toALOutboundMessageOwnerKey,
-    toALOutboundMessageVersionKey,
+    toALOutboundOriginMessageKey,
     toALOutboundVersionKey,
     type ALOutboundPendingAckRef
 } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
@@ -130,7 +130,8 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
 
         expect(fences).toEqual([
             toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId),
-            toALOutboundMessageVersionKey({
+            toALOutboundOriginMessageKey({
+                row: 'msg-version',
                 namespace: FENCE_NAMESPACE,
                 originPeerId: bundle.message.originPeerId,
                 msgId: bundle.message.msgId

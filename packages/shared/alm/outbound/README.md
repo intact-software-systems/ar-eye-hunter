@@ -374,7 +374,7 @@ from its snapshot (the inbound README's decision-surface section), so `ALOutboun
 never loses an acknowledgement to a throw out of `readControlAdmission` or its effect read.
 
 Each message has a version row, keyed by its origin and id as its receipt row is (D40,
-`toALOutboundMessageVersionKey`). Every commit that writes one of the message's rows -- its owner, sent row, receipt,
+`toALOutboundOriginMessageKey`). Every commit that writes one of the message's rows -- its owner, sent row, receipt,
 repair count, first-hop wait or control histories -- moves that version, and fences on the version its read saw. A
 bundle fences on the sender version too, because its decision reads rows other messages of the sender share: the
 track head, the sent positions, the room sent floor and the supersedence latest. A peer control reads and writes only
@@ -581,7 +581,7 @@ forwarded it: a relay forwards its child's signed control and cannot speak for t
 inbound README). A retained control keeps its source for its replay, and its replay verifies it again.
 
 A receipt row is keyed by its origin and message id
-(`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
+(`toALOutboundOriginMessageKey({ namespace, row: 'pending-ack', originPeerId, msgId })`), so origins that share one
 store namespace never collide on a message id. Its `mode` is the send's resolved ack algorithm
 and types its peer lists: next hops under `hop` and `subtree`, logical recipients under
 `receiver` and `leader`. Its `firstAttempt` names the dispatch that opened it, its attempt identity and phase, so its

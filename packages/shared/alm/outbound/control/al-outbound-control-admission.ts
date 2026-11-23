@@ -25,7 +25,7 @@ import {
     toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
     toALOutboundNotYetInSyncRetryKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundRepairAttemptKey,
     toALOutboundVersionKey
 } from '../admission/al-outbound-admission-keys.ts';
@@ -450,7 +450,8 @@ export class ALOutboundControlAdmission<TPrepared> {
         candidate: ALControlAdmissionCandidate
     ): Promise<void> {
         const { read } = candidate;
-        const pendingAckKey = toALOutboundPendingAckKey({
+        const pendingAckKey = toALOutboundOriginMessageKey({
+            row: 'pending-ack',
             namespace: this.namespace,
             originPeerId: read.owner!,
             msgId: read.targetMsgId

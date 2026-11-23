@@ -10,7 +10,7 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { toALOutboundPendingAckKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { toALOutboundOriginMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner
@@ -63,11 +63,7 @@ function createGuardsTestStores(dbName: string): ALOutboundRuntimeStores<Outboun
 
 /** Writes a row the receipt decoder rejects straight into the state store, past every admission check. */
 async function writeCorruptReceiptRow(dbName: string, message: ALMessage): Promise<void> {
-    const key = toALOutboundPendingAckKey({
-        namespace: GUARDS_NAMESPACE,
-        originPeerId: message.id.senderId,
-        msgId: message.id.msgId
-    });
+    const key = toALOutboundOriginMessageKey({ row: 'pending-ack', namespace: GUARDS_NAMESPACE, originPeerId: message.id.senderId, msgId: message.id.msgId });
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(dbName);
         request.onsuccess = () => resolve(request.result);

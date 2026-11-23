@@ -54,8 +54,7 @@ import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-a
 import {
     toALOutboundControlHistoryKey,
     toALOutboundFirstHopWaitKey,
-    toALOutboundMessageVersionKey,
-    toALOutboundPendingAckKey,
+    toALOutboundOriginMessageKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
@@ -503,7 +502,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.readValue(
             session,
-            toALOutboundPendingAckKey({ namespace: this.namespace, ...receipt }),
+            toALOutboundOriginMessageKey({ row: 'pending-ack', namespace: this.namespace, ...receipt }),
             (value) => decodeALOutboundPendingAck(value, receipt.msgId)
         );
     }
@@ -578,7 +577,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): Promise<ALOutboundMessageVersion | undefined> {
         return await this.readValue(
             session,
-            toALOutboundMessageVersionKey({
+            toALOutboundOriginMessageKey({
+                row: 'msg-version',
                 namespace: this.namespace,
                 originPeerId: message.originPeerId,
                 msgId: message.msgId
