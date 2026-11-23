@@ -10,9 +10,9 @@ const CLAIM = {
 };
 
 it.each([
-    { timed: false, clockReadCount: 0, run: undefined },
-    { timed: true, clockReadCount: 2, run: { payloadKind: 'send-prepared', durationMs: 6 } }
-])('reads the clock $clockReadCount times for a claim whose timing is wanted: $timed', async ({ timed, clockReadCount, run }) => {
+    { timed: false, clockReadCount: 0, runs: [] },
+    { timed: true, clockReadCount: 2, runs: [{ payloadKind: 'send-prepared', durationMs: 6 }] }
+])('reads the clock $clockReadCount times for a claim whose timing is wanted: $timed', async ({ timed, clockReadCount, runs }) => {
     // The clock read is itself the requirement: a lane with no diagnostics sink pays for no timing.
     const clockReads: number[] = [];
     const readNowMs = () => {
@@ -30,6 +30,6 @@ it.each([
         timed
     });
 
-    expect(settled).toEqual({ outcome: { status: 'completed' }, run });
+    expect(settled).toEqual({ outcome: { status: 'completed' }, runs });
     expect(clockReads).toHaveLength(clockReadCount);
 });

@@ -324,6 +324,7 @@ export class ALWorkHandler {
      * claims any due row. A row named again before the batch read it is read once.
      */
     expedite(keys: readonly Key[], maxRuns: number): void {
+        assertALWorkExpeditedRuns(maxRuns);
         if (this.batch !== undefined) {
             keys.forEach((key) => this.expedited.set(toKeyAsString(key), { key, maxRuns }));
         }
@@ -750,6 +751,13 @@ export class ALWorkHandler {
             return;
         }
         storageHealth.recordFailure(unavailable);
+    }
+}
+
+/** A row given no run would never meet the bound that sends its retry to the batch's release. */
+function assertALWorkExpeditedRuns(maxRuns: number): void {
+    if (!Number.isSafeInteger(maxRuns) || maxRuns < 1) {
+        throw new RangeError('An expedited row is given at least one run');
     }
 }
 

@@ -2,9 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
-import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import { createALWorkQueuePort, type ALWorkOutcome, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '@shared/alm/work/al-work-readiness-memory.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { newWorkEntry, readTestALWorkReadyAtMs, toTestALWorkReadySelection } from './al-work-test-entries.ts';
@@ -15,7 +16,10 @@ const MAX_RUNS = 3;
 
 interface ExpediteHarness {
     readonly handler: ALWorkHandler;
+    readonly queue: InMemoryQueueBox;
     readonly port: ALWorkQueuePort;
+    /** What a row's claim answers on each run; a row named nowhere completes. */
+    readonly answers: Map<string, () => ALWorkOutcome>;
     /** Each row read for an expedited claim and each claim run, in order: `read:<id>` and `run:<id>`. */
     readonly log: string[];
     /** Holds the claim of a row until the returned gate opens. */
@@ -26,6 +30,7 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
     const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(NOW_MS));
     const log: string[] = [];
     const gates = new Map<string, Promise<void>>();
+    const answers = new Map<string, () => ALWorkOutcome>();
     const queuePort = createALWorkQueuePort({
         queue,
         workTypes: AL_TEST_TYPES,
@@ -57,14 +62,16 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
         runClaim: async (claim) => {
             log.push(`run:${claim.entry.key.contextId}`);
             await gates.get(claim.entry.key.contextId);
-            return { status: 'completed' };
+            return answers.get(claim.entry.key.contextId)?.() ?? { status: 'completed' };
         },
         diagnostics: undefined
     });
     onTestFinished(() => handler.dispose());
     return {
         handler,
+        queue,
         port,
+        answers,
         log,
         hold: (effectId) => {
             const gate = Promise.withResolvers<void>();
@@ -137,4 +144,44 @@ it('runs a row the batch already holds once, though it was named while that clai
     await expect.poll(() => harness.log).toContain('read:taken');
     await harness.handler.dispose();
     expect(harness.log).toEqual(['run:taken', 'read:taken']);
+});
+
+it('gives an expedited row that keeps answering retry its runs, then leaves its retry to the batch release', async () => {
+    const harness = createExpediteHarness(16);
+    harness.answers.set('parked', () => ({ status: 'retry' }));
+    const open = await startBatchHeldOn(harness, 'in-flight');
+
+    await retainExpedited(harness, ['parked']);
+    open();
+
+    await expect.poll(async () => (await harness.queue.getItem(newWorkEntry('AL_TEST', 'parked').key))?.status)
+        .toBe(EntityStatus.RETRY);
+    await harness.handler.dispose();
+    expect(harness.log).toEqual(['run:in-flight', 'read:parked', 'run:parked', 'run:parked', 'run:parked']);
+});
+
+it('runs an expedited row no more once the handler is disposed', async () => {
+    const harness = createExpediteHarness(16);
+    const disposals: Promise<void>[] = [];
+    harness.answers.set('parked', () => {
+        disposals.push(harness.handler.dispose());
+        return { status: 'retry' };
+    });
+    const open = await startBatchHeldOn(harness, 'in-flight');
+
+    await retainExpedited(harness, ['parked']);
+    open();
+
+    await expect.poll(() => disposals).toHaveLength(1);
+    await Promise.all(disposals);
+    expect(harness.log).toEqual(['run:in-flight', 'read:parked', 'run:parked']);
+});
+
+it('refuses an expedited row given no run', async () => {
+    const harness = createExpediteHarness(16);
+    const open = await startBatchHeldOn(harness, 'in-flight');
+
+    expect(() => harness.handler.expedite([newWorkEntry('AL_TEST', 'parked').key], 0))
+        .toThrow('An expedited row is given at least one run');
+    open();
 });

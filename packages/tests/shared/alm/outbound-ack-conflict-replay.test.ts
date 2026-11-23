@@ -188,14 +188,18 @@ it.each(
 // A peer ACK parks on its first lost commit and a server receipt on its third; each further one is a replay's in the batch.
 it.each(
     [
-        { path: 'peer ACK', lostCommits: 1 },
-        { path: 'peer ACK', lostCommits: 3 },
-        { path: 'server receipt', lostCommits: 3 },
-        { path: 'server receipt', lostCommits: 5 }
+        { path: 'peer ACK', lostCommits: 1, state: 'acknowledged', confirmed: ['receiver'] },
+        { path: 'peer ACK', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'] },
+        // Its three runs spent, the replay's retry waits for the batch's release.
+        { path: 'peer ACK', lostCommits: 4, state: 'transport-accepted', confirmed: [] },
+        { path: 'server receipt', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'] },
+        { path: 'server receipt', lostCommits: 5, state: 'acknowledged', confirmed: ['receiver'] },
+        // Each run makes three attempts: the first replay loses all of its own and the batch runs it again.
+        { path: 'server receipt', lostCommits: 7, state: 'acknowledged', confirmed: ['receiver'] }
     ] as const
 )(
-    'commits a parked $path that lost $lostCommits commits before the claims queued behind the in-flight one of its batch',
-    async ({ path, lostCommits }) => {
+    'reads a parked $path that lost $lostCommits commits as $state when the claim queued behind the in-flight one starts',
+    async ({ path, lostCommits, state, confirmed }) => {
         const nowMs = 10_000;
         const clock = () => nowMs;
         vi.spyOn(Date, 'now').mockImplementation(clock);
@@ -282,10 +286,7 @@ it.each(
         gates.get('first')!();
         await waitUntil(() => gates.has('second'));
 
-        expect(handle.lifecycle()).toMatchObject({
-            state: 'acknowledged',
-            evidence: { confirmedRecipientPeerIds: ['receiver'] }
-        });
+        expect(handle.lifecycle()).toMatchObject({ state, evidence: { confirmedRecipientPeerIds: confirmed } });
         expect(competingRepairs).toBe(lostCommits);
     }
 );

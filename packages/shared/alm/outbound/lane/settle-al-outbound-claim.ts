@@ -2,6 +2,7 @@ import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
+import type { ALOutboundDurableEffect } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
@@ -16,16 +17,8 @@ export interface ALOutboundClaimObservation {
     verdict?: ALDeliveryAdmissionVerdict['kind'];
 }
 
-/** The effects an outbound work row holds, as `ALOutboundDurableEffect` names them. */
-export type ALOutboundDurableEffectKind =
-    | 'admit-message'
-    | 'send-prepared'
-    | 'ack-timeout'
-    | 'first-hop-timeout'
-    | 'repair-hint'
-    | 'nack-retry'
-    | 'admit-control'
-    | 'dequeue-message';
+/** The effects an outbound work row holds; a kind does not depend on the type of the prepared copy a send carries. */
+export type ALOutboundDurableEffectKind = ALOutboundDurableEffect<never>['kind'];
 
 /** One claim of an outbound batch as its drain states it: the effect its row held and what running it cost. */
 export interface ALOutboundClaimRun {
@@ -33,10 +26,11 @@ export interface ALOutboundClaimRun {
     readonly durationMs: number;
 }
 
-/** What a claim answered the work handler, and its run when its timing was wanted and its work decoded. */
+/** What a claim answered the work handler, and its one run when its timing was wanted and its work decoded. */
 export interface ALOutboundSettledClaim {
     readonly outcome: ALWorkAttemptResult;
-    readonly run: ALOutboundClaimRun | undefined;
+    /** The claim's run, or none: a lane with no diagnostics sink takes none. */
+    readonly runs: readonly ALOutboundClaimRun[];
 }
 
 /** The work attempt and physical claim identity handed from the lane or group to settlement. */
@@ -112,9 +106,9 @@ export async function settleALOutboundClaim<TPrepared>(
     const { payloadKind } = settlement.observed;
     return {
         outcome,
-        run: startedAtMs === undefined || payloadKind === undefined
-            ? undefined
-            : { payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }
+        runs: startedAtMs === undefined || payloadKind === undefined
+            ? []
+            : [{ payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }]
     };
 }
 

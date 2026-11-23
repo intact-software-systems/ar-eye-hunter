@@ -439,10 +439,11 @@ every session the page opens. The event's `data` is the event itself:
   below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
   `startedAtMs`. It has no `selectionDurationMs` or `queueWaitMs`: the outbound
   owner reserves straight from the queue, so it reads no page and sees no row's
-  due time. Then
-  `claims`, one `{ payloadKind, durationMs }` for each claim whose row's work
-  decoded, in the order the claims settled: `payloadKind` is the effect the row
-  held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
+  due time. Then `claims`, one `{ payloadKind, durationMs }` for each run of a
+  claim whose row's work decoded, in the order the runs settled. A parked
+  control's replay the batch runs again appears once per run, up to three
+  times, so `claims` can be longer than `claimedCount`. `payloadKind` is the
+  effect the row held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
   `ack-timeout`, `first-hop-timeout`, `repair-hint` or `nack-retry`) and
   `durationMs` what running it cost the batch, from the moment the batch awaited
   it to its settlement. A send whose carrier queued the bytes settles there, so
