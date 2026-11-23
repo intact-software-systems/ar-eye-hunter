@@ -468,23 +468,13 @@ export class ALOutboundStoreLane<TPrepared> {
         });
     }
 
-    /** A claim runs from the moment its settlement is awaited: at once alone, and from the group's start in a group. */
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
-        const { workClock } = this.input.runtime;
-        const startedAtMs = workClock.nowMs();
-        try {
-            return await settleALOutboundClaim({
-                ...settlement,
-                capture: this.input.runtime.receiptWorkCapture,
-                readNowMs: () => workClock.nowMs()
-            });
-        }
-        finally {
-            const { payloadKind } = settlement.observed;
-            if (payloadKind !== undefined) {
-                this.claimRuns.push({ payloadKind, durationMs: Math.max(0, workClock.nowMs() - startedAtMs) });
-            }
-        }
+        return await settleALOutboundClaim({
+            ...settlement,
+            capture: this.input.runtime.receiptWorkCapture,
+            readNowMs: () => this.input.runtime.workClock.nowMs(),
+            runs: this.claimRuns
+        });
     }
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */

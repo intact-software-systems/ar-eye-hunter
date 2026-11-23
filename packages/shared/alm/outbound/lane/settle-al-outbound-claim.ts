@@ -19,7 +19,7 @@ export interface ALOutboundClaimObservation {
 
 /** One claim of an outbound batch as its drain states it: the effect its row held and what running it cost. */
 export interface ALOutboundClaimRun {
-    readonly payloadKind: ALOutboundDurableEffect<unknown>['kind'];
+    readonly payloadKind: ALOutboundDurableEffect<never>['kind'];
     readonly durationMs: number;
 }
 
@@ -34,6 +34,8 @@ export interface ALOutboundClaimAttemptSettlement {
 export interface ALOutboundClaimSettlement<TPrepared> extends ALOutboundClaimAttemptSettlement {
     readonly capture: ALOutboundReceiptWorkEvidence.Capture<TPrepared> | undefined;
     readonly readNowMs: () => number;
+    /** The batch's settled claims, which this one joins once it settles. */
+    readonly runs: ALOutboundClaimRun[];
 }
 
 /** A claim keeps stage details only when it is a timed foreign outbox row. */
@@ -87,6 +89,7 @@ export async function settleALOutboundClaim<TPrepared>(
     settlement: ALOutboundClaimSettlement<TPrepared>
 ): Promise<ALWorkAttemptResult> {
     const { capture, observed } = settlement;
+    const startedAtMs = settlement.readNowMs();
     let result: ALWorkAttemptResult | undefined;
     try {
         result = await settlement.attempt;
@@ -101,6 +104,7 @@ export async function settleALOutboundClaim<TPrepared>(
         throw error;
     }
     finally {
+        recordALOutboundClaimRun(settlement, startedAtMs);
         try {
             if (capture !== undefined) {
                 observed.evidence?.publish(capture.observer, result);
@@ -115,5 +119,19 @@ export async function settleALOutboundClaim<TPrepared>(
                 });
             }
         }
+    }
+}
+
+/**
+ * A claim runs from the moment its settlement is awaited: at once alone, and from the group's start in a group. A claim
+ * whose work never decoded states no run.
+ */
+function recordALOutboundClaimRun<TPrepared>(
+    settlement: ALOutboundClaimSettlement<TPrepared>,
+    startedAtMs: number
+): void {
+    const { payloadKind } = settlement.observed;
+    if (payloadKind !== undefined) {
+        settlement.runs.push({ payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) });
     }
 }
