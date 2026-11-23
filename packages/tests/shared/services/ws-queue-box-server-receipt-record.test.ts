@@ -654,6 +654,26 @@ describe('the WS server counts a receipt through the record every instance share
             cluster.observations.filter((observation) => observation.kind === 'receipt-outbox' && observation.receipt.phase === 'complete')
         ).toHaveLength(1);
     });
+
+    // Ruling R27: pins a copy opening a record whose terminal receipt can never be delivered, so its ended work throws.
+    it('a re-sent copy of a send whose receipt could not be encoded opens nothing', async () => {
+        const cluster = createRecordCluster();
+        const room = [ORIGIN, ...toLongRecipientPeerIds(250)];
+        const a = await startInstance(cluster, instanceInput('a', room));
+        const c = await startInstance(cluster, instanceInput('c', room));
+        await connectOrigin(cluster, a);
+        await connectOrigin(cluster, c);
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
+
+        expect((await c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('duplicate');
+        await settleEngines([a, c]);
+
+        expect(readHeadKeys(cluster)).toEqual([]);
+        expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
+            .toBeUndefined();
+        expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
+        expect(phases(cluster)).toEqual([]);
+    });
 });
 
 function createRecordCluster(): RecordCluster {

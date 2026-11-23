@@ -41,9 +41,13 @@ import type { ALReceiptRecordTally } from '../../alm/receipt-record/compute-al-r
 import {
     validateALReceiptRecordConfirmation,
     type ALReceiptRecordConfirmationDto,
-    type ALReceiptRecordConfirmationIssue
+    type ALReceiptRecordConfirmationIssue,
+    type ALReceiptRecordConfirmationIssueCode
 } from '../../alm/receipt-record/validate-al-receipt-record-confirmation.ts';
-import { AL_RECEIPT_RECORD_WINDOW_MS } from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
+import {
+    AL_RECEIPT_RECORD_WINDOW_MS,
+    type ALReceiptRecordOpeningIssue
+} from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
@@ -119,6 +123,11 @@ interface WsQueueBoxServerIssuedReceipt {
     readonly opening: ALReceiptRecordOpening;
     readonly controlId: string;
     readonly settlesServerRow: boolean;
+}
+
+/** A confirmation issue of a head still open; extending the ACK issue ties every such record code to a server guard. */
+interface WsQueueBoxServerOpenReceiptIssue extends WsQueueBoxServerReceiptAggregation.AckValidationIssue {
+    readonly code: Exclude<ALReceiptRecordConfirmationIssueCode, 'head-ended'>;
 }
 
 const COUNT_REJECTED: WsQueueBoxServerCountedAck = { outcome: 'rejected', view: undefined };
@@ -457,10 +466,7 @@ export class WsQueueBoxServerReceiptAggregation {
             await this.answerOpened(opened.right);
         }
         else if (opened.left?.kind === 'invalid-opening') {
-            console.warn(
-                `AL receipt of ${opening.msgId} for ${opening.originPeerId} was not opened`,
-                opened.left.issues
-            );
+            writeNotOpenedWarning(opening, opened.left.issues);
         }
     }
 
@@ -506,9 +512,7 @@ export class WsQueueBoxServerReceiptAggregation {
         if (isWsQueueBoxServerReceiptEncodable(opening, this.#dependencies.serverPeerId)) {
             return true;
         }
-        console.warn(`AL receipt of ${opening.msgId} for ${opening.originPeerId} was not opened`, [
-            UNENCODABLE_RECEIPT
-        ]);
+        writeNotOpenedWarning(opening, [UNENCODABLE_RECEIPT]);
         return false;
     }
 
@@ -648,8 +652,15 @@ function resolveCapturedRecipientPeerIds(
 
 function isOpenReceiptIssueList(
     issues: readonly ALReceiptRecordConfirmationIssue[]
-): issues is readonly (ALReceiptRecordConfirmationIssue & WsQueueBoxServerReceiptAggregation.AckValidationIssue)[] {
+): issues is readonly WsQueueBoxServerOpenReceiptIssue[] {
     return issues.every(({ code }) => code !== 'head-ended');
+}
+
+function writeNotOpenedWarning(
+    opening: ALReceiptRecordOpening,
+    issues: readonly (ALReceiptRecordOpeningIssue | typeof UNENCODABLE_RECEIPT)[]
+): void {
+    console.warn(`AL receipt of ${opening.msgId} for ${opening.originPeerId} was not opened`, issues);
 }
 
 function toReceiptRecordRef(ack: ALAckPayload): ALReceiptRecordRef {
@@ -758,6 +769,7 @@ function isWsQueueBoxServerReceiptEncodable(opening: ALReceiptRecordOpening, ser
         return true;
     }
     catch (error) {
+        // The receipt control's codec offers no typed refusal: it refuses by throwing `TypeError`, and only that.
         if (error instanceof TypeError) {
             return false;
         }
