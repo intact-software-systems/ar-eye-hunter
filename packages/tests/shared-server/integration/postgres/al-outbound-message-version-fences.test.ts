@@ -7,10 +7,12 @@ import { createTestALOutboundControlAdmission } from '@shared-test/shared/create
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { toALOutboundRepairAttemptKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
-    type ALOutboundCommitBundle
+    type ALOutboundCommitBundle,
+    type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundReadCommitFences } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 
@@ -22,7 +24,7 @@ import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
-const NAMESPACE = 'fence-lock-order';
+const NAMESPACE = 'message-version-fences';
 const WAIT_POLL = { timeout: 20_000, interval: 25 };
 
 interface WaitingCount {
@@ -33,13 +35,14 @@ interface GateHolder {
     readonly pid: number;
 }
 
-describe('Postgres outbound sender version fence lock order', () => {
+describe('Postgres outbound message version fences under concurrent transactions', () => {
     // A bundle that rewrites a message's pending acknowledgement fences on the message's version and the sender version;
-    // a control of the message fences on the message's version alone. Were the bundle to lock its message's version as
-    // a key-ordered effect, it could lock the pending acknowledgement first: each then waited on the other's row, and
-    // Postgres aborted one with an untyped deadlock. The bundle locks the message's version before its sender version.
+    // a control of the message fences on the message's version alone. No row is locked explicitly: the bundle writes
+    // the message's version as its own compare-and-set before its other rows. Were it a key-ordered effect of the
+    // bundle's last statement, the bundle could lock the pending acknowledgement first: each then waited on the other's
+    // row, and Postgres aborted one with an untyped deadlock.
     postgresIt('serializes a pending-ack bundle and a late acknowledgement on the message version as a typed conflict', async () => {
-        const storage = await createResourceInboxTestStorage('fence_lock_order', 6);
+        const storage = await createResourceInboxTestStorage('message_version_fences', 6);
         try {
             await installRowGate(storage.sql);
             const store = createStore(storage.sql);
@@ -69,13 +72,51 @@ describe('Postgres outbound sender version fence lock order', () => {
             await storage.close();
         }
     }, 60_000);
+
+    // A bundle of the message decided before an acknowledgement of it commits, and writes no row the acknowledgement
+    // writes: only the compare-and-set of the message's version tells the two apart, so the bundle loses it.
+    postgresIt('conflicts a bundle decided before a concurrent acknowledgement of its message, losing no update', async () => {
+        const storage = await createResourceInboxTestStorage('message_version_fences', 6);
+        try {
+            await installRowGate(storage.sql);
+            const store = createStore(storage.sql);
+            const message = await seedTwoPeerObligation(store);
+            const bundle = await readRepairAttemptBundle(store, message);
+            const control = createTestALOutboundControlAdmission({
+                admissionStore: store,
+                workQueue: store.backend.workQueue,
+                nowMs: Date.now,
+                carrier: 'ws',
+                recipientAuthentication: { kind: 'carrier' }
+            });
+
+            const gate = holdRowGate(storage.sql);
+            await gate.held;
+            const acknowledging = settle(control.admit(toDeliveredAck(message, 'peer-1'), 'peer'));
+            await expect.poll(() => readWaitingBehindGate(storage.sql, gate), WAIT_POLL).toBe(1);
+            const committing = settle(store.commitBundle(bundle));
+            await expect.poll(() => readWaitingBehindGate(storage.sql, gate), WAIT_POLL).toBe(2);
+            gate.release();
+            await gate.closed;
+
+            expect(await acknowledging).toEqual({ status: 'fulfilled', value: { kind: 'committed' } });
+            expect(await committing).toEqual({ status: 'fulfilled', value: 'conflict' });
+            const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+            expect((await store.readReceiptState(receipt))?.ackedPeerIds).toEqual(['peer-1']);
+            expect(await store.backend.read(toALOutboundRepairAttemptKey(NAMESPACE, message.id.msgId), (value) => value))
+                .toBeUndefined();
+        }
+        finally {
+            await storage.close();
+        }
+    }, 60_000);
 });
 
-interface FenceLockOrderStore extends ALOutboundAdmissionStore<OutboundTestPayload> {
+interface MessageVersionFenceStore extends ALOutboundAdmissionStore<OutboundTestPayload> {
     readonly backend: PSqlAdmissionWorkBackend;
 }
 
-function createStore(sql: PSqlSql): FenceLockOrderStore {
+function createStore(sql: PSqlSql): MessageVersionFenceStore {
     const backend = new PSqlAdmissionWorkBackend({ sql, namespace: NAMESPACE, nowMs: Date.now });
     const store = createALOutboundAdmissionStore({
         nowMs: Date.now,
@@ -151,8 +192,8 @@ function settle<T>(promise: Promise<T>): Promise<PromiseSettledResult<T>> {
 }
 
 /** A committed message two peers owe an acknowledgement for, so one acknowledgement rewrites the pending row. */
-async function seedTwoPeerObligation(store: FenceLockOrderStore): Promise<ALMessage> {
-    const message = createOutboundMessage('lock-order');
+async function seedTwoPeerObligation(store: MessageVersionFenceStore): Promise<ALMessage> {
+    const message = createOutboundMessage('message-version-fences');
     const admission = await readOutboundTestAdmission({
         store,
         message,
@@ -164,21 +205,42 @@ async function seedTwoPeerObligation(store: FenceLockOrderStore): Promise<ALMess
     return message;
 }
 
+const NO_COPY_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
+    msg: planned,
+    dropReasonCode: undefined,
+    lane: 'durable',
+    preparedMessages: []
+});
+
 /** A later commit of the message that rewrites its obligation, as a receipt's next window does. */
 async function readPendingAckBundle(
-    store: FenceLockOrderStore,
+    store: MessageVersionFenceStore,
     message: ALMessage
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
-    const read = await store.readRepairMessage(message.id.msgId, (planned) => ({
-        msg: planned,
-        dropReasonCode: undefined,
-        lane: 'durable',
-        preparedMessages: []
-    }));
+    const read = await store.readRepairMessage(message.id.msgId, NO_COPY_PLANNER);
     return {
         senderId: message.id.senderId,
         ...toALOutboundReadCommitFences({ originPeerId: message.id.senderId, msgId: message.id.msgId }, read),
         mutations: [toPendingAck(message, 1)],
+        durableEffects: [],
+        endedTimeoutEffectIds: []
+    };
+}
+
+/** A commit of the message that charges its repair budget on the receipt it read, touching no row an ACK writes. */
+async function readRepairAttemptBundle(
+    store: MessageVersionFenceStore,
+    message: ALMessage
+): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
+    const read = await store.readRepairMessage(message.id.msgId, NO_COPY_PLANNER);
+    return {
+        senderId: message.id.senderId,
+        ...toALOutboundReadCommitFences({ originPeerId: message.id.senderId, msgId: message.id.msgId }, read),
+        mutations: [{
+            kind: 'set-repair-attempt',
+            snapshot: { msgId: message.id.msgId, attemptsByRequester: { 'peer-2': 1 } },
+            expireAtTimestamp: Date.now() + 30_000
+        }],
         durableEffects: [],
         endedTimeoutEffectIds: []
     };
@@ -214,7 +276,7 @@ function toDeliveredAck(message: ALMessage, peerId: string): ALMessage {
             msgId: `${message.id.msgId}-ack`,
             senderId: peerId,
             ts: observedAtMs,
-            traceId: 'trace-al-outbound-version-fence-lock-order'
+            traceId: 'trace-al-outbound-message-version-fences'
         },
         toTestALAckPayload({
             fromPeerId: peerId,

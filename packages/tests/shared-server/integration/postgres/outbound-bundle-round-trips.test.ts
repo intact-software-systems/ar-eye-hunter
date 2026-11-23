@@ -61,7 +61,7 @@ interface StoredQueueRow {
 
 // A WS lane claims every WS_OUTBOX row of its database, so each test runs on the API schema of its own.
 describe('Postgres outbound admission bundle', () => {
-    postgresIt('commits a 16-row WS group in one statement per kind of write after its fence lock, with every row it wrote before', async () => {
+    postgresIt('commits a 16-row WS group in one statement per kind of write after its message versions, with every row it wrote before', async () => {
         await withRunStorage(async ({ sql, runId }) => {
             const log: StatementLog = { statements: [], transactions: 0 };
             const lane = createWsDequeueLane(recordStatements(sql, log, null), runId);
@@ -93,10 +93,11 @@ describe('Postgres outbound admission bundle', () => {
             expect(await readQueueExpiries(sql, proved)).toEqual(proved.map(toQueueExpiries));
             const commits = readVersionCommits(log, lane);
             expect(commits).toHaveLength(1);
-            // The group's new messages hold no version row yet, so its fence lock finds none to lock.
+            // Each new message's version is inserted alone, a compare-and-set in key order, before the rows on the sender
+            // version.
             expect(commits[0]!.map(({ text, rowCount }) => [toStatementKind(text), rowCount])).toEqual([
-                ['fence-lock', 0],
-                ['state', 3 * GROUP_SIZE + 1],
+                ...Array.from({ length: GROUP_SIZE }, () => ['state', 1]),
+                ['state', 2 * GROUP_SIZE + 1],
                 ['hold', GROUP_SIZE],
                 ['insert', 2 * GROUP_SIZE]
             ]);
@@ -427,7 +428,7 @@ function createWorkEntry(runId: string): ResourceEntry {
 
 function toStatementKind(text: string): string {
     if (text.includes('runtime_state_store')) {
-        return text.includes('for update') ? 'fence-lock' : 'state';
+        return 'state';
     }
     return text.startsWith('insert into resource_inbox') ? 'insert' : text.includes('for update') ? 'hold' : text;
 }

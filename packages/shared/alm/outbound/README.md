@@ -380,8 +380,8 @@ bundle fences on the sender version too, because its decision reads rows other m
 track head, the sent positions, the room sent floor and the supersedence latest. A peer control reads and writes only
 its message's rows, so it fences on that message's version alone: a send, repair or control of another message of
 the same sender never conflicts with it (ruling 24). A commit that names several fences writes them all; on
-PostgreSQL it locks every fence but the last in key order in one statement, then writes its rows on the last, so two
-commits always take the fences they share in one order.
+PostgreSQL it writes every fence but the last alone, a compare-and-set in key order, then its rows on the last, so two
+commits always reach the fences they share in one order; no row is locked explicitly (ruling 24, option 1).
 
 A dequeued batch (`ALOutboundDequeuedAdmission.admitDequeuedMessages`) reads the same way before its commit.
 Each row's gate and pending-authority wait run two rows at a time. Once every row has passed or been

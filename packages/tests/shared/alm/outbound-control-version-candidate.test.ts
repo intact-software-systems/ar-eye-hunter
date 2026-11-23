@@ -226,13 +226,19 @@ describe('outbound control version candidate', () => {
 describe('the recipient proof verdict as a read fact (S8-R5)', () => {
     it('a refused proof is an unauthorized issue beside the others', async () => {
         const read = await createNackRead('proof-refused');
+        if (read.parsed.type !== 'nack') {
+            throw new Error('Expected a NACK read');
+        }
+        // A NACK already admitted once is the other issue the refused proof sits beside.
         const refused: ALControlAdmissionRead = {
             ...read,
+            history: { kind: 'nacks', values: [read.parsed.payload] },
             recipientProof: { kind: 'unknown-key', claimedRecipientPeerId: 'peer-1', channelPeerId: 'peer-1' }
         };
         const candidate = computeALOutboundControlAdmission(refused, normalizeALRuntimeStoreRetention());
 
         expect(validateALOutboundControlAdmission(candidate)).toEqual([
+            { code: 'unauthorized', message: 'AL control was already admitted', class: 'duplicate' },
             { code: 'unauthorized', message: 'AL control proof is refused: unknown-key', class: 'refusal' }
         ]);
     });

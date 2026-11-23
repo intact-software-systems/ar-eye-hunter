@@ -294,6 +294,26 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.readAdmissionState()).toBe(before);
     });
 
+    it('refuses a bundle that writes a row of another message, and writes nothing', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = await seedControlObligation(fixture.store);
+        const other = createOutboundMessage('another-message');
+        const bundle = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: other,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const before = await fixture.readAdmissionState();
+
+        await expect(fixture.store.commitBundle({
+            ...bundle,
+            mutations: [...bundle.mutations, { kind: 'delete-pending-ack', ...toFenceReceipt(message) }]
+        })).rejects.toThrow(`An outbound bundle of ${other.id.msgId} writes a delete-pending-ack row of another message`);
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
     it('aborts a moved control effect without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const control = createFenceControlAdmission(fixture);

@@ -31,11 +31,12 @@ export interface ALAdmissionWorkWriteContext extends ALAdmissionWriteContext, AL
     /** Records a computed entry against the exact slot already captured by readWork or readClaimedWork. */
     writeWork(entry: ResourceEntry): void;
     /**
-     * Sets a row that fences the whole commit, as `set` does; naming a row again is the same fence. A backend that
-     * writes the commit's rows in one statement writes its fences first, one at a time in key order, and every other
-     * row only on the last of them, so a fence that moved writes nothing. Every commit that writes a row another
-     * commit fences on names that row as a fence too, so all of them lock their shared fences in one order before any
-     * other row. A commit that names no fence is fenced on its first row in key order.
+     * Sets a row that fences the whole commit, as `set` does; naming a row again is the same fence. Each fence is a
+     * compare-and-set, so a fence that moved writes nothing. A backend that writes the commit's rows in one statement
+     * writes its fences first, each alone in key order, and every other row only on the last of them; it takes no
+     * explicit lock. Every commit that writes a row another commit fences on names that row as a fence too, so all of
+     * them write their shared fences in one order before any other row. A commit that names no fence is fenced on its
+     * first row in key order.
      */
     setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void>;
 }

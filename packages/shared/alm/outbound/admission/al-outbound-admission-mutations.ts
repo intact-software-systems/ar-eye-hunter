@@ -26,7 +26,8 @@ import {
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
-    toALOutboundSupersedenceReplacementKey
+    toALOutboundSupersedenceReplacementKey,
+    type ALOutboundPendingAckRef
 } from './al-outbound-admission-keys.ts';
 import type {
     ALOutboundMessageFence,
@@ -354,6 +355,19 @@ export class ALOutboundAdmissionMutations {
         );
     }
 
+    /**
+     * A bundle writes the rows of its own message only, so that message's version fences every one of them: a row of
+     * another message would be written unfenced against that message's controls.
+     */
+    assertOwnMessageRows(message: ALOutboundPendingAckRef, mutations: readonly ALOutboundAdmissionMutation[]): void {
+        const foreign = mutations.find((mutation) => !isALOutboundMutationOfMessage(mutation, message));
+        if (foreign !== undefined) {
+            throw new TypeError(
+                `An outbound bundle of ${message.msgId} writes a ${foreign.kind} row of another message`
+            );
+        }
+    }
+
     private async readMessageIdentityIssue(
         transaction: ALAdmissionWorkWriteContext,
         mutation: ALOutboundAdmissionMutation
@@ -619,6 +633,39 @@ export class ALOutboundAdmissionMutations {
                     guard: undefined
                 };
         }
+    }
+}
+
+/** Whether a mutation writes a row of `message`, or a row other messages share (a track's or a supersedence key's). */
+function isALOutboundMutationOfMessage(
+    mutation: ALOutboundAdmissionMutation,
+    message: ALOutboundPendingAckRef
+): boolean {
+    switch (mutation.kind) {
+        case 'set-msg-owner':
+            return mutation.msgId === message.msgId && mutation.senderId === message.originPeerId;
+        case 'set-sent-message':
+        case 'set-first-hop-wait':
+        case 'set-repair-attempt':
+            return mutation.snapshot.msgId === message.msgId;
+        case 'end-sent-message':
+            return mutation.stored.msgId === message.msgId;
+        case 'delete-sent-message':
+        case 'delete-first-hop-wait':
+        case 'delete-repair-attempt':
+            return mutation.msgId === message.msgId;
+        case 'set-pending-ack':
+            return mutation.originPeerId === message.originPeerId && mutation.snapshot.msgId === message.msgId;
+        case 'delete-pending-ack':
+            return mutation.originPeerId === message.originPeerId && mutation.msgId === message.msgId;
+        case 'set-ordering-message':
+        case 'delete-ordering-message':
+        case 'set-ordering-head':
+        case 'set-sent-position':
+        case 'set-room-sent-floor':
+        case 'set-supersedence-latest':
+        case 'set-supersedence-replacement':
+            return true;
     }
 }
 

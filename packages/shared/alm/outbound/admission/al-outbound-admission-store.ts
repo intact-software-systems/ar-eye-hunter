@@ -929,6 +929,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         observed: ALOutboundCommitObservation<TPrepared>,
         nowMs: number
     ): ALOutboundCommitCandidate<TPrepared> {
+        this.mutations.assertOwnMessageRows(bundle.message, bundle.mutations);
         const effects = this.effectStore.computeEffects(observed.effects, nowMs);
         const issues = this.effectStore.validateEffects(effects);
         if (issues.length > 0) {

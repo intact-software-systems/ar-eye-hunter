@@ -82,7 +82,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
         expect(sent.map((message) => message.id.msgId)).toEqual([decodePersistedALMessage(row.resource).id.msgId]);
         expect(readKeys().filter((key) => key === toKeyAsString(row.key))).toEqual([]);
-        // The dequeue's commit locks its message version before it writes on its sender version: one statement more.
+        // The dequeue's commit writes its message version, a compare-and-set of its own, before it writes on its sender
+        // version: one statement more.
         expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 8 });
     });
 
@@ -128,8 +129,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         // Rows read two at a time cost 39 autocommit statements: five supersedence reads instead of one.
         // Serial decision reads cost 57 after the front reads were already paired, and serial commit
         // observations 47 before the group read them all at once. Commits that wrote one row per statement cost 56
-        // statements inside their transactions. The group's commit locks its rows' message versions in one statement.
-        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 9 });
+        // statements inside their transactions. The group's commit writes each row's message version as a compare-and-set
+        // of its own, in key order, and takes no lock: one statement per row more.
+        expect(counts()).toEqual({ autocommit: 27, transactions: 6, inTransaction: 18 });
     });
 
     // Rows that read their admission, identity, proof and supersedence one after another, two rows at a time, cost
@@ -164,7 +166,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
 
     // Written one row per statement, the group's transaction costs 97 statements for 16 rows: 49 state rows (an owner,
     // a sent row and a version per message, and the sender version), 16 holds on the claimed rows and 32 queue rows (an
-    // identity row and an own-work row per message). One statement locks the 16 message versions first.
+    // identity row and an own-work row per message). Each of the 16 message versions is first written alone, a
+    // compare-and-set in key order, so no row is locked explicitly (ruling 24, option 1).
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);
@@ -191,7 +194,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect({
             transactions: end.transactions - start.transactions,
             inTransaction: end.inTransaction - start.inTransaction
-        }).toEqual({ transactions: 1, inTransaction: 4 });
+        }).toEqual({ transactions: 1, inTransaction: 19 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {

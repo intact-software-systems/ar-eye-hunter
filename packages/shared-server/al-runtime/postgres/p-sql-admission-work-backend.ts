@@ -156,11 +156,9 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 }
 
-/** A commit's fences to lock, state rows and the work rows it holds, inserts and replaces, computed before it begins. */
+/** A commit's state statements and the work rows it holds, inserts and replaces, all computed before it begins. */
 interface PSqlAdmissionCommit {
-    readonly namespace: string;
-    readonly fenceLocks: readonly string[];
-    readonly state: PSqlAdmissionStateWrite | undefined;
+    readonly state: readonly PSqlAdmissionStateWrite[];
     readonly holds: readonly ResourceInboxObservation[];
     readonly inserts: readonly ResourceInboxEntryInsertValues[];
     readonly replacements: readonly ResourceInboxObservedReplacement[];
@@ -229,9 +227,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
             expected: this.workObservations.get(key)
         }));
         return {
-            namespace: this.namespace,
-            fenceLocks: this.toFenceLockKeys(this.fenceKeys),
-            state: this.computeStateWrite(this.fenceKeys),
+            state: this.computeStateWrites(this.fenceKeys),
             holds: [...this.claimedSlots]
                 .filter(([key]) => !this.pendingWork.has(key))
                 .map(([, claimed]) => computeResourceInboxObservation(claimed)),
@@ -246,13 +242,13 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
 }
 
 function hasPSqlAdmissionWrites(computed: PSqlAdmissionCommit): boolean {
-    return computed.state !== undefined || computed.inserts.length > 0 || computed.replacements.length > 0;
+    return computed.state.length > 0 || computed.inserts.length > 0 || computed.replacements.length > 0;
 }
 
 /**
- * The fences but the last locked in key order, then the state rows with the last fence before every other row, then
- * one statement for every held claim and one for every new work row; a row that moved since its observation rolls the
- * commit back as a conflict.
+ * The state statements first, each fence a conditional write in key order before every other row, then one statement
+ * for every held claim and one for every new work row; a row that moved since its observation rolls the commit back as
+ * a conflict. No row is locked but by the conditional writes themselves.
  */
 async function writePSqlAdmissionCommit(
     sql: PSqlSql,
@@ -260,11 +256,8 @@ async function writePSqlAdmissionCommit(
     now: () => Date
 ): Promise<void> {
     const repository = createTransactionBoundPSqlRuntimeStateRepository(sql);
-    if (computed.fenceLocks.length > 0) {
-        await repository.lockEntriesInKeyOrder(computed.namespace, computed.fenceLocks);
-    }
-    if (computed.state !== undefined) {
-        await writePSqlAdmissionState(repository, computed.state);
+    for (const state of computed.state) {
+        await writePSqlAdmissionState(repository, state);
     }
     const work = new PSqlResourceInboxEntryRepository(sql, now);
     if (
