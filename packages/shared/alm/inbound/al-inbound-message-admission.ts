@@ -8,6 +8,10 @@ import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
 import { recordALInboundOrderingPosition } from './admission/record-al-inbound-ordering-position.ts';
+import {
+    isALInboundOriginAuthenticated,
+    isALInboundOriginAuthenticatedReadmission
+} from './admission/is-al-inbound-origin-authenticated-readmission.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundLocalDeliveryEffectId } from './al-inbound-effect-intent.ts';

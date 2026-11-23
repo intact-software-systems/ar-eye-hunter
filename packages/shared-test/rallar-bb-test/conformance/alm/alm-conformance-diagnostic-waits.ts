@@ -1,4 +1,3 @@
-import { AL_CONTROL_REPAIR_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALReceiptProofRefusal } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import type { ALInboundOrderingPosition } from '@shared/alm/inbound/admission/to-al-inbound-ordering-position.ts';

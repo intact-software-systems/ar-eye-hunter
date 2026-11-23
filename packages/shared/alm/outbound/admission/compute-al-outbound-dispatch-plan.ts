@@ -2,8 +2,8 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isKeysEqual } from '../../../queuebox/ResourceEntry.ts';
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import { isKeysEqual, type Key } from '../../../queuebox/ResourceEntry.ts';
+import type { ALOutboundDequeueAuthority, ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALMessageWithAppliedSupersedence } from '../supersedence/to-al-message-with-applied-supersedence.ts';
 import {
     validateALOutboundAdmittedMessage,
