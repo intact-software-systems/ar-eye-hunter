@@ -84,7 +84,7 @@ export function toUnsubscribeCommands(
  * Releases an election whose principal's `subscribe` was revoked while it was held. A renewal inside the revoke window
  * is refused, which ends the election `refused`; with no renewal there the release ends it `lapsed`.
  */
-export function toRevokedElectionUnsubscribeCommands(
+export function toUnsubscribeAfterRevokeCommands(
     step: AlmConformanceStepInput,
     subscriptionId: string
 ): readonly RallarBlackBoxTestCommand[] {

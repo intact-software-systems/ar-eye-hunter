@@ -714,14 +714,12 @@ describe('ALM ordered subscription entry conformance', () => {
         expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
     });
 
-    // A renewal inside the revoke window is refused `no-subscribe-grant` and ends the election `refused`; otherwise the
-    // sibling's own release ends it `lapsed`. Either way the revoke ended it, so either status proves the cell.
     it.each(ALM_CONFORMANCE_CARRIERS)('accepts the omission sibling\'s first release as lapsed or refused over %s', (carrier) => {
         const sibling = requireRoleRecipe(findOrderedScenario(carrier, 'subscription-ordered-omission'), 'sibling');
         const release = findStep(sibling, 'unsubscribe-sibling');
         const fact = sibling.commands[sibling.commands.indexOf(release) + 1]!;
         const accepts = (status: string | undefined): boolean =>
-            fact.kind === 'assert' && fact.operator !== 'sameUniqueStringSet' &&
+            fact.kind === 'assert' && 'expected' in fact &&
             fact.source === `resultCache.${release.commandId}.value.status` &&
             isAssertOperatorSatisfied(
                 status === undefined ? { exists: false } : { exists: true, value: status },

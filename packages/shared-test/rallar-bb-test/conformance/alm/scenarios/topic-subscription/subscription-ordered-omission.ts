@@ -13,8 +13,8 @@ import {
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
-    toRevokedElectionUnsubscribeCommands,
     toSubscribeCommand,
+    toUnsubscribeAfterRevokeCommands,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
@@ -132,7 +132,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
  * revoke notwithstanding, and a further token joins a held election with no request of its own; so the sibling
  * releases its first election before it elects anew, and its new election is active at the server before it lets the
  * producers publish `p5`. The first election ends `refused` when a 20 s renewal fell inside the revoke window, else
- * `lapsed` by the release; either way the revoke ended it.
+ * `lapsed` by the release; either way the first election is over before the sibling elects anew.
  */
 function toExcludedSubscriberCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -140,7 +140,7 @@ function toExcludedSubscriberCommands(sibling: AlmConformanceStepInput): readonl
         toSubscribeCommand(sibling, 'sibling'),
         ...toOrderedArrivalWaits(sibling, [1, 2]),
         toCueWait(sibling, 'regranted'),
-        ...toRevokedElectionUnsubscribeCommands(sibling, 'sibling'),
+        ...toUnsubscribeAfterRevokeCommands(sibling, 'sibling'),
         toSubscribeCommand(sibling, REGRANTED_SUBSCRIPTION),
         ...toCueSendCommands(sibling, RESUBSCRIBED),
         ...toOrderedArrivalWaits(sibling, [5]),
