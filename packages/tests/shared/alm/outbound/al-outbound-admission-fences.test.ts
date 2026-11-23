@@ -348,7 +348,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         await expect(fixture.store.commitBundle({
             ...bundle,
             mutations: [...bundle.mutations, { kind: 'delete-pending-ack', ...toFenceReceipt(message) }]
-        })).rejects.toThrow(`An outbound bundle of ${other.id.msgId} writes a delete-pending-ack row of another message`);
+        })).rejects.toThrow(`An outbound bundle of ${other.id.msgId} writes a delete-pending-ack row outside its fences`);
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -379,7 +379,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             durableEffects: [],
             endedTimeoutEffectIds: []
         })).rejects.toThrow(
-            `An outbound bundle of ${message.id.msgId} writes a set-sent-position row its sender's messages share without its sender fence`
+            `An outbound bundle of ${message.id.msgId} writes a set-sent-position row outside its fences`
         );
 
         expect(await fixture.readAdmissionState()).toBe(before);

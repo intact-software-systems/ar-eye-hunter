@@ -26,8 +26,7 @@ import {
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
-    toALOutboundSupersedenceReplacementKey,
-    type ALOutboundPendingAckRef
+    toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
 import type {
     ALOutboundCommitBundle,
@@ -632,14 +631,13 @@ export class ALOutboundAdmissionMutations {
 export function assertALOutboundBundleRows(
     bundle: Pick<ALOutboundCommitBundle<never>, 'message' | 'fencesSender' | 'mutations'>
 ): void {
-    for (const mutation of bundle.mutations) {
-        const row = toALOutboundMutationRow(mutation);
-        if (row === 'shared' ? !bundle.fencesSender : !isALOutboundRowOfMessage(row, bundle.message)) {
-            const whose = row === 'shared'
-                ? 'its sender\'s messages share without its sender fence'
-                : 'of another message';
-            throw new TypeError(`An outbound bundle of ${bundle.message.msgId} writes a ${mutation.kind} row ${whose}`);
-        }
+    const unfenced = bundle.mutations.find((mutation) =>
+        !isALOutboundRowFenced(toALOutboundMutationRow(mutation), bundle)
+    );
+    if (unfenced !== undefined) {
+        throw new TypeError(
+            `An outbound bundle of ${bundle.message.msgId} writes a ${unfenced.kind} row outside its fences`
+        );
     }
 }
 
@@ -679,8 +677,16 @@ function toALOutboundMutationRow(mutation: ALOutboundAdmissionMutation): ALOutbo
     }
 }
 
-function isALOutboundRowOfMessage(row: ALOutboundMessageRow, message: ALOutboundPendingAckRef): boolean {
-    return row.msgId === message.msgId && (row.originPeerId === undefined || row.originPeerId === message.originPeerId);
+/** A shared row is fenced by the sender version the bundle names, a message's row by that message's version. */
+function isALOutboundRowFenced(
+    row: ALOutboundMessageRow | 'shared',
+    bundle: Pick<ALOutboundCommitBundle<never>, 'message' | 'fencesSender'>
+): boolean {
+    if (row === 'shared') {
+        return bundle.fencesSender;
+    }
+    return row.msgId === bundle.message.msgId &&
+        (row.originPeerId === undefined || row.originPeerId === bundle.message.originPeerId);
 }
 
 /** The guarded row as the commit's transaction holds it now, read as the admission read it. */
