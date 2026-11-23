@@ -138,6 +138,11 @@ const ENDED_RECEIPT: WsQueueBoxServerReceiptAggregation.AckValidationIssue = {
     code: 'aggregate-absent',
     message: 'AL acknowledgement names no receipt this server aggregates'
 };
+/** The server's own refusal to open a receipt it could never answer: no receipt control can carry its largest form. */
+const UNENCODABLE_RECEIPT = {
+    code: 'receipt-not-encodable',
+    message: 'AL receipt control cannot carry the largest receipt of this opening'
+} as const;
 
 export namespace WsQueueBoxServerReceiptAggregation {
     export type AckGuard =
@@ -440,6 +445,9 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     private async openAdmittedReceipt(opening: ALReceiptRecordOpening): Promise<void> {
+        if (!this.isEncodable(opening)) {
+            return;
+        }
         if (opening.expectedRecipientPeerIds.length === 0) {
             await this.writeAnswer(opening, NO_CONFIRMATIONS, 'admitted');
             return;
@@ -479,7 +487,9 @@ export class WsQueueBoxServerReceiptAggregation {
         }
         const ingressAudience = await this.#dependencies.readIngressAudience(ref.msgId, ref.originPeerId);
         const opening = toCopyOpening({ admitted, roomAudience, ingressAudience, terms, nowMs: this.nowMs() });
-        const opened = opening === undefined ? undefined : await this.#record.open(opening);
+        const opened = opening === undefined || !this.isEncodable(opening)
+            ? undefined
+            : await this.#record.open(opening);
         if (opened?.right !== undefined) {
             await this.answerOpened(opened.right);
         }
@@ -489,6 +499,17 @@ export class WsQueueBoxServerReceiptAggregation {
                 await this.answerFromView(again.right);
             }
         }
+    }
+
+    /** Decision 9 for the server's own rule: a receipt no control could carry is never opened, with one warning. */
+    private isEncodable(opening: ALReceiptRecordOpening): boolean {
+        if (isWsQueueBoxServerReceiptEncodable(opening, this.#dependencies.serverPeerId)) {
+            return true;
+        }
+        console.warn(`AL receipt of ${opening.msgId} for ${opening.originPeerId} was not opened`, [
+            UNENCODABLE_RECEIPT
+        ]);
+        return false;
     }
 
     private async answerFromView({ head, tally }: ALReceiptRecord.View): Promise<void> {
@@ -712,6 +733,36 @@ function toWsQueueBoxServerReceiptDispatchPlan(
         lane: 'durable',
         preparedMessages: []
     };
+}
+
+/**
+ * Whether the control's own codec carries the largest receipt this opening can need. That is a `timed-out` receipt
+ * naming every expected recipient outside: a terminal receipt lists each recipient once across its two sets, both
+ * keys are always written, one list costs one comma more than a split, and only `timed-out`, one character longer than
+ * `complete`, can name every recipient without a confirmation. It is built by the same function as every receipt.
+ */
+function isWsQueueBoxServerReceiptEncodable(opening: ALReceiptRecordOpening, serverPeerId: string): boolean {
+    const largest: WsQueueBoxServerIssuedReceipt = {
+        receipt: toReceiptPayload(opening, {
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: opening.expectedRecipientPeerIds,
+            phase: 'timed-out',
+            observedAtEpochMs: opening.deadlineAtMs
+        }),
+        opening,
+        controlId: toWsQueueBoxServerEndedReceiptControlId(opening),
+        settlesServerRow: true
+    };
+    try {
+        toReceiptControlMessage(largest, serverPeerId);
+        return true;
+    }
+    catch (error) {
+        if (error instanceof TypeError) {
+            return false;
+        }
+        throw error;
+    }
 }
 
 function toReceiptControlMessage(

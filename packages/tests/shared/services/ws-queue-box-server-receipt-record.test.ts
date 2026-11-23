@@ -313,6 +313,64 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
 
+    // Ruling R27: pins a receipt opened for an audience whose terminal receipt no control can encode, whose ended work
+    // would then throw on every delivery. With ids of 128 characters, 249 recipients encode and 250 do not.
+    it.each([250, 256])(
+        'admits a room message of %i recipients whose terminal receipt cannot be encoded, and opens nothing',
+        async (count) => {
+            const cluster = createRecordCluster();
+            const a = await startInstance(cluster, instanceInput('a', [ORIGIN, ...toLongRecipientPeerIds(count)]));
+            await connectOrigin(cluster, a);
+
+            expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
+            await settleEngines([a]);
+
+            expect(phases(cluster)).toEqual([]);
+            expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
+            expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
+                .toBeUndefined();
+        }
+    );
+
+    // Ruling R27: pins the encodability rule refusing an audience whose largest receipt still encodes.
+    it('opens a receipt for 249 recipients of 128 characters and delivers its terminal receipt', async () => {
+        const cluster = createRecordCluster();
+        const recipients = toLongRecipientPeerIds(249);
+        const a = await startInstance(cluster, instanceInput('a', [ORIGIN, ...recipients]));
+        await connectOrigin(cluster, a);
+
+        const last = recipients.at(-1)!;
+        await connect(a, last);
+
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
+        // A receipt nobody confirmed never completes, so one recipient confirms and every other is recorded outside.
+        await a.service.writeOutsideAudience(message(cluster), recipients.slice(0, -1), 'durable');
+        expect((await a.service.acceptIncomingMessage(ackOf(cluster, last), last)).left).toBeUndefined();
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: [last] });
+        expect(terminal(cluster)?.outsideAudienceRecipientPeerIds).toHaveLength(248);
+    });
+
+    // Ruling R28: pins a message whose own id no receipt control can name, admitted to nobody, throwing from its answer.
+    it('admits a message whose own id a receipt cannot name to a room of its origin alone, and answers nothing', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, instanceInput('a', [ORIGIN]));
+        await connectOrigin(cluster, a);
+        const longId = roomMessage({
+            msgId: 'm'.repeat(AL_MESSAGE_RESOURCE_LIMITS.payloadBytes + 1),
+            originPeerId: ORIGIN,
+            nowMs: cluster.sentAtMs,
+            lifetimeMs: LIFETIME_MS
+        });
+
+        expect((await a.service.acceptIncomingMessage(longId, ORIGIN)).right).toEqual({ kind: 'admitted' });
+        await settleEngines([a]);
+
+        expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
+    });
+
     // Review Focus 3: a store failure is an operational exception, never a refusal and never a count.
     it('rejects an ACK whose count the record store fails, and observes no refused count', async () => {
         const cluster = createRecordCluster();
@@ -698,6 +756,11 @@ function message(cluster: RecordCluster, lifetimeMs = LIFETIME_MS): ALMessage {
 
 function volatileMessage(cluster: RecordCluster): ALMessage {
     return { ...message(cluster), qos: { durability: { algo: 'volatile' } } };
+}
+
+/** Recipients whose ids each fill the 128 characters a receipt control names. */
+function toLongRecipientPeerIds(count: number): readonly string[] {
+    return Array.from({ length: count }, (_, index) => `r${index + 1}-`.padEnd(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters, 'p'));
 }
 
 function durableMessage(cluster: RecordCluster): ALMessage {

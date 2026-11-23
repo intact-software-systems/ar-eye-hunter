@@ -16,7 +16,6 @@ import {
 
 import { toSafeApiTimingRecord } from '../../../apps/rallar-black-box/scripts/to-safe-api-timing-record.ts';
 import { toSafeApiWsReceiptObservation } from '../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../shared/al-contracts/al-message-resource-limits.ts';
 import {
     AL_DELIVERY_REFUSAL_REASONS,
     AL_DELIVERY_SKIPPED_REASONS,
@@ -1118,14 +1117,10 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it('keeps the existing 64KiB bound and loss summary for a large actual owner record', async () => {
-        // A receipt names at most 256 recipients of at most 128 characters, about 34 KB, so the count's record passes the
-        // bound through its message id, which it carries twice (the ACK's and the head's): 20,000 characters each. The
-        // shorter lines are under the bound and refused by the projection, whose identities stop at 512 characters.
-        const audience = [
-            'recipient',
-            ...Array.from({ length: 255 }, (_, index) => `peer-${index}-`.padEnd(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters, 'p'))
-        ];
-        const captured = await captureOwnerReceiptEvidence({ msgId: 'm'.repeat(20_000), expectedRecipientPeerIds: audience });
+        // The server opens only a receipt whose largest form a control carries (64 KiB), so no receipt record passes the
+        // bound. The count's record does: it carries the message id twice (the ACK's and the head's), each 33,500
+        // characters. The receipt lines stay under the bound and the projection refuses them: its identities stop at 512.
+        const captured = await captureOwnerReceiptEvidence({ msgId: 'm'.repeat(33_500), expectedRecipientPeerIds: ['recipient'] });
         expect(captured.status).toBe(0);
         expect(captured.text).toBe('');
         expect(captured.summary).toMatchObject({
