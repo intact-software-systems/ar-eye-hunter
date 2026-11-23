@@ -24,7 +24,11 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver,
+    WsQueueBoxServerReceiptOutboxVerdict
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -104,6 +108,12 @@ export interface SentReceipt {
 }
 
 /** The peer id of the server the receipt suites build; a session's ACK names it. */
+/** One refusal, count or receipt the receipt aggregation recorded: `kind`, then the count's outcome or the receipt's phase and outbox verdict. */
+export type ReceiptAggregationVerdict =
+    | 'ack-rejection'
+    | `ack-count:${Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }>['outcome']}`
+    | `receipt-outbox:${ALReceiptPayload['phase']}:${WsQueueBoxServerReceiptOutboxVerdict['kind']}`;
+
 export const RECEIPT_SERVER_PEER_ID = 'server';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
@@ -400,6 +410,27 @@ export function readTerminalReceiptIdentities(sockets: readonly SimulatedWebSock
     return [
         ...new Set(terminals.map(({ controlId, receipt }) => JSON.stringify({ controlId, phase: receipt.phase, ...toReceiptSets(receipt) })))
     ];
+}
+
+/**
+ * Every refusal, count and receipt the receipt aggregation recorded for the message, sorted, since instances record in
+ * no fixed order. An `ack-rejection` carries only its control's identity, so every one the observations hold is listed.
+ */
+export function readReceiptAggregationVerdicts(
+    observations: readonly WsQueueBoxServerReceiptObservation[],
+    msgId: string
+): readonly ReceiptAggregationVerdict[] {
+    return observations.flatMap((observation): ReceiptAggregationVerdict[] => {
+        if (observation.kind === 'ack-rejection') {
+            return ['ack-rejection'];
+        }
+        if (observation.kind === 'ack-count') {
+            return observation.ack.ackedMsgId === msgId ? [`ack-count:${observation.outcome}`] : [];
+        }
+        return observation.kind === 'receipt-outbox' && observation.receipt.msgId === msgId
+            ? [`receipt-outbox:${observation.receipt.phase}:${observation.verdict.kind}`]
+            : [];
+    }).sort();
 }
 
 export function toReceiptSets(

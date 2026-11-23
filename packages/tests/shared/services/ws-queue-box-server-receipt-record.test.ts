@@ -32,6 +32,7 @@ import {
     readOriginReceiptPhases,
     readOriginReceipts,
     readOriginTerminalReceipt,
+    readReceiptAggregationVerdicts,
     readSocketReceipts,
     readTerminalReceiptIdentities,
     RECEIPT_SERVER_PEER_ID,
@@ -39,6 +40,7 @@ import {
     roomMessage,
     toReceiptSets,
     type ClusterInstance,
+    type ReceiptAggregationVerdict,
     type ReceiptClock,
     type ReceiptClusterState,
     type ReceiptRoomView
@@ -655,6 +657,13 @@ describe('the WS server counts a receipt through the record every instance share
         expect(
             cluster.observations.filter((observation) => observation.kind === 'receipt-outbox' && observation.receipt.phase === 'complete')
         ).toHaveLength(1);
+        // The losing `end` records no refusal, no further count and no failed receipt.
+        expect(readReceiptAggregationVerdicts(cluster.observations, MSG_ID)).toEqual<readonly ReceiptAggregationVerdict[]>([
+            'ack-count:complete',
+            'ack-count:complete',
+            'receipt-outbox:admitted:admitted',
+            'receipt-outbox:complete:admitted'
+        ]);
     });
 
     // Ruling R27: pins a copy opening a record whose terminal receipt can never be delivered, so its ended work throws.

@@ -16,7 +16,10 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptOutboxVerdict
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 import {
@@ -26,12 +29,14 @@ import {
     readOriginReceiptPhases,
     readOriginReceipts,
     readOriginTerminalReceipt,
+    readReceiptAggregationVerdicts,
     readTerminalReceiptIdentities,
     RECEIPT_SERVER_PEER_ID,
     receiverAck,
     roomMessage,
     toReceiptSets,
-    type ClusterInstance
+    type ClusterInstance,
+    type ReceiptAggregationVerdict
 } from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -61,6 +66,8 @@ const LIFETIME_MS = 30_000;
 const DEADLINE_LIFETIME_MS = 2_000;
 const POLL = { timeout: 20_000 } as const;
 const CASE_TIMEOUT_MS = 60_000;
+
+type AckCountObservation = Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }>;
 
 /** One run: its rows carry `runId`, its instances share one store id, one bus and the test's own reader of the record. */
 interface ReceiptCluster {
@@ -275,10 +282,17 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         ]);
 
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
-        expect(readCountOutcomes(cluster, msgId)).toEqual(['complete', 'complete']);
+        expect(readCountOutcomes(cluster, msgId)).toEqual<ReturnType<typeof readCountOutcomes>>(['complete', 'complete']);
         await expectStoredEnd(cluster, msgId, { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
-        expect(readCompleteOutboxVerdicts(cluster, msgId)).toEqual(['admitted']);
+        expect(readCompleteOutboxVerdicts(cluster, msgId)).toEqual<ReturnType<typeof readCompleteOutboxVerdicts>>(['admitted']);
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
+        // The losing `end` records no refusal, no further count and no failed receipt.
+        expect(readReceiptAggregationVerdicts(cluster.observations, msgId)).toEqual<readonly ReceiptAggregationVerdict[]>([
+            'ack-count:complete',
+            'ack-count:complete',
+            'receipt-outbox:admitted:admitted',
+            'receipt-outbox:complete:admitted'
+        ]);
         expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
     }, CASE_TIMEOUT_MS);
 
@@ -475,12 +489,12 @@ async function expectStoredEnd(cluster: ReceiptCluster, msgId: string, ended: St
 }
 
 /** The outcome of each count the instances observed for the message's ACKs. */
-function readCountOutcomes(cluster: ReceiptCluster, msgId: string): readonly string[] {
+function readCountOutcomes(cluster: ReceiptCluster, msgId: string): readonly AckCountObservation['outcome'][] {
     return cluster.observations.flatMap((observation) => observation.kind === 'ack-count' && observation.ack.ackedMsgId === msgId ? [observation.outcome] : []);
 }
 
 /** The outbox verdict of each `complete` receipt the instances wrote for the message. */
-function readCompleteOutboxVerdicts(cluster: ReceiptCluster, msgId: string): readonly string[] {
+function readCompleteOutboxVerdicts(cluster: ReceiptCluster, msgId: string): readonly WsQueueBoxServerReceiptOutboxVerdict['kind'][] {
     return cluster.observations.flatMap((observation) =>
         observation.kind === 'receipt-outbox' && observation.receipt.msgId === msgId && observation.receipt.phase === 'complete'
             ? [observation.verdict.kind]
