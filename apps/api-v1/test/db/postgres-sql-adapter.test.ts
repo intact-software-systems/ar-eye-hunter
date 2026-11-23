@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { spyOn, test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
@@ -26,6 +26,36 @@ interface FakePostgresClient {
     readonly calls: RecordedCall[];
     readonly events: string[];
 }
+
+test('a PostgreSQL notification handler can lose its database connection without terminating later deliveries', async () => {
+    const fake = createFakePostgresClient();
+    const disconnected = Object.assign(new Error('database session terminated'), { code: '57P01' });
+    const deliveries: string[] = [];
+    const errors = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        // postgres.js invokes its notification callback without consuming a returned promise.
+        fake.client.listen = async (_channel, deliver) => {
+            for (const payload of ['in-flight', 'after-reconnect']) {
+                const returned = deliver(payload);
+                if (returned) await returned.catch(() => {});
+                assert.equal(returned, undefined);
+            }
+        };
+        const sql = createPostgresSqlClient(fake.client, undefined);
+        await sql.listen('ws-channel', async (payload) => {
+            deliveries.push(payload);
+            if (payload === 'in-flight') throw disconnected;
+        });
+        await Promise.resolve();
+        assert.deepEqual(deliveries, ['in-flight', 'after-reconnect']);
+        assert.deepEqual(errors.mock.calls, [[
+            'PostgreSQL notification handler failed', { channel: 'ws-channel', name: 'Error', code: '57P01' }
+        ]]);
+    }
+    finally {
+        errors.mockRestore();
+    }
+});
 
 test('Postgres SQL client counts every statement of its root and transaction handles on one executor and forwards the client capabilities', async () => {
     const fake = createFakePostgresClient();
