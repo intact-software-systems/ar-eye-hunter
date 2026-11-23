@@ -10,6 +10,7 @@ import {
 import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import {
+    computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -28,7 +29,6 @@ import {
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
 import {
-    computeUnelectedOutsideCount,
     toCueListenCommands,
     toCueSendCommands,
     toCueWait

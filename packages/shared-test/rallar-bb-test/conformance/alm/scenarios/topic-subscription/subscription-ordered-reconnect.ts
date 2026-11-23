@@ -9,6 +9,7 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toSiblingLeftWait } from './to-sibling-left-wait.ts';
 import {
+    computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -33,7 +34,6 @@ import {
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
 import {
-    computeUnelectedOutsideCount,
     toCueListenCommands,
     toCueSendCommands,
     toPublishUntilConfirmedCommands

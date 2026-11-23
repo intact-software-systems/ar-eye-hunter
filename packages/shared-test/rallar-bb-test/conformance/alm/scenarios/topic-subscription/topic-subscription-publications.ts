@@ -3,6 +3,7 @@ import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesObserveCommand,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
@@ -66,7 +67,8 @@ interface PayloadWaitInput {
  * subscriber's election holds, an attempt reaches fewer, or none when the page's own room snapshot does not yet hold
  * its publish grant: a probe makes those attempts without a publication's payload. A recipient that drops out of the
  * audience before the cue would leave every later attempt short, so each recipient holds its election and its socket
- * until `toConfirmedCueWait` hears the cue.
+ * until `toConfirmedCueWait` hears the cue. Each attempt sends a new message, so an ordered publication, whose retry
+ * would mint a sequence of its own, publishes once through `toPublishOnceCommands` instead.
  */
 export function toPublishUntilConfirmedCommands(
     publication: TopicPublicationInput
@@ -78,12 +80,19 @@ export function toPublishUntilConfirmedCommands(
 }
 
 /**
- * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
- * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
- * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ * Publishes once, observes the copy for one phase and holds its receipt to the counts `toPublishUntilConfirmedCommands`
+ * holds an attempt to, then tells the recipients so. A receipt that names another audience fails the cell.
  */
-export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
-    return step.input.carrier === 'ws' ? 0 : unelected;
+export function toPublishOnceCommands(publication: TopicPublicationInput): readonly RallarBlackBoxTestCommand[] {
+    const { step, name } = publication;
+    const send = toCommandId(step, `${name}-send`);
+    const observe = toPublicationObserveCommand(step, name, 'acknowledged');
+    return [
+        { ...toPublicationSend(publication), commandId: send, handleId: send },
+        observe,
+        ...toReceiptCountFacts(publication, `resultCache.${observe.commandId}.value`),
+        ...toCueSendCommands(step, toConfirmedCue(name))
+    ];
 }
 
 /** The producer's loop `name` ended: every recipient it waited for confirmed one copy. */
@@ -95,23 +104,13 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
     const { step, name } = publication;
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
     const observe = toCommandId(step, `${name}-observe`);
-    const receipt = toPollResult({ step, name, index: 2, childId: observe });
     return toPollCommand({
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
         commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
-            {
-                ...toGrantedSend({
-                    step,
-                    payload: toPublicationPayload(step, name, publication.kind),
-                    orderingKey: publication.orderingKey,
-                    audience: publication.audience
-                }),
-                commandId: toCommandId(step, `${name}-send`),
-                handleId
-            },
+            { ...toPublicationSend(publication), commandId: toCommandId(step, `${name}-send`), handleId },
             {
                 kind: 'messages.observe',
                 commandId: observe,
@@ -120,22 +119,42 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
                 state: ['acknowledged'],
                 timeoutMs: CONFIRMATION_WAIT_MS
             },
-            ...([
-                ['expected', publication.confirmations + publication.outsideAudience],
-                ['confirmed', publication.confirmations],
-                ['outsideAudience', publication.outsideAudience]
-            ] as const).map(([list, expected]) =>
-                toResultFact({
-                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-                    step,
-                    name: `${name}-${list}`,
-                    source: `${receipt}.${list}RecipientPeerIds`,
-                    operator: 'length',
-                    expected
-                })
-            )
+            ...toReceiptCountFacts(publication, toPollResult({ step, name, index: 2, childId: observe }))
         ]
     });
+}
+
+function toPublicationSend(
+    publication: TopicPublicationInput
+): Omit<RallarBlackBoxTestMessagesSendCommand, 'commandId'> {
+    return toGrantedSend({
+        step: publication.step,
+        payload: toPublicationPayload(publication.step, publication.name, publication.kind),
+        orderingKey: publication.orderingKey,
+        audience: publication.audience
+    });
+}
+
+/** The receipt at `receipt` expects the audience and outside counts, and the audience confirmed it. */
+function toReceiptCountFacts(
+    publication: TopicPublicationInput,
+    receipt: string
+): readonly RallarBlackBoxTestCommand[] {
+    const { step, name, confirmations, outsideAudience } = publication;
+    return ([
+        ['expected', confirmations + outsideAudience],
+        ['confirmed', confirmations],
+        ['outsideAudience', outsideAudience]
+    ] as const).map(([list, expected]) =>
+        toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            step,
+            name: `${name}-${list}`,
+            source: `${receipt}.${list}RecipientPeerIds`,
+            operator: 'length',
+            expected
+        })
+    );
 }
 
 function toConfirmedCue(name: string): string {

@@ -31,6 +31,15 @@ import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-confor
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 
 /**
+ * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
+ * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
+ * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ */
+export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
+    return step.input.carrier === 'ws' ? 0 : unelected;
+}
+
+/**
  * Both producers hold `publish` and `subscribe` and the receiver `subscribe`; the sibling shares the sender's
  * principal, so it holds what the sender does.
  */

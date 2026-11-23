@@ -15,6 +15,7 @@ import {
     toCueSendCommands,
     toCueWait,
     toPublicationWait,
+    toPublishOnceCommands,
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
 
@@ -49,9 +50,8 @@ const ORDERED_TRACKS: readonly OrderedTrack[] = ['a', 'c'];
 const READINESS_PROBE = 'probe-ready';
 
 /**
- * Probes until one copy reaches the cell's whole audience, so the first publication on the track leaves to an audience
- * that already holds every grant and election it needs and is confirmed by its first attempt: a retried attempt mints
- * a sequence of its own.
+ * Probes until one copy reaches the cell's whole audience, so the first publication on the track, published once,
+ * leaves to an audience that already holds every grant and election it needs.
  */
 export function toReadinessProbeCommands(
     step: AlmConformanceStepInput,
@@ -67,11 +67,14 @@ export function toReadinessProbeCommands(
     });
 }
 
-/** One publication on the producer's own track, keyed by the cell, published until confirmed. */
+/**
+ * One publication on the producer's own track, keyed by the cell, published once: a retry would mint a sequence of its
+ * own, and the attempt it abandons would be retransmitted by a timer.
+ */
 export function toOrderedPublishCommands(
     { step, publication, confirmations, outsideAudience }: OrderedPublicationInput
 ): readonly RallarBlackBoxTestCommand[] {
-    return toPublishUntilConfirmedCommands({
+    return toPublishOnceCommands({
         step,
         name: toOrderedPublicationName(toProducerTrack(step), publication),
         confirmations,

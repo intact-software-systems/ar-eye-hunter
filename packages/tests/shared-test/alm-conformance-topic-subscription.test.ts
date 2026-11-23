@@ -12,6 +12,7 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { SUBSCRIPTION_PHASE_MS } from '@shared-test/rallar-bb-test/conformance/alm/granted-topic/subscription-phase-budgets.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import {
     assessAlmUnconfirmedReceiptRole,
@@ -409,6 +410,12 @@ const START_STATE_STEPS = [
 ] as const;
 
 type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission' | 'subscription-ordered-reconnect';
+
+const ORDERED_SCENARIO_IDS: readonly OrderedScenarioId[] = [
+    'subscription-ordered-entry',
+    'subscription-ordered-omission',
+    'subscription-ordered-reconnect'
+];
 type ProducerRole = 'sender' | 'publisher-b';
 
 /** Each producer's own track: `a` names the sender's publications, `c` publisher-b's. */
@@ -450,20 +457,40 @@ function findStep(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBo
     return command;
 }
 
-/** The expected, confirmed and outside counts a publish loop ends on, in the order it asserts them. */
-function toLoopCounts(recipe: RallarBlackBoxTestRecipe, name: string): readonly (RallarBlackBoxTestJsonValue | undefined)[] {
-    const loop = findStep(recipe, name);
-    return (loop.kind === 'loop' ? loop.commands : []).flatMap((command) => command.kind === 'assert' ? [command.expected] : []);
+/**
+ * The expected, confirmed and outside counts a publication's receipt is held to, in the order it asserts them: a
+ * publish loop's attempt, or the asserts after a single publication's observe.
+ */
+function toPublicationCounts(recipe: RallarBlackBoxTestRecipe, name: string): readonly (RallarBlackBoxTestJsonValue | undefined)[] {
+    const loop = recipe.commands.find(({ commandId }) => commandId === `${recipe.recipeId}-${name}`);
+    const asserts = loop?.kind === 'loop'
+        ? loop.commands
+        : ['expected', 'confirmed', 'outsideAudience'].map((list) => findStep(recipe, `assert-${name}-${list}`));
+    return asserts.flatMap((command) => command.kind === 'assert' && 'expected' in command ? [command.expected] : []);
 }
 
-function toLoopSend(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand | undefined {
-    const loop = findStep(recipe, name);
-    return (loop.kind === 'loop' ? loop.commands : []).find(({ kind }) => kind === 'messages.send');
+/** A publish loop's send, or a single publication's. */
+function toPublicationSend(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand | undefined {
+    const loop = recipe.commands.find(({ commandId }) => commandId === `${recipe.recipeId}-${name}`);
+    return loop?.kind === 'loop' ? loop.commands.find(({ kind }) => kind === 'messages.send') : findStep(recipe, `${name}-send`);
 }
 
 /** One publish loop, its confirmed cue and the cue's leaving. */
 function toPublishSteps(name: string): readonly string[] {
     return [name, `cue-${name}-confirmed`, `cue-${name}-confirmed-sent`];
+}
+
+/** One ordered publication: its single send, its observe, its receipt's three counts, its confirmed cue. */
+function toPublishOnceSteps(name: string): readonly string[] {
+    return [
+        `${name}-send`,
+        `${name}-observe`,
+        `assert-${name}-expected`,
+        `assert-${name}-confirmed`,
+        `assert-${name}-outsideAudience`,
+        `cue-${name}-confirmed`,
+        `cue-${name}-confirmed-sent`
+    ];
 }
 
 function toPublicationSteps(state: 'received' | 'absent', track: 'a' | 'c', publications: readonly number[]): readonly string[] {
@@ -533,16 +560,52 @@ describe('ALM ordered subscription entry conformance', () => {
             const scenario = findOrderedScenario(carrier, scenarioId);
             for (const [role, track] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(scenario, role);
-                const ordered = toStepNames(producer).filter((name) => name.startsWith(`${track}-p`));
+                const ordered = toStepNames(producer).filter((name) => new RegExp(`^${track}-p\\d+-send$`).test(name))
+                    .map((send) => send.replace(/-send$/, ''));
 
                 expect(ordered.length, producer.recipeId).toBeGreaterThan(0);
                 for (const name of ordered) {
-                    const send = toLoopSend(producer, name);
+                    const send = toPublicationSend(producer, name);
                     expect(send, `${producer.recipeId} ${name}`).toMatchObject({ orderingKey: scenarioId, ack: 'all-logical-recipients' });
                     expect(send, `${producer.recipeId} ${name}`).not.toHaveProperty('seq');
                 }
                 // The readiness probe rides no track, so it moves no recipient's position.
-                expect(toLoopSend(producer, 'probe-ready'), producer.recipeId).not.toHaveProperty('orderingKey');
+                expect(toPublicationSend(producer, 'probe-ready'), producer.recipeId).not.toHaveProperty('orderingKey');
+            }
+        }
+    });
+
+    // A retried ordered publication mints a sequence of its own and leaves its abandoned attempt to a timer's repair.
+    it.each(ALM_CONFORMANCE_CARRIERS)('publishes each ordered publication once and waits a phase for its receipt over %s', (carrier) => {
+        for (const scenarioId of ORDERED_SCENARIO_IDS) {
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), role);
+                const publications = toStepNames(producer).filter((name) => new RegExp(`^${track}-p\\d+-send$`).test(name));
+                const loopSends = toNestedCommands(producer.commands.filter(({ kind }) => kind === 'loop'))
+                    .filter((command) => command.kind === 'messages.send' && 'orderingKey' in command);
+
+                expect(publications.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                expect(loopSends, `${scenarioId} ${role}`).toEqual([]);
+                for (const name of publications.map((send) => send.replace(/-send$/, ''))) {
+                    const send = findStep(producer, `${name}-send`);
+                    const observe = findStep(producer, `${name}-observe`);
+                    expect(
+                        producer.commands.filter((command) => command.kind === 'messages.send' && 'handleId' in command && command.handleId === send.commandId)
+                    )
+                        .toHaveLength(1);
+                    expect(observe).toMatchObject({
+                        kind: 'messages.observe',
+                        handleId: send.commandId,
+                        state: ['acknowledged'],
+                        timeoutMs: SUBSCRIPTION_PHASE_MS
+                    });
+                    expect(['expected', 'confirmed', 'outsideAudience'].map((list) => findStep(producer, `assert-${name}-${list}`)))
+                        .toMatchObject(['expected', 'confirmed', 'outsideAudience'].map((list) => ({
+                            kind: 'assert',
+                            source: `resultCache.${observe.commandId}.value.${list}RecipientPeerIds`,
+                            operator: 'length'
+                        })));
+                }
             }
         }
     });
@@ -561,10 +624,10 @@ describe('ALM ordered subscription entry conformance', () => {
                     'cue-listen',
                     'cue-listen-sent',
                     ...toPublishSteps('probe-ready'),
-                    ...toPublishSteps(`${track}-p1`),
-                    ...toPublishSteps(`${track}-p2`),
+                    ...toPublishOnceSteps(`${track}-p1`),
+                    ...toPublishOnceSteps(`${track}-p2`),
                     'cue-entered-applied-by-receiver-received',
-                    ...toPublishSteps(`${track}-p3`),
+                    ...toPublishOnceSteps(`${track}-p3`),
                     'no-repair-dispatch',
                     'no-gap-nack'
                 ]);
@@ -623,10 +686,10 @@ describe('ALM ordered subscription entry conformance', () => {
             for (const [role, track] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(scenario, role);
 
-                expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p1`), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p2`), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p3`), role).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, 'probe-ready'), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p1`), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p2`), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p3`), role).toEqual(toCounts(2, unelected));
             }
         }
     );
@@ -640,15 +703,15 @@ describe('ALM ordered subscription entry conformance', () => {
                 'cue-listen',
                 'cue-listen-sent',
                 ...toPublishSteps('probe-ready'),
-                ...toPublishSteps(`${track}-p1`),
-                ...toPublishSteps(`${track}-p2`),
+                ...toPublishOnceSteps(`${track}-p1`),
+                ...toPublishOnceSteps(`${track}-p2`),
                 'cue-revoked-received',
                 'revoke-head-read',
                 'revoke-head-applied',
-                ...toPublishSteps(`${track}-p3`),
-                ...toPublishSteps(`${track}-p4`),
+                ...toPublishOnceSteps(`${track}-p3`),
+                ...toPublishOnceSteps(`${track}-p4`),
                 'cue-resubscribed-applied-by-receiver-received',
-                ...toPublishSteps(`${track}-p5`),
+                ...toPublishOnceSteps(`${track}-p5`),
                 'no-repair-dispatch',
                 'no-gap-nack'
             ]);
@@ -827,7 +890,7 @@ describe('ALM ordered subscription entry conformance', () => {
                 for (const [role, track] of PRODUCER_TRACKS) {
                     const producerNames = toStepNames(requireRoleRecipe(scenario, role));
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
-                    const before = producerNames.indexOf(toPublishSteps(first)[0]!);
+                    const before = producerNames.indexOf((first.startsWith('probe') ? toPublishSteps(first) : toPublishOnceSteps(first))[0]!);
                     // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
                     const applied = reasserted
                         ? [`cue-${elected}-applied-by-sibling-received`, `${elected}-head-read`, `${elected}-head-applied`]
@@ -856,12 +919,12 @@ describe('ALM ordered subscription entry conformance', () => {
             const producer = requireRoleRecipe(scenario, role);
             const revokedOutside = role === 'sender' ? unelected : 0;
 
-            expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(2, unelected));
+            expect(toPublicationCounts(producer, 'probe-ready'), role).toEqual(toCounts(2, unelected));
             for (const publication of [1, 2, 5]) {
-                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(2, unelected));
             }
             for (const publication of [3, 4]) {
-                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(1, revokedOutside));
+                expect(toPublicationCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(1, revokedOutside));
             }
         }
     });
@@ -1015,18 +1078,18 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 'cue-listen',
                 'cue-listen-sent',
                 ...toPublishSteps('probe-ready'),
-                ...toPublishSteps(`${track}-p1`),
-                ...toPublishSteps(`${track}-p2`),
+                ...toPublishOnceSteps(`${track}-p1`),
+                ...toPublishOnceSteps(`${track}-p2`),
                 'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
-                ...toPublishSteps(`${track}-p3`),
-                ...toPublishSteps(`${track}-p4`),
+                ...toPublishOnceSteps(`${track}-p3`),
+                ...toPublishOnceSteps(`${track}-p4`),
                 'cue-reentered-applied-by-receiver-received',
                 'cue-reentered-applied-by-sibling-received',
                 'reentered-head-read',
                 'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
-                ...toPublishSteps(`${track}-p5`),
+                ...toPublishOnceSteps(`${track}-p5`),
                 'no-repair-dispatch',
                 'no-gap-nack'
             ]);
@@ -1098,7 +1161,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 const commandIds = producer.commands.map(({ commandId }) => commandId);
                 const left = findStep(producer, 'sibling-left');
 
-                const lastPublication = `${producer.recipeId}-${track}-p2`;
+                const lastPublication = `${producer.recipeId}-${track}-p2-send`;
                 const alone = `${producer.recipeId}-probe-receiver-alone`;
 
                 expect(commandIds.indexOf(armed), `${carrier} ${role}`).toBeGreaterThan(-1);
@@ -1182,14 +1245,14 @@ describe('ALM ordered subscription reconnect conformance', () => {
             const producer = requireRoleRecipe(scenario, role);
 
             for (const name of ['probe-ready', `${track}-p1`, `${track}-p2`, 'probe-reentered', `${track}-p5`]) {
-                expect(toLoopCounts(producer, name), `${role} ${name}`).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, name), `${role} ${name}`).toEqual(toCounts(2, unelected));
             }
             for (const name of ['probe-receiver-alone', `${track}-p3`, `${track}-p4`]) {
-                expect(toLoopCounts(producer, name), `${role} ${name}`).toEqual(toCounts(1, unelected));
+                expect(toPublicationCounts(producer, name), `${role} ${name}`).toEqual(toCounts(1, unelected));
             }
-            expect(toLoopSend(producer, 'probe-receiver-alone'), role).not.toHaveProperty('orderingKey');
-            expect(toLoopSend(producer, 'probe-reentered'), role).not.toHaveProperty('orderingKey');
-            expect(toLoopSend(producer, `${track}-p5`), role).toMatchObject({ orderingKey: 'subscription-ordered-reconnect' });
+            expect(toPublicationSend(producer, 'probe-receiver-alone'), role).not.toHaveProperty('orderingKey');
+            expect(toPublicationSend(producer, 'probe-reentered'), role).not.toHaveProperty('orderingKey');
+            expect(toPublicationSend(producer, `${track}-p5`), role).toMatchObject({ orderingKey: 'subscription-ordered-reconnect' });
         }
     });
 
