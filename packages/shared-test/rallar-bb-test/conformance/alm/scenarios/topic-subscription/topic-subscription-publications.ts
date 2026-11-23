@@ -29,7 +29,8 @@ import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 /**
  * How long one attempt of a publish loop observes its copy before the next attempt sends a new one. The origin's
  * admission of acknowledgements reached 12.1 s on GitHub runners, with a p90 of 4.3 to 5.8 s on the failing jobs of the
- * full-scope runs of 2026-11-22, so an attempt that misses this window met a short audience, not a slow lane.
+ * full-scope runs of 2026-11-22. A short audience completes at once and fails the count facts; an attempt that misses
+ * this window waited on an expected recipient that cannot answer, not on a slow lane.
  */
 const SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS = 15_000;
 
@@ -43,7 +44,7 @@ const REJECTION_WAIT_MS = 30_000;
 export interface TopicPublicationInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** How many recipients one copy must confirm before the loop ends. */
+    /** How many recipients one copy must confirm. */
     readonly confirmations: number;
     /**
      * How many more the copy's receipt must expect and record outside its audience: granted sessions that answered
@@ -57,6 +58,17 @@ export interface TopicPublicationInput {
     /** Absent, every granted session of the room. */
     readonly audience?: AlmConformanceSendAudience;
 }
+
+/**
+ * A publish loop's publication: it rides no track, since each attempt sends a new copy and a track would mint a
+ * sequence for each.
+ */
+type UnorderedTopicPublicationInput =
+    & Omit<TopicPublicationInput, 'orderingKey'>
+    & Readonly<{ orderingKey?: undefined; }>;
+
+/** What a publication's one send is built from. */
+type TopicPublicationSendInput = Pick<TopicPublicationInput, 'step' | 'name' | 'kind' | 'orderingKey' | 'audience'>;
 
 interface PayloadWaitInput {
     readonly step: AlmConformanceStepInput;
@@ -75,7 +87,7 @@ interface PayloadWaitInput {
  * would mint a sequence of its own, publishes once through `toPublishOnceCommands` instead.
  */
 export function toPublishUntilConfirmedCommands(
-    publication: TopicPublicationInput
+    publication: UnorderedTopicPublicationInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toPublishUntilConfirmedPoll(publication),
@@ -89,17 +101,16 @@ export function toPublishUntilConfirmedCommands(
  */
 export function toPublishOnceCommands(publication: TopicPublicationInput): readonly RallarBlackBoxTestCommand[] {
     const { step, name } = publication;
-    const send = toCommandId(step, `${name}-send`);
     const observe = toPublicationObserveCommand(step, name, 'acknowledged');
     return [
-        { ...toPublicationSend(publication), commandId: send, handleId: send },
+        toNamedPublicationSend(publication),
         observe,
         ...toReceiptCountFacts(publication, `resultCache.${observe.commandId}.value`),
         ...toCueSendCommands(step, toConfirmedCue(name))
     ];
 }
 
-/** The producer's loop `name` ended: every recipient it waited for confirmed one copy. */
+/** The producer's publication or probe `name` ended: every recipient it waited for confirmed one copy. */
 export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toCueWait(step, toConfirmedCue(name));
 }
@@ -108,7 +119,7 @@ export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string):
  * Attempts start for one phase; the poll's deadline adds one attempt's budget, its send's and its observe's timeouts,
  * so the last attempt started inside the phase observes its whole window.
  */
-function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): RallarBlackBoxTestCommand {
+function toPublishUntilConfirmedPoll(publication: UnorderedTopicPublicationInput): RallarBlackBoxTestCommand {
     const { step, name } = publication;
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
     const observe = toCommandId(step, `${name}-observe`);
@@ -132,7 +143,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
 }
 
 function toPublicationSend(
-    publication: TopicPublicationInput
+    publication: TopicPublicationSendInput
 ): Omit<RallarBlackBoxTestMessagesSendCommand, 'commandId'> {
     return toGrantedSend({
         step: publication.step,
@@ -140,6 +151,12 @@ function toPublicationSend(
         orderingKey: publication.orderingKey,
         audience: publication.audience
     });
+}
+
+/** A publication's one send, its handle named after it (`<name>-send`) so the cell can observe it and read its receipt. */
+function toNamedPublicationSend(publication: TopicPublicationSendInput): RallarBlackBoxTestMessagesSendCommand {
+    const send = toCommandId(publication.step, `${publication.name}-send`);
+    return { ...toPublicationSend(publication), commandId: send, handleId: send };
 }
 
 /** The receipt at `receipt` expects the audience and outside counts, and the audience confirmed it. */
@@ -170,18 +187,14 @@ function toConfirmedCue(name: string): string {
 
 /** One publication on the granted topic, its handle named after it so the cell can read its receipt. */
 export function toPublishCommands(step: AlmConformanceStepInput, name: string): readonly RallarBlackBoxTestCommand[] {
-    const send = toCommandId(step, `${name}-send`);
+    const send = toNamedPublicationSend({ step, name, kind: 'publication' });
     return [
-        {
-            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
-            commandId: send,
-            handleId: send
-        },
+        send,
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-admitted`,
-            source: `resultCache.${send}.value.status`,
+            source: `resultCache.${send.commandId}.value.status`,
             operator: 'notEquals',
             expected: 'rejected'
         })
@@ -198,14 +211,9 @@ export function toRejectedPublishCommands(
     name: string,
     reason: string
 ): readonly RallarBlackBoxTestCommand[] {
-    const send = toCommandId(step, `${name}-send`);
     const observe = toPublicationObserveCommand(step, name, 'rejected');
     return [
-        {
-            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
-            commandId: send,
-            handleId: send
-        },
+        toNamedPublicationSend({ step, name, kind: 'publication' }),
         observe,
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,

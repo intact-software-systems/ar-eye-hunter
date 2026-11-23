@@ -486,11 +486,8 @@ type ReadSiblingContinuationSnapshot = (
     runIds: SiblingContinuationRunIds
 ) => SiblingContinuationSnapshot;
 
-/**
- * A three-agent cell whose sibling holds a continuation gated on the receiver's `receiver-p4-confirmed`. The sibling
- * copies the receiver's recipe, so one passed connect releases both barriers; `read` states each snapshot.
- */
-async function createSiblingContinuationFixture(runId: string, read: ReadSiblingContinuationSnapshot) {
+/** The cell's recipes: the sibling copies the receiver's, and holds a continuation gated on `receiver-p4-confirmed`. */
+function toSiblingContinuationRecipes() {
     const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
     const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
     const continuation = {
@@ -503,9 +500,17 @@ async function createSiblingContinuationFixture(runId: string, read: ReadSibling
         sibling: `${sibling.recipeId}-run`,
         continuation: `${continuation.recipe.recipeId}-run`
     };
+    const recipes = new Map<AlmConformanceRole, typeof sibling>([
+        ['sender', baseline.sender],
+        ['receiver', baseline.receiver],
+        ['sibling', sibling]
+    ]);
     const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
-    const control = await openRecordingControlRequest(runId);
-    const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
+    return { recipes, continuation, runIds, connect };
+}
+
+/** The control snapshot `snapshot` states: the receiver's connect passed, and its gate once open. */
+function toSiblingContinuationSnapshot(runId: string, connect: string, snapshot: SiblingContinuationSnapshot) {
     const toPassedEvent = (commandId: string) => ({
         kind: 'event' as const,
         protocolVersion: 1 as const,
@@ -516,6 +521,35 @@ async function createSiblingContinuationFixture(runId: string, read: ReadSibling
         commandId,
         payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
     });
+    return {
+        runId,
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 2,
+        agents: [],
+        commands: [],
+        events: [toPassedEvent(connect), ...(snapshot.gateOpen ? [toPassedEvent('receiver-p4-confirmed')] : [])],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+        results: snapshot.results.map(({ commandId, ok }) => ({
+            kind: 'result' as const,
+            protocolVersion: 1 as const,
+            runId,
+            agentId: 'observed-agent',
+            commandId,
+            ok
+        }))
+    };
+}
+
+/**
+ * A three-agent cell whose sibling holds a continuation. The sibling copies the receiver's recipe, so one passed
+ * connect releases both barriers; `read` states each snapshot.
+ */
+async function createSiblingContinuationFixture(runId: string, read: ReadSiblingContinuationSnapshot) {
+    const { recipes, continuation, runIds, connect } = toSiblingContinuationRecipes();
+    const control = await openRecordingControlRequest(runId);
+    const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
     const run: AgentRecipeRun = {
         request: control.request,
         runId,
@@ -525,33 +559,7 @@ async function createSiblingContinuationFixture(runId: string, read: ReadSibling
             ['sibling', { agentId: 'sibling-agent' }]
         ]),
         startedRoots: [],
-        readSnapshot: async () => {
-            const snapshot = read(posted(), runIds);
-            return {
-                runId,
-                createdAtEpochMs: 1,
-                updatedAtEpochMs: 2,
-                agents: [],
-                commands: [],
-                events: [toPassedEvent(connect), ...(snapshot.gateOpen ? [toPassedEvent('receiver-p4-confirmed')] : [])],
-                stats: [],
-                reports: [],
-                heartbeats: [],
-                results: snapshot.results.map(({ commandId, ok }) => ({
-                    kind: 'result',
-                    protocolVersion: 1,
-                    runId,
-                    agentId: 'observed-agent',
-                    commandId,
-                    ok
-                }))
-            };
-        }
+        readSnapshot: async () => toSiblingContinuationSnapshot(runId, connect, read(posted(), runIds))
     };
-    const recipes = new Map<AlmConformanceRole, typeof sibling>([
-        ['sender', baseline.sender],
-        ['receiver', baseline.receiver],
-        ['sibling', sibling]
-    ]);
     return { control, posted, run, recipes, continuation, runIds };
 }

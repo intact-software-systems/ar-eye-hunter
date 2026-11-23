@@ -15,6 +15,7 @@ import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/
 
 import { isAssertOperatorSatisfied } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
     createAlmConformanceRecipes,
@@ -28,6 +29,7 @@ import {
     toAlmUnconfirmedReceiptRole
 } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
+import { toPublishUntilConfirmedCommands } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/topic-subscription-publications.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
@@ -611,6 +613,21 @@ describe('ALM ordered subscription entry conformance', () => {
         }
     });
 
+    it('refuses an ordered publication to the publish loop by its type', () => {
+        const refuseOrderedLoop = (step: AlmConformanceStepInput) =>
+            toPublishUntilConfirmedCommands({
+                step,
+                name: 'a-p1',
+                confirmations: 1,
+                outsideAudience: 0,
+                kind: 'publication',
+                // @ts-expect-error A publish loop's attempts each send a new copy, so its publication rides no track.
+                orderingKey: 'subscription-ordered-entry'
+            });
+
+        expect(refuseOrderedLoop).toBeTypeOf('function');
+    });
+
     // A retried ordered publication mints a sequence of its own and leaves its abandoned attempt to a timer's repair.
     it.each(ALM_CONFORMANCE_CARRIERS)('publishes each ordered publication once and waits a phase for its receipt over %s', (carrier) => {
         for (const scenarioId of ORDERED_SCENARIO_IDS) {
@@ -625,10 +642,6 @@ describe('ALM ordered subscription entry conformance', () => {
                 for (const name of publications.map((send) => send.replace(/-send$/, ''))) {
                     const send = findStep(producer, `${name}-send`);
                     const observe = findStep(producer, `${name}-observe`);
-                    expect(
-                        producer.commands.filter((command) => command.kind === 'messages.send' && 'handleId' in command && command.handleId === send.commandId)
-                    )
-                        .toHaveLength(1);
                     expect(observe).toMatchObject({
                         kind: 'messages.observe',
                         handleId: send.commandId,

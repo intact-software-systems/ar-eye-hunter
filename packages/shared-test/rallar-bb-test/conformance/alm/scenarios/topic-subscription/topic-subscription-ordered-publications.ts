@@ -174,7 +174,7 @@ export function toArrivedTrackKey(step: AlmConformanceStepInput, arrival: Rallar
     return `${step.scenarioKey}:{resultCache.${arrival.commandId}.value.event.payload.senderId}`;
 }
 
-/** Both producers' loops for `publication` ended: every recipient each waited for confirmed one copy. */
+/** Both producers' publications `publication` ended: every recipient each waited for confirmed one copy. */
 export function toOrderedConfirmedCueWaits(
     step: AlmConformanceStepInput,
     publication: number

@@ -94,7 +94,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 }
 
 /**
- * Each grant change waits for both producers' loops before it. The revoke's delta reaches the receiver, which wrote it,
+ * Each grant change waits for both producers' publications before it. The revoke's delta reaches the receiver, which wrote it,
  * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`. The
  * sibling's new election reaches the receiver before its cue lets the producers publish `p5`.
  */

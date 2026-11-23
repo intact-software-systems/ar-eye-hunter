@@ -659,7 +659,7 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   under the new connection generation, for its subscription row and for its own room presence under that
   generation (the page restored it) and cues `reentered`; the producers probe
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
-  without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
+  without `p3` or `p4`. The sibling holds its election until both producers' `p5` publications end, and no producer
   dispatches a repair or admits a gap NACK about the cell's tracks.
 - `server-ordered-entry` (`ws`, same-principal, full): a principal's second session reads its first client-state event
   as `entered`, prior 0, on the server's producer track.
