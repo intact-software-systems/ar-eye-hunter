@@ -116,7 +116,7 @@ interface WriteRoomTimeline extends WriteRoomTime {
 export function createRoomTimeOperations(
     services: Pick<
         CreateBrowserRallarRoomsInput,
-        'requireSession' | 'roomEvents' | 'ws' | 'auth' | 'messages' | 'readSession'
+        'requireSession' | 'roomEvents' | 'ws' | 'auth' | 'messages' | 'readSession' | 'readEarliestServerEpochMs'
     >
 ): RoomTimeOperations {
     const { requireSession } = services;
@@ -135,6 +135,7 @@ export function createRoomTimeOperations(
         assertRoomDeadlineName(name);
         return watchRoomRevision<T>({
             room: roomRef, services, regresses, listener, signal, eventTypes: ['group-updated'],
+            readEarliestServerEpochMs: observation === 'named-program' ? services.readEarliestServerEpochMs : undefined,
             project: group => decode(group.metadata, name),
             subscribeInvalidation: observation === 'room-events' ? undefined : (room, invalidate) => subscribeViewInvalidations({
                 browser: { messages: services.messages, session: services.readSession },

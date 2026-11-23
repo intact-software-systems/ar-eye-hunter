@@ -13,6 +13,7 @@ import { readStateGroupSnapshot } from './point-read.ts';
 
 export interface ObservedRoomMetadata {
     readonly snapshotVersion: number;
+    readonly purgeAfterEpochMs: number | null;
     readonly metadata: ApiJsonObject;
 }
 

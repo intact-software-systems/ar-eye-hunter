@@ -125,6 +125,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly realtime: RallarRealtimeFacade;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
+    readonly readEarliestServerEpochMs: () => number | undefined;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     readonly readSession: () => AuthSession | undefined;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(options: T) => T & RallarOperationOptions;

@@ -23,7 +23,7 @@ export function watchRoomAccess(
     listener: (access: RoomAccessObservation) => void, signal?: AbortSignal
 ): () => void {
     return watchRoomRevision({
-        room, services, signal,
+        room, services, signal, readEarliestServerEpochMs: services.readEarliestServerEpochMs,
         subscribeInvalidation: (watched, invalidate) => subscribeViewInvalidations({
             browser: { messages: services.messages, session: services.readSession },
             scope: watched, resource: 'room-access',
