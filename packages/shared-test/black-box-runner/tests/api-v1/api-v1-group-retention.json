@@ -150,7 +150,8 @@
           "kind": "room",
           "joinMode": "open",
           "retention": {
-            "mode": "temporary"
+            "mode": "temporary",
+            "pausedTimelineRetentionMs": 750000
           }
         }
       },
@@ -164,6 +165,7 @@
               "rallarRetention": {
                 "mode": "temporary",
                 "reconnectGraceMs": 600000,
+                "pausedTimelineRetentionMs": 750000,
                 "emptyPresenceFingerprint": null
               }
             }

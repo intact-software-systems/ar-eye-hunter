@@ -104,6 +104,7 @@ export function toGroupMutationDescriptorTargetIdentity(
         case 'reconfigureGroup':
         case 'failGroupFormation':
         case 'applyPlannedLayout':
+        case 'settleTimeline':
         case 'updateGroupActivationStatus':
         case 'pauseGroupTransport':
         case 'resumeGroupTransport':

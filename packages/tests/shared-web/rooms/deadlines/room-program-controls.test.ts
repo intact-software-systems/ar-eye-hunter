@@ -238,3 +238,20 @@ it('updates the named timeline from its account notice and clears it when room a
         await facade.disconnect();
     }
 });
+
+it('confirms the requested successor on the same occurrence when setting or cancelling it', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const { rooms } = createRallarFacade();
+    const successor = { phase: 'period-one', durationMs: 600_000 };
+    const control = { name: 'match', expectedRevision: 2, expectedDirectorEpoch: 7 };
+    const occurrence = {
+        name: 'match', phase: 'warmup', startedAtRevision: 1, startedAtEpochMs: 1000,
+        startedBy: 'director' as const, revision: 3, status: 'paused' as const, remainingMs: 40000
+    };
+    vi.stubGlobal('fetch', async () => response({ ...occurrence, successor }));
+    const change = { ...control, successor };
+    await expect(rooms.setTimelineSuccessor(room, change, 'schedule-next-phase-request')).resolves.toEqual({ ...occurrence, successor });
+    await expect(rooms.setTimelineSuccessor(room, { ...control, successor: null }, 'cancel-next-phase-request')).rejects.toThrow(/acknowledgement/);
+    vi.stubGlobal('fetch', async () => response({ ...occurrence, startedAtRevision: 3, successor }));
+    await expect(rooms.setTimelineSuccessor(room, change, 'schedule-next-phase-request')).rejects.toThrow(/acknowledgement/);
+});

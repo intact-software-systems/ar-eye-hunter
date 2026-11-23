@@ -210,6 +210,13 @@ export class GroupStateInboxService {
         });
     }
 
+    async enqueueTimelineSettlement({ command, atEpochMs, traceId }: GroupSystemCommandSubmission): Promise<void> {
+        const ingress = await this.groupStateService.captureTimelineDeadlineMutationIngress(command, atEpochMs);
+        await this.queueEntryWriter.enqueue({
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_TIMELINE_SETTLE, ingress), traceId
+        });
+    }
+
     async enqueueActivationStatusCommand({ command, atEpochMs, traceId }: GroupSystemCommandSubmission): Promise<void> {
         const ingress = await this.groupStateService.captureActivationStatusMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({

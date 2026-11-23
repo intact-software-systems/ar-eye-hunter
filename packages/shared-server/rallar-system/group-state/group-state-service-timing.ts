@@ -68,9 +68,10 @@ type InternalCommandIngressCapture =
     | 'captureFormationCriterionMutationIngress'
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
+    | 'captureTimelineDeadlineMutationIngress'
     | 'captureActivationStatusMutationIngress';
 
-// The four internal ingress captures share one signature, so one factory
+// Internal ingress captures share one signature, so one factory
 // times them all; the operation string doubles as the method name, which
 // keeps the timing label and the forwarded call from drifting apart.
 function createTimedInternalCommandIngressCapture(
@@ -126,6 +127,7 @@ function createTimedIngressCaptureOperations(
         captureFormationCriterionMutationIngress: timedCommand('captureFormationCriterionMutationIngress'),
         captureFormationAutomationMutationIngress: timedCommand('captureFormationAutomationMutationIngress'),
         captureTopologyPublicationMutationIngress: timedCommand('captureTopologyPublicationMutationIngress'),
+        captureTimelineDeadlineMutationIngress: timedCommand('captureTimelineDeadlineMutationIngress'),
         captureActivationStatusMutationIngress: timedCommand('captureActivationStatusMutationIngress'),
         captureExpiredPresenceMutationIngresses: async (atEpochMs) =>
             await timeGroupStateOperation({

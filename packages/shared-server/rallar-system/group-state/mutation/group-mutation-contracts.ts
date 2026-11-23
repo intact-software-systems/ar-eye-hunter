@@ -78,6 +78,15 @@ export type GroupPublicationGrantOperation = 'grantGroupPublication' | 'revokeGr
 export type GroupTopicSubscriptionOperation = 'subscribeGroupTopic' | 'unsubscribeGroupTopic';
 
 export type GroupMutationCommand =
+    | (GroupMutationCommandBase & {
+        readonly operation: 'settleTimeline';
+        readonly input: NullableActorInput & {
+            readonly name: string;
+            readonly revision: number;
+            readonly dueAtEpochMs: number;
+            readonly groupCreatedAtEpochMs: number;
+        };
+    })
     | (
         & GroupMutationCommandBase
         & Readonly<{
@@ -564,6 +573,7 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'formation-criterion',
     'formation-automation',
     'topology-publication',
+    'timeline-deadline',
     'activation-status'
 ] as const;
 

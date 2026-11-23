@@ -210,6 +210,7 @@ function decodeGroupMutationOperation(
         case 'reconfigureGroup':
         case 'failGroupFormation':
         case 'applyPlannedLayout':
+        case 'settleTimeline':
         case 'updateGroupActivationStatus':
         case 'joinGroup':
         case 'acceptGroupInvite':

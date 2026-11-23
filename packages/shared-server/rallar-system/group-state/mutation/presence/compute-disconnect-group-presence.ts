@@ -1,3 +1,4 @@
+import { readPausedTimelineRetention } from '../../retention/compute-empty-group-lifetime.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 
 import type {
@@ -17,7 +18,7 @@ export function computeDisconnectGroupPresence(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    requireGroup(read, command.aggregateRef);
+    const group = requireGroup(read, command.aggregateRef).value;
     const existing = read.targetPresence;
     if (!existing) {
         if (facts.internalAuthority === 'expiry') {
@@ -40,7 +41,7 @@ export function computeDisconnectGroupPresence(
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
         return noOp(command, read, facts);
     }
-    if (facts.internalAuthority === 'expiry') {
+    if (facts.internalAuthority === 'expiry' && readPausedTimelineRetention(group) === null) {
         return computeGroupPresenceWrite({
             command,
             read,
@@ -58,7 +59,8 @@ export function computeDisconnectGroupPresence(
     const session: GroupPresenceSession = {
         ...existing.value,
         status: 'disconnected',
-        disconnectedAtEpochMs: disconnectedAt,
+        // Keep the logical departure within the bounded paused-room recovery window.
+        disconnectedAtEpochMs: facts.internalAuthority === 'expiry' ? existing.value.expiresAtEpochMs : disconnectedAt,
         disconnectReason: command.input.reason ?? 'closed'
     };
     return computeGroupPresenceWrite({

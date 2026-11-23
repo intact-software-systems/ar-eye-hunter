@@ -1,9 +1,6 @@
 import { GROUP_RETENTION_METADATA_KEY, readGroupRetentionState } from '@shared/api/group-retention.ts';
-import { readGroupSessionSchedule, toGroupSessionTiming } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
-
-import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { computeGroupPresenceSummaryContent } from '../presence/compute-group-presence-summary.ts';
+import { computeEmptyGroupLifetime, type GroupRetentionObservation } from './compute-empty-group-lifetime.ts';
 import { computeGroupRetentionWrite, toGroupRetentionReceipt } from './compute-group-retention-write.ts';
 import type { GroupRetentionService } from './group-retention-service.ts';
 
@@ -23,38 +20,11 @@ export function computeGroupRetention(read: GroupRetentionService.Read): GroupRe
     if (group.status !== 'active' || policy === null) {
         return noChange(read, group);
     }
-    const live = computeGroupPresenceSummaryContent({
-        ...read.authority,
-        group: stored,
-        current: read.authority.current ?? null
-    }, read.attemptAtEpochMs).activeSessionCount > 0;
-    const schedule = readGroupSessionSchedule(group.metadata);
-    const timing = schedule === null ? null : toGroupSessionTiming(schedule, read.attemptAtEpochMs);
-    const holdReleasedAtEpochMs = schedule === null || timing === null
-        ? null
-        : schedule.cancelledAtEpochMs ?? timing.reservationsExpireAtEpochMs;
-    const heldForSession = timing !== null && timing.phase !== 'cancelled' &&
-        read.attemptAtEpochMs < timing.reservationsExpireAtEpochMs;
-    if (live || heldForSession) {
-        return group.emptySinceEpochMs === null
+    const lifetime = computeEmptyGroupLifetime(read.authority, policy, read.attemptAtEpochMs);
+    if (lifetime !== 'expired') {
+        return lifetime.atEpochMs === group.emptySinceEpochMs && policy.emptyPresenceFingerprint === lifetime.fingerprint
             ? noChange(read, group)
-            : computeGroupRetentionWrite(read, updateObservation(read, group, { atEpochMs: null, fingerprint: null }));
-    }
-    const fingerprint = computePresenceFingerprint(read);
-    if (
-        group.emptySinceEpochMs === null || policy.emptyPresenceFingerprint !== fingerprint ||
-        (holdReleasedAtEpochMs !== null && group.emptySinceEpochMs < holdReleasedAtEpochMs)
-    ) {
-        return computeGroupRetentionWrite(
-            read,
-            updateObservation(read, group, {
-                atEpochMs: Math.max(read.attemptAtEpochMs, group.emptySinceEpochMs ?? 0),
-                fingerprint
-            })
-        );
-    }
-    if (read.attemptAtEpochMs - group.emptySinceEpochMs < policy.reconnectGraceMs) {
-        return noChange(read, group);
+            : computeGroupRetentionWrite(read, updateObservation(read, group, lifetime));
     }
     const audit = retentionAudit(read);
     return computeGroupRetentionWrite(read, {
@@ -92,19 +62,10 @@ function noChange(read: GroupRetentionService.Read, group: Group): GroupRetentio
     return { outcome: 'no-op', receipt: toGroupRetentionReceipt(read, { group, outcome: 'no-op', outboxIds: [] }) };
 }
 
-function computePresenceFingerprint(read: GroupRetentionService.Read): string {
-    const authority = read.authority;
-    const observations = [authority.members, authority.admissions, authority.presenceSessions].map((rows) =>
-        rows.map(({ entry }) => ({ key: entry.key, revision: entry.revision }))
-            .toSorted((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
-    );
-    return computeMutationCommandDigest(encodeJsonWireValue(observations));
-}
-
 function updateObservation(
     read: GroupRetentionService.Read,
     group: Group,
-    observation: Readonly<{ atEpochMs: number | null; fingerprint: string | null; }>
+    observation: GroupRetentionObservation
 ): Group {
     const policy = readGroupRetentionState(group.metadata);
     if (policy === null) {

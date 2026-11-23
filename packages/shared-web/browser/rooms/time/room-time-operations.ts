@@ -21,7 +21,7 @@ import {
     type RoomClockMutation
 } from '@shared/api/group-deadlines/room-clock.ts';
 import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
-import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
+import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension, type RoomTimelineSuccessorChange } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import { captureRoomSession } from '../room-session-fence.ts';
@@ -53,6 +53,9 @@ export interface RoomTimeOperations {
     readSchedule(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule | null>;
     watchSchedule(room: GroupRef, name: string, listener: (state: RoomSchedule.Observation) => void,
         options?: { readonly signal?: AbortSignal; }): () => void;
+    setTimelineSuccessor(
+        room: GroupRef, change: RoomTimelineSuccessorChange, requestId: string, options?: { readonly signal?: AbortSignal; }
+    ): Promise<RoomTimeline>;
     extendTimeline(
         room: GroupRef, extension: RoomTimelineExtension, requestId: string, options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomTimeline>;
@@ -110,7 +113,7 @@ interface WriteRoomProgram extends WriteRoomTime {
 }
 
 interface WriteRoomTimeline extends WriteRoomTime {
-    readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>; };
+    readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase' | 'set-successor'; }>; };
 }
 
 export function createRoomTimeOperations(
@@ -208,7 +211,11 @@ export function createRoomTimeOperations(
                         !sameSchedulePhases(a.phases, b.phases))), signal, 'named-program');
         },
         advanceTimeline(room, advance, requestId, { signal } = {}) {
-            const roomClock = { ...advance, operation: 'advance-phase' as const };
+            const roomClock = { ...structuredClone(advance), operation: 'advance-phase' as const };
+            return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
+        },
+        setTimelineSuccessor(room, change, requestId, { signal } = {}) {
+            const roomClock = { ...structuredClone(change), operation: 'set-successor' as const };
             return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
         },
         extendTimeline(room, extension, requestId, { signal } = {}) {

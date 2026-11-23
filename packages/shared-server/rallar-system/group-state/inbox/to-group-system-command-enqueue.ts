@@ -7,6 +7,7 @@ export type GroupSystemCommandType =
     | typeof AppInboxType.GROUP_FORMATION_CRITERION
     | typeof AppInboxType.GROUP_FORMATION_AUTOMATION
     | typeof AppInboxType.GROUP_TOPOLOGY_PUBLICATION
+    | typeof AppInboxType.GROUP_TIMELINE_SETTLE
     | typeof AppInboxType.GROUP_ACTIVATION_STATUS
     | typeof AppInboxType.GROUP_PRESENCE_EXPIRE;
 
