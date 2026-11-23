@@ -131,12 +131,26 @@ in the same application and workspace. Retain membership in A when switching roo
 Private WebSocket notices identify the affected room and program. The SDK reads the phase and clock together
 at startup, on matching changes and after reconnect. A change to a different clock leaves the watch idle.
 Access loss clears the cached timeline. Use the existing clock pause/resume commands with the same name.
-The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
+The occurrence stays stable across those changes. At zero a phase with no configured successor remains current.
 
 Use `rooms.extendTimeline(roomRef, { name: 'match', durationMs, expectedRevision, expectedDirectorEpoch }, requestId)`
 to add a positive whole number of milliseconds to a running or paused phase. A running phase extends from its existing end.
 A paused phase stays paused with a larger balance. Both keep the phase label and starting revision. An expired running phase
 requires an explicit advance. Retry the original request unchanged with the same ID to recover its receipt.
+
+A director can include `successor: { phase, durationMs }` in `advanceTimeline`, or call
+`rooms.setTimelineSuccessor(roomRef, { name, expectedRevision, expectedDirectorEpoch, successor }, requestId)`
+to configure, replace or cancel the next phase. Pass `null` to cancel. Authorized observers can read the planned phase
+and its duration through `watchTimeline`. Pausing freezes the countdown, extending moves the boundary, and resuming
+uses the saved balance. A replacement director inherits the plan. An early manual advance clears the previous plan.
+
+When the countdown expires, the server starts the configured successor at the scheduled boundary, even if processing
+resumes later or every browser has left. A late command cannot extend the old phase. The successor has its own duration
+and no further automatic transition. Reconnecting participants recover the committed occurrence and clock together.
+
+An empty temporary room stays available through the successor’s end. A paused temporary room with a planned successor
+uses its `retention.pausedTimelineRetentionMs` window, one hour by default, starting when it is both empty and paused.
+Entering interrupts cleanup. Watching from another room leaves that deadline unchanged. Explicit room deletion still takes effect.
 
 Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
 its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
