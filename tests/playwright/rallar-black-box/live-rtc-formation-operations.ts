@@ -14,6 +14,7 @@ import type { RallarBlackBoxTestFormationCommandCommand } from '../../../package
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '../../../packages/shared/api/group-types.ts';
 
+import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 import {
     openLiveRtcBrowserAgent,
     type LiveRtcBrowserAgentConfig,
@@ -25,7 +26,6 @@ import {
     jsonRecord,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
-import { FORMATION_READINESS_TIMEOUT_MS } from './live-rtc-wait-budgets.ts';
 
 /** Everything a command id is built from: the agent it addresses and the scenario it belongs to. */
 export interface FormationCommandIdInput {

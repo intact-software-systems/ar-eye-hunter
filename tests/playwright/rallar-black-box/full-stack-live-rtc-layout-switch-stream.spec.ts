@@ -15,6 +15,7 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 import {
     computeLiveRtcLayoutSwitchEvidence,
     countLiveRtcMissingFrames,
@@ -39,7 +40,6 @@ import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamQos } from './live-rtc-layout-switch-operations.ts';
-import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from './live-rtc-wait-budgets.ts';
 import {
     resolveLiveRtcLayoutShape,
     toLiveRtcAcceptedLayout,

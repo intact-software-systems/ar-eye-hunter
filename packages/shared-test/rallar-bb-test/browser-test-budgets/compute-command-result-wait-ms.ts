@@ -1,6 +1,6 @@
-import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { computeRtcConnectReadinessTimeoutMs } from '@shared-test/rallar-bb-test/recipe/compute-rtc-connect-readiness-timeout-ms.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '../distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
+import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
+import { computeRtcConnectReadinessTimeoutMs } from '../recipe/compute-rtc-connect-readiness-timeout-ms.ts';
 
 /**
  * How long a harness waits for a command's result: what the command may take, then the harness's own poll margin for

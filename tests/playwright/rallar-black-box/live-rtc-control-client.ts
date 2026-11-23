@@ -43,6 +43,12 @@ import {
 } from './live-rtc-control-diagnostic-projections.ts';
 
 import {
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
+    LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
+    LIVE_RTC_PEER_READINESS_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import {
     jsonRecord,
     normalizeJson,
     optionalJsonArray,
@@ -64,12 +70,6 @@ import type {
     LiveRtcNackProbeStage
 } from './live-rtc-performance-evidence.ts';
 import { readLiveRtcRecorderJsonl, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
-import {
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
-    LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
-    LIVE_RTC_PEER_READINESS_TIMEOUT_MS
-} from './live-rtc-wait-budgets.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
 

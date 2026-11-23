@@ -1,6 +1,6 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from './browser-test-harness-margin.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
 import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
 import { CONTROL_RUN_AGENT_POLL_TIMEOUT_MS, LOGIN_RUN_HEADER_TIMEOUT_MS } from './full-stack-helpers.ts';
 

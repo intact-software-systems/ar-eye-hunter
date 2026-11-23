@@ -19,12 +19,12 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
 
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import type {
     BrowserRallarSmokeConfig,
     SmokeAgentAuth,
     SmokeTransport
 } from './browser-rallar-smoke-config.ts';
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 
 const SPA_BASE_URL = 'http://127.0.0.1:5176';
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';

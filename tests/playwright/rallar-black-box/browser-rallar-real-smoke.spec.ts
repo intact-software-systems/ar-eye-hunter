@@ -13,7 +13,7 @@ import {
     decodeText
 } from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';

@@ -25,17 +25,17 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
-import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
-import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
-import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
     FORMATION_CONNECT_TIMING,
     FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
     FORMATION_PRESENCE_POLL_TIMEOUT_MS,
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
-} from './live-rtc-wait-budgets.ts';
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
+import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
+import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 

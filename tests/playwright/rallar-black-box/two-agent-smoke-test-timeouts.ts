@@ -1,10 +1,10 @@
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
 import {
     computeTwoAgentConnectResultWaitMs,
     TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS,
     TWO_AGENT_MESSAGE_POLL_TIMEOUT_MS,
     TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS
 } from './browser-rallar-two-agent-smoke.ts';
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from './browser-test-harness-margin.ts';
 
 /** Each connect waits for its one peer to be ready. */
 export const TWO_AGENT_PEER_READINESS = { minReadyPeers: 1, timeoutMs: 30_000, intervalMs: 250 };

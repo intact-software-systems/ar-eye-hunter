@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from '../../../tests/playwright/rallar-black-box/browser-test-harness-margin.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
 import {
     computeLiveRtcLifecycleScenarioTimeoutMs,
     PRESENCE_CONNECT_RESULT_WAIT_MS

@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import {
+    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
 import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -21,11 +26,6 @@ import {
     createSimulatedAckManifest,
     SIMULATED_FAILURES_TEST_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-recipe-test-runs.ts';
-import {
-    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
-    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
-    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
-} from '../../../tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts';
 import {
     computeConsoleNativeTestTimeoutMs,
     CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS

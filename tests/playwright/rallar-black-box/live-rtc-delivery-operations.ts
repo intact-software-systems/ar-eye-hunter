@@ -14,6 +14,14 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
+    MATRIX_INBOX_TIMEOUT_MS,
+    MATRIX_SEND_TIMEOUT_MS,
+    NACK_PROBE_SEND_TIMEOUT_MS,
+    NACK_RECEIPT_POLL_TIMEOUT_MS,
+    STALE_SEND_TIMEOUT_MS,
+    WS_OPEN_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import {
     createGroupFormationLifecycleDriver,
     retainLiveRtcFormationFailure,
     type GroupFormationLifecycleDriver,
@@ -28,14 +36,6 @@ import type {
     LiveRtcNackProbeStage,
     LiveRtcPerformanceTiming
 } from './live-rtc-performance-evidence.ts';
-import {
-    MATRIX_INBOX_TIMEOUT_MS,
-    MATRIX_SEND_TIMEOUT_MS,
-    NACK_PROBE_SEND_TIMEOUT_MS,
-    NACK_RECEIPT_POLL_TIMEOUT_MS,
-    STALE_SEND_TIMEOUT_MS,
-    WS_OPEN_TIMEOUT_MS
-} from './live-rtc-wait-budgets.ts';
 import { hasLiveRtcNotYetInSyncNack, type LiveRtcReceivedNackProbe } from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';

@@ -2,7 +2,7 @@ import {
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
-} from '../../../../tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts';
+} from '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
 
 /** Each RTC-B06 attempt runs the one matrix test its case selects, under the timeout that test derives. */
 const RTC_B06_ATTEMPT_TEST_TIMEOUTS_MS: Readonly<Record<string, number>> = {

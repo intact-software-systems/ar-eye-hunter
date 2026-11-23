@@ -11,7 +11,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-import { computeCommandResultWaitMs } from '../../../tests/playwright/rallar-black-box/compute-command-result-wait-ms.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort
@@ -19,7 +20,6 @@ import {
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '../../../tests/playwright/rallar-black-box/live-rtc-wait-budgets.ts';
 
 const appliedNativeCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> = {
     status: 'observed',

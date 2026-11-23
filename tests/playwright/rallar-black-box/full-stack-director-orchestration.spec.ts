@@ -13,7 +13,7 @@ import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-t
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
     DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS,
     DIRECTOR_CONNECT_TIMING,

@@ -6,12 +6,12 @@ import {
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     RETENTION_RECONNECT_CYCLES
-} from '../../../tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts';
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
 import {
     FORMATION_CONNECT_RESULT_WAIT_MS,
     FORMATION_RUN_BOUNDED_WAITS_MS,
     FORMATION_RUN_CONNECT_RESULT_WAIT_MS
-} from '../../../tests/playwright/rallar-black-box/live-rtc-wait-budgets.ts';
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 
 const MARGIN = 60_000;
 /** A delivery's 60 s send runs beside its receivers' 60 s message waits. */

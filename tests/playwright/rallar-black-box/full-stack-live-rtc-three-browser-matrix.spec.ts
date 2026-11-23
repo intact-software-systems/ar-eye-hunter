@@ -10,6 +10,14 @@ import type {
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import {
+    CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
+    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
+    MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
+    RETENTION_RECONNECT_CYCLES
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
@@ -41,14 +49,6 @@ import {
     type TransportUnderTest
 } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
-import {
-    CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
-    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
-    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
-    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
-    MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
-    RETENTION_RECONNECT_CYCLES
-} from './live-rtc-matrix-test-timeouts.ts';
 import {
     captureLiveRtcPostGcHeap,
     liveRtcRetentionStateReturned,

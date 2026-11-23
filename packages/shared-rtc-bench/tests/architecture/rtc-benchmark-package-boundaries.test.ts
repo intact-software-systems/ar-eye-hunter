@@ -14,7 +14,18 @@ const resultReleaseArtifactDecoderPath = path.join(repoRoot, 'packages/shared-te
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
 );
-const liveRtcMatrixTestTimeoutsPath = path.join(repoRoot, 'tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts');
+const liveRtcMatrixTestTimeoutsPath = path.join(
+    repoRoot,
+    'packages/shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts'
+);
+/** The repository aliases the package's tsconfig resolves, each to its package root. */
+const packageAliasRoots: Readonly<Record<string, string>> = {
+    '@shared/': 'packages/shared/',
+    '@shared-graph/': 'packages/shared-graph/',
+    '@shared-server/': 'packages/shared-server/',
+    '@shared-test/': 'packages/shared-test/',
+    '@shared-web/': 'packages/shared-web/'
+};
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
@@ -105,6 +116,47 @@ function readUnapprovedImports(file: string): string[] {
         .map((specifier) => `${path.relative(repoRoot, file)} -> ${specifier}`);
 }
 
+interface ImportClosure {
+    readonly files: ReadonlySet<string>;
+    readonly externalSpecifiers: readonly string[];
+}
+
+/** Every module a source reaches through its imports, type-only ones included, by the package's own path aliases. */
+function readImportClosure(entry: string): ImportClosure {
+    const files = new Set<string>();
+    const externalSpecifiers: string[] = [];
+    const pending = [entry];
+    while (pending.length > 0) {
+        const file = pending.pop()!;
+        if (files.has(file)) {
+            continue;
+        }
+        files.add(file);
+        for (const specifier of toImportSpecifiers(fs.readFileSync(file, 'utf8'))) {
+            const target = resolveRepositoryImport(file, specifier);
+            if (target === undefined) {
+                externalSpecifiers.push(specifier);
+            }
+            else {
+                pending.push(target);
+            }
+        }
+    }
+    return { files, externalSpecifiers };
+}
+
+function resolveRepositoryImport(file: string, specifier: string): string | undefined {
+    if (specifier.startsWith('.')) {
+        return path.resolve(path.dirname(file), specifier);
+    }
+    const alias = Object.keys(packageAliasRoots)
+        .filter((prefix) => specifier.startsWith(prefix))
+        .toSorted((left, right) => right.length - left.length)[0];
+    return alias === undefined
+        ? undefined
+        : path.join(repoRoot, packageAliasRoots[alias], specifier.slice(alias.length));
+}
+
 function isBenchmarkPackageSpecifier(specifier: string): boolean {
     return specifier === benchmarkPackageName || specifier.startsWith(`${benchmarkPackageName}/`);
 }
@@ -184,15 +236,34 @@ describe('shared RTC benchmark package boundaries', () => {
     });
 
     // The capture starts an attempt only while its job budget covers the attempt's test timeout, as the spec derives it.
-    it('admits only the Playwright-free matrix test timeout derivation, which reads its wait budgets and margin', () => {
+    it('admits only the matrix test timeout derivation of the shared-test wait budgets', () => {
         const consumer = path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts');
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
         expect(toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))).toEqual([
             './browser-test-harness-margin.ts',
             './live-rtc-wait-budgets.ts'
         ]);
-        expect(isApprovedImport(consumer, '../../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts')).toBe(false);
-        expect(isApprovedImport(consumer, '../../../../tests/playwright/rallar-black-box/live-rtc-wait-budgets.ts')).toBe(false);
+        for (
+            const forbidden of [
+                '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts',
+                '../../../shared-test/rallar-bb-test/control-protocol.ts',
+                '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts',
+                '../../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts'
+            ]
+        ) {
+            expect(isApprovedImport(consumer, forbidden)).toBe(false);
+        }
+    });
+
+    it('keeps the whole import closure of the attempt test timeout in packages and free of Playwright', () => {
+        const closure = readImportClosure(path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts'));
+        const outsidePackages = [...closure.files]
+            .map((file) => path.relative(repoRoot, file).split(path.sep).join('/'))
+            .filter((file) => !file.startsWith('packages/') || file.startsWith('packages/tests/'));
+
+        expect(closure.files.size).toBeGreaterThan(1);
+        expect(outsidePackages).toEqual([]);
+        expect(closure.externalSpecifiers.filter((specifier) => specifier.startsWith('@playwright/'))).toEqual([]);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {

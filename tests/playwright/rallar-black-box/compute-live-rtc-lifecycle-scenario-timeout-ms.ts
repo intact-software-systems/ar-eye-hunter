@@ -1,9 +1,12 @@
 import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestRtcConnectCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from './browser-test-harness-margin.ts';
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
-import { FORMATION_READINESS_TIMEOUT_MS, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from './live-rtc-wait-budgets.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
+import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
+import {
+    FORMATION_READINESS_TIMEOUT_MS,
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 
 /** A presence connect joins the room under the establishment SDK timeout and waits for no readiness. */
 export const PRESENCE_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {

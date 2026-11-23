@@ -1,10 +1,10 @@
-import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import type { RallarBlackBoxTestRtcConnectCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '../fixtures/live-rtc-setup.ts';
+import type { RallarBlackBoxTestRtcConnectCommand } from '../rallar-black-box-test-contracts.ts';
 
 import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 
-// The live RTC harness's wait budgets live apart from the Playwright modules that run them, so the RTC-B06 capture
-// orchestrator can derive an attempt's test timeout without loading Playwright.
+// The live RTC harness's wait budgets live in this package rather than beside the Playwright modules that run them, so
+// the RTC-B06 capture orchestrator can derive an attempt's test timeout without loading Playwright or the test tree.
 
 /** How long the control client polls for a command's result once the command's own budget is spent. */
 export const LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS = 45_000;
