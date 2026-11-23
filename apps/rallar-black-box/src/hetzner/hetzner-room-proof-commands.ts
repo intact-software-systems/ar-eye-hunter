@@ -1,7 +1,9 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     createRallarBlackBoxEnsureGroupCommands,
-    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 export interface HetznerRoomProofInput {
@@ -44,7 +46,8 @@ function toRoomProofConnect(input: HetznerRoomProofInput): RallarBlackBoxTestCom
         workspaceId: group.workspaceId,
         roomRef,
         transport: 'realtime',
-        timeoutMs: 15_000,
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
+        rallar: { timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS },
         readiness: {
             minReadyPeers: 1,
             timeoutMs: 10_000,

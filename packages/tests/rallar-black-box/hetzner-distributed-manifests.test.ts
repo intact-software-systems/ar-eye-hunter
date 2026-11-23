@@ -8,7 +8,10 @@ import {
 
 import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
@@ -234,6 +237,58 @@ describe('Hetzner distributed manifest catalog', () => {
                     topicId: 'black-box.group.multicast.position'
                 });
             }
+        }
+    });
+
+    it('bounds every room-joining connect by the SDK timeout it names, twice for the connect and the join', () => {
+        // The ALM conformance connects keep their harness budgets, so only the other families are held to this rule.
+        const checked = createHetznerDistributedManifestCatalog()
+            .filter((entry) => entry.manifest.metadata.family !== 'alm-conformance')
+            .flatMap((entry) =>
+                toHetznerManifestCommands(entry.manifest)
+                    .filter((command): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.roomId !== undefined)
+                    .map((connect) => ({ filePath: entry.filePath, connect }))
+            );
+
+        expect(checked.length).toBeGreaterThan(0);
+        for (const { filePath, connect } of checked) {
+            const sdkTimeoutMs = connect.rallar?.timeoutMs;
+            expect(sdkTimeoutMs, `${filePath} ${connect.commandId}`).toEqual(expect.any(Number));
+            expect(connect.timeoutMs, `${filePath} ${connect.commandId}`).toBe(2 * Number(sdkTimeoutMs) + 5_000);
+        }
+    });
+
+    it('gives the live RTC smoke, parity, realtime and room-proof connects the establishment SDK timeout', () => {
+        const paths = [
+            'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
+            'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+            'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
+            'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
+            'apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json',
+            'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
+            'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json'
+        ];
+        const connects = createHetznerDistributedManifestCatalog()
+            .filter((entry) => paths.includes(entry.filePath))
+            .flatMap((entry) =>
+                toHetznerManifestCommands(entry.manifest)
+                    .filter((command) => command.kind === 'rtc.connect')
+                    .map((connect) => ({ filePath: entry.filePath, connect }))
+            );
+
+        expect(new Set(connects.map(({ filePath }) => filePath))).toEqual(new Set(paths));
+        for (const { filePath, connect } of connects) {
+            // 65 s for the SDK connect, 65 s for the join and the 5 s margin; readiness stays 10 s after it.
+            expect(connect, filePath).toMatchObject({
+                timeoutMs: 135_000,
+                rallar: { timeoutMs: 65_000 },
+                readiness: { timeoutMs: 10_000 }
+            });
         }
     });
 
@@ -630,7 +685,8 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(JSON.stringify(parity?.manifest)).not.toContain('charlie-session');
         expect(parity?.manifest.recipes[0]?.recipe?.commands.find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({
-                timeoutMs: 15_000,
+                timeoutMs: 135_000,
+                rallar: { sessionId: 'alice-session', timeoutMs: 65_000 },
                 readiness: { timeoutMs: 10_000 }
             });
     });

@@ -6,13 +6,13 @@ import type {
     RallarBlackBoxTestRtcStreamThresholds
 } from '../rallar-black-box-test-contracts.ts';
 import {
-    computeRtcConnectOwnTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
@@ -37,12 +37,6 @@ const RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS = 5_000;
 const RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_POLL_INTERVAL_MS = 5_000;
 
 const RALLAR_BLACK_BOX_RTC_MESSAGES_RELAY_HOLD_INTERVAL_MS = 1_000;
-
-/** Every multicast connect joins the run's room under the SDK timeout its establishment needs. */
-const RALLAR_BLACK_BOX_RTC_MESSAGES_CONNECT_TIMEOUT_MS = computeRtcConnectOwnTimeoutMs({
-    sdkTimeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    joinsRoom: true
-});
 
 export interface RallarBlackBoxRtcMessagesMulticastRecipeOptions {
     readonly participantCount?: number;
@@ -170,7 +164,7 @@ export function computeRtcMessagesSenderStreamRemainingAtPollStartMs(
     input: RtcMessagesDeliveryPollWindowInput
 ): number {
     const leadInAndStreamMs = input.leadInMs + input.durationSeconds * 1_000;
-    const connectSpreadMs = RALLAR_BLACK_BOX_RTC_MESSAGES_CONNECT_TIMEOUT_MS + input.readinessTimeoutMs;
+    const connectSpreadMs = RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS + input.readinessTimeoutMs;
     const latestSenderStreamEndMs = connectSpreadMs + leadInAndStreamMs;
     const earliestPollStartMs = input.streamsBeforePoll ? leadInAndStreamMs : 0;
     return latestSenderStreamEndMs - earliestPollStartMs;
@@ -233,7 +227,7 @@ function messagesRtcConnectCommand(
             ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
             timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
         },
-        timeoutMs: RALLAR_BLACK_BOX_RTC_MESSAGES_CONNECT_TIMEOUT_MS,
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
         readiness: {
             minReadyPeers: options.minReadyPeers,
             timeoutMs: readinessTimeoutMs,

@@ -426,9 +426,12 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         const connect = smoke.commands.find((command) => command.kind === 'rtc.connect');
 
+        // The connect joins the room under the SDK timeout it names; readiness runs after it under its own timeout.
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
-            timeoutMs: 15_000,
+            roomId: expect.any(String),
+            timeoutMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS,
+            rallar: { timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS },
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
@@ -446,8 +449,18 @@ describe('rallar-bb-test recipe fixtures', () => {
         const stream = createRallarBlackBoxRtcRealtimeRecipe({ executionMode: 'stream' })
             .commands.find((command) => command.kind === 'rtc.stream');
 
-        expect(connect).toMatchObject({ kind: 'rtc.connect' });
+        expect(connect).toMatchObject({
+            kind: 'rtc.connect',
+            roomId: expect.any(String),
+            timeoutMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS,
+            rallar: { timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS }
+        });
         expect(connect?.readiness).toBeUndefined();
+        expect(createRallarBlackBoxRtcSmokeRecipe().commands.find((command) => command.kind === 'rtc.connect'))
+            .toMatchObject({
+                timeoutMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS,
+                rallar: { timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS }
+            });
         expect(realtime.metadata).toMatchObject({
             rateHz: 20,
             intervalMs: 50,
@@ -486,7 +499,8 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
-            timeoutMs: 15_000,
+            timeoutMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS,
+            rallar: { timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS },
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
