@@ -1,4 +1,7 @@
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -72,6 +75,12 @@ function matchesExpectedMessage(message: JsonWireObject, expectation: Production
         (expectation.identityKind === 'logical-msg-id' && messageId !== expectation.effectId)
     ) {
         return false;
+    }
+    if (expectation.effectKind === 'room-access') {
+        const decoded = decodeALMessageValue(message);
+        return decoded.right !== undefined && route.resourceId === expectation.physicalKey.resourceId &&
+            messageId === expectation.sourceMessageId &&
+            computeSha256CanonicalJson(decodeViewInvalidationMessage(decoded.right)) === expectation.sourceMessageId;
     }
     if (expectation.effectKind === 'principal-state:snapshot') {
         return matchesSnapshotMessage(message, expectation);
@@ -173,6 +182,9 @@ function computeResourceEffectKind(
         return 'rtc-topology-recompute';
     }
     if (row.ri_type_id === 'WS_OUTBOX') {
+        if (row.ri_topic_id === AppTopics.viewInvalidated) {
+            return 'room-access';
+        }
         if (row.ri_topic_id === 'client-state.snapshot') {
             return 'principal-state:snapshot';
         }
