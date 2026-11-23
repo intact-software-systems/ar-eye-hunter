@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { settleALOutboundClaim } from '@shared/alm/outbound/lane/settle-al-outbound-claim.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
@@ -10,14 +10,15 @@ const CLAIM = {
 };
 
 it.each([
-    { timed: false, clockReads: 0, run: undefined },
-    { timed: true, clockReads: 2, run: { payloadKind: 'send-prepared', durationMs: 6 } }
-])('reads the clock $clockReads times for a claim whose timing is wanted: $timed', async ({ timed, clockReads, run }) => {
-    let nowMs = 1_000;
-    const readNowMs = vi.fn(() => {
-        nowMs += 6;
-        return nowMs;
-    });
+    { timed: false, clockReadCount: 0, run: undefined },
+    { timed: true, clockReadCount: 2, run: { payloadKind: 'send-prepared', durationMs: 6 } }
+])('reads the clock $clockReadCount times for a claim whose timing is wanted: $timed', async ({ timed, clockReadCount, run }) => {
+    // The clock read is itself the requirement: a lane with no diagnostics sink pays for no timing.
+    const clockReads: number[] = [];
+    const readNowMs = () => {
+        clockReads.push(1_000 + 6 * (clockReads.length + 1));
+        return clockReads.at(-1)!;
+    };
 
     const settled = await settleALOutboundClaim({
         attempt: Promise.resolve({ status: 'completed' }),
@@ -30,6 +31,5 @@ it.each([
     });
 
     expect(settled).toEqual({ outcome: { status: 'completed' }, run });
-    // The clock read is itself the requirement: a lane with no diagnostics sink pays for no timing.
-    expect(readNowMs).toHaveBeenCalledTimes(clockReads);
+    expect(clockReads).toHaveLength(clockReadCount);
 });
