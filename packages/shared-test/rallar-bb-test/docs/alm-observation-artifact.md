@@ -340,7 +340,9 @@ where a product deadline was missed: `churn-bounded-tracks` and `buffered-track-
 recipes' run budget by their cue wait; a family's limit is 35 minutes
 ([`conformance/alm/lane/alm-lane-family-timeout-ms.ts`](../conformance/alm/lane/alm-lane-family-timeout-ms.ts));
 a publish loop's attempt observes for 15 s; a poll starts its attempts for one phase and its deadline
-runs one attempt's budget past it; and a `connected` barrier counts a connect's readiness wait.
+runs one attempt's budget past it; a `connected` barrier counts a connect's readiness wait; every
+fairness send loop has a budget of 1,500 ms a send; and the buffered track's sends live for a
+lifetime derived from that loop's budget, not a flat 90 s.
 
 ## The regime file
 
