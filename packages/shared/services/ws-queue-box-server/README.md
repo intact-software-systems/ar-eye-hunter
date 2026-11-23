@@ -35,7 +35,7 @@ Supporting translations remain beside their owner: [inbound planning](./ws-queue
 [inbound recipient projection](./ws-queue-box-server-inbound-recipients.ts),
 [addressee authorization](./to-ws-queue-box-server-addressee-authorization.ts), and
 [receipt row recognition/republish delay](./ws-queue-box-server-receipt-row.ts).
-The `receipt/` subfolder holds the aggregation's pure translations, one decision
+The `receipt/` subfolder holds the aggregation's pure translations, one concern
 each: [a client's send and a re-sent copy as an opening](./receipt/to-ws-queue-box-server-receipt-opening.ts)
 with the frozen audience; [a server publication's opening](./receipt/to-ws-queue-box-server-own-receipt-opening.ts)
 from the server's pending receipt row; [a receipt as a control](./receipt/to-ws-queue-box-server-receipt-control.ts),
@@ -157,8 +157,10 @@ Follow these production paths directly when reviewing a change:
    or `countAhead` for an ACK the hook proved and that finds no head (the record's
    `writeConfirmation`: guard, then the confirmation `set`) → the `Counted` view →
    `end` when the view is complete → worker `committed` → the worker's ended work
-   → aggregation `writeEndedReceipt` → existing outbound enqueue → server receipt
-   settlement → guarded outbox/count observations. A losing `end` does nothing;
+   → aggregation `writeEndedReceipt` → existing outbound enqueue for a client's
+   send (a server publication's ended work enqueues nothing and admits the
+   receipt into the server's row, probe 4) → server receipt settlement → guarded
+   outbox/count observations. A losing `end` does nothing;
    only `end`'s result is authoritative.
 3. Deadline: the record's worker task on the engine → worker `runClaim` on
    whichever instance claims the deadline work → `claimCommitted()`, then record
