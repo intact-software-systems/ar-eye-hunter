@@ -764,6 +764,8 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishOnceSteps(`${track}-p3`),
                 ...toPublishOnceSteps(`${track}-p4`),
                 'cue-resubscribed-applied-by-receiver-received',
+                // Over RTC the producer's own snapshot freezes p5's audience, so it applies the head carrying the re-grant.
+                ...(carrier === 'ws' ? [] : ['regrant-head-read', 'regrant-head-applied']),
                 ...toPublishOnceSteps(`${track}-p5`),
                 'no-gap-nack',
                 'no-repair-control'
@@ -847,6 +849,22 @@ describe('ALM ordered subscription entry conformance', () => {
         expect([undefined, 'released', 'active', 'pending', 'lapsed-refused'].map(accepts))
             .toEqual([false, false, false, false, false]);
     });
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'each producer applies the head carrying the re-grant after the receiver\'s cue and before it publishes p5 over %s',
+        (carrier) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const names = toStepNames(requireRoleRecipe(scenario, role));
+                const cue = names.indexOf('cue-resubscribed-applied-by-receiver-received');
+                const read = names.indexOf('regrant-head-read');
+                const applied = names.indexOf('regrant-head-applied');
+
+                expect([cue, read, applied].every((index) => index >= 0), role).toBe(true);
+                expect(cue < read && read < applied && applied < names.indexOf(`${track}-p5-send`), role).toBe(true);
+            }
+        }
+    );
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
         'subscription-ordered-omission: every page the revoke must reach waits for its applied revision after its cue or its own write instead of a fixed pause over %s',
@@ -945,9 +963,13 @@ describe('ALM ordered subscription entry conformance', () => {
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
                     const before = producerNames.indexOf((first.startsWith('probe') ? toPublishSteps(first) : toPublishOnceSteps(first))[0]!);
                     // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
+                    // Over RTC an omission producer applies the head that carries the re-grant before p5.
+                    const regranted = scenarioId === 'subscription-ordered-omission' && carrier !== 'ws'
+                        ? ['regrant-head-read', 'regrant-head-applied']
+                        : [];
                     const applied = reasserted
                         ? [`cue-${elected}-applied-by-sibling-received`, `${elected}-head-read`, `${elected}-head-applied`]
-                        : [];
+                        : regranted;
                     expect(producerNames.slice(before - 1 - applied.length, before), `${carrier} ${scenarioId} ${role}`)
                         .toEqual([`cue-${elected}-applied-by-receiver-received`, ...applied]);
                     expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);

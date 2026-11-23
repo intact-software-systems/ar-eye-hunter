@@ -645,8 +645,11 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   the room's head, waits until it applied it and cues `reentered-applied-by-sibling`; and each producer, once it
   heard both cues, reads the room's head and waits until its own page applied it. In `subscription-ordered-entry`
   and `-omission` the sibling keeps its socket and its presence, so the layout does not change, and its page holds
-  its own election from the response its subscribe asserts `active` before it cues. No cell waits a fixed margin for
-  the election's delta.
+  its own election from the response its subscribe asserts `active` before it cues. Over the RTC carriers a copy
+  freezes the live sessions whose principal holds `subscribe` in the producer's own snapshot, so in
+  `subscription-ordered-omission` each producer also reads the room's head after the receiver's cue and waits until
+  its own page applied it (`regrant-head`), which carries the re-grant, before it publishes `p5`. No cell waits a
+  fixed margin for the election's delta.
 - `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
   producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
   socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
