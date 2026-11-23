@@ -7,7 +7,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceSendAudience } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import {
@@ -306,64 +306,32 @@ export function toCueListenCommands(step: AlmConformanceStepInput): readonly Ral
  * handle reads `transport-accepted`; a page that departs next sends its cue with `toDepartingCueSendCommands`.
  */
 export function toCueSendCommands(step: AlmConformanceStepInput, cue: string): readonly RallarBlackBoxTestCommand[] {
-    const send = toCueSend(step, cue, 'none');
+    const handleId = toCommandId(step, `cue-${cue}`);
     return [
-        send,
+        {
+            kind: 'messages.send',
+            commandId: handleId,
+            connection: toConnectionName(step),
+            carrier: 'ws',
+            typeId: toScenarioTypeId(step),
+            topicId: ALM_CONFORMANCE_TOPIC_ID,
+            roomRef: toRoomRef(step.input.group),
+            payload: toCuePayload(step, cue),
+            reliability: 'at-least-once',
+            ack: 'none',
+            ttlMs: NON_EXPIRING_TTL_MS,
+            handleId,
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        },
         {
             kind: 'messages.observe',
             commandId: toCommandId(step, `cue-${cue}-sent`),
             connection: toConnectionName(step),
-            handleId: send.handleId,
+            handleId,
             state: ['transport-accepted'],
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
         }
     ];
-}
-
-/**
- * A cue its page departs after: the WS server admits an inbound message apart from the socket's close, so a close
- * right after `transport-accepted` can end the session before the cue passes the membership fence. Every session the
- * room held at admission acknowledges the cue first, which proves the server admitted it and every listener has it.
- */
-export function toDepartingCueSendCommands(
-    step: AlmConformanceStepInput,
-    cue: string
-): readonly RallarBlackBoxTestCommand[] {
-    const send = toCueSend(step, cue, 'receiver');
-    return [
-        send,
-        {
-            kind: 'messages.observe',
-            commandId: toCommandId(step, `cue-${cue}-acknowledged`),
-            connection: toConnectionName(step),
-            handleId: send.handleId,
-            state: ['acknowledged'],
-            timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
-        }
-    ];
-}
-
-function toCueSend(
-    step: AlmConformanceStepInput,
-    cue: string,
-    ack: 'none' | 'receiver'
-): RallarBlackBoxTestMessagesSendCommand & { readonly handleId: string; } {
-    const handleId = toCommandId(step, `cue-${cue}`);
-    return {
-        kind: 'messages.send',
-        commandId: handleId,
-        connection: toConnectionName(step),
-        carrier: 'ws',
-        typeId: toScenarioTypeId(step),
-        topicId: ALM_CONFORMANCE_TOPIC_ID,
-        roomRef: toRoomRef(step.input.group),
-        payload: toCuePayload(step, cue),
-        reliability: 'at-least-once',
-        ack,
-        ttlMs: NON_EXPIRING_TTL_MS,
-        handleId,
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
-    };
 }
 
 export function toCueWait(step: AlmConformanceStepInput, cue: string): RallarBlackBoxTestWaitCommand {

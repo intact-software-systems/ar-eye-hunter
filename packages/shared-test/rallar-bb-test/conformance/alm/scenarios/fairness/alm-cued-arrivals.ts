@@ -5,11 +5,11 @@ import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { computeCommandsTimeoutMs } from '../../cell/compute-commands-timeout-ms.ts';
 import { toCueStep } from '../receipted-audience.ts';
+import { toDepartingCueSendCommands } from '../topic-subscription/to-departing-cue-send-commands.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
-    toCueWait,
-    toDepartingCueSendCommands
+    toCueWait
 } from '../topic-subscription/topic-subscription-publications.ts';
 
 /**

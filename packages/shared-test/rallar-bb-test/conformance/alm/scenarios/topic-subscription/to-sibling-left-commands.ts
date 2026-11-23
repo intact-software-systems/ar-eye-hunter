@@ -10,9 +10,10 @@ import { toAlmCellCommandPrefix } from '../../cell/to-alm-cell-command-prefix.ts
 import { toHeldGroupAppliedMatch } from '../../cell/to-held-group-applied-match.ts';
 import { SUBSCRIPTION_PHASE_MS } from '../../granted-topic/subscription-phase-budgets.ts';
 import { toPollChildId, toPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
+import { toDepartingCueSendCommands } from './to-departing-cue-send-commands.ts';
 import { toResultTextWait } from './topic-subscription-budgets.ts';
 import { toRoomSnapshotCommand } from './topic-subscription-generation-polls.ts';
-import { toCueWait, toDepartingCueSendCommands } from './topic-subscription-publications.ts';
+import { toCueWait } from './topic-subscription-publications.ts';
 
 /** The cue the sibling sends before it closes its socket: the cue's sender is the sibling's own session. */
 const LEAVING_CUE = 'leaving';
