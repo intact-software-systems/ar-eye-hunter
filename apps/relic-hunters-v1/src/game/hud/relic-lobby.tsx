@@ -49,7 +49,6 @@ export function RelicLobby({ game, preferences }: RelicLobbyProps) {
                 Your account reference<input value={game.session.clientId} readOnly />
             </label>
             <RoomModerationPanel
-                accessCheckIntervalMs={5000}
                 session={game.session}
                 rooms={rallar.rooms}
             />

@@ -1,19 +1,14 @@
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import type { RallarRoomSession, RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { readRoomMembershipRevocation } from '@shared-web/browser/rooms/read-room-membership-revocation.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RoomAccessObservation } from '@shared-web/browser/state-read/watch-room-access.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { useEffect, useState } from 'react';
 
 export interface RoomModerationStateInput {
     readonly session: AuthSession;
-    readonly accessCheckIntervalMs: number;
-    readonly rooms: Pick<BrowserRallarRooms, 'state' | 'onChange'> & {
-        session(room: GroupRef): Pick<RallarRoomSession, 'refresh'>;
-    };
+    readonly rooms: Pick<BrowserRallarRooms, 'onChange' | 'watchAccess'>;
 }
 
 interface RoomModerationObservation {
@@ -26,69 +21,54 @@ export function useRoomModerationState(props: RoomModerationStateInput): RoomMod
     const [notice, setNotice] = useState<string | null>(null);
     useEffect(() => {
         let selected: GroupRef | undefined;
-        let controller = new AbortController();
-        const observeRoomState = (next: RallarRoomState): void => {
+        let watch: AbortController | undefined;
+        let lastStatus: RoomAccessObservation['status'] = 'stale';
+
+        function observeAccess(room: GroupRef): void {
+            const lifetime = new AbortController();
+            watch = lifetime;
+            lastStatus = 'stale';
+            props.rooms.watchAccess(room, access => {
+                if (lifetime.signal.aborted) return;
+                lastStatus = access.status;
+                if (access.status === 'stale') return;
+                if (access.status === 'denied' && access.reason !== 'unavailable') {
+                    setNotice(`You were ${access.reason} from room ${room.groupId}. Choose another room.`);
+                }
+                if (!selected) lifetime.abort();
+            }, { signal: lifetime.signal });
+        }
+
+        const unsubscribe = props.rooms.onChange(next => {
+            setState(next);
             const previous = selected;
             const current = next.currentRoomRef;
-            const changed = previous ? !current || !isSameGroupRef(previous, current) : !!current;
-            if (changed) {
-                controller.abort();
-                controller = new AbortController();
-            }
+            if (previous && current && isSameGroupRef(previous, current)) return;
+            if (!previous && !current) return;
             selected = current;
-            if (current && changed) {
+            if (current) {
+                watch?.abort();
                 setNotice(null);
-            }
-            if (previous && !current) {
-                const revoked = next.rooms.find((room) => isSameGroupRef(room.roomRef, previous))?.snapshot.members
-                    .find((member) => member.principalId === props.session.clientId)?.status;
-                if (revoked === 'banned' || revoked === 'removed') {
-                    setNotice(`You were ${revoked} from room ${previous.groupId}. Choose another room.`);
+                observeAccess(current);
+            } else if (previous) {
+                const member = next.rooms.find(room => isSameGroupRef(room.roomRef, previous))?.snapshot.members
+                    .find(row => row.principalId === props.session.clientId);
+                if (member?.status === 'banned' || member?.status === 'removed') {
+                    watch?.abort();
+                    setNotice(`You were ${member.status} from room ${previous.groupId}. Choose another room.`);
+                } else if (lastStatus === 'current') {
+                    // Collection repair cleared the room without a pending access read. Recheck it once.
+                    watch?.abort();
+                    observeAccess(previous);
+                } else if (lastStatus === 'denied') {
+                    watch?.abort();
                 }
-                else {
-                    // Collection repair may remove the snapshot before a revoked roster arrives.
-                    void checkCurrentRoomAccess({ props, room: previous, signal: controller.signal, setNotice });
-                }
             }
-            setState(next);
-        };
-        const unsubscribe = props.rooms.onChange(observeRoomState);
-        const stop = startRepeating({
-            timers: createDefaultTimers(),
-            intervalMs: props.accessCheckIntervalMs,
-            firstRun: 'after-interval',
-            run: () =>
-                selected
-                    ? checkCurrentRoomAccess({ props, room: selected, signal: controller.signal, setNotice })
-                    : undefined
         });
         return () => {
-            controller.abort();
+            watch?.abort();
             unsubscribe();
-            stop();
         };
-    }, [props.rooms, props.session.clientId, props.session.sessionId, props.accessCheckIntervalMs]);
+    }, [props.rooms, props.session.clientId, props.session.sessionId]);
     return { state, notice };
-}
-
-interface CheckCurrentRoomAccessInput {
-    readonly props: RoomModerationStateInput;
-    readonly room: GroupRef;
-    readonly signal: AbortSignal;
-    readonly setNotice: (notice: string) => void;
-}
-
-async function checkCurrentRoomAccess({ props, room, signal, setNotice }: CheckCurrentRoomAccessInput): Promise<void> {
-    try {
-        await props.rooms.session(room).refresh({ signal, timeoutMs: props.accessCheckIntervalMs });
-    }
-    catch (error) {
-        if (signal.aborted) {
-            return;
-        }
-        const revoked = readRoomMembershipRevocation(error);
-        if (revoked && !props.rooms.state().currentRoomRef) {
-            setNotice(`You were ${revoked} from room ${room.groupId}. Choose another room.`);
-        }
-    }
 }

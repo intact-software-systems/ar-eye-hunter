@@ -54,3 +54,17 @@ export function readObservedRoomDelta(
     }
     return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room)?.group;
 }
+
+export function validateReadRevision<T extends { readonly revision: number; }>(
+    next: T | null,
+    previous: T | null,
+    announcedRevision: number,
+    regresses: (previous: T, next: T) => boolean
+): void {
+    if ((next?.revision ?? 0) < announcedRevision) {
+        throw new Error('Room read predates the server notification.');
+    }
+    if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
+        throw new Error('Room read regressed.');
+    }
+}

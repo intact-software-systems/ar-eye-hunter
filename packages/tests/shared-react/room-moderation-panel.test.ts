@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
 import type { RoomModerationPanelProps } from '@shared-react/room-moderation-panel.tsx';
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { RoomAccessObservation } from '@shared-web/browser/state-read/watch-room-access.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { toRallarRoomState } from '@shared-web/browser/rooms/room-group-state-translation.ts';
@@ -15,9 +15,6 @@ import { createRevokedGroupMember } from '../shared-web/create-revoked-group-mem
 
 it('subscribes safely before room repositories are initialized', async () => {
     const fixture = createModerationFixture();
-    fixture.props.rooms.state = () => {
-        throw new Error('Repository not found');
-    };
     fixture.props.rooms.onChange = () => () => undefined;
     const view = await renderModeration(fixture.props);
     try {
@@ -122,97 +119,72 @@ it('discards an old confirmation and delayed outcome when the selected room chan
     }
 });
 
-it.each(['member-banned', 'member-removed'])('clears access after the current-room read reports %s', async (code) => {
+it.each(['banned', 'removed'] as const)('shows a pushed %s denial while the selected room is idle', async reason => {
     vi.useFakeTimers();
     const fixture = createModerationFixture();
-    fixture.props.rooms.session = () => ({
-        refresh: vi.fn(async () => {
-            fixture.clearSelection();
-            throw new ApiHttpError('GET', '/group', 403, JSON.stringify({ error: 'forbidden', code }));
-        })
-    });
+    const subscribe = vi.spyOn(fixture.props.rooms, 'watchAccess');
     const view = await renderModeration(fixture.props);
     try {
-        await act(async () => vi.advanceTimersByTimeAsync(1000));
-        expect(view.container.textContent).toContain(code === 'member-banned' ? 'You were banned' : 'You were removed');
-    }
-    finally {
+        subscribe.mockClear();
+        await act(async () => vi.advanceTimersByTimeAsync(15_000));
+        expect(subscribe).not.toHaveBeenCalled();
+        await act(async () => fixture.access({ status: 'denied', reason }));
+        expect(view.container.textContent).toContain(`You were ${reason}`);
+    } finally {
         await view.close();
         vi.useRealTimers();
     }
 });
 
-it.each(['member-banned', 'member-removed'])('explains %s when collection repair drops the room before the access timer', async (code) => {
+it('recovers the reason when collection repair drops the room before the access notice arrives', async () => {
     const fixture = createModerationFixture();
-    fixture.props.rooms.session = () => ({
-        refresh: vi.fn().mockRejectedValue(new ApiHttpError('GET', '/group', 403, JSON.stringify({ error: 'forbidden', code })))
-    });
     const view = await renderModeration(fixture.props);
     try {
         await act(async () => fixture.clearSelection());
-        expect(view.container.textContent).toContain(code === 'member-banned' ? 'You were banned' : 'You were removed');
-    }
-    finally {
-        await view.close();
-    }
-});
-
-it('does not label a cache gap as removal when the authenticated room read succeeds', async () => {
-    const fixture = createModerationFixture();
-    const refresh = vi.fn().mockResolvedValue(undefined);
-    fixture.props.rooms.session = () => ({ refresh });
-    const view = await renderModeration(fixture.props);
-    try {
-        await act(async () => fixture.clearSelection());
+        await act(async () => fixture.access({ status: 'stale' }));
         expect(view.container.textContent).not.toContain('You were');
-    }
-    finally {
+        await act(async () => fixture.access({ status: 'denied', reason: 'removed' }));
+        expect(view.container.textContent).toContain('You were removed');
+        expect(fixture.watching()).toBe(false);
+    } finally {
         await view.close();
     }
 });
 
-it('ignores a departed-room access result after a newer room has also been cleared', async () => {
+it('keeps the pending authoritative denial when cache eviction clears the selection first', async () => {
     const fixture = createModerationFixture();
-    const response = Promise.withResolvers<never>();
-    fixture.props.rooms.session = (room) => ({
-        refresh: () =>
-            room.groupId === fixture.snapshot.group.groupId ? response.promise : Promise.reject(new ApiHttpError('GET', '/next-room', 503, 'unavailable'))
-    });
+    const subscribe = vi.spyOn(fixture.props.rooms, 'watchAccess');
     const view = await renderModeration(fixture.props);
     try {
+        await act(async () => fixture.access({ status: 'current' }));
+        await act(async () => fixture.access({ status: 'stale' }));
+        const inFlight = fixture.lastWatch();
+        subscribe.mockClear();
         await act(async () => fixture.clearSelection());
+        await act(async () => inFlight?.({ status: 'denied', reason: 'banned' }));
+        expect(view.container.textContent).toContain('You were banned');
+        expect(subscribe).not.toHaveBeenCalled();
+        expect(fixture.watching()).toBe(false);
+    } finally {
+        await view.close();
+    }
+});
+
+it('ignores a departed-room result after switching rooms and cancels observation on unmount', async () => {
+    const fixture = createModerationFixture();
+    const view = await renderModeration(fixture.props);
+    const old = fixture.lastWatch();
+    try {
         await act(async () => fixture.publish({ ...fixture.snapshot, group: { ...fixture.snapshot.group, groupId: 'next-room' } }));
-        await act(async () => fixture.clearSelection());
-        await act(async () => response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-removed' }))));
+        await act(async () => old?.({ status: 'denied', reason: 'banned' }));
         expect(view.container.textContent).not.toContain('You were');
-    }
-    finally {
+    } finally {
         await view.close();
     }
+    expect(fixture.watching()).toBe(false);
 });
 
-it('cancels a pending access check before disposing its room state on unmount', async () => {
-    const fixture = createModerationFixture();
-    const response = Promise.withResolvers<never>();
-    const started = Promise.withResolvers<AbortSignal | undefined>();
-    fixture.props.rooms.session = () => ({
-        refresh: (options) => {
-            started.resolve(options?.signal);
-            return response.promise;
-        }
-    });
-    const view = await renderModeration(fixture.props);
-    await act(async () => fixture.clearSelection());
-    const signal = await started.promise;
-    await view.close();
-    fixture.props.rooms.state = () => {
-        throw new Error('Room state disposed');
-    };
-    await act(async () => response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-removed' }))));
-    expect(signal?.aborted).toBe(true);
-});
-
-it.each(['banned', 'removed'] as const)('explains an authoritative %s roster update before the access timer runs', async (status) => {
+it.each(['banned', 'removed'] as const)('explains an authoritative %s roster update when the selection clears', async (status) => {
     const fixture = createModerationFixture();
     const view = await renderModeration(fixture.props);
     try {
@@ -233,8 +205,6 @@ it.each(['banned', 'removed'] as const)('explains an authoritative %s roster upd
 it.each(['read', 'roster'] as const)('preserves a newer admission when an obsolete %s reports revocation', async (delivery) => {
     vi.useFakeTimers();
     const fixture = createModerationFixture();
-    const response = Promise.withResolvers<never>();
-    fixture.props.rooms.session = () => ({ refresh: () => response.promise });
     const joining = Promise.withResolvers<GroupSnapshot>();
     const entry = createRoomEntry(fixture.props, (room) => room.groupId === 'next-room' ? joining.promise : Promise.resolve(fixture.snapshot));
     entry.start();
@@ -243,7 +213,6 @@ it.each(['read', 'roster'] as const)('preserves a newer admission when an obsole
     try {
         expect(entry.getState().status).toBe('entered');
         if (delivery === 'read') {
-            await act(async () => vi.advanceTimersByTimeAsync(1000));
             await act(async () => fixture.clearSelection());
             expect(entry.getState().status).toBe('idle');
         }
@@ -252,7 +221,7 @@ it.each(['read', 'roster'] as const)('preserves a newer admission when an obsole
         const admission = entry.resume();
         await act(async () => {
             if (delivery === 'read') {
-                response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-banned' })));
+                fixture.access({ status: 'denied', reason: 'banned' });
             }
             else {
                 fixture.publish({
@@ -295,10 +264,10 @@ function createRoomEntry(props: RoomModerationPanelProps, join: (room: GroupRef)
 it('does not treat a failed access read as revocation', async () => {
     vi.useFakeTimers();
     const fixture = createModerationFixture();
-    fixture.props.rooms.session = () => ({ refresh: vi.fn().mockRejectedValue(new ApiHttpError('GET', '/group', 503, 'unavailable')) });
+
     const view = await renderModeration(fixture.props);
     try {
-        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        await act(async () => fixture.access({ status: 'stale' }));
         expect(view.container.textContent).not.toContain('You were');
         expect(button(view.container, 'Ban guest').disabled).toBe(false);
     }
@@ -320,12 +289,16 @@ function createModerationFixture() {
     const notifications = new SynchronousNotifications<RallarRoomState>((error) => {
         throw error;
     });
+    let accessListener: ((access: RoomAccessObservation) => void) | undefined;
     const props: RoomModerationPanelProps = {
-        accessCheckIntervalMs: 1000,
         session: { clientId: 'host', sessionId: 'host', username: 'host', accessToken: 'test-token', expiresAtEpochMs: 4_000_000_000_000 },
         rooms: {
-            session: () => ({ refresh: vi.fn() }),
-            state: () => state,
+            watchAccess: (_room, listener, options) => {
+                accessListener = listener;
+                const stop = () => { if (accessListener === listener) accessListener = undefined; };
+                options?.signal?.addEventListener('abort', stop, { once: true });
+                return stop;
+            },
             onChange: (listener) => notifications.subscribeAndNotify(listener, state).unsubscribe,
             removeMember: async () => snapshot,
             banMember: async () => snapshot,
@@ -335,6 +308,9 @@ function createModerationFixture() {
     return {
         props,
         snapshot,
+        watching: () => !!accessListener,
+        lastWatch: () => accessListener,
+        access: (access: RoomAccessObservation) => accessListener?.(access),
         clearSelection() {
             state = toRallarRoomState({ groupSnapshots: [], clientSnapshots: [], sessionId: 'host' });
             notifications.publishLatest(state);

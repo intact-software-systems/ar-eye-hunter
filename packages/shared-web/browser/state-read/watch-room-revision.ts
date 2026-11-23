@@ -1,4 +1,4 @@
-import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, type ObservedRoomMetadata } from './observed-room.ts';
+import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, validateReadRevision, type ObservedRoomMetadata } from './observed-room.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
 
@@ -12,24 +12,12 @@ interface WatchRoomRevisionInput<T> extends Pick<RallarRoomEventOptions, 'eventT
     readonly services: Pick<CreateBrowserRallarRoomsInput, 'requireSession' | 'ws' | 'auth' | 'roomEvents'>;
     subscribeInvalidation?(room: GroupRef, invalidate: (reason: 'program-changed' | 'access-changed') => void): () => void;
     readonly signal?: AbortSignal;
+    read?(room: GroupRef, signal: AbortSignal): Promise<ObservedRoomMetadata>;
+    onDenied?(error: ApiHttpError): void;
     project(group: ObservedRoomMetadata): T | null;
     listener(observation: { status: 'current' | 'stale'; value: T | null; }): void;
     regresses(previous: T, next: T): boolean;
     onDelta?(previous: T, next: T): 'ignore' | 'publish' | 'refresh';
-}
-
-function validateReadRevision<T extends { readonly revision: number; }>(
-    next: T | null,
-    previous: T | null,
-    announcedRevision: number,
-    regresses: WatchRoomRevisionInput<T>['regresses']
-): void {
-    if ((next?.revision ?? 0) < announcedRevision) {
-        throw new Error('Room read predates the server notification.');
-    }
-    if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
-        throw new Error('Room read regressed.');
-    }
 }
 
 /** Read on entry and recovery. Scoped server deltas can publish a projection or invalidate the read. */
@@ -87,17 +75,13 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         let next: T | null;
         try {
             fence.assertCurrent();
-            next = input.project(
-                await readObservedRoom(
-                    room,
-                    requireSession,
-                    AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)])
-                )
-            );
+            const readSignal = AbortSignal.any([attempt.signal, AbortSignal.timeout(15_000)]);
+            const group = input.read ? await input.read(room, readSignal) : await readObservedRoom(room, requireSession, readSignal);
+            next = input.project(group);
             validateReadRevision(next, observed, announcedRevision, input.regresses);
         }
         catch (error) {
-            const accessLost = error instanceof ApiHttpError && [401, 403, 404].includes(error.status);
+            const accessLost = error instanceof ApiHttpError && [401, 403, 404].includes(error.status) ? error : undefined;
             handleReadFailure(attempt, accessLost);
             return;
         }
@@ -110,7 +94,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
             void refresh();
         }
     }
-    function handleReadFailure(attempt: AbortController, accessLost: boolean): void {
+    function handleReadFailure(attempt: AbortController, accessLost: ApiHttpError | undefined): void {
         if (request !== attempt) {
             return;
         }
@@ -119,6 +103,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
             queued = false;
             announcedRevision = 0;
             publish('stale', null);
+            if (!signal.aborted) input.onDenied?.(accessLost);
             return;
         }
         publish('stale');

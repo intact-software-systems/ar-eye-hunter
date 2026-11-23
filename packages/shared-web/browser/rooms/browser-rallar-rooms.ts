@@ -19,7 +19,7 @@ import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-roo
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
-import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { removeMissingRoomSnapshot, clearDeniedRoomIfUnchanged, watchRoomAccess, type RoomAccessObservation } from '../state-read/watch-room-access.ts';
 import {
     hydrateGroupTopologyOverlays,
     type GroupTopologyReadThroughOutcome
@@ -41,7 +41,6 @@ import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import {
     findGroupStateSnapshotByRef,
     refreshGroupStateSnapshotIfUnchanged,
-    removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
@@ -138,6 +137,7 @@ export interface CreateBrowserRallarRoomsInput {
 }
 
 export interface BrowserRallarRooms extends RoomTimeOperations, RoomDirectorOperations {
+    watchAccess(room: GroupRef, listener: (access: RoomAccessObservation) => void, options?: { readonly signal?: AbortSignal }): RallarUnsubscribe;
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
     refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
@@ -307,6 +307,7 @@ function createRoomReadOperations(
     ) => Promise<RallarRoomState>
 ): Pick<
     BrowserRallarRooms,
+    | 'watchAccess'
     | 'state'
     | 'list'
     | 'refresh'
@@ -320,6 +321,7 @@ function createRoomReadOperations(
     | 'onEvent'
 > {
     return {
+        watchAccess: (room, listener, options) => watchRoomAccess(input, room, listener, options?.signal),
         state: () => input.stateStore.state(),
         list: () => input.stateStore.state().rooms,
         refresh,
@@ -560,13 +562,11 @@ async function refreshAuthenticatedRoom(
         return readThrough?.outcome;
     }
     catch (error) {
-        if (readRoomMembershipRevocation(error) !== undefined && findGroupStateSnapshotByRef(roomRef) === observed) {
+        if (readRoomMembershipRevocation(error) !== undefined) {
             assertCurrent();
-            input.stateStore.clearCurrentRoomIfMatches(roomRef, true);
-            if (observed) {
-                await removeMissingRoomSnapshot(roomRef, observed);
+            if (await clearDeniedRoomIfUnchanged(input.stateStore, roomRef, observed)) {
+                await input.acceptSnapshots({ context, clients: [], groups: [], scope, assertCurrent });
             }
-            await input.acceptSnapshots({ context, clients: [], groups: [], scope, assertCurrent });
         }
         if (error instanceof ApiHttpError && error.status === 404 && observed) {
             assertCurrent();
@@ -602,18 +602,6 @@ async function acceptRefreshedRoom(
         await waitForGroupStateSnapshotChangesIdle();
         acceptance.assertCurrent();
     }
-}
-
-async function removeMissingRoomSnapshot(roomRef: GroupRef, observed: GroupSnapshot): Promise<void> {
-    const removed = removeGroupStateSnapshotIfUnchanged(roomRef, observed);
-    emitBrowserStateReadDiagnostic({
-        name: 'rallar.browser.state-read',
-        feature: 'group',
-        operation: 'point',
-        result: removed ? 'removed' : 'preserved',
-        durationMs: 0
-    });
-    await waitForGroupStateSnapshotChangesIdle();
 }
 
 function resolveRoomSessionRef(

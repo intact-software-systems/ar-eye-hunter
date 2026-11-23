@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import type { RoomAccessObservation } from '@shared-web/browser/rooms/watch-room-access.ts';
+import type { RoomAccessObservation } from '@shared-web/browser/state-read/watch-room-access.ts';
 import type { RoomTimelineObservation } from '@shared-web/browser/rooms/time/room-time-operations.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readFullStackConfig, type FullStackUser } from './full-stack-helpers.ts';

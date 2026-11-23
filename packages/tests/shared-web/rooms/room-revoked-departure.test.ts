@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { newALUntargetedMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
@@ -72,6 +75,63 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         expect(facade.rooms.selected()).toBeUndefined();
     });
 
+    it('recovers revocation on foreground through the public access watcher', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        respondToDeparture(code, 403);
+        await facade.rooms.join(destination.group);
+        vi.spyOn(facade.ws, 'status').mockReturnValue({ ...facade.ws.status(), isOpen: true });
+        const page = new EventTarget();
+        vi.stubGlobal('window', page);
+        vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+        vi.stubGlobal('navigator', { onLine: true });
+        let access = 200;
+        vi.stubGlobal('fetch', async () => access !== 200
+            ? Response.json({ error: 'unavailable', code }, { status: access })
+            : Response.json(destination, { headers: {
+                'cache-control': 'no-store', 'rallar-state-source': 'durable',
+                'rallar-group-revision': String(destination.causalRevision.groupRevision),
+                'rallar-presence-revision': String(destination.causalRevision.presenceRevision)
+            } }));
+        const observed = vi.fn();
+        const stop = facade.rooms.watchAccess(destination.group, observed);
+        try {
+            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'current' }));
+            access = 503;
+            page.dispatchEvent(new Event('pageshow'));
+            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'stale' }));
+            expect(facade.rooms.selected()?.groupId).toBe('destination');
+            page.dispatchEvent(new Event('pagehide'));
+            expect(observed).toHaveBeenLastCalledWith({ status: 'stale' });
+            access = 403;
+            page.dispatchEvent(new Event('pageshow'));
+            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({
+                status: 'denied', reason: code === 'member-banned' ? 'banned' : 'removed'
+            }));
+            expect(facade.rooms.selected()).toBeUndefined();
+            expect(facade.rooms.current()).toBeUndefined();
+            access = 200;
+            const { applicationId, workspaceId, groupId } = destination.group;
+            const scope = { applicationId, workspaceId };
+            const principalId = runtime.session.clientId;
+            const changeId = crypto.randomUUID();
+            const topic = AppTopics.viewInvalidated;
+            const message = newALUntargetedMessage({
+                createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, principalId, changeId), typeId: topic,
+                resource: { version: 1, resource: 'room-access', scope, groupId, principalId, changeId }
+            });
+            const targeted = { ...message, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } } } as const;
+            const { webSocketQueueBox } = runtime.context.middleware;
+            const inbox = vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mock.calls.at(-1)![1];
+            await inbox.onMessage(targeted, toResourceEntry(topic, targeted));
+            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'current' }));
+            expect(facade.rooms.selected()).toBeUndefined();
+        }
+        finally {
+            stop();
+        }
+    });
+
     it('keeps a newly admitted destination when the source membership refuses departure', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         respondToDeparture(code, 403);
@@ -79,6 +139,41 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
         expect(await facade.rooms.join(destination.group)).toEqual(destination);
         expect(facade.rooms.current()?.group.groupId).toBe('destination');
     });
+});
+
+it('stops all access notifications when the stale listener disposes during denial', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    await facade.connect();
+    vi.spyOn(facade.ws, 'status').mockReturnValue({ ...facade.ws.status(), isOpen: true });
+    const page = new EventTarget();
+    vi.stubGlobal('window', page);
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    let denied = false;
+    vi.stubGlobal('fetch', async () => denied
+        ? Response.json({ error: 'forbidden', code: 'member-banned' }, { status: 403 })
+        : Response.json(previous, { headers: {
+            'cache-control': 'no-store', 'rallar-state-source': 'durable',
+            'rallar-group-revision': String(previous.causalRevision.groupRevision),
+            'rallar-presence-revision': String(previous.causalRevision.presenceRevision)
+        } }));
+    const lifetime = new AbortController();
+    const updates: string[] = [];
+    facade.rooms.watchAccess(previous.group, access => {
+        updates.push(access.status);
+        if (denied && access.status === 'stale') lifetime.abort();
+    }, { signal: lifetime.signal });
+    try {
+        await vi.waitFor(() => expect(updates.at(-1)).toBe('current'));
+        denied = true;
+        page.dispatchEvent(new Event('pageshow'));
+        await vi.waitFor(() => expect(lifetime.signal.aborted).toBe(true));
+        expect(updates.at(-1)).toBe('stale');
+    } finally {
+        lifetime.abort();
+        await facade.disconnect();
+    }
 });
 
 it.each([

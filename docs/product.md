@@ -126,7 +126,8 @@ A phase is an application-defined identifier of 1–64 ASCII letters, digits, do
 
 `rooms.readTimeline` and `rooms.watchTimeline` accept the room and clock name. Each observation combines the phase identifier,
 its `startedAtRevision`, the current clock revision and either `endsAtEpochMs` or `remainingMs` from one room snapshot.
-A missing timeline returns null. Members can keep room B selected while following a named timeline in A.
+A missing timeline returns null. Members can keep room B selected while following a named timeline in A
+in the same application and workspace. Retain membership in A when switching rooms.
 Private WebSocket notices identify the affected room and program. The SDK reads the phase and clock together
 at startup, on matching changes and after reconnect. A change to a different clock leaves the watch idle.
 Access loss clears the cached timeline. Use the existing clock pause/resume commands with the same name.
