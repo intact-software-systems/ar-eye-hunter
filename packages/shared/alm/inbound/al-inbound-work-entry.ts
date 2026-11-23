@@ -35,7 +35,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { computeALWorkEntry } from '../work/compute-al-work-entry.ts';
-import { resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
+import { resolveALWorkEntryDueAtMs, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
 import type { ALInboundDurableEffect, ALInboundGapRenewalEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 
@@ -208,9 +208,7 @@ export function resolveALInboundWorkReadyAt(entry: ResourceEntry): number {
  * when it was written; the wait a batch reports precisely is the one read before the reservation.
  */
 export function resolveALInboundWorkDueAtMs(entry: ResourceEntry): number {
-    return Number(
-        entry.dequeueAudit.nextTs?.epochMilliseconds ?? entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-    );
+    return resolveALWorkEntryDueAtMs(entry);
 }
 
 function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEffect {

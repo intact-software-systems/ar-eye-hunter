@@ -13,7 +13,11 @@ import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
 import type { ALWorkLeaseSweepState } from '../work/al-work-lease-recovery.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALWorkEntry } from '../work/compute-al-work-entry.ts';
-import { readALWorkReadyAt, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
+import {
+    readALWorkReadyAt,
+    resolveALWorkEntryDueAtMs,
+    resolveALWorkEntryReadyAt
+} from '../work/read-al-work-ready-at.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -102,10 +106,7 @@ export function decodeALOutboundWorkEntry<TPrepared>(
             canonicalMessage: preparedRead.message,
             entry,
             attempts: entry.dequeueAudit.attempts,
-            retryAtMs: Number(
-                entry.dequeueAudit.nextTs?.epochMilliseconds ??
-                    entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-            ),
+            retryAtMs: resolveALWorkEntryDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
             leaseUntilMs: entry.status === EntityStatus.RESERVED
                 ? resolveALWorkEntryReadyAt(entry, AL_OUTBOUND_WORK_LEASE_MS)
@@ -159,10 +160,7 @@ export function toALOutboundDequeueWork<TPrepared>(
         canonicalMessage: readALOutboundQueuedMessage(entry, readMessageFromEntry),
         entry,
         attempts: entry.dequeueAudit.attempts,
-        retryAtMs: Number(
-            entry.dequeueAudit.nextTs?.epochMilliseconds ??
-                entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-        ),
+        retryAtMs: resolveALWorkEntryDueAtMs(entry),
         expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
         leaseUntilMs: entry.status === EntityStatus.RESERVED
             ? resolveALWorkEntryReadyAt(entry, AL_OUTBOUND_WORK_LEASE_MS)

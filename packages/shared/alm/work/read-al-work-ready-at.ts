@@ -33,6 +33,11 @@ export function resolveALWorkEntryReadyAt(entry: ResourceEntry, leaseMs: number)
         }
         return computeALWorkLeaseUntilMs(entry, leaseMs);
     }
+    return resolveALWorkEntryDueAtMs(entry);
+}
+
+/** When the row came due, whatever status it carries: its `nextTs`, else when it was created. */
+export function resolveALWorkEntryDueAtMs(entry: ResourceEntry): number {
     return Number(
         entry.dequeueAudit.nextTs?.epochMilliseconds ?? entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
     );
