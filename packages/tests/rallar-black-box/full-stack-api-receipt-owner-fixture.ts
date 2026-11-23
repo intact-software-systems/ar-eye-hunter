@@ -135,6 +135,8 @@ class ReceiptOwnerFixture {
     };
     readonly observations: WsQueueBoxServerReceiptObservation[] = [];
     readonly engine = new InboxOutboxEngine();
+    readonly receiptRecordStores = createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs);
+    receiptRecordReleases = 0;
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
@@ -158,6 +160,7 @@ class ReceiptOwnerFixture {
         });
         this.observe = sink === 'disabled' ? undefined : (event) => this.recordObservation(event);
         this.holdClaims();
+        this.countReceiptRecordReleases();
         installReceiptConflict(this.store, this.effects);
         this.service = this.createServer();
         this.service.authorizeInboundMessagesWith({
@@ -189,7 +192,7 @@ class ReceiptOwnerFixture {
                     return this.clock.nowMs;
                 }
             }),
-            receiptRecordStores: createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs),
+            receiptRecordStores: this.receiptRecordStores,
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             receiptObserver: this.observe,
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
@@ -214,7 +217,9 @@ class ReceiptOwnerFixture {
     async run(evidencePath: string, scenario: ReceiptOwnerScenario): Promise<void> {
         await generateCompleteReceipt(this.service);
         // The record's ended work delivers the complete receipt, whose first commit conflicts and is retained as work.
-        await drainReceipt(this.engine, () => this.effects.conflicted);
+        // The conflict is set inside that commit, and a pass can return while the ended work it started still runs:
+        // the drain waits for that work's release, after which the work has observed what it issued.
+        await drainReceipt(this.engine, () => this.effects.conflicted && this.receiptRecordReleases > 0);
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
             assert.equal(pending?.kind === 'receipt-outbox' && pending.verdict.kind, 'pending');
@@ -261,6 +266,16 @@ class ReceiptOwnerFixture {
                     this.effects.receiptReleaseStatuses.push(entry.status);
                 }
             }
+            return result;
+        };
+    }
+
+    private countReceiptRecordReleases(): void {
+        const { workQueue } = this.receiptRecordStores.backend;
+        const release = workQueue.releaseEntries.bind(workQueue);
+        workQueue.releaseEntries = async (releases) => {
+            const result = await release(releases);
+            this.receiptRecordReleases += releases.length;
             return result;
         };
     }
