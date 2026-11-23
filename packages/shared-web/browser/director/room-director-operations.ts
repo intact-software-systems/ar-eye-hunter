@@ -6,7 +6,8 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../rooms/room-group-state-http-api.ts';
 import { captureRoomSession } from '../rooms/room-session-fence.ts';
-import { explicitRoomRef, readObservedRoom, watchRoomRevision, type ObservedRoomMetadata } from '../state-read/watch-room-revision.ts';
+import { explicitRoomRef, readObservedRoom, type ObservedRoomMetadata } from '../state-read/observed-room.ts';
+import { watchRoomRevision } from '../state-read/watch-room-revision.ts';
 
 export namespace RoomDirectorOperations {
     export interface View {

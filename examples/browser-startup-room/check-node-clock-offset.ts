@@ -1,52 +1,5 @@
-import { readServerClockSample } from '@shared-web/browser/connection/server-clock/read-server-clock-sample.ts';
-import { computeRemoteClockWindow, type RemoteClockObservation } from '@shared/resilience/remote-clock.ts';
-import { parseNodeClockProbe } from './parse-node-clock-probe.ts';
-
-interface NodeClockPair {
-    readonly calibration: RemoteClockObservation;
-    readonly enforcement: RemoteClockObservation;
-}
-
-export function checkNodeClockOffset(pair: NodeClockPair, nowMonotonicMs: number, budgetMs: number) {
-    if (!Number.isSafeInteger(budgetMs) || budgetMs < 0) {
-        throw new RangeError('Supply a nonnegative integer millisecond offset budget.');
-    }
-    const calibration = projectWindow(pair.calibration, nowMonotonicMs);
-    const enforcement = projectWindow(pair.enforcement, nowMonotonicMs);
-    const minimumOffsetMs = enforcement.earliestEpochMs - calibration.latestEpochMs;
-    const maximumOffsetMs = enforcement.latestEpochMs - calibration.earliestEpochMs;
-    let verdict: 'within' | 'outside' | 'inconclusive' = 'inconclusive';
-    if (minimumOffsetMs >= -budgetMs && maximumOffsetMs <= budgetMs) {
-        verdict = 'within';
-    }
-    else if (maximumOffsetMs < -budgetMs || minimumOffsetMs > budgetMs) {
-        verdict = 'outside';
-    }
-    return { verdict, minimumOffsetMs, maximumOffsetMs, budgetMs };
-}
-
-function projectWindow(observation: RemoteClockObservation, nowMonotonicMs: number) {
-    const window = computeRemoteClockWindow({
-        observation,
-        nowMonotonicMs,
-        policy: { maxRoundTripMs: 500, maxAgeMs: 2_000, maxRelativeDriftPpm: 1_000, maxMonotonicErrorMs: 2 }
-    });
-    if (window.left) {
-        throw new Error(window.left.join(' '));
-    }
-    return window.right!;
-}
-
-async function sampleNode(baseUrl: string, expectedServerPeerId: string) {
-    const sample = await readServerClockSample({ baseUrl, expectedServerPeerId, signal: AbortSignal.timeout(2_000) }, {
-        fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }),
-        nowMonotonicMs: () => performance.now()
-    });
-    if (sample.left) {
-        throw new Error('Time sample unavailable: ' + sample.left.code);
-    }
-    return sample.right!;
-}
+import { checkNodeClockOffset, sampleNodeClockPair } from '@shared-test/black-box-runner/cluster-proofs/check-node-clock-offset.ts';
+import { parseNodeClockProbe } from '@shared-test/black-box-runner/cluster-proofs/parse-node-clock-probe.ts';
 
 if (import.meta.main) {
     try {
@@ -60,17 +13,7 @@ if (import.meta.main) {
             const started = performance.now();
             const at = new Date().toISOString();
             try {
-                const [calibration, enforcement] = await Promise.allSettled([
-                    sampleNode(first, calibrationId),
-                    sampleNode(second, enforcementId)
-                ]);
-                if (calibration.status === 'rejected') {
-                    throw calibration.reason;
-                }
-                if (enforcement.status === 'rejected') {
-                    throw enforcement.reason;
-                }
-                const pair = { calibration: calibration.value, enforcement: enforcement.value };
+                const pair = await sampleNodeClockPair({ origin: first, peerId: calibrationId }, { origin: second, peerId: enforcementId });
                 const now = performance.now();
                 const result = checkNodeClockOffset(pair, now, budgetMs);
                 console.log(JSON.stringify(

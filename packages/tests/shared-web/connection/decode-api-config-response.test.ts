@@ -21,6 +21,15 @@ describe('the /api/config boundary decoder', () => {
         expect(decodeApiConfigResponse({ ...SERVED, build: 'b-1' }, API_URL).right).toEqual(SERVED);
     });
 
+    it('preserves the clock peer separately from the shared queue peer', () => {
+        const served = { ...SERVED, clockPeerId: 'node-a' };
+        expect(decodeApiConfigResponse(served, API_URL).right).toEqual(served);
+    });
+
+    it.each(['', ' ', null, 3])('rejects an invalid configured clock peer %j', (clockPeerId) => {
+        expect(decodeApiConfigResponse({ ...SERVED, clockPeerId }, API_URL).left).toContain('clock peer id');
+    });
+
     it('returns the replaced-layout overlap the server states', () => {
         expect(decodeApiConfigResponse(SERVED, API_URL).right?.rtcReplacedLayoutOverlapMs).toBe(7_000);
         expect(decodeApiConfigResponse({ ...SERVED, rtcReplacedLayoutOverlapMs: 0 }, API_URL).right?.rtcReplacedLayoutOverlapMs)

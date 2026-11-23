@@ -7,6 +7,8 @@ export const MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
 export interface ApiConfig {
     readonly apiBaseUrl: string;
     readonly wsBaseUrl: string;
+    /** A separately identified node clock. A server with one shared identity uses its WS peer id for both. */
+    readonly clockPeerId?: string;
     readonly endpoints: {
         readonly createWs: string;
     };

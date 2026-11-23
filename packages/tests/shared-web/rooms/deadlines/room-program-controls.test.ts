@@ -1,8 +1,11 @@
+import { AppTopics } from '@shared/api/api-config.ts';
+import { newALBroadcastMessage, newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
+import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
 
 const room = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const program = { name: 'court', elapsedThroughEpochMs: 1500, phases: [{ phase: 'first', startsAtEpochMs: 1000 }, { phase: 'second', startsAtEpochMs: 4000 }] };
@@ -32,6 +35,12 @@ function response(schedule: RoomSchedule): Response {
             'rallar-presence-revision': '1'
         }
     });
+}
+
+async function deliverServerMessage(message: ALMessage) {
+    const { webSocketQueueBox } = getRoomWorkflowMocks().context.middleware;
+    const inbox = vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mock.calls.at(-1)![1];
+    await inbox.onMessage(message, toResourceEntry(message.payload.typeId, message));
 }
 
 it('uses the captured director and program revision for both transitions and their retries', async () => {
@@ -94,5 +103,95 @@ it('recovers a missed resume on foreground without accepting a different state a
     }
     finally {
         stop();
+    }
+});
+
+it('repairs a missed resume and ban on server resync while the browser socket stays open', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    await facade.connect();
+    const { rooms, ws } = facade;
+    vi.spyOn(ws, 'status').mockReturnValue({ ...ws.status(), isOpen: true });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    let stored: RoomSchedule | null = paused;
+    vi.stubGlobal('fetch', async () => stored ? response(stored) : Response.json({ error: 'Forbidden' }, { status: 403 }));
+    const observed: RoomSchedule.Observation[] = [];
+    const stop = rooms.watchSchedule(room, 'court', value => observed.push(value));
+    async function resync() {
+        const topic = AppTopics.viewResync;
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, crypto.randomUUID(), 'all'),
+            scope: 'all', typeId: topic, resource: { version: 1 }
+        });
+        await deliverServerMessage(message);
+    }
+    try {
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: paused }));
+        stored = resumed;
+        await resync();
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: resumed }));
+        stored = null;
+        await resync();
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'stale', schedule: null }));
+    }
+    finally {
+        stop();
+        await facade.disconnect();
+    }
+});
+
+it('publishes progress during ongoing notices, coalesces each burst, and fences a read overtaken by revocation', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    await facade.connect();
+    vi.spyOn(facade.ws, 'status').mockReturnValue({ ...facade.ws.status(), isOpen: true });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+    const reads: { supply(response: Response): void; signal: AbortSignal }[] = [];
+    vi.stubGlobal('fetch', (_url: string, options: { signal: AbortSignal }) => {
+        // A response may already be in transit when access changes. It can complete despite cancellation.
+        const pending = Promise.withResolvers<Response>();
+        reads.push({ supply: pending.resolve, signal: options.signal });
+        return pending.promise;
+    });
+    const observed: RoomSchedule.Observation[] = [];
+    const stop = facade.rooms.watchSchedule(room, 'court', value => observed.push(value));
+    async function notify(reason: 'program-changed' | 'access-changed') {
+        const topic = AppTopics.viewInvalidated;
+        const scope = { applicationId: room.applicationId, workspaceId: room.workspaceId };
+        const principalId = 'principal-1';
+        const changeId = crypto.randomUUID();
+        const message = newALUntargetedMessage({
+            createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, principalId, changeId), typeId: topic,
+            resource: { version: 1, resource: 'room-program', scope, groupId: room.groupId, principalId, changeId, reason }
+        });
+        await deliverServerMessage({ ...message, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } } });
+    }
+    try {
+        for (const [index, schedule] of [paused, resumed].entries()) {
+            await notify('program-changed');
+            await notify('program-changed');
+            expect(reads).toHaveLength(index + 1);
+            expect(reads[index]!.signal.aborted).toBe(false);
+            reads[index]!.supply(response(schedule));
+            await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule }));
+            expect(reads).toHaveLength(index + 2);
+        }
+        await notify('access-changed');
+        expect(reads[2]!.signal.aborted).toBe(true);
+        expect(observed.at(-1)).toEqual({ status: 'stale', schedule: null });
+        const afterRevocation = observed.length;
+        reads[2]!.supply(response({ ...resumed, revision: 4 }));
+        reads[3]!.supply(Response.json({ error: 'Forbidden' }, { status: 403 }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(observed.slice(afterRevocation).every(value => value.schedule === null)).toBe(true);
+        expect(reads).toHaveLength(4);
+    }
+    finally {
+        stop();
+        await facade.disconnect();
     }
 });

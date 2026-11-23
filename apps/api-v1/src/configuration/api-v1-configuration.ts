@@ -28,6 +28,7 @@ export interface ApiV1HttpConfiguration {
 export interface ApiV1PublicApiConfiguration {
     readonly apiBaseUrl: string;
     readonly wsBaseUrl: string;
+    readonly clockPeerId?: string;
     /** How long an RTC browser keeps routing over the layout a promotion replaced (0 to `MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS`). */
     readonly rtcReplacedLayoutOverlapMs: number;
 }

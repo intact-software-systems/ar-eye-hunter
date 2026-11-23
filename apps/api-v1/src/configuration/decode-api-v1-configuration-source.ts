@@ -91,7 +91,7 @@ const OVERLAY_TOP_LEVEL_KEYS = new Set([
 const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> = {
     profile: new Set(['productionHardening']),
     http: new Set(['hostname', 'port', 'replicaCount', 'corsOrigins', 'preflightMaxAgeSeconds', 'shutdownDeadlineMs']),
-    publicApi: new Set(['apiBaseUrl', 'wsBaseUrl', 'rtcReplacedLayoutOverlapMs']),
+    publicApi: new Set(['apiBaseUrl', 'wsBaseUrl', 'clockPeerId', 'rtcReplacedLayoutOverlapMs']),
     database: new Set([
         'mode',
         'dataDirectory',
@@ -218,6 +218,7 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'http.shutdownDeadlineMs': 'RALLAR_SHUTDOWN_DEADLINE_MS',
     'http.corsOrigins': 'CORS_ORIGINS',
     'publicApi.apiBaseUrl': 'RALLAR_API_BASE_URL',
+    'publicApi.clockPeerId': 'RALLAR_SERVER_CLOCK_PEER_ID',
     'publicApi.wsBaseUrl': 'RALLAR_WS_BASE_URL',
     'database.mode': 'RALLAR_SQL_BACKEND',
     'database.dataDirectory': 'RALLAR_PGLITE_DATA_DIR',
