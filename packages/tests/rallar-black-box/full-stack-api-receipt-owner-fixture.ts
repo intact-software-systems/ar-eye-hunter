@@ -21,6 +21,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '../../shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { createInMemoryALReceiptRecordStores } from '../../shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { decodeALReceiptRecordWorkEntry } from '../../shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
 import { Either } from '../../shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '../../shared/resilience/timers.ts';
@@ -217,8 +218,9 @@ class ReceiptOwnerFixture {
     async run(evidencePath: string, scenario: ReceiptOwnerScenario): Promise<void> {
         await generateCompleteReceipt(this.service);
         // The record's ended work delivers the complete receipt, whose first commit conflicts and is retained as work.
-        // The conflict is set inside that commit, and a pass can return while the ended work it started still runs:
-        // the drain waits for that work's release, after which the work has observed what it issued.
+        // The conflict is set inside that commit. The ended work runs in the batch its end's commit started
+        // (`#worker.committed`), which no engine pass awaits: the drain waits for that work's own release, after which
+        // the work has observed what it issued.
         await drainReceipt(this.engine, () => this.effects.conflicted && this.receiptRecordReleases > 0);
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
@@ -271,11 +273,11 @@ class ReceiptOwnerFixture {
     }
 
     private countReceiptRecordReleases(): void {
-        const { workQueue } = this.receiptRecordStores.backend;
+        const { backend: { workQueue }, namespace } = this.receiptRecordStores;
         const release = workQueue.releaseEntries.bind(workQueue);
         workQueue.releaseEntries = async (releases) => {
             const result = await release(releases);
-            this.receiptRecordReleases += releases.length;
+            this.receiptRecordReleases += releases.filter((value) => decodeALReceiptRecordWorkEntry(value.entry, namespace).kind === 'ended').length;
             return result;
         };
     }
