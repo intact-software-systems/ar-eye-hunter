@@ -274,24 +274,6 @@ describe('ALM fault stream cells', () => {
         ]);
     });
 
-    it('seeded-jitter-stream proves frames reached the server out of order: the sender admitted a gap NACK about its track', () => {
-        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
-        const reordered = findCommand(sender, 'gap-nack');
-
-        expect(reordered).toMatchObject({
-            kind: 'wait',
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep('ws', 'seeded-jitter-stream'))}:`
-            }
-        });
-        expect(reordered).not.toHaveProperty('absent');
-        expect(toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])).toEqual(
-            [...toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])].sort((left, right) => left - right)
-        );
-    });
-
     it('seeded-jitter-stream holds send 2 alone by its message id until send 3 left the page and the jitter\'s longest delay passed, then releases it, before the gap NACK it reveals', () => {
         const sender = requireCell('seeded-jitter-stream', 'ws').sender;
         const places = toPlaces(sender, [
@@ -325,6 +307,24 @@ describe('ALM fault stream cells', () => {
         expect(findCommand(sender, 'release-message-2-ws')).toMatchObject({ kind: 'fault.inject', match: held, remaining: 0 });
         // The jitter delays a frame by at most its longest delay, so send 3 reached the socket before send 2 can.
         expect(findCommand(sender, 'frame-delay-3')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 80 });
+    });
+
+    it('seeded-jitter-stream proves frames reached the server out of order: the sender admitted a gap NACK about its track', () => {
+        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
+        const reordered = findCommand(sender, 'gap-nack');
+
+        expect(reordered).toMatchObject({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep('ws', 'seeded-jitter-stream'))}:`
+            }
+        });
+        expect(reordered).not.toHaveProperty('absent');
+        expect(toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])).toEqual(
+            [...toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])].sort((left, right) => left - right)
+        );
     });
 
     it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {
