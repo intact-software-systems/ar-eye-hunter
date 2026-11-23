@@ -18,6 +18,10 @@ const liveRtcMatrixTestTimeoutsPath = path.join(
     repoRoot,
     'packages/shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts'
 );
+const fullStackWebServerStartTimeoutsPath = path.join(
+    repoRoot,
+    'packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts'
+);
 /** The repository aliases the package's tsconfig resolves, each to its package root. */
 const packageAliasRoots: Readonly<Record<string, string>> = {
     '@shared/': 'packages/shared/',
@@ -87,6 +91,7 @@ function isApprovedImport(file: string, specifier: string): boolean {
             eventHistoryOwnerPath,
             resultReleaseArtifactDecoderPath,
             liveRtcMatrixTestTimeoutsPath,
+            fullStackWebServerStartTimeoutsPath,
             ...productionFixturePaths
         ].includes(
             path.resolve(path.dirname(file), specifier)
@@ -236,9 +241,12 @@ describe('shared RTC benchmark package boundaries', () => {
     });
 
     // The capture starts an attempt only while its job budget covers the attempt's test timeout, as the spec derives it.
-    it('admits only the matrix test timeout derivation of the shared-test wait budgets', () => {
+    it('admits only the matrix test timeouts and the web server start limits of the shared-test wait budgets', () => {
         const consumer = path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts');
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fullStackWebServerStartTimeoutsPath)))
+            .toBe(true);
+        expect(toImportSpecifiers(fs.readFileSync(fullStackWebServerStartTimeoutsPath, 'utf8'))).toEqual([]);
         expect(toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))).toEqual([
             './browser-test-harness-margin.ts',
             './live-rtc-wait-budgets.ts'

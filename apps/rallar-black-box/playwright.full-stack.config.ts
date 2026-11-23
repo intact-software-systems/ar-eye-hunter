@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import { readGovernedLiveRtcControlServer } from '../../tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts';
 
+import { FULL_STACK_SPA_START_TIMEOUT_MS } from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import {
     createDefaultFullStackApiV1WebServer,
     portFromBaseUrl,
@@ -108,7 +109,7 @@ const spaWebServer = preparedProduction?.right
         env: { VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl },
         url: headlessSpaEnabled ? `${fullStackSpaBaseUrl}/headless/` : fullStackSpaBaseUrl,
         reuseExistingServer,
-        timeout: 60_000
+        timeout: FULL_STACK_SPA_START_TIMEOUT_MS
     };
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [

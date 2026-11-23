@@ -4,6 +4,10 @@ import {
     readFullStackRtcIceFixtureRequests,
     type ReadFullStackRtcIceFixtureRequestsInput
 } from '../../packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts';
+import {
+    FULL_STACK_MEMORY_API_START_TIMEOUT_MS,
+    FULL_STACK_POSTGRES_API_START_TIMEOUT_MS
+} from '../../packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import { ALM_CONFORMANCE_GRANTED_TOPIC_ID } from '../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 
 export type FullStackApiServerMode = typeof FULL_STACK_API_SERVER_MODES[number];
@@ -155,7 +159,7 @@ export function createFullStackApiV1WebServer(
             mode === 'memory' || input.requireFreshPostgres === true || input.timingCaptureDirectory !== undefined
                 ? false
                 : input.reuseExistingServer,
-        timeout: mode === 'memory' ? 120_000 : 90_000,
+        timeout: mode === 'memory' ? FULL_STACK_MEMORY_API_START_TIMEOUT_MS : FULL_STACK_POSTGRES_API_START_TIMEOUT_MS,
         ...(input.timingCaptureDirectory === undefined
             ? {}
             : { gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 7_000 } })

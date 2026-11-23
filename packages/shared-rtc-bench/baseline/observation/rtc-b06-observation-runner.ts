@@ -14,7 +14,7 @@ import { readRtcB06EvidenceReport, type RtcB06EvidenceReport } from './read-rtc-
 import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
 import type { RtcPerformanceObservationOutcome } from './rtc-performance-observation.ts';
-import { toRtcB06AttemptTestTimeoutMs } from './to-rtc-b06-attempt-test-timeout-ms.ts';
+import { computeRtcB06AttemptTimeoutMs } from './to-rtc-b06-attempt-test-timeout-ms.ts';
 
 export interface RtcB06ObservationRunInput {
     readonly sourceRef: 'main';
@@ -241,7 +241,10 @@ function initializePrimary(
 interface RtcB06AttemptsRun {
     readonly baselineId: string;
     readonly environmentId: RtcB06BaselineCaptureInput['environmentId'];
-    /** The monotonic time by which a started attempt's test must be able to end; absent, every attempt starts. */
+    /**
+     * The monotonic time by which a started attempt, its build and web server start included, must be able to end;
+     * absent, every attempt starts.
+     */
     readonly deadlineMs: number | undefined;
 }
 
@@ -274,8 +277,8 @@ async function captureAndFinalize(dependencies: RtcB06ObservationRunnerDependenc
 }
 
 /**
- * Runs the attempts in order until one is refused or the job budget cannot cover the next attempt's test; that attempt
- * and every later one are then recorded as not started, so finalization still accounts for each of them.
+ * Runs the attempts in order until one is refused or the job budget cannot cover the next attempt; that attempt and
+ * every later one are then recorded as not started, so finalization still accounts for each of them.
  */
 async function produceAttempts(
     dependencies: RtcB06ObservationRunnerDependencies,
@@ -315,7 +318,7 @@ function fitsJobDeadline(
     attempt: RtcBaselineAttemptLocatorDto
 ): boolean {
     return run.deadlineMs === undefined ||
-        run.deadlineMs - dependencies.monotonicNowMs() >= toRtcB06AttemptTestTimeoutMs(attempt.caseId);
+        run.deadlineMs - dependencies.monotonicNowMs() >= computeRtcB06AttemptTimeoutMs(attempt.caseId);
 }
 
 function toAttemptInputLocator(attempt: RtcBaselineAttemptLocatorDto): RtcBaselineAttemptInputLocatorDto {

@@ -14,7 +14,10 @@ import { decodeRtcBaselineCaptureRequest } from '../../../baseline/contracts/rtc
 import { createRtcB06ObservationRunner, type RtcB06ObservationRunnerDependencies } from '../../../baseline/observation/rtc-b06-observation-runner.ts';
 import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from '../../../baseline/observation/rtc-performance-observation-archive.ts';
-import { toRtcB06AttemptTestTimeoutMs } from '../../../baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
+import {
+    computeRtcB06AttemptTimeoutMs,
+    toRtcB06AttemptTestTimeoutMs
+} from '../../../baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
 import { createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');
@@ -474,10 +477,10 @@ describe('RTC-B06 job budget', () => {
         return { configured, produced, recorded, notStarted };
     }
 
-    it('starts every attempt whose derived test timeout the job budget still covers', async () => {
+    it('starts every attempt whose build, web server start and derived test timeout the job budget still covers', async () => {
         const { configured, produced, recorded } = budgetedDependencies();
-        const everyAttemptMs = 6 * toRtcB06AttemptTestTimeoutMs('default') +
-            4 * toRtcB06AttemptTestTimeoutMs('all-scenarios') + 4 * toRtcB06AttemptTestTimeoutMs('retention-100');
+        const everyAttemptMs = 6 * computeRtcB06AttemptTimeoutMs('default') +
+            4 * computeRtcB06AttemptTimeoutMs('all-scenarios') + 4 * computeRtcB06AttemptTimeoutMs('retention-100');
 
         await createRtcB06ObservationRunner(configured).captureBaseline({
             ...workflow,
@@ -490,10 +493,10 @@ describe('RTC-B06 job budget', () => {
         expect(recorded).toEqual(['cohort', 'finalize']);
     });
 
-    // Six default attempts take 600 s, leaving one second less than an every-scenario attempt's derived timeout.
+    // Six default attempts take 600 s, leaving one second less than an every-scenario attempt's timeout.
     it('records the first attempt the budget cannot cover as not started and starts no later attempt', async () => {
         const { configured, produced, recorded, notStarted } = budgetedDependencies();
-        const budgetMs = 6 * ATTEMPT_DURATION_MS + toRtcB06AttemptTestTimeoutMs('all-scenarios') - 1_000;
+        const budgetMs = 6 * ATTEMPT_DURATION_MS + computeRtcB06AttemptTimeoutMs('all-scenarios') - 1_000;
 
         await createRtcB06ObservationRunner(configured).captureBaseline({
             ...workflow,
@@ -521,6 +524,22 @@ describe('RTC-B06 job budget', () => {
                 outerOrdinal: 1
             }
         }]);
+    });
+
+    // The deadline check left out the production build and the web servers' start that run before every attempt's test.
+    it('does not start an attempt whose test the budget covers but whose build and web server start it does not', async () => {
+        const { configured, produced, recorded } = budgetedDependencies();
+        const budgetMs = 6 * ATTEMPT_DURATION_MS + toRtcB06AttemptTestTimeoutMs('all-scenarios');
+
+        await createRtcB06ObservationRunner(configured).captureBaseline({
+            ...workflow,
+            environmentId: 'E3-memory',
+            sourceRef: 'codex/rtc-baseline-refresh',
+            jobBudgetSeconds: budgetMs / 1_000
+        });
+
+        expect(produced.at(-1)).toBe('default/retained/5');
+        expect(recorded).toEqual(['not-started', 'finalize']);
     });
 
     function budgetSummary(passedOrFailed: 'passed' | 'failed') {

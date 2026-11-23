@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { FULL_STACK_WEB_SERVERS_START_BOUNDED_WAITS_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts';
 import {
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
@@ -31,7 +32,11 @@ import {
     CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/recipe-console-monitor-test-timeouts.ts';
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts';
-import { toRtcB06AttemptTestTimeoutMs } from '../../shared-rtc-bench/baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
+import {
+    computeRtcB06AttemptTimeoutMs,
+    RTC_B06_ATTEMPT_PRODUCTION_BUILD_MS,
+    toRtcB06AttemptTestTimeoutMs
+} from '../../shared-rtc-bench/baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
 
 interface WorkflowMatrix {
     readonly case?: readonly string[];
@@ -99,9 +104,9 @@ const B06_DIAGNOSTIC_JOB_SETUP_MS = 10 * 60_000;
 const B06_CAPTURE_JOB_SETUP_MS = 10 * 60_000;
 
 /**
- * What the B06 capture job does once its deadline passes: the last attempt's build and web-server start, which its
- * deadline check does not count, the orchestrator's finalization and archive, then the E4 cleanup and the uploads. The
- * steps after the capture took 10 s, 5 s, 11 s, 7 s, 3 s and 3 s in the runs above, and each web server may take 60 s.
+ * What the B06 capture job does once its deadline passes: the orchestrator's finalization and archive, then the E4
+ * cleanup and the uploads. Each attempt's build and web server start count against the deadline with the attempt. The
+ * steps after the capture took 10 s, 5 s, 11 s, 7 s, 3 s and 3 s in the runs above.
  */
 const B06_CAPTURE_REPORT_RESERVE_MS = 10 * 60_000;
 
@@ -237,13 +242,15 @@ describe('the B06 capture job deadline', () => {
         }
     });
 
-    it('checks each declared B06 attempt against the derived timeout of the test its case runs', () => {
-        const caseIds = readRtcB06CaseIds();
+    // The deadline check left out the production build and the web servers' start every attempt runs before its test.
+    it('checks each declared B06 attempt against its build, its web servers\' start and its case\'s derived test', () => {
+        const startupMs = RTC_B06_ATTEMPT_PRODUCTION_BUILD_MS + FULL_STACK_WEB_SERVERS_START_BOUNDED_WAITS_MS;
 
-        expect(Object.fromEntries(caseIds.map((caseId) => [caseId, toRtcB06AttemptTestTimeoutMs(caseId)]))).toEqual({
-            default: LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
-            'all-scenarios': LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
-            'retention-100': LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
-        });
+        expect(Object.fromEntries(readRtcB06CaseIds().map((caseId) => [caseId, computeRtcB06AttemptTimeoutMs(caseId)])))
+            .toEqual({
+                default: startupMs + LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+                'all-scenarios': startupMs + LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+                'retention-100': startupMs + LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
+            });
     });
 });
