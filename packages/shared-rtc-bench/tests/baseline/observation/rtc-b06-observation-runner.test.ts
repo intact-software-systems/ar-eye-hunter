@@ -438,6 +438,9 @@ describe('RTC-B06 job budget', () => {
     function budgetedDependencies() {
         const { configured } = dependencies();
         const produced: string[] = [];
+        /** What the capture recorded, in order, besides each produced attempt. */
+        const recorded: string[] = [];
+        const notStarted: Parameters<RtcB06ObservationRunnerDependencies['envelope']['recordExternalAttemptsNotStarted']>[0][] = [];
         let nowMs = 0;
         let manifest: ReturnType<typeof deriveRtcBaselineCaptureManifest>;
         configured.monotonicNowMs = () => nowMs;
@@ -455,11 +458,24 @@ describe('RTC-B06 job budget', () => {
             nowMs += ATTEMPT_DURATION_MS;
             return { exitStatus: 0 };
         };
-        return { configured, produced };
+        configured.envelope.recordExternalAttemptsNotStarted = async (input) => {
+            recorded.push('not-started');
+            notStarted.push(input);
+            return success({ notStartedSampleCount: 1 });
+        };
+        configured.envelope.recordExternalCohortAssertion = async () => {
+            recorded.push('cohort');
+            return success({ acceptedCohortCount: 1 });
+        };
+        configured.envelope.finalize = async () => {
+            recorded.push('finalize');
+            return success(finalizedSummary());
+        };
+        return { configured, produced, recorded, notStarted };
     }
 
     it('starts every attempt whose derived test timeout the job budget still covers', async () => {
-        const { configured, produced } = budgetedDependencies();
+        const { configured, produced, recorded } = budgetedDependencies();
         const everyAttemptMs = 6 * toRtcB06AttemptTestTimeoutMs('default') +
             4 * toRtcB06AttemptTestTimeoutMs('all-scenarios') + 4 * toRtcB06AttemptTestTimeoutMs('retention-100');
 
@@ -471,12 +487,12 @@ describe('RTC-B06 job budget', () => {
         });
 
         expect(produced).toHaveLength(14);
-        expect(configured.envelope.recordExternalAttemptsNotStarted).not.toHaveBeenCalled();
+        expect(recorded).toEqual(['cohort', 'finalize']);
     });
 
     // Six default attempts take 600 s, leaving one second less than an every-scenario attempt's derived timeout.
     it('records the first attempt the budget cannot cover as not started and starts no later attempt', async () => {
-        const { configured, produced } = budgetedDependencies();
+        const { configured, produced, recorded, notStarted } = budgetedDependencies();
         const budgetMs = 6 * ATTEMPT_DURATION_MS + toRtcB06AttemptTestTimeoutMs('all-scenarios') - 1_000;
 
         await createRtcB06ObservationRunner(configured).captureBaseline({
@@ -494,8 +510,8 @@ describe('RTC-B06 job budget', () => {
             'default/retained/4',
             'default/retained/5'
         ]);
-        expect(configured.envelope.recordExternalAttemptsNotStarted).toHaveBeenCalledOnce();
-        expect(configured.envelope.recordExternalAttemptsNotStarted).toHaveBeenCalledWith({
+        expect(recorded).toEqual(['not-started', 'finalize']);
+        expect(notStarted).toEqual([{
             baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
             locator: {
                 workloadId: 'RTC-B06',
@@ -504,9 +520,7 @@ describe('RTC-B06 job budget', () => {
                 intendedPhase: 'warmup',
                 outerOrdinal: 1
             }
-        });
-        expect(configured.envelope.recordExternalCohortAssertion).not.toHaveBeenCalled();
-        expect(configured.envelope.finalize).toHaveBeenCalledOnce();
+        }]);
     });
 
     function budgetSummary(passedOrFailed: 'passed' | 'failed') {
@@ -529,12 +543,14 @@ describe('RTC-B06 job budget', () => {
     it('classifies a capture whose only unfinished outcomes the job budget left as incomplete, without accepted metrics', async () => {
         const { configured } = dependencies();
         configured.envelope.finalize = async () => success(budgetSummary('passed'));
+        configured.envelope.readBaselineValidation = async () => {
+            throw new Error('An incomplete capture must not be validated as accepted evidence.');
+        };
 
         expect(await createRtcB06ObservationRunner(configured).run(workflow)).toMatchObject({
             ok: true,
             value: { observation: { primary: { outcome: 'incomplete', acceptedMetrics: false } } }
         });
-        expect(configured.envelope.readBaselineValidation).not.toHaveBeenCalled();
     });
 
     it('keeps a capture failed when an attempt it ran failed before the budget ran out', async () => {
