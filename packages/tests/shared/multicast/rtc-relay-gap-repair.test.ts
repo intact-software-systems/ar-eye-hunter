@@ -1710,7 +1710,8 @@ async function readRepairRequesters(origin: RtcOriginOverlayFixture, message: AL
         msg: message,
         planner: (planned: ALMessage) => ({ msg: planned, dropReasonCode: undefined, lane: 'volatile' as const, preparedMessages: [] }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue' as const
+        intent: 'enqueue' as const,
+        stampsAppliedSupersedence: false
     };
     const stores = [origin.resources.admissionStore, origin.resources.volatileStores?.admissionStore];
     for (const store of stores) {

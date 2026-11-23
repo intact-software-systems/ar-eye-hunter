@@ -226,7 +226,8 @@ it('reads a first send decision surface from one readonly transaction', async ()
         msg: message,
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     });
 
     expect(recorded.modes()).toEqual(['readonly']);
@@ -242,7 +243,8 @@ it('reads a re-admitted supersedence-tracked message from one readonly transacti
         msg: message,
         planner: SUPERSEDING_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     });
 
     // Both dependent hops ran: the canonical key came from the stored reference, the supersedence
@@ -280,7 +282,8 @@ it('reads a single send decision and the observation its commit fences from one 
         msg: message,
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
 
     expect(recorded.modes()).toEqual(['readonly']);
@@ -327,7 +330,8 @@ it('conflicts a single send whose canonical row was written after its decision r
         msg: message,
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
 
     // Written without an admission, so the sender version the commit also fences does not move.
@@ -346,7 +350,8 @@ it('reads the canonical row a dequeue supplies inside the commit\'s observation,
         msg: message,
         planner: SEND_PLANNER,
         observedCanonicalEntry: supplied,
-        intent: 'dequeue'
+        intent: 'dequeue',
+        stampsAppliedSupersedence: false
     }, async (read) => ({ kind: 'commit', bundle: createTestDequeueBundle(read, supplied) }));
 
     const canonicalWrite = observation?.canonicalWrites.find((write) => toKeyAsString(write.entry.key) === toKeyAsString(supplied.key));
@@ -363,7 +368,8 @@ it('conflicts a single send whose effect row was written after its decision read
         msg: message,
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
     const [effect] = decision.bundle.durableEffects;
     const nowMs = Date.now();

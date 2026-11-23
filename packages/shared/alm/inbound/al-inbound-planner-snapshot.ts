@@ -15,6 +15,7 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import { isALInboundDeliveringPlan } from './admission/al-inbound-not-subscribed-plan.ts';
+import { toALOrderingTrackStartInput } from './admission/is-al-ordering-track-start-owed.ts';
 import {
     resolveALOrderingObserverRole,
     type ALOrderingObserver
@@ -34,6 +35,8 @@ export interface ALInboundPlannerSnapshot {
     readonly orderingObserver: ALOrderingObserver;
     readonly orderingTrackKey: string | undefined;
     readonly orderingSnapshot: ALOrderingTrackSnapshot | undefined;
+    /** Whether the store evicted the track's snapshot at its cap; never true beside a live snapshot. */
+    readonly orderingTrackEvicted: boolean;
     readonly bufferedSnapshots: readonly ALBufferedOrderedMessageSnapshot[];
     readonly orderingTrackTtlMs: number;
     readonly dedupExpiresAt: number | undefined;
@@ -142,19 +145,23 @@ export function computeALInboundOrderingAcceptance(
     apply: boolean
 ): ALOrderingAcceptance {
     const ordering = computeALOrderingObservation({
+        ...toALOrderingTrackStartInput({
+            msg: read.msg,
+            plan: read.prePlan,
+            selfPeerId: read.selfPeerId,
+            evictedTrack: read.orderingTrackEvicted
+        }),
         snapshot: read.orderingSnapshot,
-        msg: read.msg,
         nowMs: read.nowMs,
         trackTtlMs: read.orderingTrackTtlMs,
+        bufferedPriorSeqs: toBufferedPriorSeqs(read),
         apply,
         role: resolveALOrderingObserverRole({
             msg: read.msg,
             selfPeerId: read.selfPeerId,
             delivering: isALInboundDeliveringPlan(read.prePlan),
             observer: read.orderingObserver
-        }),
-        selfPeerId: read.selfPeerId,
-        bufferedPriorSeqs: toBufferedPriorSeqs(read)
+        })
     });
     if (
         !read.prePlan.localDelivery.enabled ||

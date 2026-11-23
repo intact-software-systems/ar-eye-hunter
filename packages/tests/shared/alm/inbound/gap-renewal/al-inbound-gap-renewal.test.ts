@@ -6,10 +6,20 @@ import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/a
 import { decodeALPeerControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
-import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
+import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
-import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { resolveALInboundWorkDueAtMs } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundCommitBundle,
+    ALInboundGapRenewalEffect
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALInboundMessageKey, toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { resolveALInboundWorkDueAtMs, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundGapRenewal } from '@shared/alm/inbound/gap-renewal/al-inbound-gap-renewal.ts';
 import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -25,15 +35,18 @@ import {
 } from '../../../signature/publication-crypto-fixtures.ts';
 import { readInboundTestWorkDueAtMs } from '../../../wait-for-al-inbound-work.ts';
 import {
+    createInboundTestBackendStores,
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_EFFECT_PREPARATION,
     INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
+    planInboundTestMessage,
     readInboundTestWorkRows,
     runInboundWorkDueNow,
     setNextInboundCommitConflicted,
+    type CreateInboundTestRuntimeInput,
     type InboundTestRuntime,
     type InboundTestStorage
 } from '../../inbound-runtime-test-fixture.ts';
@@ -42,8 +55,17 @@ const START_MS = Date.UTC(2026, 10, 19, 12);
 const STORAGES: readonly InboundTestStorage[] = ['memory', 'indexeddb'];
 /** How far one step moves the fake clock while a started engine runs by itself. */
 const ENGINE_STEP_MS = 20;
+/** A message lifetime shorter than the renewal schedule's 7 s at the fixture's stretch of 1. */
+const SHORT_TTL_MS = 5_000;
+/** A draw that stretches every interval as far as a stretch may: 1.5 s, 3 s and 6 s, the last timer due at 10.5 s. */
+const MAXIMUM_STRETCH_DRAW = 0.999_999_9;
+/** How long after its due time the engine claims the last timer under load. */
+const LATE_CLAIM_MS = 100;
+/** A copy lifetime that ends after the last timer's read at 7 s and before its commit. */
+const COPY_EXPIRING_AT_END_TTL_MS = 7_050;
 /** Turns of the event loop each step gives the store, more than one engine pass needs. */
 const STORAGE_TURNS_PER_STEP = 100;
+const RENEWAL_NAMESPACE = 'gap-renewal';
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
 const RTC_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const CRYPTO = await createAvailablePublicationCryptoFixture();
@@ -75,12 +97,14 @@ interface RenewalFixtureInput {
     readonly isRoutedPeerReady?: ALInboundMessageRuntime.Dependencies['isRoutedPeerReady'];
     /** Absent, every gap NACK is granted the wire limit, as on a runtime with no overlay. */
     readonly readGapNackRelayHops?: ALInboundMessageRuntime.Dependencies['readGapNackRelayHops'];
-}
-
-/** How a timer run is composed outside its lane: which upstream peer resolves, and whether the revealing message is kept. */
-interface DirectRenewalInput {
-    readonly readUpstreamPeerId: ALInboundMessageRuntime.Dependencies['readUpstreamPeerId'];
-    readonly keepsRevealingMessage: boolean;
+    /** Absent, the fixture opens its own stores over `storage`. */
+    readonly stores?: ALInboundRuntimeStores;
+    /** Absent, every message is dispatched as soon as it is released. */
+    readonly canDispatchMessage?: (msg: ALMessage) => boolean;
+    /** Absent leaves the policy's plan as it stands. */
+    readonly plan?: CreateInboundTestRuntimeInput['plan'];
+    /** Absent verifies no publication proof. */
+    readonly verifyPublicationProof?: CreateInboundTestRuntimeInput['verifyPublicationProof'];
 }
 
 interface OrderedMessageInput {
@@ -370,18 +394,7 @@ describe('a receiver whose ordered track has a gap', () => {
             throw new Error('The gap admission armed no timer');
         }
         vi.setSystemTime(START_MS + 1_000);
-        const renewal = new ALInboundGapRenewal({
-            admissionStore: fixture.stores.admissionStore,
-            workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
-            clock: { nowMs: Date.now },
-            effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
-            stretch: 1,
-            receiptProofs: { kind: 'carrier-authenticated' },
-            diagnostics: undefined,
-            readUpstreamPeerId: () => undefined,
-            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
-            isRoutedPeerReady: () => false
-        });
+        const { renewal } = createDirectRenewal(fixture, {});
         await renewal.renew(timer, timer.payload);
         const afterFirstRun = await readInboundTestWorkRows(fixture.stores);
         await renewal.renew(timer, timer.payload);
@@ -454,17 +467,17 @@ describe('a renewal of a gap whose upstream peer has changed since it was first 
         ]);
     });
 
-    it.each<[string, DirectRenewalInput]>([
-        ['no upstream peer resolves', { readUpstreamPeerId: () => undefined, keepsRevealingMessage: true }],
-        ['the revealing message is no longer kept', { readUpstreamPeerId: () => 'p2', keepsRevealingMessage: false }]
-    ])('asks the recorded peer and still arms the next number when %s', async (_case, input) => {
+    it.each<[string, DirectRenewalStore, DirectRenewalPlanning]>([
+        ['no upstream peer resolves', {}, { readUpstreamPeerId: () => undefined }],
+        ['the revealing message is no longer kept', { readDeliverySurface: async () => undefined }, { readUpstreamPeerId: () => 'p2' }]
+    ])('asks the recorded peer and still arms the next number when %s', async (_case, store, planning) => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
         await advanceTo(fixture, 500);
         const timer = await readFirstRenewalTimer(fixture);
         vi.setSystemTime(START_MS + 1_000);
 
-        const result = await createDirectRenewal(fixture, input).renew(timer, timer.payload);
+        const result = await createDirectRenewal(fixture, store, planning).renewal.renew(timer, timer.payload);
 
         expect(result).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
         expect(readGapTargets(await readRetainedRenewalControls(fixture))).toEqual([
@@ -475,11 +488,420 @@ describe('a renewal of a gap whose upstream peer has changed since it was first 
     });
 });
 
+describe('a receiver holding a recorded track at its start (the bounded hold)', () => {
+    it.each(STORAGES)('on %s, enters at its lowest buffered copy when the last renewal falls due unanswered, at 7 s, delivering 2 then 3', async (storage) => {
+        const fixture = createRenewalFixture(storage);
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 6_999]);
+        expect(fixture.deliveredMessages).toEqual([]);
+        expect(gapControls(fixture).map((control) => control.gapRequestNumber)).toEqual([1, 1, 1, 1, 2, 2, 3, 3]);
+
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('states one entered position for the copy it enters at, after its commit, as an entered admission states its own', async () => {
+        const fixture = createRenewalFixture('memory');
+        const workerId = `al-inbound:gap-renewal-${fixtureCount}`;
+        const [second, third] = [recordedMessage(2), recordedMessage(3)];
+        for (const message of [second, third]) {
+            await fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 6_999]);
+        expect(readOrderingPositions(fixture)).toEqual([]);
+
+        await advanceTo(fixture, 7_000);
+
+        expect(readOrderingPositions(fixture)).toEqual([{
+            kind: 'ordering-position',
+            workerId,
+            trackKey: toALOrderingTrackKey(second),
+            seq: 2,
+            priorSeq: 1,
+            status: 'entered',
+            carrier: 'ws',
+            ...toALMessageTrace(second)
+        }]);
+    });
+
+    it('states no position when every held copy expired and its end passes them', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        }
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+        expect(readOrderingPositions(fixture)).toEqual([]);
+    });
+
+    // A carrier whose planner reads a proof verdict per message object (a signed receipted RTC room copy, #887) plans a
+    // copy no one verified as unauthorized: the hold's end verifies each copy it plans, as an admission and a release do.
+    it('verifies the copy it enters at before planning it, as a carrier that signs its copies needs, and states the entry', async () => {
+        const verified = new WeakSet<ALMessage>();
+        const fixture = createRenewalFixture('memory', {
+            verifyPublicationProof: async (msg) => {
+                verified.add(msg);
+                return true;
+            },
+            plan: (plan, msg) => verified.has(msg) ? plan : { ...plan, dropReason: 'unauthorized' }
+        });
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(readOrderingPositions(fixture)).toMatchObject([{ status: 'entered', seq: 2, priorSeq: 1 }]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+    });
+
+    it('commits no end, states nothing and sends the last request when the copy it would enter at cannot be verified', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const commits: ALInboundCommitBundle[] = [];
+        const refused = new Set<ALMessage>();
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            verifyPublicationProof: async (msg) => {
+                refused.add(msg);
+                return false;
+            },
+            // As the RTC carrier plans a signed copy: dropped exactly where its verification resolved false.
+            planIncomingMessage: (msg, source, observations) => {
+                const plan = planInboundTestMessage(msg, source, observations);
+                return refused.has(msg) ? { ...plan, dropReason: 'unauthorized' } : plan;
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+
+        expect(refused.size).toBe(1);
+        expect(commits).toEqual([]);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect((await admissionStore.readOrderingSnapshot(timer.payload.trackKey, Date.now()))?.lastContiguousSeq).toBe(0);
+        expect((await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId))
+            .toEqual(expect.arrayContaining([expect.stringMatching(/^nack:.*:renewal:1:1:4/)]));
+    });
+
+    it('commits no end, states nothing and runs the timer again when the copy it would enter at may not be delivered yet', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const commits: ALInboundCommitBundle[] = [];
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            // The entry's plan, the one planned with an ordering observation, waits on its hop's sync.
+            planIncomingMessage: (msg, source, observations) => {
+                const plan = planInboundTestMessage(msg, source, observations);
+                return observations?.orderingObservation === undefined
+                    ? plan
+                    : { ...plan, dropReason: 'not yet in sync', dropReasonCode: 'not-yet-in-sync' };
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+
+        expect(commits).toEqual([]);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect((await admissionStore.readOrderingSnapshot(timer.payload.trackKey, Date.now()))?.lastContiguousSeq).toBe(0);
+        expect((await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId))
+            .not.toEqual(expect.arrayContaining([expect.stringMatching(/^nack:.*:renewal:1:1:4/)]));
+    });
+
+    it('commits the very copy it verified and planned, in the entered slot of its bundle', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const verified = new Set<ALMessage>();
+        const planned = new Set<ALMessage>();
+        const commits: ALInboundCommitBundle[] = [];
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            // A durable store decodes each row into its own object: the track's copies are not the copy read for itself.
+            readIncomingMessage: async (input) => {
+                const read = await admissionStore.readIncomingMessage(input);
+                const ordering = read.observations.ordering;
+                const decoded = ordering?.buffered.map((buffered) => ({ ...buffered, msg: { ...buffered.msg, id: { ...buffered.msg.id } } }));
+                return ordering === undefined || decoded === undefined ? read : {
+                    ...read,
+                    bufferedSnapshots: decoded,
+                    observations: { ...read.observations, ordering: { ...ordering, buffered: decoded } }
+                };
+            },
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            verifyPublicationProof: async (msg) => {
+                verified.add(msg);
+                return true;
+            },
+            planIncomingMessage: (msg, source, observations) => {
+                planned.add(msg);
+                return planInboundTestMessage(msg, source, observations);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+
+        const entered = commits.flatMap((bundle) => bundle.mutations)
+            .flatMap((mutation) => mutation.kind === 'set-buffered' && mutation.snapshot.seq === 2 ? [mutation.snapshot.msg] : []);
+        expect(entered).toHaveLength(1);
+        expect(verified.has(entered[0]!)).toBe(true);
+        expect([...planned].every((msg) => verified.has(msg))).toBe(true);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
+    });
+
+    it('refuses the late first copy as before its entry once the hold has ended', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(readNackReasons(fixture, '1')).toEqual(['before-entry']);
+    });
+
+    it('outlives a 5 s lifetime: with every held copy expired it passes them, sends no fourth request, and its next copy follows in order', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        expect(gapControls(fixture).map((control) => control.gapRequestNumber)).toEqual([1, 1, 1, 1, 2, 2, 3, 3]);
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([4]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('retains the copy that revealed the start range for its own lifetime only, and its timer still ends the hold', async () => {
+        const { backend, stores } = createInboundTestBackendStores({
+            namespace: RENEWAL_NAMESPACE,
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const fixture = createRenewalFixture('memory', { stores });
+        const second = recordedMessage(2, { ttlMs: SHORT_TTL_MS });
+        await fixture.runtime.admitIncomingMessage(second, INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        const reference = toALInboundMessageReference(second);
+
+        expect(readRowExpiry(backend, toALInboundMessageKey(RENEWAL_NAMESPACE, reference))).toBe(second.constraints?.expiresAtMs);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('enters at the lowest held copy still live when the copy that revealed the gap has expired', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('ends the hold at the maximum stretch even when the last timer is claimed after its due time', async () => {
+        const fixture = createRenewalFixture('memory', { random: () => MAXIMUM_STRETCH_DRAW });
+        await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_500, 4_500, 10_500 + LATE_CLAIM_MS]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('runs its last timer again when the end\'s commit is refused as expired, and then enters', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        let refusals = 1;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                refusals -= 1;
+                return refusals >= 0 ? 'expired' as const : await admissionStore.commitBundle(bundle);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toMatchObject([{ status: 'entered', seq: 2 }]);
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    // The retry reads the track's live copies again: a buffered slot is written with its message's own expiry, and every
+    // later rewrite of it takes a release row's, which is that expiry too, so a copy whose message expired is not live.
+    it('reads a copy that expired between the end\'s read and its commit as no longer live on the retry, and enters past it', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(2, { ttlMs: COPY_EXPIRING_AT_END_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                vi.setSystemTime(START_MS + COPY_EXPIRING_AT_END_TTL_MS + LATE_CLAIM_MS);
+                return await admissionStore.commitBundle(bundle);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
+        await advanceTo(fixture, COPY_EXPIRING_AT_END_TTL_MS + LATE_CLAIM_MS);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(gapControls(fixture).filter((control) => control.gapRequestNumber === 4)).toEqual([]);
+    });
+
+    it('runs again when a lower copy is buffered between the track\'s read and the read of its lowest copy, which the hold then enters at', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [3, 4]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const admissionStore = fixture.stores.admissionStore;
+        let lowerArrived = false;
+        const { renewal } = createDirectRenewal(fixture, {
+            readIncomingMessage: async (input) => {
+                if (!lowerArrived) {
+                    lowerArrived = true;
+                    await fixture.runtime.admitIncomingMessage(recordedMessage(2), INBOUND_TEST_SOURCE);
+                }
+                return await admissionStore.readIncomingMessage(input);
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+        // The lane's own run of the same timer, due now, ends the hold at the lower copy.
+        await advanceTo(fixture, 7_000);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3, 4]);
+    });
+
+    it('passes an expired copy between live ones and releases the run past it', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5]);
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('passes an expired copy after the released run, so only the sequence never received stays missing, and delivers it and its successor when it arrives', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3]);
+        const askedBefore = gapControls(fixture).length;
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+
+        expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('waits for the run\'s last delivery when the sequence after the passed copies arrives before it completed', async () => {
+        let thirdHeld = true;
+        const fixture = createRenewalFixture('memory', {
+            canDispatchMessage: (msg) => !thirdHeld || msg.ordering?.seq !== 3
+        });
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(4, { ttlMs: SHORT_TTL_MS }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(6), INBOUND_TEST_SOURCE);
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+        const askedBefore = gapControls(fixture).length;
+
+        await fixture.runtime.admitIncomingMessage(recordedMessage(5), INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 7_000);
+        expect(fixture.deliveredMessages).toEqual([]);
+        thirdHeld = false;
+        await advanceThrough(fixture, [8_000, 10_000]);
+
+        expect(gapControls(fixture).slice(askedBefore)).toEqual([]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([3, 5, 6]);
+        expect(['5', '6'].flatMap((msgId) => readNackReasons(fixture, msgId))).not.toContain('resync-required');
+        expect(await readPendingInboundWork(fixture)).toEqual([]);
+    });
+
+    it('keeps asking, numbered 4, on a track that delivered something, and enters nowhere', async () => {
+        const fixture = createRenewalFixture('memory');
+        await fixture.runtime.admitIncomingMessage(recordedMessage(1), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(recordedMessage(3), INBOUND_TEST_SOURCE);
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000, 29_000]);
+
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([1]);
+        expect(renewedRanges(fixture, 4)).toEqual([[{ from: 2, to: 2 }], [{ from: 2, to: 2 }]]);
+    });
+});
+
 function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixtureInput = {}): InboundTestRuntime {
     fixtureCount += 1;
     return createInboundTestRuntime({
-        stores: createInboundTestStores({
-            namespace: 'gap-renewal',
+        stores: input.stores ?? createInboundTestStores({
+            namespace: RENEWAL_NAMESPACE,
             storage,
             observer: createPassThroughIndexedDbOperationObserver(),
             dbName: input.dbName,
@@ -488,6 +910,9 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         carrier: input.carrier ?? 'ws',
         effectWorkerId: `al-inbound:gap-renewal-${fixtureCount}`,
         receiptProofs: input.receiptProofs,
+        canDispatchMessage: input.canDispatchMessage,
+        plan: input.plan,
+        verifyPublicationProof: input.verifyPublicationProof,
         random: input.random ?? (() => 0),
         readUpstreamPeerId: input.readUpstreamPeerId,
         isRoutedPeerReady: input.isRoutedPeerReady,
@@ -513,6 +938,20 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
     return { ...frozen, ordering: { orderingKey: 'chat', seq } };
 }
 
+/** The same copy as its authority recorded it: this receiver, its frozen audience, was sent every sequence below. */
+function recordedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage {
+    const message = orderedMessage(seq, input);
+    return { ...message, ordering: { ...message.ordering!, priorSeqByRecipient: {} } };
+}
+
+/** The reasons of every NACK this receiver sent about the message `msgId`, in send order. */
+function readNackReasons(fixture: InboundTestRuntime, msgId: string): readonly string[] {
+    return readSentControls(fixture).flatMap((msg) => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' && control.payload.msgId === msgId ? [control.payload.reason] : [];
+    });
+}
+
 /**
  * Lets the engine's pass finish its IndexedDB requests before the fake clock moves on: the store schedules each step on
  * a real immediate, which the fake clock does not run. Counted in turns of the event loop, not in time.
@@ -526,6 +965,13 @@ async function yieldToStorage(): Promise<void> {
 async function advanceTo(fixture: InboundTestRuntime, ms: number): Promise<void> {
     vi.setSystemTime(START_MS + ms);
     await runInboundWorkDueNow(fixture);
+}
+
+/** Runs the work due at each instant in turn, as the renewal schedule's own timers fall due. */
+async function advanceThrough(fixture: InboundTestRuntime, instantsMs: readonly number[]): Promise<void> {
+    for (const ms of instantsMs) {
+        await advanceTo(fixture, ms);
+    }
 }
 
 function readSentControls(fixture: InboundTestRuntime): readonly ALMessage[] {
@@ -567,6 +1013,67 @@ function toGapControl(
         msgId: payload.msgId,
         expectedSeq: payload.expectedSeq
     };
+}
+
+/** The start range's last timer, armed by the run at 3 s. */
+async function readLastRenewalTimer(
+    fixture: InboundTestRuntime
+): Promise<ALPersistedInboundEffect & { readonly payload: ALInboundGapRenewalEffect; }> {
+    const timer = (await readInboundTestWorkRows(fixture.stores))
+        .find((effect) => effect.payload.kind === 'renew-gap' && effect.payload.requestNumber === 4);
+    if (timer?.payload.kind !== 'renew-gap') {
+        throw new Error('The schedule armed no last timer');
+    }
+    return { ...timer, payload: timer.payload };
+}
+
+/** A renewal over the fixture's stores, with `store`'s reads and commits in place of theirs, and the events it states. */
+interface DirectRenewal {
+    readonly renewal: ALInboundGapRenewal;
+    readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+}
+
+/** The admission-store reads and commits a direct renewal replaces. */
+type DirectRenewalStore = Partial<Pick<ALInboundAdmissionStore, 'commitBundle' | 'readIncomingMessage' | 'readDeliverySurface'>>;
+
+/** The dependencies a direct renewal replaces; absent, no upstream peer resolves and the lane routes over no layout. */
+type DirectRenewalPlanning = Partial<Pick<ALInboundGapRenewal.Dependencies, 'planIncomingMessage' | 'verifyPublicationProof' | 'readUpstreamPeerId'>>;
+
+function createDirectRenewal(
+    fixture: InboundTestRuntime,
+    store: DirectRenewalStore,
+    planning: DirectRenewalPlanning = {}
+): DirectRenewal {
+    const admissionStore = fixture.stores.admissionStore;
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const renewal = new ALInboundGapRenewal({
+        admissionStore: Object.assign(Object.create(admissionStore) as typeof admissionStore, store),
+        workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
+        clock: { nowMs: Date.now },
+        orderingObserver: 'addressed',
+        planIncomingMessage: planInboundTestMessage,
+        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
+        stretch: 1,
+        receiptProofs: { kind: 'carrier-authenticated' },
+        diagnostics: (event) => {
+            diagnostics.push(event);
+        },
+        effectWorkerId: 'al-inbound:gap-renewal-direct',
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        ...planning
+    });
+    return { renewal, diagnostics };
+}
+
+/** When the memory backend drops a row, read without expiring it. */
+function readRowExpiry(backend: ALAdmissionWorkBackend, key: string): number | undefined {
+    return backend instanceof InMemoryAdmissionBackend ? backend.peek(key)?.expireAtTimestamp : undefined;
+}
+
+function readOrderingPositions(fixture: InboundTestRuntime): readonly ALInboundRuntimeDiagnosticsEvent[] {
+    return fixture.diagnostics.filter((event) => event.kind === 'ordering-position');
 }
 
 /** The outcome of each claim of a timer row, in claim order. */
@@ -633,26 +1140,4 @@ async function readFirstRenewalTimer(fixture: InboundTestRuntime) {
         throw new Error('The gap admission armed no timer');
     }
     return { ...timer, payload: timer.payload };
-}
-
-/** A timer run over the fixture's stores, composed as its lane composes it except for the dependencies `input` names. */
-function createDirectRenewal(fixture: InboundTestRuntime, input: DirectRenewalInput): ALInboundGapRenewal {
-    const { admissionStore } = fixture.stores;
-    return new ALInboundGapRenewal({
-        admissionStore: {
-            namespace: admissionStore.namespace,
-            readOrderingSnapshot: async (trackKey, nowMs) => await admissionStore.readOrderingSnapshot(trackKey, nowMs),
-            readDeliverySurface: async (reference, nowMs) =>
-                input.keepsRevealingMessage ? await admissionStore.readDeliverySurface(reference, nowMs) : undefined
-        },
-        workPort: createTestALInboundWorkPort({ ...fixture.stores, nowMs: Date.now, carrier: 'ws' }),
-        clock: { nowMs: Date.now },
-        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
-        stretch: 1,
-        receiptProofs: { kind: 'carrier-authenticated' },
-        diagnostics: undefined,
-        readUpstreamPeerId: input.readUpstreamPeerId,
-        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
-        isRoutedPeerReady: () => false
-    });
 }

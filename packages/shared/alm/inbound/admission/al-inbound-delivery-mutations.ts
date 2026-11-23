@@ -130,7 +130,8 @@ export function toALInboundDeliveryMutations(
         msg: read.msg,
         plan,
         carrier: toALDeliveryCarrier(read.source),
-        copyCarriers: []
+        copyCarriers: [],
+        completesThrough: plan.orderingRuntime.seq
     };
     mutations.push(
         toALInboundRecordedCopyMutation(read, slot, {

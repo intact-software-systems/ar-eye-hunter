@@ -204,7 +204,7 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
-        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 19, rtc: 55, 'rtc-with-ws-fallback': 19 });
+        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 19, rtc: 56, 'rtc-with-ws-fallback': 19 });
     });
 
     // A continuation carries no barrier and no arming run: it runs on the connection its role's first recipe opened,

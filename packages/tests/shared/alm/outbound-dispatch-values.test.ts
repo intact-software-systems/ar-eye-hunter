@@ -151,7 +151,8 @@ describe('outbound dispatch value ownership', () => {
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const outboxEntry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
         const input = freezeValues({
@@ -510,7 +511,16 @@ async function readAdmittedMessage(
         planner
     });
     expect(await store.commitBundle(admission)).toBe('committed');
-    return { store, read: await store.readOutgoingMessage({ msg: message, planner, observedCanonicalEntry: undefined, intent }) };
+    return {
+        store,
+        read: await store.readOutgoingMessage({
+            msg: message,
+            planner,
+            observedCanonicalEntry: undefined,
+            intent,
+            stampsAppliedSupersedence: intent === 'enqueue'
+        })
+    };
 }
 
 function freezeValues<T>(value: T): T {

@@ -1371,14 +1371,14 @@ export const reviewedDispositions = Object.freeze([
     }),
     // The ALM conformance catalog is one feature: the scenario definitions, the
     // command builders by concern (message, receipt, receiver, session, fault,
-    // ordering, diagnostic waits), the four identity assessments and the
-    // observation regimes, each a direct owner the harness docs map. Its
+    // ordering, diagnostic waits, repair waits), the four identity assessments
+    // and the observation regimes, each a direct owner the harness docs map. Its
     // scenarios sit beside it.
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/conformance/alm',
         rule: 'layout.directory-density',
         symbol: 'alm',
-        maximumMagnitude: 22
+        maximumMagnitude: 23
     }),
     Object.freeze({
         path: 'packages/shared-test/rallar-bb-test/conformance/alm',

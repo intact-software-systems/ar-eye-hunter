@@ -4,7 +4,14 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { AL_INBOUND_MAX_ORDERING_TRACKS } from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import {
+    decodeALInboundEvictedOrderingTracks,
+    type ALInboundEvictedOrderingTrack
+} from '@shared/alm/inbound/admission/al-inbound-evicted-ordering-tracks.ts';
+import {
+    AL_INBOUND_MAX_ORDERING_TRACKS,
+    evictALInboundOrderingTracksPastCap
+} from '@shared/alm/inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
@@ -12,6 +19,7 @@ import {
     createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestRuntime,
+    INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SOURCE,
     readInboundTestDecisionSurface,
     type InboundTestRuntime,
@@ -20,8 +28,12 @@ import {
 
 const START_MS = Date.UTC(2026, 9, 8, 12);
 const NAMESPACE = 'ordering-cap';
+const ROOM = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
 const ORDERING_PREFIX = `${NAMESPACE}:ordering:`;
 const DELIVERED_PREFIX = `${NAMESPACE}:delivered:`;
+const EVICTED_TRACKS_KEY = `${NAMESPACE}:ordering-evicted`;
+/** The inbound fixture store's ordering-track TTL. */
+const ORDERING_TRACK_TTL_MS = 60_000;
 const CHURNED_TRACKS = 300;
 /** Three hundred IndexedDB admissions, each opening a track, take about five seconds under a loaded machine. */
 const CHURN_TIMEOUT_MS = 30_000;
@@ -120,6 +132,7 @@ describe('the inbound store\'s ordering tracks', () => {
         expect(removedByRival).toBe(true);
         expect(stated).toEqual([AL_INBOUND_MAX_ORDERING_TRACKS]);
         expect(await readHeldTracks(fixture.backend)).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS);
+        expect(await readEvictedTracks(fixture.backend)).toBeUndefined();
     });
 
     it('keeps the evicted track\'s delivered marker', async () => {
@@ -216,6 +229,7 @@ describe('the eviction pass after a committed admission', () => {
         }, { timeout: DELIVERY_TIMEOUT_MS }).toBe(1);
         expect(stated).toEqual([]);
         expect(await readHeldTracks(fixture.backend)).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS + 1);
+        expect(await readEvictedTracks(fixture.backend)).toBeUndefined();
     }, CHURN_TIMEOUT_MS);
 
     it('admits and delivers the opening track when the count\'s listener throws', async () => {
@@ -244,10 +258,116 @@ describe.each<InboundTestStorage>(['memory', 'indexeddb'])('the %s inbound pair 
     }, CHURN_TIMEOUT_MS);
 });
 
+describe('the ordering-track eviction pass\'s record of what it evicted', () => {
+    it('names exactly the tracks it removed, each until one ordering-track TTL after the pass', async () => {
+        const { backend } = await createOrderingCapFixture('memory');
+        await writeOrderingSnapshots(backend, ['a', 'b', 'c']);
+
+        await evictPastCap(backend, 1);
+
+        expect(await readHeldTracks(backend)).toEqual(['c']);
+        expect(await readEvictedTracks(backend)).toEqual([
+            { trackKey: 'a', untilMs: START_MS + ORDERING_TRACK_TTL_MS },
+            { trackKey: 'b', untilMs: START_MS + ORDERING_TRACK_TTL_MS }
+        ]);
+    });
+
+    it('expires the record with its newest entry, so the row leaves once every entry has lapsed', async () => {
+        const { backend } = await createOrderingCapFixture('memory');
+        await writeOrderingSnapshots(backend, ['a', 'b', 'c']);
+        await evictPastCap(backend, 2);
+        vi.setSystemTime(START_MS + 1);
+        await writeOrderingSnapshots(backend, ['d']);
+        await evictPastCap(backend, 2);
+
+        vi.setSystemTime(START_MS + ORDERING_TRACK_TTL_MS);
+        expect(await readEvictedTracks(backend)).toEqual([
+            { trackKey: 'a', untilMs: START_MS + ORDERING_TRACK_TTL_MS },
+            { trackKey: 'b', untilMs: START_MS + 1 + ORDERING_TRACK_TTL_MS }
+        ]);
+        vi.setSystemTime(START_MS + 1 + ORDERING_TRACK_TTL_MS);
+        expect(await readEvictedTracks(backend)).toBeUndefined();
+    });
+
+    it('neither removes nor records a snapshot updated between its list and its removal', async () => {
+        const { backend } = await createOrderingCapFixture('memory');
+        await writeOrderingSnapshots(backend, ['a', 'b', 'c']);
+        const readWithin = backend.readWithin.bind(backend);
+        let updated = false;
+        vi.spyOn(backend, 'readWithin').mockImplementation(async (read) => {
+            const result = await readWithin(read);
+            if (!updated && Array.isArray(result) && result.length === 3) {
+                updated = true;
+                await backend.write(async (transaction) => {
+                    await transaction.set(`${ORDERING_PREFIX}a`, { lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: START_MS });
+                });
+            }
+            return result;
+        });
+
+        await evictPastCap(backend, 1);
+
+        expect(updated).toBe(true);
+        expect(await readHeldTracks(backend)).toEqual(['a', 'c']);
+        expect(await readEvictedTracks(backend)).toEqual([{ trackKey: 'b', untilMs: START_MS + ORDERING_TRACK_TTL_MS }]);
+    });
+});
+
+describe('the inbound store\'s read of the tracks its cap evicted', () => {
+    it('enters an evicted track\'s next recorded copy there, while a never-seen track\'s copy asks the gap', async () => {
+        const fixture = await createOrderingCapFixture('memory', undefined, 2);
+        await admitFirstSequences(fixture, 3);
+        const evictedAtMs = Date.now();
+
+        const evicted = await readOrderingObservation(fixture, createRecordedTrackMessage(0, 3));
+        const neverSeen = await readOrderingObservation(fixture, createRecordedTrackMessage(9, 2));
+
+        expect(await readHeldTracks(fixture.backend)).toEqual(['track-1', 'track-2']);
+        expect(await readEvictedTracks(fixture.backend))
+            .toEqual([{ trackKey: toTrackKey(0), untilMs: evictedAtMs + ORDERING_TRACK_TTL_MS }]);
+        expect(evicted?.status).toBe('entered');
+        expect(neverSeen).toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 1 }] });
+    });
+
+    it('states a fresh track the row names until its instant, so a recorded copy enters there instead of asking 1..prior', async () => {
+        const fixture = await createOrderingCapFixture('memory');
+        await writeEvictedTracks(fixture.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 1 }]);
+
+        const named = await readInboundTestDecisionSurface(fixture.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+        const unnamed = await readInboundTestDecisionSurface(fixture.inbound.stores.admissionStore, createRecordedTrackMessage(1, 2));
+        const lapsed = await readInboundTestDecisionSurface(
+            fixture.inbound.stores.admissionStore,
+            createRecordedTrackMessage(0, 2),
+            START_MS + 1
+        );
+
+        expect(named.orderingTrackEvicted).toBe(true);
+        expect(computeALInboundPlanningObservations(named, false).orderingObservation?.status).toBe('entered');
+        expect(unnamed.orderingTrackEvicted).toBe(false);
+        expect(computeALInboundPlanningObservations(unnamed, false).orderingObservation)
+            .toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 1 }] });
+        expect(lapsed.orderingTrackEvicted).toBe(false);
+    });
+
+    it('states no eviction beside a live snapshot, nor in a store without a cap', async () => {
+        const capped = await createOrderingCapFixture('memory');
+        await admitAtNextMs(capped, createTrackMessage(0, 1));
+        await writeEvictedTracks(capped.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 60_000 }]);
+        const uncapped = await createOrderingCapFixture('memory', undefined, 'uncapped');
+        await writeEvictedTracks(uncapped.backend, [{ trackKey: toTrackKey(0), untilMs: START_MS + 60_000 }]);
+
+        const held = await readInboundTestDecisionSurface(capped.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+        const unbounded = await readInboundTestDecisionSurface(uncapped.inbound.stores.admissionStore, createRecordedTrackMessage(0, 2));
+
+        expect(held.orderingTrackEvicted).toBe(false);
+        expect(unbounded.orderingTrackEvicted).toBe(false);
+    });
+});
+
 async function createOrderingCapFixture(
     storage: InboundTestStorage,
     reportOrderingTracks?: (tracks: number) => void,
-    cap: 'capped' | 'uncapped' = 'capped'
+    cap: number | 'uncapped' = AL_INBOUND_MAX_ORDERING_TRACKS
 ): Promise<OrderingCapFixture> {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(START_MS);
@@ -258,7 +378,7 @@ async function createOrderingCapFixture(
         namespace: NAMESPACE,
         storage,
         observer: createPassThroughIndexedDbOperationObserver(),
-        maxOrderingTracks: cap === 'capped' ? AL_INBOUND_MAX_ORDERING_TRACKS : undefined,
+        maxOrderingTracks: cap === 'uncapped' ? undefined : cap,
         reportOrderingTracks
     });
     const inbound = createInboundTestRuntime({ carrier: 'ws', stores, effectWorkerId: 'al-inbound:ordering-cap' });
@@ -299,6 +419,61 @@ async function admitAtNextMs(fixture: OrderingCapFixture, message: ALMessage): P
 function createTrackMessage(track: number, seq: number): ALMessage {
     const message = createInboundTestMessage({ msgId: `track-${track}-${seq}`, seq });
     return { ...message, ordering: { orderingKey: `track-${track}`, seq } };
+}
+
+/**
+ * A gap-repaired copy whose authority recorded that this receiver, its frozen audience, was sent every sequence below
+ * it.
+ */
+function createRecordedTrackMessage(track: number, seq: number): ALMessage {
+    const message = createTrackMessage(track, seq);
+    return {
+        ...message,
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 },
+        qos: { ...message.qos, repair: { algo: 'retransmit' } },
+        ordering: { ...message.ordering, priorSeqByRecipient: {} }
+    };
+}
+
+function toTrackKey(track: number): string {
+    return toALOrderingTrackKey(createTrackMessage(track, 1))!;
+}
+
+async function writeEvictedTracks(
+    backend: ALAdmissionWorkBackend,
+    tracks: readonly ALInboundEvictedOrderingTrack[]
+): Promise<void> {
+    await backend.write(async (transaction) => {
+        await transaction.set(EVICTED_TRACKS_KEY, tracks);
+    });
+}
+
+async function readEvictedTracks(
+    backend: ALAdmissionWorkBackend
+): Promise<readonly ALInboundEvictedOrderingTrack[] | undefined> {
+    return await backend.read(EVICTED_TRACKS_KEY, decodeALInboundEvictedOrderingTracks);
+}
+
+/** One snapshot per track key, each updated a millisecond after the one before it, all before `START_MS`. */
+async function writeOrderingSnapshots(backend: ALAdmissionWorkBackend, trackKeys: readonly string[]): Promise<void> {
+    await backend.write(async (transaction) => {
+        for (const [index, trackKey] of trackKeys.entries()) {
+            const updatedAtMs = START_MS - trackKeys.length + index;
+            await transaction.set(`${ORDERING_PREFIX}${trackKey}`, { lastContiguousSeq: 1, bufferedSeqs: [], updatedAtMs });
+        }
+    });
+}
+
+async function evictPastCap(backend: ALAdmissionWorkBackend, maxTracks: number): Promise<void> {
+    await evictALInboundOrderingTracksPastCap({
+        backend,
+        orderingPrefix: ORDERING_PREFIX,
+        evictedTracksKey: EVICTED_TRACKS_KEY,
+        maxTracks,
+        orderingTrackTtlMs: ORDERING_TRACK_TTL_MS,
+        nowMs: Date.now(),
+        report: undefined
+    });
 }
 
 /** The ordering key of every track the store holds a snapshot for. */

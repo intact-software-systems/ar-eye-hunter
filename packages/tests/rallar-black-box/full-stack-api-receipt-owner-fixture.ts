@@ -430,7 +430,8 @@ async function readCompetingReceiptBundle(
         msg: competitor,
         planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: false
     });
     const computed = computeALOutboundDispatch({
         read,

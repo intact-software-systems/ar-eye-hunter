@@ -106,7 +106,8 @@ describe('outbound shared supersedence decisions', () => {
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: false
         });
         expect(latest.supersedence.latest?.latestMsgId).toBe(newer.id.msgId);
         expect(JSON.stringify((await store.readSentMessage(other.id.msgId))?.msg)).toBe(JSON.stringify(other));
@@ -156,7 +157,8 @@ async function readDecision(input: ReadSupersedenceDecisionInput): Promise<ALOut
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: input.supersedenceKey ?? 'shared-topic' }
         }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: false
     });
     return computeALOutboundDispatch({
         read,

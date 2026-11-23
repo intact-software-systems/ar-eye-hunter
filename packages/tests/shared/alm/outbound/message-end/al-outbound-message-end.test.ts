@@ -702,6 +702,7 @@ async function readRepairAttempt(
         msg: message,
         planner: toSendPlanner(fixture.maxRepairs),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     })).repairAttempt;
 }

@@ -466,7 +466,8 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
                 msg: message,
                 planner,
                 observedCanonicalEntry: undefined,
-                intent: 'repair'
+                intent: 'repair',
+                stampsAppliedSupersedence: false
             });
             return computeALOutboundDispatch({
                 read,
@@ -510,7 +511,13 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             )
         ).toBe('committed');
         const decideRetry = async () => {
-            const read = await fixture.store.readOutgoingMessage({ msg: message, planner, observedCanonicalEntry: undefined, intent: 'repair' });
+            const read = await fixture.store.readOutgoingMessage({
+                msg: message,
+                planner,
+                observedCanonicalEntry: undefined,
+                intent: 'repair',
+                stampsAppliedSupersedence: false
+            });
             return computeALOutboundDispatch({
                 read,
                 outboxEntry: createOutboundCanonicalEntry(fixture.store, read.msg, Temporal.Now.instant()),
@@ -883,7 +890,8 @@ async function readPendingAdmissionBundle(
             preparedMessages: [{ peer: 'held' }]
         }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: true
     });
     const computed = computeALOutboundDispatch({
         read,

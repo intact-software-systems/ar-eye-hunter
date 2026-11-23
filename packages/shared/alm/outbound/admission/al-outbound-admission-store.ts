@@ -170,6 +170,12 @@ export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
+    /**
+     * Whether a first admission writes the latest-wins supersedence its plan applied into the send's request: the
+     * sender's own enqueue, never a relay's or a server queue box's explicit plan, which carries another's envelope,
+     * nor the drain of a retained admission, whose request already holds what its first admission decided.
+     */
+    readonly stampsAppliedSupersedence: boolean;
     /** Present only for a dispatch that charges a repair budget: the read reports whether its sends are already committed. */
     readonly repairAttempt?: ALOutboundSendAttemptIdentity;
 }

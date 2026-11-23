@@ -572,14 +572,26 @@ describe('IndexedDB AL runtime stores', () => {
             'peer'
         );
 
-        const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const beforeExpiry = await admissionStore.readOutgoingMessage({
+            msg: msg,
+            planner: planner,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
+        });
         expect(beforeExpiry.sentSnapshot).toBeDefined();
         expect(beforeExpiry.repairAttempt?.attemptsByRequester).toEqual({ 'peer-1': 1 });
         expect(beforeExpiry.nacks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);
 
-        const afterExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const afterExpiry = await admissionStore.readOutgoingMessage({
+            msg: msg,
+            planner: planner,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
+        });
         expect(afterExpiry.sentSnapshot).toBeDefined();
         expect(afterExpiry.repairAttempt).toBeUndefined();
         expect(afterExpiry.nacks).toEqual([]);

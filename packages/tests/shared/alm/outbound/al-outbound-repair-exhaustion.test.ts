@@ -213,7 +213,8 @@ async function readRepairAttempts(
                 msg: message,
                 planner: planOutgoingMessage,
                 observedCanonicalEntry: undefined,
-                intent: 'enqueue'
+                intent: 'enqueue',
+                stampsAppliedSupersedence: true
             }))
                 .repairAttempt?.attemptsByRequester[requester] ?? 0
         )

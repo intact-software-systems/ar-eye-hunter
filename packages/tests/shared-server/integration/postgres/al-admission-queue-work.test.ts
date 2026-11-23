@@ -689,7 +689,8 @@ async function readSupersedenceDecision(
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }
         }),
         observedCanonicalEntry: undefined,
-        intent: 'enqueue'
+        intent: 'enqueue',
+        stampsAppliedSupersedence: false
     });
     return computeALOutboundDispatch({
         read,

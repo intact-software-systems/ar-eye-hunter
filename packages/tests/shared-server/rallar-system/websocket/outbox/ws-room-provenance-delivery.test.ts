@@ -88,6 +88,7 @@ describe('verified direct room row delivery', () => {
             msg: message,
             observedCanonicalEntry: entry,
             intent: 'dequeue',
+            stampsAppliedSupersedence: false,
             dequeueAuthority: { admittedAudience: ['session'], audienceJudged: true, recipientScope: undefined },
             planner: (msg, authority) => {
                 authorities.push(authority);

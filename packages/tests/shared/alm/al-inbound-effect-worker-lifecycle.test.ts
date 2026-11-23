@@ -998,7 +998,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     msg: buffered,
                     plan: read.prePlan,
                     carrier: 'ws',
-                    copyCarriers: [{ carrier: 'ws', ackToPeerId: buffered.id.senderId }]
+                    copyCarriers: [{ carrier: 'ws', ackToPeerId: buffered.id.senderId }],
+                    completesThrough: 2
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }],

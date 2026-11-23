@@ -879,13 +879,23 @@ absence window. The cell is not run over `ws`, where the server orders the track
 untested there since the repair budget became per requester. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
-Four fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
+Five fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
 Every send of each names the cell's ordering key, and every send but `seeded-loss-unreceipted-stream`'s names
-`ack: 'receiver'`. `lost-stream-start` runs over `rtc` alone and
-pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
-the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
-`entered` at seq 2 and `before-entry` for seq 1, and proves the absence of a third; the sender observes handle 1 `failed` with
-`failure.kind: 'receipt-exhausted'`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no
+`ack: 'receiver'`. `lost-stream-start` runs over `rtc` and `ws`: the sender holds send 1 by its message id, sends 2 and 3, and releases
+the hold once it admitted a gap NACK about its track, which a later send reaching the track's ordering hop before the
+first causes, and committed a repair of send 1 (the repair dispatch's `commit-phases` event, stated even while the hold
+keeps the frame), so the cell fails where the origin cannot serve the gap; the hop opens the track at its start, holds
+the later sends and asks for the first. Over `ws` the WS server's initial-window gap already recovered send 1 before
+the receiver's entry rule changed, so `ws` is a regression guard and `rtc` the evidence. The receiver reads
+three arrivals in sequence order (`ascendingBy: 'seq'`) and proves the absence of a fourth, since send 1 can arrive
+twice, by the repair and at the release; it proves no `before-entry` position was stated, and the sender reads all three
+handles `acknowledged`. `lost-stream-start-bounded` runs over `rtc` alone, since the WS server hop orders the track
+by another rule: it proves the bounded hold. The sender holds send 1 by its message id, sends 2 and 3 and waits for the
+gap NACK about its track, then keeps the hold until the receiver cues that it entered (a cue on the cell's own cue
+type, which the sender subscribes in its arming run). The receiver waits for the `entered` position its hold's end
+states, prior `1`, within the verdict budget, which covers the hold's end 7 to 10.5 s after the gap; it then reads 2
+and 3 in sequence order, cues, proves the absence of a third arrival while the sender releases send 1, and reads send
+1 refused `before-entry` (prior `0`). The sender reads handle 1 `failed`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no
 delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twenty sends are sent and each read
 acknowledged. Two facts prove the jitter disturbed the stream: its release must read at least twenty delayed frames
 (`acted.delay`, one per send), and the sender must have admitted a gap NACK about its track, which the server sends
@@ -989,9 +999,10 @@ message id its send returned (the type's hold covers it until that id is known),
 send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as
 the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (1,500 ms each), and releases seq 2,
 which alone is observed admitted; it then cues `released-2`. The sends leave in sequence order, since a stated sequence
-at or below the track's head is refused `unsupported`; the hold reorders their arrival. A receiver enters a recorded
-track at its first copy, so seq 1 goes first: holding it instead would make the receiver enter at seq 2 and refuse
-seq 1. All carry `ack: 'none'`, since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and one
+at or below the track's head is refused `unsupported`; the hold reorders their arrival. Seq 1 goes first so the
+receiver opens the track with no gap and the cell exercises the buffered drain alone: holding seq 1 instead would make
+the receiver open at 0 and ask the sender for seq 1, a repair this cell does not observe. All carry `ack: 'none'`,
+since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and one
 `ttlMs` derived from the sender's commands: seq 2, the earliest send still live at the drain, must outlive the held
 block that carries its own send and the faults that move its hold to its message id, the loop's budget, its release and
 admission, the cue, and the receiver's count. The lifetime is the harness's budget, not a drain time: a 64-message

@@ -108,7 +108,8 @@ async function decideRepair(
         msg: message,
         planner: RECEIPTED_PLANNER,
         observedCanonicalEntry: undefined,
-        intent: 'repair'
+        intent: 'repair',
+        stampsAppliedSupersedence: false
     });
     return computeALOutboundDispatch({
         read,

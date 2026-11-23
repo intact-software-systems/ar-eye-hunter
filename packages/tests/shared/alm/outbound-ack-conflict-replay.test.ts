@@ -346,7 +346,8 @@ async function readRepairBundle(
         msg: message,
         planner: planTrackedSend,
         observedCanonicalEntry: undefined,
-        intent: 'repair'
+        intent: 'repair',
+        stampsAppliedSupersedence: false
     });
     const computed = computeALOutboundDispatch({
         read,

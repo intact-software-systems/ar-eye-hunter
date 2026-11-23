@@ -1,6 +1,6 @@
 import type { ALMessage, ALTargets } from './al-contract.ts';
 import type { ALInboundNackPlanReason } from './al-control-value-codec.ts';
-import { resolveALFrozenMulticastAudience } from './al-frozen-multicast-audience.ts';
+import { isALFrozenMulticastRecipient } from './al-frozen-multicast-audience.ts';
 
 import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
 import { toALSeqRangesText } from './al-seq-range.ts';
@@ -404,8 +404,7 @@ export function planALMessageHandling(
         nack: planNack(result.effective, context, {
             orderingRuntime,
             drop,
-            frozenRecipient: resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds
-                .includes(context.selfPeerId) === true
+            frozenRecipient: isALFrozenMulticastRecipient(msg.targets, context.selfPeerId)
         }),
         repair: drop
             ? { enabled: false, algo: 'none' }

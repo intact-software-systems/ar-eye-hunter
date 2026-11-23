@@ -66,6 +66,7 @@ import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { lostStreamStartBounded } from './scenarios/fault-streams/lost-stream-start-bounded.ts';
 import { lostStreamStart } from './scenarios/fault-streams/lost-stream-start.ts';
 import { seededJitterStream } from './scenarios/fault-streams/seeded-jitter-stream.ts';
 import { seededLossStream } from './scenarios/fault-streams/seeded-loss-stream.ts';
@@ -241,6 +242,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     seededLossStream,
     seededLossUnreceiptedStream,
     lostStreamStart,
+    lostStreamStartBounded,
     seededJitterStream,
     ...crossCarrierDuplicate,
     notYetInSync,

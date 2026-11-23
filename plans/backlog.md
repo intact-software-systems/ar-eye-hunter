@@ -508,9 +508,16 @@ and it has no status list.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
-- A lost entry frame (S4-i, D527; a later outcome after S4-ii): a receiver
-  whose entry frame is lost and whose next frame arrives first enters past it;
-  the lost frame answers `before-entry` on a recorded frozen copy, a live-only
+- A lost entry frame (S4-i, D527; a later outcome after S4-ii): a fresh
+  receiver whose copy's prior exceeds the 256-sequence repair window enters past
+  the lost frames, and the lost frame answers `before-entry` on a recorded
+  frozen copy; a start the origin cannot serve (retention ended, origin left,
+  no repair on the path) holds the later copies until the bounded hold ends
+  (7 to 10.5 s) and is then lost; a track pushed off the evicted list by 256
+  later evictions, a storage reset or a new connect that keeps the peer id asks
+  again for frames it delivered, receives once more those the origin still
+  retains, and ends the hold on older ones; a latest-wins copy and a copy whose
+  plan repairs no gap enter by ruling; a live-only
   hand-over copy carries no record and is dropped silently (`ordering-rejected`, no NACK), and
   over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed.
   Under `rtc-with-ws-fallback` a server copy whose record meets the receiver's
@@ -519,6 +526,13 @@ and it has no status list.
   the RTC origin's sends; the RTC record already counts the WS leg's (D525), so
   a server-side room-wide position fed by the browser's RTC sends would close
   the mirror.
+- The WS-leg floor raises a never-sent recipient's prior (lost-stream-start,
+  maintainer ruling 7 of 2026-11-21): under `rtc-with-ws-fallback` the RTC
+  origin's record reads every recipient no lower than the room's WS-leg floor
+  (`to-al-outbound-sent-position-priors.ts`), so a genuine late joiner never
+  sent the track can read a prior above `0`, ask a range the RTC origin cannot
+  serve, and enter only when its bounded hold ends, about 7 s later. Option:
+  the floor skips a recipient with no own and no shared position row.
 - The residual stall for a recipient the WS leg left out (S4-i and S4-ii,
   D525): under `rtc-with-ws-fallback` the WS leg's `admitted` receipt names the
   recipients the server routed a send to, and the browser records each at the
@@ -1031,12 +1045,21 @@ and it has no status list.
   probe while a batch runs. The race predates D671 (identical before it). Fix:
   `await other.runtime.ready()` before `executeOnce()`, as the sibling test
   does.
-- Over `rtc`, the first send of a new ordered track is lost for good when a
-  later send reaches the receiver before it (D669, `lost-stream-start`): the
-  receiver enters at the first frame it sees and refuses the earlier one as
-  `before-entry`. It widens D646's one-frame limit. Recorded by ruling
-  (2026-11-18); a fix changes how a receiver enters a track and is its own
-  slice.
+- A receiver that holds a position on a latest-wins ordered track stalls on a
+  sequence its sender superseded before sending: the sender's record counts it
+  sent, the receiver asks the gap, and the repair settles it `superseded` and
+  sends nothing, so the replacement is never delivered (found building #868;
+  for a fresh receiver ruled "latest-wins tracks enter"). Options: the record
+  names the earlier prior for a superseded unsent sequence, or the repair
+  answer is read as an omission.
+- A buffered copy is acknowledged at admission, and a retried duplicate of one
+  is acknowledged `delivered` while still buffered (#868 lane and fix wave), so
+  a receipt can read `acknowledged` for a stream start the app has not received.
+  Receipt truth's to judge.
+- A server-originated send whose latest-wins comes only from server QoS provider
+  defaults is not stamped into its `qos` (#868, D712: explicit plans never
+  stamp), so a fresh WS client of such a track can ask for a sequence superseded
+  before it was sent and wait for the bounded hold.
 - After the instance that admitted a publication crashes, the publisher,
   reconnected to a survivor, reads neither `complete` nor `timed-out` for it
   (`api-v1-cluster-publisher-instance-loss`, D700); a receipt that survives a

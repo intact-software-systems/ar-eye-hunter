@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
-import type { ALInboundGapRenewalEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/validate-al-inbound-commit-bundle.ts';
+import type {
+    ALInboundCommitBundle,
+    ALInboundDurableEffect,
+    ALInboundGapRenewalEffect
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     computeALGapRenewalDelayMs,
     computeALGapRenewalStretch,
     computeALInboundNewlyMissingRanges,
-    computeALInboundStillMissingRanges
+    computeALInboundStillMissingRanges,
+    isALInboundMessageRetainingWork
 } from '@shared/alm/inbound/gap-renewal/compute-al-inbound-gap-renewal.ts';
 
 function toSnapshot(lastContiguousSeq: number, bufferedSeqs: readonly number[]): ALOrderingTrackSnapshot {
@@ -87,20 +93,21 @@ describe('computeALGapRenewalStretch', () => {
 
 describe('a stored gap renewal', () => {
     const NAMESPACE = 'gap-renewal-decoding';
-    const toStoredRenewal = (requestNumber: number | string) =>
+    const RENEWAL = {
+        kind: 'renew-gap',
+        trackKey: 'chat:sender:1',
+        range: { from: 1, to: 1 },
+        toPeerId: 'sender',
+        message: { senderId: 'sender', msgId: '2' },
+        traceId: 'trace-gap-renewal-decoding',
+        signsForRecipient: false,
+        heldStart: true
+    } as const;
+    const toStoredRenewal = (requestNumber: number | string, payload: Partial<ALInboundGapRenewalEffect> = RENEWAL) =>
         computeALInboundWorkEntry({
             namespace: NAMESPACE,
             effectId: 'renew-gap:stored',
-            payload: {
-                kind: 'renew-gap',
-                trackKey: 'chat:sender:1',
-                range: { from: 1, to: 1 },
-                requestNumber,
-                toPeerId: 'sender',
-                message: { senderId: 'sender', msgId: '2' },
-                traceId: 'trace-gap-renewal-decoding',
-                signsForRecipient: false
-            } as ALInboundGapRenewalEffect,
+            payload: { ...payload, requestNumber } as ALInboundGapRenewalEffect,
             observedAtMs: 0,
             expireAtTimestamp: 60_000,
             carrier: 'ws',
@@ -113,5 +120,82 @@ describe('a stored gap renewal', () => {
 
     it.each([1, 5, 2.5, '2'])('refuses renewal number %j', (requestNumber) => {
         expect(() => decodeALInboundWorkEntry(toStoredRenewal(requestNumber), NAMESPACE)).toThrow();
+    });
+
+    it('decodes whether the timer holds the track\'s start, and refuses a renewal that does not say', () => {
+        const { heldStart: _heldStart, ...unsaid } = RENEWAL;
+
+        expect(decodeALInboundWorkEntry(toStoredRenewal(2), NAMESPACE).payload).toMatchObject({ heldStart: true });
+        expect(() => decodeALInboundWorkEntry(toStoredRenewal(2, unsaid), NAMESPACE)).toThrow();
+    });
+});
+
+describe('the work that keeps the message it names retained', () => {
+    const NAMESPACE = 'gap-renewal-retention';
+    const renewal = (heldStart: boolean): ALInboundGapRenewalEffect => ({
+        kind: 'renew-gap',
+        trackKey: 'chat:sender:0',
+        range: { from: 1, to: 1 },
+        requestNumber: 2,
+        toPeerId: 'sender',
+        message: { senderId: 'sender', msgId: '2' },
+        traceId: 'trace-gap-renewal-retention',
+        signsForRecipient: false,
+        heldStart
+    });
+    /** Message `2`'s provenance, retained to 1 s, and `work` naming it, retained to 5 s. */
+    const toBundle = (work: ALInboundDurableEffect): ALInboundCommitBundle => ({
+        admissionExpiresAtMs: null,
+        senderId: 'sender',
+        observations: {
+            msgId: '2',
+            senderId: 'sender',
+            messageOwner: undefined,
+            dedup: undefined,
+            claim: undefined,
+            ordering: undefined,
+            buffered: undefined,
+            deliveryProgress: undefined,
+            supersedence: {},
+            pendingAck: undefined,
+            acks: [],
+            nacks: [],
+            controlOwners: undefined
+        },
+        mutations: [{
+            kind: 'set-msg-owner',
+            value: {
+                msgId: '2',
+                senderId: 'sender',
+                source: { kind: 'rtc-peer', peerId: 'sender' },
+                supersedenceKey: null,
+                deliveredLocally: false,
+                originAuthenticated: false
+            },
+            expireAtTimestamp: 1_000
+        }],
+        durableEffects: [computeALInboundWorkEntry({
+            namespace: NAMESPACE,
+            effectId: 'work:2',
+            payload: work,
+            observedAtMs: 0,
+            expireAtTimestamp: 5_000,
+            carrier: 'rtc',
+            signsForRecipient: false
+        })]
+    });
+
+    it('is every work row but a held start range\'s timer', () => {
+        expect(isALInboundMessageRetainingWork(renewal(true))).toBe(false);
+        expect(isALInboundMessageRetainingWork(renewal(false))).toBe(true);
+        expect(isALInboundMessageRetainingWork({ kind: 'release-buffered', trackKey: 'chat:sender:0', seq: 2 })).toBe(true);
+    });
+
+    it('lets only a held start range\'s timer outlive the provenance of the message it names', () => {
+        expect(validateALInboundCommitBundle(toBundle(renewal(true)), NAMESPACE).right).toBeDefined();
+        expect(validateALInboundCommitBundle(toBundle(renewal(false)), NAMESPACE).left?.message)
+            .toBe('Inbound admission candidate provenance expires before its owned work');
+        expect(validateALInboundCommitBundle(toBundle({ kind: 'release-buffered', trackKey: 'chat:sender:0', seq: 2 }), NAMESPACE).left?.message)
+            .toBe('Inbound admission candidate provenance expires before its owned work');
     });
 });

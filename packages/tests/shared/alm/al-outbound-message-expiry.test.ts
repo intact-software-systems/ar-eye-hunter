@@ -60,7 +60,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const candidate = computeALOutboundDispatch({
             read,
@@ -119,7 +120,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const candidate = computeALOutboundDispatch({
             read,
@@ -166,7 +168,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const candidate = computeALOutboundDispatch({
             read,
@@ -359,7 +362,13 @@ describe('outbound message expiry', () => {
             lane: 'volatile',
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
-        const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const read = await store.readOutgoingMessage({
+            msg: msg,
+            planner: () => plan,
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
+        });
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
@@ -401,7 +410,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const candidate = computeALOutboundDispatch({
             read,
@@ -437,7 +447,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         const candidate = computeALOutboundDispatch({
@@ -469,7 +480,8 @@ describe('outbound message expiry', () => {
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
-            intent: 'enqueue'
+            intent: 'enqueue',
+            stampsAppliedSupersedence: true
         });
         const candidate = computeALOutboundDispatch({
             read,

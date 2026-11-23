@@ -6,8 +6,10 @@ import {
 } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import { computeALOrderingMissingRanges } from '../../compute-al-ordering-observation.ts';
+import { toALOrderingTrackStartInput } from '../admission/is-al-ordering-track-start-owed.ts';
 import type {
     ALInboundCommitBundle,
+    ALInboundDurableEffect,
     ALInboundGapRenewalEffect,
     ALInboundMessageReadDto
 } from '../al-inbound-admission-store.ts';
@@ -18,6 +20,7 @@ import {
     isALInboundRecipientReceiptIntent,
     resolveALInboundReceiptStanding
 } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
+import { isALOrderingHeldStartRange } from './compute-al-ordering-held-entry.ts';
 
 /** The gap NACK an admission planned for an arrival that revealed a gap. */
 export type ALInboundGapNackIntent = ALInboundEffectIntent & {
@@ -78,11 +81,24 @@ export function toALInboundGapRenewalEffectId(payload: ALInboundGapRenewalEffect
     return toALInboundEffectId(['renew-gap', trackKey, range.from, range.to, requestNumber, message.msgId]);
 }
 
+/**
+ * Whether a work row keeps the message it names retained: every row does but a held start range's timer, which ends the
+ * hold from the track alone, so the ordering TTL it lives for never extends the message's own lifetime.
+ */
+export function isALInboundMessageRetainingWork(payload: ALInboundDurableEffect): boolean {
+    return payload.kind !== 'renew-gap' || !payload.heldStart;
+}
+
 export function isALInboundGapNackIntent(intent: ALInboundEffectIntent): intent is ALInboundGapNackIntent {
     return intent.payload.kind === 'send-nack' && intent.payload.reason === 'gap';
 }
 
-/** One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. */
+/**
+ * One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. The
+ * timer of a held start range lives at least as long as the track's ordering snapshot does from the reveal, whatever
+ * the copy's own lifetime, so its last timer runs however late it is claimed and the bounded hold always ends; it
+ * names the copy without retaining it.
+ */
 export function toALInboundGapRenewalEffects(
     input: ToALInboundGapRenewalEffectsInput
 ): readonly ALInboundEffectIntent[] {
@@ -93,6 +109,16 @@ export function toALInboundGapRenewalEffects(
     }
     const { toPeerId } = gapNack.payload;
     const standing = resolveALInboundReceiptStanding(read.msg, read.plan, input.selfPeerId);
+    const start = toALOrderingTrackStartInput({
+        msg: read.msg,
+        plan: read.plan,
+        selfPeerId: input.selfPeerId,
+        evictedTrack: read.observations.ordering?.evicted ?? false
+    });
+    const heldStartExpireAtMs = Math.max(
+        gapNack.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs,
+        read.nowMs + read.orderingTrackTtlMs
+    );
     return computeALInboundNewlyMissingRanges(read.orderingSnapshot, read.plan.orderingRuntime).map((range) => {
         const payload: ALInboundGapRenewalEffect = {
             kind: 'renew-gap',
@@ -102,11 +128,12 @@ export function toALInboundGapRenewalEffects(
             toPeerId,
             message: toALInboundMessageReference(read.msg),
             traceId: read.msg.id.traceId,
-            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, standing)
+            signsForRecipient: isALInboundRecipientReceiptIntent(gapNack, standing),
+            heldStart: isALOrderingHeldStartRange({ range, start })
         };
         return {
             effectId: toALInboundGapRenewalEffectId(payload),
-            expireAtTimestamp: gapNack.expireAtTimestamp,
+            expireAtTimestamp: payload.heldStart ? heldStartExpireAtMs : gapNack.expireAtTimestamp,
             carrier: gapNack.carrier,
             payload
         };

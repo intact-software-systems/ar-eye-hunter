@@ -263,7 +263,13 @@ describe('ALOutboundMessageRuntime', () => {
             preparedMessages: []
         });
         const readVersions = async () => ({
-            next: await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' }),
+            next: await admissionStore.readOutgoingMessage({
+                msg: nextMessage,
+                planner: plan,
+                observedCanonicalEntry: undefined,
+                intent: 'enqueue',
+                stampsAppliedSupersedence: true
+            }),
             acknowledged: (await admissionStore.readRepairMessage(msg.id.msgId, plan)).messageVersion
         });
         const beforeAck = await readVersions();

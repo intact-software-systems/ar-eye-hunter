@@ -738,9 +738,11 @@ each inbound lane draws once from the runtime's `random`, so receivers behind on
 reads the track's ordering snapshot, asks again under its own number for exactly the part of its range still missing,
 with the gap NACK and `missing-seq` request an arrival would send (signed as that report is), and arms the next
 number; once nothing is missing, the track is gone or the row has expired it ends and writes nothing, and there is no
-request past 4. Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
+request past 4. The last timer ends a bounded hold instead of asking a fourth time, on a track the entry rule below
+opened at `0` that has delivered nothing ("Entry, omission and witness"). Every row has a fixed id written if absent, so a run a lease recovery repeats finds what the first
 wrote, and a burst of later frames arms one row; reports caused by arrivals keep their one number. The rows expire
-with the message, and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
+with the message (a held start range's live for the track's ordering TTL without retaining its message, "Entry,
+omission and witness"), and on the server's PostgreSQL store an expired row is never claimed and the queue's expiry sweep
 removes it. A durable lane renews after a reload, a volatile lane does not. A run asks the peer the gap was first
 reported to, which the row records, while the lane still routes over it: on `rtc`, a connected neighbour of the
 layout it replaced while that one is still forwarded over
@@ -816,8 +818,20 @@ to it, `every-track` (the WS server, its clients' ordering hop) every track it a
 [`resolveALOrderingObserverRole`](./admission/resolve-al-ordering-observer-role.ts) reads the planner snapshot's
 `selfPeerId`: an `every-track` runtime or a delivering admission is a `recipient`, a frozen recipient that may not
 deliver a `witness`, and any other peer, a pure relay included, `none`, which observes nothing and forwards a
-recorded track it never saw. A recipient with no snapshot enters a recorded track at its copy (`entered`, no window
-check); one whose position `L` the copy's prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
+recorded track it never saw. A recipient with no snapshot opens the track at `0` where the copy's record owes it the
+start ([`isALOrderingTrackStartOwed`](./admission/is-al-ordering-track-start-owed.ts)): the copy's frozen audience names
+the recipient, the copy's plan repairs gaps (a plan whose repair algorithm is `none` plans no gap NACK, so it could
+never ask), it is not latest-wins in its plan, the store has not evicted the track, and the prior `p` is above `0` and
+below `seq`, within the repair window (`p` at most 256). It then treats the copy as tracked above `0`: it buffers the
+copy and asks the gap `1` to `p` through the gap NACK, renewal and release path above. The record speaks only for the
+copy's frozen audience, so a copy whose audience does not name the recipient enters as it always did: the WS server,
+ordering hop of every track, is never in an RTC copy's frozen audience, so the RTC admission's message a client hands
+over to it after admission enters there. A copy of a client's own WS send carries no frozen audience (the server keeps
+the audience it freezes at ingress beside the message, not in it), and neither does a unicast copy, so a WS client
+enters at such a copy; but an RTC leg handed over to WS after its freeze keeps its frozen multicast verbatim, so a WS
+client that audience names takes the rule on the server's copy, with the server's own record for it. Any
+other recipient with no snapshot enters a recorded track at its copy (`entered`); one whose position `L` the copy's
+prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
 prior ahead of `L` is a gap that ends at the prior; a prior behind `L`, `0` on a held track, or a copy without a
 record reads the rule above. `entered` and `omitted` deliver as `in-order` does, a buffered copy whose own prior
 equals `L` is released as its successor, and delivery progress jumps to a delivered sequence once its predecessor
@@ -826,9 +840,10 @@ position to the copy and buffers, asks and releases nothing; its progress passes
 pending delivery, so a session that witnessed while its own deliveries were pending, and is a recipient again,
 resyncs its next delivered copy. A recorded frozen copy below a recipient's position is `stale` and answers a
 `before-entry` NACK (above, under the relay); an unrecorded stale copy is dropped with no NACK, as before recorded
-tracks, and so is a WS copy, which carries no frozen audience: over `ws` the server skips a copy below a recorded
-position before it is sent. After each committed admission, replays included,
-[`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
+tracks, and so is a copy of a WS send, which carries no frozen audience: over `ws` the server skips a copy below a
+recorded position before it is sent. After each committed admission, replays included, and after a bounded hold's
+end that enters at a copy (below),
+[`recordALInboundOrderingPosition`](./admission/record-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
 carrier. Its bounded dimensions are `status` (four values) and `carrier` (`rtc`, `ws`); `workerId`, `trackKey` and the
@@ -837,10 +852,74 @@ metric labels. [`computeALInboundOrderingCounters`](./admission/al-inbound-order
 into `ALInboundOrderingCounters` (`entered`, `omitted`, `witnessed`, `beforeEntry`), returning its input unchanged for
 any other event; it counts events, not distinct copies, so a repeated `before-entry` refusal or a duplicate `witnessed`
 counts again. The browser keeps one fold per connect in a tee around the connect's inbound diagnostics sink, shared by
-both carriers, and reports it as `rallar.messages.readUsage().ordering`, keyed on `status` alone. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
-copy, arriving later, answers `before-entry` on a recorded frozen copy; a live-only hand-over copy carries no
-record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with no NACK
-and stays unconfirmed in the origin's receipt.
+both carriers, and reports it as `rallar.messages.readUsage().ordering`, keyed on `status` alone. The store knows an
+evicted track from one row, `<namespace>:ordering-evicted`
+([`al-inbound-evicted-ordering-tracks.ts`](./admission/al-inbound-evicted-ordering-tracks.ts)): the tracks the browser's
+256-track cap evicted, each until its eviction plus the ordering TTL, newest last, at most 256. The eviction pass
+([`evict-al-inbound-ordering-tracks-past-cap.ts`](./admission/evict-al-inbound-ordering-tracks-past-cap.ts)) writes it in
+the transaction that removes the snapshots, for the snapshots it actually removed, and gives the row its newest entry's
+instant as its expiry, so the row leaves the store once every entry lapsed; an admission whose track has no live
+snapshot reads it, in a capped store only. The row is decoded fail-loud, like every stored row: a corrupt row fails
+every admission in the store whose track has no live snapshot, and the eviction pass, until it is removed. A track on
+it enters at its next copy, as before, since its earlier frames were delivered. A snapshot that expired needs no row:
+the receiver's TTL outlasts the sender's head, so the sender restarts such a track at `seq` `1` with prior `0`, which
+enters. A late joiner's first copy enters too wherever its record names it with prior `0`, the authority having sent
+it nothing on the track; under `rtc-with-ws-fallback` that does not always hold, since the record raises a recipient
+never sent the track to the room's WS-leg floor (outbound README, "Sent positions"), so a genuine late joiner can read
+a prior above `0`, ask a range the RTC origin cannot serve, and enter only when its bounded hold ends.
+
+**Bounded hold.** A track opened at `0` that has delivered nothing (its position still `0`) waits for its start at
+most until its renewal schedule ends. The admission that opens it arms the start range's timer (`1` to `p`,
+[`isALOrderingHeldStartRange`](./gap-renewal/compute-al-ordering-held-entry.ts)) to live at least as long as the
+track's ordering snapshot does from the reveal (`orderingTrackTtlMs`), whatever the copy's own lifetime, so the last
+timer runs however late the engine claims it; every other gap timer still expires with its message. The admission
+decides once that the timer holds the start and the timer carries it (`heldStart`, a required field of the
+`renew-gap` row). Such a timer names the copy that revealed the range without retaining it
+([`isALInboundMessageRetainingWork`](./gap-renewal/compute-al-inbound-gap-renewal.ts): the bundle neither extends
+the message's canonical and owner rows to the timer's expiry nor requires them to outlive it), so that message keeps
+its own lifetime. When that last timer comes due with
+the range still missing, the third request has gone unanswered for its whole interval, so the timer asks no fourth
+time and ends the hold instead: about the sum of the renewal intervals (1 s, 2 s and 4 s) times the lane's stretch (1
+to 1.5) after the gap was revealed, so 7 to 10.5 s. The last run reads the track by its key alone
+(`readOrderingTrack`: its snapshot, live buffered copies and delivery progress, guarded by the rows of the message the
+timer names, held or not). One rule,
+[`computeALOrderingHeldEntry`](./gap-renewal/compute-al-ordering-held-entry.ts), over the timer's `heldStart` and the
+track's live buffered copies, ends it: the track passes every
+buffered sequence below its lowest live copy and enters at that copy, releasing it and each live successor the run
+reaches across nothing but expired copies, and its position also passes the expired copies right after that run (none
+will be delivered), so only a sequence never received stays a gap; with no live copy (every held copy expired) it
+passes every buffered sequence and releases nothing, so its next copy follows in order. A buffered slot records the
+sequence its completed delivery moves the progress through (`completesThrough`, a required slot field: its own
+`seq`, and for the run's last copy the end of the expired copies passed after it), so completing that copy completes
+the passed ones too and the next copy, in order after them, is delivered; one rule,
+[`computeALInboundDeliveryCompletion`](./admission/al-inbound-delivery-progress.ts), beside the omission's jump to its
+prior, reads it for every completion and for the bundle validator, and its reach predicate `isALInboundDeliveryReaching`
+serves the delivery-readiness lookup of a predecessor (the predecessor's own slot by its key, or on a miss the slot
+whose reach passes it, so a copy that arrives before the run's last delivery completed waits on that delivery) and the
+check, at write and at read, that a slot reaches at least its own sequence. A buffered copy is live only
+while its message lives: its slot is written with the message's own expiry and every rewrite of it takes a release
+row's, which is that expiry too.
+[`computeALInboundHeldTrackEntry`](./gap-renewal/compute-al-inbound-held-track-entry.ts) commits an entry as an entered
+admission of that copy would, from that copy's own admission surface: the new position, the copy's slot recording it
+`entered` (so its delivery waits on nothing below it), and a release of the copy and of each contiguous live successor
+through the buffered-release path; after its commit it states the copy's `entered` `ordering-position`, as an entered
+admission does, so `readUsage().ordering` counts the hold's entry;
+`computeALInboundPassedTrack` moves the position and the delivery progress past the buffered sequences, as a witness
+does, and states no position event: it judges no copy, and none of the four statuses describes passing expired copies.
+Both are guarded by the track as read, so an arrival that moved the track first wins and the timer runs again, as does
+an end that cannot commit because its copy expired meanwhile. A copy below the new
+position that arrives later is `stale` and answers `before-entry`, as at any entry. A track that delivered anything,
+or whose start range's revealing copy owes no start (an unrecorded track, the WS server's initial window included),
+keeps the mid-track behaviour: the fourth request goes out and the track waits.
+
+**Limits:** a fresh recipient whose copy's prior is above 256 enters past the lost frames; a start the origin cannot
+serve (its retention ended, it left, or the path repairs nothing) holds the later copies until the bounded hold ends
+and is then lost, and under `rtc-with-ws-fallback` a genuine late joiner whose prior the WS-leg floor raised waits the
+same bound before it enters; a recipient that forgot a track it delivered (one pushed off the evicted list by 256 later
+evictions, a storage reset or a new connect that keeps the peer id) asks for its start again: the frames the origin
+still retains are delivered once more (at least once, past the 60 s dedup window), and older ones end the hold; a
+live-only hand-over copy carries no record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws`
+it is dropped `stale` with no NACK and stays unconfirmed in the origin's receipt.
 
 **Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
 releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release

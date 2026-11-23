@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+
+import { NON_EXPIRING_SEND_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toOrderingKey } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts';
 import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toScenarioTypeId } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -21,7 +25,8 @@ const STREAM_SENDS = 20;
 const CELL_CARRIERS = [
     ['seeded-loss-stream', ['ws', 'rtc']],
     ['seeded-loss-unreceipted-stream', ['ws']],
-    ['lost-stream-start', ['rtc']],
+    ['lost-stream-start', ['ws', 'rtc']],
+    ['lost-stream-start-bounded', ['rtc']],
     ['seeded-jitter-stream', ['ws']]
 ] as const;
 const STREAM_CELLS = [
@@ -29,6 +34,10 @@ const STREAM_CELLS = [
     ['seeded-loss-stream', 'rtc'],
     ['seeded-jitter-stream', 'ws']
 ] as const;
+const LOST_START_CARRIERS = ['ws', 'rtc'] as const;
+/** The latest a bounded hold ends after the gap: every renewal interval at the most a stretch may be. */
+const HOLD_END_MS = AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs.reduce((sum, intervalMs) => sum + intervalMs, 0) *
+    AL_MESSAGE_RESOURCE_LIMITS.gapRenewalMaxStretch;
 
 function findCell(key: string, carrier: Carrier): AlmConformanceScenario | undefined {
     return createAlmConformanceRecipes(toConformanceInput(carrier)).find((scenario) => scenario.scenarioKey === key);
@@ -55,14 +64,26 @@ function findCommand(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlac
     return command;
 }
 
+/** The sends of the cell's own type: a cue travels on a type of its own. */
 function toSends(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestMessagesSendCommand[] {
-    return recipe.commands.filter((command): command is RallarBlackBoxTestMessagesSendCommand => command.kind === 'messages.send');
+    return recipe.commands
+        .filter((command): command is RallarBlackBoxTestMessagesSendCommand => command.kind === 'messages.send')
+        .filter((send) => !send.typeId.endsWith('-cues'));
 }
 
 /** Each named command's place in the recipe, so a test reads the order of the steps it names. */
 function toPlaces(recipe: RallarBlackBoxTestRecipe, names: readonly string[]): readonly number[] {
     const all = toNames(recipe);
     return names.map((name) => all.indexOf(name));
+}
+
+/** A cue's command, named under the cell's cue type rather than the cell's own prefix. */
+function findCueCommand(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand {
+    const command = recipe.commands.find((candidate) => candidate.commandId?.endsWith(`-${name}`) === true);
+    if (command === undefined) {
+        throw new Error(`${recipe.recipeId} has no ${name}.`);
+    }
+    return command;
 }
 
 function toSenderStep(carrier: Carrier, key: string): AlmConformanceStepInput {
@@ -91,19 +112,24 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each([...STREAM_CELLS, ['lost-stream-start', 'rtc'] as const])(
+    it.each([
+        ...STREAM_CELLS,
+        ...LOST_START_CARRIERS.map((carrier) => ['lost-stream-start', carrier] as const),
+        ['lost-stream-start-bounded', 'rtc'] as const
+    ])(
         '%s over %s sends only receipted at-least-once sends on its own track, in sequence',
         (key, carrier) => {
-            const sends = toSends(requireCell(key, carrier).sender);
+            const cell = requireCell(key, carrier);
+            const sends = toSends(cell.sender);
 
-            expect(sends.length).toBe(key === 'lost-stream-start' ? 3 : STREAM_SENDS);
+            expect(sends.length).toBe(key.startsWith('lost-stream-start') ? 3 : STREAM_SENDS);
             sends.forEach((send, index) => {
                 expect(send).toMatchObject({
                     ack: 'receiver',
                     reliability: 'at-least-once',
                     orderingKey: toOrderingKey(toSenderStep(carrier, key)),
                     seq: index + 1,
-                    payload: { marker: key, seq: index + 1 }
+                    payload: { marker: cell.scenarioId, seq: index + 1 }
                 });
             });
         }
@@ -292,60 +318,195 @@ describe('ALM fault stream cells', () => {
         );
     });
 
-    it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {
-        const sender = requireCell('lost-stream-start', 'rtc').sender;
-        const places = toPlaces(sender, [
-            'hold-rtc',
-            'send-1',
-            'hold-message-1-rtc',
-            'release-rtc',
-            'send-2',
-            'assert-reached-2',
-            'send-3',
-            'assert-reached-3',
-            'release-message-1-rtc',
-            'observe-failed-1',
-            'assert-receipt-exhausted-1'
-        ]);
-        const faults = sender.commands.filter((command) => command.kind === 'fault.inject');
+    it.each(LOST_START_CARRIERS)(
+        'lost-stream-start over %s holds send 1 by its message id until the sender admitted a gap NACK about the track and committed send 1\'s repair, then reads every handle acknowledged',
+        (carrier) => {
+            const sender = requireCell('lost-stream-start', carrier).sender;
+            const places = toPlaces(sender, [
+                `hold-${carrier}`,
+                'send-1',
+                `hold-message-1-${carrier}`,
+                `release-${carrier}`,
+                'send-2',
+                'send-3',
+                'gap-nack',
+                'repair-dispatch-1',
+                `release-message-1-${carrier}`,
+                'assert-reached-1',
+                'assert-reached-2',
+                'assert-reached-3'
+            ]);
+            const hold = carrier === 'ws' ? 'not-ready' : 'drop';
+
+            expect(places.every((place) => place >= 0)).toBe(true);
+            expect([...places].sort((left, right) => left - right)).toEqual(places);
+            expect(findCommand(sender, `hold-message-1-${carrier}`)).toMatchObject({
+                carrier,
+                match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
+                action: hold,
+                remaining: 'until-cleared'
+            });
+            expect(findCommand(sender, `release-message-1-${carrier}`)).toMatchObject({
+                carrier,
+                match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
+                remaining: 0
+            });
+            expect(sender.commands.filter((command) => command.kind === 'fault.inject').every((fault) => fault.action === hold))
+                .toBe(true);
+            expect(findCommand(sender, 'gap-nack')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep(carrier, 'lost-stream-start'))}:`
+                }
+            });
+            expect(findCommand(sender, 'gap-nack')).not.toHaveProperty('absent');
+            const step = toSenderStep(carrier, 'lost-stream-start');
+            expect(findCommand(sender, 'repair-dispatch-1')).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: `"msgId":"{resultCache.${sender.recipeId}-send-1.value.msgId}",` +
+                        `"typeId":"${toScenarioTypeId(step)}","origin":"repair"`
+                }
+            });
+            expect(findCommand(sender, 'repair-dispatch-1')).not.toHaveProperty('absent');
+            for (const seq of [1, 2, 3]) {
+                expect(findCommand(sender, `observe-acknowledged-${seq}`)).toMatchObject({ state: ['acknowledged'] });
+            }
+            expect(toNames(sender).filter((name) => name.startsWith('observe-') && !name.startsWith('observe-admitted-')))
+                .toEqual(['observe-acknowledged-1', 'observe-acknowledged-2', 'observe-acknowledged-3']);
+        }
+    );
+
+    it.each(LOST_START_CARRIERS)(
+        'lost-stream-start over %s reads three arrivals in sequence order, no fourth, and no send refused as before the track\'s entry',
+        (carrier) => {
+            const receiver = requireCell('lost-stream-start', carrier).receiver;
+            const track = `"trackKey":"${toOrderingKey(toSenderStep(carrier, 'lost-stream-start'))}:`;
+
+            expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
+                { count: 3, absent: false, ascendingBy: 'seq' },
+                { count: 4, absent: true }
+            ]);
+            expect(receiver.commands.filter((command) => command.kind === 'wait')).toEqual([
+                findCommand(receiver, 'no-before-entry')
+            ]);
+            expect(findCommand(receiver, 'no-before-entry')).toMatchObject({
+                kind: 'wait',
+                absent: true,
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    contains: track,
+                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
+                }
+            });
+            const [first] = toPlaces(receiver, ['received-3']);
+            expect(toPlaces(receiver, ['received-3', 'received-4', 'no-before-entry'])).toEqual([first, first + 1, first + 2]);
+        }
+    );
+
+    it('lost-stream-start-bounded holds send 1 by its message id past the receiver\'s entry, which the receiver cues, then reads handle 1 failed', () => {
+        const sender = requireCell('lost-stream-start-bounded', 'rtc').sender;
+        const cueReceived = findCueCommand(sender, 'cue-entered-received');
+        const listen = sender.commands.filter((command) => command.metadata?.cellArming === 'cue-subscription');
+        const names = toNames(sender);
+        const places = [
+            names.indexOf('hold-rtc'),
+            names.indexOf('send-1'),
+            names.indexOf('hold-message-1-rtc'),
+            names.indexOf('release-rtc'),
+            names.indexOf('send-2'),
+            names.indexOf('send-3'),
+            names.indexOf('gap-nack'),
+            sender.commands.indexOf(cueReceived),
+            names.indexOf('release-message-1-rtc'),
+            names.indexOf('observe-failed-1')
+        ];
 
         expect(places.every((place) => place >= 0)).toBe(true);
         expect([...places].sort((left, right) => left - right)).toEqual(places);
+        expect(listen.map((command) => command.kind)).toEqual(['messages.send', 'messages.observe']);
+        const [listenAt] = listen.map((command) => sender.commands.indexOf(command));
+        expect(listen.map((command) => sender.commands.indexOf(command))).toEqual([listenAt, listenAt + 1]);
+        expect(listenAt + 1).toBeLessThan(places[0]);
         expect(findCommand(sender, 'hold-message-1-rtc')).toMatchObject({
+            carrier: 'rtc',
             match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
             action: 'drop',
             remaining: 'until-cleared'
         });
-        expect(faults.every((fault) => fault.action === 'drop')).toBe(true);
-        expect(findCommand(sender, 'assert-receipt-exhausted-1')).toEqual(expect.objectContaining({
-            kind: 'assert',
-            source: `resultCache.${sender.recipeId}-observe-failed-1.value.failure.kind`,
-            operator: 'equals',
-            expected: 'receipt-exhausted'
-        }));
+        expect(findCommand(sender, 'release-message-1-rtc')).toMatchObject({
+            carrier: 'rtc',
+            match: { msgId: `{resultCache.${sender.recipeId}-send-1.value.msgId}` },
+            remaining: 0
+        });
+        expect(findCommand(sender, 'gap-nack')).toMatchObject({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start-bounded'))}:`
+            }
+        });
+        expect(cueReceived).toMatchObject({
+            kind: 'wait',
+            match: { kind: 'message', equals: { marker: 'lost-stream-start-bounded-cues', carrier: 'rtc', cue: 'entered' } }
+        });
+        expect(cueReceived).not.toHaveProperty('absent');
+        expect(cueReceived.timeoutMs).toBeGreaterThan(HOLD_END_MS);
+        expect(findCommand(sender, 'observe-failed-1')).toMatchObject({
+            kind: 'messages.observe',
+            state: ['failed'],
+            timeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
+        });
+        expect(names.filter((name) => name.startsWith('observe-') && !name.startsWith('observe-admitted-')))
+            .toEqual(['observe-failed-1']);
     });
 
-    it('lost-stream-start reads two arrivals in order, its entry at the second send, the first refused as before it, and no third', () => {
-        const receiver = requireCell('lost-stream-start', 'rtc').receiver;
-        const track = `"trackKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start'))}:`;
-        const position = { kind: 'diagnostic', topic: 'rallar.browser.alm.inbound_diagnostics', contains: track };
-        const steps = ['received-2', 'entered-2', 'before-entry-1', 'received-3'];
+    it('lost-stream-start-bounded reads the hold\'s entry at 2 after prior 1, then 2 and 3 in order, cues, no third, and send 1 refused as before the entry', () => {
+        const receiver = requireCell('lost-stream-start-bounded', 'rtc').receiver;
+        const track = `"trackKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start-bounded'))}:`;
+        const entered = findCommand(receiver, 'entered-2');
+        const cueSend = findCueCommand(receiver, 'cue-entered');
+        const names = toNames(receiver);
+        const first = names.indexOf('entered-2');
 
+        expect(first).toBeGreaterThanOrEqual(0);
+        expect([names.indexOf('received-2'), receiver.commands.indexOf(cueSend), names.indexOf('received-3'), names.indexOf('before-entry-1')])
+            .toEqual([first + 1, first + 2, first + 4, first + 5]);
+        expect(entered).toMatchObject({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                contains: track,
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 1 }
+            }
+        });
+        expect(entered).not.toHaveProperty('absent');
+        expect(entered.timeoutMs).toBeGreaterThan(HOLD_END_MS);
         expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
-            { count: 2, ascendingBy: 'seq' },
+            { count: 2, absent: false, ascendingBy: 'seq' },
             { count: 3, absent: true }
         ]);
-        expect(findCommand(receiver, 'entered-2')).toMatchObject({
-            kind: 'wait',
-            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 1 } }
+        expect(cueSend).toMatchObject({
+            kind: 'messages.send',
+            carrier: 'ws',
+            payload: { marker: 'lost-stream-start-bounded-cues', carrier: 'rtc', cue: 'entered' }
         });
         expect(findCommand(receiver, 'before-entry-1')).toMatchObject({
             kind: 'wait',
-            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.priorSeq': 0 } }
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                contains: track,
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.priorSeq': 0 }
+            }
         });
-        expect(findCommand(receiver, 'entered-2')).not.toHaveProperty('absent');
         expect(findCommand(receiver, 'before-entry-1')).not.toHaveProperty('absent');
-        expect(toPlaces(receiver, steps)).toEqual([...toPlaces(receiver, steps)].sort((left, right) => left - right));
-        expect(toPlaces(receiver, steps).every((place) => place >= 0)).toBe(true);
     });
 });

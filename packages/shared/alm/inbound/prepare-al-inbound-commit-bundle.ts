@@ -20,6 +20,7 @@ import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import { toALForwardedReceiptControlMessage } from './control/to-al-forwarded-receipt-control-message.ts';
+import { isALInboundMessageRetainingWork } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
     isALInboundRecipientReceiptIntent,
     resolveALInboundReceiptStanding
@@ -91,7 +92,9 @@ export function prepareALInboundCommitBundle(
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
     const mutations = [...deliveryMutations, ...computeDeliveryProgressRetention(input, deliveryMutations)];
     const ownedWorkExpiries = [
-        ...durableEffects.map((effect) => effect.expireAtTimestamp),
+        ...durableEffects.flatMap((effect) =>
+            isALInboundMessageRetainingWork(effect.payload) ? [effect.expireAtTimestamp] : []
+        ),
         ...mutations.flatMap((mutation) => isOwnedWorkMutation(mutation) ? [mutation.expireAtTimestamp] : [])
     ];
     return {
@@ -335,6 +338,7 @@ function toDeliveryOwnerMutation(
             plan: snapshot.plan,
             carrier: snapshot.carrier,
             copyCarriers: snapshot.copyCarriers,
+            completesThrough: snapshot.completesThrough,
             delivery: { effectId: effect.effectId }
         },
         expireAtTimestamp

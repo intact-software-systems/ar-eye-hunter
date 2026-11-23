@@ -3,6 +3,7 @@ import '../../../setup-browser-indexeddb.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALPeerControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_WORK_PAGE_SIZE } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
@@ -30,6 +31,9 @@ const BUFFERED_64_PROMOTED_PER_BATCH = [0, 15, 15, 15, 15];
 const DRAIN_TIMEOUT_MS = 20_000;
 const TEST_TIMEOUT_MS = 30_000;
 const WAIT = { timeout: DRAIN_TIMEOUT_MS, interval: 5 };
+const ROOM = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
+/** The WS server's peer id, as `WsQueueBoxServerService` composes its inbound owner. */
+const SERVER_PEER_ID = 'default-qbox-server';
 
 describe('promotion of a buffered track\'s next release', () => {
     it('delivers a buffered track in sequence order, each release promoted only after its predecessor delivered', async () => {
@@ -160,16 +164,107 @@ describe('delivery progress on a recorded track', () => {
     }, TEST_TIMEOUT_MS);
 });
 
+describe('the WS server, ordering hop of every track, at a recorded copy whose audience does not name it', () => {
+    it('enters the track at the copy and asks no gap: the record speaks for the frozen audience, not for the hop', async () => {
+        const fixture = createInboundTestRuntime({
+            carrier: 'ws',
+            stores: createInboundTestStores({
+                namespace: 'server-entry',
+                storage: 'memory',
+                observer: createPassThroughIndexedDbOperationObserver()
+            }),
+            effectWorkerId: 'al-inbound:server-entry',
+            selfPeerId: SERVER_PEER_ID,
+            orderingObserver: 'every-track'
+        });
+        await fixture.runtime.ready();
+        const message = toRepairedMessage(createRecordedMessage(3, {}));
+
+        await fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
+
+        const trackKey = toALOrderingTrackKey(message)!;
+        expect(await fixture.stores.admissionStore.readOrderingSnapshot(trackKey, Date.now()))
+            .toMatchObject({ lastContiguousSeq: 3, bufferedSeqs: [] });
+        expect(readGapNacks(fixture)).toEqual([]);
+    });
+});
+
+describe('a fresh receiver whose first copy of a recorded track is not the track\'s first', () => {
+    it('asks the missing start at copy 2, then delivers 1, 2 and 3 in order and refuses nothing as before its entry', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        const fixture = await startInboundRuntime('missing-start', {
+            gateDispatch: async (msg) => {
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        for (const seq of [2, 3, 1]) {
+            await fixture.runtime.admitIncomingMessage(toRepairedMessage(createRecordedMessage(seq, {})), INBOUND_TEST_SOURCE);
+        }
+
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 3)).toBe(3), WAIT);
+        expect(deliveredSeqs).toEqual([1, 2, 3]);
+        const nacks = fixture.controlSends.flat().flatMap((msg) => {
+            const control = decodeALPeerControlMessage(msg).right;
+            return control?.type === 'nack' ? [control.payload] : [];
+        });
+        expect(nacks.find((nack) => nack.msgId === 'recorded-2'))
+            .toMatchObject({ reason: 'gap', expectedSeq: 1, missingRanges: [{ from: 1, to: 1 }] });
+        expect(nacks.filter((nack) => nack.reason === 'before-entry')).toEqual([]);
+        expect(fixture.diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+
+    it('enters at copy 2 when its plan repairs no gap, delivering 2 and 3 and asking for nothing', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        const fixture = await startInboundRuntime('unrepaired-start', {
+            gateDispatch: async (msg) => {
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        // Copy 2's delivery completes before copy 3 is admitted, so no completion loses its commit and is dispatched again.
+        await admitRecorded(fixture, 2, {});
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 2)).toBe(2), WAIT);
+        await admitRecorded(fixture, 3, {});
+
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 3)).toBe(3), WAIT);
+        expect(deliveredSeqs).toEqual([2, 3]);
+        expect(readGapNacks(fixture)).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+});
+
 async function admitRecorded(
     fixture: InboundTestRuntime,
     seq: number,
     priorSeqByRecipient: Readonly<Record<string, number>>
 ): Promise<void> {
+    await fixture.runtime.admitIncomingMessage(createRecordedMessage(seq, priorSeqByRecipient), INBOUND_TEST_SOURCE);
+}
+
+/** A copy its authority recorded, frozen to `recipientPeerIds` (the fixture's receiver by default) as a room copy is. */
+function createRecordedMessage(
+    seq: number,
+    priorSeqByRecipient: Readonly<Record<string, number>>,
+    recipientPeerIds: readonly string[] = [INBOUND_TEST_SELF_PEER_ID]
+): ALMessage {
     const message = createInboundTestMessage({ msgId: `recorded-${seq}`, seq });
-    await fixture.runtime.admitIncomingMessage(
-        { ...message, ordering: { ...message.ordering, priorSeqByRecipient } },
-        INBOUND_TEST_SOURCE
-    );
+    return {
+        ...message,
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds, snapshotVersion: 1 },
+        ordering: { ...message.ordering, priorSeqByRecipient }
+    };
+}
+
+/** The copy with the gap repair its sender asked for, which the open-at-start rule requires. */
+function toRepairedMessage(message: ALMessage): ALMessage {
+    return { ...message, qos: { ...message.qos, repair: { algo: 'retransmit' } } };
+}
+
+function readGapNacks(fixture: InboundTestRuntime): readonly ALNackPayload[] {
+    return fixture.controlSends.flat().flatMap((msg) => {
+        const control = decodeALPeerControlMessage(msg).right;
+        return control?.type === 'nack' && control.payload.reason === 'gap' ? [control.payload] : [];
+    });
 }
 
 async function readCompletedThrough(fixture: InboundTestRuntime, seq: number): Promise<number> {

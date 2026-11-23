@@ -243,7 +243,8 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         'requestNumber',
         'toPeerId',
         'traceId',
-        'signsForRecipient'
+        'signsForRecipient',
+        'heldStart'
     ]);
     switch (effect.kind) {
         case 'admit-message': {
@@ -321,14 +322,17 @@ function decodeALInboundGapRenewalEffect(
         'toPeerId',
         'message',
         'traceId',
-        'signsForRecipient'
+        'signsForRecipient',
+        'heldStart'
     ]);
     const [range] = decodeALAdmissionSeqRanges([effect.range]);
     if (
-        range === undefined || typeof effect.signsForRecipient !== 'boolean' ||
+        range === undefined || typeof effect.signsForRecipient !== 'boolean' || typeof effect.heldStart !== 'boolean' ||
         !isALGapRenewalRequestNumber(effect.requestNumber)
     ) {
-        throw new TypeError('Persisted gap renewal names no range, no signing rule or no renewal number');
+        throw new TypeError(
+            'Persisted gap renewal names no range, no signing rule, no held start or no renewal number'
+        );
     }
     return {
         kind: 'renew-gap',
@@ -338,7 +342,8 @@ function decodeALInboundGapRenewalEffect(
         toPeerId: decodeALAdmissionString(effect.toPeerId),
         message: decodeALInboundMessageReference(effect.message),
         traceId: decodeALAdmissionString(effect.traceId),
-        signsForRecipient: effect.signsForRecipient
+        signsForRecipient: effect.signsForRecipient,
+        heldStart: effect.heldStart
     };
 }
 
