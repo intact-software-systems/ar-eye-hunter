@@ -46,6 +46,7 @@ import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-di
 import { computeALOutboundWorkEntry, toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { ALOutboundReceiptAdmission } from '@shared/alm/outbound/control/al-outbound-receipt-admission.ts';
 import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -58,6 +59,7 @@ import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtim
 import {
     createOutboundCanonicalEntry,
     createOutboundMessage,
+    createServerReceipt,
     readOutboundTestAdmission,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
@@ -239,6 +241,40 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             expect((await fixture.store.readReceiptState(toFenceReceipt(message)))?.ackedPeerIds).toEqual(['peer-1']);
         }
     );
+
+    it('commits a server receipt of one message at once while a send of another message of its sender lands before each of its writes', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store, undefined, 'receiver');
+        const receipts = new ALOutboundReceiptAdmission<OutboundTestPayload>({
+            admissionStore: fixture.store,
+            clock: { nowMs: Date.now },
+            settlements: () => {},
+            diagnostics: undefined,
+            pendingControls: control
+        });
+        const write = fixture.backend.write.bind(fixture.backend);
+        let siblingCommitting = false;
+        let siblingsLanded = 0;
+        vi.spyOn(fixture.backend, 'write').mockImplementation(async (operation, executionExpiresAtMs) => {
+            if (!siblingCommitting) {
+                siblingCommitting = true;
+                expect(await commitSiblingOf(fixture, control, { sibling: 'send', other: message })).toBe('committed');
+                siblingCommitting = false;
+                siblingsLanded += 1;
+            }
+            return await write(operation, executionExpiresAtMs);
+        });
+
+        const receipt = createServerReceipt(message, 'admitted', ['peer-1'], {
+            controlMsgId: `receipt-admitted-${message.id.msgId}`,
+            confirmedRecipientPeerIds: ['peer-1']
+        });
+        expect(await receipts.admit(receipt)).toEqual({ kind: 'committed' });
+
+        expect(siblingsLanded).toBe(1);
+        expect((await fixture.store.readReceiptState(toFenceReceipt(message)))?.ackedPeerIds).toEqual(['peer-1']);
+    });
 
     it('commits a send of one message decided before a control of another message of its sender committed', async () => {
         const fixture = await createFenceFixture(storage);
@@ -582,7 +618,8 @@ function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
 async function seedControlObligation(
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
-    ordering?: ALMessage['ordering']
+    ordering?: ALMessage['ordering'],
+    mode: 'hop' | 'receiver' = 'hop'
 ): Promise<ALMessage> {
     const created = createOutboundMessage('control-fence');
     const message = ordering === undefined ? created : { ...created, ordering };
@@ -599,7 +636,7 @@ async function seedControlObligation(
             originPeerId: message.id.senderId,
             snapshot: {
                 msgId: message.id.msgId,
-                mode: 'hop',
+                mode,
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
                 outsideAudiencePeerIds: [],

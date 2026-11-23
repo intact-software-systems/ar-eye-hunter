@@ -70,6 +70,7 @@ function committed(
         trackedReceiptAlgo: 'none',
         bundle: {
             senderId: 'a',
+            fencesSender: true,
             message: { originPeerId: 'a', msgId: msg.id.msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations,
             durableEffects: [],

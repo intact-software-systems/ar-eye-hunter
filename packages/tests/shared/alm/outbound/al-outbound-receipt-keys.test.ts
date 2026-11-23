@@ -157,6 +157,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             expect(
                 await stores.admissionStore.commitBundle({
                     senderId: originPeerId,
+                    fencesSender: true,
                     message: { originPeerId, msgId: MSG_ID, expectedVersion: undefined, expiresAtMs: undefined },
                     mutations: [{
                         kind: 'set-pending-ack',

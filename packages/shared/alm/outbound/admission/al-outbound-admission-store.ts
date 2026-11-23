@@ -391,6 +391,11 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly claimedCanonical?: ResourceEntry;
     readonly senderId: string;
     readonly expectedVersion?: number;
+    /**
+     * The bundle's decision read rows the sender's other messages share -- a track head, sent positions, a room floor, a
+     * supersedence latest -- so its commit fences on the sender version too; otherwise on its message's version alone.
+     */
+    readonly fencesSender: boolean;
     /** The message whose rows the bundle writes, which a control of that message fences on too. */
     readonly message: ALOutboundMessageFence;
     readonly canonicalEntry?: ResourceEntry;
@@ -1003,7 +1008,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 this.effectStore.writeEffects(tx, effects);
                 await this.mutations.writeStateWrites(tx, mutations);
                 await writeALOutboundTimeoutCompletions(tx, this.namespace, endedTimeoutEffectIds);
-                await tx.setFence(versionKey, version, versionExpireAt);
+                if (bundle.fencesSender) {
+                    await tx.setFence(versionKey, version, versionExpireAt);
+                }
                 for (const candidate of candidates) {
                     await this.mutations.writeMessageVersion(tx, candidate.bundle.message, nowMs);
                 }
@@ -1039,12 +1046,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         tx: ALAdmissionWorkWriteContext,
         candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
     ): Promise<void> {
-        const { senderId, expectedVersion } = candidates[0]!.bundle;
+        const { senderId, expectedVersion, fencesSender } = candidates[0]!.bundle;
         const [current, bundleFences] = await Promise.all([
-            this.reads.readClientRecord(tx, senderId),
+            fencesSender ? this.reads.readClientRecord(tx, senderId) : undefined,
             Promise.all(candidates.map((candidate) => this.readBundleFenceError(tx, candidate)))
         ]);
-        if (current?.version !== expectedVersion) {
+        if (fencesSender && current?.version !== expectedVersion) {
             throw new ALAdmissionBackendConflictError('Outbound sender version changed');
         }
         const failed = bundleFences.find((error) => error !== undefined);
@@ -1106,9 +1113,14 @@ function assertALOutboundBundleGroup<TPrepared>(bundles: readonly ALOutboundComm
     const [first] = bundles;
     if (
         first !== undefined &&
-        bundles.some((bundle) => bundle.senderId !== first.senderId || bundle.expectedVersion !== first.expectedVersion)
+        bundles.some((bundle) =>
+            bundle.senderId !== first.senderId || bundle.expectedVersion !== first.expectedVersion ||
+            bundle.fencesSender !== first.fencesSender
+        )
     ) {
-        throw new TypeError('An outbound bundle group must share one sender and one expected version');
+        throw new TypeError(
+            'An outbound bundle group must share one sender, one expected version and one sender fence'
+        );
     }
 }
 

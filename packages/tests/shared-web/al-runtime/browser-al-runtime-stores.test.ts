@@ -371,6 +371,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await stores.admissionStore.commitBundle({
             senderId: sessionId,
             expectedVersion: undefined,
+            fencesSender: true,
             message: { originPeerId: sessionId, msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [
                 {

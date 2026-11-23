@@ -126,6 +126,7 @@ export function computeALOutboundDispatch<TPrepared>(
             claimedCanonical: options.claimedOutboxEntry,
             senderId: read.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
+            fencesSender: true,
             message: toALOutboundMessageFence(
                 { originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
                 read.messageVersion,

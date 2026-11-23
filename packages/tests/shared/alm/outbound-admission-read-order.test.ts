@@ -180,6 +180,7 @@ describe('outbound admission observation order', () => {
             await store.commitBundle({
                 senderId: message.id.senderId,
                 expectedVersion: 1,
+                fencesSender: true,
                 message: { originPeerId: message.id.senderId, msgId: message.id.msgId, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
                 durableEffects: [],
@@ -258,6 +259,7 @@ describe('outbound admission observation order', () => {
             await store.commitBundle({
                 senderId: message.id.senderId,
                 expectedVersion: 1,
+                fencesSender: true,
                 message: { originPeerId: message.id.senderId, msgId: message.id.msgId, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [{ kind: 'delete-sent-message', msgId: message.id.msgId }],
                 durableEffects: [],

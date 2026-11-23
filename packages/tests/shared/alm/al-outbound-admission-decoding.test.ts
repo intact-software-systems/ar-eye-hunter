@@ -268,6 +268,7 @@ describe('outbound admission persisted-record validation', () => {
         expect(await peekOutboundWorkReadyAt(backend.workQueue, store.namespace)).toBeUndefined();
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
+            fencesSender: true,
             message: { originPeerId: msg.id.senderId, msgId: msg.id.msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: [{ effectId: effect.effectId, payload: effect.payload }],

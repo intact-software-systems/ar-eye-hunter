@@ -182,6 +182,7 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: 'outbound-conflict', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{
                 kind: 'set-msg-owner',
@@ -245,6 +246,7 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: 'outbound-error', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{
                 kind: 'set-msg-owner',

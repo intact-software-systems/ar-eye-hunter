@@ -38,6 +38,7 @@ export function toALOutboundMessageEndBundle<TPrepared>(
     return {
         senderId: input.senderId,
         expectedVersion: input.expectedVersion,
+        fencesSender: true,
         message: toALOutboundMessageFence(
             { originPeerId: input.senderId, msgId },
             input.messageVersion,
@@ -63,9 +64,10 @@ export type ALOutboundMessageEndRead = Pick<
 export function toALOutboundReadCommitFences(
     message: ALOutboundPendingAckRef,
     read: Pick<ALOutboundMessageEndRead, 'storedMessage' | 'clientRecord' | 'messageVersion'>
-): Pick<ALOutboundCommitBundle<never>, 'expectedVersion' | 'message'> {
+): Pick<ALOutboundCommitBundle<never>, 'expectedVersion' | 'fencesSender' | 'message'> {
     return {
         expectedVersion: read.clientRecord?.version,
+        fencesSender: true,
         message: toALOutboundMessageFence(message, read.messageVersion, read.storedMessage?.reference.expiresAtMs)
     };
 }

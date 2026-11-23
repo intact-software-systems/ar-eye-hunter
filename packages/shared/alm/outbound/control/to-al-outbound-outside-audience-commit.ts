@@ -49,6 +49,7 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
         bundle: {
             senderId: receipt.originPeerId,
             expectedVersion: input.clientRecord?.version,
+            fencesSender: true,
             message: toALOutboundMessageFence(receipt, input.messageVersion, stored.reference.expiresAtMs),
             mutations: [{
                 kind: 'set-pending-ack',

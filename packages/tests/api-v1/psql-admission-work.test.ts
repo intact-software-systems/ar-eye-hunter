@@ -425,6 +425,7 @@ describe('PostgreSQL outbound admission', () => {
         await stores.admissionStore.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: msg.id.msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [
                 {

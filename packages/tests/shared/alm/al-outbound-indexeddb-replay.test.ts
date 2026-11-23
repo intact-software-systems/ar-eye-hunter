@@ -53,6 +53,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const { admissionStore, stores, backend, port, peek } = createAdmission(storage);
         await admissionStore.commitBundle({
             senderId: 'self',
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: 'malformed', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: ['malformed', 'valid'].map((msgId) => ({
@@ -321,6 +322,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const nowMs = Date.now();
         await admissionStore.commitBundle({
             senderId: msg.id.senderId,
+            fencesSender: true,
             message: { originPeerId: msg.id.senderId, msgId: msg.id.msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: [{ effectId: 'lease-fence', retryAtMs: nowMs, payload: { kind: 'ack-timeout', msgId: msg.id.msgId } }],
@@ -418,6 +420,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const { admissionStore, backend, port, peek } = createAdmission(storage);
         await admissionStore.commitBundle({
             senderId: 'self',
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: 'exhausted', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: [{ effectId: 'exhausted', payload: { kind: 'ack-timeout', msgId: 'exhausted' } }],
@@ -449,6 +452,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         const attemptLimit = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts;
         await admissionStore.commitBundle({
             senderId: 'self',
+            fencesSender: true,
             message: { originPeerId: 'self', msgId: 'crashed-last-attempt', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: [{ effectId: 'crashed-last-attempt', payload: { kind: 'ack-timeout', msgId: 'crashed-last-attempt' } }],

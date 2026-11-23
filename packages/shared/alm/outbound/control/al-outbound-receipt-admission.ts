@@ -45,7 +45,8 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
  * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
  * an outbox-fanned message. At a browser origin whose carriers share their heads, an `admitted` receipt
  * also moves the recipients it names on the shared head and resolves the room floor (S4ii-R7). One
- * conditional commit fenced on the origin's version; a conflict starts a fresh read, and the few attempts
+ * conditional commit fenced on the message's version, and on the origin's version only when it reads those shared-head
+ * rows (ruling 24); a conflict starts a fresh read, and the few attempts
  * bound a receipt racing the origin's own writes. A receipt that runs out of them is retained as work and
  * replayed until its deadline, since the row would otherwise keep waiting on acknowledgements the receipt
  * already counted.
@@ -178,6 +179,8 @@ function toReceiptCommitBundle<TPrepared>(
     return {
         senderId: receipt.originPeerId,
         expectedVersion: read.clientRecord?.version,
+        // Only the shared-head positions an admitted receipt answers are rows the sender's other messages share.
+        fencesSender: read.trackPositions !== undefined,
         message: toALOutboundMessageFence(receipt, read.messageVersion, stored?.reference.expiresAtMs),
         mutations: [
             toALOutboundReceiptMutation(write, receipt),

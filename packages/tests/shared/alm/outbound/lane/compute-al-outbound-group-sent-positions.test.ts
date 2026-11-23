@@ -103,6 +103,7 @@ describe('the sent positions of one commit group', () => {
         const bundle = (mutations: readonly ALOutboundAdmissionMutation[]) =>
             ({
                 senderId: 'a',
+                fencesSender: true,
                 message: { originPeerId: 'a', msgId: 'event', expectedVersion: undefined, expiresAtMs: undefined },
                 mutations,
                 durableEffects: [],
