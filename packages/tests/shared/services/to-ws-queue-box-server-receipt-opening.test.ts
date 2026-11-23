@@ -70,6 +70,16 @@ describe('the frozen audience a receipt expects', () => {
         expect(toWsQueueBoxServerFrozenAudience(narrowed, 'a', ['a', 'b', 'c', 'd', 'e'])).toEqual(['b', 'e']);
     });
 
+    it('is every authorized session but its origin for a message with no targets or an unfrozen multicast', () => {
+        // Pins the broadcast filter reaching a message that is not a broadcast: only the origin is left out.
+        const untargeted: ALMessage = { ...message(ROOM_BROADCAST), targets: undefined };
+        const unfrozen = message({ mode: 'multicast', groupRef: ROOM });
+        expect([
+            toWsQueueBoxServerFrozenAudience(untargeted, 'a', ['a', 'b', 'c']),
+            toWsQueueBoxServerFrozenAudience(unfrozen, 'a', ['a', 'b', 'c'])
+        ]).toEqual([['b', 'c'], ['b', 'c']]);
+    });
+
     it('names an authorized session once', () => {
         // Pins that an audience listing a session twice does not make the receipt wait for two of its ACKs.
         expect(toWsQueueBoxServerFrozenAudience(message(ROOM_BROADCAST), 'a', ['b', 'c', 'b', 'a'])).toEqual(['b', 'c']);
@@ -120,6 +130,14 @@ describe('the opening of a re-sent copy', () => {
                 copy({ message: message(ROOM_BROADCAST, NOW_MS - AL_RECEIPT_RECORD_WINDOW_MS) })
             )
         ]).toEqual([undefined, undefined, undefined, undefined]);
+    });
+
+    it('opens a copy whose own deadline lies exactly at the window\'s edge', () => {
+        // Pins the guard refusing only a deadline beyond the window (`>`), as the record's own opening validator does: a
+        // copy naming the edge itself opens its head there, not nothing.
+        const atEdge = { ownDeadlineAtMs: NOW_MS + AL_RECEIPT_RECORD_WINDOW_MS, ackTimeoutMs: ACK_TIMEOUT_MS };
+        expect(toWsQueueBoxServerCopyReceiptOpening(copy({ terms: atEdge }))?.deadlineAtMs)
+            .toBe(NOW_MS + AL_RECEIPT_RECORD_WINDOW_MS);
     });
 
     it('opens nothing for a row that freezes to nobody', () => {
