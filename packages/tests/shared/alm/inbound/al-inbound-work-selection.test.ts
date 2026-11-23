@@ -290,13 +290,16 @@ describe('ALInboundWorkSelector probe walk', () => {
     it('reads one rotation\'s pages and one eligibility per held row on an idle pass over a held backlog', async () => {
         const heldRows = 40;
         const fixture = await createDispatchPageFixture(heldRows);
-        const readReadiness = vi.spyOn(fixture.delivery, 'readReadiness')
-            .mockResolvedValue({ ready: false, observed: undefined });
+        const eligibilityReads: string[] = [];
+        vi.spyOn(fixture.delivery, 'readReadiness').mockImplementation(async (effect) => {
+            eligibilityReads.push(effect.effectId);
+            return { ready: false, observed: undefined };
+        });
         const scanned = recordScannedStatuses(fixture.port);
         // The first pass leaves the rotation at the head of NEW, where every idle pass after it starts.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, Date.now())).toBeUndefined();
         scanned.length = 0;
-        readReadiness.mockClear();
+        eligibilityReads.length = 0;
 
         expect(await fixture.selector.readNextReadyAtMs(fixture.port, Date.now())).toBeUndefined();
 
@@ -305,7 +308,8 @@ describe('ALInboundWorkSelector probe walk', () => {
             EntityStatus.RETRY,
             EntityStatus.RESERVED
         ]);
-        expect(readReadiness).toHaveBeenCalledTimes(heldRows);
+        expect(eligibilityReads, 'one eligibility read per held row').toHaveLength(heldRows);
+        expect(new Set(eligibilityReads).size).toBe(heldRows);
     });
 
     it('ends its walk as due when a commit drops the page it reads, though commits keep landing', async () => {
