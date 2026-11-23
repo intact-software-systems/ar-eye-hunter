@@ -15,14 +15,16 @@ import type {
 
 import {
     LIVE_RTC_CLOSE_RESULT_WAIT_MS,
-    LIVE_RTC_RESET_RESULT_WAIT_MS,
+    LIVE_RTC_RESET_RESULT_WAIT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
+import {
     MATRIX_INBOX_TIMEOUT_MS,
     MATRIX_SEND_TIMEOUT_MS,
     NACK_PROBE_SEND_TIMEOUT_MS,
     NACK_RECEIPT_POLL_TIMEOUT_MS,
     STALE_SEND_TIMEOUT_MS,
     WS_OPEN_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-delivery-waits.ts';
 import {
     createGroupFormationLifecycleDriver,
     retainLiveRtcFormationFailure,

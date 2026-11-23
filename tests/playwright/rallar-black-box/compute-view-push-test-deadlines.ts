@@ -1,6 +1,6 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import { toRecommendedTerminalTimeoutMs } from './distributed-recipes/to-recommended-terminal-timeout-ms.ts';
 import {
     BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,

@@ -1,4 +1,4 @@
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import {
     computeTwoAgentConnectResultWaitMs,
     TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS,

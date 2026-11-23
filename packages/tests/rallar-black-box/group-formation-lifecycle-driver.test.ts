@@ -12,7 +12,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort

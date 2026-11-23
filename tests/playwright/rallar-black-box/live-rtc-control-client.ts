@@ -48,7 +48,7 @@ import {
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts';
 import {
     jsonRecord,
     normalizeJson,

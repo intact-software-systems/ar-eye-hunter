@@ -14,7 +14,7 @@ import type { RallarBlackBoxTestFormationCommandCommand } from '../../../package
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '../../../packages/shared/api/group-types.ts';
 
-import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import { FORMATION_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import {
     openLiveRtcBrowserAgent,
     type LiveRtcBrowserAgentConfig,

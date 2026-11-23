@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    FORMATION_CONNECT_RESULT_WAIT_MS,
+    FORMATION_RUN_BOUNDED_WAITS_MS,
+    FORMATION_RUN_CONNECT_RESULT_WAIT_MS
+} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
+import {
     CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     RETENTION_RECONNECT_CYCLES
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts';
-import {
-    FORMATION_CONNECT_RESULT_WAIT_MS,
-    FORMATION_RUN_BOUNDED_WAITS_MS,
-    FORMATION_RUN_CONNECT_RESULT_WAIT_MS
-} from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 
 const MARGIN = 60_000;
 /** Each of a trio's agents waits 30 s for its registration as it opens, one after another. */

@@ -4,7 +4,7 @@ import {
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin-ms.ts';
 import {
     CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
     DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,

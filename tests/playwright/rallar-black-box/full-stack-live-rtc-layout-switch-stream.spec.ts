@@ -15,7 +15,7 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
+import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-formation-waits.ts';
 import {
     computeLiveRtcLayoutSwitchEvidence,
     countLiveRtcMissingFrames,

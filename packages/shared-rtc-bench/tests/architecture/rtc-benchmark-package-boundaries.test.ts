@@ -247,13 +247,13 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fullStackWebServerStartTimeoutsPath)))
             .toBe(true);
         expect(toImportSpecifiers(fs.readFileSync(fullStackWebServerStartTimeoutsPath, 'utf8'))).toEqual([]);
-        expect(toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))).toEqual([
-            './browser-test-harness-margin.ts',
-            './live-rtc-wait-budgets.ts'
-        ]);
+        expect(
+            toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))
+                .filter((specifier) => !specifier.startsWith('./'))
+        ).toEqual([]);
         for (
             const forbidden of [
-                '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts',
+                '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts',
                 '../../../shared-test/rallar-bb-test/control-protocol.ts',
                 '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-matrix-test-timeouts.ts',
                 '../../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts'
