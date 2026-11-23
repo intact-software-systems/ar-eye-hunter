@@ -33,9 +33,15 @@ import {
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts';
 import { toRtcB06AttemptTestTimeoutMs } from '../../shared-rtc-bench/baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
 
+interface WorkflowMatrix {
+    readonly case?: readonly string[];
+    readonly include?: readonly Readonly<Record<string, string | number>>[];
+}
+
 interface WorkflowJob {
-    readonly 'timeout-minutes'?: number;
+    readonly 'timeout-minutes'?: number | string;
     readonly env?: Readonly<Record<string, string>>;
+    readonly strategy?: Readonly<{ matrix?: WorkflowMatrix; }>;
     readonly steps?: readonly Readonly<{ name?: string; run?: string; }>[];
 }
 
@@ -79,9 +85,9 @@ const E2E_LIVE_RECIPES_JOB_SETUP_MS = 5 * 60_000;
 const POSTGRES_INTEGRATION_JOB_SETUP_MS = 12 * 60_000;
 
 /**
- * The B06 diagnostic job's work besides its three Playwright invocations' tests: checkout, toolchain, `npm ci`,
- * Chromium and the observation tooling check, then each invocation starting its API, SPA and control web servers. The
- * B06 capture job, which shares that setup, spent 60 s on it in run 34573688470 and 86 s in run 39110663949.
+ * A B06 diagnostic leg's work besides its Playwright invocation's tests: checkout, toolchain, `npm ci`, Chromium and
+ * the observation tooling check, then the invocation starting its API, SPA and control web servers. The B06 capture
+ * job, which shares that setup, spent 60 s on it in run 34573688470 and 86 s in run 39110663949.
  */
 const B06_DIAGNOSTIC_JOB_SETUP_MS = 10 * 60_000;
 
@@ -128,20 +134,52 @@ function readJob(workflowPath: string, job: string): WorkflowJob {
 }
 
 function readJobTimeoutMs(workflowPath: string, job: string): number {
-    return (readJob(workflowPath, job)['timeout-minutes'] ?? 0) * 60_000;
+    return Number(readJob(workflowPath, job)['timeout-minutes'] ?? 0) * 60_000;
+}
+
+/** The limit GitHub gives the diagnostic leg of one case: the job's limit names the case's matrix entry. */
+function readDiagnosticLegTimeoutMs(caseId: string): number {
+    const diagnostic = readJob(B06_WORKFLOW_PATH, 'diagnostic');
+    const entry = diagnostic.strategy?.matrix?.include?.find((include) => include.case === caseId);
+
+    expect(diagnostic['timeout-minutes']).toBe('${{ matrix.timeout-minutes }}');
+    return Number(entry?.['timeout-minutes'] ?? 0) * 60_000;
+}
+
+/**
+ * Without a predeclared attempt the matrix spec runs its proof in every invocation, and beside it the one test a case's
+ * environment enables; the default case enables none.
+ */
+function computeDiagnosticLegTestsMs(caseId: string): number {
+    return caseId === 'default'
+        ? LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS
+        : LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + toRtcB06AttemptTestTimeoutMs(caseId);
+}
+
+/** The catalog declares each B06 case once per environment. */
+function readRtcB06CaseIds(): readonly string[] {
+    return [
+        ...new Set(
+            RTC_BASELINE_WORKLOAD_CATALOG.find((workload) => workload.workloadId === 'RTC-B06')!.cases
+                .map((entry) => entry.caseId)
+        )
+    ];
 }
 
 describe('jobs that run tests whose timeouts are derived', () => {
-    // The diagnostic job runs the matrix spec three times: alone, with every scenario, and with the retention soak; the
-    // proof runs in each. With every bounded wait counted, the three no longer fit GitHub's six-hour maximum, which no
-    // limit can raise; this pins that shortfall until the maintainer rules on how the diagnostic is split or bounded.
-    it('records that the B06 diagnostic job\'s three invocations outlast the hosted maximum', () => {
-        const casesMs = 3 * LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS + LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS +
-            LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS;
+    // The three cases together outlast GitHub's six-hour maximum, so each runs in a leg of its own.
+    it('runs one B06 case in each diagnostic leg', () => {
+        const matrix = readJob(B06_WORKFLOW_PATH, 'diagnostic').strategy?.matrix;
 
-        expect(readJobTimeoutMs('.github/workflows/rtc-b06-performance-observation.yml', 'diagnostic'))
-            .toBe(GITHUB_HOSTED_JOB_MAXIMUM_MS);
-        expect(B06_DIAGNOSTIC_JOB_SETUP_MS + casesMs).toBeGreaterThan(GITHUB_HOSTED_JOB_MAXIMUM_MS);
+        expect(matrix?.case).toEqual(readRtcB06CaseIds());
+        expect(matrix?.include?.map((include) => include.case)).toEqual(readRtcB06CaseIds());
+    });
+
+    it.each(readRtcB06CaseIds())('gives the B06 diagnostic leg of %s room for its setup and its tests', (caseId) => {
+        const legTimeoutMs = readDiagnosticLegTimeoutMs(caseId);
+
+        expect(legTimeoutMs).toBeGreaterThan(B06_DIAGNOSTIC_JOB_SETUP_MS + computeDiagnosticLegTestsMs(caseId));
+        expect(legTimeoutMs).toBeLessThanOrEqual(GITHUB_HOSTED_JOB_MAXIMUM_MS);
     });
 
     // The lifecycle test runs after the app browser and in-memory full-stack tests in one job.
@@ -200,8 +238,7 @@ describe('the B06 capture job deadline', () => {
     });
 
     it('checks each declared B06 attempt against the derived timeout of the test its case runs', () => {
-        const caseIds = RTC_BASELINE_WORKLOAD_CATALOG.find((workload) => workload.workloadId === 'RTC-B06')!.cases
-            .map((entry) => entry.caseId);
+        const caseIds = readRtcB06CaseIds();
 
         expect(Object.fromEntries(caseIds.map((caseId) => [caseId, toRtcB06AttemptTestTimeoutMs(caseId)]))).toEqual({
             default: LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
