@@ -218,9 +218,11 @@ async function computeArrival(
         nowMs,
         prePlan: peer.planner(msg, source, { nowMs })
     });
-    const plan = peer.planner(msg, source, computeALInboundPlanningObservations(read));
+    const plan = peer.planner(msg, source, computeALInboundPlanningObservations(read, false));
     const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return computeALInboundAdmission({
+        originAuthenticated: false,
+        readmission: false,
         read,
         plan,
         facts,

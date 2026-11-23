@@ -32,6 +32,8 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -51,11 +53,6 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
-
-interface ResourceInboxStatusRow {
-    readonly ri_type_id: string;
-    readonly ri_status: string;
-}
 
 interface NumericCountRow {
     readonly count: string | number;
@@ -77,11 +74,6 @@ interface ResourceInboxForeignKeyRow {
     readonly ri_topic_id: string;
     readonly ri_resource_id: string;
     readonly fk_ext_bank_id: string;
-}
-
-interface ResourceInboxTopicTypeRow {
-    readonly ri_topic_id: string;
-    readonly ri_type_id: string;
 }
 
 interface NumericValueRow {
@@ -392,8 +384,8 @@ test(
                 'Vertical Group'
             );
             assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 3);
-            const beforeSummary = await sql<ResourceInboxStatusRow[]>`
-      select ri_type_id, ri_status from resource_inbox order by ri_row_id
+            const beforeSummary = await sql<ResourceInboxLifecycleRow[]>`
+      select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource from resource_inbox order by ri_row_id
     `;
             assert.equal(
                 beforeSummary.filter((row) =>
@@ -409,7 +401,15 @@ test(
                 ).length,
                 3
             );
-            assert.equal(beforeSummary.filter((row) => row.ri_type_id === 'WS_OUTBOX').length, 0);
+            const notified = beforeSummary.filter(row => row.ri_type_id === 'WS_OUTBOX').map(row => {
+                assert.equal(row.ri_topic_id, AppTopics.viewInvalidated);
+                assert.equal(row.ri_status, EntityStatus.NEW);
+                const notice = decodeViewInvalidationMessage(decodePersistedALMessage(row.ri_resource));
+                assert.ok(notice.resource === 'room-access');
+                assert.equal(notice.groupId, ref.groupId);
+                return notice.principalId;
+            });
+            assert.deepEqual(notified.toSorted(), ['alice', 'bob', 'carol']);
             assert.equal(
                 Number(
                     (await sql<NumericCountRow[]>`
@@ -563,6 +563,13 @@ test(
                 workspaceId: 'main',
                 groupId: 'fence-group'
             };
+            const readDownstream = () => sql<ResourceInboxLifecycleRow[]>`
+                select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource from resource_inbox
+                where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX') and ri_topic_id <> ${GROUP_PRESENCE_SUMMARY_TOPIC}
+                order by ri_row_id
+            `;
+            const priorDownstream = await readDownstream();
+            assert.deepEqual(priorDownstream.map(row => [row.ri_type_id, row.ri_topic_id]), [['WS_OUTBOX', AppTopics.viewInvalidated]]);
             const summaryBefore = await groups.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
@@ -590,13 +597,7 @@ test(
             const stillReserved = await resourceInbox.entries.findAnyByKey(key);
             assert.equal(stillReserved?.status, EntityStatus.RESERVED);
             assert.equal(stillReserved?.dequeueAudit.attempts, 1);
-            const downstream = await sql<ResourceInboxTopicTypeRow[]>`
-      select ri_topic_id, ri_type_id
-      from resource_inbox
-      where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX')
-        and ri_topic_id <> ${GROUP_PRESENCE_SUMMARY_TOPIC}
-    `;
-            assert.deepEqual(downstream, []);
+            assert.deepEqual(await readDownstream(), priorDownstream);
         });
     }
 );

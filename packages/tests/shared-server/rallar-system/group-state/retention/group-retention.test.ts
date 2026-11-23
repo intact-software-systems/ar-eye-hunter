@@ -8,9 +8,11 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GROUPS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupRetentionService } from '@shared-server/rallar-system/group-state/retention/group-retention-service.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { presenceConnectEnqueue } from '../inbox/group-state-inbox-presence-fixtures.ts';
 import {
     createAuthorityHarness,
@@ -28,6 +30,99 @@ interface RetentionFixture {
 }
 
 describe('temporary room retention decisions', () => {
+    it('protects an empty court until its automatic successor has finished, including after a delayed worker', async () => {
+        const fixture = await createFixture();
+        const start = fixture.nowEpochMs;
+        const clock = {
+            name: 'match', revision: 1, startedAtRevision: 1, phase: 'warmup', status: 'running',
+            startedBy: 'director', startedAtEpochMs: start, endsAtEpochMs: start + 2_000,
+            successor: { phase: 'play', durationMs: 10_000 }
+        };
+        await storeClock(fixture, clock);
+        await reconcile(fixture, 'empty-court');
+        fixture.nowEpochMs += 4_000;
+        await reconcile(fixture, 'delayed-successor');
+        expect((await group(fixture)).status).toBe('active');
+
+        await storeClock(fixture, {
+            ...clock, phase: 'play', startedBy: 'automatic', revision: 2, startedAtRevision: 2,
+            startedAtEpochMs: start + 2_000, endsAtEpochMs: start + 12_000, successor: null
+        });
+        fixture.nowEpochMs = start + 11_999;
+        await reconcile(fixture, 'still-playing');
+        expect((await group(fixture)).status).toBe('active');
+        fixture.nowEpochMs += 1;
+        await reconcile(fixture, 'match-ended');
+        expect((await group(fixture)).status).toBe('archived');
+    });
+
+    it.each([[undefined, 3_600_000], [5_000, 5_000]] as const)(
+        'starts the paused-room window at the later of empty observation and pause, with override %s',
+        async (override, duration) => {
+            const fixture = await createFixture(true, override);
+            await reconcile(fixture, 'empty-court');
+            fixture.nowEpochMs += 20_000;
+            const pause = fixture.nowEpochMs;
+            await storeClock(fixture, { ...pausedClock(fixture), successor: { phase: 'play', durationMs: 10_000 } });
+            fixture.nowEpochMs = pause + duration - 1;
+            await reconcile(fixture, 'still-recoverable');
+            expect((await group(fixture)).status).toBe('active');
+            fixture.nowEpochMs += 1;
+            await reconcile(fixture, 'paused-window-expired');
+            expect((await group(fixture)).status).toBe('archived');
+        }
+    );
+
+    it('starts a fresh paused window after a player returns and leaves, even without a configured successor', async () => {
+        const fixture = await createFixture(true, 5_000);
+        await storeClock(fixture, pausedClock(fixture));
+        await reconcile(fixture, 'first-empty');
+        fixture.nowEpochMs += 4_000;
+        await connectOwner(fixture);
+        await reconcile(fixture, 'occupied');
+        expect((await group(fixture)).emptySinceEpochMs).toBeNull();
+        fixture.nowEpochMs += 1_500;
+        await disconnectOwner(fixture, fixture.nowEpochMs);
+        await reconcile(fixture, 'empty-again');
+        fixture.nowEpochMs += 4_999;
+        await reconcile(fixture, 'new-window-open');
+        expect((await group(fixture)).status).toBe('active');
+        fixture.nowEpochMs += 1;
+        await reconcile(fixture, 'new-window-ended');
+        expect((await group(fixture)).status).toBe('archived');
+    });
+
+    it.each([4_999, 5_000])('enforces the remaining paused window on arrival %i ms after lease expiry', async (elapsedMs) => {
+        const fixture = await createFixture(true, 5_000);
+        await storeClock(fixture, pausedClock(fixture));
+        await connectOwner(fixture, 1_000);
+        const { service, reader, sessions, runtimeRepository, repository } = fixture.harness;
+        const runtime = createTestGroupStateRuntime({
+            runtimeRepository, now: () => fixture.nowEpochMs, serviceId: 'expiry'
+        });
+        fixture.nowEpochMs += 1_000 + elapsedMs;
+        expect(await runtime.maintenance.expireExpiredPresenceSessions(fixture.nowEpochMs)).toHaveLength(1);
+        const returning = presenceConnectEnqueue(REF.groupId, 'owner', fixture.nowEpochMs);
+        if (returning.type !== AppInboxType.GROUP_PRESENCE_CONNECT) throw new Error('Expected presence entry');
+        const result = await processAuthenticated({
+            service, reader, authority: sessions.owner,
+            input: {
+                ...returning, resourceId: 'return-to-court',
+                data: { ...returning.data, request: { ...returning.data.request, requestId: 'return-to-court', generationId: 'returning' } }
+            }
+        });
+        const session = await repository.findPresenceEntry({ ...REF, sessionId: 'owner-session' });
+        if (elapsedMs < 5_000) {
+            expect(result.left).toBeUndefined();
+            expect(session?.value).toMatchObject({ status: 'active', generationId: 'returning' });
+        } else {
+            expect(result.left?.code).toBe('group-mutation-rejected');
+            expect(session?.value.status).toBe('disconnected');
+        }
+        await reconcile(fixture, 'maintenance-recovered');
+        expect((await group(fixture)).status).toBe(elapsedMs < 5_000 ? 'active' : 'archived');
+    });
+
     it('keeps an empty scheduled room through the no-show window and then starts the full grace', async () => {
         const fixture = await createFixture();
         const startsAtEpochMs = fixture.nowEpochMs + 3_600_000;
@@ -147,28 +242,7 @@ describe('temporary room retention decisions', () => {
         await reconcile(fixture, 'first');
         const original = await group(fixture);
         await connectOwner(fixture);
-        const result = await processAuthenticated({
-            service: fixture.harness.service,
-            reader: fixture.harness.reader,
-            authority: fixture.harness.sessions.owner,
-            input: {
-                traceId: 'trace-test-fixture',
-                type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
-                resourceId: 'old-disconnect',
-                contextId: REF.groupId,
-                data: {
-                    scope: SCOPE,
-                    groupId: REF.groupId,
-                    sessionId: 'owner-session',
-                    request: {
-                        requestId: 'old-disconnect',
-                        generationId: 'owner-generation',
-                        disconnectedAtEpochMs: fixture.harness.nowEpochMs
-                    }
-                }
-            }
-        });
-        expect(result.left).toBeUndefined();
+        await disconnectOwner(fixture);
         fixture.nowEpochMs += 1_000;
 
         await reconcile(fixture, 'changed-empty');
@@ -261,9 +335,9 @@ describe('temporary room retention decisions', () => {
     });
 });
 
-async function createFixture(temporary = true): Promise<RetentionFixture> {
-    const harness = await createAuthorityHarness(['owner']);
-    const clock = { nowEpochMs: harness.nowEpochMs };
+async function createFixture(temporary = true, pausedTimelineRetentionMs?: number): Promise<RetentionFixture> {
+    const clock = { nowEpochMs: Date.now() };
+    const harness = await createAuthorityHarness(['owner'], { now: () => clock.nowEpochMs });
     const service = new GroupRetentionService({
         runtime: harness.runtimeRepository,
         repository: harness.repository,
@@ -291,7 +365,8 @@ async function createFixture(temporary = true): Promise<RetentionFixture> {
                     kind: 'room',
                     joinMode: 'open',
                     createdByPrincipalId: 'owner',
-                    ...(temporary ? { retention: { mode: 'temporary', reconnectGraceMs: 1_000 } } : {})
+                    ...(temporary ? { retention: { mode: 'temporary', reconnectGraceMs: 1_000,
+                        ...(pausedTimelineRetentionMs === undefined ? {} : { pausedTimelineRetentionMs }) } } : {})
                 }
             }
         }
@@ -317,13 +392,52 @@ async function group(fixture: RetentionFixture): Promise<Group> {
     return found;
 }
 
-async function connectOwner(fixture: RetentionFixture): Promise<void> {
+async function connectOwner(fixture: RetentionFixture, leaseMs = 60_000): Promise<void> {
     const enqueue = presenceConnectEnqueue(REF.groupId, 'owner', fixture.harness.nowEpochMs);
+    if (enqueue.type !== AppInboxType.GROUP_PRESENCE_CONNECT) throw new Error('Expected presence entry');
     const result = await processAuthenticated({
         service: fixture.harness.service,
         reader: fixture.harness.reader,
         authority: fixture.harness.sessions.owner,
-        input: enqueue
+        input: { ...enqueue, data: { ...enqueue.data, request: { ...enqueue.data.request, expiresAtEpochMs: fixture.harness.nowEpochMs + leaseMs } } }
     });
     expect(result.left).toBeUndefined();
+}
+
+async function disconnectOwner(fixture: RetentionFixture, disconnectedAtEpochMs = fixture.harness.nowEpochMs): Promise<void> {
+    const result = await processAuthenticated({
+        service: fixture.harness.service,
+        reader: fixture.harness.reader,
+        authority: fixture.harness.sessions.owner,
+        input: {
+            traceId: 'trace-test-fixture',
+            type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+            resourceId: 'disconnect-owner',
+            contextId: REF.groupId,
+            data: {
+                scope: SCOPE,
+                groupId: REF.groupId,
+                sessionId: 'owner-session',
+                request: {
+                    requestId: 'disconnect-owner',
+                    generationId: 'owner-generation',
+                    disconnectedAtEpochMs
+                }
+            }
+        }
+    });
+    expect(result.left).toBeUndefined();
+}
+
+async function storeClock(fixture: RetentionFixture, clock: ApiJsonObject): Promise<void> {
+    const current = await group(fixture);
+    await fixture.harness.repository.putGroup({ ...current, metadata: { ...current.metadata, rallarRoomClocks: [clock] } });
+}
+
+function pausedClock(fixture: RetentionFixture): ApiJsonObject {
+    return {
+        name: 'match', phase: 'warmup', revision: 2, startedAtRevision: 1,
+        startedBy: 'director', startedAtEpochMs: fixture.harness.nowEpochMs, status: 'paused',
+        remainingMs: 40_000, pausedAtEpochMs: fixture.nowEpochMs, successor: null
+    };
 }

@@ -2,6 +2,8 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { newALBroadcastMessage, newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { RoomTimelineObservation } from '@shared-web/browser/rallar.ts';
+import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
@@ -25,9 +27,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function response(schedule: RoomSchedule): Response {
+function response(record: RoomSchedule | RoomTimeline): Response {
     const snapshot = createRoomSnapshot(room.groupId, ['session-1']);
-    return Response.json({ ...snapshot, group: { ...snapshot.group, metadata: { rallarRoomClocks: [schedule] } } }, {
+    return Response.json({ ...snapshot, group: { ...snapshot.group, metadata: { rallarRoomClocks: [record] } } }, {
         headers: {
             'cache-control': 'no-store',
             'rallar-state-source': 'durable',
@@ -41,6 +43,18 @@ async function deliverServerMessage(message: ALMessage) {
     const { webSocketQueueBox } = getRoomWorkflowMocks().context.middleware;
     const inbox = vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mock.calls.at(-1)![1];
     await inbox.onMessage(message, toResourceEntry(message.payload.typeId, message));
+}
+
+async function notify(resource: { resource: 'room-access' } | { resource: 'room-program'; name: string }, groupId = room.groupId) {
+    const topic = AppTopics.viewInvalidated;
+    const scope = { applicationId: room.applicationId, workspaceId: room.workspaceId };
+    const principalId = 'principal-1';
+    const changeId = crypto.randomUUID();
+    const message = newALUntargetedMessage({
+        createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, principalId, changeId), typeId: topic,
+        resource: { version: 1, ...resource, scope, groupId, principalId, changeId }
+    });
+    await deliverServerMessage({ ...message, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } } });
 }
 
 it('uses the captured director and program revision for both transitions and their retries', async () => {
@@ -159,39 +173,85 @@ it('publishes progress during ongoing notices, coalesces each burst, and fences 
     });
     const observed: RoomSchedule.Observation[] = [];
     const stop = facade.rooms.watchSchedule(room, 'court', value => observed.push(value));
-    async function notify(reason: 'program-changed' | 'access-changed') {
-        const topic = AppTopics.viewInvalidated;
-        const scope = { applicationId: room.applicationId, workspaceId: room.workspaceId };
-        const principalId = 'principal-1';
-        const changeId = crypto.randomUUID();
-        const message = newALUntargetedMessage({
-            createdAtEpochMs: Date.now(), senderId: 'server', route: newALRoute(topic, principalId, changeId), typeId: topic,
-            resource: { version: 1, resource: 'room-program', scope, groupId: room.groupId, principalId, changeId, reason }
-        });
-        await deliverServerMessage({ ...message, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } } });
-    }
     try {
+        await notify({ resource: 'room-program', name: 'playoffs' });
+        reads[0]!.supply(response(paused));
+        await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule: paused }));
+        expect(reads).toHaveLength(1);
+        await notify({ resource: 'room-program', name: 'court' });
         for (const [index, schedule] of [paused, resumed].entries()) {
-            await notify('program-changed');
-            await notify('program-changed');
-            expect(reads).toHaveLength(index + 1);
-            expect(reads[index]!.signal.aborted).toBe(false);
-            reads[index]!.supply(response(schedule));
-            await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule }));
+            await notify({ resource: 'room-program', name: 'court' });
+            await notify({ resource: 'room-program', name: 'court' });
             expect(reads).toHaveLength(index + 2);
+            expect(reads[index + 1]!.signal.aborted).toBe(false);
+            reads[index + 1]!.supply(response(schedule));
+            await vi.waitFor(() => expect(observed.at(-1)).toEqual({ status: 'current', schedule }));
+            expect(reads).toHaveLength(index + 3);
         }
-        await notify('access-changed');
-        expect(reads[2]!.signal.aborted).toBe(true);
+        await notify({ resource: 'room-access' });
+        expect(reads[3]!.signal.aborted).toBe(true);
         expect(observed.at(-1)).toEqual({ status: 'stale', schedule: null });
         const afterRevocation = observed.length;
-        reads[2]!.supply(response({ ...resumed, revision: 4 }));
-        reads[3]!.supply(Response.json({ error: 'Forbidden' }, { status: 403 }));
+        reads[3]!.supply(response({ ...resumed, revision: 4 }));
+        reads[4]!.supply(Response.json({ error: 'Forbidden' }, { status: 403 }));
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(observed.slice(afterRevocation).every(value => value.schedule === null)).toBe(true);
-        expect(reads).toHaveLength(4);
+        expect(reads).toHaveLength(5);
     }
     finally {
         stop();
         await facade.disconnect();
     }
+});
+
+it('updates the named timeline from its account notice and clears it when room access changes', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    await facade.connect();
+    vi.spyOn(facade.ws, 'status').mockReturnValue({ ...facade.ws.status(), isOpen: true });
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    vi.stubGlobal('navigator', { onLine: true });
+
+    const occurrence = { name: 'match', phase: 'halftime', startedAtRevision: 2 };
+    let stored: RoomTimeline | null = { ...occurrence, revision: 2, status: 'running', endsAtEpochMs: 180_000 };
+    const read = vi.fn(async () => stored ? response(stored) : Response.json({ error: 'Forbidden' }, { status: 403 }));
+    vi.stubGlobal('fetch', read);
+    let observed: RoomTimelineObservation | undefined;
+    const stop = facade.rooms.watchTimeline(room, 'match', value => { observed = value; });
+    try {
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'current', timeline: stored }));
+        await notify({ resource: 'room-program', name: 'practice' });
+        await notify({ resource: 'room-program', name: 'match' }, 'another-room');
+        await notify({ resource: 'room-access' }, 'another-room');
+        expect(read).toHaveBeenCalledTimes(1);
+
+        stored = { ...occurrence, revision: 4, status: 'paused', remainingMs: 210_000 };
+        await notify({ resource: 'room-program', name: 'match' });
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'current', timeline: stored }));
+        stored = null;
+        await notify({ resource: 'room-access' });
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'stale', timeline: null }));
+    }
+    finally {
+        stop();
+        await facade.disconnect();
+    }
+});
+
+it('confirms the requested successor on the same occurrence when setting or cancelling it', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const { rooms } = createRallarFacade();
+    const successor = { phase: 'period-one', durationMs: 600_000 };
+    const control = { name: 'match', expectedRevision: 2, expectedDirectorEpoch: 7 };
+    const occurrence = {
+        name: 'match', phase: 'warmup', startedAtRevision: 1, startedAtEpochMs: 1000,
+        startedBy: 'director' as const, revision: 3, status: 'paused' as const, remainingMs: 40000
+    };
+    vi.stubGlobal('fetch', async () => response({ ...occurrence, successor }));
+    const change = { ...control, successor };
+    await expect(rooms.setTimelineSuccessor(room, change, 'schedule-next-phase-request')).resolves.toEqual({ ...occurrence, successor });
+    await expect(rooms.setTimelineSuccessor(room, { ...control, successor: null }, 'cancel-next-phase-request')).rejects.toThrow(/acknowledgement/);
+    vi.stubGlobal('fetch', async () => response({ ...occurrence, startedAtRevision: 3, successor }));
+    await expect(rooms.setTimelineSuccessor(room, change, 'schedule-next-phase-request')).rejects.toThrow(/acknowledgement/);
 });

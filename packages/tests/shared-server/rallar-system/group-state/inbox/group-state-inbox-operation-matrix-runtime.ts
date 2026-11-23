@@ -85,6 +85,7 @@ export function createGovernedOperationCase(
     return {
         type: input.type,
         operation: input.operation,
+        outboxEntries: input.operation === 'banGroupMember' ? 2 : 1,
         authority: input.harness.sessions.owner,
         data: {
             scope: SCOPE,
@@ -217,7 +218,7 @@ export async function runOperationMatrix(
         ).toBeDefined();
         expect(
             harness.database.outboxEntries.size,
-            `${testCase.operation} outbox entry`
+            `${testCase.operation} ${requestId} outbox entry`
         ).toBe(previousOutboxCount + (testCase.outboxEntries ?? 1));
         expect(
             (await harness.queueEntries()).some(

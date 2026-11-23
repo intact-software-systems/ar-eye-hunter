@@ -1043,12 +1043,18 @@ route captured the receipt's audience; the send asked no logical receipt, so its
 expires; or the `admitted` receipt arrived after the `complete` one, which is refused as a repeat and writes no rows.
 The WS server's receipt admission has no shared head and writes none. A pair whose head is its own (the WS server)
 has no room-wide floor.
-On RTC the carrier then signs the stamped
-frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
-canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
-stored (D519). The refusals `admitLeg` can know (shape, leader, a page that cannot sign) run before admission; a signer
-that still cannot sign in the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported`
-like them. That drop names the request, never the stamped frame: its sequence and record belong to positions the
+On RTC the carrier then signs a frame that must carry a publisher proof, once, at the dispatch that first holds its
+frozen audience and its room snapshot: the first admission, or the dequeue that freezes a held send
+(`signAdmittedMessage`, `RtcSignedPublicationCarrier.signAdmitted`, which returns every other frame as it is). A frame
+must carry a proof when its topic is granted, or when it is a room send that asks a `receiver` or `leader` receipt
+([`isRtcPublisherProofRequired`](../../multicast/publication/is-rtc-publisher-proof-required.ts), D758); a send that
+asks no logical receipt stays unsigned and costs no sign and no verify. The stored canonical carries the proof over
+the sequence and the record, and every re-plan, dequeue and repair resends it as stored (D519). A granted
+publication's refusals that `admitLeg` can know (shape, leader, a page that cannot sign) run before admission. A
+receipted room send's signer refusal is its first admission's (`key-not-registered`, a page without WebCrypto), and
+at a freezing dequeue it ends the held send `rejected`, as a keyless counted recipient does; an exclusions-only room
+broadcast that asks a logical receipt is never frozen and is refused `unsupported`. A signer that still cannot sign in
+the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported` like them. That drop names the request, never the stamped frame: its sequence and record belong to positions the
 aborted admission never committed, and it carries no proof. Under `rtc-with-ws-fallback` WS takes that request over and
 stamps its own copy (D498); under `rtc` alone the send settles `rejected`. A granted publication enters only as a leg:
 `enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A planner's message is checked

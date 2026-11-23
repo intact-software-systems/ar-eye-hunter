@@ -219,13 +219,16 @@ and it has no status list.
   counted recipient still ends everyone's receipt; Slice 8 proves who said it,
   not that one recipient may speak for all. Narrowing it to its sender is a
   receipt-semantics change with its own pins.
-- Unsigned ordinary publications (S8-i, D590): the publisher proof covers
-  granted sends only, so an ordinary room send's origin stays unauthenticated
-  across relays while its receipts are signed. A receipt binds the message id
-  and the origin, not the bytes: a peer adjacent to a recipient can deliver
-  other content under the origin's id first, the recipient signs a true
-  `delivered` and the origin reads `acknowledged`. A granted publication is not
-  affected, since its recipient verifies the publisher.
+- Unsigned unreceipted publications (S8-i, D590, D758): an ordinary RTC room
+  send that asks no logical receipt (`ack: none`, `hop`, `subtree`) carries no
+  publisher proof, so a room member can deliver content under another
+  session's id to an application. It can no longer make a `receiver` or
+  `leader` send read `acknowledged`. Two costs of that remain: a forged copy
+  that took an ordered send's sequence makes the origin's copy end
+  `receipt-exhausted`, and a relay that admitted a forged copy forwards
+  nothing of the origin's, so its leaf is confirmed only over WS (D759). Next
+  step, if wanted: sign every ordinary RTC room send, a classification
+  change on the same wire shape.
 - `toSafeAck` in
   `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts` is a
   hand-written ACK shape rule beside the codec's (S8-i). Since S9-i its status,

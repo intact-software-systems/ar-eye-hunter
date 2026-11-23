@@ -14,6 +14,9 @@ export function assertGroupMutationAuthority(
         assertInternalMutationAuthority(command, facts);
         return;
     }
+    if (command.operation === 'settleTimeline') {
+        throw new TypeError('A timeline deadline requires internal authority');
+    }
     if (command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null) {
         throw new TypeError('Principal connect cannot consume automatic trigger intent');
     }
@@ -56,6 +59,9 @@ function assertInternalMutationAuthority(
             return assertFormationAutomationAuthority(command);
         case 'topology-publication':
             return assertTopologyPublicationAuthority(command);
+        case 'timeline-deadline':
+            if (command.operation !== 'settleTimeline') throw new TypeError('Timeline deadline authority requires a settlement');
+            return;
         case 'activation-status':
             return assertActivationStatusAuthority(command);
         case 'none':

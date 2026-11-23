@@ -17,7 +17,8 @@ export type ViewInvalidationPublicationInput =
             & (
                 | Pick<ViewInvalidation.ScopedAccount, 'resource' | 'scope'>
                 | Pick<ViewInvalidation.Account, 'resource' | 'scope'>
-                | Pick<ViewInvalidation.RoomProgram, 'resource' | 'scope' | 'groupId' | 'reason'>
+                | Pick<ViewInvalidation.RoomAccess, 'resource' | 'scope' | 'groupId'>
+                | Pick<ViewInvalidation.RoomProgram, 'resource' | 'scope' | 'groupId' | 'name'>
             )
             & { readonly principalIds: readonly string[]; }
         )
@@ -47,7 +48,8 @@ export function computeViewInvalidationPublication(
         const notice = decodeViewInvalidation({
             version: 1,
             resource: input.resource,
-            ...(input.resource === 'room-program' ? { groupId: input.groupId, reason: input.reason } : {}),
+            ...('groupId' in input ? { groupId: input.groupId } : {}),
+            ...('name' in input ? { name: input.name } : {}),
             scope: input.scope,
             principalId,
             changeId: input.changeId

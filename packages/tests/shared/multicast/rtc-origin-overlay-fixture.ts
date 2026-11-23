@@ -425,7 +425,8 @@ function createOpenChannel(peerId: string): CapturedChannel {
         peerSessionId: peerId,
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, { createOfferId: crypto.randomUUID.bind(crypto) });
     const channel = new QRtcDataChannel(peerConnection, {
         faultPort: createPassThroughTransportFaultPort(),

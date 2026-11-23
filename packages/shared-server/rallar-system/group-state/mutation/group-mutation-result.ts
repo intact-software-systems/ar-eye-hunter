@@ -1,3 +1,4 @@
+import { computeGroupTimelineDeadlines } from '../schedule/group-timeline-deadline.ts';
 import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import { computeGroupLobbyMutation } from '../lobby/compute-group-lobby-mutation.ts';
@@ -18,7 +19,7 @@ import type {
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeGroupSessionMembershipEffects } from '../schedule/compute-group-session-membership-effects.ts';
-import { computeGroupProgramPublication } from '../schedule/compute-group-program-publication.ts';
+import { computeGroupObservationPublication } from '../schedule/compute-group-observation-publication.ts';
 import { computeGroupSessionViewPublication } from '../schedule/compute-group-session-view-publication.ts';
 import { computeGroupSessionDeadlines } from '../schedule/group-session-deadline.ts';
 
@@ -430,7 +431,11 @@ function computeScheduledMutationWrites(
     }
     const { command, read, facts, members } = input;
     const publication = computeGroupSessionViewPublication({ command, read, facts, group, members, reservations });
-    const program = computeGroupProgramPublication(input, group);
+    const observation = computeGroupObservationPublication(input, group);
+    const timelineDeadlines = command.operation === 'updateGroup' && (command.input.roomClock || read.group?.value.status !== group.status)
+        ? computeGroupTimelineDeadlines({ before: read.group?.value ?? null, after: group, createdAtEpochMs: facts.nowEpochMs,
+            serviceId: facts.serviceId, traceId: facts.traceId })
+        : [];
     const deadlines = computeGroupSessionDeadlines({
         changedMembers: members,
         previousMembers: [read.actorMember, read.targetMember, read.authorityMember, read.directorMember].filter((
@@ -444,7 +449,7 @@ function computeScheduledMutationWrites(
         traceId: facts.traceId
     });
     return {
-        outboxWrites: [...publication.outbox, ...program.outbox, ...deadlines],
-        viewProvenance: [...publication.provenance, ...program.provenance]
+        outboxWrites: [...publication.outbox, ...observation.outbox, ...deadlines, ...timelineDeadlines],
+        viewProvenance: [...publication.provenance, ...observation.provenance]
     };
 }

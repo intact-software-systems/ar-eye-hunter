@@ -8,7 +8,7 @@ import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { readDirectResourceOutboxEntries } from '../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
-import { assertWorkerOutboxLifecycle } from '../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { assertMembershipWorkerOutbox, assertWorkerOutboxLifecycle } from '../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresDatabaseUrl,
@@ -124,12 +124,16 @@ describe('Postgres group join convergence across AppInbox servers', () => {
 
             expect(await Promise.all([firstJoin, secondJoin, connect].map(async (held) => await readAppInboxRowState(setupSql, held.command.queueKey))))
                 .toEqual([1, 2, 1].map((attempts) => ({ status: EntityStatus.COMPLETED, attempts, hasResult: true })));
-            const receipts = [firstReceipt, secondReceipt, connectReceipt];
+            const joins = [[firstReceipt, 'dave'], [secondReceipt, 'erin']] as const;
+            for (const [receipt, principalId] of joins) {
+                await assertMembershipWorkerOutbox(setupSql, fixture.groupRef, principalId, {
+                    outboxIds: receipt.outboxIds, domainStatus: receipt.outcome
+                });
+            }
             assertWorkerOutboxLifecycle({
-                entries: await readDirectResourceOutboxEntries(setupSql, receipts.flatMap((receipt) => receipt.outboxIds)),
-                outputs: receipts.map((receipt) => ({ outboxIds: receipt.outboxIds, domainStatus: receipt.outcome })),
-                kind: 'group',
-                effects: ['group-presence-summary']
+                entries: await readDirectResourceOutboxEntries(setupSql, connectReceipt.outboxIds),
+                outputs: [{ outboxIds: connectReceipt.outboxIds, domainStatus: connectReceipt.outcome }],
+                kind: 'group', effects: ['group-presence-summary']
             });
 
             const eventCount = (await fixture.repository.listEvents(fixture.groupRef)).length;

@@ -86,6 +86,36 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "room-timeline-rejects-unrelated-network-wakeups",
+      "domain": "Room observation",
+      "owner": "Rallar browser SDK maintainers",
+      "summary": "An active named timeline watcher makes no snapshot requests for notices about another program or room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/deadlines/room-program-controls.test.ts#updates the named timeline from its account notice and clears it when room access changes",
+      "coverageRelation": "After initial hydration the test delivers three unrelated notifications and measures traffic before delivering the matching notification.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Browser HTTP fetch for the scoped room snapshot",
+        "observableEffect": "The Rallar API receives and authorizes each snapshot request sent over the network.",
+        "requiredConstraint": "One initial read is the only HTTP request after unrelated program and access notifications.",
+        "failureRationale": "Unrelated room activity could emit unlimited redundant snapshot reads while producing identical timeline values."
+      }
+    },
+    {
+      "id": "room-access-confirms-purge",
+      "domain": "Room observation",
+      "owner": "Rallar browser SDK maintainers",
+      "summary": "A room access watcher confirms storage expiry across clock skew and stops reading after denial.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/room-access-purge.test.ts#confirms a far purge cutoff with storage lag of %i ms",
+      "coverageRelation": "The test advances the browser across a long calibrated server cutoff and an additional idle minute with on-time and delayed storage expiry.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser HTTP fetch for the scoped room snapshot",
+        "observableEffect": "The Rallar API receives and authorizes each snapshot request sent over the network.",
+        "requiredConstraint": "The initial read is followed by exactly one recheck at the calibrated cutoff, with follow-up confirmation for a lagging storage node and zero reads after denial.",
+        "failureRationale": "A correct final access value can hide early reads, an omitted recheck while the room remains readable, or repeated reads after denial."
+      }
+    },
+    {
       "id": "room-clock-idle-watch-sends-no-reads",
       "domain": "Room clock observation",
       "owner": "Rallar browser SDK maintainers",
@@ -6189,6 +6219,50 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-ecdaea875da3f5e5",
+      "path": "packages/tests/shared-web/rooms/deadlines/room-program-controls.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-timeline-rejects-unrelated-network-wakeups",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser SDK maintainers",
+      "rationale": "The browser network port receives exactly its initial request after announcements for other programs and rooms.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/deadlines/room-program-controls.test.ts#updates the named timeline from its account notice and clears it when room access changes"
+    },
+    {
+      "id": "test-structure-coupling-d07e3406ea7f23f3",
+      "path": "packages/tests/shared-web/rooms/room-access-purge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-access-confirms-purge",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser SDK maintainers",
+      "rationale": "Measuring browser requests before the cutoff proves that the skewed wall clock and maximum-delay timer do not send an early authorization read.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/room-access-purge.test.ts#confirms a far purge cutoff with storage lag of %i ms"
+    },
+    {
+      "id": "test-structure-coupling-148d69ee35cac94a",
+      "path": "packages/tests/shared-web/rooms/room-access-purge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-access-confirms-purge",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser SDK maintainers",
+      "rationale": "The boundary must produce one authorization read even when the server still returns the same readable room.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/room-access-purge.test.ts#confirms a far purge cutoff with storage lag of %i ms"
+    },
+    {
+      "id": "test-structure-coupling-6efcc688221280b4",
+      "path": "packages/tests/shared-web/rooms/room-access-purge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-access-confirms-purge",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser SDK maintainers",
+      "rationale": "The additional idle minute must produce zero requests after the storage node has confirmed denial.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/room-access-purge.test.ts#confirms a far purge cutoff with storage lag of %i ms"
+    },
     {
       "id": "test-structure-coupling-df150c022611e3dd",
       "path": "packages/tests/shared-web/rooms/deadlines/room-deadlines.test.ts",

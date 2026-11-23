@@ -36,7 +36,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { readDirectResourceOutboxEntries } from '../../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
-import { assertWorkerOutboxLifecycle } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { assertMembershipWorkerOutbox, assertWorkerOutboxLifecycle } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 import { createRuntimeStatePostgresSql } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
@@ -466,12 +466,10 @@ describe('Postgres presence expiry concurrency', () => {
                 expect(snapshot?.members.find((member) => member.principalId === 'carol')).toMatchObject({
                     status: 'banned'
                 });
-                await expectPendingWorkerOutboxes({
-                    sql: setupSql,
-                    outputs,
-                    kind: 'group',
-                    effects: ['group-presence-summary']
-                });
+                const ids = outputs.flatMap(output => output.outboxIds);
+                expect(new Set(ids).size).toBe(ids.length);
+                await assertMembershipWorkerOutbox(setupSql, groupRef, 'bob', outputs[0]!);
+                await assertMembershipWorkerOutbox(setupSql, groupRef, 'carol', outputs[1]!);
             }
             finally {
                 await Promise.allSettled(handles.map((handle) => handle.done));
@@ -757,14 +755,11 @@ describe('Postgres presence expiry concurrency', () => {
                         )
                     )?.receipt
                     : undefined;
-                if (!receipt) {
+                if (!receipt || !acceptedInput) {
                     throw new Error('Expected accepted last-slot receipt');
                 }
-                assertWorkerOutboxLifecycle({
-                    entries: await readDirectResourceOutboxEntries(setupSql, receipt.outboxIds),
-                    outputs: [{ outboxIds: receipt.outboxIds, domainStatus: 'applied' }],
-                    kind: 'group',
-                    effects: ['group-presence-summary']
+                await assertMembershipWorkerOutbox(setupSql, groupRef, acceptedInput.authority.clientId, {
+                    outboxIds: receipt.outboxIds, domainStatus: receipt.outcome
                 });
             }
             finally {

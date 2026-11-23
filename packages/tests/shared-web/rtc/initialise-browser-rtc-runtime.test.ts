@@ -800,6 +800,7 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
         token: 'fixture-token',
         signalType: 'Offer',
         offerId: 'offer-1',
+        offerGeneration: 1,
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
     const message: ALMessage = newALUnicastMessage(

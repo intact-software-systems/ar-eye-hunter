@@ -243,7 +243,8 @@ export function createRtcBenchmarkPeerConnection(peerSessionId: string): RtcBenc
             token: 'benchmark-token',
             peerSessionId,
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            isPolite: true
+            isPolite: true,
+            offerGeneration: 1
         }, { createOfferId: () => crypto.randomUUID() });
         peer.connect();
         const native = runtime.peers[0];

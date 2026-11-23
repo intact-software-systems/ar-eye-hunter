@@ -1,4 +1,4 @@
-import { expect, vi } from 'vitest';
+import { expect } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -10,6 +10,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
+import { drainUntil } from '../advance-until.ts';
 import { createAvailablePublicationCryptoFixture, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
 import { createRtcOriginOverlayFixture, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
@@ -79,12 +80,6 @@ export interface OrderedOriginPublicationInput {
 export const GRANTED_TYPE_ID = 'room.granted-feed.v1';
 
 const ORDERED_TRACK_KEY = 'feed-track';
-
-/** The real `setTimeout`, read before a suite installs its fake timers. */
-const REAL_SET_TIMEOUT = globalThis.setTimeout;
-
-/** One drain cycle per event-loop turn: enough for every hop's lock grants under a loaded runner. */
-const DRAIN_MAX_CYCLES = 200;
 
 export async function createRelayChain(
     sessionIds: readonly string[],
@@ -223,18 +218,6 @@ export function toGrantsSnapshot(
             return topicGrant === undefined ? grant : { ...grant, topics: { [PUBLICATION_TOPIC_ID]: topicGrant } };
         })
     };
-}
-
-/**
- * Runs the chain's due work until `condition` holds or the cycle budget runs out. Each cycle runs the due fake timers
- * without moving the clock and yields one real event-loop turn, which a Web Locks grant needs. It never throws: the
- * caller's assertion states what did not happen.
- */
-export async function drainUntil(condition: () => boolean | Promise<boolean>, maxCycles = DRAIN_MAX_CYCLES): Promise<void> {
-    for (let cycle = 0; cycle < maxCycles && !(await condition()); cycle++) {
-        await vi.advanceTimersByTimeAsync(0);
-        await new Promise<void>((resolve) => REAL_SET_TIMEOUT(resolve, 0));
-    }
 }
 
 export async function deliverEach(messages: readonly ALMessage[], to: RtcRelayOverlayFixture, fromPeerId: string): Promise<void> {

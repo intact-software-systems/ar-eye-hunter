@@ -1441,7 +1441,8 @@ function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): 
                 authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
             },
             supersedenceKey: null,
-            deliveredLocally: true
+            deliveredLocally: true,
+            originAuthenticated: false
         },
         expireAtTimestamp
     };
@@ -1502,7 +1503,14 @@ async function seedTrackedAcknowledgement(
         observations: read.observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId: message.id.msgId, senderId: message.id.senderId, source, supersedenceKey: null, deliveredLocally: true },
+            value: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source,
+                supersedenceKey: null,
+                deliveredLocally: true,
+                originAuthenticated: false
+            },
             expireAtTimestamp
         }, {
             kind: 'set-control-pending',

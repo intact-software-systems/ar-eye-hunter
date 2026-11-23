@@ -42,7 +42,7 @@ export function readsGroupActiveMembers(
     return readsGroupActiveMemberPrincipalIds(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
         operation === 'setGroupMemberRole' || operation === 'transferGroupOwnership' ||
-        operation === 'updateGroup' || operation === 'changeGroupSession';
+        operation === 'updateGroup' || operation === 'changeGroupSession' || operation === 'settleTimeline';
 }
 
 /** Sorted player identities are needed only for electorate and manager decisions. */

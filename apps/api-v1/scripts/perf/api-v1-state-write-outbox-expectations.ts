@@ -6,10 +6,12 @@ import {
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
+import { computeRoomAccessEvidenceIdentity } from '@shared-test/black-box-runner/state-write-evidence/room-access-effect-evidence.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
+import { readStateWriteBenchmarkClientIndex } from './state-write/api-v1-state-write-app-inbox-evidence.ts';
 import type { StateWriteOutboxCommand } from './api-v1-state-write-outbox-evidence.ts';
 import type { AuthoritativeResultBinding, ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';
 
@@ -68,6 +70,32 @@ function computeOutboxExpectation(
     binding: AuthoritativeResultBinding,
     effect: ReceiptOutboxEffect
 ): ProductionOutboxExpectation {
+    if (command.kind === 'membership') {
+        const { applicationId, workspaceId, groupId } = binding.aggregateRef;
+        if (groupId === undefined || binding.snapshotVersion === null) {
+            throw new TypeError('Membership effect requires a room and snapshot version');
+        }
+        const { sourceMessageId, logicalContextId, physicalKey } = computeRoomAccessEvidenceIdentity({
+            commandId: binding.receiptId,
+            ref: { applicationId, workspaceId, groupId },
+            revision: binding.snapshotVersion,
+            principalId: `client-${readStateWriteBenchmarkClientIndex(command.commandId)}`
+        });
+        if (effect.effectId === physicalKey.resourceId) {
+            return {
+                ...effect,
+                physicalKey,
+                logicalContextId,
+                sourceMessageId,
+                canonicalCommandId: binding.receiptId,
+                typeId: 'WS_OUTBOX',
+                payloadTypeId: AppTopics.viewInvalidated,
+                effectKind: 'room-access',
+                aggregateRef: binding.aggregateRef,
+                stateRevision: binding.stateRevision
+            };
+        }
+    }
     const effectKind = expectedEffectKind(command, binding, effect.effectId);
     const identity = toExpectedOutboxIdentity(effectKind, binding.aggregateRef);
     return {

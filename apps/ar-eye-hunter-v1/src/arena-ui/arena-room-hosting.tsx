@@ -47,7 +47,6 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
         <section className="stack" aria-label="Arena hosting">
             {arena.session && (
                 <RoomModerationPanel
-                    accessCheckIntervalMs={5000}
                     session={arena.session}
                     rooms={rallar.rooms}
                 />

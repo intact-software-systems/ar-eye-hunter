@@ -203,6 +203,7 @@ function signalingMessage(offerId: string, sdp = 'sdp'): ALMessage {
                 token: 'fixture-ticket',
                 signalType: 'Offer',
                 offerId,
+                offerGeneration: 1,
                 payload: { description: { type: 'offer', sdp }, candidate: null }
             }
         }

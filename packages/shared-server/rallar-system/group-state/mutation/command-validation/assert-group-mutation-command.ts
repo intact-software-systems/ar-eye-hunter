@@ -1,3 +1,4 @@
+import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
@@ -131,6 +132,12 @@ function assertAggregateOperationInput(
             return;
         case 'updateGroup':
             assertUpdateGroupInput(input);
+            return;
+        case 'settleTimeline':
+            requireNonEmptyString(input.name, 'Timeline name');
+            requirePositiveSafeInteger(input.revision, 'Timeline revision');
+            requireEpoch(input.dueAtEpochMs, 'Timeline boundary');
+            requireEpoch(input.groupCreatedAtEpochMs, 'Room creation');
             return;
         case 'appointDirector':
             if (input.succession !== undefined) decodeRoomDirectorSuccessionCommand(input.succession);
@@ -305,6 +312,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'reconfigureGroup',
     'failGroupFormation',
     'applyPlannedLayout',
+    'settleTimeline',
     'updateGroupActivationStatus',
     'pauseGroupTransport',
     'resumeGroupTransport',
@@ -368,6 +376,7 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'reconfigureGroup',
     'failGroupFormation',
     'applyPlannedLayout',
+    'settleTimeline',
     'updateGroupActivationStatus'
 ]);
 
@@ -420,6 +429,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     reconfigureGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'landing'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
+    settleTimeline: [...ACTOR_INPUT_KEYS, 'name', 'revision', 'dueAtEpochMs', 'groupCreatedAtEpochMs'],
     updateGroupActivationStatus: [
         ...ACTOR_INPUT_KEYS,
         'expectedFormationEpoch',

@@ -91,6 +91,6 @@ async function createRetriedDeliveryFixture(storage: InboundTestStorage): Promis
 
 async function readDeliveryRow(inbound: InboundTestRuntime, msg: ALMessage): Promise<ResourceEntry | undefined> {
     return await inbound.stores.workQueue.getItem(
-        toALInboundWorkKey(inbound.stores.admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg))
+        toALInboundWorkKey(inbound.stores.admissionStore.namespace, toALInboundLocalDeliveryEffectId(msg, false))
     );
 }

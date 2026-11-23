@@ -191,7 +191,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
         nowMs,
         prePlan: planALMessageHandling(message, context)
     });
-    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
+    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read, false) });
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
@@ -200,6 +200,15 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
     return {
         read,
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
+        bundle: computeALInboundAdmission({
+            originAuthenticated: false,
+            readmission: false,
+            read,
+            plan,
+            facts,
+            canForward: false,
+            recordedParentPresent: true,
+            retriedCopyNextHopPeerIds: []
+        })
     };
 }

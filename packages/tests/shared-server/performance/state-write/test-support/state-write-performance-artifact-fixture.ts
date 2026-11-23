@@ -390,7 +390,7 @@ function createFinalEvidence(
             outboxId: effectIds(command)[index],
             commandId: command.commandId,
             effectKind,
-            typeId: effectKind.startsWith('principal-state') ? 'WS_OUTBOX' : 'APP_OUTBOX',
+            typeId: (effectKind.startsWith('principal-state') || effectKind === 'room-access') ? 'WS_OUTBOX' : 'APP_OUTBOX',
             topicId: effectKind
         }))
     );

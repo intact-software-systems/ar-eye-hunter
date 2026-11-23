@@ -15,6 +15,7 @@ import {
     collectEvidenceNamedStrings,
     parseEvidenceJson
 } from './api-v1-state-write-json-evidence.ts';
+import { matchesRoomAccessEffect } from './room-access-effect-evidence.ts';
 import type { PersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { validatePersistedAppInboxResult } from './api-v1-state-write-result-evidence.ts';
 import { toStateWriteEvidenceInstant } from './to-state-write-evidence-instant.ts';
@@ -456,8 +457,17 @@ function linkOutboxEvidence(
     const inboxByCommandId = new Map(
         appInbox.flatMap((row) => row.commandIds.map((commandId) => [commandId, row] as const))
     );
+    const accessByResourceId = new Map(commandEvidence.flatMap(command =>
+        command.roomAccessIdentity && command.receipt
+            ? [[command.roomAccessIdentity.physicalKey.resourceId, {
+                identity: command.roomAccessIdentity, commandId: command.receipt.commandId
+            }] as const] : []
+    ));
     return rawOutboxRows.flatMap((row) => {
-        const canonical = canonicalEffect(row);
+        const access = accessByResourceId.get(row.ri_resource_id);
+        const canonical = access && matchesRoomAccessEffect(row, access.identity)
+            ? { commandId: access.commandId, effectKind: 'room-access', outboxId: access.identity.sourceMessageId }
+            : canonicalEffect(row);
         if (!canonical) {
             return [];
         }

@@ -315,7 +315,7 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     const plan = planALMessageHandling(message, {
         selfPeerId: 'receiver',
         fromPeerId: 'sender',
-        ...computeALInboundPlanningObservations(read)
+        ...computeALInboundPlanningObservations(read, false)
     });
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
@@ -324,7 +324,16 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     expect(
         await store.commitBundle(
-            computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
+            computeALInboundAdmission({
+                originAuthenticated: false,
+                readmission: false,
+                read,
+                plan,
+                facts,
+                canForward: false,
+                recordedParentPresent: true,
+                retriedCopyNextHopPeerIds: []
+            })
         )
     ).toBe('committed');
 }

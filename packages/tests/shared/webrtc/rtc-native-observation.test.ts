@@ -374,6 +374,7 @@ describe('original native owner evidence', () => {
         await peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         expect(attempted).toEqual(['first', 'last']);
@@ -445,6 +446,7 @@ describe('original native owner evidence', () => {
                 await expect(peer.connection.handleSignal({
                     signalType: 'Offer',
                     offerId: 'offer',
+                    offerGeneration: 1,
                     payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
                 })).rejects.toBe(failure);
             }
@@ -492,6 +494,7 @@ describe('original native owner evidence', () => {
         await expect(peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         })).rejects.toBe(failure);
         await native.channels[0].fail();
@@ -694,6 +697,7 @@ describe('original native owner evidence', () => {
             peer.connection.handleSignal({
                 signalType: 'Offer',
                 offerId: 'offer',
+                offerGeneration: 1,
                 payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
             })
         ).rejects.toBe(failure);
@@ -732,6 +736,7 @@ describe('original native owner evidence', () => {
         const applying = peer.connection.handleSignal({
             signalType: 'Offer',
             offerId: 'offer',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
         });
         await entered.promise;

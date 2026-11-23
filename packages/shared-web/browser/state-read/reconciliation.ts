@@ -1,10 +1,11 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import * as clientSnapshots from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
+import type { RallarRoomStateStorePort } from '../rooms/room-state-store.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 
 export type StateSnapshotCollectionObservations = Readonly<{
@@ -72,4 +73,25 @@ function isScope(
     scope: StateScope
 ): boolean {
     return ref.applicationId === scope.applicationId && ref.workspaceId === scope.workspaceId;
+}
+
+export async function clearDeniedRoomIfUnchanged(
+    store: RallarRoomStateStorePort, room: GroupRef, observed: GroupSnapshot | undefined
+): Promise<boolean> {
+    if (groupSnapshots.findGroupStateSnapshotByRef(room) !== observed) return false;
+    store.clearCurrentRoomIfMatches(room, true);
+    if (observed) await removeMissingRoomSnapshot(room, observed);
+    return true;
+}
+
+export async function removeMissingRoomSnapshot(roomRef: GroupRef, observed: GroupSnapshot): Promise<void> {
+    const removed = groupSnapshots.removeGroupStateSnapshotIfUnchanged(roomRef, observed);
+    emitBrowserStateReadDiagnostic({
+        name: 'rallar.browser.state-read',
+        feature: 'group',
+        operation: 'point',
+        result: removed ? 'removed' : 'preserved',
+        durationMs: 0
+    });
+    await groupSnapshots.waitForGroupStateSnapshotChangesIdle();
 }

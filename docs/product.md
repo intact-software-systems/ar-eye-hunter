@@ -126,14 +126,32 @@ A phase is an application-defined identifier of 1–64 ASCII letters, digits, do
 
 `rooms.readTimeline` and `rooms.watchTimeline` accept the room and clock name. Each observation combines the phase identifier,
 its `startedAtRevision`, the current clock revision and either `endsAtEpochMs` or `remainingMs` from one room snapshot.
-A missing timeline returns null. A fresh watch on returning to the room recovers changes missed while away. Live updates reuse
-the room WebSocket. Idle watches make no periodic reads. Use the existing clock pause/resume commands with the same name.
-The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
+A missing timeline returns null. Members can keep room B selected while following a named timeline in A
+in the same application and workspace. Retain membership in A when switching rooms.
+Private WebSocket notices identify the affected room and program. The SDK reads the phase and clock together
+at startup, on matching changes and after reconnect. A change to a different clock leaves the watch idle.
+Access loss clears the cached timeline. Use the existing clock pause/resume commands with the same name.
+The occurrence stays stable across those changes. At zero a phase with no configured successor remains current.
 
 Use `rooms.extendTimeline(roomRef, { name: 'match', durationMs, expectedRevision, expectedDirectorEpoch }, requestId)`
 to add a positive whole number of milliseconds to a running or paused phase. A running phase extends from its existing end.
 A paused phase stays paused with a larger balance. Both keep the phase label and starting revision. An expired running phase
 requires an explicit advance. Retry the original request unchanged with the same ID to recover its receipt.
+
+A director can include `successor: { phase, durationMs }` in `advanceTimeline`, or call
+`rooms.setTimelineSuccessor(roomRef, { name, expectedRevision, expectedDirectorEpoch, successor }, requestId)`
+to configure, replace or cancel the next phase. Pass `null` to cancel. Authorized observers can read the planned phase
+and its duration through `watchTimeline`. Pausing freezes the countdown, extending moves the boundary, and resuming
+uses the saved balance. A replacement director inherits the plan. An early manual advance clears the previous plan.
+
+When the countdown expires, the server starts the configured successor at the scheduled boundary, even if processing
+resumes later or every browser has left. During a worker outage, reads return the last committed snapshot.
+A late command cannot extend the old phase. When processing recovers, the successor uses the original boundary. The successor has its own duration
+and no further automatic transition. Reconnecting participants recover the committed occurrence and clock together.
+
+An empty temporary room stays available through the successor’s end. A temporary room with a paused named timeline
+uses its `retention.pausedTimelineRetentionMs` window (1 ms to 24 hours, one hour by default), starting when it is both empty and paused.
+Entering interrupts cleanup. Watching from another room leaves that deadline unchanged. Explicit room deletion still takes effect.
 
 Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with
 its original request ID. A competing change reports `room-clock-revision-conflict`, and a lost appointment reports
@@ -182,9 +200,12 @@ cannot be removed; admins cannot moderate other admins, and nobody can target th
 Remove requires a new invitation to return. Unban permits a fresh admission attempt and never
 joins the player automatically. Explicit revocation stops the affected player's room participation,
 explains the loss of access and leaves other rooms available. Leaving locally never erases a ban.
-The games observe authoritative roster updates and check current-room access every five seconds
-after the preceding check completes; browser suspension and network failures can delay detection.
-A missing snapshot or failed connection alone is not reported as a ban. Relic's existing Keeper
+Both games use the SDK's `rooms.watchAccess(roomRef, listener)` to observe membership, including in ordinary
+rooms. It checks the authorized room snapshot on startup, private access notifications, and recovery.
+Idle observation makes no periodic access requests. For a room with a storage expiry time, the SDK
+rechecks access when the earliest calibrated server time reaches the cutoff. If storage still reports the same cutoff,
+the SDK rechecks with backoff until storage confirms expiry or supplies a new cutoff. A disconnect marks the observation stale.
+An authoritative refusal distinguishes a ban, removal or unavailable access. Relic's existing Keeper
 takeover and round timeout preserve ongoing play; accepted plans and saved expedition progress remain.
 
 Both games refresh public room discovery automatically while signed in, visible, and online.

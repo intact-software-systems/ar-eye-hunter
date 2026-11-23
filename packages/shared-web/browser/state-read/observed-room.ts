@@ -13,6 +13,7 @@ import { readStateGroupSnapshot } from './point-read.ts';
 
 export interface ObservedRoomMetadata {
     readonly snapshotVersion: number;
+    readonly purgeAfterEpochMs: number | null;
     readonly metadata: ApiJsonObject;
 }
 
@@ -38,10 +39,12 @@ export async function readObservedRoom(
     return result.snapshot.group;
 }
 
-export function readObservedRoomDelta(
+export function readObservedRoomDelta<T extends { readonly revision: number; }>(
     message: Pick<RallarStateEventMessage, 'transport' | 'topicId' | 'typeId' | 'raw'>,
-    room: GroupRef
-) {
+    room: GroupRef,
+    project: (group: ObservedRoomMetadata) => T | null,
+    afterRevision: number
+): T | undefined {
     if (
         message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
         message.typeId !== AppTopics.groupStateEvent
@@ -52,5 +55,21 @@ export function readObservedRoomDelta(
     if (!target || !isSameGroupRef(target, room)) {
         return;
     }
-    return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room)?.group;
+    const group = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room)?.group;
+    const projection = group && project(group);
+    return projection && projection.revision > afterRevision ? projection : undefined;
+}
+
+export function validateReadRevision<T extends { readonly revision: number; }>(
+    next: T | null,
+    previous: T | null,
+    announcedRevision: number,
+    regresses: (previous: T, next: T) => boolean
+): void {
+    if ((next?.revision ?? 0) < announcedRevision) {
+        throw new Error('Room read predates the server notification.');
+    }
+    if (previous && (!next || next.revision < previous.revision || regresses(previous, next))) {
+        throw new Error('Room read regressed.');
+    }
 }

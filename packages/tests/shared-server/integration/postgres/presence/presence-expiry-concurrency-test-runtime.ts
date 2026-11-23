@@ -1,6 +1,8 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { encodeClientStateStorageKeyPart } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-key-codec.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateEntry,
@@ -131,6 +133,22 @@ export async function seedExpiredGroupPresenceSession(
 }
 
 export async function cleanupRuntimeState(sql: PostgresSql, applicationId: string): Promise<void> {
+    // Private queue identities are hashed. Use the owning application and the complete queue key in its proof.
+    await sql`
+        with owned_notices as (
+            delete from runtime_state_store
+            where store_namespace = ${WS_OUTBOX_PROVENANCE_NAMESPACE}
+              and store_value::jsonb #>> '{queueKey,topicId}' = ${AppTopics.viewInvalidated}
+              and store_value::jsonb #>> '{target,kind}' = 'scoped-account-view'
+              and store_value::jsonb #>> '{target,principalRef,applicationId}' = ${applicationId}
+            returning store_value::jsonb -> 'queueKey' as key
+        )
+        delete from resource_inbox q using owned_notices n
+        where q.ri_type_id = ${EnqueuedType.WS_OUTBOX}
+          and q.ri_topic_id = n.key ->> 'topicId'
+          and q.ri_resource_id = n.key ->> 'resourceId'
+          and q.fk_ext_bank_id = n.key ->> 'contextId'
+    `;
     await sql`
         delete from client_state_events
         where application_id = ${applicationId}

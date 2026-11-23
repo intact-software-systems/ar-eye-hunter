@@ -152,6 +152,7 @@ interface GroupMutationRequests {
     readonly reconfigureGroup: GroupReconfigureAppInboxPayload['request'];
     readonly failGroupFormation: MutationActorInput;
     readonly applyPlannedLayout: MutationActorInput;
+    readonly settleTimeline: MutationActorInput;
     readonly updateGroupActivationStatus: MutationActorInput;
     readonly pauseGroupTransport: MutationActorInput;
     readonly resumeGroupTransport: MutationActorInput;
@@ -257,6 +258,10 @@ export type GroupStateService =
             atEpochMs: number
         ): Promise<GroupMutationIngress>;
         captureTopologyPublicationMutationIngress(
+            command: GroupMutationCommand,
+            atEpochMs: number
+        ): Promise<GroupMutationIngress>;
+        captureTimelineDeadlineMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number
         ): Promise<GroupMutationIngress>;

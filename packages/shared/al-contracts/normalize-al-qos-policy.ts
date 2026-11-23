@@ -150,6 +150,14 @@ export function normalizeALQosPolicy(msg: ALMessage, input: ALQosNormalizationIn
     };
 }
 
+/**
+ * The receipt a message itself asks, as normalization merges it: its `qos.ack`, else the algorithm its `delivery.ack`
+ * names; `undefined` when it names neither, so the carrier's default applies.
+ */
+export function resolveALRequestedAckAlgo(msg: Pick<ALMessage, 'delivery' | 'qos'>): ALAckAlgo | undefined {
+    return (msg.qos?.ack ?? toAckRequest(msg.delivery))?.algo;
+}
+
 function toALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
     return {
         delivery: msg.delivery

@@ -13,8 +13,11 @@ import {
 } from '@relic-hunters/mod.ts';
 import { decodeRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { assertPrivateRoomAccessNotice } from '../shared-server/rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
 import { createAppInboxTestResilience } from '../shared-server/rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { connectGameSession } from './relic-game-database-fixture.ts';
 import { createInboxFixture, toRelicInboxTestKey } from './relic-game-inbox-fixture.ts';
@@ -229,7 +232,7 @@ describe('Relic AppInbox ownership', () => {
             expect(proposal).toHaveBeenCalledTimes(1);
             expect(await fixture.results.findByKey(toRelicInboxTestKey(fixture))).toEqual(resultBefore);
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
+            expect(await readCommandPublications(fixture)).toHaveLength(0);
         }
         finally {
             await fixture.storage.close();
@@ -256,10 +259,9 @@ describe('Relic AppInbox ownership', () => {
             const refused = await fixture.inbox.enqueue(command, proposal);
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect(await fixture.inbox.wait(refused)).toMatchObject({ status: 'refused', code: 'rule-refused', httpStatus: 409 });
-            const published = await fixture.storage.sql<{ ri_resource: string; }[]>`
-                select ri_resource from resource_inbox where ri_type_id = 'WS_OUTBOX'`;
+            const published = await readCommandPublications(fixture);
             expect(published).toHaveLength(1);
-            const message = JSON.parse(published[0].ri_resource);
+            const message = published[0]!;
             expect(message.targets).toMatchObject({
                 scope: 'principal',
                 groupRef: fixture.ref,
@@ -288,7 +290,7 @@ describe('Relic AppInbox ownership', () => {
                 failure: { code: 'app-inbox-retry-exhausted', status: 503, retry: { attempts: 20 } }
             });
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(await fixture.storage.sql`select ri_resource from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toEqual(published);
+            expect(await readCommandPublications(fixture)).toEqual(published);
         }
         finally {
             await fixture.storage.close();
@@ -334,7 +336,7 @@ describe('Relic AppInbox ownership', () => {
             ).toEqual(['read', 'compute', 'validate', 'write']);
             expect(proposals).toBe(1);
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
+            expect(await readCommandPublications(fixture)).toHaveLength(0);
         }
         finally {
             await fixture.storage.close();
@@ -377,7 +379,7 @@ describe('Relic AppInbox ownership', () => {
                 failure: { code: 'app-inbox-retry-exhausted', status: 503, retry: { kind: 'exhausted', attempts: 20 } }
             });
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
-            expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
+            expect(await readCommandPublications(fixture)).toHaveLength(0);
         }
         finally {
             await fixture.storage.close();
@@ -396,7 +398,7 @@ describe('Relic AppInbox ownership', () => {
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await fixture.data.read(fixture.ref))[0].entry).toBeNull();
             expect(await fixture.repository.findGroupEntry(fixture.ref)).toEqual(before);
-            expect(await fixture.storage.sql`select ri_resource_id from resource_inbox where ri_type_id = 'WS_OUTBOX'`).toHaveLength(0);
+            expect(await readCommandPublications(fixture)).toHaveLength(0);
             expect((await fixture.results.findByKey(toRelicInboxTestKey(fixture)))?.status).not.toBe('COMPLETED');
         }
         finally {
@@ -404,3 +406,15 @@ describe('Relic AppInbox ownership', () => {
         }
     }, 30_000);
 });
+
+/** Account for the owner's room-creation publication before checking the command's complete set of effects. */
+async function readCommandPublications(fixture: Awaited<ReturnType<typeof createInboxFixture>>) {
+    const rows = await fixture.storage.sql<{ ri_resource: string; }[]>`
+        select ri_resource from resource_inbox where ri_type_id = 'WS_OUTBOX'`;
+    const messages = rows.map(row => decodePersistedALMessage(row.ri_resource));
+    const notices = messages.filter(message => message.route.topicId === AppTopics.viewInvalidated);
+    expect(notices).toHaveLength(1);
+    const [notice] = notices;
+    assertPrivateRoomAccessNotice(notice!, fixture.ref, fixture.owner.clientId);
+    return messages.filter(message => message !== notice);
+}

@@ -1,4 +1,6 @@
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { matchesRoomAccessEffect } from '@shared-test/black-box-runner/state-write-evidence/room-access-effect-evidence.ts';
 import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -30,7 +32,14 @@ export function validateExpectedProductionOutboxRecord(
 ): Either<Error, ProductionOutboxRecord> {
     try {
         const message = requireJsonWireObject(JSON.parse(row.ri_resource));
-        if (!matchesExpectedOutboxRow(row, expectation) || !matchesExpectedMessage(message, expectation)) {
+        const matchesMessage = expectation.effectKind === 'room-access'
+            ? expectation.sourceMessageId !== null && matchesRoomAccessEffect(row, {
+                physicalKey: expectation.physicalKey,
+                sourceMessageId: expectation.sourceMessageId,
+                logicalContextId: expectation.logicalContextId
+            })
+            : matchesExpectedMessage(message, expectation);
+        if (!matchesExpectedOutboxRow(row, expectation) || !matchesMessage) {
             return Either.ofLeft(new TypeError('ResourceInbox outbox differs from its receipt'));
         }
         return Either.ofRight({
@@ -173,6 +182,9 @@ function computeResourceEffectKind(
         return 'rtc-topology-recompute';
     }
     if (row.ri_type_id === 'WS_OUTBOX') {
+        if (row.ri_topic_id === AppTopics.viewInvalidated) {
+            return 'room-access';
+        }
         if (row.ri_topic_id === 'client-state.snapshot') {
             return 'principal-state:snapshot';
         }

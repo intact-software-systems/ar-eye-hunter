@@ -19,6 +19,7 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
 
+import { drainUntil } from '../advance-until.ts';
 import type { AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { toAcceptedLayout, toPromotedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
 import { createOriginOverlay, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
@@ -27,7 +28,6 @@ import {
     createChainHop,
     createOriginRelayChain,
     deliverEach,
-    drainUntil,
     publishOrderedFromOrigin,
     readOrderingPositions,
     toControlTuples,

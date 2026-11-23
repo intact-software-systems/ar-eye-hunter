@@ -16,6 +16,7 @@ import type {
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
+import { drainUntil } from '../advance-until.ts';
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 import { toOriginDirectedSnapshot } from './rtc-origin-overlay-fixture.ts';
 
@@ -60,6 +61,8 @@ describe('the receipt timeout of a copy an RTC relay forwarded', () => {
         const relayCommits = recordCommits(relay);
 
         await origin.multicast.enqueueIfAbsent(message);
+        // The relay verifies the origin's proof with real WebCrypto (D756) before it admits and forwards the copy.
+        await drainUntil(() => readPendingAttempts(relayCommits).length > 0);
         await vi.advanceTimersByTimeAsync(RECEIPT_LIFETIME_MS);
 
         const retry = { trigger: 'ack-timeout', failedPeerIds: ['director'], missingRanges: [] };

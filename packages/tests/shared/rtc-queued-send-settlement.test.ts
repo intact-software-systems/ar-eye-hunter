@@ -442,7 +442,8 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}) {
         peerSessionId: 'peer',
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     peer.connect();
     peers.push(peer);

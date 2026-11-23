@@ -163,8 +163,8 @@ request identity, command hash, aggregate reference, revision, snapshot version,
 and event identity so the persisted public result cannot be substituted from a
 different command. Production effect IDs and kinds are projected without
 inventing evidence: principal snapshot/event effects for profile-instance,
-`group-presence-summary` for group mutations, and `rtc-topology-recompute` for
-topology-source. Receipt linkage records the command-specific immutable identity:
+`group-presence-summary` for group mutations, the private `room-access` notification for
+each measured membership grant, and `rtc-topology-recompute` for topology-source. Receipt linkage records the command-specific immutable identity:
 physical ResourceInbox keys for client/group receipts and outer envelope
 `id.msgId` for topology receipts. Intermediate mutation-intent evidence is forbidden.
 Snapshot receipts enumerate every page and audience carrier. Capture uses the

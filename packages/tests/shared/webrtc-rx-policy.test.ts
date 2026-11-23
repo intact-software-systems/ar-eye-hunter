@@ -31,11 +31,12 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createAcceptedGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.ts';
 import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
-import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { signPublication } from './multicast/rtc-publication-proof-fixtures.ts';
+import { createRoomPublicationVerifier } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
-import { ROOM_PUBLICATION_CRYPTO, UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY, UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 import { toTestALAckPayload, verifyTestALReceiptControl } from '../al-control-test-payloads.ts';
 import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
@@ -356,7 +357,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
                 delivered.push(message.id.msgId);
             }
         });
-        const message = createMulticast({ seq: 1, acknowledgeSubtree: true });
+        const message = await signAsOrigin(createMulticast({ seq: 1, acknowledgeSubtree: true }));
 
         await fixture.receive(message, 'peer-1');
         await fixture.receive(
@@ -433,7 +434,7 @@ describe('a retried copy of a message this peer already admitted', () => {
                 delivered.push(message.id.msgId);
             }
         });
-        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), ['peer-2', 'peer-3']);
+        const message = toCopyForSelf(await signAsOrigin(createMulticast({ seq: 1, acknowledgeSubtree: true })), ['peer-2', 'peer-3']);
 
         await fixture.receive(message, 'peer-1');
         await fixture.receive(message, 'peer-1');
@@ -448,7 +449,7 @@ describe('a retried copy of a message this peer already admitted', () => {
     it('a streamer built with an available crypto signs a counted recipient\'s ACK', async () => {
         const fixture = new RtcReceiveFixture();
         fixture.service.onAllInboxMessagesDo({ onMessage: async () => {} });
-        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), ['peer-2', 'peer-3']);
+        const message = toCopyForSelf(await signAsOrigin(createMulticast({ seq: 1, acknowledgeSubtree: true })), ['peer-2', 'peer-3']);
 
         await fixture.receive(message, 'peer-1');
 
@@ -471,7 +472,7 @@ describe('a retried copy of a message this peer already admitted', () => {
                 delivered.push(message.id.msgId);
             }
         });
-        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), []);
+        const message = toCopyForSelf(await signAsOrigin(createMulticast({ seq: 1, acknowledgeSubtree: true })), []);
         await fixture.receive(message, 'peer-1');
         await fixture.receive(createChildAck(message, 'peer-2'), 'peer-2');
 
@@ -493,7 +494,7 @@ describe('a retried copy of a message this peer already admitted', () => {
         const fixture = new RtcReceiveFixture();
         fixture.service.onAllInboxMessagesDo({ onMessage: async () => undefined });
         // The gap before seq 2 holds local delivery, so the row stays incomplete with every child complete.
-        const message = toCopyForSelf(createMulticast({ seq: 2, acknowledgeSubtree: true }), []);
+        const message = toCopyForSelf(await signAsOrigin(createMulticast({ seq: 2, acknowledgeSubtree: true })), []);
         await fixture.receive(message, 'peer-1');
         await fixture.receive(createChildAck(message, 'peer-2'), 'peer-2');
         await fixture.receive(createChildAck(message, 'peer-3'), 'peer-3');
@@ -507,7 +508,7 @@ describe('a retried copy of a message this peer already admitted', () => {
     it('re-sends a relay whose subtree completed its terminal ACK', async () => {
         const fixture = new RtcReceiveFixture();
         fixture.service.onAllInboxMessagesDo({ onMessage: async () => undefined });
-        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), []);
+        const message = toCopyForSelf(await signAsOrigin(createMulticast({ seq: 1, acknowledgeSubtree: true })), []);
         await fixture.receive(message, 'peer-1');
         await fixture.receive(createChildAck(message, 'peer-2'), 'peer-2');
         await fixture.receive(createChildAck(message, 'peer-3'), 'peer-3');
@@ -535,10 +536,10 @@ describe('a retried copy of a message this peer already admitted', () => {
             }
         });
         const message = toCopyForSelf(
-            toALFrozenMulticastMessage(createMulticast({ seq: 1, acknowledgeSubtree: true }), {
+            await signAsOrigin(toALFrozenMulticastMessage(createMulticast({ seq: 1, acknowledgeSubtree: true }), {
                 recipientPeerIds: ['peer-2', 'peer-3'],
                 snapshotVersion: 1
-            }),
+            })),
             ['peer-2', 'peer-3']
         );
 
@@ -661,7 +662,8 @@ class RtcReceiveFixture {
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             // The manager is keyless: the session's receipt signing reaches its inbound runtime from the streamer alone.
             publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
-            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            // It still verifies the receipted room sends it receives (D756) against the keys its room names.
+            publicationVerifier: createRoomPublicationVerifier(this.groups),
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: this.connection.service.input.sessionId
         });
@@ -704,7 +706,11 @@ class RtcReceiveFixture {
         const snapshot = createAcceptedGroupSnapshotFixture(['self', 'peer-1', 'peer-2', 'peer-3']);
         this.groups.accept('group-1', {
             ...snapshot,
-            activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+            activeSessions: snapshot.activeSessions.map((session) => ({
+                ...session,
+                expiresAtEpochMs: Date.now() + 60_000,
+                publicationKey: ROOM_PUBLICATION_KEY
+            }))
         });
         this.overlays.accept('group-1', {
             sourceGroupStateCausalRevision: snapshot.causalRevision,
@@ -760,6 +766,14 @@ function createUnicast(input: UnicastFixtureInput): shared.ALMessage {
                 ownership: { algo: input.exclusive ? 'exclusive' : 'shared' }
             }
         }
+    });
+}
+
+/** A receipted room send as its origin `peer-1` signs it, expiry bound, with the key the room names for it (D756). */
+async function signAsOrigin(message: shared.ALMessage): Promise<shared.ALMessage> {
+    return await signPublication(ROOM_PUBLICATION_CRYPTO, {
+        ...message,
+        constraints: { ...message.constraints, expiresAtMs: message.id.ts + 30_000 }
     });
 }
 

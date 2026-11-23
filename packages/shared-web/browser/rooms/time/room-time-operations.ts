@@ -21,7 +21,7 @@ import {
     type RoomClockMutation
 } from '@shared/api/group-deadlines/room-clock.ts';
 import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
-import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';
+import { readRoomTimeline, type RoomTimeline, type RoomTimelineAdvance, type RoomTimelineExtension, type RoomTimelineSuccessorChange } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
 import { captureRoomSession } from '../room-session-fence.ts';
@@ -53,6 +53,9 @@ export interface RoomTimeOperations {
     readSchedule(room: GroupRef, name: string, options?: { readonly signal?: AbortSignal; }): Promise<RoomSchedule | null>;
     watchSchedule(room: GroupRef, name: string, listener: (state: RoomSchedule.Observation) => void,
         options?: { readonly signal?: AbortSignal; }): () => void;
+    setTimelineSuccessor(
+        room: GroupRef, change: RoomTimelineSuccessorChange, requestId: string, options?: { readonly signal?: AbortSignal; }
+    ): Promise<RoomTimeline>;
     extendTimeline(
         room: GroupRef, extension: RoomTimelineExtension, requestId: string, options?: { readonly signal?: AbortSignal; }
     ): Promise<RoomTimeline>;
@@ -110,13 +113,13 @@ interface WriteRoomProgram extends WriteRoomTime {
 }
 
 interface WriteRoomTimeline extends WriteRoomTime {
-    readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>; };
+    readonly change: { readonly roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase' | 'set-successor'; }>; };
 }
 
 export function createRoomTimeOperations(
     services: Pick<
         CreateBrowserRallarRoomsInput,
-        'requireSession' | 'roomEvents' | 'ws' | 'auth' | 'messages' | 'readSession'
+        'requireSession' | 'roomEvents' | 'ws' | 'auth' | 'messages' | 'readSession' | 'readEarliestServerEpochMs'
     >
 ): RoomTimeOperations {
     const { requireSession } = services;
@@ -130,11 +133,27 @@ export function createRoomTimeOperations(
         listener: (observation: { status: 'current' | 'stale'; value: T | null; }) => void,
         regresses: (previous: T, next: T) => boolean,
         signal?: AbortSignal,
-        subscribeInvalidation?: Parameters<typeof watchRoomRevision<T>>[0]['subscribeInvalidation']
+        observation: 'room-events' | 'named-program' = 'room-events'
     ) {
         assertRoomDeadlineName(name);
-        return watchRoomRevision<T>({ room: roomRef, services, regresses, listener, signal, subscribeInvalidation, eventTypes: ['group-updated'],
-            project: group => decode(group.metadata, name) });
+        return watchRoomRevision<T>({
+            room: roomRef, services, regresses, listener, signal, eventTypes: ['group-updated'],
+            readEarliestServerEpochMs: observation === 'named-program' ? services.readEarliestServerEpochMs : undefined,
+            project: group => decode(group.metadata, name),
+            subscribeInvalidation: observation === 'room-events' ? undefined : (room, invalidate) => subscribeViewInvalidations({
+                browser: { messages: services.messages, session: services.readSession },
+                scope: room,
+                resource: ['room-access', 'room-program'],
+                changed(notice) {
+                    if (!notice || (notice.resource === 'room-program' && notice.groupId === room.groupId && notice.name === name)) {
+                        invalidate('program-changed');
+                    }
+                    else if (notice.resource === 'room-access' && notice.groupId === room.groupId) {
+                        invalidate('access-changed');
+                    }
+                }
+            })
+        });
     }
     async function write({ roomRef, change, requestId, signal }: WriteRoomTime) {
         const room = explicitRoomRef(roomRef);
@@ -189,23 +208,14 @@ export function createRoomTimeOperations(
             return watch(room, name, readRoomSchedule, ({ status, value }) => listener({ status, schedule: value }),
                 (a, b) => b.elapsedThroughEpochMs < a.elapsedThroughEpochMs ||
                     (a.revision === b.revision && (a.status !== b.status || a.elapsedThroughEpochMs !== b.elapsedThroughEpochMs ||
-                        !sameSchedulePhases(a.phases, b.phases))), signal,
-                (watchedRoom, invalidate) => subscribeViewInvalidations({
-                    browser: { messages: services.messages, session: services.readSession },
-                    scope: watchedRoom,
-                    resource: 'room-program',
-                    changed(notice) {
-                        if (!notice) {
-                            invalidate('program-changed');
-                        }
-                        else if (notice.resource === 'room-program' && notice.groupId === watchedRoom.groupId) {
-                            invalidate(notice.reason);
-                        }
-                    }
-                }));
+                        !sameSchedulePhases(a.phases, b.phases))), signal, 'named-program');
         },
         advanceTimeline(room, advance, requestId, { signal } = {}) {
-            const roomClock = { ...advance, operation: 'advance-phase' as const };
+            const roomClock = { ...structuredClone(advance), operation: 'advance-phase' as const };
+            return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
+        },
+        setTimelineSuccessor(room, change, requestId, { signal } = {}) {
+            const roomClock = { ...structuredClone(change), operation: 'set-successor' as const };
             return writeTimeline({ roomRef: room, change: { roomClock }, requestId, signal });
         },
         extendTimeline(room, extension, requestId, { signal } = {}) {
@@ -219,7 +229,7 @@ export function createRoomTimeOperations(
             return watch(room, name, readRoomTimeline, ({ status, value }) => listener({ status, timeline: value }),
                 (a, b) => b.startedAtRevision < a.startedAtRevision ||
                     (a.startedAtRevision === b.startedAtRevision && a.phase !== b.phase) ||
-                    (a.revision === b.revision && JSON.stringify(a) !== JSON.stringify(b)), signal);
+                    (a.revision === b.revision && JSON.stringify(a) !== JSON.stringify(b)), signal, 'named-program');
         },
         async readDeadline(room, name, { signal } = {}) {
             return readRoomDeadline(await readMetadata(room, signal), name);

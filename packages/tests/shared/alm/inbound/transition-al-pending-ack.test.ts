@@ -235,8 +235,10 @@ async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, m
         prePlan: planAsDirector(msg, DIRECTOR_SOURCE, { nowMs })
     });
     return computeALInboundAdmission({
+        originAuthenticated: false,
+        readmission: false,
         read,
-        plan: planAsDirector(msg, DIRECTOR_SOURCE, computeALInboundPlanningObservations(read)),
+        plan: planAsDirector(msg, DIRECTOR_SOURCE, computeALInboundPlanningObservations(read, false)),
         facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' }, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: true,
         recordedParentPresent: true,

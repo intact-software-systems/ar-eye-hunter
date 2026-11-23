@@ -109,7 +109,8 @@ function computeArrival(
             senderId: 'origin',
             source: { kind: 'rtc-peer', peerId: 'parent' },
             supersedenceKey: null,
-            deliveredLocally: false
+            deliveredLocally: false,
+            originAuthenticated: false
         },
         pending: row,
         acks,
@@ -381,7 +382,14 @@ describe('a child\'s gap NACK at a relay that keeps no row for a message asking 
             namespace: 'relay',
             nack: { ...nack, reason: 'gap' },
             msg,
-            owner: { msgId: 'subject', senderId: 'origin', source: { kind: 'rtc-peer', peerId: 'parent' }, supersedenceKey: null, deliveredLocally: false },
+            owner: {
+                msgId: 'subject',
+                senderId: 'origin',
+                source: { kind: 'rtc-peer', peerId: 'parent' },
+                supersedenceKey: null,
+                deliveredLocally: false,
+                originAuthenticated: false
+            },
             arrivalPeerId: 'parent',
             route: { isLayoutChild: false, upstreamPeerId: undefined, relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT },
             childPeerIds: ['child'],

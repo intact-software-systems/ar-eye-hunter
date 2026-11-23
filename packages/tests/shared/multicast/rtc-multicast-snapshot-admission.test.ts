@@ -218,7 +218,7 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
 
         // Unauthorized, so no NACK asks the sender for a resend, and nothing is delivered or forwarded.
-        expect(plan.dropReason).toBe('unauthorized: proof-on-ungranted-topic');
+        expect(plan.dropReason).toBe('unauthorized: proof-not-required');
         expect(plan.dropReasonCode).toBe('unauthorized');
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });

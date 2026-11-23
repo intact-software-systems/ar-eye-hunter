@@ -65,13 +65,28 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
 }
 
 /**
- * Whether a candidate freezes the audience of an original held without one: a room send admitted before its room
- * authority was observed is frozen by the plan that first reads it, and that plan's copy replaces the held row.
+ * Whether a candidate is the frozen copy that replaces a row held before its room authority was observed: the plan
+ * that first reads the room freezes an unfrozen row's audience, and the dispatch that first holds that authority signs
+ * a receipted room send (D756), so the proof it adds to an unsigned row -- frozen there or frozen before -- is part of
+ * that copy.
  */
 export function isALFreezeOfMessage(original: ALMessage, candidate: ALMessage): boolean {
-    return resolveALFrozenMulticastAudience(original.targets) === undefined &&
-        resolveALFrozenMulticastAudience(candidate.targets) !== undefined &&
-        jsonEquals(original, toALFreezeComparableMessage(original, candidate));
+    if (resolveALFrozenMulticastAudience(candidate.targets) === undefined) {
+        return false;
+    }
+    const comparable = toALFreezeSignedComparable(original, candidate);
+    return resolveALFrozenMulticastAudience(original.targets) === undefined
+        ? jsonEquals(original, toALFreezeComparableMessage(original, comparable))
+        : comparable !== candidate && jsonEquals(original, comparable);
+}
+
+/** The candidate without the proof its dispatch added to an unsigned original; any other candidate as it is. */
+function toALFreezeSignedComparable(original: ALMessage, candidate: ALMessage): ALMessage {
+    if (original.proof !== undefined || candidate.proof === undefined) {
+        return candidate;
+    }
+    const { proof: _proof, ...unsigned } = candidate;
+    return unsigned;
 }
 
 /**

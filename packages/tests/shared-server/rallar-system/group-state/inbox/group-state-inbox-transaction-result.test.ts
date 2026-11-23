@@ -99,7 +99,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         });
         expect(harness.observedSnapshots).toEqual([]);
         expect(harness.readWakeCount()).toBe(1);
-        expect(harness.outboxEntries.size).toBe(1);
+        expect([...harness.outboxEntries.values()].map(row => row.key.topicId).sort()).toEqual(['app-outbox.group-presence-summary', 'view.invalidated']);
     });
 
     it('records one formation mutation metric only after the commit succeeds', async () => {

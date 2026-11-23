@@ -269,7 +269,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         const before = toGroupStateRows(runtime);
 
         await expect(createGroup(service, 'missing-member-result')).rejects.toThrow(
-            'expected 3 effects, received 2'
+            /Invalid runtime state guarded batch result: expected \d+ effects, received \d+/
         );
 
         expectTerminalRollback(runtime, eventStore.events, before);

@@ -127,6 +127,7 @@ function signalingMessage(): ALMessage {
             token: 'fixture-ticket',
             signalType: 'Offer',
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
         }
     });

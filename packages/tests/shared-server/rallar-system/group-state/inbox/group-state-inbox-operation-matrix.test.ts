@@ -152,7 +152,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
-                    outboxEntries: 5,
+                    outboxEntries: 6,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -200,6 +200,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -241,6 +242,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_JOIN,
                     operation: 'joinGroup',
+                    outboxEntries: 2,
                     authority: harness.sessions.bob,
                     data: {
                         scope: SCOPE,
@@ -296,6 +298,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_INVITE_ACCEPT,
                     operation: 'acceptGroupInvite',
+                    outboxEntries: 2,
                     authority: harness.sessions.charlie,
                     data: {
                         scope: SCOPE,
@@ -313,6 +316,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -386,6 +390,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_ADMISSION_GRANT,
                     operation: 'grantGroupAdmission',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -540,6 +545,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_MEMBER_UPSERT,
                     operation: 'upsertMember',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -575,6 +581,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_MEMBER_REMOVE,
                     operation: 'removeGroupMember',
+                    outboxEntries: 2,
                     authority: harness.sessions.bob,
                     data: {
                         scope: SCOPE,
@@ -678,6 +685,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -737,8 +745,8 @@ describe('GroupStateInboxService authenticated authority', () => {
                             requestId: 'matrix-create-phased'
                         }
                     } satisfies GroupCreateAppInboxPayload,
-                    // A phased creation arms the plan trigger's timer beside its summary (plan slice 11a).
-                    outboxEntries: 2,
+                    // The phased room arms its formation timer alongside the summary and initial access notice.
+                    outboxEntries: 3,
                     assertDomain: async () => {
                         expect(
                             (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))
@@ -816,6 +824,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 2,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,

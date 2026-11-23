@@ -3,6 +3,8 @@ export interface CountingSubtleCrypto {
     readonly counts: Record<'digest' | 'sign' | 'verify' | 'importKey', number>;
     /** Holds the next `verify` call until the returned release runs, so a test orders two verdicts. */
     holdNextVerify(): () => void;
+    /** Holds the next `sign` call until the returned release runs, so a test orders a signer against another dispatch. */
+    holdNextSign(): () => void;
 }
 
 type SubtleCryptoMember = SubtleCrypto[keyof SubtleCrypto];
@@ -12,6 +14,7 @@ export function createCountingSubtleCrypto(): CountingSubtleCrypto {
     const real = globalThis.crypto.subtle;
     const counts = { digest: 0, sign: 0, verify: 0, importKey: 0 };
     let held: Promise<void> | undefined;
+    let heldSign: Promise<void> | undefined;
     const subtle = new Proxy(real, {
         get(target, property) {
             const member = Reflect.get(target, property, target) as SubtleCryptoMember;
@@ -27,6 +30,11 @@ export function createCountingSubtleCrypto(): CountingSubtleCrypto {
                     held = undefined;
                     await gate;
                 }
+                if (property === 'sign') {
+                    const gate = heldSign;
+                    heldSign = undefined;
+                    await gate;
+                }
                 return await Reflect.apply(member, target, args);
             };
         }
@@ -37,6 +45,11 @@ export function createCountingSubtleCrypto(): CountingSubtleCrypto {
         holdNextVerify: () => {
             const gate = Promise.withResolvers<void>();
             held = gate.promise;
+            return gate.resolve;
+        },
+        holdNextSign: () => {
+            const gate = Promise.withResolvers<void>();
+            heldSign = gate.promise;
             return gate.resolve;
         }
     };

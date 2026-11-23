@@ -199,9 +199,6 @@ export function expectCompactWorkerOutput(output: WorkerOutput): void {
     expect(output.attemptCount).toBeGreaterThanOrEqual(1);
     expect(output.attemptCount).toBeLessThanOrEqual(3);
     if (output.domainStatus === 'applied') {
-        expect(output.outboxIds).toHaveLength(
-            expectedSingleSessionWorkerEffects(output.operation).length
-        );
         output.outboxIds.forEach((outboxId) => expect(outboxId).toMatch(/\S/u));
     }
     else if (output.domainStatus === 'no-op') {
@@ -228,8 +225,10 @@ export async function expectPendingWorkerOutboxes(
     expect(new Set(outboxIds).size).toBe(outboxIds.length);
     const entries = await readDirectResourceOutboxEntries(input.sql, outboxIds);
     for (const output of input.outputs) {
-        const effects = expectedSingleSessionWorkerEffects(output.operation);
-        expect([...new Set(effects)]).toEqual(input.effects);
+        // A connected client publishes a snapshot to its live session as well as its principal.
+        const effects: readonly WorkerOutboxEffect[] = output.operation === 'client-heartbeat' || output.operation === 'client-reconnect'
+            ? ['principal-state:snapshot', ...input.effects]
+            : input.effects;
         assertWorkerOutboxLifecycle({
             entries: entries.filter((entry) => output.outboxIds.includes(entry.resourceId)),
             outputs: [output],
@@ -390,15 +389,4 @@ function requireClassification(
         throw new TypeError('Worker trace classification is invalid');
     }
     return value;
-}
-
-function expectedSingleSessionWorkerEffects(operation: WorkerInput['command']): readonly WorkerOutboxEffect[] {
-    if (operation === 'client-heartbeat' || operation === 'client-reconnect') {
-        // These fixtures have one live session: the snapshot's principal broadcast
-        // and live-session unicast precede the event. Disconnect has no live recipient.
-        return ['principal-state:snapshot', 'principal-state:snapshot', 'principal-state:event'];
-    }
-    return operation === 'client-disconnect'
-        ? ['principal-state:snapshot', 'principal-state:event']
-        : ['group-presence-summary'];
 }

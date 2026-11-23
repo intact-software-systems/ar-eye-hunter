@@ -297,7 +297,8 @@ describe('AppInbox expired row replacement', () => {
             if (!groupBeforeExpiry || !summaryBefore) {
                 throw new Error('Expected seeded group and presence summary');
             }
-            const [staleWorkEntry] = database.outboxEntries.values();
+            const summaryWork = () => [...database.outboxEntries.values()].filter(entry => entry.key.topicId === 'app-outbox.group-presence-summary');
+            const [staleWorkEntry] = summaryWork();
             if (!staleWorkEntry) {
                 throw new Error('Expected seeded presence-summary work');
             }
@@ -396,7 +397,9 @@ describe('AppInbox expired row replacement', () => {
             });
             expect(rollbackPreservedPredecessors).toBe(true);
             expect(database.groupEventStore.events).toHaveLength(2);
-            expect(database.outboxEntries.size).toBe(2);
+            expect(summaryWork()).toHaveLength(2);
+            const accessChanges = [...database.outboxEntries.values()].filter(entry => entry.key.topicId === 'view.invalidated');
+            expect(accessChanges).toHaveLength(2);
             expect(
                 (await queue.readEntries()).some(
                     (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2

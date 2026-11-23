@@ -93,6 +93,50 @@ test('a foreground poll recovers the final snapshot when calibration becomes ava
     await expect(page.getByText('Yes 3 · No 1 · Your vote: pending')).toBeVisible();
 });
 
+test('a restored page recovers while its previous connection attempt is still pending', async ({ page }) => {
+    await page.evaluate(() => {
+        document.body.dataset.holdReconnect = 'true';
+        document.body.dataset.uncalibrated = 'true';
+    });
+    await expect(page.locator('body')).toHaveAttribute('data-reconnecting', 'true');
+    const final = { roomRef, schedule, revision: 1, canExtend: false, yes: 3, no: 1, closed: true, disposition: 'accepted' };
+    await page.route('**/poll-snapshot', route => route.fulfill({ json: final }));
+    await page.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+        delete document.body.dataset.holdReconnect;
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect(page.getByText('Voting closed · Results')).toBeVisible();
+    await expect(page.getByText('Yes 3 · No 1 · Your vote: accepted')).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('release-connect')));
+    await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+});
+
+test('a foreground clock loss supersedes an unfinished receipt read', async ({ page }) => {
+    const reading = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const final = { roomRef, schedule, revision: 1, canExtend: false, yes: 1, no: 0, closed: true, disposition: 'accepted' };
+    let readingStarted = false;
+    await page.route('**/poll-snapshot', async route => {
+        if (route.request().method() === 'POST') return await route.abort('failed');
+        if (!readingStarted) {
+            readingStarted = true;
+            reading.resolve();
+            await release.promise;
+        }
+        await route.fulfill({ json: final });
+    });
+    try {
+        await page.getByRole('button', { name: 'Yes' }).click();
+        await reading.promise;
+        await page.evaluate(() => { document.body.dataset.uncalibrated = 'true'; });
+        await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+    }
+    finally {
+        release.resolve();
+    }
+});
+
 test('a click crossing into an uncertain boundary sends no ballot', async ({ page }) => {
     const ballots: string[] = [];
     await page.route('**/poll-snapshot', async (route) => {

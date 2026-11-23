@@ -1292,7 +1292,10 @@ the plan that freezes the audience, so a later re-plan or dequeue is neither
 refused nor re-keyed. Bundle figures (S8-R11): `browser/rallar.ts` 298.0 →
 300.024 KiB brotli (307,225 B), its budget raised 299 → 301 KiB, and the
 headless agent 394.516 → 396.793 KiB (406,316 B), its budget raised 395 → 397
-KiB. Limits: an ordinary (non-granted) publication's origin stays unsigned
+KiB. Since D758 an ordinary room send that asks a `receiver` or `leader`
+receipt carries its origin's publisher proof and every hop verifies it, so the
+limit that follows holds only for a build before it. Limits then: an ordinary
+(non-granted) publication's origin stays unsigned
 across relays, and the receipt binds the message id and the origin, not the
 bytes, so a peer adjacent to a recipient can deliver other content under the
 origin's id first: the recipient signs a true `delivered` and the origin reads

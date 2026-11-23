@@ -211,6 +211,8 @@ describe('retention request validation', () => {
         {},
         { mode: 'future' },
         { mode: 'persistent', reconnectGraceMs: 1_000 },
+        { mode: 'temporary', pausedTimelineRetentionMs: 0 },
+        { mode: 'temporary', pausedTimelineRetentionMs: 86_400_001 },
         { mode: 'temporary', reconnectGraceMs: 999 },
         { mode: 'temporary', reconnectGraceMs: 86_400_001 },
         { mode: 'temporary', reconnectGraceMs: 1_000.5 },

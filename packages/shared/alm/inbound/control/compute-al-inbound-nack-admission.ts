@@ -224,7 +224,8 @@ export function computeALInboundUnheldGapNackAdmission(
         senderId: nack.originPeerId,
         source: parent,
         supersedenceKey: null,
-        deliveredLocally: false
+        deliveredLocally: false,
+        originAuthenticated: false
     };
     return toALInboundRowlessGapNackCandidate({
         read: { ...read, owner },

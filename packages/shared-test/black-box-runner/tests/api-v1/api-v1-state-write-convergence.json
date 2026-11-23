@@ -2028,10 +2028,12 @@
           "minimumMatchedRows": 10,
           "expectedEffectsByCommandType": {
             "GROUP_CREATE": [
-              "group-presence-summary"
+              "group-presence-summary",
+              "room-access"
             ],
             "GROUP_MEMBER_UPSERT": [
-              "group-presence-summary"
+              "group-presence-summary",
+              "room-access"
             ],
             "GROUP_PRESENCE_CONNECT": [
               "group-presence-summary"

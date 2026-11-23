@@ -727,7 +727,13 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
             capturedPeerConnection: toLifecycleBoolean(event.capturedPeerConnection),
             currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection),
             offerMatches: toLifecycleBoolean(event.offerMatches),
-            signalingState: toAllowedLifecycleState(event.signalingState, RTC_SIGNALING_STATES)
+            signalingState: toAllowedLifecycleState(event.signalingState, RTC_SIGNALING_STATES),
+            ...(disposition === 'offer-superseded'
+                ? {
+                    offerGeneration: toFiniteNonnegativeObservation(event.offerGeneration),
+                    appliedOfferGeneration: toFiniteNonnegativeObservation(event.appliedOfferGeneration)
+                }
+                : {})
         };
     }
     if (event.kind === 'signal-caller-release') {

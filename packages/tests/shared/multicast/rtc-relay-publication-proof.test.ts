@@ -309,7 +309,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         await relay.receive({ ...createMembersTransportCopy(), proof: signed.proof }, 'a');
 
         expect([relay.delivered, await relay.readSent('c'), await relay.readSent('a')]).toEqual([[], [], []]);
-        expect(readAdmissionReasons(relay, MEMBERS_TYPE_ID)).toEqual(['unauthorized: proof-on-ungranted-topic']);
+        expect(readAdmissionReasons(relay, MEMBERS_TYPE_ID)).toEqual(['unauthorized: proof-not-required']);
     });
 
     it('keeps a snapshot readable for its cache TTL: delivered a second before it lapses, dropped no-authority a second after', async () => {

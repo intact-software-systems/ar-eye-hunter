@@ -455,7 +455,7 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
         nowMs,
         prePlan: planALMessageHandling(message, context)
     });
-    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read) });
+    const plan = planALMessageHandling(message, { ...context, ...computeALInboundPlanningObservations(read, false) });
     const facts = readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
@@ -463,7 +463,16 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
     }, () => AL_GAP_NACK_RELAY_HOP_LIMIT);
     return {
         plan,
-        bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true, retriedCopyNextHopPeerIds: [] })
+        bundle: computeALInboundAdmission({
+            originAuthenticated: false,
+            readmission: false,
+            read,
+            plan,
+            facts,
+            canForward: false,
+            recordedParentPresent: true,
+            retriedCopyNextHopPeerIds: []
+        })
     };
 }
 

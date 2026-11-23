@@ -10,20 +10,18 @@ const panels = [
         entry: 'packages/shared-react/room-move-panel.tsx',
         symbol: 'RoomMovePanel',
         requiredInputs: ['packages/shared/api/group-member-presence.ts'],
-        allowedWebInputs: [],
         maxBrotliKiB: 5
     },
     {
         entry: 'packages/shared-react/room-moderation-panel.tsx',
         symbol: 'RoomModerationPanel',
         requiredInputs: ['packages/shared/api/group-member-presence.ts'],
-        allowedWebInputs: ['packages/shared-web/browser/rooms/read-room-membership-revocation.ts', 'packages/shared-web/browser/api/http-error.ts'],
         maxBrotliKiB: 7
     },
-    { entry: 'packages/shared-react/party-panel.tsx', symbol: 'PartyPanel', requiredInputs: [], allowedWebInputs: [], maxBrotliKiB: 5 }
+    { entry: 'packages/shared-react/party-panel.tsx', symbol: 'PartyPanel', requiredInputs: [], maxBrotliKiB: 5 }
 ];
 
-describe.each(panels)('shared-react $symbol boundary', ({ entry, symbol, requiredInputs, allowedWebInputs, maxBrotliKiB }) => {
+describe.each(panels)('shared-react $symbol boundary', ({ entry, symbol, requiredInputs, maxBrotliKiB }) => {
     it('exports the view and its props directly from their owner', () => {
         expect(collectExportSnapshot(entry, { resolveStarExports: false })).toEqual({
             values: [symbol],
@@ -51,8 +49,7 @@ describe.each(panels)('shared-react $symbol boundary', ({ entry, symbol, require
             expect(inputs).toContain(input);
         }
         expect(inputs.filter((file) => file.startsWith('packages/shared-server/'))).toEqual([]);
-        expect(inputs.filter((file) => file.startsWith('packages/shared-web/')).sort()).toEqual(allowedWebInputs.toSorted());
-        // Moderation includes access monitoring and HTTP policy decoding; other views retain their 5 KiB budget.
+        expect(inputs.filter((file) => file.startsWith('packages/shared-web/'))).toEqual([]);
         const brotliKiB = brotliCompressSync(bundle.outputFiles[0].contents, {
             params: { [constants.BROTLI_PARAM_QUALITY]: 11 }
         }).length / 1024;

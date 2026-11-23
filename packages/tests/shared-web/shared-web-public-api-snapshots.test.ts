@@ -340,6 +340,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsStatus',
                 'RallarWsStatusListener',
                 'RallarWsWaitForOpenResult',
+                'RoomAccessObservation',
                 'RoomClock',
                 'RoomClockCommand',
                 'RoomClockObservation',
@@ -350,7 +351,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomTimeline',
                 'RoomTimelineAdvance',
                 'RoomTimelineExtension',
-                'RoomTimelineObservation'
+                'RoomTimelineObservation',
+                'RoomTimelineSuccessor',
+                'RoomTimelineSuccessorChange'
             ],
             starExports: [],
             namespaceExports: []
@@ -512,6 +515,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarTypedWsSendOptions',
                 'RallarUnsubscribe',
                 'RallarWsSendInput',
+                'RoomAccessObservation',
                 'RoomClock',
                 'RoomClockCommand',
                 'RoomClockObservation',
@@ -522,7 +526,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomTimeline',
                 'RoomTimelineAdvance',
                 'RoomTimelineExtension',
-                'RoomTimelineObservation'
+                'RoomTimelineObservation',
+                'RoomTimelineSuccessor',
+                'RoomTimelineSuccessorChange'
             ],
             starExports: [],
             namespaceExports: []

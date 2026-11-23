@@ -15,10 +15,6 @@ it('archives and retires scheduled rooms with redacted notices to retained priva
             maxMembers: 4,
             metadata: {
                 ...group.value.metadata,
-                rallarRoomClocks: [{
-                    name: 'court', status: 'scheduled', revision: 1, elapsedThroughEpochMs: 100,
-                    phases: [{ phase: 'first', startsAtEpochMs: 100 }]
-                }],
                 rallarSessionSchedule: {
                     revision: 2,
                     startsAtEpochMs: fixture.nowEpochMs,
@@ -40,7 +36,7 @@ it('archives and retires scheduled rooms with redacted notices to retained priva
         expect((await fixture.repository.findGroup(RETENTION_REF))?.status).toBe('archived');
         expect(await fixture.repository.findSessionIntentEntry(RETENTION_REF, 'needs-confirmation')).toBeDefined();
         fixture.nowEpochMs += 604800000;
-        const retire = (await prepareRetention(fixture, 'retire')).computed;
+        const { ingress, computed: retire } = await prepareRetention(fixture, 'retire');
         await commitRetention(fixture, retire);
         expect(await fixture.repository.findSessionIntentEntry(RETENTION_REF, 'needs-confirmation')).toBeUndefined();
         const rows = await fixture.storage.sql<
@@ -49,8 +45,8 @@ it('archives and retires scheduled rooms with redacted notices to retained priva
         const notices = rows.map(({ ri_resource }) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(ri_resource))));
         expect(notices.filter((notice) => notice.principalId === 'needs-confirmation')).toHaveLength(2);
         expect(notices.filter(notice => notice.resource === 'sessions').every(notice => !('groupId' in notice))).toBe(true);
-        expect(notices.filter(notice => notice.resource === 'room-program')).toEqual([
-            expect.objectContaining({ principalId: 'owner', groupId: RETENTION_REF.groupId, reason: 'access-changed' })
+        expect(notices.filter(notice => notice.resource === 'room-access' && notice.changeId === ingress.commandHash)).toEqual([
+            expect.objectContaining({ principalId: 'owner', groupId: RETENTION_REF.groupId })
         ]);
     }
     finally {
