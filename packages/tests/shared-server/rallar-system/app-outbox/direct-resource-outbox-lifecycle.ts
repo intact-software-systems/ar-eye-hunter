@@ -1,5 +1,9 @@
+import assert from 'node:assert/strict';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { decodeViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 type DirectOutboxRow = Readonly<{
@@ -36,6 +40,15 @@ export type DirectResourceOutboxLifecycleExpectation = Readonly<{
     entries: readonly ExpectedDirectResourceOutboxEntry[];
     appToWsLinks: readonly ExpectedAppOutboxWsLink[];
 }>;
+
+export function assertPrivateRoomAccessNotice(message: ALMessage, room: GroupRef, principalId: string): void {
+    const scope = { applicationId: room.applicationId, workspaceId: room.workspaceId };
+    assert.equal(message.route.topicId, AppTopics.viewInvalidated);
+    assert.equal(message.payload.typeId, AppTopics.viewInvalidated);
+    assert.deepEqual(message.targets, { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } });
+    const notice = decodeViewInvalidation(JSON.parse(message.payload.resource));
+    assert.deepEqual(notice, { version: 1, resource: 'room-access', groupId: room.groupId, scope, principalId, changeId: notice.changeId });
+}
 
 export async function readDirectResourceOutboxEntries(
     sql: PSqlSql,
