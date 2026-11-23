@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
     describe,
     expect,
@@ -13,12 +16,20 @@ import { deriveRtcBaselineCaptureManifest, deriveRtcBaselineExternalAttempts } f
 import { decodeRtcBaselineCaptureRequest } from '../../../baseline/contracts/rtc-baseline-decoding.ts';
 import { createRtcB06ObservationRunner, type RtcB06ObservationRunnerDependencies } from '../../../baseline/observation/rtc-b06-observation-runner.ts';
 import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
-import type { RtcPerformanceObservationArchiveWritten } from '../../../baseline/observation/rtc-performance-observation-archive.ts';
+import {
+    verifyRtcPerformanceObservationArchive,
+    type RtcPerformanceObservationArchiveWritten
+} from '../../../baseline/observation/rtc-performance-observation-archive.ts';
+import {
+    createVerifiedRtcPerformanceObservationArchive,
+    writeRtcPerformanceObservationOutput
+} from '../../../baseline/observation/rtc-performance-observation-bun-support.ts';
+import { runRtcPerformanceObservationCli } from '../../../baseline/observation/rtc-performance-observation-cli.ts';
 import {
     computeRtcB06AttemptTimeoutMs,
     toRtcB06AttemptTestTimeoutMs
 } from '../../../baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
-import { createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
+import { createRtcB06FinalizedArtifacts, createRtcB06JobBudgetIncompleteArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');
 const source = {
@@ -205,6 +216,19 @@ function dependencies() {
         monotonicNowMs: vi.fn(() => 0)
     };
     return { configured };
+}
+
+/** The capture's output written to a real directory, as the job uploads it for publication. */
+function toFileOutputPort(): Parameters<typeof writeRtcPerformanceObservationOutput>[0] {
+    return {
+        mkdir: async (path, options) => {
+            await mkdir(path, options);
+        },
+        readFile: async (path) => new Uint8Array(await readFile(path)),
+        writeFile: async (path, bytes, options) => {
+            await writeFile(path, bytes, { flag: options?.createNew ? 'wx' : 'w' });
+        }
+    };
 }
 
 function createArchiveFixture(observation: RtcB06PerformanceObservation): RtcPerformanceObservationArchiveWritten {
@@ -542,8 +566,9 @@ describe('RTC-B06 job budget', () => {
         expect(recorded).toEqual(['not-started', 'finalize']);
     });
 
-    function budgetSummary(passedOrFailed: 'passed' | 'failed') {
-        const summary = finalizedSummary(passedOrFailed);
+    /** An attempt that ran failed, and the job budget left a later one unstarted. */
+    function failedBudgetSummary() {
+        const summary = finalizedSummary('failed');
         return {
             ...summary,
             sampleOutcomes: [
@@ -558,23 +583,56 @@ describe('RTC-B06 job budget', () => {
         };
     }
 
-    // The observation schema and its publication carry `incomplete`; a pass would claim metrics no complete set backs.
-    it('classifies a capture whose only unfinished outcomes the job budget left as incomplete, without accepted metrics', async () => {
+    // A fake archive hid that the archive's evidence check refused `incomplete`, so publish mode wrote no archive.
+    it('archives an incomplete capture as incomplete, and the publication verifies the files the job uploads', async () => {
         const { configured } = dependencies();
-        configured.envelope.finalize = async () => success(budgetSummary('passed'));
+        const evidence = await createRtcB06JobBudgetIncompleteArtifacts(
+            '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3'
+        );
+        const outputDirectory = await mkdtemp(join(tmpdir(), 'rtc-b06-incomplete-'));
+        configured.envelope.finalize = async () => success(JSON.parse(new TextDecoder().decode(evidence.get('summary.json')!)));
         configured.envelope.readBaselineValidation = async () => {
             throw new Error('An incomplete capture must not be validated as accepted evidence.');
         };
+        configured.readFinalizedArtifacts = async () => success(evidence);
+        configured.createArchive = createVerifiedRtcPerformanceObservationArchive;
+        configured.writeOutput = ({ archive }) => writeRtcPerformanceObservationOutput(toFileOutputPort(), outputDirectory, archive);
+        try {
+            const run = await createRtcB06ObservationRunner(configured).run({ ...workflow, outputDirectory });
+            const uploaded = await readdir(outputDirectory);
+            const stdout: string[] = [];
+            const exitStatus = await runRtcPerformanceObservationCli({
+                args: [
+                    'verify-observation',
+                    `--archive=${join(outputDirectory, uploaded.find((name) => name.endsWith('.zip'))!)}`,
+                    `--index-entry=${join(outputDirectory, 'index-entry.jsonl')}`
+                ],
+                browserRunner: { run: vi.fn() },
+                liveRtcRunner: { run: vi.fn(), captureBaseline: vi.fn() },
+                readFile: async (path) => new Uint8Array(await readFile(path)),
+                verifyArchive: verifyRtcPerformanceObservationArchive,
+                writeStdout: (value) => stdout.push(value),
+                writeStderr: (value) => stdout.push(value)
+            });
 
-        expect(await createRtcB06ObservationRunner(configured).run(workflow)).toMatchObject({
-            ok: true,
-            value: { observation: { primary: { outcome: 'incomplete', acceptedMetrics: false } } }
-        });
+            expect(run).toMatchObject({ ok: true, value: { observation: { primary: { outcome: 'incomplete' } } } });
+            expect(uploaded.toSorted()).toEqual([
+                'index-entry.jsonl',
+                '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3.zip'
+            ].toSorted());
+            expect(exitStatus).toBe(0);
+            expect(JSON.parse(stdout.join('')).primary).toEqual({ outcome: 'incomplete', acceptedMetrics: false });
+            expect(JSON.parse(await readFile(join(outputDirectory, 'index-entry.jsonl'), 'utf8')).observation.primary)
+                .toEqual({ outcome: 'incomplete', acceptedMetrics: false });
+        }
+        finally {
+            await rm(outputDirectory, { recursive: true, force: true });
+        }
     });
 
     it('keeps a capture failed when an attempt it ran failed before the budget ran out', async () => {
         const { configured } = dependencies();
-        configured.envelope.finalize = async () => success(budgetSummary('failed'));
+        configured.envelope.finalize = async () => success(failedBudgetSummary());
 
         expect(
             await createRtcB06ObservationRunner(configured).captureBaseline({

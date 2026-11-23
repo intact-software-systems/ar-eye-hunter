@@ -1,6 +1,5 @@
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-import { isRtcBaselineJobBudgetOutcome } from '../acceptance/rtc-baseline-job-budget-not-started.ts';
 import type {
     RtcBaselineAttemptInputLocatorDto,
     RtcBaselineAttemptLocatorDto,
@@ -10,6 +9,7 @@ import type {
 import { createRtcBaselineObservationId } from '../contracts/rtc-baseline-id.ts';
 import type { RtcBaselineFinalizedSummary } from '../evidence/rtc-baseline-finalized-evidence.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
+import { computeRtcPerformanceObservationOutcome } from './compute-rtc-performance-observation-outcome.ts';
 import { readRtcB06EvidenceReport, type RtcB06EvidenceReport } from './read-rtc-b06-evidence-report.ts';
 import type { RtcB06PerformanceObservation } from './rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from './rtc-performance-observation-archive.ts';
@@ -140,7 +140,7 @@ async function captureRtcB06Baseline(
     if (!primary.ok) {
         return primary;
     }
-    const primaryOutcome = outcomeOf(primary.value);
+    const primaryOutcome = computeRtcPerformanceObservationOutcome(primary.value);
     const evidenceReport = await readEvidenceReport(dependencies, primary.value);
     if (!evidenceReport.ok) {
         return evidenceReport;
@@ -344,16 +344,6 @@ async function runProducer(
     catch {
         return 1;
     }
-}
-
-/** Attempts the job budget left unstarted make a capture incomplete unless something it did run failed. */
-function outcomeOf(summary: RtcBaselineFinalizedSummary): RtcPerformanceObservationOutcome {
-    const outcomes = [...summary.sampleOutcomes, ...summary.cohortOutcomes];
-    const unpassed = outcomes.filter(({ outcome }) => outcome !== 'passed');
-    if (outcomes.length === 0 || (unpassed.length > 0 && unpassed.every(isRtcBaselineJobBudgetOutcome))) {
-        return 'incomplete';
-    }
-    return unpassed.length > 0 ? 'failed' : 'passed';
 }
 
 function validExitStatus(value: number) {
