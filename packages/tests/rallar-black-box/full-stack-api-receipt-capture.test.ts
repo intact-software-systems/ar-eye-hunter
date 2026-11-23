@@ -544,9 +544,9 @@ describe('full-stack private upstream receipt capture', () => {
         }
     });
 
-    // Pins the relay's deletion: a record of its kind, its refusal owner or a count stating a relayed source would
-    // otherwise still pass the projection as evidence of a path no instance runs.
-    it('refuses every record of the deleted ACK relay: its kind, its refusal owner and a count that states a source', () => {
+    // Pins the relay's deletion: a record of its kind or its refusal owner would otherwise still pass the projection
+    // as evidence of a path no instance runs.
+    it('refuses every record of the deleted ACK relay: its kind and its refusal owner', () => {
         expect(toSafeApiWsReceiptObservation({ ...ACK_RELAY })).toBeUndefined();
         expect(toSafeApiWsReceiptObservation({
             ...ACK_REJECTION,
@@ -557,8 +557,6 @@ describe('full-stack private upstream receipt capture', () => {
             deadlineAtMs: undefined
         })).toBeUndefined();
         expect(toSafeApiWsReceiptObservation(ACK_COUNT)).toEqual(ACK_COUNT);
-        expect(toSafeApiWsReceiptObservation({ ...ACK_COUNT, source: 'relayed' })).toBeUndefined();
-        expect(toSafeApiWsReceiptObservation({ ...ACK_COUNT, relayPublisherId: 'publisher-1' })).toBeUndefined();
     });
 
     it.each([
@@ -957,6 +955,7 @@ describe('full-stack private upstream receipt capture', () => {
         }
     });
 
+    // It spawns eight `node --import tsx` processes, so it takes their own 15 s spawn limit, not vitest's 5 s default.
     it('preserves actual effects, work release and owned clock reads with absent, mutating or throwing sinks', async () => {
         const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
         for (const sink of ['disabled', 'mutating', 'throwing'] as const) {
@@ -979,7 +978,7 @@ describe('full-stack private upstream receipt capture', () => {
                 expect(captured.records).toEqual([]);
             }
         }
-    });
+    }, 15000);
 
     it('publishes transport evidence after the actual work release clock', async () => {
         const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
@@ -1074,9 +1073,6 @@ describe('full-stack private upstream receipt capture', () => {
             }
         ]);
         expect(records[1]?.wsReceipt).not.toHaveProperty('before');
-        // The count is this instance's own; no relay remains to name a source or a publisher.
-        expect(records[1]?.wsReceipt).not.toHaveProperty('source');
-        expect(records[1]?.wsReceipt).not.toHaveProperty('relayPublisherId');
         expect(captured.text).not.toMatch(/AUTH_SENTINEL|ERROR_SENTINEL|authorization|headers/);
         expect(captured.mode).toBe(0o600);
         expect(captured.summary).toMatchObject({

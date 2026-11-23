@@ -123,9 +123,9 @@ completion or native cross-instance behavior.
 
 Follow these production paths directly when reviewing a change:
 
-1. Socket ACK: service `acceptIncomingMessage` → authority `readSocketAdmission`,
-   whose `readALInboundMessageAuthorization` calls the receipt hook at the
-   ingress stage (`readIngressProtocolAckRejection`: aggregation
+1. Socket ACK: service `acceptIncomingMessage` → authority `readSocketAdmission`
+   → `readScopedSocketOrigin`, whose `readALInboundMessageAuthorization` calls
+   the receipt hook at the ingress stage (`readIngressProtocolAckRejection`: aggregation
    `readRelayedAckRejection` checks only that the ACK addresses the origin it
    names), and `resolveAuthorizedSocketAdmission` → service
    `admitAuthorizedMessage` → inbound runtime `admitIncomingMessage` →

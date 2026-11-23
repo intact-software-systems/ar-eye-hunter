@@ -51,7 +51,7 @@ export interface WsQueueBoxServerReceiptAckFacts {
     readonly controlCreatedAtEpochMs: number;
     /**
      * The ACK control's own trace, which equals its subject's in production because the ACK is built with it; on
-     * `ack-count` the counted aggregate's trace instead, when one is live.
+     * `ack-count` the record head's trace instead when the count returned a view, else the control's.
      */
     readonly traceId: string;
     readonly ack: ALAckPayload;

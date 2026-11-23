@@ -272,7 +272,7 @@ export class WsQueueBoxServerReceiptAggregation {
      * A message the server admitted opens its receipt here, once; one it keeps for admission opens none until its
      * replay admits it. A copy its sender sent again that ingress accepts as a duplicate or a pending admission is
      * answered from the record, to that sender alone, so a lost receipt does not leave the sender resending into
-     * silence; a copy that finds no head opens the record its admission never opened (ruling R11).
+     * silence; a copy that finds no head opens the record its admission never opened.
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const { roomAudience, acceptance } = admitted;

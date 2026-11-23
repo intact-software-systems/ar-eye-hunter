@@ -730,7 +730,7 @@ describe('WS server receipt aggregation of recipients never sent the message (#8
     );
 });
 
-describe('WS server receipt aggregation of a re-sent copy whose admission opened no head (ruling R11)', () => {
+describe('WS server receipt aggregation of a re-sent copy whose admission opened no head', () => {
     // Pins a copy opening from its own room audience or never-sent list instead of the audience its admission row froze.
     it('opens the record for a copy whose admission row names recipients and whose head is absent', async () => {
         const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined });
@@ -764,7 +764,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
     it.each([
         { name: 'names no deadline', toMessage: (message: ALMessage): ALMessage => ({ ...message, constraints: undefined }) },
         {
-            name: 'names a deadline beyond the window (R15)',
+            name: 'names a deadline beyond the window',
             toMessage: (message: ALMessage): ALMessage => ({ ...message, constraints: { expiresAtMs: 1_000 + AL_RECEIPT_RECORD_WINDOW_MS + 1 } })
         },
         {

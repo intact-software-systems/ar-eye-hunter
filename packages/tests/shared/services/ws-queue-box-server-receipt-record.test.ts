@@ -299,7 +299,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
 
-    // Ruling R26: pins a room member whose identity no receipt control can name opening a head whose answer throws.
+    // Pins a room member whose identity no receipt control can name opening a head whose answer throws.
     it('admits a room message whose audience holds an identity a receipt cannot name, and starts no receipt for it', async () => {
         const cluster = createRecordCluster();
         const unnameable = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1);
@@ -314,7 +314,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
 
-    // Ruling R27: pins a receipt opened for an audience whose terminal receipt no control can encode, whose ended work
+    // Pins a receipt opened for an audience whose terminal receipt no control can encode, whose ended work
     // would then throw on every delivery. With ids of 128 characters, 249 recipients encode and 250 do not.
     it.each([250, 256])(
         'admits a room message of %i recipients whose terminal receipt cannot be encoded, and opens nothing',
@@ -334,7 +334,7 @@ describe('the WS server counts a receipt through the record every instance share
         }
     );
 
-    // Ruling R27: pins the encodability rule refusing an audience whose largest receipt still encodes.
+    // Pins the encodability rule refusing an audience whose largest receipt still encodes.
     it('opens a receipt for 249 recipients of 128 characters and delivers its terminal receipt', async () => {
         const cluster = createRecordCluster();
         const recipients = toLongRecipientPeerIds(249);
@@ -354,7 +354,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)?.outsideAudienceRecipientPeerIds).toHaveLength(248);
     });
 
-    // Ruling R28: pins a message whose own id no receipt control can name, admitted to nobody, throwing from its answer.
+    // Pins a message whose own id no receipt control can name, admitted to nobody, throwing from its answer.
     it('admits a message whose own id a receipt cannot name to a room of its origin alone, and answers nothing', async () => {
         const cluster = createRecordCluster();
         const a = await startInstance(cluster, instanceInput('a', [ORIGIN]));
@@ -460,7 +460,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readOriginTerminalReceipt(cluster.originSockets, MSG_ID)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
     });
 
-    // R21: ended work delivers at least once, so a second delivery must enqueue nothing new and end quietly.
+    // Ended work delivers at least once, so a second delivery must enqueue nothing new and end quietly.
     it('enqueues one terminal receipt for an ended work row claimed twice', async () => {
         const cluster = createRecordCluster();
         const instances = await startThree(cluster);
@@ -581,7 +581,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readOriginReceipts(cluster.originSockets, MSG_ID)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
     });
 
-    // Pins a copy opening a head whose deadline the record's window cannot hold (R15).
+    // Pins a copy opening a head whose deadline the record's window cannot hold.
     it('a re-sent copy of a send whose deadline lies beyond the window opens nothing', async () => {
         const cluster = createRecordCluster();
         const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingFirstWrite });
@@ -666,7 +666,7 @@ describe('the WS server counts a receipt through the record every instance share
         ]);
     });
 
-    // Ruling R27: pins a copy opening a record whose terminal receipt can never be delivered, so its ended work throws.
+    // Pins a copy opening a record whose terminal receipt can never be delivered, so its ended work throws.
     it('a re-sent copy of a send whose receipt could not be encoded opens nothing', async () => {
         const cluster = createRecordCluster();
         const room = [ORIGIN, ...toLongRecipientPeerIds(250)];

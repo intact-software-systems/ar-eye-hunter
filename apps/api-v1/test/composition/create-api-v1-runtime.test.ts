@@ -132,7 +132,7 @@ test('real runtime resubscribing either PostgreSQL listener resyncs unchanged au
     }
 });
 
-// R22: a runtime whose WS server counted in a record of its own would refuse this ACK, since its own record holds no head.
+// A runtime whose WS server counted in a record of its own would refuse this ACK, since its own record holds no head.
 test('real runtime counts a receipt in the record on the shared runtime-state repository', async () => {
     const fixture = await createFixture();
     try {

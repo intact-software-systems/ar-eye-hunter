@@ -99,7 +99,7 @@ describe('computeALReceiptRecordTally', () => {
         expect(computeALReceiptRecordTally(openHead, lateOutside).outsideAudienceRecipientPeerIds).toEqual([]);
     });
 
-    // Ruling R14: a row written ahead of its head passed no validator, so the tally itself must leave out an ACK from
+    // A row written ahead of its head passed no validator, so the tally itself must leave out an ACK from
     // a recipient the owner never sent; that recipient's `outside` row is the owner's word and counts.
     it('leaves out a confirmation from a recipient its owner never sent, and counts its outside row', () => {
         const head: ALReceiptRecordOpenHead = {

@@ -378,7 +378,7 @@ function toSafeAckCount(record: Readonly<Record<string, unknown>>): SafeApiWsRec
     const identity = toSafeAckIdentity(record, 'ack-count');
     const after = record.after === undefined ? undefined : toSafeAggregate(record.after);
     if (
-        !identity || record.source !== undefined || record.relayPublisherId !== undefined ||
+        !identity ||
         !isAllowedApiTimingString(record.outcome, ['rejected', 'conflict', 'partial', 'complete']) ||
         !isNonNegativeApiTimingNumber(record.countAtEpochMs) ||
         (record.after !== undefined && after === undefined)

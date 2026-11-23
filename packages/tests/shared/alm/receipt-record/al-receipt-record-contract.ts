@@ -464,7 +464,7 @@ export function describeALReceiptRecordContract(
             expect(toTally(read.right)).toEqual({ confirmed: ['r1', 'r2'], outside: [], complete: true });
         });
 
-        // Ruling R6: a loose key check ('ends with :r1') would read recipient a:r1's key as r1's. The record knows
+        // A loose key check ('ends with :r1') would read recipient a:r1's key as r1's. The record knows
         // its namespace and ref, so a row stored under another recipient's key fails closed, never counted.
         it('keeps a recipient whose id contains a colon apart from its look-alike', async () => {
             const f = await fixture();
@@ -668,7 +668,7 @@ export function describeALReceiptRecordContract(
             expect(toTally(counted.right?.view)).toEqual({ confirmed: ['r1'], outside: ['r2'], complete: true });
         });
 
-        // Ruling R14: `countAhead` with no head validates nothing, so a forged ACK from a never-sent recipient is
+        // `countAhead` with no head validates nothing, so a forged ACK from a never-sent recipient is
         // stored; the head that opens later must not count it, nor complete on it.
         it('an ACK that arrived ahead from a recipient its owner never sent does not count', async () => {
             const f = await fixture();
@@ -683,7 +683,7 @@ export function describeALReceiptRecordContract(
             expect(stored.map(({ value }) => value.recipientPeerId).sort()).toEqual(['r1', 'r2']);
         });
 
-        // Ruling R19: first write wins, so a forged ACK stored ahead would hold the never-sent recipient's row for good;
+        // First write wins, so a forged ACK stored ahead would hold the never-sent recipient's row for good;
         // the owner's `not-sent` would answer `repeated`, write nothing, and the receipt would time out on r1 alone.
         // The owner's word replaces that row, and only that row: an ordinary recipient's ACK and an `outside` row stay.
         it('the owner\'s word replaces an ACK that arrived ahead from a recipient it never sent', async () => {
@@ -710,7 +710,7 @@ export function describeALReceiptRecordContract(
             expect(afterOrdinary.find(({ value }) => value.recipientPeerId === 'r1')?.value.kind).toBe('confirmed');
         });
 
-        // Ruling R26: a head naming an identity no receipt control can carry could never be answered: its `admitted`
+        // A head naming an identity no receipt control can carry could never be answered: its `admitted`
         // answer would throw. Such an opening is refused before any row exists.
         it('refuses an opening a receipt could not name', async () => {
             const f = await fixture();
@@ -724,7 +724,7 @@ export function describeALReceiptRecordContract(
             expect(await readWork(f, 'deadline')).toBeUndefined();
         });
 
-        // Ruling R26: a confirmation row naming a recipient no receipt control can carry would fail every later read of
+        // A confirmation row naming a recipient no receipt control can carry would fail every later read of
         // the receipt. Under a head it is refused as outside the frozen audience; ahead of its head it fails closed at
         // the storage boundary, before anything is written.
         it('stores no confirmation for a recipient a receipt could not name', async () => {
