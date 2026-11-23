@@ -679,7 +679,9 @@ describe('Rallar WS lifecycle', () => {
             readConnectState: () => 'idle'
         });
         const lifecycles: RallarWsLifecycleEvent[] = [];
-        controller.facade.onLifecycle((event) => lifecycles.push(event), { emitCurrent: false });
+        controller.facade.onLifecycle((event) => {
+            lifecycles.push(event);
+        }, { emitCurrent: false });
 
         controller.disconnected(end);
 
