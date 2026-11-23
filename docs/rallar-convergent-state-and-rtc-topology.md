@@ -610,6 +610,22 @@ data/media lane startup; deletion observers run after owned teardown. Reentrant
 observers therefore see a complete lifetime boundary and cannot lose a replacement
 or allocate through a half-created peer record.
 
+Signals carry no ordering key, so one peer's offers can reach the other side out
+of order. Every Offer signal therefore carries a required `offerGeneration`, a
+non-negative integer; Answer and ICE signals carry none, and the shared decoder
+used by the browser and the server route refuses an Offer without it and the
+field on any other signal. The offering runtime assigns each new native peer
+connection the generation `max(now, last + 1)` from its epoch clock, so a
+redial outranks the connection it replaced even when the clock repeats or steps
+back, and every offer that connection sends, an ICE restart's included, carries
+it. The answering connection keeps the highest generation it has applied, for
+its own lifetime, across native resets. It refuses an offer below that mark
+before the collision handling: no remote description, no answer, and a
+`native-signal-decision` row with disposition `offer-superseded` carrying the
+refused `offerGeneration` and the `appliedOfferGeneration`. An equal generation
+is the same connection renegotiating and is applied as before; a higher one is
+applied and raises the mark.
+
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat
 absence, or successful complete collection omission removes that value only if

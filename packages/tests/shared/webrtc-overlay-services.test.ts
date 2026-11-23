@@ -1323,7 +1323,8 @@ function createOpenRtcChannel(): CapturedRtcChannel {
         peerSessionId: 'peer-1',
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const health = channel.readHealth();

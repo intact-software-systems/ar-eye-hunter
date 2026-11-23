@@ -559,7 +559,8 @@ function createChannel(
         peerSessionId: peerId,
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     onTestFinished(() => {
         peer.reset();

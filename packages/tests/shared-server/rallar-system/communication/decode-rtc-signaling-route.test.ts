@@ -23,7 +23,12 @@ describe('RTC signaling route authority', () => {
     });
 
     it('routes an ICE candidate, which names no offer', () => {
-        const message = createSignal({ signalType: 'IceCandidate', offerId: undefined, payload: ICE_PAYLOAD });
+        const message = createSignal({
+            signalType: 'IceCandidate',
+            offerId: undefined,
+            offerGeneration: undefined,
+            payload: ICE_PAYLOAD
+        });
         expect(validateRtcSignalingMessage(message).right).toBe(message);
     });
 
@@ -43,6 +48,14 @@ describe('RTC signaling route authority', () => {
         { offerId: '' },
         { offerId: '   ' },
         { offerId: 17 },
+        { offerGeneration: undefined },
+        { offerGeneration: null },
+        { offerGeneration: -1 },
+        { offerGeneration: 1.5 },
+        { offerGeneration: Number.POSITIVE_INFINITY },
+        { offerGeneration: '1' },
+        { signalType: 'Answer', payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } },
+        { signalType: 'IceCandidate', offerId: undefined, payload: ICE_PAYLOAD },
         { signalType: 'Renegotiate' },
         { payload: { description: { type: 'offer', sdp: 'sdp', extra: true }, candidate: null } },
         { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null, extra: true } },
@@ -69,6 +82,7 @@ function createSignal(replacement: Readonly<Record<string, unknown>>): ALMessage
             token: 'ticket',
             signalType: 'Offer',
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null },
             ...replacement
         }

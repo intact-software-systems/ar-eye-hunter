@@ -24,6 +24,11 @@ export type QRtcSignal =
     | {
         readonly signalType: 'Offer';
         readonly offerId: string;
+        /**
+         * The offering connection's generation: rises with each new connection the offering runtime
+         * opens to one peer. An answerer refuses an offer below the highest generation it has applied.
+         */
+        readonly offerGeneration: number;
         readonly payload: {
             readonly description: { readonly type: 'offer'; readonly sdp: string; };
             readonly candidate: null;

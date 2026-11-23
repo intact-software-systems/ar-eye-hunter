@@ -951,6 +951,22 @@ describe('owned native signaling projection', () => {
         expect(JSON.stringify(history)).not.toContain('private-sentinel');
     });
 
+    it('carries the refused and the applied offer generation of a superseded offer, and only of one', () => {
+        const history = toNotificationHistory([
+            '{"name":"superseded","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"offer-superseded","atEpochMs":118,"localSessionId":"a","peerSessionId":"b","signalType":"Offer","offerId":"offer","capturedPeerConnection":true,"currentPeerConnection":true,"signalingState":"have-local-offer","offerGeneration":19,"appliedOfferGeneration":20}}}}',
+            '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"offer-superseded","signalType":"Offer","offerId":"offer","offerGeneration":-1,"appliedOfferGeneration":"20"}}}}',
+            '{"name":"started","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"application-started","signalType":"Offer","offerId":"offer","offerGeneration":19,"appliedOfferGeneration":20}}}}'
+        ].join('\n'));
+        const events = requiredJsonArray(requiredJsonRecord(history, 'history').events, 'events');
+        expect(events).toMatchObject([
+            { disposition: 'offer-superseded', signalingState: 'have-local-offer', offerGeneration: 19, appliedOfferGeneration: 20 },
+            { disposition: 'offer-superseded', offerGeneration: null, appliedOfferGeneration: null },
+            { disposition: 'application-started' }
+        ]);
+        expect(requiredJsonRecord(events[2], 'started')).not.toHaveProperty('offerGeneration');
+        expect(requiredJsonRecord(events[2], 'started')).not.toHaveProperty('appliedOfferGeneration');
+    });
+
     it('keeps absent invalid and nonfinite native facts unavailable instead of inventing success', () => {
         const history = toNotificationHistory([
             '{"name":"invalid","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.signaling_diagnostics","payload":{"data":{"kind":"native-signal-decision","disposition":"answer-ineligible","atEpochMs":1e999,"currentPeerConnection":"false","offerMatches":0,"signalingState":"private-sentinel","signalType":"private-sentinel","offerId":"private-offer-sentinel"}}}}',

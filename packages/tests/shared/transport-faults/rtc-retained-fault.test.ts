@@ -23,7 +23,8 @@ it('suppresses every held RTC native write until the same fault is explicitly re
         peerSessionId: 'peer',
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, { createOfferId: crypto.randomUUID.bind(crypto) });
     const channel = new QRtcDataChannel(peer, { faultPort: faults, peerId: 'peer', dataChannelName: 'alm' });
     try {
@@ -75,7 +76,8 @@ it('writes the frame a rewrite fault returns in place of the one the sender subm
         peerSessionId: 'peer',
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, { createOfferId: crypto.randomUUID.bind(crypto) });
     const channel = new QRtcDataChannel(peer, { faultPort: faults, peerId: 'peer', dataChannelName: 'alm' });
     try {
