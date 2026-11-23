@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isAssertOperatorSatisfied } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
@@ -690,7 +691,7 @@ describe('ALM ordered subscription entry conformance', () => {
             ...toPublicationSteps('received', 'c', [1, 2]),
             'cue-regranted-received',
             'unsubscribe-sibling',
-            'assert-unsubscribe-sibling-lapsed',
+            'assert-unsubscribe-sibling-lapsed-or-refused',
             'subscribe-sibling-regranted',
             'cue-resubscribed',
             'cue-resubscribed-sent',
@@ -711,6 +712,26 @@ describe('ALM ordered subscription entry conformance', () => {
                 { operation: 'grant', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } }
             ]);
         expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
+    });
+
+    // A renewal inside the revoke window is refused `no-subscribe-grant` and ends the election `refused`; otherwise the
+    // sibling's own release ends it `lapsed`. Either way the revoke ended it, so either status proves the cell.
+    it.each(ALM_CONFORMANCE_CARRIERS)('accepts the omission sibling\'s first release as lapsed or refused over %s', (carrier) => {
+        const sibling = requireRoleRecipe(findOrderedScenario(carrier, 'subscription-ordered-omission'), 'sibling');
+        const release = findStep(sibling, 'unsubscribe-sibling');
+        const fact = sibling.commands[sibling.commands.indexOf(release) + 1]!;
+        const accepts = (status: string | undefined): boolean =>
+            fact.kind === 'assert' && fact.operator !== 'sameUniqueStringSet' &&
+            fact.source === `resultCache.${release.commandId}.value.status` &&
+            isAssertOperatorSatisfied(
+                status === undefined ? { exists: false } : { exists: true, value: status },
+                fact.operator,
+                fact.expected
+            );
+
+        expect(['lapsed', 'refused'].map(accepts)).toEqual([true, true]);
+        expect([undefined, 'released', 'active', 'pending', 'lapsed-refused'].map(accepts))
+            .toEqual([false, false, false, false, false]);
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(

@@ -72,9 +72,39 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
     });
 }
 
+/** Releases the election under `subscriptionId`, which the page's own release ends `lapsed`. */
 export function toUnsubscribeCommands(
     step: AlmConformanceStepInput,
     subscriptionId: string
+): readonly RallarBlackBoxTestCommand[] {
+    return toReleaseCommands(step, subscriptionId, { name: 'lapsed', operator: 'equals', expected: 'lapsed' });
+}
+
+/**
+ * Releases an election whose principal's `subscribe` was revoked while it was held. A renewal inside the revoke window
+ * is refused, which ends the election `refused`; with no renewal there the release ends it `lapsed`.
+ */
+export function toRevokedElectionUnsubscribeCommands(
+    step: AlmConformanceStepInput,
+    subscriptionId: string
+): readonly RallarBlackBoxTestCommand[] {
+    return toReleaseCommands(step, subscriptionId, {
+        name: 'lapsed-or-refused',
+        operator: 'matches',
+        expected: '^(lapsed|refused)$'
+    });
+}
+
+interface ReleasedStatusFact {
+    readonly name: string;
+    readonly operator: 'equals' | 'matches';
+    readonly expected: string;
+}
+
+function toReleaseCommands(
+    step: AlmConformanceStepInput,
+    subscriptionId: string,
+    released: ReleasedStatusFact
 ): readonly RallarBlackBoxTestCommand[] {
     const unsubscribe = toCommandId(step, `unsubscribe-${subscriptionId}`);
     return [
@@ -88,10 +118,10 @@ export function toUnsubscribeCommands(
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
-            name: `unsubscribe-${subscriptionId}-lapsed`,
+            name: `unsubscribe-${subscriptionId}-${released.name}`,
             source: `resultCache.${unsubscribe}.value.status`,
-            operator: 'equals',
-            expected: 'lapsed'
+            operator: released.operator,
+            expected: released.expected
         })
     ];
 }
