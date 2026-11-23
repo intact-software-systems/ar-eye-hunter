@@ -173,19 +173,11 @@ class RtcBaselineEvidenceAcceptanceController implements RtcBaselineEvidenceAcce
 
     /** Nothing ran, so nothing is staged or reconciled; the receipts only account for what the budget left. */
     async recordExternalAttemptsNotStarted(input: RtcBaselineRecordNotStartedInputDto) {
-        const manifest = await this.dependencies.readManifest(input.baselineId);
-        if (!manifest.ok) {
-            return manifest;
+        const attempt = await this.readAttemptOwner(input, 'external');
+        if (!attempt.ok) {
+            return attempt;
         }
-        const ownershipIssue = entryOwnershipIssue('external', input.locator.workloadId);
-        if (ownershipIssue) {
-            return { ok: false as const, issues: [ownershipIssue] };
-        }
-        const owner = findRtcBaselineAttemptFailureOwner(manifest.value, input.locator);
-        if (!owner) {
-            return { ok: false as const, issues: [unknownExternalAttemptIssue()] };
-        }
-        const artifacts = buildRtcBaselineJobBudgetNotStartedSequence(manifest.value, owner);
+        const artifacts = buildRtcBaselineJobBudgetNotStartedSequence(attempt.value.manifest, attempt.value.owner);
         for (const artifact of artifacts) {
             const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, artifact);
             if (!written.ok) {
@@ -413,34 +405,44 @@ class RtcBaselineEvidenceAcceptanceController implements RtcBaselineEvidenceAcce
         return written;
     }
 
+    /** The manifest that declares the attempt, once its workload enters through this entry, and the attempt's owner. */
+    private async readAttemptOwner(
+        input: RtcBaselineRecordNotStartedInputDto,
+        entry: 'browser' | 'external'
+    ): Promise<RtcBaselineResult<RtcBaselineEvidenceAcceptanceController.AttemptAdmissionContext>> {
+        const manifest = await this.dependencies.readManifest(input.baselineId);
+        if (!manifest.ok) {
+            return manifest;
+        }
+        const ownershipIssue = entryOwnershipIssue(entry, input.locator.workloadId);
+        if (ownershipIssue) {
+            return { ok: false as const, issues: [ownershipIssue] };
+        }
+        const owner = findRtcBaselineAttemptFailureOwner(manifest.value, input.locator);
+        return owner
+            ? { ok: true, value: { manifest: manifest.value, owner } }
+            : { ok: false as const, issues: [unknownExternalAttemptIssue()] };
+    }
+
     private async readAttemptContext(
         input: RtcBaselineRecordAttemptInputDto,
         entry: 'browser' | 'external'
     ): Promise<RtcBaselineResult<RtcBaselineEvidenceAcceptanceController.AttemptAdmissionContext>> {
-        const manifestResult = await this.dependencies.readManifest(input.baselineId);
-        if (!manifestResult.ok) {
-            return manifestResult;
-        }
-        const workloadId = input.locator.workloadId;
-        const ownershipIssue = entryOwnershipIssue(entry, workloadId);
-        if (ownershipIssue) {
-            return { ok: false as const, issues: [ownershipIssue] };
-        }
-        const owner = findRtcBaselineAttemptFailureOwner(manifestResult.value, input.locator);
-        if (!owner) {
-            return { ok: false as const, issues: [unknownExternalAttemptIssue()] };
+        const attempt = await this.readAttemptOwner(input, entry);
+        if (!attempt.ok) {
+            return attempt;
         }
         const reconciliation = await this.dependencies.reconcileAcceptedOperation(entry, input);
         if (reconciliation.length > 0) {
             return this.persistFailure({
                 baselineId: input.baselineId,
-                manifest: manifestResult.value,
-                owner,
+                manifest: attempt.value.manifest,
+                owner: attempt.value.owner,
                 issues: reconciliation,
                 rawEvidence: null
             });
         }
-        return { ok: true, value: { manifest: manifestResult.value, owner } };
+        return attempt;
     }
 
     private async readAcceptedAttempt(
