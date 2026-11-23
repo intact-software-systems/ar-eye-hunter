@@ -321,8 +321,9 @@ export function describeALReceiptRecordContract(
             expect(await readStoredConfirmations(f)).toEqual([]);
         });
 
-        // Every row is bounded: an open head and its rows at deadline + grace, an ended head at the later of its
-        // deadline and its end plus grace, and an early confirmation at the latest a head opened after it could need.
+        // Every row is bounded: an open head at deadline + grace and its confirmations one grace later, so an `end`
+        // that reads a live head always reads its confirmations too; an ended head at the later of its deadline and
+        // its end plus grace; an early confirmation at the latest a head opened after it could need.
         it('expires a receipt with the receipt grace', async () => {
             const f = await fixture();
             await openWith(f, ['r1']);
@@ -330,6 +331,10 @@ export function describeALReceiptRecordContract(
             expect((await f.a.record.read(f.ref)).right).toBeDefined();
             setClocks(f, f.startMs + 35_000);
             expect((await f.a.record.read(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect((await readStoredConfirmations(f)).map(({ value }) => value.recipientPeerId)).toEqual(['r1']);
+            setClocks(f, f.startMs + 64_999);
+            expect(await readStoredConfirmations(f)).toHaveLength(1);
+            setClocks(f, f.startMs + 65_000);
             expect(await readStoredConfirmations(f)).toEqual([]);
 
             const complete = await createFixture(createScope);
@@ -485,6 +490,29 @@ export function describeALReceiptRecordContract(
             expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
             expect(toTally((await f.b.record.read(f.ref)).right))
                 .toEqual({ confirmed: ['r1', 'r2'], outside: [], complete: true });
+        });
+
+        // A deadline pass one grace late reads the head and then the confirmations: were they to expire with the
+        // head, it could read a live head and no confirmation, and end a complete receipt 'timed-out' naming nobody.
+        it('ends on the confirmations it read when the deadline pass runs late', async () => {
+            const f = await fixture();
+            await openWith(f, ['r1', 'r2']);
+            f.b.clock.nowMs = f.startMs + 34_999;
+
+            const ended = await f.b.record.end(f.ref);
+            expect(ended.right?.phase).toBe('complete');
+            expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+        });
+
+        // The sibling: a late pass over a partial set must name the recipient that did confirm.
+        it('times out naming the confirmations it read when the deadline pass runs late', async () => {
+            const f = await fixture();
+            await openWith(f, ['r1']);
+            f.b.clock.nowMs = f.startMs + 34_999;
+
+            const ended = await f.b.record.end(f.ref);
+            expect(ended.right?.phase).toBe('timed-out');
+            expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1']);
         });
     });
 }

@@ -290,10 +290,14 @@ export class ALReceiptRecord {
     }
 }
 
+/**
+ * A confirmation under a head outlives the open head by one grace, so an `end` that reads a live head also reads every
+ * confirmation counted under it, however late it runs.
+ */
 function computeConfirmationExpiryMs(head: ALReceiptRecordHead | undefined, nowMs: number): number {
     return head === undefined
         ? nowMs + AL_RECEIPT_RECORD_WINDOW_MS + AL_RECEIPT_DEADLINE_GRACE_MS
-        : computeALReceiptRetentionExpiryMs(head.opening.deadlineAtMs);
+        : computeALReceiptRetentionExpiryMs(head.opening.deadlineAtMs) + AL_RECEIPT_DEADLINE_GRACE_MS;
 }
 
 /**
