@@ -39,10 +39,12 @@ export async function readObservedRoom(
     return result.snapshot.group;
 }
 
-export function readObservedRoomDelta(
+export function readObservedRoomDelta<T extends { readonly revision: number; }>(
     message: Pick<RallarStateEventMessage, 'transport' | 'topicId' | 'typeId' | 'raw'>,
-    room: GroupRef
-) {
+    room: GroupRef,
+    project: (group: ObservedRoomMetadata) => T | null,
+    afterRevision: number
+): T | undefined {
     if (
         message.transport !== 'ws' || message.topicId !== AppTopics.groupStateEvent ||
         message.typeId !== AppTopics.groupStateEvent
@@ -53,7 +55,9 @@ export function readObservedRoomDelta(
     if (!target || !isSameGroupRef(target, room)) {
         return;
     }
-    return parseGroupStateDeltaEnvelope(message.raw.payload.resource, room)?.group;
+    const group = parseGroupStateDeltaEnvelope(message.raw.payload.resource, room)?.group;
+    const projection = group && project(group);
+    return projection && projection.revision > afterRevision ? projection : undefined;
 }
 
 export function validateReadRevision<T extends { readonly revision: number; }>(

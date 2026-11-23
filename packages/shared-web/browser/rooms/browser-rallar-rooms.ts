@@ -19,7 +19,8 @@ import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-roo
 import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
-import { removeMissingRoomSnapshot, clearDeniedRoomIfUnchanged, watchRoomAccess, type RoomAccessObservation } from '../state-read/watch-room-access.ts';
+import { removeMissingRoomSnapshot, clearDeniedRoomIfUnchanged } from '../state-read/reconciliation.ts';
+import { watchRoomAccess, type RoomAccessObservation } from '../state-read/watch-room-access.ts';
 import {
     hydrateGroupTopologyOverlays,
     type GroupTopologyReadThroughOutcome

@@ -1,4 +1,4 @@
-import { observeRoomReadLifecycle } from './room-read-lifecycle.ts';
+import { observeRoomReadLifecycle } from './observe-room-read-lifecycle.ts';
 import { RoomPurgeWakeup } from './room-purge-wakeup.ts';
 import { explicitRoomRef, readObservedRoom, readObservedRoomDelta, validateReadRevision, type ObservedRoomMetadata } from './observed-room.ts';
 import { ApiHttpError } from '../api/http-error.ts';
@@ -132,12 +132,8 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
         }
         wake();
     }) ?? roomEvents.onEvent((_event, message) => {
-        const group = readObservedRoomDelta(message, room);
-        if (!group) {
-            return;
-        }
-        const announced = input.project(group);
-        if (!announced || announced.revision <= Math.max(announcedRevision, observed?.revision ?? 0)) {
+        const announced = readObservedRoomDelta(message, room, input.project, Math.max(announcedRevision, observed?.revision ?? 0));
+        if (!announced) {
             return;
         }
         const action = observed && input.onDelta?.(observed, announced);

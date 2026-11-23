@@ -1,17 +1,14 @@
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    findGroupStateSnapshotByRef, removeGroupStateSnapshotIfUnchanged, waitForGroupStateSnapshotChangesIdle
-} from '@shared/repository/group-state-snapshots-repository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import { ApiHttpError } from '../api/http-error.ts';
 import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
 import { notifyListener } from '../messages/rallar-listener-delivery.ts';
-import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
+import { clearDeniedRoomIfUnchanged } from './reconciliation.ts';
 import { readObservedRoom } from './observed-room.ts';
 import { watchRoomRevision } from './watch-room-revision.ts';
 import type { CreateBrowserRallarRoomsInput } from '../rooms/browser-rallar-rooms.ts';
 import { readRoomMembershipRevocation } from '../rooms/read-room-membership-revocation.ts';
 import { captureRoomSession } from '../rooms/room-session-fence.ts';
-import type { RallarRoomStateStorePort } from '../rooms/room-state-store.ts';
 
 export type RoomAccessObservation =
     | { readonly status: 'current' | 'stale' }
@@ -56,25 +53,4 @@ export function watchRoomAccess(
         listener: ({ status }) => listener({ status }),
         onDenied: error => notifyListener(listener, { status: 'denied', reason: readRoomMembershipRevocation(error) ?? 'unavailable' })
     });
-}
-
-export async function clearDeniedRoomIfUnchanged(
-    store: RallarRoomStateStorePort, room: GroupRef, observed: GroupSnapshot | undefined
-): Promise<boolean> {
-    if (findGroupStateSnapshotByRef(room) !== observed) return false;
-    store.clearCurrentRoomIfMatches(room, true);
-    if (observed) await removeMissingRoomSnapshot(room, observed);
-    return true;
-}
-
-export async function removeMissingRoomSnapshot(roomRef: GroupRef, observed: GroupSnapshot): Promise<void> {
-    const removed = removeGroupStateSnapshotIfUnchanged(roomRef, observed);
-    emitBrowserStateReadDiagnostic({
-        name: 'rallar.browser.state-read',
-        feature: 'group',
-        operation: 'point',
-        result: removed ? 'removed' : 'preserved',
-        durationMs: 0
-    });
-    await waitForGroupStateSnapshotChangesIdle();
 }
