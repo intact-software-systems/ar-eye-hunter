@@ -269,12 +269,14 @@ manifest and sends `room_id` only when `--room-id <id>` is supplied, so each
 spawned run is isolated by default. It creates a sanitized run id from the
 manifest file name plus a UTC timestamp (or `--run-id`), uses the manifest's
 `metadata.recommendedTerminalTimeoutSeconds` unless
-`--terminal-timeout-seconds` or `--fast` is given, and calls
+`--terminal-timeout-seconds` is given, and calls
 `gh workflow run`. It preflights the required repository or `production`
 environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
 is supplied. The `--fast` flag maps to `rollout_before_run=false`,
 `install_playwright=false`, `npm_ci=false`, `wait_for_agents=true`,
-`ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. The helper also
+and `ready_timeout_seconds=60`; it skips setup, not the run, so the manifest's
+recommended terminal timeout still bounds it, and `terminal_timeout_seconds=180`
+applies only to a manifest that recommends none. The helper also
 defaults `register_before_login=true` and `stop_after_run=true`. Passing only
 `rollout_before_run=false` does not skip Playwright unless
 `install_playwright=false` is also supplied. Pass `--keep-headless` only when

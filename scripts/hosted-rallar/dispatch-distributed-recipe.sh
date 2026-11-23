@@ -52,12 +52,12 @@ Options:
   --npm-ci <bool>                Pass npm_ci. Default: false.
   --wait-for-agents <bool>       Pass wait_for_agents. Default: true.
   --ready-timeout-seconds <n>    Pass ready_timeout_seconds. Default: 120.
-  --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
+  --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: the manifest's recommendation, else 300.
   --register-before-login <bool> Pass register_before_login. Default: true.
   --stop-after-run <bool>        Pass stop_after_run. Default: true.
   --headless-entry <entry>       Pass headless_entry. Values: operator-spa, headless. Default: headless.
   --browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
-  --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
+  --fast                         Skip rollout, Playwright install, and npm ci with a shorter ready timeout.
   --keep-headless                Keep browsers running after artifacts and analysis for debugging.
   --server-timing                Run with the API's timing logs on; the run rolls the API out to apply them.
   --allow-diagnostic            Allow manifests marked as diagnostic.
@@ -243,8 +243,10 @@ while [[ $# -gt 0 ]]; do
 		NPM_CI="false"
 		WAIT_FOR_AGENTS="true"
 		READY_TIMEOUT_SECONDS="60"
-		TERMINAL_TIMEOUT_SECONDS="180"
-		TERMINAL_TIMEOUT_SECONDS_EXPLICIT="1"
+		# Only the fallback for a manifest that recommends no terminal timeout; fast mode skips setup, not the run.
+		if [[ "${TERMINAL_TIMEOUT_SECONDS_EXPLICIT}" != "1" ]]; then
+			TERMINAL_TIMEOUT_SECONDS="180"
+		fi
 		shift
 		;;
 	--keep-headless)
@@ -392,8 +394,7 @@ elif [[ "${FAST_MODE}" == "1" &&
 	"${INSTALL_PLAYWRIGHT}" == "false" &&
 	"${NPM_CI}" == "false" &&
 	"${WAIT_FOR_AGENTS}" == "true" &&
-	"${READY_TIMEOUT_SECONDS}" == "60" &&
-	"${TERMINAL_TIMEOUT_SECONDS}" == "180" ]]; then
+	"${READY_TIMEOUT_SECONDS}" == "60" ]]; then
 	mode="fast"
 fi
 
