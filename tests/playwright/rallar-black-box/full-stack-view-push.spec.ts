@@ -4,6 +4,8 @@ import path from 'node:path';
 import { runWorldFleetDistributedRecipe } from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
+
+import { computeViewPushTestDeadlines } from './compute-view-push-test-deadlines.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     openBrowserControlAgent,
@@ -20,13 +22,14 @@ test(
     'two fresh browser agents observe private view push and recover offline changes',
     async ({ browser, request }, testInfo) => {
         test.skip(!config.enabled, config.skipReason);
-        test.setTimeout(180_000);
         const authored = decodeDistributedRunManifest(JSON.parse(await readFile(manifestPath, 'utf8'))).fold(
             (issues) => {
                 throw new Error(`Invalid view push manifest: ${JSON.stringify(issues)}`);
             },
             (value) => value
         );
+        const deadlines = computeViewPushTestDeadlines(authored);
+        test.setTimeout(deadlines.testTimeoutMs);
         const runId = uniqueRunId(testInfo);
         const manifest = { ...authored, distributedRunId: `${runId}-view-push`, controlRunId: runId };
         const agents: OpenedBrowserControlAgent[] = [];
@@ -53,8 +56,8 @@ test(
                 controlRunId: runId,
                 artifactDir,
                 pollMs: 250,
-                readinessTimeoutMs: 90_000,
-                terminalTimeoutMs: 90_000
+                readinessTimeoutMs: deadlines.readinessTimeoutMs,
+                terminalTimeoutMs: deadlines.terminalTimeoutMs
             }, {
                 fetch,
                 readManifestText: async () => JSON.stringify(manifest),
