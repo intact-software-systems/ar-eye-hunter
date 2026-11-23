@@ -105,7 +105,7 @@ async function readOutboxRows(
             select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_type_id, ri_status, ri_resource
             from resource_inbox
             where ri_type_id = 'WS_OUTBOX' and ri_topic_id = 'view.invalidated'
-              and ri_resource_id in (select jsonb_array_elements_text(${JSON.stringify(roomAccessIds)}::jsonb))
+              and ri_resource_id = any(string_to_array(${roomAccessIds.join(',')}, ','))
         `);
     }
     return [...new Map(rows.flatMap((batch) =>
