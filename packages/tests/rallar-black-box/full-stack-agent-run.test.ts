@@ -20,6 +20,19 @@ import {
 
 import { openRecordingControlRequest } from './recording-control-request-fixture.ts';
 
+/** How many recipe gates the lane has begun to wait on: a gate's first read follows its start at once. */
+const recipeGates = vi.hoisted(() => ({ started: 0 }));
+vi.mock('../../../tests/playwright/rallar-black-box/full-stack-recipe-gate.ts', async (importOriginal) => {
+    const gate = await importOriginal<typeof import('../../../tests/playwright/rallar-black-box/full-stack-recipe-gate.ts')>();
+    return {
+        ...gate,
+        waitForRecipeGate: async (...input: Parameters<typeof gate.waitForRecipeGate>) => {
+            recipeGates.started += 1;
+            return await gate.waitForRecipeGate(...input);
+        }
+    };
+});
+
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 const SENDER_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the sender\'s reconnect failed' };
@@ -508,21 +521,17 @@ describe('ALM run on an agent per role', () => {
     });
 
     it('does not start a continuation whose gate passed because the gating role\'s recipe failed, before that failure is read', async () => {
-        // Once the sender's root is posted, the roles' first reads run in start order, the receiver's, the sibling's and
-        // the sender's, and the gate's follows the sibling's pass. The receiver's own failure shows from the gate's first
+        // The gate starts once the sibling's pass was read, and the receiver's own failure shows from that gate's first
         // read on, so the gate sees the receiver's recipe ended a poll before the receiver's read does.
-        let readsAfterSenderPosted = 0;
-        const fixture = await createSiblingContinuationFixture('gating-failure-continuation-run', (posted, runIds) => {
-            readsAfterSenderPosted += posted.includes(runIds.sender) ? 1 : 0;
-            return {
-                gateOpen: false,
-                results: [
-                    ...posted.filter((commandId) => [runIds.sibling, runIds.sender, runIds.continuation].includes(commandId))
-                        .map((commandId) => ({ commandId, ok: true })),
-                    ...(readsAfterSenderPosted >= 4 ? [{ commandId: runIds.receiver, ok: false, error: SENDER_FAILURE }] : [])
-                ]
-            };
-        });
+        const gatesBefore = recipeGates.started;
+        const fixture = await createSiblingContinuationFixture('gating-failure-continuation-run', (posted, runIds) => ({
+            gateOpen: false,
+            results: [
+                ...posted.filter((commandId) => [runIds.sibling, runIds.sender, runIds.continuation].includes(commandId))
+                    .map((commandId) => ({ commandId, ok: true })),
+                ...(recipeGates.started > gatesBefore ? [{ commandId: runIds.receiver, ok: false, error: SENDER_FAILURE }] : [])
+            ]
+        }));
         const { control, runIds } = fixture;
         try {
             const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
