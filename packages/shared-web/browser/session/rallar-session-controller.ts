@@ -106,7 +106,6 @@ export function createRallarSessionController(
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({
         sessionDeliveries: options.sessionDeliveries,
-        nowMs: Date.now,
         newRequestId: crypto.randomUUID.bind(crypto),
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,

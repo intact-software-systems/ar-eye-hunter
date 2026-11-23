@@ -511,7 +511,6 @@ function createDefaultAuthFixture(
     };
     const lifecycle = new BrowserSessionAuthLifecycle({
         sessionDeliveries,
-        nowMs: Date.now,
         newRequestId: crypto.randomUUID.bind(crypto),
         connectionRuntime: runtime,
         transportRuntime,
@@ -524,10 +523,14 @@ function createDefaultAuthFixture(
 }
 
 function openObservedMessage(fixture: AuthFixture, msgId: string): RallarMessageHandle {
-    return fixture.deliveries.open({ message: {
-        id: { v: 4, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId, traceId: 'trace-session-auth-lifecycle-notifications' },
-        route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
-        payload: { typeId: 'app.event', resource: 'true' },
-        delivery: { reliability: 'at-least-once', ack: 'receiver' }
-    }, carrier: 'ws', readDeadlineEpochMs: Date.now });
+    return fixture.deliveries.open({
+        message: {
+            id: { v: 4, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId, traceId: 'trace-session-auth-lifecycle-notifications' },
+            route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
+            payload: { typeId: 'app.event', resource: 'true' },
+            delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        },
+        carrier: 'ws',
+        readDeadlineEpochMs: Date.now
+    });
 }

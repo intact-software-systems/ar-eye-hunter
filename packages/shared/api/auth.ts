@@ -24,6 +24,7 @@ export function readAuthSessionStorageKind(): AuthSessionStorageKind {
     return authSessionStorageKind;
 }
 
+/** Expiry is not judged here: only a calibrated server clock or the server itself can judge a server-issued expiry. */
 export function readSession(): AuthSession | undefined {
     const storage = readStorage();
     const raw = storage.getItem(KEY);
@@ -40,11 +41,6 @@ export function readSession(): AuthSession | undefined {
             !s.sessionId ||
             !Number.isFinite(s.expiresAtEpochMs)
         ) {
-            return undefined;
-        }
-
-        if (s.expiresAtEpochMs <= Date.now()) {
-            clearSession();
             return undefined;
         }
 

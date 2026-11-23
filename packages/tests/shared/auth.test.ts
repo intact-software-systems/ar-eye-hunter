@@ -17,18 +17,34 @@ describe('browser auth session storage', () => {
         vi.unstubAllGlobals();
     });
 
-    it('clears and hides an expired stored session', () => {
-        const expiredSession: AuthSession = {
+    it('keeps a stored session whose server-issued expiry the browser clock has already passed', () => {
+        // The browser clock runs ahead of the server: by server time this session is still valid.
+        const storedSession: AuthSession = {
             clientId: 'principal-1',
             sessionId: 'session-1',
             username: 'principal-1',
             accessToken: 'token-1',
             expiresAtEpochMs: 999
         };
-        writeSession(expiredSession);
+        writeSession(storedSession);
+
+        expect(readSession()).toEqual(storedSession);
+        expect(localStorage.getItem('auth.session')).not.toBeNull();
+    });
+
+    it('hides a stored session without a finite expiry', () => {
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+                username: 'principal-1',
+                accessToken: 'token-1',
+                expiresAtEpochMs: null
+            })
+        );
 
         expect(readSession()).toBeUndefined();
-        expect(localStorage.getItem('auth.session')).toBeNull();
     });
 
     it('can isolate auth sessions in browser session storage', () => {

@@ -173,8 +173,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
     });
 
     it('contains an expiry failure instead of raising an unhandled rejection', async () => {
-        // Both games restore a stored session before connecting, so an already
-        // expired one fires this timer with nothing to catch its rejection. An
+        // The expiry timer fires with nothing to catch its rejection. An
         // escaping rejection fails this file, which is the assertion that matters.
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         vi.useFakeTimers();
@@ -192,13 +191,92 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             throw new Error('storage unavailable');
         });
         const facade = createRallarFacade();
-        facade.auth.onChange(() => undefined, { emitCurrent: true });
 
+        await facade.connect();
         await vi.advanceTimersByTimeAsync(500);
         await Promise.resolve();
 
         expect(reported).toContain('Failed to expire the Rallar auth session');
         consoleError.mockRestore();
+    });
+
+    it('keeps a session the server still honours when the browser clock runs ahead of it', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        vi.useFakeTimers();
+        vi.setSystemTime(100_000);
+        const session = {
+            ...mocks.ctx.session,
+            expiresAtEpochMs: 1_500
+        };
+        let currentSession: typeof session | undefined = session;
+        mocks.initialiseMiddleware.mockResolvedValue({
+            middleware: mocks.ctx.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(() => Date.now() - 99_000),
+            checkpoints: []
+        });
+        mocks.readSession.mockImplementation(() => currentSession);
+        mocks.clearSession.mockImplementation(() => {
+            currentSession = undefined;
+        });
+        const facade = createRallarFacade();
+        const authStates: RallarAuthState[] = [];
+        // A stored session is restored before any connection has calibrated the server clock.
+        facade.auth.onChange((authState) => {
+            authStates.push(authState);
+        }, { emitCurrent: true });
+        await vi.advanceTimersByTimeAsync(0);
+
+        await facade.connect();
+        await vi.advanceTimersByTimeAsync(499);
+        const beforeServerExpiry = { authStates: [...authStates], connected: facade.isConnected() };
+        await vi.advanceTimersByTimeAsync(1);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(beforeServerExpiry).toEqual({
+            authStates: [{ authenticated: true, reason: 'current', session }],
+            connected: true
+        });
+        expect(authStates.at(-1)).toEqual({ authenticated: false, reason: 'expired', session: undefined });
+        expect(facade.isConnected()).toBe(false);
+    });
+
+    it('expires a session the server has ended when the browser clock runs behind it', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const session = {
+            ...mocks.ctx.session,
+            expiresAtEpochMs: 5_000
+        };
+        let currentSession: typeof session | undefined = session;
+        mocks.initialiseMiddleware.mockResolvedValue({
+            middleware: mocks.ctx.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(() => Date.now() + 9_000),
+            checkpoints: []
+        });
+        mocks.readSession.mockImplementation(() => currentSession);
+        mocks.clearSession.mockImplementation(() => {
+            currentSession = undefined;
+        });
+        const facade = createRallarFacade();
+        const authStates: RallarAuthState[] = [];
+        facade.auth.onChange((authState) => {
+            authStates.push(authState);
+        }, { emitCurrent: false });
+
+        await facade.connect();
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect({ authStates, currentSession, connected: facade.isConnected() }).toEqual({
+            authStates: [{ authenticated: false, reason: 'expired', session: undefined }],
+            currentSession: undefined,
+            connected: false
+        });
     });
 
     it('does not expire a replacement session when an old expiry timer fires', async () => {
