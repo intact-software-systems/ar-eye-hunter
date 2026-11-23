@@ -269,14 +269,17 @@ export type ALInboundRuntimeDiagnosticsEvent =
         workerId: string;
         /**
          * Rotations that walked back to the head of NEW in this window. One event per
-         * `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS` window at most: the first rotation that completes that long
-         * after the window opened states it and opens the next.
+         * `AL_INBOUND_ROTATION_WINDOW_MS` window at most, the shortest jittered idle-ceiling gap: the first
+         * rotation that completes that long after the window opened states it and opens the next.
          */
         rotationCount: number;
         /** The window's wall time, so a slowed rotation reads as a long gap, not an absence. */
         durationMs: number;
-        /** The slowest single rotation, from its first page read to its wrap, so one crawling scan is not averaged away. */
-        longestRotationMs: number;
+        /**
+         * The slowest single rotation's own page reads, summed, each timed from before its read to its
+         * settlement: time the engine spent between them is not in it, so one crawling scan is not averaged away.
+         */
+        longestRotationReadMs: number;
         /** How many of those rotations held back at least one due row. */
         deferredRotationCount: number;
         /** The due rows the latest such rotation held back, oldest first, at most one page of them. */

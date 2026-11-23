@@ -531,7 +531,7 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(rotationsOf(diagnostics)[0]).toMatchObject({ kind: 'rotation-alive', workerId: DIAGNOSTICS_WORKER_ID });
         // The slowest single rotation of each window: a rotation that crawls says so without stopping.
         for (const rotation of rotationsOf(diagnostics)) {
-            expect(rotation.longestRotationMs).toBeLessThanOrEqual(rotation.durationMs);
+            expect(rotation.longestRotationReadMs).toBeLessThanOrEqual(rotation.durationMs);
         }
         expect(drainsOf(diagnostics)).toEqual([]);
     },

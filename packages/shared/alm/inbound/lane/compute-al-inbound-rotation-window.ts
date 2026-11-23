@@ -1,4 +1,7 @@
-import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS } from '../../../services/inbox-outbox-engine.ts';
+import {
+    INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
+    INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO
+} from '../../../services/inbox-outbox-engine.ts';
 import type { ALInboundDeferredEffect, ALInboundRuntimeDiagnosticsEvent } from '../al-inbound-runtime-diagnostics.ts';
 import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
 
@@ -6,7 +9,7 @@ import type { ALInboundRotationPage } from './al-inbound-rotation-page.ts';
 export interface ALInboundRotationWindow {
     readonly openedAtMs: number | undefined;
     readonly rotationCount: number;
-    readonly longestRotationMs: number;
+    readonly longestRotationReadMs: number;
     readonly deferredRotationCount: number;
     readonly latestDeferred: readonly ALInboundDeferredEffect[];
 }
@@ -23,20 +26,27 @@ export interface ALInboundRecordedRotationWindow {
     readonly alive: ALInboundRotationAlive | undefined;
 }
 
+/**
+ * How long a window stays open: the shortest wait the engine's jitter allows between two idle passes
+ * at its ceiling, so the rotation of every idle pass closes the window the pass before it opened.
+ */
+export const AL_INBOUND_ROTATION_WINDOW_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS *
+    (1 - INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO);
+
 export const AL_INBOUND_ROTATION_WINDOW_UNOPENED: ALInboundRotationWindow = {
     openedAtMs: undefined,
     rotationCount: 0,
-    longestRotationMs: 0,
+    longestRotationReadMs: 0,
     deferredRotationCount: 0,
     latestDeferred: []
 };
 
 /**
  * The window with one more completed rotation in it. The first window opens when its first rotation
- * started; the first rotation that completes at least the engine's idle ceiling after the window
- * opened closes it into `alive` and opens the next one at its completion. An idle engine passes at
- * least once per idle ceiling and every pass walks the rotation, so a live lane states itself about
- * once per ceiling, and silence well beyond that means the rotation stopped.
+ * started; the first rotation that completes at least `AL_INBOUND_ROTATION_WINDOW_MS` after the
+ * window opened closes it into `alive` and opens the next one at its completion. An idle engine
+ * passes 2.4 to 3.6 s apart at its jittered ceiling and every pass walks the rotation, so a live idle
+ * lane states itself on every idle pass, and silence well beyond 3.6 s means the rotation stopped.
  */
 export function computeALInboundRotationWindow(
     window: ALInboundRotationWindow,
@@ -46,17 +56,17 @@ export function computeALInboundRotationWindow(
     const durationMs = Math.max(0, rotation.completedAtMs - openedAtMs);
     const heldBack = rotation.deferred.length > 0;
     const rotationCount = window.rotationCount + 1;
-    const longestRotationMs = Math.max(window.longestRotationMs, rotation.completedAtMs - rotation.startedAtMs);
+    const longestRotationReadMs = Math.max(window.longestRotationReadMs, rotation.readDurationMs);
     const deferredRotationCount = window.deferredRotationCount + (heldBack ? 1 : 0);
     const latestDeferred = heldBack ? rotation.deferred : window.latestDeferred;
-    if (durationMs < INBOX_OUTBOX_ENGINE_MAX_IDLE_MS) {
+    if (durationMs < AL_INBOUND_ROTATION_WINDOW_MS) {
         return {
-            window: { openedAtMs, rotationCount, longestRotationMs, deferredRotationCount, latestDeferred },
+            window: { openedAtMs, rotationCount, longestRotationReadMs, deferredRotationCount, latestDeferred },
             alive: undefined
         };
     }
     return {
         window: { ...AL_INBOUND_ROTATION_WINDOW_UNOPENED, openedAtMs: rotation.completedAtMs },
-        alive: { rotationCount, durationMs, longestRotationMs, deferredRotationCount, latestDeferred }
+        alive: { rotationCount, durationMs, longestRotationReadMs, deferredRotationCount, latestDeferred }
     };
 }
