@@ -16,9 +16,9 @@ import type {
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
+import { drainUntil } from '../advance-until.ts';
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 import { toOriginDirectedSnapshot } from './rtc-origin-overlay-fixture.ts';
-import { drainUntil } from './rtc-relay-chain-test-support.ts';
 
 /** A `command` send's receipt: three retries two seconds apart, so every window has passed by then. */
 const RECEIPT_LIFETIME_MS = 9_000;

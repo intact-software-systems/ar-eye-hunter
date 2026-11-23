@@ -6,6 +6,7 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
+import { drainUntil } from '../../advance-until.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
 import {
     createAvailablePublicationCryptoFixture,
@@ -18,7 +19,7 @@ import {
     useFakeClock,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
-import { createRelayChain, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
+import { createRelayChain, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 /** The receipt window of an `at-least-once` send, after which its origin retries what is unconfirmed. */

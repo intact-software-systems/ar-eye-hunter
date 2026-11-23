@@ -8,6 +8,7 @@ import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { drainUntil } from '../../advance-until.ts';
 import { createDefaultOutboundTestRuntime, createOutboundMessage, enqueueOutboundOrThrow } from '../../alm/outbound-runtime-test-fixture.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
 import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
@@ -22,7 +23,7 @@ import {
     toOriginDirectedSnapshot,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
-import { createRelayChain, deliverEach, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
+import { createRelayChain, deliverEach, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';

@@ -28,6 +28,7 @@ import {
     toRtcFrozenRoomMessage
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
+import { advanceUntil } from '../advance-until.ts';
 import {
     createOriginOverlay,
     createOriginPrincipalSnapshot,
@@ -43,8 +44,6 @@ import {
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
-
-import { drainUntil } from './rtc-relay-chain-test-support.ts';
 
 import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
 
@@ -477,7 +476,8 @@ describe('the RTC leg of a principal or listed room send', () => {
             expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
 
             fixture.groups.accept('room', createOriginPrincipalSnapshot());
-            await vi.advanceTimersByTimeAsync(200);
+            // The freezing dequeue signs this receiver send with real WebCrypto (D758), which fake time alone does not run.
+            await advanceUntil(() => fixture.channels.b!.sent.length > 0);
 
             expect(readSentTargets(fixture.channels.b!)).toEqual([toAudienceFrozenTargets(recipientPeerIds)]);
             expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
@@ -491,13 +491,10 @@ describe('the RTC leg of a principal or listed room send', () => {
         const admitted = await enqueueLegAndDrain(fixture, createAudienceBroadcast('list', ORIGIN_ROOM, 'local-outbox'));
         const held = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
         fixture.groups.accept('room', createOriginPrincipalSnapshot());
-        // The freezing dequeue signs this receiver send with real WebCrypto (D756), which fake timers alone do not drain:
+        // The freezing dequeue signs this receiver send with real WebCrypto (D758), which fake time alone does not run:
         // wait until its commit replaced the held row before reading the canonical row.
         const readCanonical = async () => await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
-        for (let step = 0; step < 20 && !isFrozenRow(await readCanonical()); step++) {
-            await vi.advanceTimersByTimeAsync(100);
-            await drainUntil(async () => isFrozenRow(await readCanonical()), 20);
-        }
+        await advanceUntil(async () => isFrozenRow(await readCanonical()));
         const canonical = await readCanonical();
 
         const replayed = await enqueueLegAndDrain(fixture, JSON.parse(held!.resource));

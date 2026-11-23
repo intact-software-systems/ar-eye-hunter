@@ -23,16 +23,16 @@ import { computeRtcReceiptKeyRefusal } from '@shared/multicast/receipt-proof/com
 import { toRtcReceiptProofDispatchPlan } from '@shared/multicast/receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { toRtcAckTrackingPlan } from '@shared/multicast/to-rtc-ack-tracking-plan.ts';
 
+import { advanceUntil } from '../../advance-until.ts';
 import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
 import {
     createOriginReceiverMulticast,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     ORIGIN_ROOM,
-    toOriginFrozenTargets
+    toOriginFrozenTargets,
+    type CapturedChannel
 } from '../rtc-origin-overlay-fixture.ts';
-
-import { drainUntil } from '../rtc-relay-chain-test-support.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
@@ -370,7 +370,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-keyed');
 
         fixture.groups.accept('room', toArrivingRoom(keys));
-        await vi.advanceTimersByTimeAsync(5_000);
+        await advanceUntilSent(fixture.channels.b!);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
         expect(fixture.channels.b!.sent.length).toBeGreaterThan(0);
@@ -404,7 +404,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-keyed', ['b', 'c']);
 
         fixture.groups.accept('room', toArrivingRoom(keys));
-        await vi.advanceTimersByTimeAsync(5_000);
+        await advanceUntilSent(fixture.channels.b!);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
         expect(fixture.channels.b!.sent.length).toBeGreaterThan(0);
@@ -418,7 +418,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         const { fixture, message, held, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-keyless', ['b', 'c']);
 
         fixture.groups.accept('room', toArrivingRoom(keys));
-        await vi.advanceTimersByTimeAsync(5_000);
+        await advanceUntilSent(fixture.channels.c!);
 
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
         expect(fixture.channels.c!.sent.length).toBeGreaterThan(0);
@@ -441,7 +441,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         // The row's policy was captured before the freeze and expects nobody; the canonical's frozen targets name who counts.
         const { fixture, message, toArrivingRoom } = await holdWithoutRoomSnapshot('held-freeze-counted');
         fixture.groups.accept('room', toArrivingRoom(await createPageKeys(['b', 'c'])));
-        await vi.advanceTimersByTimeAsync(5_000);
+        await advanceUntilSent(fixture.channels.b!);
 
         const admitted = await fixture.manager.acceptControlMessage(newALAckControlMessage(
             { v: 4, msgId: 'ack-b-unsigned', senderId: 'b', ts: Date.now(), traceId: 'trace-held-freeze' },
@@ -461,9 +461,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         // stores no key record, so even a recipient's own signed ACK keys nobody; its receipt retries, then times out.
         const { fixture, message, toArrivingRoom } = await holdWithoutRoomSnapshot('held-frozen-unkeyed', ['b', 'c']);
         fixture.groups.accept('room', toArrivingRoom({}));
-        for (let step = 0; step < 50 && fixture.channels.c!.sent.length === 0; step++) {
-            await vi.advanceTimersByTimeAsync(100);
-        }
+        await advanceUntilSent(fixture.channels.c!);
         const sentBefore = fixture.channels.c!.sent.length;
         const c = await createAvailablePublicationCryptoFixture();
         const ack = await signTestALReceiptControl(c, {
@@ -564,11 +562,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
 
         await fixture.manager.enqueueLegIfAbsent(message, 'hold');
         // Its admission now also signs the send (D756) with real WebCrypto, which fake timers alone do not drain.
-        const sentToBoth = () => fixture.channels.b!.sent.length > 0 && fixture.channels.c!.sent.length > 0;
-        for (let step = 0; step < 20 && !sentToBoth(); step++) {
-            await vi.advanceTimersByTimeAsync(10);
-            await drainUntil(sentToBoth, 20);
-        }
+        await advanceUntil(() => fixture.channels.b!.sent.length > 0 && fixture.channels.c!.sent.length > 0, 10);
         const sentBefore = [fixture.channels.b!.sent.length, fixture.channels.c!.sent.length];
         const admitted = [];
         for (const peerId of ['b', 'c'] as const) {
@@ -652,6 +646,14 @@ async function holdWithoutRoomSnapshot(resourceId: string, frozenPeerIds?: reado
     const held = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
     await vi.advanceTimersByTimeAsync(0);
     return { fixture, message, held, toArrivingRoom };
+}
+
+/**
+ * Moves fake time on, within the five seconds a held send's freezing dequeue has, until `channel` carried a send: that
+ * dequeue signs it with real WebCrypto (D758), which fake time alone does not run.
+ */
+async function advanceUntilSent(channel: CapturedChannel): Promise<void> {
+    await advanceUntil(() => channel.sent.length > 0, 100, 50);
 }
 
 function createFrozenMulticast(recipientPeerIds: readonly string[]): ALMessage {

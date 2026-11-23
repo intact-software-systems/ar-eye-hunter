@@ -55,6 +55,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { advanceUntil } from '../../shared/advance-until.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
@@ -139,10 +140,30 @@ class ReceiptLoopClock {
     private closed = false;
 
     async advanceBy(milliseconds: number): Promise<void> {
+        await this.advanceWith(async () => {
+            await vi.advanceTimersByTimeAsync(milliseconds);
+        });
+    }
+
+    /** Moves the clock on until `condition` holds, for work that waits on real WebCrypto, which fake time alone does not run. */
+    async advanceUntil(condition: () => boolean): Promise<void> {
+        await this.advanceWith(() => advanceUntil(condition));
+    }
+
+    cancel(): void {
+        this.closed = true;
+    }
+
+    async close(): Promise<void> {
+        this.cancel();
+        await this.advance;
+    }
+
+    private async advanceWith(start: () => Promise<void>): Promise<void> {
         if (this.closed || this.advance !== undefined) {
             throw new Error('Receipt loop clock cannot advance concurrently or after closing');
         }
-        const advance = vi.advanceTimersByTimeAsync(milliseconds).then(() => undefined);
+        const advance = start();
         this.advance = advance;
         try {
             await advance;
@@ -153,15 +174,6 @@ class ReceiptLoopClock {
         finally {
             this.advance = undefined;
         }
-    }
-
-    cancel(): void {
-        this.closed = true;
-    }
-
-    async close(): Promise<void> {
-        this.cancel();
-        await this.advance;
     }
 }
 
@@ -649,7 +661,8 @@ async function deliverRtcThenWs(loop: ReceiptLoop): Promise<void> {
 
 async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
     loop.origin.dispatch.send(loop.origin.delivery);
-    await loop.clock.advanceBy(100);
+    // The origin's first admission signs this receipted send with real WebCrypto (D758).
+    await loop.clock.advanceUntil(() => (['b', 'c'] as const).every((peerId) => loop.origin.rtc.channels[peerId]!.sent.length > 0));
     for (const peerId of ['b', 'c'] as const) {
         const message = loop.origin.rtc.channels[peerId]!.sent[0]!;
         expect(message).toBeDefined();
