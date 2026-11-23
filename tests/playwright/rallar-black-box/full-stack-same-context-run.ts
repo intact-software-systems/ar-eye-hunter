@@ -169,7 +169,8 @@ async function runOwnerThenSuccessor(
 
 /**
  * The successor starts once the owner's gate command passed, or at once when the owner's recipe already ended; a gate
- * that does neither within its timeout fails the cell before the successor starts, the owner cancelled first.
+ * that does neither within its timeout fails the cell before the successor starts. A failed gate, or a successor that
+ * cannot be started or read, cancels the owner first, so its read ends too.
  */
 async function runSuccessorBesideOwner(
     run: RecipePairRun,
@@ -199,12 +200,12 @@ async function readGatedSuccessorOutcome(
             scenario: input.scenario,
             timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
         });
+        return await readSuccessorOutcome(run, input);
     }
     catch (error) {
         input.ownerRun.cancelAfter(toPageStepsFailure(input.recipes.sender, toError(error)));
         throw error;
     }
-    return await readSuccessorOutcome(run, input);
 }
 
 /** The successor starts while no root of the scenario ended not ok; after one did, it is reported not started. */
@@ -218,9 +219,12 @@ async function readSuccessorOutcome(
         : toNotStartedRecipeRunOutcome(recipes.successor, failure);
 }
 
-/** What a root cancelled after the pages' own steps failed is cancelled after: the owner's recipe, whose steps they are. */
+/**
+ * What a root cancelled after the pages' own steps failed is cancelled after: those steps, named for the owner's recipe
+ * they run beside, and not that recipe, which may still be running when they fail.
+ */
 function toPageStepsFailure(owner: RallarBlackBoxTestRecipe, error: Error): RecipeRunOutcome {
-    return { commandId: owner.recipeId, ok: false, summary: error.message, cancelledAfter: undefined };
+    return { commandId: `${owner.recipeId}-page-steps`, ok: false, summary: error.message, cancelledAfter: undefined };
 }
 
 function requireOutcome<T>(outcome: PromiseSettledResult<T>): T {
