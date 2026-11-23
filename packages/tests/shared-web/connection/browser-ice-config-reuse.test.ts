@@ -46,6 +46,7 @@ const options = {
 let runtime: BrowserTransportRuntime;
 let iceResponse: () => Promise<Response>;
 let configResponse: (apiUrl: URL) => Promise<Response>;
+let serverNowEpochMs: () => number;
 const requests: Array<{ readonly url: string; readonly authorization: string | null; }> = [];
 
 beforeEach(() => {
@@ -60,6 +61,7 @@ beforeEach(() => {
     configureApiClient({ apiBaseUrl: 'https://first.test' });
     runtime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
     requests.length = 0;
+    serverNowEpochMs = () => Date.now();
     iceResponse = async () => Response.json({ iceServers: [], expiresAtEpochMs: 20_000 });
     configResponse = async (apiUrl) =>
         Response.json({
@@ -114,10 +116,10 @@ describe('browser ICE configuration reuse', () => {
         expect(requests.filter((request) => request.url.endsWith('/api/config'))).toHaveLength(1);
     });
 
-    it('refreshes exactly at server expiry without using authentication expiry as a TTL', async () => {
+    it('refreshes at server expiry without using authentication expiry as a TTL', async () => {
         await runtime.init(options);
         runtime.shutdown();
-        vi.mocked(Date.now).mockReturnValue(19_999);
+        vi.mocked(Date.now).mockReturnValue(19_000);
         await runtime.init(options);
         runtime.shutdown();
         vi.mocked(Date.now).mockReturnValue(20_000);
@@ -125,6 +127,28 @@ describe('browser ICE configuration reuse', () => {
         const current = await runtime.init(options);
 
         expect(current.middleware.middleware.webRtcConnectionService.input.iceCandidates.iceServers).toEqual([{ urls: 'stun:next.test' }]);
+        expect(requests.filter((request) => request.url.endsWith('/api/webrtc/ice'))).toHaveLength(2);
+    });
+
+    it('judges server-issued ICE expiry by server time when the browser clock runs ahead', async () => {
+        vi.mocked(Date.now).mockReturnValue(130_000);
+        serverNowEpochMs = () => 10_000;
+        await runtime.init(options);
+        runtime.shutdown();
+        const reconnected = await runtime.init(options);
+
+        expect(reconnected.middleware.middleware.webRtcConnectionService.input.iceCandidates).toEqual({ iceServers: [], expiresAtEpochMs: 20_000 });
+        expect(requests.filter((request) => request.url.endsWith('/api/webrtc/ice'))).toHaveLength(1);
+    });
+
+    it('replaces ICE the server has expired when the browser clock runs behind', async () => {
+        await runtime.init(options);
+        runtime.shutdown();
+        serverNowEpochMs = () => 25_000;
+        iceResponse = async () => Response.json({ iceServers: [{ urls: 'stun:next.test' }], expiresAtEpochMs: 30_000 });
+        const reconnected = await runtime.init(options);
+
+        expect(reconnected.middleware.middleware.webRtcConnectionService.input.iceCandidates.iceServers).toEqual([{ urls: 'stun:next.test' }]);
         expect(requests.filter((request) => request.url.endsWith('/api/webrtc/ice'))).toHaveLength(2);
     });
 
@@ -279,7 +303,7 @@ async function readResponse(url: RequestInfo | URL, init?: RequestInit): Promise
         return configResponse(new URL(String(url)));
     }
     if (String(url).endsWith('/api/time')) {
-        return Response.json({ serverPeerId: 'ice-fixture-server', serverNowEpochMs: Date.now() });
+        return Response.json({ serverPeerId: 'ice-fixture-server', serverNowEpochMs: serverNowEpochMs() });
     }
     if (String(url).endsWith('/api/webrtc/ice')) {
         return iceResponse();
