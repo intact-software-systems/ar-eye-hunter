@@ -177,7 +177,9 @@ export function toRepairDispatchWait(
 /**
  * No receiver asked this page to repair anything: no gap NACK about the cell's tracks and no repair control reached
  * it, whatever its admission made of either (every outcome states the event). A receiver sends a repair control only
- * beside a gap NACK, yet the origin repairs on whichever it admits first, so both are read. A repair control's event
+ * beside a NACK: a `missing-seq` one beside a gap NACK, and a `retransmit` one beside a `resync-required`, `expired`
+ * or `overloaded` NACK when it misses an owned child (`toRepairEffects` in `al-inbound-effect-intent.ts`). The origin
+ * repairs on whichever of a gap NACK and its control it admits first, so both are read. A repair control's event
  * names neither its reason nor its track, so that absence covers every track. A timer's retransmission (a first hop
  * or a receipt that timed out) admits no control and is no repair request. The first wait listens one window; the
  * second reads the cell's history, that window included. A minted send names no index to pin either by.

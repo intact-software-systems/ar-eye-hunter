@@ -335,6 +335,13 @@ Both constants live in
 window is derived from them in
 [`conformance/alm/alm-conformance-receiver-commands.ts`](../conformance/alm/alm-conformance-receiver-commands.ts).
 
+Other budgets were added or raised where a GitHub runner's work outlasted the wait that covered it, not
+where a product deadline was missed: `churn-bounded-tracks` and `buffered-track-drains` extend their
+recipes' run budget by their cue wait; a family's limit is 35 minutes
+([`conformance/alm/lane/alm-lane-family-timeout-ms.ts`](../conformance/alm/lane/alm-lane-family-timeout-ms.ts));
+a publish loop's attempt observes for 15 s; a poll starts its attempts for one phase and its deadline
+runs one attempt's budget past it; and a `connected` barrier counts a connect's readiness wait.
+
 ## The regime file
 
 `ALMObservationRegime`

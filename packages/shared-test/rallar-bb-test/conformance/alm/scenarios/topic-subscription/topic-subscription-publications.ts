@@ -96,8 +96,12 @@ export function toPublishUntilConfirmedCommands(
 }
 
 /**
- * Publishes once, observes the copy for one phase and holds its receipt to the counts `toPublishUntilConfirmedCommands`
- * holds an attempt to, then tells the recipients so. A receipt that names another audience fails the cell.
+ * Publishes once, observes the copy until it ends and holds its receipt to the counts `toPublishUntilConfirmedCommands`
+ * holds an attempt to, then tells the recipients so. A receipt that names another audience fails the cell. The send
+ * states no receipt policy, so the product's default receipt budget ends an unconfirmed copy first: its handle reads
+ * `failed` about 8 s after admission for a frame that leaves at once (`packages/shared/alm/outbound/README.md`,
+ * "Budget exhaustion"), later only as gap repairs renew it, and the copy's 30 s lifetime ends it otherwise. The
+ * observe's own timeout of one phase is only an upper cap.
  */
 export function toPublishOnceCommands(publication: TopicPublicationInput): readonly RallarBlackBoxTestCommand[] {
     const { step, name } = publication;
@@ -248,7 +252,8 @@ export function toEndedReceiptCommands(
 
 /**
  * The publication's handle reaches `state` or any terminal state: a refusal within its rejection budget, a receipt
- * once its audience confirmed, which is one phase of the cell.
+ * once its audience confirmed or its receipt budget or lifetime ended it, whichever comes first, under a cap of one
+ * phase of the cell.
  */
 function toPublicationObserveCommand(
     step: AlmConformanceStepInput,
