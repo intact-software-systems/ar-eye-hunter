@@ -161,12 +161,14 @@ test('a member follows court A from B through pause, a missed resume and access 
             const stop = rooms.watchSchedule(court, 'match', value => history.push(value));
             const timelines: RoomTimelineObservation[] = [];
             const stopTimeline = rooms.watchTimeline(court, 'period', value => timelines.push(value));
-            return { history, timelines, stop: () => { stop(); stopTimeline(); }, principalId: rallar.session()!.clientId, room: () => rooms.current()?.group.groupId };
+            const room = () => ({ selected: rooms.selected()?.groupId, present: rooms.current()?.group.groupId });
+            return { history, timelines, stop: () => { stop(); stopTimeline(); }, principalId: rallar.session()!.clientId, room };
         }, { court, lounge });
         const latest = () => observer.evaluate(state => state.history.at(-1));
-        const selected = () => observer.evaluate(state => state.room());
+        const room = () => observer.evaluate(state => state.room());
+        const inLounge = { selected: lounge.groupId, present: lounge.groupId };
         await expect.poll(latest).toMatchObject({ status: 'current', schedule: { revision: 1 } });
-        expect(await selected()).toBe(lounge.groupId);
+        expect(await room()).toEqual(inLounge);
         await host.evaluate(({ rooms }, { court, control }) =>
             rooms.pauseProgram(court, { ...control, expectedRevision: 1 }, crypto.randomUUID()), { court, control });
         await expect.poll(latest).toMatchObject({ status: 'current', schedule: { revision: 2, status: 'program-paused' } });
@@ -191,7 +193,7 @@ test('a member follows court A from B through pause, a missed resume and access 
         // Longer than the historical five-second polling interval. The observer stays mounted throughout.
         await new Promise(resolve => setTimeout(resolve, 5500));
         expect(roomReads.length).toBe(beforeIdle);
-        expect(await selected()).toBe(lounge.groupId);
+        expect(await room()).toEqual(inLounge);
         await network.disconnect();
         await expect.poll(latest).toMatchObject({ status: 'stale' });
         const resumed = await host.evaluate(({ rooms }, { court, control }) =>
@@ -204,7 +206,9 @@ test('a member follows court A from B through pause, a missed resume and access 
         expect(await timeline()).toEqual({ status: 'stale', timeline: extended });
         await network.reconnect();
         await expect.poll(latest, { timeout: 20000 }).toEqual({ status: 'current', schedule: resumed });
-        expect(await selected()).toBe(lounge.groupId);
+        // The outage ended lounge presence. Selected-room recovery restores it, possibly after the schedule recovers.
+        expect(await room()).toMatchObject({ selected: lounge.groupId });
+        await expect.poll(room).toEqual(inLounge);
         await expect.poll(timeline).toEqual({ status: 'current', timeline: resumedPeriod });
         const principalId = await observer.evaluate(state => state.principalId);
         const deniedRead = guestPage.waitForResponse(response =>
@@ -215,7 +219,7 @@ test('a member follows court A from B through pause, a missed resume and access 
         await expect.poll(latest).toEqual({ status: 'stale', schedule: null });
         await host.evaluate(({ rooms }, { court, control }) =>
             rooms.pauseProgram(court, { ...control, expectedRevision: 3 }, crypto.randomUUID()), { court, control });
-        expect(await selected()).toBe(lounge.groupId);
+        expect(await room()).toEqual(inLounge);
         expect(await latest()).toEqual({ status: 'stale', schedule: null });
         await observer.evaluate(state => state.stop());
     } finally {
