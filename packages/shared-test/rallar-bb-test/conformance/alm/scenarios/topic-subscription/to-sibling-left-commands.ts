@@ -37,25 +37,29 @@ export function toSiblingLeftCommands(producer: AlmConformanceStepInput): readon
     ];
 }
 
-/** Re-reads the room's snapshot until no presence names `sessionId`. */
+/**
+ * Re-reads the room's snapshot until no active session is `sessionId`. The match reads the snapshot's presences alone:
+ * every role wrote its own membership, so the sibling's session stays in its member's audit stamps after it left.
+ */
 function toSessionGonePollCommand(step: AlmConformanceStepInput, sessionId: string): RallarBlackBoxTestCommand {
     const name = 'sibling-session-gone';
     const readName = `${name}-read`;
     const attemptRead = toPollChildId({ step, name, index: 1, childId: toCommandId(step, readName) });
+    const absent = toResultTextWait({
+        step,
+        name: `${name}-absent`,
+        commandId: attemptRead,
+        topic: 'rallar.bb.http.response',
+        text: `"sessionId":"${sessionId}"`,
+        absent: true
+    });
     return toPollCommand({
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
         commands: [
             toRoomSnapshotCommand(step, readName),
-            toResultTextWait({
-                step,
-                name: `${name}-absent`,
-                commandId: attemptRead,
-                topic: 'rallar.bb.http.response',
-                text: `"sessionId":"${sessionId}"`,
-                absent: true
-            })
+            { ...absent, match: { ...absent.match, payloadPath: 'body.activeSessions' } }
         ]
     });
 }

@@ -1400,12 +1400,52 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 expect(children[1]).toMatchObject({
                     match: {
                         topic: 'rallar.bb.http.response',
+                        payloadPath: 'body.activeSessions',
                         contains: `"sessionId":"{resultCache.${cue.commandId}.value.event.payload.senderId}"`
                     },
                     absent: true
                 });
             }
         }
+    });
+
+    it('takes the sibling for gone once no active session names it, its membership stamps still naming it', async () => {
+        const producer = requireRoleRecipe(findBarrieredReconnectScenario('ws'), 'sender');
+        const cue = findStep(producer, 'cue-leaving-received');
+        const gone = findStep(producer, 'sibling-session-gone');
+        const [read, absent] = gone.kind === 'loop' ? gone.commands : [];
+        const leaving = {
+            kind: 'message' as const,
+            topic: 'rallar.browser.messages.ws.message',
+            connection: cue.kind === 'wait' ? cue.match.connection : 'not a wait',
+            payload: {
+                senderId: 'session-sibling',
+                data: { payload: cue.kind === 'wait' ? cue.match.equals ?? null : null }
+            }
+        };
+        // The sibling wrote its own membership in its prologue, so its session stays in that member's audit stamps.
+        const toMember = (principalId: string, sessionId: string) => {
+            const stamp = { atEpochMs: 1, actor: { kind: 'session', sessionId, principalId }, reason: null, traceId: 't', requestId: 'r' };
+            return { principalId, status: 'active', joined: stamp, updated: stamp };
+        };
+        const toSnapshot = (activeSessionIds: readonly string[]) => ({
+            kind: 'event' as const,
+            topic: 'rallar.bb.http.response',
+            commandId: absent?.kind === 'wait' ? absent.match.commandId : 'not a wait',
+            transport: 'http' as const,
+            severity: 'info' as const,
+            payload: {
+                status: 200,
+                body: {
+                    members: [toMember('sender', 'session-sender'), toMember('sibling', 'session-sibling')],
+                    activeSessions: activeSessionIds.map((sessionId) => ({ sessionId }))
+                }
+            }
+        });
+
+        expect(read?.kind).toBe('http.request');
+        expect(await runAfterEvents([cue, absent!], [leaving, toSnapshot(['session-sender'])])).toBe(true);
+        expect(await runAfterEvents([cue, absent!], [leaving, toSnapshot(['session-sender', 'session-sibling'])])).toBe(false);
     });
 
     it('counts a session removal from the armed barrier onward, and no count the roles reached while connecting', async () => {
