@@ -598,7 +598,8 @@ second producer. The owner's grants name each grantee as `{principal:<role>}`, w
 creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;
 a placeholder no entry resolves throws). A grant is retried until its grantee has joined, and an
 election until it is `active`. A producer publishes until one copy is confirmed by every
-subscriber, or probes so before a publication it sends once; a role tells another it reached a
+subscriber, or probes so before a publication it sends once, whose one send waits 15 s for the page's
+durable outbound lane to admit it, where a probe's and a cue's sends wait 5 s; a role tells another it reached a
 step with a cue, a members-topic send under the cell's type that the waiting role hears through
 the channel its own first cue send opened. Connection generations are compared with `wait`s on
 the result events of `messages.subscriptions` and of the subscription rows read, whose

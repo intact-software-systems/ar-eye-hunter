@@ -339,7 +339,8 @@ Other budgets were added or raised where a GitHub runner's work outlasted the wa
 where a product deadline was missed: `churn-bounded-tracks` and `buffered-track-drains` extend their
 recipes' run budget by their cue wait; a family's limit is 35 minutes
 ([`conformance/alm/lane/alm-lane-family-timeout-ms.ts`](../conformance/alm/lane/alm-lane-family-timeout-ms.ts));
-a publish loop's attempt observes for 15 s; a poll starts its attempts for one phase and its deadline
+a publish loop's attempt observes for 15 s, and a publication published once gives its one send the same
+15 s to reach durable admission; a poll starts its attempts for one phase and its deadline
 runs one attempt's budget past it; a `connected` barrier counts a connect's readiness wait; every
 fairness send loop has a budget of 1,500 ms a send; and the buffered track's sends live for a
 lifetime derived from that loop's budget, not a flat 90 s.

@@ -650,6 +650,36 @@ describe('ALM ordered subscription entry conformance', () => {
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
+        'gives each ordered publication\'s one send the slow-path window while the probe and cue sends keep one command\'s over %s',
+        (carrier) => {
+            for (const scenarioId of ORDERED_SCENARIO_IDS) {
+                for (const [role, track] of PRODUCER_TRACKS) {
+                    const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), role);
+                    const sends = toNestedCommands(producer.commands).filter(({ kind }) => kind === 'messages.send');
+                    const isPublication = ({ commandId }: RallarBlackBoxTestCommand): boolean =>
+                        new RegExp(`^${producer.recipeId}-${track}-p\\d+-send$`).test(commandId ?? '');
+                    const publications = sends.filter(isPublication);
+                    const others = sends.filter((send) => !isPublication(send));
+                    const loopSends = toNestedCommands(producer.commands.filter(({ kind }) => kind === 'loop'))
+                        .filter(({ kind }) => kind === 'messages.send');
+                    const cueSends = others.filter(({ commandId }) => commandId?.startsWith(`${producer.recipeId}-cue-`));
+
+                    expect(publications.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    expect(cueSends.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    expect(loopSends.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    // 15 000 ms is the pinned slow-path measurement, not a number derived from another budget: a
+                    // publication's one send waits as long as a probe attempt's observe, on the same durable lane.
+                    expect(publications.map(({ timeoutMs }) => timeoutMs), `${scenarioId} ${role}`)
+                        .toEqual(publications.map(() => 15_000));
+                    // A probe's attempt is retried and a cue is not a publication: each keeps one command's 5 000 ms.
+                    expect(others.map(({ timeoutMs }) => timeoutMs), `${scenarioId} ${role}`)
+                        .toEqual(others.map(() => 5_000));
+                }
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
         'the readiness probe observes each attempt for the slow-path window and starts attempts for one phase over %s',
         (carrier) => {
             for (const scenarioId of ORDERED_SCENARIO_IDS) {

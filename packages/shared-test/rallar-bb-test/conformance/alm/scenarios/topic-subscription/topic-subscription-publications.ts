@@ -27,12 +27,15 @@ import { toGrantedSend } from './to-granted-send.ts';
 import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 
 /**
- * How long one attempt of a publish loop observes its copy before the next attempt sends a new one. The origin's
- * admission of acknowledgements reached 12.1 s on GitHub runners, with a p90 of 4.3 to 5.8 s on the failing jobs of the
- * full-scope runs of 2026-11-22. A short audience completes at once and fails the count facts; an attempt that misses
- * this window waited on an expected recipient that cannot answer, not on a slow lane.
+ * How long a page's durable lane on a GitHub runner may take to admit: what a publish loop's attempt observes its copy
+ * for before the next attempt sends a new one, and what a publication published once waits for its one send. The
+ * origin's admission of acknowledgements reached 12.1 s on GitHub runners, with a p90 of 4.3 to 5.8 s on the failing
+ * jobs of the full-scope runs of 2026-11-22. In run 45104862538 three single-publication sends over `rtc` passed a 5 s
+ * timeout at 5.4 to 5.9 s, with the durable read ending up to 8.07 s after the send started. A short audience
+ * completes at once and fails the count facts; an attempt that misses this window waited on an expected recipient
+ * that cannot answer, not on a slow lane.
  */
-const SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS = 15_000;
+const SLOW_DURABLE_LANE_ADMISSION_MS = 15_000;
 
 /**
  * A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. The S3-ii
@@ -101,13 +104,14 @@ export function toPublishUntilConfirmedCommands(
  * states no receipt policy, so the product's default receipt budget ends an unconfirmed copy first: its handle reads
  * `failed` about 8 s after admission for a frame that leaves at once (`packages/shared/alm/outbound/README.md`,
  * "Budget exhaustion"), later only as gap repairs renew it, and the copy's 30 s lifetime ends it otherwise. The
- * observe's own timeout of one phase is only an upper cap.
+ * observe's own timeout of one phase is only an upper cap. The send itself returns once the page's durable outbound
+ * lane admits the copy, which it waits for over the slow-path window, since no later attempt absorbs a slow admission.
  */
 export function toPublishOnceCommands(publication: TopicPublicationInput): readonly RallarBlackBoxTestCommand[] {
     const { step, name } = publication;
     const observe = toPublicationObserveCommand(step, name, 'acknowledged');
     return [
-        toNamedPublicationSend(publication),
+        { ...toNamedPublicationSend(publication), timeoutMs: SLOW_DURABLE_LANE_ADMISSION_MS },
         observe,
         ...toReceiptCountFacts(publication, `resultCache.${observe.commandId}.value`),
         ...toCueSendCommands(step, toConfirmedCue(name))
@@ -139,7 +143,7 @@ function toPublishUntilConfirmedPoll(publication: UnorderedTopicPublicationInput
                 connection: toConnectionName(step),
                 handleId,
                 state: ['acknowledged'],
-                timeoutMs: SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS
+                timeoutMs: SLOW_DURABLE_LANE_ADMISSION_MS
             },
             ...toReceiptCountFacts(publication, toPollResult({ step, name, index: 2, childId: observe }))
         ]
