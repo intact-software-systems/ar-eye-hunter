@@ -32,9 +32,13 @@ import {
     type ReceiptInstance,
     type ReceiptTrio
 } from './test-support/create-receipt-cluster.ts';
-import { holdPostgresAfterCommit, holdPostgresCommitUntilLost } from './test-support/hold-postgres-commit.ts';
+import { holdPostgresAfterCommit, holdPostgresCommit, holdPostgresCommitUntilLost } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
-import { toRecordedPostgresStatementShape, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
+import {
+    recordPostgresStatements,
+    toRecordedPostgresStatementShape,
+    type PostgresStatementLog
+} from './test-support/record-postgres-statements.ts';
 
 const LIFETIME_MS = 60_000;
 /** An ACK timeout no case outlasts, so no `ack-timeout` window falls due inside a case that does not retry. */
@@ -135,6 +139,57 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
             { verb: 'select', transaction: null }
         ]);
         expect((await cluster.reader.read(ownRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's2']);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins what the dequeue of a receipted server publication adds for its receipt, so a change that adds a statement
+    // or a transaction to every such dequeue shows here. The hook reads the server's pending receipt row through the
+    // outbound store's client; on the record's client the `open` reads the head and its deadline work row, writes both
+    // in one transaction and reads the view's confirmations, and the record worker's one batch for the row that
+    // commit wrote makes one claim. The hook's read follows the dispatch commit on the same client with no pause
+    // between them, so it is taken while the `open` waits at its commit: the outbound client's statements after its
+    // last transaction, which is the dispatch commit.
+    it('opens the head at its dequeue in a pinned number of statements', async () => {
+        const cluster = await createReceiptCluster();
+        const outboundLog: PostgresStatementLog = { statements: [], transactions: 0 };
+        const recordLog: PostgresStatementLog = { statements: [], transactions: 0 };
+        const opening = createNextTransactionHold();
+        const sessionIds = toSessionIds(3);
+        const only = await startInstance(cluster, {
+            ...instanceInput('a', sessionIds),
+            log: outboundLog,
+            toRecordSql: (sql) => recordPostgresStatements(holdPostgresCommit(sql, opening.hold), recordLog, null),
+            starts: false
+        });
+        const sessions = await connectAll(only, sessionIds);
+        // The record worker's first batch, and then at most one batch per 10 s lease, also sweeps its queue's leases (a
+        // finalization sweep and a timeout sweep, each in its own transaction); this publication spends them.
+        await publish(only, { sent: publication(cluster, 'warm-up', NO_WINDOW_QOS), sessions });
+        await Promise.all([waitForQuietStatements(outboundLog), waitForQuietStatements(recordLog)]);
+        outboundLog.statements.splice(0);
+        recordLog.statements.splice(0);
+        recordLog.transactions = 0;
+        const sent = publication(cluster, 'pin', NO_WINDOW_QOS);
+
+        opening.armNext();
+        await enqueue(only, { sent, sessions });
+        await opening.hold.arrived;
+        await waitForQuietStatements(outboundLog);
+        const afterDispatchCommit = outboundLog.statements.slice(outboundLog.statements.findLastIndex(({ transaction }) => transaction !== null) + 1);
+        opening.hold.release();
+        await expect.poll(async () => (await cluster.reader.read(ownRef(sent))).right?.head.phase, POLL).toBe('open');
+        await waitForQuietStatements(recordLog);
+
+        // The pending receipt row, on the outbound store's client.
+        expect(afterDispatchCommit.map(toRecordedPostgresStatementShape)).toEqual([{ verb: 'select', transaction: null }]);
+        expect(recordLog.transactions).toBe(2);
+        expect(recordLog.statements.map(toRecordedPostgresStatementShape)).toEqual([
+            { verb: 'select', transaction: null }, // the head
+            { verb: 'select', transaction: null }, // the deadline work row
+            { verb: 'insert', transaction: 1 }, // the head, guarded
+            { verb: 'insert', transaction: 1 }, // the deadline work row
+            { verb: 'select', transaction: null }, // the view's confirmations
+            { verb: 'with', transaction: 2 } // the record worker's claim
+        ]);
     }, CASE_TIMEOUT_MS);
 
     // Pins a retransmission that resends to every recipient, the confirmed ones included.
@@ -305,6 +360,32 @@ async function publish(instance: ReceiptInstance, publication: Publication): Pro
 
 function readCopies(sessions: readonly ConnectedSession[], sent: ALMessage): readonly number[] {
     return sessions.map(({ socket }) => countCopies(socket, sent.id.msgId));
+}
+
+/** A hold that only the next transaction after `armNext` arrives at; every other transaction passes it. */
+interface NextTransactionHold {
+    readonly hold: WorkerHold;
+    armNext(): void;
+}
+
+function createNextTransactionHold(): NextTransactionHold {
+    const next = createWorkerHold();
+    let armed = false;
+    return {
+        hold: {
+            arrived: next.arrived,
+            arrive: async () => {
+                if (armed) {
+                    armed = false;
+                    await next.arrive();
+                }
+            },
+            release: () => next.release()
+        },
+        armNext: () => {
+            armed = true;
+        }
+    };
 }
 
 /** The hold an instance's record transactions stop at, and the loss their callers wait for once stopped there. */
