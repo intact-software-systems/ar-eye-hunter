@@ -1466,7 +1466,9 @@ describe('ALM browser adapter execution', () => {
 
         expect(Date.now() - startedAt).toBeLessThan(1_000);
         expect(stalled.ok).toBe(false);
-        expect(stalled.value).toMatchObject({ count: 3, observed: 1, absent: false });
+        expect(stalled.value).toMatchObject({ count: 3, observed: 1, absent: false, stall: { stallMs: 40, stalled: true } });
+        const diagnostic = runtime.state().events.find((event) => event.commandId === 'alm-received-stalled' && event.topic === 'rallar.bb.messages.received');
+        expect(isJsonRecordValue(diagnostic?.payload) ? diagnostic.payload.data : undefined).toMatchObject({ stall: { stallMs: 40, stalled: true } });
         expect(stalled.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
             message: 'messages.received observed 1 alm.conformance messages against count 3, no new copy arriving ' +
@@ -1499,8 +1501,69 @@ describe('ALM browser adapter execution', () => {
         await arrivals;
 
         expect(counted.ok, counted.error?.message).toBe(true);
-        expect(counted.value).toMatchObject({ count: 4, observed: 4 });
+        expect(counted.value).toMatchObject({ count: 4, observed: 4, stall: { stallMs: 120, stalled: false } });
         expect(Date.now() - startedAt).toBeGreaterThan(120);
+    });
+
+    it('lets no inbound message of another type reset the stall clock', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        runtime.receiveRallarBrowserEvent(inboundMessageEvent('msg-1'));
+        const others = (async () => {
+            for (const index of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+                await sleepMs(20);
+                runtime.receiveRallarBrowserEvent(inboundMessageEvent(`msg-other-${index}`, 'alm.other'));
+            }
+        })();
+
+        const startedAt = Date.now();
+        const stalled = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-stalled-among-others',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 2,
+            stallMs: 80,
+            windowMs: 5_000
+        });
+        const elapsedMs = Date.now() - startedAt;
+        await others;
+
+        expect(stalled.value).toMatchObject({ observed: 1, stall: { stallMs: 80, stalled: true } });
+        expect(elapsedMs).toBeLessThan(180);
+    });
+
+    // A recent history evicts old copies, so the count of retained copies can stand still while new copies arrive.
+    it('counts a newly arriving copy as progress though a recent history evicted older ones', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+            eventHistory: { mode: 'recent', maxEvents: 2 }
+        });
+        let arriving = true;
+        const arrivals = (async () => {
+            for (let index = 0; arriving; index++) {
+                runtime.receiveRallarBrowserEvent(inboundMessageEvent(`msg-${index}`));
+                await sleepMs(20);
+            }
+        })();
+
+        const counted = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-evicting',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 10,
+            stallMs: 80,
+            windowMs: 300
+        });
+        arriving = false;
+        await arrivals;
+
+        expect(counted.ok).toBe(false);
+        expect(counted.value).toMatchObject({ stall: { stallMs: 80, stalled: false } });
     });
 
     it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {

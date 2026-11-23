@@ -5,38 +5,42 @@ import type {
 } from '../../rallar-black-box-test-contracts.ts';
 import { decodeAlmRuntimeRecord } from '../decode-alm-runtime-record.ts';
 
-export namespace ObserveAlmMatchingMessages {
-    /** The clock and the abortable sleep the browser adapter binds. */
-    export interface Port {
-        readonly now: () => number;
-        readonly sleep: (ms: number) => Promise<void>;
-        readonly withAbort: <T>(operation: Promise<T>, signal: AbortSignal | undefined) => Promise<T>;
-    }
+/** The clock and the abortable sleep the browser adapter binds. */
+export interface AlmMatchingMessagesPort {
+    readonly now: () => number;
+    readonly sleep: (ms: number) => Promise<void>;
+    readonly withAbort: <T>(operation: Promise<T>, signal: AbortSignal | undefined) => Promise<T>;
+}
 
-    export interface Match {
-        readonly connection: string;
-        readonly typeId: string;
-        readonly msgId: string | undefined;
-    }
+export interface AlmReceivedMessageMatch {
+    readonly connection: string;
+    readonly typeId: string;
+    readonly msgId: string | undefined;
+}
 
-    export interface Input {
-        readonly port: Port;
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly holdFullWindow: boolean;
-        readonly count: number;
-        readonly match: Match;
-        readonly deadlineEpochMs: number;
-        /** `undefined` when only the deadline ends the observation. */
-        readonly stallMs: number | undefined;
-        readonly signal: AbortSignal | undefined;
-    }
+export interface ObserveAlmMatchingMessagesInput {
+    readonly port: AlmMatchingMessagesPort;
+    readonly context: RallarBlackBoxTestCommandContext;
+    readonly holdFullWindow: boolean;
+    readonly count: number;
+    readonly match: AlmReceivedMessageMatch;
+    readonly deadlineEpochMs: number;
+    /** `undefined` when only the deadline ends the observation. */
+    readonly stallMs: number | undefined;
+    readonly signal: AbortSignal | undefined;
+}
 
-    export interface Result {
-        /** Each matched inbound event's message `data`, in arrival order. */
-        readonly copies: readonly RallarBlackBoxTestRecord[];
-        /** Whether the stall window ended the observation before its deadline. */
-        readonly stalled: boolean;
-    }
+export interface AlmMatchingMessages {
+    /** Each matched inbound event's message `data`, in arrival order. */
+    readonly copies: readonly RallarBlackBoxTestRecord[];
+    /** Whether the stall window ended the observation before its deadline. */
+    readonly stalled: boolean;
+}
+
+/** The retained matching copies, and the event id of the newest, which a recent history keeps however many it evicts. */
+interface AlmMatchingCopies {
+    readonly copies: readonly RallarBlackBoxTestRecord[];
+    readonly newestEventId: string | undefined;
 }
 
 const ALM_INBOUND_MESSAGE_TOPICS: readonly string[] = [
@@ -51,48 +55,56 @@ const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
  * buffer, while a presence claim settles as soon as the recipe's count is on the log. Each poll
  * tick races the abort signal, so a recipe cancellation interrupts the hold instead of always
  * running the full window. A stall window ends a presence claim early once that long passed with
- * no new copy since the observation started or since its latest copy.
+ * no new matching copy since the observation started or since its latest copy.
  */
-export async function observeAlmMatchingMessages(
-    input: ObserveAlmMatchingMessages.Input
-): Promise<ObserveAlmMatchingMessages.Result> {
-    let copies = resolveAlmMatchingMessages(input.context.state().events, input.match);
+export async function observeAlmMatchingMessages(input: ObserveAlmMatchingMessagesInput): Promise<AlmMatchingMessages> {
+    let matching = resolveAlmMatchingCopies(input.context.state().events, input.match);
     let progressEpochMs = input.port.now();
     while (input.port.now() < input.deadlineEpochMs) {
-        if (!input.holdFullWindow && copies.length >= input.count) {
-            return { copies, stalled: false };
+        if (!input.holdFullWindow && matching.copies.length >= input.count) {
+            return { copies: matching.copies, stalled: false };
         }
         if (input.stallMs !== undefined && input.port.now() - progressEpochMs >= input.stallMs) {
-            return { copies, stalled: true };
+            return { copies: matching.copies, stalled: true };
         }
         const remainingMs = input.deadlineEpochMs - input.port.now();
         await input.port.withAbort(
             input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
             input.signal
         );
-        const observed = resolveAlmMatchingMessages(input.context.state().events, input.match);
-        progressEpochMs = observed.length > copies.length ? input.port.now() : progressEpochMs;
-        copies = observed;
+        const observed = resolveAlmMatchingCopies(input.context.state().events, input.match);
+        progressEpochMs = observed.newestEventId === matching.newestEventId ? progressEpochMs : input.port.now();
+        matching = observed;
     }
-    return { copies, stalled: false };
+    return { copies: matching.copies, stalled: false };
 }
 
-function resolveAlmMatchingMessages(
+function resolveAlmMatchingCopies(
     events: readonly RallarBlackBoxTestEvent[],
-    match: ObserveAlmMatchingMessages.Match
-): readonly RallarBlackBoxTestRecord[] {
-    return events.flatMap((event) => {
-        if (
-            !ALM_INBOUND_MESSAGE_TOPICS.includes(event.topic) ||
-            (event.connection !== undefined && event.connection !== match.connection)
-        ) {
-            return [];
-        }
-        const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
-        const matches = toAlmEventStringField(data, 'typeId') === match.typeId &&
-            (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
-        return matches ? [data] : [];
+    match: AlmReceivedMessageMatch
+): AlmMatchingCopies {
+    const matching = events.flatMap((event) => {
+        const data = toAlmMatchingCopy(event, match);
+        return data === undefined ? [] : [{ eventId: event.eventId, data }];
     });
+    return { copies: matching.map(({ data }) => data), newestEventId: matching.at(-1)?.eventId };
+}
+
+/** The inbound event's message `data` when it is a copy the count matches; `undefined` otherwise. */
+function toAlmMatchingCopy(
+    event: RallarBlackBoxTestEvent,
+    match: AlmReceivedMessageMatch
+): RallarBlackBoxTestRecord | undefined {
+    if (
+        !ALM_INBOUND_MESSAGE_TOPICS.includes(event.topic) ||
+        (event.connection !== undefined && event.connection !== match.connection)
+    ) {
+        return undefined;
+    }
+    const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
+    const matches = toAlmEventStringField(data, 'typeId') === match.typeId &&
+        (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
+    return matches ? data : undefined;
 }
 
 function toAlmEventStringField(record: RallarBlackBoxTestRecord, key: string): string {

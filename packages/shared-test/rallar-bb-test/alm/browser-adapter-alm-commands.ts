@@ -13,7 +13,6 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
@@ -32,11 +31,10 @@ import {
     decodeAlmTopicSubscriptionResultValue
 } from './decode-alm-topic-subscription-result.ts';
 import { observeAlmMatchingMessages } from './messages-received/observe-alm-matching-messages.ts';
+import { computeAlmPayloadFieldAscends, toAlmReceivedOutcome } from './messages-received/to-alm-received-outcome.ts';
 import type {
-    AlmReceivedMessageIdentity,
     RallarBlackBoxTestFaultInjectResultValue,
-    RallarBlackBoxTestMessagesObserveResultValue,
-    RallarBlackBoxTestMessagesReceivedResultValue
+    RallarBlackBoxTestMessagesObserveResultValue
 } from './rallar-black-box-alm-result-values.ts';
 import { resolveAlmControlReferences } from './resolve-alm-control-references.ts';
 import { resolveAlmFaultMatchReferences } from './resolve-alm-fault-match-references.ts';
@@ -99,21 +97,6 @@ interface AlmFailureOutcomeInput {
     readonly error: Error;
 }
 
-interface AlmReceivedOutcomeInput {
-    readonly command: Extract<RallarBlackBoxAlmCommandWithId, Readonly<{ kind: 'messages.received'; }>>;
-    readonly context: RallarBlackBoxTestCommandContext;
-    readonly connection: string;
-    readonly received: readonly AlmReceivedMessageIdentity[];
-    /** `undefined` when the command claims no order. */
-    readonly ascending: boolean | undefined;
-    readonly stalled: boolean;
-}
-
-interface AlmReceivedFailure {
-    readonly code: string;
-    readonly message: string;
-}
-
 type AlmDeliveryKind = 'messages.observe' | 'messages.cancel' | 'messages.receipts';
 
 type AlmTopicSubscriptionKind = 'messages.subscribe' | 'messages.unsubscribe';
@@ -138,10 +121,7 @@ const ALM_ERROR_CODES = {
     rawControlUnavailable: 'RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE',
     peerUnresolved: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED',
     replyRequestUnreceived: 'RALLAR_BLACK_BOX_ALM_REPLY_REQUEST_UNRECEIVED',
-    commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
-    messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
-    messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT',
-    messagesNotAscending: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING'
+    commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED'
 } as const;
 
 const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES)[] = [
@@ -512,7 +492,24 @@ async function countAlmReceivedMessages(
         const ascending = command.ascendingBy === undefined
             ? undefined
             : computeAlmPayloadFieldAscends(copies, command.ascendingBy);
-        return toAlmReceivedOutcome({ command, context: input.context, connection, received, ascending, stalled });
+        const { outcome, summary } = toAlmReceivedOutcome({
+            command,
+            received,
+            ascending,
+            stalled,
+            currentStatus: input.context.state().status
+        });
+        // The copy list is unbounded, so only the result carries it; the diagnostic stays a fixed-size summary.
+        recordAlmDiagnostic({
+            context: input.context,
+            command,
+            connection,
+            topic: 'rallar.bb.messages.received',
+            severity: outcome.status === 'ok' ? 'info' : 'error',
+            message: undefined,
+            value: summary
+        });
+        return outcome;
     }
     catch (caught) {
         return toAlmFailureOutcome({
@@ -526,81 +523,6 @@ async function countAlmReceivedMessages(
     finally {
         abort.cleanup();
     }
-}
-
-/** A copy whose payload lacks the field, or holds anything but a finite number there, ascends nothing. */
-function computeAlmPayloadFieldAscends(copies: readonly RallarBlackBoxTestRecord[], field: string): boolean {
-    let previous = Number.NEGATIVE_INFINITY;
-    for (const copy of copies) {
-        const value = isJsonRecordValue(copy.payload) ? copy.payload[field] : undefined;
-        if (typeof value !== 'number' || !Number.isFinite(value) || value <= previous) {
-            return false;
-        }
-        previous = value;
-    }
-    return true;
-}
-
-/** The count is judged first: an order is claimed of the copies the count asked for. */
-function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTestCommandOutcome {
-    const command = input.command;
-    const absent = command.absent === true;
-    const observed = input.received.length;
-    const counted = absent
-        ? observed < Math.max(command.count, 1)
-        : observed >= command.count;
-    const passed = counted && input.ascending !== false;
-    const summary = {
-        typeId: command.typeId,
-        ...(command.msgId === undefined ? {} : { msgId: command.msgId }),
-        count: command.count,
-        observed,
-        absent,
-        ...(input.ascending === undefined ? {} : { ascending: input.ascending })
-    };
-    const value: RallarBlackBoxTestMessagesReceivedResultValue = { ...summary, received: input.received };
-    // The copy list is unbounded, so only the result carries it; the diagnostic stays a fixed-size summary.
-    recordAlmDiagnostic({
-        context: input.context,
-        command,
-        connection: input.connection,
-        topic: 'rallar.bb.messages.received',
-        severity: passed ? 'info' : 'error',
-        message: undefined,
-        value: summary
-    });
-    return passed
-        ? { status: 'ok', value, nextStatus: input.context.state().status }
-        : {
-            status: 'failed',
-            value,
-            error: { ...toAlmReceivedFailure(input, observed, counted), details: value },
-            nextStatus: 'failed'
-        };
-}
-
-/** A count that was met leaves the order as the claim that failed. */
-function toAlmReceivedFailure(
-    { command, stalled }: AlmReceivedOutcomeInput,
-    observed: number,
-    counted: boolean
-): AlmReceivedFailure {
-    const observation = `messages.received observed ${observed} ${command.typeId} messages`;
-    if (counted) {
-        return {
-            code: ALM_ERROR_CODES.messagesNotAscending,
-            message: `${observation} whose payload ${command.ascendingBy} does not strictly ascend in arrival order.`
-        };
-    }
-    return {
-        code: command.absent === true
-            ? ALM_ERROR_CODES.messagesReceivedWhileAbsent
-            : ALM_ERROR_CODES.messagesNotReceived,
-        message: stalled
-            ? `${observation} against count ${command.count}, no new copy arriving within its ${command.stallMs} ms ` +
-                'stall window.'
-            : `${observation} against count ${command.count}.`
-    };
 }
 
 function readAlmWaitTimeoutMs(

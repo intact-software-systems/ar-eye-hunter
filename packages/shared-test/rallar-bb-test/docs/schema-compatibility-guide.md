@@ -1278,6 +1278,7 @@ Change type:
 Affected schemas:
 - RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.received branch)
 - validateRallarBlackBoxTestCommand messages.received
+- RallarBlackBoxTestMessagesReceivedResultValue
 
 Old shape:
 messages.received ended a presence count only when its count was met or its windowMs closed, so a recipe whose copies
@@ -1287,7 +1288,8 @@ the copies stopped.
 New shape:
 messages.received may also name stallMs, a positive integer of milliseconds. A presence count then also fails once
 stallMs passes with no new copy since the command started or since its latest copy, with
-RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED and a message that names the stall window. A stallMs that is not a positive
+RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED and a message that names the stall window; its result and diagnostic
+carry stall: { stallMs, stalled }. A stallMs that is not a positive
 integer is refused by the schema and by command validation; stallMs beside absent: true by command validation.
 
 Migration:

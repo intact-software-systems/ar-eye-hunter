@@ -1248,8 +1248,11 @@ order was claimed. An absence claim has no order: command validation refuses
 
 `stallMs`, a positive integer of milliseconds, bounds a presence claim by its progress
 as well as by its window: the count also fails once `stallMs` passes with no new copy
-since the command started or since its latest copy, and its failure message names the
-stall window. A count whose copies keep arriving may then take its whole `windowMs`, so
+since the command started or since its latest copy. A new copy is a matching event the
+page logged after the newest one the count saw, so a `recent` event history that evicts
+older copies does not read as a stall. The result and the `rallar.bb.messages.received`
+diagnostic then carry `stall: { stallMs, stalled }`, `stalled` saying whether the stall
+window ended the count, and a stalled count's failure message names the window. A count whose copies keep arriving may then take its whole `windowMs`, so
 a slow runner lengthens the count without failing it while a stopped sender still fails
 it within `stallMs`. An absence claim holds its whole window: command validation refuses
 `stallMs` beside `absent: true`.
