@@ -31,7 +31,6 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
-import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
@@ -370,31 +369,6 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | ALOutboundRtcAckSubmission
     | ALOutboundRtcHandoffRefusal
     | ALOutboundRtcQueuedBytesHighWater
-    | Readonly<{
-        kind: 'sender-queue-wait';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        queued: boolean;
-        /** `none` when this commit found the sender's queue empty. */
-        queuedBehindOrigin: ALOutboundCommitOrigin | 'none';
-        durationMs: number;
-    }>
-    | Readonly<{
-        kind: 'browser-lock-wait';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        lockName: string;
-        available: boolean;
-        durationMs: number;
-    }>
-    | Readonly<{
-        kind: 'browser-lock-hold';
-        senderId: string;
-        origin: ALOutboundCommitOrigin;
-        lockName: string;
-        available: boolean;
-        durationMs: number;
-    }>
     | (
         & Readonly<{
             kind: 'commit-phases';
@@ -411,6 +385,11 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             readOperationCount: number;
             commitDurationMs: number;
             commitOutcome: ALOutboundCommitBundleOutcome;
+            /**
+             * The write transactions this commit opened: one per attempt, and one more when every attempt lost the
+             * sender-version fence and it retained its request. Above one, its sender's other commits won the fence.
+             */
+            commitAttemptCount: number;
         }>
         & ALMessageTrace
     )
@@ -618,7 +597,6 @@ export namespace ALOutboundMessageRuntime {
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
-        readonly browserLocks: ALBrowserLocks | undefined;
         /** Which runtime of the session drains the durable pair; only the durable lane's work follows it. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
@@ -747,7 +725,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             dequeueTypes: dependencies.dequeue.types,
-            browserLocks: dependencies.browserLocks,
             durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
             checkpoint: undefined,
@@ -764,7 +741,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores: dependencies.volatileStores,
             workerId: `${dependencies.effectWorkerId}/volatile`,
             dequeueTypes: new Set<string>(),
-            browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
             checkpoint: undefined,
@@ -1018,7 +994,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             stores,
             workerId: `${dependencies.effectWorkerId}/checkpoint`,
             dequeueTypes: new Set<string>(),
-            browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: stores.evictExpired,
             checkpoint: stores.checkpoint,

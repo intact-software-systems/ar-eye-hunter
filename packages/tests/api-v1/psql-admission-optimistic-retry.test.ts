@@ -30,6 +30,7 @@ import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outboun
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { decodeALOutboundWorkEntry, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -266,16 +267,21 @@ describe('PSql admission optimistic retry', () => {
         const runtime = createOutboxOnlyTestRuntime(stores);
         await runtime.ready();
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (candidate) => {
-            expect(candidate.expectedVersion).toBeUndefined();
-            await repository.upsert(
-                {
-                    namespace: store.namespace,
-                    key: `${store.namespace}:version:self`,
-                    value: JSON.stringify({ senderId: 'self', version: 1 }),
-                    expireAtTimestamp: Date.now() + 60_000
-                }
-            );
+        let attempts = 0;
+        // Another commit of the sender moves its version after each attempt's read, so every attempt loses the fence.
+        vi.spyOn(store, 'commitBundle').mockImplementation(async (candidate) => {
+            if (attempts < AL_OUTBOUND_COMMIT_ATTEMPTS) {
+                expect(candidate.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
+                attempts += 1;
+                await repository.upsert(
+                    {
+                        namespace: store.namespace,
+                        key: `${store.namespace}:version:self`,
+                        value: JSON.stringify({ senderId: 'self', version: attempts }),
+                        expireAtTimestamp: Date.now() + 60_000
+                    }
+                );
+            }
             return await commit(candidate);
         });
         const retain = store.retainPendingAdmission.bind(store);

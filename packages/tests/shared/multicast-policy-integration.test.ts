@@ -35,6 +35,7 @@ import {
     captureOutboundWorkRunnable,
     createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
+    loseOutboundCommitAttempts,
     peekOutboundWorkReadyAt,
     readOutboundTestAdmission,
     runOutboundWorkTask
@@ -78,10 +79,8 @@ describe('multicast QoS integration', () => {
                 creationNow: () => Temporal.Now.instant(),
                 clock: { nowMs: () => Date.now() }
             });
-            const commit = store.commitBundle.bind(store);
-            vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            loseOutboundCommitAttempts(store, async (commit) => {
                 expect(await commit(competitor)).toBe('committed');
-                return await commit(bundle);
             });
             const holdClaims = vi.spyOn(resources.workQueue, 'reserveEntries').mockResolvedValue(new Map());
             const dependencies: shared.WebRtcOverlayMulticastManager.Dependencies = {

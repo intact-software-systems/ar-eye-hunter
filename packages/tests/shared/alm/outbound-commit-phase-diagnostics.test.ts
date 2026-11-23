@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -22,14 +21,13 @@ import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     createVolatileOutboundTestStores,
-    readOutboundTestAdmission
+    loseOutboundCommitAttempts
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
-type SenderQueueWaitEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'sender-queue-wait'; }>;
 type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
 
 /** The admission read chain a first send walks: client record, stored message, canonical pair, control. */
@@ -76,12 +74,6 @@ function controlAdmissionsOf(
     return diagnostics.filter((event): event is ControlAdmissionEvent => event.kind === 'control-admission');
 }
 
-function senderQueueWaitsOf(
-    diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]
-): readonly SenderQueueWaitEvent[] {
-    return diagnostics.filter((event): event is SenderQueueWaitEvent => event.kind === 'sender-queue-wait');
-}
-
 it.each(['memory', 'indexeddb'] as const)(
     'splits a send admission into its read chain and its write transaction over %s',
     async (kind) => {
@@ -112,6 +104,7 @@ it.each(['memory', 'indexeddb'] as const)(
             origin: 'send',
             readOperationCount: FIRST_SEND_READ_OPERATIONS,
             commitOutcome: 'committed',
+            commitAttemptCount: 1,
             traceId: 'trace-commit-phases',
             corrId: message.id.msgId
         });
@@ -121,38 +114,15 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(keys.slice(-2)).toEqual(['traceId', 'corrId']);
         expect(phases?.readDurationMs).toBeGreaterThanOrEqual(0);
         expect(phases?.commitDurationMs).toBeGreaterThanOrEqual(0);
-        expect(senderQueueWaitsOf(diagnostics)[0]).toMatchObject({
-            origin: 'send',
-            queued: false,
-            queuedBehindOrigin: 'none'
-        });
-        expect(diagnostics.filter((event) => event.kind === 'browser-lock-hold')[0]).toMatchObject({
-            origin: 'send'
-        });
         await runtime.dispose();
     }
 );
 
 it('charges the drain its own commit rather than leaving it on the next send', async () => {
     const stores = createStores('memory');
-    const store = stores.admissionStore;
-    const competitor = await readOutboundTestAdmission({
-        store: store,
-        message: createOutboundMessage('competing-sender-version'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    const commitBundle = store.commitBundle.bind(store);
-    let contested = false;
-    // A competing sender wins the version fence inside the first commit, so the send below is told
-    // its bundle conflicted and retains a pending admission the drain must admit on its own.
-    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
-        if (!contested) {
-            contested = true;
-            expect(await commitBundle(competitor)).toBe('committed');
-        }
-        return await commitBundle(bundle);
-    });
+    // Another commit of the sender wins the version fence inside each of the send's attempts, so the send below
+    // retains a pending admission the drain must admit on its own.
+    loseOutboundCommitAttempts(stores.admissionStore);
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const engine = new InboxOutboxEngine();
     const runtime = createDefaultOutboundTestRuntime({
@@ -183,42 +153,6 @@ it('charges the drain its own commit rather than leaving it on the next send', a
         typeId: 'chat.private-text.v1'
     });
     expect(drained?.readOperationCount).toBeGreaterThan(0);
-    expect(senderQueueWaitsOf(diagnostics).map((event) => event.origin)).toContain('drain');
-    await runtime.dispose();
-});
-
-it('names the origin a queued send waited behind', async () => {
-    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const runtime = createDefaultOutboundTestRuntime({
-        stores: createStores('memory'),
-        diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({
-            msg,
-            dropReasonCode: undefined,
-            lane: 'volatile',
-            preparedMessages: [{ kind: 'send' }]
-        }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
-    });
-
-    const [first, second] = await Promise.all([
-        runtime.enqueueIfAbsent(createOutboundMessage('msg-queued-first')),
-        runtime.enqueueIfAbsent(createOutboundMessage('msg-queued-second'))
-    ]);
-
-    for (const result of [first, second]) {
-        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
-    }
-    expect(
-        senderQueueWaitsOf(diagnostics).map((event) => ({
-            origin: event.origin,
-            queued: event.queued,
-            queuedBehindOrigin: event.queuedBehindOrigin
-        }))
-    ).toEqual([
-        { origin: 'send', queued: false, queuedBehindOrigin: 'none' },
-        { origin: 'send', queued: true, queuedBehindOrigin: 'send' }
-    ]);
     await runtime.dispose();
 });
 

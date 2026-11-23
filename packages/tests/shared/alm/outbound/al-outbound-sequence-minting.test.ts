@@ -22,8 +22,10 @@ import { computeALOutboundSequenceMint } from '@shared/alm/outbound/admission/se
 import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 
 import {
+    commitCompetingOutboundSend,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createVolatileOutboundTestStores,
@@ -133,7 +135,7 @@ describe('outbound sequence minting', () => {
         const { runtime, sent } = createMintingRuntime(stores);
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
-        interleaveAfterFirstDecisionRead(stores, async () => {
+        interleaveAfterEveryAttemptDecisionRead(stores, async () => {
             const bundle = await readOutboundTestAdmission({
                 store: stores.admissionStore,
                 message: early,
@@ -167,7 +169,7 @@ describe('outbound sequence minting', () => {
         const { runtime } = createMintingRuntime(stores);
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
-        interleaveAfterFirstDecisionRead(stores, async () => {
+        interleaveAfterEveryAttemptDecisionRead(stores, async () => {
             const bundle = await readOutboundTestAdmission({
                 store: stores.admissionStore,
                 message: early,
@@ -443,15 +445,23 @@ async function enqueueMintedSeq(
 }
 
 /**
- * Lets `interleaved` commit right after the next decision read, so that read's commit finds the sender moved.
- * It commits through the store, as another instance would: a second runtime here would wait on the sender's lock.
+ * Lets `interleaved` commit right after the next decision read, and a send of no copies after each of that commit's
+ * attempts that follow, so every attempt's commit finds the sender moved and the admission retains its request.
  */
-function interleaveAfterFirstDecisionRead(stores: OutboundTestStores, interleaved: () => Promise<void>): void {
+function interleaveAfterEveryAttemptDecisionRead(stores: OutboundTestStores, interleaved: () => Promise<void>): void {
     const store = stores.admissionStore;
     const readOutgoingDecision = store.readOutgoingDecision.bind(store);
-    vi.spyOn(store, 'readOutgoingDecision').mockImplementationOnce(async (input, decide) => {
+    const commitBundle = store.commitBundle.bind(store);
+    let attempts = 0;
+    vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {
         const observed = await readOutgoingDecision(input, decide);
-        await interleaved();
+        attempts += 1;
+        if (attempts === 1) {
+            await interleaved();
+        }
+        else if (attempts <= AL_OUTBOUND_COMMIT_ATTEMPTS) {
+            await commitCompetingOutboundSend(store, commitBundle, { senderId: input.msg.id.senderId, resourceId: `competing-send-${attempts}` });
+        }
         return observed;
     });
 }

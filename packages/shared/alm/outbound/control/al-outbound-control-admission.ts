@@ -108,11 +108,12 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
 }
 
 /**
- * Two bounds of one count: the commit attempts a receipt's admission makes in one run, and the runs a batch gives a
- * parked control it claims ahead of its next claim. A receipt's every run makes its own attempts, so a batch bounds a
- * parked receipt at nine commits, three runs of three; a peer control's run makes one, so three.
+ * Three bounds of one count: the commit attempts a dispatch makes before it retains its request, the commit attempts a
+ * receipt's admission makes in one run, and the runs a batch gives a parked control it claims ahead of its next claim.
+ * A receipt's every run makes its own attempts, so a batch bounds a parked receipt at nine commits, three runs of three;
+ * a peer control's run makes one, so three.
  */
-export const AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS = 3;
+export const AL_OUTBOUND_COMMIT_ATTEMPTS = 3;
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
 export class ALOutboundControlAdmission<TPrepared> {

@@ -75,7 +75,6 @@ describe('ALOutboundMessageRuntime', () => {
             workClock: { nowMs: () => nowMs },
             queueEngine,
             ownsQueueEngine: false,
-            browserLocks: undefined,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             random: () => 0,
             diagnostics: undefined,
@@ -412,87 +411,22 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([]);
     });
 
-    it('uses browser Web Locks around outbound commits when available', async () => {
-        const requestLock = vi.fn(
-            async <T>(
-                _name: string,
-                _options: { mode: 'exclusive'; },
-                callback: () => Promise<T>
-            ) => await callback()
-        );
-        vi.stubGlobal('navigator', {
-            locks: {
-                request: requestLock
-            }
-        });
+    it('commits an outbound send without a Web Lock where the browser has one: the sender-version fence orders commits', async () => {
+        const requestLock = vi.fn();
+        vi.stubGlobal('navigator', { locks: { request: requestLock } });
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                lane: 'volatile',
+                lane: 'durable',
                 preparedMessages: [{ kind: 'send' }]
             })
         });
 
-        await runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock'));
-
-        expect(requestLock).toHaveBeenCalledWith(
-            'rallar:al-outbound-commit:self',
-            { mode: 'exclusive' },
-            expect.any(Function)
-        );
-    });
-
-    it('releases browser Web Locks before draining committed send effects', async () => {
-        const events: string[] = [];
-        const sendGate = Promise.withResolvers<void>();
-        const requestLock = vi.fn(
-            async <T>(
-                _name: string,
-                _options: { mode: 'exclusive'; },
-                callback: () => Promise<T>
-            ) => {
-                events.push('lock-enter');
-                const result = await callback();
-                events.push('lock-exit');
-                return result;
-            }
-        );
-        vi.stubGlobal('navigator', {
-            locks: {
-                request: requestLock
-            }
-        });
-        const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => {
-                events.push('send-start');
-                await sendGate.promise;
-                events.push('send-end');
-
-                return { status: 'sent' as const, submissionAttempted: true };
-            },
-            planOutgoingMessage: (msg) => ({
-                msg: msg,
-                dropReasonCode: undefined,
-                lane: 'volatile',
-                preparedMessages: [{ kind: 'send' }]
-            })
-        });
-
-        onTestFinished(() => sendGate.resolve());
-
-        const enqueue = runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock-drain'));
-        await waitUntil(() => events.includes('send-start'));
-
-        expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start']);
-        // Admission returns before the send it committed, so the lock is never held across transport.
-        expect((await enqueue).verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
-
-        sendGate.resolve();
-        await waitUntil(() => events.includes('send-end'));
-
-        expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start', 'send-end']);
+        expect((await runtime.enqueueIfAbsent(createOutboundMessage('msg-without-lock'))).verdict.kind).toBe('admitted');
+        // The lock request is the requirement: no outbound commit serializes on a cross-tab lock.
+        expect(requestLock).not.toHaveBeenCalled();
     });
 
     it('waits for effects committed while another drain is running', async () => {
@@ -547,7 +481,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(started).toEqual(['msg-drain-first', 'msg-drain-second']);
     });
 
-    it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
+    it('emits diagnostics for commit phases and effect drains', async () => {
         const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
         let nowMs = 0;
         const runtime = createDefaultOutboundTestRuntime({
@@ -570,25 +504,13 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.enqueueIfAbsent(createOutboundMessage('msg-diagnostics'));
 
         await expect.poll(() => diagnostics.filter((event) => event.kind === 'effect-drain' && event.claimedCount === 1)).toHaveLength(1);
-        expect(diagnostics.map((event) => event.kind)).toEqual(expect.arrayContaining([
-            'sender-queue-wait',
-            'browser-lock-wait',
-            'browser-lock-hold',
-            'commit-phases',
-            'effect-drain'
-        ]));
+        expect(diagnostics.map((event) => event.kind)).toEqual(expect.arrayContaining(['commit-phases', 'effect-drain']));
         expect(diagnostics).toContainEqual(
             expect.objectContaining({
                 kind: 'commit-phases',
                 origin: 'send',
-                commitOutcome: 'committed'
-            })
-        );
-        expect(diagnostics).toContainEqual(
-            expect.objectContaining({
-                kind: 'sender-queue-wait',
-                origin: 'send',
-                queuedBehindOrigin: 'none'
+                commitOutcome: 'committed',
+                commitAttemptCount: 1
             })
         );
         expect(diagnostics).toContainEqual(

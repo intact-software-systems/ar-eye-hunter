@@ -4,10 +4,12 @@
 lifecycle boundary: it enqueues, accepts control messages, claims work, and routes
 each claimed durable effect to the owner that runs it. It never sends or mutates
 admission state itself. [`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)
-owns sender serialization, browser locking, and optimistic read/compute/commit. Its cross-tab commit
-lock, `rallar:al-outbound-commit:<senderId>`, is a name on the shared Web Locks port
-[`ALBrowserLocks`](../storage/al-browser-locks.ts), which the default composition fills with
-`navigator.locks` where the API exists.
+owns optimistic read/compute/commit. Nothing serializes a sender's commits, in a tab or across tabs:
+every commit is fenced on the sender's one version, and a commit whose write lost that fence to
+another commit of the sender reads, decides and writes again at once, `AL_OUTBOUND_COMMIT_ATTEMPTS` (3)
+attempts in all, the last after a jittered 10 ms pause; past the bound a send retains its request as
+a pending admission and any other commit leaves its claim to its work retry (see
+[Commit conflicts](#commit-conflicts)).
 [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) owns control
 acceptance, the ACK-timeout schedule, and the not-yet-in-sync retry schedule; it
 commits new bundles and never sends.
@@ -182,7 +184,7 @@ handler's construction-time registration. While another runtime of the session o
 durable lane's [`ALWorkHandler`](../work/al-work-handler.ts) joins no engine round, its `ready()`
 runs no bootstrap batch, and a commit runs no batch: it is announced (`announceCommit`) under the
 lane's work type, `toALOutboundWorkType(namespace)`, which every runtime of the session shares. The
-lane still admits under the commit lock. When ownership turns true (once, never back) the handler
+lane still admits. When ownership turns true (once, never back) the handler
 registers its task and runs the bootstrap batch once; that batch's first-batch report is the
 takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
 batch, at its lease end plus at most 16.6 s, never sooner. The owner's lane hears every commit another
@@ -246,7 +248,7 @@ every server message keeps its one backend.
   the target message (a memory read each), else to the durable lane.
 - **One cancel.** `cancel(msgId, traceId)` is runtime-wide: one set of send controls serves both lanes.
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
-  takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab. A
+  shares no store with another tab, since memory is per tab. A
   planner that returns zero prepared messages for a volatile message must settle it (drop code or an
   immediate zero-recipient receipt, as the RTC empty-audience plan does) — the volatile lane has no
   claimant for a `NEW` canonical row.
@@ -269,7 +271,7 @@ every server message keeps its one backend.
   goes to the memory lane first. No caller does this.
 - **Tracks do not span stores.** An ordering or supersedence track whose messages declare different
   durabilities is split between the lanes; no caller declares one that way.
-- **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
+- **A volatile admission never leaves the caller's turn.** It reads no IndexedDB,
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
   task turn until it ends (R-S3a-7). A burst loop should yield or batch: the outbound claim order is
   the queue's own order, not a rotation across senders or tracks, so a backlog admitted ahead puts
@@ -463,33 +465,45 @@ ended or superseded) receipt state, in one readonly session (`readSendGuards`), 
 admission read session and a miss two: the canonical read stays its own session before the
 attempt starts.
 
-A validated initial AL control enqueue runs the normal read, computation, validation,
-and optimistic commit without entering the sender queue or browser Web Lock (D105). An
-uncontended commit returns `admitted`; a real commit conflict atomically retains the
-canonical payload, immutable identity, and compact `admit-message` work through
-[`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts). That fallback
-returns `pending`, meaning durable ownership exists, not that transport ran. A spoofed
-control type whose envelope does not decode as a canonical control stays on the ordinary
-serialized path.
+### Commit conflicts
+
+Every admission -- a send, a control hand-off, a dequeue, a repair -- runs the same read, computation,
+validation and optimistic commit, and no queue or Web Lock orders the commits of a sender. Each commit
+is fenced on the sender's one version, which is what keeps a track's sequences unique and gap-free:
+two commits that read one version mint one sequence, and only one of their writes lands. The other
+write answers `conflict`, and its commit reads, decides and writes again at once
+(`AL_OUTBOUND_COMMIT_CONFLICT_RETRY` in
+[`al-outbound-dispatch-admission.ts`](./al-outbound-dispatch-admission.ts), on the shared
+`try-with-policy` primitive). The first retry runs at once, since a lost fence means the winner has
+committed; the third and last attempt first waits 10 ms with half of it jittered. A commit therefore
+makes at most three reads and three writes and waits at most 15 ms, and contention costs fresh
+reads, never a wait for another commit's read. Concurrent sends of one track are sequenced in the
+order their commits land, not the order they were called: the outbound promises no call order
+between sends that are in flight at once.
+
+Past the bound a send retains its request: the canonical payload, immutable identity and compact
+`admit-message` work, atomically, through
+[`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts). That fallback returns
+`pending`, meaning durable ownership exists, not that transport ran. A replay, a dequeue and a
+repair that lose every attempt throw a retryable conflict, so their claim's work retry runs them
+again. A burst of one sender's commits at once is the costly case: each round of its attempts lands
+one commit, so most of a large burst is retained and replayed one by one by the durable worker
+(measured in the in-memory server test that admits 4096 at once: about 33 s against about 6 s with the
+removed commit lock).
 
 Controls are `volatile` (`computeALControlMessage` in
 [`al-control.ts`](../../al-contracts/al-control.ts)), so a runtime with a memory pair — both browser
-carriers — admits them in the memory lane, which takes no Web Lock: there the hand-off skips only that
-lane's in-tab sender queue. A runtime without a memory pair (the WS server, or a WS client built
-without `outboundVolatileStores`) admits them in the durable lane, where the hand-off also skips the
-Web Lock when the platform has one. The memory lane shares nothing between tabs, so the two-tab
-proof covers the durable lane: two tabs of one session that share the IndexedDB lane and the Web
-Lock and hand off the same controls at once, or where one tab closes after its commit, send each
-control once and in hand-off order; a tab that closes inside its send leaves that send to be
-retried once after its lease lapses, at least once on the wire
+carriers — admits them in the memory lane; a runtime without one (the WS server, or a WS client built
+without `outboundVolatileStores`) admits them in the durable lane. The memory lane shares nothing
+between tabs, so the two-tab proof covers the durable lane: two tabs of one session that share the
+IndexedDB lane and hand off the same controls at once, or where one tab closes after its commit,
+send each control once and in hand-off order; a tab that closes inside its send leaves that send to
+be retried once after its lease lapses, at least once on the wire
 ([`al-outbound-control-handoff-two-tabs.test.ts`](../../../tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts));
-a send a closed tab still holds under its lease waits for that lease on either path. The hand-off
-shares the sender version fence with that sender's data commits, so a data commit that races a
-control can conflict and retain a pending admission, which the worker replays.
+a send a closed tab still holds under its lease waits for that lease on either path.
 
 The outbound worker claims the retained `admit-message`, rereads current admission
-facts, and replays one new attempt through the unchanged sender queue and browser Web
-Lock. The retained policy, original deadline, and authorized transport provenance
+facts, and replays one new attempt. The retained policy, original deadline, and authorized transport provenance
 remain unchanged; the stored candidate contains no prior mutable write context. A
 retention conflict leaves no false ownership for the caller to complete, and a terminal
 pending descriptor cannot be revived merely because its content matches.
@@ -504,8 +518,8 @@ transport action and does not confirm the logical audience; a server receipt doe
 
 | Entry                        | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | After commit                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker after commit, outside admission's sender/browser lock.                                                                                                                                                                                                                                                       |
-| `enqueueAllIfAbsent`         | One sender's messages read, compute, and validate as `enqueueIfAbsent` does. A homogeneous group attempts one `commitBundles` write under one version fence; a mixed control/data group commits members separately (see Grouped control sends below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker for committed work; each message still reports its own `commit-phases` event.                                                                                                                                                                                                                                |
+| `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker after commit.                                                                                                                                                                                                                                                                                                |
+| `enqueueAllIfAbsent`         | One sender's messages read, compute, and validate as `enqueueIfAbsent` does. The group attempts one `commitBundles` write under one version fence and falls back to members alone (see Grouped sends below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The runtime wakes the existing worker for committed work; each message still reports its own `commit-phases` event.                                                                                                                                                                                                                                |
 | `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK, unless its message has ended or is a room send without a repair planner, whose own hop retains it.                                                                                                 |
 | `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                                                                                              |
 | `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's dequeued admission authority with the batch's sequences, then rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and hands the configured `afterDequeueAdmission` port the policy its commit wrote and the dequeue authority it planned from. |
@@ -1110,8 +1124,7 @@ client names no hop; at the WS server each recipient session is its own hop, com
 An RTT heartbeat is not one of these entries.
 [`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it
 straight to an open socket -- the same bytes `enqueueOutboxIfAbsent` sends today -- with no
-admission read, bundle, work row, or retry, and it never takes the sender/browser lock the
-ordinary data admissions use. A closed socket answers `'socket-closed'` rather than throwing; a lost
+admission read, bundle, work row, or retry. A closed socket answers `'socket-closed'` rather than throwing; a lost
 heartbeat costs nothing because the next one, latest-value telemetry, simply replaces it.
 `sendLive` also bypasses the WS submission-readiness fault port, so a harness `not-ready` hold
 never delays an RTT heartbeat; that is acceptable only because the heartbeat is latest-value
@@ -1271,18 +1284,16 @@ A volatile pair that did mint would drop a track's ordering head with its last s
 receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than that would restart at
 sequence 1.
 
-### Grouped control sends
+### Grouped sends
 
-`enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`
-takes one sender-queue slot and one browser lock for an ordinary data group. Canonical initial
-controls bypass those waits and use the same optimistic group commit; a mixed group settles each
-member alone. Each member uses the single-message decision in a read of its own; `commitBundles` then reads
+`enqueueAllIfAbsent` admits one sender's messages as one group, controls and data alike, through
+`ALOutboundDispatchAdmission.commitAll`'s optimistic group commit. Each member uses the single-message decision in a read of its own; `commitBundles` then reads
 every bundle's effect rows and canonical pair in one observation read, fences the sender version once, runs every
 bundle's own pending, effect, observation and identity fences, writes every bundle and bumps the version
 once. The group falls back when a member settles before its write (it fails validation, finds its own
 pending admission, or has nothing to commit), when a version moved between the members' reads, when two
 bundles write one row, when the store answers anything but `committed`, or when the group attempt throws.
-Every member then goes through the single-message commit, one after another, and keeps its own answer:
+Every member then goes through the single-message commit, with its retries, one after another, and keeps its own answer:
 a planning refusal is that member's `failed` value, as a single send answers it, and a member whose
 single commit throws does not stop the members after it; the first such throw is rethrown once every
 member ran, and the runtime wakes the owner for the members that landed before it rethrows. The RTC

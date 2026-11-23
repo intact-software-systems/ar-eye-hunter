@@ -7,7 +7,6 @@ import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type { ALBrowserLocks } from '../../storage/al-browser-locks.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
 import {
     toALDurableWorkLaneOwnership,
@@ -60,7 +59,7 @@ import {
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import {
-    AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS,
+    AL_OUTBOUND_COMMIT_ATTEMPTS,
     type ALOutboundControlAdmission
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
@@ -91,7 +90,6 @@ export namespace ALOutboundStoreLane {
         readonly workerId: string;
         /** Foreign queue rows only the durable lane admits; the volatile lane names none. */
         readonly dequeueTypes: ReadonlySet<string>;
-        readonly browserLocks: ALBrowserLocks | undefined;
         /** The session ownership the durable lane's work runs under; undefined for the volatile lane, which owns its memory pair. */
         readonly durableWorkOwnership: ALDurableWorkOwnership | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
@@ -321,14 +319,14 @@ export class ALOutboundStoreLane<TPrepared> {
 
     /**
      * A control whose commit lost to this owner's own writes is replayed ahead of the running batch's remaining
-     * claims, and again while its replays keep losing, `AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS` runs in all: those
+     * claims, and again while its replays keep losing, `AL_OUTBOUND_COMMIT_ATTEMPTS` runs in all: those
      * claims are the writes it lost to, and a page of them can outlast the deadline it answers.
      */
     private expeditePendingControl(control: ALMessage): void {
         const { namespace } = this.input.stores.admissionStore;
         this.work.expedite(
             [toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))],
-            AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS
+            AL_OUTBOUND_COMMIT_ATTEMPTS
         );
         // Harmless when the batch claims the row: the follow-up batch this owes finds it gone, a readiness probe.
         this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
@@ -760,7 +758,6 @@ function createALOutboundLaneAdmissions<TPrepared>(
         toOutboxEntry: runtime.toOutboxEntry,
         decodePreparedMessage: runtime.decodePreparedMessage,
         clock: runtime.clock,
-        browserLocks: input.browserLocks,
         diagnostics: runtime.diagnostics,
         dequeueTiming: runtime.dequeueTiming,
         signAdmittedMessage: runtime.signAdmittedMessage,

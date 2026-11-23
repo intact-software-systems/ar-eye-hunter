@@ -188,8 +188,8 @@ the deadline, and the dedup window, which the deadline now floors (section 5).
 ### 7.1 Cost model
 
 In the browser, a durable decision costs its IndexedDB operations times the main-thread latency of
-each operation. It also waits in the queue behind the per-sender commit Web Lock
-(`rallar:al-outbound-commit:<senderId>`).
+each operation. No queue or lock orders a sender's commits: a commit that loses the sender-version
+fence to another reads and writes again, up to three attempts, so contention costs reads, not waits.
 
 | Fact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                             | Label                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------- |

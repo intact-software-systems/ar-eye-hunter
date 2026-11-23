@@ -31,10 +31,9 @@ import {
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import {
-    createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
     holdOutboundClaims,
-    readOutboundTestAdmission,
+    loseOutboundCommitAttempts,
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
@@ -55,17 +54,7 @@ describe('Rallar middleware queue registration completeness', () => {
             decodePrepared: decodeWsQueueBoxServerPreparedMessage
         });
         const store = stores.admissionStore;
-        const competitor = await readOutboundTestAdmission({
-            store: store,
-            message: createOutboundMessage('competing-server-admission'),
-            creationNow: () => Temporal.Now.instant(),
-            clock: { nowMs: () => Date.now() }
-        });
-        const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
-            expect(await commit(competitor)).toBe('committed');
-            return await commit(bundle);
-        });
+        loseOutboundCommitAttempts(store);
         const claims = holdOutboundClaims(stores);
         const input = createOutboundRuntimeWithWorkTask(() => createQueueTaskInput(stores, engine));
         const published: string[] = [];

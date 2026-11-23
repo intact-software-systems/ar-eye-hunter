@@ -382,8 +382,7 @@ diagnostics event per emission, recorded the moment the outbound runtime calls
 the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
-- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
+- `kind`: `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
   `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
   `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `track-index-end`,
   `publication-staging` or `publication-opportunity` (the last two are described under
@@ -400,9 +399,9 @@ every session the page opens. The event's `data` is the event itself:
   storage read cost
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
-  dequeue commits, `repair` for retransmission. It is on all four
-  commit-scoped kinds, so a hold is charged to the work behind it rather than
-  guessed at from a duration
+  dequeue commits, `repair` for retransmission. It is on `commit-phases`, so a
+  slow commit is charged to the work behind it rather than guessed at from a
+  duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
   `control-admission` (after a receipt's `phase`, or a NACK's fields and any proof refusal),
   `relay-forward-not-enqueued`,
@@ -416,8 +415,7 @@ every session the page opens. The event's `data` is the event itself:
   the browser's send handle name. On `control-admission`,
   `receipt-confirmation` and `rtc-ack-submission` the pair is the control's
   own, and a control travels under the trace of the message it answers. The
-  sender- and batch-scoped kinds (`sender-queue-wait`, the two
-  `browser-lock-*` phases, `effect-drain`, `readiness-probe`,
+  batch-scoped kinds (`effect-drain`, `readiness-probe`,
   `rtc-handoff-refusal` and `rtc-queued-bytes-high-water`) carry neither.
   Because the pair is appended after every other field, a wait that matches
   earlier fields in their emitted order still matches; match the trace itself
@@ -435,14 +433,12 @@ every session the page opens. The event's `data` is the event itself:
     "readOperationCount": 9,
     "commitDurationMs": 2,
     "commitOutcome": "committed",
+    "commitAttemptCount": 1,
     "traceId": "trace-1",
     "corrId": "msg-1"
   }
   ```
-- the phase's own identity fields: `senderId`, `queued` and
-  `queuedBehindOrigin` for `sender-queue-wait`; `senderId`, `lockName` and
-  `available` for the two `browser-lock-*` phases; `workerId`,
-  `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
+- the phase's own identity fields: `workerId`, `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
   for `effect-drain`
 - the outbound `effect-drain` also carries three of the inbound one's phases
   below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
@@ -466,15 +462,11 @@ every session the page opens. The event's `data` is the event itself:
   takes seconds therefore names the claim that took them; `claims` is not an
   identity, and an `admit-control` among them is the replay of a control a
   `control-admission` read `pending-control` for
-- `queuedBehindOrigin` is the origin of the commit already at the end of that
-  sender's queue, or `none` when the queue was empty. A drain's own commits
-  re-enter the same per-sender queue, so this says when a send's wait is the
-  batch it caused rather than another send
 - `commit-phases` also carries `msgId` and `typeId`, so one message -- an RTC
   offer, say -- can be followed from the commit that admitted it to the drain
   that sent it, and a lane's commits can be counted apart from the rest
-- `commit-phases` splits what `browser-lock-hold` measures as one number:
-  `readDurationMs` and `readOperationCount` for the admission read chain.
+- `commit-phases` splits one commit in two: `readDurationMs` and
+  `readOperationCount` for the admission read chain.
   `readDurationMs` covers the whole decision read (`readOutgoingMessage` plus
   the pending-admission probe and the decision; for a single send also the
   effect rows and the canonical pair its commit fences, read in the same
@@ -485,7 +477,13 @@ every session the page opens. The event's `data` is the event itself:
   are timed but not counted. Then come
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
-  settled before opening one
+  settled before opening one. No queue or lock orders a sender's commits, so a
+  write can lose the sender-version fence to another commit of the sender; the
+  commit then reads, decides and writes again, and `commitAttemptCount` counts
+  the write transactions it opened: one per attempt, at most three, and one more
+  when a send lost every attempt and retained its request (`commitOutcome` is
+  then the retention's). The read fields and `commitDurationMs` sum over every
+  attempt
 - `readOperationCount` counts read **operations**, not transactions: several
   keys read from one storage transaction are several operations. It is also an
   upper bound rather than an exact per-call count, because the commit samples a

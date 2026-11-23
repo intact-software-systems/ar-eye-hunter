@@ -25,6 +25,7 @@ import type {
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundMessageRuntime
@@ -219,7 +220,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         await runOutboundWorkTask(runtime);
         await runOutboundWorkTask(runtime);
 
-        expect(writes.dequeueCommits()).toBe(1 + 4);
+        // The group's one write, then each row alone: the moved row makes every attempt, since its claim stays moved.
+        expect(writes.dequeueCommits()).toBe(1 + AL_OUTBOUND_COMMIT_ATTEMPTS + others.length);
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(others.map(toMsgId).sort());
         expect(await readSenderVersion(storage)).toBe(3);
     });

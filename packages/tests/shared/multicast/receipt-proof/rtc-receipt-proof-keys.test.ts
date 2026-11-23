@@ -17,6 +17,7 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcReceiptKeyRefusal } from '@shared/multicast/receipt-proof/compute-rtc-receipt-key-refusal.ts';
@@ -557,7 +558,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         const commitBundle = store.commitBundle.bind(store);
         let conflicts = 0;
         vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
-            if (conflicts > 0) {
+            if (conflicts === AL_OUTBOUND_COMMIT_ATTEMPTS) {
                 return await commitBundle(bundle, observation);
             }
             conflicts++;
@@ -565,8 +566,9 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         });
         const message = createOriginReceiverMulticast('conflicted-keyed');
 
-        await fixture.manager.enqueueLegIfAbsent(message, 'hold');
-        await vi.advanceTimersByTimeAsync(10);
+        const enqueued = fixture.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(100);
+        await enqueued;
         const sentBefore = [fixture.channels.b!.sent.length, fixture.channels.c!.sent.length];
         const admitted = [];
         for (const peerId of ['b', 'c'] as const) {
@@ -591,7 +593,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         }
         await vi.advanceTimersByTimeAsync(30_000);
 
-        expect(conflicts).toBe(1);
+        expect(conflicts).toBe(AL_OUTBOUND_COMMIT_ATTEMPTS);
         expect(sentBefore).toEqual([1, 1]);
         expect(admitted).toEqual([{ kind: 'committed' }, { kind: 'committed' }]);
         expect([fixture.channels.b!.sent.length, fixture.channels.c!.sent.length]).toEqual(sentBefore);

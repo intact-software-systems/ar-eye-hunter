@@ -12,7 +12,7 @@ import {
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import {
-    AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS,
+    AL_OUTBOUND_COMMIT_ATTEMPTS,
     type ALOutboundControlAdmission,
     type ALOutboundPendingControl
 } from './al-outbound-control-admission.ts';
@@ -75,7 +75,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         control: ALMessage,
         receipt: ALReceiptPayload
     ): Promise<ALOutboundControlAdmissionResult> {
-        for (let attempt = 0; attempt < AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS; attempt += 1) {
+        for (let attempt = 0; attempt < AL_OUTBOUND_COMMIT_ATTEMPTS; attempt += 1) {
             const result = await this.admitOnce(control, receipt, attempt + 1);
             if (result !== 'conflict') {
                 return result;

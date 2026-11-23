@@ -382,11 +382,15 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
             await admitRoomMessage(fixture);
             await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
 
-            // One admission past the cap evicts the oldest aggregate, the subject's, long before its deadline.
-            const fillers = await Promise.all(Array.from({ length: WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES }, async (_, offset) => {
+            // One admission past the cap evicts the oldest aggregate, the subject's, long before its deadline. The fillers
+            // arrive one after another: a burst of one sender's commits at once contends on its version fence instead.
+            const fillers: (string | undefined)[] = [];
+            for (let offset = 0; offset < WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES; offset += 1) {
                 const filler = roomMessage(fixture.clock.nowMs);
-                return (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind;
-            }));
+                fillers.push(
+                    (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind
+                );
+            }
             await settleQueueEngine(fixture.engine);
 
             expect(new Set(fillers)).toEqual(new Set(['admitted']));

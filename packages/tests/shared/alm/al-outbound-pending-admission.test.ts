@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     expect,
@@ -20,7 +19,7 @@ import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     holdOutboundClaims,
-    readOutboundTestAdmission
+    loseOutboundCommitAttempts
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -58,23 +57,9 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     };
     const store = createALOutboundAdmissionStore(options);
     const stores = { admissionStore: store, workQueue: backend.workQueue };
-    const competitor = await readOutboundTestAdmission({
-        store: store,
-        message: createOutboundMessage('competing-sender-version'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    const commit = store.commitBundle.bind(store);
-    let first = true;
-    // A competing sender wins the version fence inside the first commit, so the admission below is
+    // A competing sender wins the version fence inside each of its commit attempts, so the admission below is
     // told its own bundle conflicted and must retain a pending admission instead.
-    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
-        if (first) {
-            first = false;
-            expect(await commit(competitor)).toBe('committed');
-        }
-        return await commit(bundle);
-    });
+    loseOutboundCommitAttempts(store);
     const claims = holdOutboundClaims(stores);
     const original = createOutboundMessage('pending-unique-payload', { ttlMs: 10_000 });
     const initial = createDefaultOutboundTestRuntime({

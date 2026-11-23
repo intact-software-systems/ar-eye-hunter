@@ -52,6 +52,7 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
 import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
@@ -628,6 +629,57 @@ export async function readOutboundTestAdmission<TPrepared>(
         throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);
     }
     return computed.bundle;
+}
+
+/**
+ * Lets another commit of the store's sender land right before each of the store's next `AL_OUTBOUND_COMMIT_ATTEMPTS`
+ * single commits, so each finds the sender version moved and a commit that makes all its attempts retains its
+ * request. `first` is the competing commit before the first of them; a send of no copies competes before the rest.
+ * Returns how many commits it has made lose.
+ */
+export function loseOutboundCommitAttempts<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    first?: (commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle']) => Promise<void>
+): () => number {
+    const commitBundle = store.commitBundle.bind(store);
+    let lost = 0;
+    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
+        if (lost < AL_OUTBOUND_COMMIT_ATTEMPTS) {
+            lost += 1;
+            await (lost === 1 && first !== undefined
+                ? first(commitBundle)
+                : commitCompetingOutboundSend(store, commitBundle, { senderId: bundle.senderId, resourceId: `competing-send-${lost}` }));
+        }
+        return await commitBundle(bundle, observation);
+    });
+    return () => lost;
+}
+
+/**
+ * Answers every attempt of the store's next `commits` single commits `conflict`, as a sender version that moved before
+ * each attempt's write would: each such commit makes all its attempts and settles as a lost fence.
+ */
+export function conflictOutboundCommitAttempts<TPrepared>(store: ALOutboundAdmissionStore<TPrepared>, commits = 1): void {
+    const spy = vi.spyOn(store, 'commitBundle');
+    for (let attempt = 0; attempt < commits * AL_OUTBOUND_COMMIT_ATTEMPTS; attempt += 1) {
+        spy.mockResolvedValueOnce('conflict');
+    }
+}
+
+/** Commits a send of no copies from `senderId` through `commitBundle`, as another commit of that sender would. */
+export async function commitCompetingOutboundSend<TPrepared>(
+    store: ALOutboundAdmissionStore<TPrepared>,
+    commitBundle: ALOutboundAdmissionStore<TPrepared>['commitBundle'],
+    competitor: Readonly<{ senderId: string; resourceId: string; }>
+): Promise<void> {
+    const message = createOutboundMessage(competitor.resourceId);
+    const bundle = await readOutboundTestAdmission({
+        store,
+        message: { ...message, id: { ...message.id, senderId: competitor.senderId } },
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
+    expect(await commitBundle(bundle)).toBe('committed');
 }
 
 /** A `hop` receipt expecting these peers, each its own next hop. */

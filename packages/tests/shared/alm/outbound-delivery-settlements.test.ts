@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -36,8 +35,8 @@ import {
     createVolatileOutboundTestStores,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
+    loseOutboundCommitAttempts,
     peekOutboundWorkReadyAt,
-    readOutboundTestAdmission,
     runOutboundWorkTask,
     toOutboundTestAck,
     trackOutboundTestAcks,
@@ -400,23 +399,9 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
     const settlements: ALDeliverySettlement[] = [];
     const stores = createStores(kind);
     const store = stores.admissionStore;
-    const competitor = await readOutboundTestAdmission({
-        store: store,
-        message: createOutboundMessage('competing-sender-version'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    const commitBundle = store.commitBundle.bind(store);
-    let contested = false;
-    // A competing sender wins the version fence inside the first commit, so the send below is told
+    // A competing sender wins the version fence inside each of its commit attempts, so the send below is told
     // its bundle conflicted and retains a pending admission the drain replays on its own.
-    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
-        if (!contested) {
-            contested = true;
-            expect(await commitBundle(competitor)).toBe('committed');
-        }
-        return await commitBundle(bundle);
-    });
+    loseOutboundCommitAttempts(store);
     const runtime = createDefaultOutboundTestRuntime({
         stores,
         settlements: (settlement) => settlements.push(settlement),
@@ -497,22 +482,8 @@ it.each(BACKEND_KINDS)('states the old message superseded at its replacement\'s 
     const old = createOutboundMessage('msg-superseded-before-replay');
     const replacement = createOutboundMessage('msg-replayed-replacement');
     await enqueueOutboundOrThrow(runtime, old);
-    const competitor = await readOutboundTestAdmission({
-        store: store,
-        message: createOutboundMessage('competing-replay-version'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    const commitBundle = store.commitBundle.bind(store);
-    let contested = false;
-    // The replacement's own commit loses the sender's version fence, so its admission waits for the replay.
-    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
-        if (!contested) {
-            contested = true;
-            expect(await commitBundle(competitor)).toBe('committed');
-        }
-        return await commitBundle(bundle);
-    });
+    // Each of the replacement's own commit attempts loses the sender's version fence, so its admission waits for the replay.
+    loseOutboundCommitAttempts(store);
 
     expect((await runtime.enqueueIfAbsent(replacement)).verdict).toEqual({ kind: 'pending' });
     expect(settlements.filter((settlement) => settlement.kind === 'superseded')).toEqual([]);

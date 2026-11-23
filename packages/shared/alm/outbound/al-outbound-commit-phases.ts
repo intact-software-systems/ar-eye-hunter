@@ -30,6 +30,7 @@ export class ALOutboundCommitPhases {
     private readOperationCount = 0;
     private commitDurationMs = 0;
     private commitOutcome: ALOutboundCommitBundleOutcome = 'not-attempted';
+    private commitAttemptCount = 0;
 
     constructor(input: ALOutboundCommitPhases.Input) {
         this.input = input;
@@ -51,6 +52,7 @@ export class ALOutboundCommitPhases {
         commit: () => Promise<TOutcome>
     ): Promise<TOutcome> {
         const startedAtMs = this.input.nowMs();
+        this.commitAttemptCount += 1;
         try {
             const outcome = await commit();
             this.commitOutcome = outcome;
@@ -73,6 +75,7 @@ export class ALOutboundCommitPhases {
             readOperationCount: this.readOperationCount,
             commitDurationMs: this.commitDurationMs,
             commitOutcome: this.commitOutcome,
+            commitAttemptCount: this.commitAttemptCount,
             ...this.input.trace
         };
     }

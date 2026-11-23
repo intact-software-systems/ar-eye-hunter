@@ -7,7 +7,6 @@ import { CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
-import { readALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
 import {
@@ -138,7 +137,6 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined,
-        browserLocks: readALBrowserLocks(),
         durableWorkOwnership: input.durableWorkOwnership ?? ALWAYS_OWNED_AL_DURABLE_WORK
     };
 }

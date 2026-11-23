@@ -15,6 +15,7 @@ import { createDefaultALInboundRuntimeResources } from '../../shared/alm/inbound
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '../../shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '../../shared/alm/outbound/al-outbound-canonical-message.ts';
 import { computeALOutboundDispatch } from '../../shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '../../shared/alm/outbound/control/al-outbound-control-admission.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -366,14 +367,20 @@ function installReceiptConflict(
     effects: Pick<ReceiptOwnerFixture.Effects, 'conflicted' | 'receiptControlMsgId' | 'receiptKey'>
 ): void {
     const commit = store.commitBundle.bind(store);
+    let lostAttempts = 0;
+    // A competing receipt commits before each of the complete receipt's attempts, so it loses every one and is retained.
     const commitWithConflict: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>['commitBundle'] = async (bundle) => {
         const message = bundle.canonicalEntry === undefined ? undefined : decodePersistedALMessage(bundle.canonicalEntry.resource);
         const control = message && decodeALControlMessage(message).right;
-        if (!effects.conflicted && message && control?.type === 'receipt' && control.payload.phase === 'complete') {
+        if (
+            lostAttempts < AL_OUTBOUND_COMMIT_ATTEMPTS && bundle.pendingAdmission === undefined && message &&
+            control?.type === 'receipt' && control.payload.phase === 'complete'
+        ) {
+            lostAttempts += 1;
             effects.conflicted = true;
             effects.receiptControlMsgId = message.id.msgId;
             effects.receiptKey = JSON.stringify(bundle.canonicalEntry?.key);
-            assert.equal(await commit(await readCompetingReceiptBundle(store, message)), 'committed');
+            assert.equal(await commit(await readCompetingReceiptBundle(store, message, lostAttempts)), 'committed');
             const result = await commit(bundle);
             assert.equal(result, 'conflict');
             return result;
@@ -413,8 +420,12 @@ async function drainReceipt(engine: InboxOutboxEngine, finished: () => boolean):
     assert.fail('The actual generated complete receipt did not reach its transport owner');
 }
 
-async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>, message: ALMessage) {
-    const competitor = { ...message, id: { ...message.id, msgId: 'competing-version' } };
+async function readCompetingReceiptBundle(
+    store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
+    message: ALMessage,
+    attempt: number
+) {
+    const competitor = { ...message, id: { ...message.id, msgId: `competing-version-${attempt}` } };
     const read = await store.readOutgoingMessage({
         msg: competitor,
         planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),

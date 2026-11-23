@@ -27,7 +27,7 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-
 describe('outbound admission observation order', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('keeps the raced normal admission authoritative while recovering its stale same-message enqueue', async () => {
+    it('keeps the raced normal admission authoritative while its stale same-message enqueue rereads it as a duplicate', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
             nowMs: Date.now,
@@ -45,7 +45,6 @@ describe('outbound admission observation order', () => {
                 toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
-                browserLocks: undefined,
                 signAdmittedMessage: undefined,
                 diagnostics: undefined,
                 settlements: () => {}
@@ -99,7 +98,8 @@ describe('outbound admission observation order', () => {
         const rejected = await pending;
         expect(won.committed).toBe(true);
         expect(rejected.committed).toBe(false);
-        expect(rejected.computed.verdict).toEqual({ kind: 'pending' });
+        // Its next attempt rereads at once and finds the winner's admission: it retains nothing.
+        expect(rejected.computed.verdict).toEqual({ kind: 'duplicate' });
         expect(await store.readSentMessage(message.id.msgId)).toEqual(winningSnapshot);
         expect(winningSnapshot?.outboxKey).toBeDefined();
         const sent: string[] = [];
@@ -141,7 +141,6 @@ describe('outbound admission observation order', () => {
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
@@ -213,7 +212,6 @@ describe('outbound admission observation order', () => {
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}

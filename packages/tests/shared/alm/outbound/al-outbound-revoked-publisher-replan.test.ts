@@ -269,7 +269,6 @@ function createRetransmission(
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: record

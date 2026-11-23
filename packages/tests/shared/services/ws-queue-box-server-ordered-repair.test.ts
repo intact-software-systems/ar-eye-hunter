@@ -396,12 +396,11 @@ describe.each([
     it('commits an in-order run of one track claimed in one batch as one chained group, every recipient its entry', async () => {
         const server = await createOrderedServer({ cluster });
         // The first admission's commit starts a claim at once; the other three commit while it runs, and the follow-up
-        // claim takes them together, ahead of `b`'s recorded position at sequence 1.
-        await Promise.all(
-            [['a', 'b'], ['a', 'b'], ['a'], ['a', 'b']].map((audience, index) =>
-                server.service.enqueueOutboxIfAbsent(roundEvent(`event-${index + 1}`), toAudienceAuthority(audience))
-            )
-        );
+        // claim takes them together, ahead of `b`'s recorded position at sequence 1. They are sent one after another:
+        // concurrent sends of one track mint in the order their commits land, not the order they were sent.
+        for (const [index, audience] of [['a', 'b'], ['a', 'b'], ['a'], ['a', 'b']].entries()) {
+            await server.service.enqueueOutboxIfAbsent(roundEvent(`event-${index + 1}`), toAudienceAuthority(audience));
+        }
 
         await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.a).length)).toBe(4);
         await settle(server);
