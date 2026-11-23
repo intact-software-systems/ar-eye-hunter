@@ -6,6 +6,10 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectCommand
@@ -695,9 +699,10 @@ function toFormationConnectCommand(
             leaveRoomOnClose: false,
             ...(input.transport === 'messages.rtc'
                 ? { typeId: config.messagesRtcTypeId, topicId: config.messagesRtcTopicId }
-                : {})
+                : {}),
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
         },
-        timeoutMs: 45_000
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
     };
 }
 

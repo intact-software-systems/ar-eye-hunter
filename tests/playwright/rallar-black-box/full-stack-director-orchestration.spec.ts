@@ -9,6 +9,10 @@ import {
 } from '@playwright/test';
 
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -694,9 +698,10 @@ async function connectAgent(input: ConnectAgentInput): Promise<DirectorConnectio
                 leaveRoomOnClose: false,
                 applicationId: config.applicationId,
                 workspaceId: config.workspaceId,
-                transport: 'realtime'
+                transport: 'realtime',
+                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
             },
-            timeoutMs: 45_000
+            timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
         },
         timeout: 60_000
     });

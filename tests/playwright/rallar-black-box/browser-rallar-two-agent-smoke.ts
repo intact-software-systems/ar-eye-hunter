@@ -7,6 +7,10 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
@@ -219,9 +223,12 @@ export class BrowserRallarTwoAgentSmoke {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
                 transport,
-                rallar: connectionConfig.rallar,
+                rallar: {
+                    ...connectionConfig.rallar,
+                    timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+                },
                 readiness: connectionConfig.readiness,
-                timeoutMs: 30_000
+                timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
             }
         });
         const sessionId = toStringValue(toRecord(result.value).sessionId);

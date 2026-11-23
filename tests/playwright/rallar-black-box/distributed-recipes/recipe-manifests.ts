@@ -2,6 +2,10 @@ import {
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '../../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
@@ -145,9 +149,10 @@ export function rtcConnectRecipe(
                 apiBaseUrl: config.apiBaseUrl,
                 restoreSession: true,
                 logoutOnClose: false,
-                leaveRoomOnClose: false
+                leaveRoomOnClose: false,
+                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
             },
-            timeoutMs: 45_000
+            timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
         }]
     };
 }

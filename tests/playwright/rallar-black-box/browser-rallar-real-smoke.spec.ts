@@ -1,5 +1,10 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+
 const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 
@@ -131,7 +136,8 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
         actor,
         roomId,
         transport: 'realtime',
-        timeoutMs: 20_000
+        rallar: { timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS },
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
     });
 
     await expect.poll(async () => {

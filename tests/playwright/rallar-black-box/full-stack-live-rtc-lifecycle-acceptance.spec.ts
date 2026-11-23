@@ -6,6 +6,10 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
+import {
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
@@ -389,9 +393,10 @@ async function connectPresence(
                 // Restore the stored session; credentials would mint a different layout peer.
                 // Closing a page preserves its session and membership for the reopening test.
                 logoutOnClose: false,
-                leaveRoomOnClose: false
+                leaveRoomOnClose: false,
+                timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
             },
-            timeoutMs: 45_000
+            timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
         },
         timeoutMs: 90_000
     });

@@ -18,7 +18,11 @@ import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-captu
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { decodeRallarBlackBoxTestResult } from '../../../packages/shared-test/rallar-bb-test/composite-results.ts';
-import { createRallarBlackBoxEnsureGroupCommands } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    createRallarBlackBoxEnsureGroupCommands,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
@@ -400,8 +404,14 @@ async function connectWorkerAgent(
         workspaceId: run.group.workspaceId,
         roomRef: { ...run.group },
         transport: 'realtime',
-        rallar: { apiBaseUrl, restoreSession: true, logoutOnClose: false, leaveRoomOnClose: false },
-        timeoutMs: 45_000,
+        rallar: {
+            apiBaseUrl,
+            restoreSession: true,
+            logoutOnClose: false,
+            leaveRoomOnClose: false,
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+        },
+        timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS,
         readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
     });
     return toWorkerCapturedConnection(run, agent, { ...connected, mode, commandId });
