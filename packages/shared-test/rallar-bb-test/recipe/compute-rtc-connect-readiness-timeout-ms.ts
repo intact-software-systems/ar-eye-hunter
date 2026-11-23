@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contrac
 import { decodePositiveInteger } from '../runtime/decode-runtime-result-values.ts';
 
 /** How long a connect's readiness waits when it names no positive timeout of its own. */
-export const RTC_CONNECT_READINESS_DEFAULT_TIMEOUT_MS = 5_000;
+const RTC_CONNECT_READINESS_DEFAULT_TIMEOUT_MS = 5_000;
 
 /**
  * How long a command waits for RTC readiness after its own timeout: the runtime connects under the connect's timeout
