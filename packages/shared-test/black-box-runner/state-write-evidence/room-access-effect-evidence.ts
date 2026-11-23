@@ -2,6 +2,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import type { OutboxRow } from './api-v1-state-write-evidence-contracts.ts';
@@ -13,8 +14,14 @@ interface RoomAccessChange {
     readonly principalId: string;
 }
 
+export interface RoomAccessEvidenceIdentity {
+    readonly sourceMessageId: string;
+    readonly logicalContextId: string;
+    readonly physicalKey: Key;
+}
+
 /** Derive the expected private notice from the accepted write, independently of its outbox. */
-export function computeRoomAccessEvidenceIdentity({ commandId, ref, revision, principalId }: RoomAccessChange) {
+export function computeRoomAccessEvidenceIdentity({ commandId, ref, revision, principalId }: RoomAccessChange): RoomAccessEvidenceIdentity {
     const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
     const changeId = computeSha256CanonicalJson({ commandId, ref, revision });
     const sourceMessageId = computeSha256CanonicalJson({
@@ -25,7 +32,7 @@ export function computeRoomAccessEvidenceIdentity({ commandId, ref, revision, pr
     return { sourceMessageId, logicalContextId, physicalKey };
 }
 
-export function matchesRoomAccessEffect(row: Omit<OutboxRow, 'ri_status'>, identity: ReturnType<typeof computeRoomAccessEvidenceIdentity>): boolean {
+export function matchesRoomAccessEffect(row: Omit<OutboxRow, 'ri_status'>, identity: RoomAccessEvidenceIdentity): boolean {
     const key = identity.physicalKey;
     if (row.ri_type_id !== 'WS_OUTBOX' || row.ri_topic_id !== key.topicId ||
         row.ri_resource_id !== key.resourceId || row.fk_ext_bank_id !== key.contextId) return false;
