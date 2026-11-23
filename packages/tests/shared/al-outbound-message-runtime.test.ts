@@ -227,7 +227,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(await reserveOutbox(outbox)).toHaveLength(0);
     });
 
-    it('stops invalidating the sender revision when acknowledgement ownership expires', async () => {
+    it('moves only the acknowledged message\'s version, and stops moving it when acknowledgement ownership expires', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -262,7 +262,11 @@ describe('ALOutboundMessageRuntime', () => {
             lane: 'volatile' as const,
             preparedMessages: []
         });
-        const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
+        const readVersions = async () => ({
+            next: await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' }),
+            acknowledged: (await admissionStore.readRepairMessage(msg.id.msgId, plan)).messageVersion
+        });
+        const beforeAck = await readVersions();
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
@@ -279,17 +283,14 @@ describe('ALOutboundMessageRuntime', () => {
             ),
             'peer'
         );
-        const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
-        expect(afterAck.clientRecord?.senderId).toBe('self');
-        expect(afterAck.clientRecord).not.toEqual(beforeAck.clientRecord);
+        const afterAck = await readVersions();
+        expect(afterAck.next.clientRecord?.senderId).toBe('self');
+        expect(afterAck.next.clientRecord).toEqual(beforeAck.next.clientRecord);
+        expect(afterAck.next.messageVersion).toEqual(beforeAck.next.messageVersion);
+        expect(afterAck.acknowledged).not.toEqual(beforeAck.acknowledged);
 
         vi.setSystemTime(new Date('2026-01-01T00:00:15.000Z'));
-        const beforeLateAck = await admissionStore.readOutgoingMessage({
-            msg: nextMessage,
-            planner: plan,
-            observedCanonicalEntry: undefined,
-            intent: 'enqueue'
-        });
+        const beforeLateAck = await readVersions();
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
@@ -306,13 +307,9 @@ describe('ALOutboundMessageRuntime', () => {
             ),
             'peer'
         );
-        const afterLateAck = await admissionStore.readOutgoingMessage({
-            msg: nextMessage,
-            planner: plan,
-            observedCanonicalEntry: undefined,
-            intent: 'enqueue'
-        });
-        expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
+        const afterLateAck = await readVersions();
+        expect(afterLateAck.next.clientRecord).toEqual(beforeLateAck.next.clientRecord);
+        expect(afterLateAck.acknowledged).toEqual(beforeLateAck.acknowledged);
     });
 
     it('retries a not-ready transport after the requested delay across restart', async () => {
