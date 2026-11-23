@@ -53,7 +53,8 @@ test(
                 controlRunId: runId,
                 artifactDir,
                 pollMs: 250,
-                timeoutMs: 90_000
+                readinessTimeoutMs: 90_000,
+                terminalTimeoutMs: 90_000
             }, {
                 fetch,
                 readManifestText: async () => JSON.stringify(manifest),

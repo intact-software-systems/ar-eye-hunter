@@ -6,7 +6,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-const authoredAlmPaths = new Map([
+export const ALL_LOCAL_ALM_MANIFEST_PATHS = new Map([
     [6, 'apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-6-agent-30s.json'],
     [11, 'apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-11-agent-30s.json'],
     [15, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json'],
@@ -16,7 +16,7 @@ const authoredAlmPaths = new Map([
 
 export function selectAllLocalAlmManifest(input) {
     const count = Number(input.targetAgentCount);
-    const path = authoredAlmPaths.get(count);
+    const path = ALL_LOCAL_ALM_MANIFEST_PATHS.get(count);
     if (
         path === undefined || input.targetAgentCount !== String(count) || input.manifestPath !== path ||
         input.browserEngine !== 'chromium' || input.registerBeforeLogin !== 'true'

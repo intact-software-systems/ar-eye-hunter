@@ -30,6 +30,7 @@ export function readManifestRunnerOptions(
         throw new Error('Missing --control and/or --manifest.');
     }
 
+    const timeoutMs = positiveInteger(values.get('timeout-ms'), 30 * 60_000);
     return {
         controlBaseUrl,
         manifestPath,
@@ -38,7 +39,8 @@ export function readManifestRunnerOptions(
         token: values.get('token') ?? env.RALLAR_CONTROL_ADMIN_TOKEN,
         artifactDir: values.get('artifact-dir'),
         pollMs: positiveInteger(values.get('poll-ms'), 2_000),
-        timeoutMs: positiveInteger(values.get('timeout-ms'), 30 * 60_000)
+        readinessTimeoutMs: timeoutMs,
+        terminalTimeoutMs: timeoutMs
     };
 }
 
