@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
@@ -18,7 +17,6 @@ import {
     serverNotification,
     sessionAck
 } from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
-import { createPostgresSqlCall } from './test-support/create-postgres-sql-call.ts';
 import {
     countTogether,
     createReceiptCluster,
@@ -31,9 +29,10 @@ import {
     startInstance,
     waitForQuietStatements,
     type ReceiptCluster,
-    type ReceiptInstance
+    type ReceiptInstance,
+    type ReceiptTrio
 } from './test-support/create-receipt-cluster.ts';
-import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
+import { holdPostgresAfterCommit, holdPostgresCommitUntilLost } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { toRecordedPostgresStatementShape, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
 
@@ -45,8 +44,6 @@ const RETRYING_QOS: ALQosPolicyRequest = { ack: { algo: 'receiver' } };
 const CASE_TIMEOUT_MS = 90_000;
 
 type OwnReceiptStore = ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
-
-type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
 
 /** A session of the room and the instance it is connected to. */
 interface ConnectedSession {
@@ -81,7 +78,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
             outsideAudienceRecipientPeerIds: []
         });
         await pollRowEnded(readOwnReceiptStore(cluster), sent);
-        expect(await readHeadCount(cluster, ownRef(sent))).toBe(1);
+        expect(await readHeadCount(cluster, sent.id.msgId)).toBe(1);
     }, CASE_TIMEOUT_MS);
 
     // Pins a fenced commit on the server's one version row per confirmation of its publication. The one move is the
@@ -102,8 +99,10 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
 
     // Pins what one ACK of a server publication costs when its head is open and it does not complete the set: the
     // record's count alone (the head and the confirmation key in one read, the insert in one transaction, the prefix
-    // read for the tally), five round trips with BEGIN and COMMIT. A change that adds a statement or a transaction to
-    // every such ACK shows here.
+    // read for the tally), five round trips with BEGIN and COMMIT. A client ACK's pin also holds the relayed-ACK hook's
+    // reads and the inbound control-owner read; this ACK has neither, since it is addressed to the server itself
+    // (no relay hook) and names the server as its origin (the inbound runtime's origin bypass). A change that adds a
+    // statement or a transaction to every such ACK shows here.
     it('counts an ACK that finds its head and does not complete the set in a pinned number of statements', async () => {
         const cluster = await createReceiptCluster();
         const log: PostgresStatementLog = { statements: [], transactions: 0 };
@@ -117,9 +116,9 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
             await only.engine.executeOnce();
             return (await cluster.reader.read(ownRef(sent))).right?.head.phase;
         }, POLL).toBe('open');
-        // An instance's first inbound work also sweeps once per lease for work whose lease lapsed (a claim in its own
-        // transaction and a read of the held page); s2's ACK spends that sweep, as a client's admission does before
-        // its first ACK.
+        // An instance's first inbound message runs the inbound work handler's one bootstrap batch (a finalization
+        // sweep in its own transaction and a page read); s2's ACK spends it, as a client's admission does before its
+        // first ACK.
         await confirmTogether(sessions.slice(2), sent);
         await waitForQuietStatements(log);
         log.statements.splice(0);
@@ -148,9 +147,11 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await publish(only, { sent, sessions });
 
         await confirmTogether(sessions.slice(0, 2), sent);
+        expect((await cluster.reader.read(ownRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's1']);
 
         await expect.poll(() => readCopies(sessions, sent)[2], POLL).toBe(2);
         expect(readCopies(sessions, sent)).toEqual([1, 1, 2]);
+        expect((await readOwnReceiptStore(cluster).readReceiptState(ownRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
     }, CASE_TIMEOUT_MS);
 
     // Pins a receipt that dies with the instance that dequeued its publication and opened its head.
@@ -174,8 +175,8 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         await pollRowEnded(readOwnReceiptStore(cluster), sent);
     }, CASE_TIMEOUT_MS);
 
-    // Pins a losing `end` that settles the server's row twice or surfaces as a failure. Both counts commit before
-    // either reads its tally, so both read a complete set and both call `end`.
+    // Pins a losing `end` that settles the server's row twice (its version row moving twice) or surfaces as a
+    // failure. Both counts commit before either reads its tally, so both read a complete set and both call `end`.
     it('ends once when the last two confirmations are counted at once on two instances', async () => {
         const cluster = await createReceiptCluster();
         const sessionIds = toSessionIds(3);
@@ -195,6 +196,8 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         const sent = publication(cluster, 'both-end', NO_WINDOW_QOS);
         await publish(a, { sent, sessions });
         await confirmTogether(sessions.slice(0, 1), sent);
+        const store = readOwnReceiptStore(cluster);
+        const before = await readServerVersion(store, sent);
 
         const results = await countTogether([
             { hold: holds.b, count: () => b.service.acceptIncomingMessage(sessionAck(sent, 's1', 'delivered'), 's1') },
@@ -203,7 +206,8 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
 
         expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
         await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
-        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+        await pollRowEnded(store, sent);
+        expect(await readServerVersion(store, sent) - before).toBe(1);
         expect(readCountOutcomes(cluster, sent.id.msgId)).toEqual<ReturnType<typeof readCountOutcomes>>(['partial', 'complete', 'complete']);
     }, CASE_TIMEOUT_MS);
 
@@ -213,7 +217,10 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         const cluster = await createReceiptCluster();
         const sessionIds = toSessionIds(3);
         const loss: HeldLoss = { hold: createWorkerHold(), lost: Promise.withResolvers<void>() };
-        const a = await startInstance(cluster, { ...instanceInput('a', sessionIds), toRecordSql: (sql) => toLostInsideTransaction(sql, loss) });
+        const a = await startInstance(cluster, {
+            ...instanceInput('a', sessionIds),
+            toRecordSql: (sql) => holdPostgresCommitUntilLost(sql, loss.hold, loss.lost.promise)
+        });
         const b = await startInstance(cluster, { ...instanceInput('b', sessionIds), starts: false });
         // `c` stays stopped, so the window is `b`'s and its retransmission reaches the sessions connected to `b`.
         await startInstance(cluster, { ...instanceInput('c', sessionIds), starts: false });
@@ -230,7 +237,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
             await confirmTogether(sessions, sent);
 
             await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
-            expect(await readHeadCount(cluster, ownRef(sent))).toBe(1);
+            expect(await readHeadCount(cluster, sent.id.msgId)).toBe(1);
             await pollRowEnded(store, sent);
             expect(await store.readPendingAck(ownRef(sent))).toBeUndefined();
             // A window charged an attempt; a second dequeue would have rewritten the row with none.
@@ -300,33 +307,14 @@ function readCopies(sessions: readonly ConnectedSession[], sent: ALMessage): rea
     return sessions.map(({ socket }) => countCopies(socket, sent.id.msgId));
 }
 
-/** The hold an instance's record transactions stop at, and the loss its callers wait for once stopped there. */
+/** The hold an instance's record transactions stop at, and the loss their callers wait for once stopped there. */
 interface HeldLoss {
     readonly hold: WorkerHold;
     readonly lost: PromiseWithResolvers<void>;
 }
 
 /**
- * The record client of an instance that is lost inside a transaction: every `begin` runs its write and stops at
- * `loss.hold` uncommitted, and its caller waits for `loss.lost` however the transaction ended, as a lost process runs
- * nothing after it.
- */
-function toLostInsideTransaction(source: PSqlSql, loss: HeldLoss): PSqlSql {
-    const held = holdPostgresCommit(source, loss.hold);
-    return Object.assign(createPostgresSqlCall(held, held), {
-        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
-            const [ended] = await Promise.allSettled([held.begin(write)]);
-            await loss.lost.promise;
-            if (ended.status === 'rejected') {
-                throw ended.reason;
-            }
-            return ended.value;
-        }
-    });
-}
-
-/**
- * Enqueues on `instance`, whose record client is `toLostInsideTransaction`'s, and once its dequeue's `open` is written
+ * Enqueues on `instance`, whose record client is `holdPostgresCommitUntilLost`'s at `loss`, and once its dequeue's `open` is written
  * and uncommitted loses the instance: its engine claims nothing more and its record client is terminated, so
  * PostgreSQL rolls the `open` back, and the dequeue waits at the loss, so no copy leaves the instance. Disposing the
  * instance would wait for that dequeue, so it is not disposed here. The returned release lets the dequeue run out once
@@ -385,12 +373,8 @@ async function pollRowEnded(store: OwnReceiptStore, sent: ALMessage): Promise<vo
 
 /** The server's outbound admission state, read through the client no instance uses. */
 function readOwnReceiptStore(cluster: ReceiptCluster): OwnReceiptStore {
-    const [reader] = cluster.clients;
-    if (reader === undefined) {
-        throw new Error('The cluster has no reader client');
-    }
     return createDefaultPSqlALOutboundRuntimeStores({
-        repository: new PSqlRuntimeStateRepository(reader),
+        repository: new PSqlRuntimeStateRepository(cluster.readerClient),
         namespace: cluster.storeId,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     }).admissionStore;

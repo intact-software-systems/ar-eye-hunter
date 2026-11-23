@@ -31,6 +31,7 @@ import {
     waitForQuietStatements,
     type ReceiptCluster,
     type ReceiptInstance,
+    type ReceiptTrio,
     type StartAcceptance
 } from './test-support/create-receipt-cluster.ts';
 import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
@@ -46,8 +47,6 @@ const LIFETIME_MS = 30_000;
 /** A deadline the survivors' engines reach in real time: the PostgreSQL queue calls work due on the database clock. */
 const DEADLINE_LIFETIME_MS = 2_000;
 const CASE_TIMEOUT_MS = 60_000;
-
-type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
 
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS receipt record across instances', () => {
     // Pins an instance that counts on a record of its own: the receipt never completes, and the shared record holds
@@ -143,7 +142,7 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS 
         await expect.poll(() => phases(cluster, msgId), POLL).toEqual(['admitted', 'complete']);
         expect(terminal(cluster, msgId)?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
         expect(readTerminalReceiptIdentities(cluster.originSockets, msgId)).toHaveLength(1);
-        expect(await readHeadCount(cluster, toRef(msgId))).toBe(1);
+        expect(await readHeadCount(cluster, msgId)).toBe(1);
         await expectStoredEnd(cluster, toRef(msgId), { phase: 'complete', confirmedRecipientPeerIds: ['r1', 'r2'], outsideAudienceRecipientPeerIds: [] });
     }, CASE_TIMEOUT_MS);
 

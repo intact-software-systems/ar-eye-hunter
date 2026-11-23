@@ -33,3 +33,22 @@ export function holdPostgresAfterCommit(source: PSqlSql, hold: WorkerHold): PSql
         }
     });
 }
+
+/**
+ * Holds every transaction as `holdPostgresCommit` does, and then keeps its caller until `lost` settles, however the
+ * transaction ended: the record client of an instance lost inside a transaction, since a lost process runs nothing
+ * after it. Forwards neither optional member of the SQL port.
+ */
+export function holdPostgresCommitUntilLost(source: PSqlSql, hold: WorkerHold, lost: Promise<void>): PSqlSql {
+    const held = holdPostgresCommit(source, hold);
+    return Object.assign(createPostgresSqlCall(held, held), {
+        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            const [ended] = await Promise.allSettled([held.begin(write)]);
+            await lost;
+            if (ended.status === 'rejected') {
+                throw ended.reason;
+            }
+            return ended.value;
+        }
+    });
+}

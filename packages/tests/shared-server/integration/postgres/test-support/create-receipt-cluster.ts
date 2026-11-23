@@ -7,7 +7,11 @@ import {
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { toALReceiptRecordHeadKey, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import {
+    toALReceiptRecordHeadKey,
+    toALReceiptRecordRefToken,
+    type ALReceiptRecordRef
+} from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import type { ALReceiptRecordEndedHead } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import { toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
@@ -43,6 +47,8 @@ export interface ReceiptCluster {
     readonly runId: string;
     readonly storeId: string;
     readonly clients: TerminablePostgresSql[];
+    /** The client no instance uses: the test's reads and the run's cleanup. */
+    readonly readerClient: TerminablePostgresSql;
     readonly bus: ReturnType<typeof createBridgeBus>;
     readonly originSockets: SimulatedWebSocket[];
     /** What every instance's receipt observer recorded. */
@@ -70,18 +76,20 @@ export interface ReceiptInstance extends ClusterInstance {
     readonly recordClient: TerminablePostgresSql;
 }
 
+export type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
+
 /** Starts one `acceptIncomingMessage` on an instance. */
 export type StartAcceptance = () => ReturnType<ClusterInstance['service']['acceptIncomingMessage']>;
 
 type StoredEnd = Pick<ALReceiptRecordEndedHead, 'phase' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'>;
 
-/** The run's cleanup is registered first, so it runs after every instance's own disposal. */
+/** The run's cleanup is registered before any instance, so it runs after every instance's own disposal. */
 export async function createReceiptCluster(): Promise<ReceiptCluster> {
     const runId = crypto.randomUUID();
     const clients: TerminablePostgresSql[] = [];
-    onTestFinished(async () => await closeReceiptCluster(runId, clients));
-    const storeId = `ws-receipt-cluster-${runId}`;
     const readerClient = await openClient(clients);
+    onTestFinished(async () => await closeReceiptCluster(runId, { readerClient, clients }));
+    const storeId = `ws-receipt-cluster-${runId}`;
     const { backend, namespace } = createPSqlALReceiptRecordStores({
         repository: new PSqlRuntimeStateRepository(readerClient),
         namespace: storeId,
@@ -91,6 +99,7 @@ export async function createReceiptCluster(): Promise<ReceiptCluster> {
         runId,
         storeId,
         clients,
+        readerClient,
         bus: createBridgeBus(),
         originSockets: [],
         observations: [],
@@ -100,18 +109,15 @@ export async function createReceiptCluster(): Promise<ReceiptCluster> {
     };
 }
 
-/**
- * Deletes the run's rows before asserting none remain, then ends every client whatever happened; the first client
- * is the reader's, which no instance uses.
- */
-async function closeReceiptCluster(runId: string, clients: readonly TerminablePostgresSql[]): Promise<void> {
+/** Deletes the run's rows through the reader's client before asserting none remain, then ends every client whatever happened. */
+async function closeReceiptCluster(
+    runId: string,
+    { readerClient, clients }: Pick<ReceiptCluster, 'readerClient' | 'clients'>
+): Promise<void> {
     try {
-        const [reader] = clients;
-        if (reader !== undefined) {
-            const deletes = await Promise.allSettled([deletePostgresRunRows(reader, runId)]);
-            expect(deletes.filter(({ status }) => status === 'rejected')).toEqual([]);
-            expect(await readPostgresRunRowCounts(reader, runId)).toEqual(NO_POSTGRES_RUN_ROWS);
-        }
+        const deletes = await Promise.allSettled([deletePostgresRunRows(readerClient, runId)]);
+        expect(deletes.filter(({ status }) => status === 'rejected')).toEqual([]);
+        expect(await readPostgresRunRowCounts(readerClient, runId)).toEqual(NO_POSTGRES_RUN_ROWS);
     }
     finally {
         await Promise.allSettled(clients.map(async (client) => await client.end()));
@@ -183,15 +189,15 @@ interface HeldCount {
  * settled before this returns or throws, so none still runs while the case's cleanup deletes its rows.
  */
 export async function countTogether(counts: readonly HeldCount[]): Promise<Awaited<ReturnType<StartAcceptance>>[]> {
-    const counting = counts.map(({ count }) => count());
+    const counting = counts.map(({ hold, count }) => ({ hold, result: count() }));
     try {
-        await Promise.all(counts.map(async ({ hold }, index) => await awaitHoldArrival(hold, counting[index]!)));
+        await Promise.all(counting.map(async ({ hold, result }) => await awaitHoldArrival(hold, result)));
     }
     finally {
-        counts.forEach(({ hold }) => hold.release());
-        await Promise.allSettled(counting);
+        counting.forEach(({ hold }) => hold.release());
+        await Promise.allSettled(counting.map(({ result }) => result));
     }
-    return await Promise.all(counting);
+    return await Promise.all(counting.map(({ result }) => result));
 }
 
 /** The stored head's terminal phase and sets, and its ended work row delivered. */
@@ -216,12 +222,22 @@ export async function waitForQuietStatements(log: PostgresStatementLog): Promise
     }, { ...POLL, interval: 250 }).toBe(true);
 }
 
-export async function readHeadCount(cluster: ReceiptCluster, ref: ALReceiptRecordRef): Promise<number> {
-    const [reader] = cluster.clients;
-    const rows = await reader!<Array<{ readonly count: number; }>>`
+/**
+ * The heads the run's record holds for the message `msgId` under any origin. A head's key is unique per origin and
+ * message, so more than one is a second head opened under another origin.
+ */
+export async function readHeadCount(cluster: ReceiptCluster, msgId: string): Promise<number> {
+    // A head key ends in the pair token `["<origin>","<msgId>"]`: the key less the token of an empty origin is the
+    // head prefix, and that token less its empty origin is the message's suffix.
+    const anyOrigin = { originPeerId: '', msgId };
+    const token = toALReceiptRecordRefToken(anyOrigin);
+    const headPrefix = toALReceiptRecordHeadKey(cluster.recordNamespace, anyOrigin).slice(0, -token.length);
+    const messageSuffix = token.slice(JSON.stringify(['']).length - 1);
+    const rows = await cluster.readerClient<Array<{ readonly count: number; }>>`
         select count(*)::int as count from runtime_state_store
         where store_namespace = ${cluster.recordNamespace}
-            and store_key = ${toALReceiptRecordHeadKey(cluster.recordNamespace, ref)}
+            and starts_with(store_key, ${headPrefix})
+            and right(store_key, char_length(${messageSuffix}::text)) = ${messageSuffix}
     `;
     return rows[0]?.count ?? 0;
 }
