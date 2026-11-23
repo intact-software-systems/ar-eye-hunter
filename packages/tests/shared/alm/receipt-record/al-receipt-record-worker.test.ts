@@ -1,0 +1,309 @@
+import { describe, expect, it, onTestFinished } from 'vitest';
+
+import type { ALReceiptRecordEndedHead, ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
+import {
+    createInMemoryALReceiptRecordStores,
+    type ALReceiptRecordStores
+} from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import {
+    toALReceiptRecordWorkKey,
+    toALReceiptRecordWorkType,
+    type ALReceiptRecordWork
+} from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
+import {
+    AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS,
+    ALReceiptRecordWorker
+} from '@shared/alm/receipt-record/al-receipt-record-worker.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
+import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
+import { computeALWorkEntry } from '@shared/alm/work/compute-al-work-entry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+const T = 1_760_000_000_000;
+const DEADLINE_AT_MS = T + 5_000;
+const ref = { originPeerId: 'origin', msgId: 'msg-1' };
+const opening: ALReceiptRecordOpening = {
+    ...ref,
+    traceId: 'trace-1',
+    expectedRecipientPeerIds: ['r1', 'r2'],
+    neverSentRecipientPeerIds: [],
+    snapshotVersion: 1,
+    deadlineAtMs: DEADLINE_AT_MS
+};
+const deadlineWork: ALReceiptRecordWork = { kind: 'deadline', ref };
+
+interface MutableClock {
+    nowMs: number;
+}
+
+interface WorkerFixture {
+    readonly queueClock: MutableClock;
+    readonly recordClock: MutableClock;
+    readonly stores: ALReceiptRecordStores;
+    readonly record: ALReceiptRecord;
+    readonly worker: ALReceiptRecordWorker;
+    readonly engine: InboxOutboxEngine;
+    readonly delivered: ALReceiptRecordEndedHead[];
+}
+
+interface WorkerFixtureInput {
+    /** How far the record's and the worker's clock runs behind the stores' queue. */
+    readonly recordBehindQueueMs: number;
+    readonly writeEndedReceipt: (ended: ALReceiptRecordEndedHead) => Promise<void>;
+}
+
+function createWorkerFixture(input: WorkerFixtureInput): WorkerFixture {
+    const queueClock = { nowMs: T };
+    const recordClock = { nowMs: T - input.recordBehindQueueMs };
+    const stores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => queueClock.nowMs);
+    const record = new ALReceiptRecord({
+        backend: stores.backend,
+        namespace: stores.namespace,
+        nowMs: () => recordClock.nowMs
+    });
+    const engine = new InboxOutboxEngine({
+        nowEpochMs: () => recordClock.nowMs,
+        random: () => 0,
+        reportTaskFailure: () => undefined
+    });
+    const delivered: ALReceiptRecordEndedHead[] = [];
+    const worker = new ALReceiptRecordWorker({
+        record,
+        stores,
+        workerId: 'receipt-record-worker-test',
+        queueEngine: engine,
+        clock: { nowMs: () => recordClock.nowMs },
+        random: () => 0,
+        writeEndedReceipt: async (ended) => {
+            await input.writeEndedReceipt(ended);
+            delivered.push(ended);
+        }
+    });
+    onTestFinished(() => worker.dispose());
+    return { queueClock, recordClock, stores, record, worker, engine, delivered };
+}
+
+function createDeliveringFixture(): WorkerFixture {
+    return createWorkerFixture({ recordBehindQueueMs: 0, writeEndedReceipt: async () => {} });
+}
+
+function setNowMs(fixture: WorkerFixture, nowMs: number): void {
+    const behindMs = fixture.queueClock.nowMs - fixture.recordClock.nowMs;
+    fixture.queueClock.nowMs = nowMs;
+    fixture.recordClock.nowMs = nowMs - behindMs;
+}
+
+/**
+ * Two engine rounds, each followed by a macrotask: the memory stores settle on microtasks, so a batch a round (or a
+ * `committed()`) started has released its claims before the next round asks for work.
+ */
+async function runRounds(fixture: WorkerFixture): Promise<void> {
+    for (let round = 0; round < 2; round += 1) {
+        await fixture.engine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
+async function readPhase(record: ALReceiptRecord): Promise<string | undefined> {
+    return (await record.read(ref)).right?.head.phase;
+}
+
+async function readDeadlineRow(stores: ALReceiptRecordStores): Promise<ResourceEntry | undefined> {
+    return await stores.backend.workQueue.getItem(toALReceiptRecordWorkKey(stores.namespace, 'deadline', ref));
+}
+
+async function openCommitted(fixture: WorkerFixture): Promise<void> {
+    expect((await fixture.record.open(opening)).right?.head.phase).toBe('open');
+    fixture.worker.committed(deadlineWork, DEADLINE_AT_MS);
+    await runRounds(fixture);
+}
+
+async function confirm(record: ALReceiptRecord, recipientPeerId: string): Promise<void> {
+    expect((await record.count({ ...ref, recipientPeerId, kind: 'confirmed' })).right?.disposition).toBe('counted');
+}
+
+describe('ALReceiptRecordWorker', () => {
+    it('keeps the record under its own namespace', () => {
+        const stores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => T);
+
+        expect(stores.namespace).toBe('server-ws-qbox:test:receipt:record');
+    });
+
+    // A worker that ended a receipt before its deadline, or never ended it, would leave the sender without the
+    // terminal receipt the record owes it.
+    it('ends a receipt timed-out when its deadline work comes due', async () => {
+        const fixture = createDeliveringFixture();
+        await openCommitted(fixture);
+        await confirm(fixture.record, 'r1');
+
+        setNowMs(fixture, DEADLINE_AT_MS - 1);
+        await runRounds(fixture);
+        expect(await readPhase(fixture.record)).toBe('open');
+        expect(fixture.delivered).toEqual([]);
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await runRounds(fixture);
+        const ended = (await fixture.record.read(ref)).right?.head;
+        expect(ended?.phase).toBe('timed-out');
+        expect(fixture.delivered).toEqual([ended]);
+        expect(fixture.delivered[0]?.confirmedRecipientPeerIds).toEqual(['r1']);
+    });
+
+    // The instance that ends a receipt may not be the one that delivers it: a survivor must find the ended work at
+    // its next readiness read, though no commit of its own announced it.
+    it('delivers a receipt another instance ended', async () => {
+        const fixture = createDeliveringFixture();
+        await openCommitted(fixture);
+        const otherRecord = new ALReceiptRecord({
+            backend: fixture.stores.backend,
+            namespace: fixture.stores.namespace,
+            nowMs: () => fixture.recordClock.nowMs
+        });
+
+        setNowMs(fixture, T + 1_000);
+        await confirm(otherRecord, 'r1');
+        await confirm(otherRecord, 'r2');
+        expect((await otherRecord.end(ref)).right?.phase).toBe('complete');
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([]);
+
+        setNowMs(fixture, T + 1_000 + AL_WORK_READINESS_MEMORY_MS);
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([(await fixture.record.read(ref)).right?.head]);
+        expect(fixture.delivered[0]?.phase).toBe('complete');
+    });
+
+    // A set that completed while nobody called `end` must not be reported timed-out at its deadline.
+    it('ends complete at the deadline a set that was complete under an open head', async () => {
+        const fixture = createDeliveringFixture();
+        await openCommitted(fixture);
+        await confirm(fixture.record, 'r1');
+        await confirm(fixture.record, 'r2');
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await runRounds(fixture);
+        expect(fixture.delivered[0]?.phase).toBe('complete');
+    });
+
+    // Review Focus 4: the queue may call a deadline row due on a clock the record has not reached. Completing the row
+    // would lose the receipt's end; a retry would spend attempts and back off; releasing it due at once would spin.
+    it('waits a bounded time when the queue calls a deadline due before the record does', async () => {
+        const fixture = createWorkerFixture({ recordBehindQueueMs: 100, writeEndedReceipt: async () => {} });
+        await openCommitted(fixture);
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await fixture.record.open({ ...opening, msgId: 'msg-2', deadlineAtMs: T + 20_000 });
+        fixture.worker.committed({ kind: 'deadline', ref: { ...ref, msgId: 'msg-2' } }, T + 20_000);
+
+        const releasedAtMs = DEADLINE_AT_MS + AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS;
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([]);
+        expect(await readPhase(fixture.record)).toBe('open');
+        const released = await readDeadlineRow(fixture.stores);
+        expect(released?.status).toBe(EntityStatus.RETRY);
+        expect(released?.dequeueAudit.attempts).toBe(0);
+        expect(released?.dequeueAudit.nextTs?.epochMilliseconds).toBe(releasedAtMs);
+
+        setNowMs(fixture, releasedAtMs - 101);
+        fixture.worker.committed({ kind: 'deadline', ref: { ...ref, msgId: 'msg-2' } }, T + 20_000);
+        await runRounds(fixture);
+        await runRounds(fixture);
+        const waiting = await readDeadlineRow(fixture.stores);
+        expect(waiting?.dequeueAudit.attempts).toBe(0);
+        expect(waiting?.dequeueAudit.nextTs?.epochMilliseconds).toBe(releasedAtMs);
+
+        fixture.recordClock.nowMs = releasedAtMs;
+        fixture.queueClock.nowMs = releasedAtMs + 100;
+        await runRounds(fixture);
+        expect(await readPhase(fixture.record)).toBe('timed-out');
+        expect(fixture.delivered).toEqual([(await fixture.record.read(ref)).right?.head]);
+    });
+
+    it('waits what the record still lacks when that is more than the floor', async () => {
+        const fixture = createWorkerFixture({ recordBehindQueueMs: 2_000, writeEndedReceipt: async () => {} });
+        await openCommitted(fixture);
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await fixture.record.open({ ...opening, msgId: 'msg-2', deadlineAtMs: T + 20_000 });
+        fixture.worker.committed({ kind: 'deadline', ref: { ...ref, msgId: 'msg-2' } }, T + 20_000);
+
+        await runRounds(fixture);
+        const released = await readDeadlineRow(fixture.stores);
+        expect(released?.status).toBe(EntityStatus.RETRY);
+        expect(released?.dequeueAudit.attempts).toBe(0);
+        expect(released?.dequeueAudit.nextTs?.epochMilliseconds).toBe(DEADLINE_AT_MS + 2_000);
+    });
+
+    // A delivery that failed must be retried from the stored head, or the sender never hears the receipt's end.
+    it('delivers again after a failed delivery', async () => {
+        let failures = 1;
+        const fixture = createWorkerFixture({
+            recordBehindQueueMs: 0,
+            writeEndedReceipt: async () => {
+                if (failures > 0) {
+                    failures -= 1;
+                    throw new Error('delivery failed');
+                }
+            }
+        });
+        await openCommitted(fixture);
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([]);
+
+        setNowMs(fixture, DEADLINE_AT_MS + 1_000);
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([(await fixture.record.read(ref)).right?.head]);
+        const endedRow = await fixture.stores.backend.workQueue.getItem(
+            toALReceiptRecordWorkKey(fixture.stores.namespace, 'ended', ref)
+        );
+        expect(endedRow?.status).toBe(EntityStatus.COMPLETED);
+    });
+
+    // The deadline work of a receipt already ended must neither end it again nor deliver its receipt twice.
+    it('writes nothing for a deadline of a receipt already ended', async () => {
+        const fixture = createDeliveringFixture();
+        await openCommitted(fixture);
+        await confirm(fixture.record, 'r1');
+        await confirm(fixture.record, 'r2');
+        const ended = await fixture.record.end(ref);
+        fixture.worker.committed({ kind: 'ended', ref }, ended.right?.endedAtEpochMs ?? T);
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await runRounds(fixture);
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([ended.right]);
+        expect((await readDeadlineRow(fixture.stores))?.status).toBe(EntityStatus.COMPLETED);
+    });
+
+    // A row the record cannot read must be refused for good, not retried until its attempts run out.
+    it('refuses work that is not the record\'s', async () => {
+        const fixture = createDeliveringFixture();
+        const corruptRef = { originPeerId: 'origin', msgId: 'corrupt' };
+        const key = toALReceiptRecordWorkKey(fixture.stores.namespace, 'ended', corruptRef);
+        await fixture.stores.backend.workQueue.enqueueIfAbsent(computeALWorkEntry({
+            key,
+            typeId: toALReceiptRecordWorkType(fixture.stores.namespace),
+            resource: '{',
+            observedAtMs: T,
+            readyAtMs: T,
+            expireAtTimestamp: T + 60_000
+        }));
+
+        fixture.worker.committed({ kind: 'ended', ref: corruptRef }, T);
+        await runRounds(fixture);
+        expect((await fixture.stores.backend.workQueue.getItem(key))?.status).toBe(EntityStatus.NON_RETRYABLE);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    // A disposed worker that still claimed would run against a server that is shutting down.
+    it('claims nothing once disposed', async () => {
+        const fixture = createDeliveringFixture();
+        await openCommitted(fixture);
+        await fixture.worker.dispose();
+
+        setNowMs(fixture, DEADLINE_AT_MS);
+        await runRounds(fixture);
+        expect(await readPhase(fixture.record)).toBe('open');
+    });
+});
