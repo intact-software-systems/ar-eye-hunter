@@ -65,7 +65,7 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
     });
 
     it('compares the same request enqueued twice equal to its stamped admission, refusing nothing', async () => {
-        const { runtime, signed } = createSigningRuntime(LATEST_WINS_BY_DEFAULT_PLANNER);
+        const { runtime, asked, signed } = createSigningRuntime(LATEST_WINS_BY_DEFAULT_PLANNER);
         const message = createOutboundMessage('twice');
 
         const first = await runtime.enqueueIfAbsent(message);
@@ -75,6 +75,8 @@ describe('a send whose latest-wins supersedence came from its provider\'s defaul
         expect(second.verdict.kind, second.reason).not.toBe('refused');
         expect(second.verdict.kind, second.reason).not.toBe('failed');
         expect(second.message).toEqual(first.message);
+        // The second dispatch reads the stored canonical, already signed, so the signer passes it and signs nothing.
+        expect(asked.map((msg) => msg.proof)).toEqual([undefined, PROOF]);
         expect(signed).toHaveLength(1);
     });
 
@@ -164,13 +166,21 @@ describe('the supersedence stamp on one send', () => {
 });
 
 function createSigningRuntime(planOutgoingMessage: ALOutboundPlanner<OutboundTestPayload>) {
+    /** Every frame the dispatch asked the signer about. */
+    const asked: ALMessage[] = [];
+    /** The frames it actually signed. */
     const signed: ALMessage[] = [];
     const sent: ALMessage[] = [];
     const stores = createDefaultOutboundTestStores();
     const runtime = createDefaultOutboundTestRuntime({
         stores,
         planOutgoingMessage,
+        // As the carrier's signer does (`RtcSignedPublicationCarrier.signAdmitted`): a frame already signed passes as it is.
         signAdmittedMessage: async (msg) => {
+            asked.push(msg);
+            if (msg.proof !== undefined) {
+                return Either.ofRight(msg);
+            }
             signed.push(msg);
             return Either.ofRight({ ...msg, proof: PROOF });
         },
@@ -179,7 +189,7 @@ function createSigningRuntime(planOutgoingMessage: ALOutboundPlanner<OutboundTes
             return { status: 'sent', submissionAttempted: true };
         }
     });
-    return { runtime, stores, signed, sent };
+    return { runtime, stores, asked, signed, sent };
 }
 
 /** A competing send of the same sender wins the version fence inside the message's first commit, so it retains. */

@@ -164,7 +164,14 @@ describe('the work that keeps the message it names retained', () => {
         },
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId: '2', senderId: 'sender', source: { kind: 'rtc-peer', peerId: 'sender' }, supersedenceKey: null, deliveredLocally: false },
+            value: {
+                msgId: '2',
+                senderId: 'sender',
+                source: { kind: 'rtc-peer', peerId: 'sender' },
+                supersedenceKey: null,
+                deliveredLocally: false,
+                originAuthenticated: false
+            },
             expireAtTimestamp: 1_000
         }],
         durableEffects: [computeALInboundWorkEntry({

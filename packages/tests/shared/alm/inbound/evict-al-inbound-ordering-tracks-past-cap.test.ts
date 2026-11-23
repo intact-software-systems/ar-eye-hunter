@@ -342,9 +342,9 @@ describe('the inbound store\'s read of the tracks its cap evicted', () => {
         );
 
         expect(named.orderingTrackEvicted).toBe(true);
-        expect(computeALInboundPlanningObservations(named).orderingObservation?.status).toBe('entered');
+        expect(computeALInboundPlanningObservations(named, false).orderingObservation?.status).toBe('entered');
         expect(unnamed.orderingTrackEvicted).toBe(false);
-        expect(computeALInboundPlanningObservations(unnamed).orderingObservation)
+        expect(computeALInboundPlanningObservations(unnamed, false).orderingObservation)
             .toMatchObject({ status: 'gap', missingRanges: [{ from: 1, to: 1 }] });
         expect(lapsed.orderingTrackEvicted).toBe(false);
     });
