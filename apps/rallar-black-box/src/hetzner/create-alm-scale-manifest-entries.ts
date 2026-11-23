@@ -3,7 +3,7 @@ import { RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS } from '@shared-test/rallar-b
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
-    createManifestEntry,
+    createMulticastManifestEntry,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GROUP,
     toControllerAgentIds,
@@ -44,7 +44,7 @@ function createAlmScaleManifestEntry(input: AlmScaleManifestInput): HetznerDistr
         readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
         almDiagnostics: input.diagnostic
     });
-    return createManifestEntry({
+    return createMulticastManifestEntry({
         filePath: input.filePath,
         title: `ALM conformance ${input.participantCount}-agent 30s${input.diagnostic ? ' diagnostic' : ''}`,
         description:
@@ -96,7 +96,6 @@ function toAlmScaleManifestMetadata(
         senderCount: scaleMetadata.senderCount,
         receiverCount,
         expectedDurationSeconds: workloadWindowMs / 1_000,
-        recommendedTerminalTimeoutSeconds: 330,
         rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(participantCount + 1) },
         loadEstimate: { logicalFanoutMessages: receiverCount * (shotsPerPlayer + lifecycleEvents) },
         almMetrics: scaleMetadata

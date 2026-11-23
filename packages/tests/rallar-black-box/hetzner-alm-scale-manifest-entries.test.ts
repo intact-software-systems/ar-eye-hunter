@@ -4,10 +4,28 @@ import {
     it
 } from 'vitest';
 
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
+
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { toHetznerRecipeCommands } from './hetzner-manifest-test-commands.ts';
 
 describe('Hetzner scale catalog', () => {
+    it('recommends the terminal timeout its ack, barrier and slowest recipe add up to for every ALM scale run', () => {
+        const scale = createHetznerDistributedManifestCatalog()
+            .filter((entry) => entry.manifest.metadata?.family === 'alm-scale');
+
+        expect(scale.map((entry) => entry.agentCount).toSorted((left, right) => left - right)).toEqual([6, 11, 15, 30, 50]);
+        for (const { manifest } of scale) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId).toBe(
+                computeDistributedRunTerminalTimeoutSeconds({
+                    recipes: manifest.recipes.flatMap((selection) => selection.recipe ? [selection.recipe] : []),
+                    ackTimeoutMs: manifest.ackTimeoutMs,
+                    barrier: manifest.barrier
+                })
+            );
+        }
+    });
+
     it('registers six- and eleven-browser diagnostic checkpoints through the same scale fixture', () => {
         const catalog = createHetznerDistributedManifestCatalog();
         expect(
@@ -30,7 +48,6 @@ describe('Hetzner scale catalog', () => {
             expect(entry?.manifest.metadata).toMatchObject({
                 family: 'alm-scale',
                 receiverCount: agentCount - 1,
-                recommendedTerminalTimeoutSeconds: 330,
                 rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1) },
                 almMetrics: { sampleCount: 7, samplingWindowMs: 30_000, workloadWindowMs: 30_000 }
             });
@@ -73,7 +90,6 @@ describe('Hetzner scale catalog', () => {
                 senderCount: 1,
                 receiverCount: agentCount - 1,
                 expectedDurationSeconds: 30,
-                recommendedTerminalTimeoutSeconds: 330,
                 rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: meshMinSize },
                 loadEstimate: { logicalFanoutMessages: shotArrivals + 2 * (agentCount - 1) },
                 almMetrics: {

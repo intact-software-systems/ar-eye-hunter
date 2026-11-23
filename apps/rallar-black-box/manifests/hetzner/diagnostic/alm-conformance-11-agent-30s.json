@@ -10409,7 +10409,6 @@
     "senderCount": 1,
     "receiverCount": 10,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "12"
     },
@@ -11898,7 +11897,8 @@
           "role": "receiver"
         }
       ]
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 782
   },
   "description": "Diagnostic: One director and 10 players send reliable AR Eye match payloads within a 30-second workload deadline, with seven bounded ALM samples and native per-agent delivery evidence."
 }
