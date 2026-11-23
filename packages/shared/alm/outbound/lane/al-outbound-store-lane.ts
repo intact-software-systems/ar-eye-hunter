@@ -76,7 +76,8 @@ import {
     recordALOutboundClaimTerminalReason,
     settleALOutboundClaim,
     type ALOutboundClaimAttemptSettlement,
-    type ALOutboundClaimObservation
+    type ALOutboundClaimObservation,
+    type ALOutboundClaimRun
 } from './settle-al-outbound-claim.ts';
 
 export namespace ALOutboundStoreLane {
@@ -126,6 +127,8 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly takeOverSubscription: Unsubscribe | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
+    /** The running batch's settled claims; its selection empties it, so a batch that never ended leaves nothing here. */
+    private claimRuns: ALOutboundClaimRun[] = [];
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
@@ -353,6 +356,7 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
+        this.claimRuns = [];
         const startedAtMs = this.input.runtime.workClock.nowMs();
         const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
         const claimDurationMs = Math.max(0, this.input.runtime.workClock.nowMs() - startedAtMs);
@@ -424,6 +428,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 return { status: 'completed' };
             }
             observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
+            observed.payloadKind = work.payload.kind;
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
@@ -463,12 +468,23 @@ export class ALOutboundStoreLane<TPrepared> {
         });
     }
 
+    /** A claim runs from the moment its settlement is awaited: at once alone, and from the group's start in a group. */
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
-        return await settleALOutboundClaim({
-            ...settlement,
-            capture: this.input.runtime.receiptWorkCapture,
-            readNowMs: () => this.input.runtime.workClock.nowMs()
-        });
+        const { workClock } = this.input.runtime;
+        const startedAtMs = workClock.nowMs();
+        try {
+            return await settleALOutboundClaim({
+                ...settlement,
+                capture: this.input.runtime.receiptWorkCapture,
+                readNowMs: () => workClock.nowMs()
+            });
+        }
+        finally {
+            const { payloadKind } = settlement.observed;
+            if (payloadKind !== undefined) {
+                this.claimRuns.push({ payloadKind, durationMs: Math.max(0, workClock.nowMs() - startedAtMs) });
+            }
+        }
     }
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
@@ -663,7 +679,14 @@ export class ALOutboundStoreLane<TPrepared> {
             claimedCount: event.claimedCount,
             completedCount: event.completedCount,
             rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount
+            rejectedCount: event.rejectedCount,
+            selectionDurationMs: event.selectionDurationMs,
+            claimDurationMs: event.claimDurationMs,
+            runDurationMs: event.runDurationMs,
+            releaseDurationMs: event.releaseDurationMs,
+            queueWaitMs: event.queueWaitMs,
+            startedAtMs: event.startedAtMs,
+            claims: this.claimRuns
         });
     }
 

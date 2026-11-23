@@ -322,3 +322,42 @@ it('names the lane on the commit, readiness and drain events each store lane sta
     expect(new Set(workEvents.map((event) => laneOf(event.workerId)))).toEqual(new Set(['durable', 'volatile']));
     await runtime.dispose();
 });
+
+it('states each claim of an outbound drain with the effect its row held and what running it cost', async () => {
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    let nowMs = Date.now();
+    const sendCostMs: Readonly<Record<string, number>> = { first: 7, second: 30 };
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: createStores('memory'),
+        nowMs: () => nowMs,
+        workNowMs: () => nowMs,
+        diagnostics: (event) => diagnostics.push(event),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ copy: 'first' }, { copy: 'second' }]
+        }),
+        sendPreparedMessage: async (prepared) => {
+            nowMs += sendCostMs[prepared.copy!]!;
+            return { status: 'sent' as const, submissionAttempted: true };
+        }
+    });
+    await runtime.ready();
+
+    await runtime.enqueueIfAbsent(createOutboundMessage('drain-claims'));
+
+    await vi.waitFor(() =>
+        expect(diagnostics).toContainEqual(expect.objectContaining({
+            kind: 'effect-drain',
+            lane: 'durable',
+            claimedCount: 2,
+            runDurationMs: 37,
+            claims: [
+                { payloadKind: 'send-prepared', durationMs: 7 },
+                { payloadKind: 'send-prepared', durationMs: 30 }
+            ]
+        }))
+    );
+    await runtime.dispose();
+});

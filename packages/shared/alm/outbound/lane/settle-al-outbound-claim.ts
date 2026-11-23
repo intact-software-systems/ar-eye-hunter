@@ -2,6 +2,7 @@ import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
+import type { ALOutboundDurableEffect } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
@@ -9,9 +10,17 @@ import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timi
 /** The evidence a claim's attempt publishes once it settles; a claim whose work never decoded has none. */
 export interface ALOutboundClaimObservation {
     evidence: ALOutboundReceiptWorkEvidence | undefined;
+    /** The effect the claimed row held, once its work decoded. */
+    payloadKind: ALOutboundClaimRun['payloadKind'] | undefined;
     timing?: ALOutboundDequeuedAdmission.TimingSink;
     terminalReason?: string;
     verdict?: ALDeliveryAdmissionVerdict['kind'];
+}
+
+/** One claim of an outbound batch as its drain states it: the effect its row held and what running it cost. */
+export interface ALOutboundClaimRun {
+    readonly payloadKind: ALOutboundDurableEffect<unknown>['kind'];
+    readonly durationMs: number;
 }
 
 /** The work attempt and physical claim identity handed from the lane or group to settlement. */
@@ -33,7 +42,7 @@ export function createALOutboundClaimObservation(
     timing: ALOutboundDequeuedAdmission.TimingSink | undefined,
     dequeueTypes: ReadonlySet<string>
 ): ALOutboundClaimObservation {
-    const observed: ALOutboundClaimObservation = { evidence: undefined };
+    const observed: ALOutboundClaimObservation = { evidence: undefined, payloadKind: undefined };
     if (timing !== undefined && dequeueTypes.has(claim.entry.typeId)) {
         observed.timing = timing;
     }

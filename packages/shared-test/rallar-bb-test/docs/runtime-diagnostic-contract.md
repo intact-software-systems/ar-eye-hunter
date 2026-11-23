@@ -435,6 +435,21 @@ every session the page opens. The event's `data` is the event itself:
   `available` for the two `browser-lock-*` phases; `workerId`,
   `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
   for `effect-drain`
+- the outbound `effect-drain` also carries the batch's phases, as the inbound
+  one does below: `selectionDurationMs` (always near zero: the outbound owner
+  reserves straight from the queue and reads no page first), `claimDurationMs`,
+  `runDurationMs`, `releaseDurationMs`, `queueWaitMs` and `startedAtMs`. Then
+  `claims`, one `{ payloadKind, durationMs }` for each claim whose row's work
+  decoded, in the order the claims settled: `payloadKind` is the effect the row
+  held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
+  `ack-timeout`, `first-hop-timeout`, `repair-hint` or `nack-retry`) and
+  `durationMs` what running it cost the batch, from the moment the batch awaited
+  it to its settlement. A send whose carrier queued the bytes settles there, so
+  its carrier's later settlement is not in it. The dequeued rows of one selection
+  start together, so each of theirs runs from the group's start. A drain that
+  takes seconds therefore names the claim that took them; `claims` is not an
+  identity, and an `admit-control` among them is the replay of a control a
+  `control-admission` read `pending-control` for
 - `queuedBehindOrigin` is the origin of the commit already at the end of that
   sender's queue, or `none` when the queue was empty. A drain's own commits
   re-enter the same per-sender queue, so this says when a send's wait is the
@@ -533,7 +548,9 @@ every session the page opens. The event's `data` is the event itself:
   verdict. `msgId` is the control's own id, the join key when both events are
   present, and `targetMsgId` is the sent message it answers. `outcome` is
   `committed`, `pending-control` (a conflict retained as `admit-control` work,
-  which the outbound drain replays), `rejected`, `duplicate` (every issue of
+  which the outbound drain replays: a batch running when it was retained claims
+  it before its next claim, so it waits behind the claim in flight and no more),
+  `rejected`, `duplicate` (every issue of
   the refusal is a repeat: `AL control was already admitted`,
   `AL acknowledgement confirms a peer the receipt already counted`), or
   `not-handled` (the control's
@@ -855,8 +872,7 @@ publication succeed. The event's `data` is the event itself:
   `status` in `stats.rallar.alm.ordering`.
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
-  touched work, the same five fields the outbound topic reports for its own
-  drains. A batch that claimed and rejected nothing reports nothing: the
+  touched work, five fields the outbound topic's drains also carry. A batch that claimed and rejected nothing reports nothing: the
   inbound rotation runs one every engine round, and recording its resting state
   costs the page hundreds of events per session that say only what the probe
   already decided — enough, measured, to move the very races this sink exists
