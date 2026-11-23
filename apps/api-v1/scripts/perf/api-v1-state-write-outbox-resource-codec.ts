@@ -1,7 +1,6 @@
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
+import { matchesRoomAccessEffect } from '@shared-test/black-box-runner/state-write-evidence/room-access-effect-evidence.ts';
 import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -33,7 +32,14 @@ export function validateExpectedProductionOutboxRecord(
 ): Either<Error, ProductionOutboxRecord> {
     try {
         const message = requireJsonWireObject(JSON.parse(row.ri_resource));
-        if (!matchesExpectedOutboxRow(row, expectation) || !matchesExpectedMessage(message, expectation)) {
+        const matchesMessage = expectation.effectKind === 'room-access'
+            ? expectation.sourceMessageId !== null && matchesRoomAccessEffect(row, {
+                physicalKey: expectation.physicalKey,
+                sourceMessageId: expectation.sourceMessageId,
+                logicalContextId: expectation.logicalContextId
+            })
+            : matchesExpectedMessage(message, expectation);
+        if (!matchesExpectedOutboxRow(row, expectation) || !matchesMessage) {
             return Either.ofLeft(new TypeError('ResourceInbox outbox differs from its receipt'));
         }
         return Either.ofRight({
@@ -75,12 +81,6 @@ function matchesExpectedMessage(message: JsonWireObject, expectation: Production
         (expectation.identityKind === 'logical-msg-id' && messageId !== expectation.effectId)
     ) {
         return false;
-    }
-    if (expectation.effectKind === 'room-access') {
-        const decoded = decodeALMessageValue(message);
-        return decoded.right !== undefined && route.resourceId === expectation.physicalKey.resourceId &&
-            messageId === expectation.sourceMessageId &&
-            computeSha256CanonicalJson(decodeViewInvalidationMessage(decoded.right)) === expectation.sourceMessageId;
     }
     if (expectation.effectKind === 'principal-state:snapshot') {
         return matchesSnapshotMessage(message, expectation);

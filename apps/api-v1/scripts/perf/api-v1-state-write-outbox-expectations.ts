@@ -6,7 +6,7 @@ import {
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
+import { computeRoomAccessEvidenceIdentity } from '@shared-test/black-box-runner/state-write-evidence/room-access-effect-evidence.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
@@ -75,19 +75,11 @@ function computeOutboxExpectation(
         if (groupId === undefined || binding.snapshotVersion === null) {
             throw new TypeError('Membership effect requires a room and snapshot version');
         }
-        const scope = { applicationId, workspaceId };
-        const principalId = `client-${readStateWriteBenchmarkClientIndex(command.commandId)}`;
-        const changeId = computeSha256CanonicalJson({
-            commandId: binding.receiptId, ref: binding.aggregateRef, revision: binding.snapshotVersion
-        });
-        const sourceMessageId = computeSha256CanonicalJson({
-            version: 1, resource: 'room-access', scope, groupId, principalId, changeId
-        });
-        const logicalContextId = computeSha256CanonicalJson({ scope, principalId });
-        const physicalKey = toAppQueueKey({
-            topicId: AppTopics.viewInvalidated,
-            resourceId: sourceMessageId,
-            contextId: logicalContextId
+        const { sourceMessageId, logicalContextId, physicalKey } = computeRoomAccessEvidenceIdentity({
+            commandId: binding.receiptId,
+            ref: { applicationId, workspaceId, groupId },
+            revision: binding.snapshotVersion,
+            principalId: `client-${readStateWriteBenchmarkClientIndex(command.commandId)}`
         });
         if (effect.effectId === physicalKey.resourceId) {
             return {
