@@ -630,7 +630,7 @@ export class ALOutboundAdmissionMutations {
  * fence. A row of another message, or a shared row without the sender fence, would be written unfenced.
  */
 export function assertALOutboundBundleRows(
-    bundle: Pick<ALOutboundCommitBundle<unknown>, 'message' | 'fencesSender' | 'mutations'>
+    bundle: Pick<ALOutboundCommitBundle<never>, 'message' | 'fencesSender' | 'mutations'>
 ): void {
     for (const mutation of bundle.mutations) {
         const row = toALOutboundMutationRow(mutation);
@@ -643,10 +643,14 @@ export function assertALOutboundBundleRows(
     }
 }
 
-/** The message whose row a mutation writes, the origin where its key names one; `shared` for a row messages share. */
-function toALOutboundMutationRow(
-    mutation: ALOutboundAdmissionMutation
-): Readonly<{ msgId: string; originPeerId: string | undefined; }> | 'shared' {
+/** The message a per-message row belongs to: its id, and its origin where the row's key names one. */
+interface ALOutboundMessageRow {
+    readonly msgId: string;
+    readonly originPeerId: string | undefined;
+}
+
+/** The message whose row a mutation writes; `shared` for a row the sender's messages share. */
+function toALOutboundMutationRow(mutation: ALOutboundAdmissionMutation): ALOutboundMessageRow | 'shared' {
     switch (mutation.kind) {
         case 'set-msg-owner':
             return { msgId: mutation.msgId, originPeerId: mutation.senderId };
@@ -675,10 +679,7 @@ function toALOutboundMutationRow(
     }
 }
 
-function isALOutboundRowOfMessage(
-    row: Readonly<{ msgId: string; originPeerId: string | undefined; }>,
-    message: ALOutboundPendingAckRef
-): boolean {
+function isALOutboundRowOfMessage(row: ALOutboundMessageRow, message: ALOutboundPendingAckRef): boolean {
     return row.msgId === message.msgId && (row.originPeerId === undefined || row.originPeerId === message.originPeerId);
 }
 
