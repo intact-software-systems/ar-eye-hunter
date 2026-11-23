@@ -510,9 +510,9 @@ every session the page opens. The event's `data` is the event itself:
   this is where it is charged: an owner whose probe answers "due now" holds the
   page for the batch that follows, which reads none of its own. A probe is not a
   batch, so it is outside the empty-batch suppression the drains carry. The
-  inbound rotation reports none: its probe reads a page every engine round by
-  construction, and relaying one event per round costs more in this harness than
-  the answer is worth (see **Inbound Admission Diagnostics** below). The ALM
+  inbound rotation reports none: its probe walks the rotation on every engine
+  pass by construction, and relaying one event per pass costs more in this
+  harness than the answer is worth (see **Inbound Admission Diagnostics** below). The ALM
   observation artifact reads this bullet's `age-bound` probes as the page's
   storage-queue regime (`pageRegime`, `alm-observation-artifact.md`)
 
@@ -697,7 +697,7 @@ publication succeed. The event's `data` is the event itself:
   `claim-settled`, `receipt-sign` or `rotation-alive`, plus explicitly enabled
   `acknowledgement-association` and `acknowledgement-handoff`. There is no
   `readiness-probe` on this topic: the inbound rotation probes storage on every
-  engine round by construction, and relaying one event per round doubled the
+  engine pass by construction, and relaying one event per pass doubled the
   page's measured per-operation cost in the conformance lane (8.2 → 20.9 ms/op)
   and delayed RTC signaling until the cell failed, so the inbound owner does not
   relay probes and `rotation-alive` below is its liveness witness instead
@@ -842,10 +842,10 @@ publication succeed. The event's `data` is the event itself:
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own
   drains. A batch that claimed and rejected nothing reports nothing: the
-  inbound rotation runs one every engine round, and recording its resting state
-  costs the page hundreds of events per session that say only what the probe
-  already decided — enough, measured, to move the very races this sink exists
-  to explain
+  inbound rotation runs a batch only for a page its probe can claim from, or for
+  a commit, so an empty one is a commit's page with nothing claimable or a port
+  that reserved nothing the page cleared, and it says nothing the probe had not
+  already decided
 - `effect-drain` also splits that `durationMs` into where the batch spent it, so
   a drain that takes seconds names the phase that took them rather than one
   opaque number: `selectionDurationMs` (the page read and every eligibility read
@@ -938,20 +938,26 @@ publication succeed. The event's `data` is the event itself:
   diagnostics can also omit a `claim-settled` for a returning claim. Thus
   `claimedCount` is a ceiling on the `claim-settled` events of one drain, never a
   guarantee of the count, and silence establishes no claim outcome
-- `rotation-alive` carries `workerId`, `emptyRoundCount`, `durationMs` and
-  `longestRoundMs`: one event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` rounds
-  that claimed and rejected nothing, with the wall time those rounds spanned and
-  the slowest single round among them, so one crawling scan is not averaged away
-  by the rest. It is the liveness witness the suppression above costs: without it
-  a rotation that keeps finding nothing and a rotation that stopped running both
-  report nothing at all. An owner whose queue is empty scans nothing and reports
-  none
-- `rotation-alive` also carries `deferredRoundCount`, how many of those rounds
-  saw a due row they did not run, and `latestDeferred`, the `{ effectId, dueAtMs }`
-  rows the latest such round did not run, oldest first. A round that finds a due
-  row it cannot run is exactly the idle round that must relay nothing, so the
-  witness rides on this event, which already stands for its rounds, rather than
-  on one of its own.
+- `rotation-alive` carries `workerId`, `rotationCount`, `durationMs` and
+  `longestRotationMs`, built from completed rotations, each one a walk from the
+  head of NEW through RETRY and RESERVED back to it, whichever probes and
+  batches read its pages. It is stated at most once per
+  `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS` (3 s) window: the first rotation that
+  completes at least that long after the window opened states it, and the next
+  window opens there. `rotationCount` is the rotations of the window,
+  `durationMs` its wall time, and `longestRotationMs` the slowest single rotation
+  from its first page read to its wrap, so one crawling scan is not averaged away
+  by the rest. An idle engine passes at least once per idle ceiling and every
+  pass walks the rotation, so a live owner states one about every 3 to 3.6 s, and
+  silence well beyond that means its rotation stopped. It is the liveness witness
+  the suppression above costs: without it a rotation that keeps finding nothing
+  and a rotation that stopped running both report nothing at all
+- `rotation-alive` also carries `deferredRotationCount`, how many of the
+  window's rotations held back at least one due row, and `latestDeferred`, the
+  `{ effectId, dueAtMs }` rows the latest such rotation held back, oldest first,
+  at most one page (16) of them. A rotation that finds a due row it cannot run
+  relays nothing of its own, so the witness rides on this event, which already
+  stands for its rotations.
 
 ACK association capture is explicitly installed by the black-box browser diagnostic
 producer on the existing callable sink. Plain callbacks, including the ordinary
@@ -1010,12 +1016,12 @@ identity and independently retained storage/native evidence.
 After a submission's `admission-outcome`, the receiver's events say where its
 delivery waited:
 
-| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                           |
-| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                        |
-| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved         |
-| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                       |
-| None of the three, and no `rotation-alive` after the admission                                       | No later round is captured; this alone cannot prove a blocked or stopped rotation |
+| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                          |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                       |
+| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rotations read it and held it back (eligibility), or the port left it unreserved |
+| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started; no captured drain establishes how it ended                      |
+| None of the three, and no `rotation-alive` after the admission                                       | No later rotation is captured; alone this cannot prove a blocked or stopped one  |
 
 `commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
 writes that field, on this topic or the outbound one, so no reader may depend on
