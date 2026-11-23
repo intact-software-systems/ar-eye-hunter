@@ -68,9 +68,12 @@ export function decodeALReceiptRecordWorkEntry(entry: ResourceEntry, namespace: 
             'originPeerId',
             'msgId'
         ]);
-        const { kind } = stored;
-        if (stored.namespace !== namespace || (kind !== 'deadline' && kind !== 'ended')) {
+        if (stored.namespace !== namespace) {
             throw new TypeError('Receipt record work identity differs from its record scope');
+        }
+        const kind = decodeALAdmissionString(stored.kind);
+        if (!isALReceiptRecordWorkKind(kind)) {
+            throw new TypeError(`Receipt record work kind '${kind}' is unknown`);
         }
         const ref = {
             originPeerId: decodeALAdmissionString(stored.originPeerId),
@@ -87,4 +90,8 @@ export function decodeALReceiptRecordWorkEntry(entry: ResourceEntry, namespace: 
     catch (error) {
         throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
     }
+}
+
+function isALReceiptRecordWorkKind(kind: string): kind is ALReceiptRecordWorkKind {
+    return Object.hasOwn(WORK_TOPICS, kind);
 }

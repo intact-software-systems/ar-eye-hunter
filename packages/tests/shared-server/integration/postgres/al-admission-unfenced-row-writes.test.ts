@@ -17,7 +17,11 @@ import {
 import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { racePastHeldCommit } from './test-support/race-past-held-commit.ts';
-import { recordPostgresStatements, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
+import {
+    recordPostgresStatements,
+    toRecordedPostgresStatementShape,
+    type PostgresStatementLog
+} from './test-support/record-postgres-statements.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -67,7 +71,10 @@ describe('Postgres unfenced admission row writes', () => {
             const keyC = toProbeKey(namespace, 0);
             await recordedBackend.write(async (write) => await write.set(keyC, keyC, expireAtMs));
             expect(log.transactions).toBe(1);
-            expect(log.statements.map((statement) => statement.transaction)).toEqual([null, 1]);
+            expect(log.statements.map(toRecordedPostgresStatementShape)).toEqual([
+                { verb: 'select', transaction: null },
+                { verb: 'insert', transaction: 1 }
+            ]);
         });
     }, 60_000);
 });

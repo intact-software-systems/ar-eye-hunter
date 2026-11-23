@@ -177,7 +177,12 @@ export class ALReceiptRecord {
             if (ending.right === undefined) {
                 return { kind: 'not-due', view: { head, tally } } as const;
             }
-            await this.writeHead(transaction, { head: ending.right, work: 'ended', nowMs, readyAtMs: nowMs });
+            await this.writeHead(transaction, {
+                head: ending.right,
+                work: 'ended',
+                nowMs,
+                readyAtMs: ending.right.endedAtEpochMs
+            });
             return ending.right;
         });
         return 'kind' in ended ? Either.ofLeft(ended) : Either.ofRight(ended);
@@ -256,10 +261,7 @@ export class ALReceiptRecord {
         context: ALAdmissionReadContext,
         ref: ALReceiptRecordRef
     ): Promise<ALReceiptRecordHead | undefined> {
-        return await context.read(
-            toALReceiptRecordHeadKey(this.namespace, ref),
-            toALReceiptRecordHeadDecoder(this.namespace, ref)
-        );
+        return await context.read(toALReceiptRecordHeadKey(this.namespace, ref), decodeALReceiptRecordHead);
     }
 
     private async listConfirmations(
@@ -294,20 +296,10 @@ function computeConfirmationExpiryMs(head: ALReceiptRecordHead | undefined, nowM
         : computeALReceiptRetentionExpiryMs(head.opening.deadlineAtMs);
 }
 
-/** The row decoders check a key by its suffix alone; the record knows its namespace and ref, so it requires the exact key. */
-function toALReceiptRecordHeadDecoder(
-    namespace: string,
-    ref: ALReceiptRecordRef
-): ALAdmissionDecoder<ALReceiptRecordHead> {
-    const headKey = toALReceiptRecordHeadKey(namespace, ref);
-    return (value, key) => {
-        if (key !== headKey) {
-            throw new TypeError('Stored receipt head lies outside its record key');
-        }
-        return decodeALReceiptRecordHead(value, key);
-    };
-}
-
+/**
+ * The confirmation decoder checks a key by its suffix alone; a prefix list returns rows under any key, so the record,
+ * which knows its namespace and ref, requires the exact key.
+ */
 function toALReceiptRecordConfirmationDecoder(
     namespace: string,
     ref: ALReceiptRecordRef

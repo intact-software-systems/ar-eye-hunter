@@ -29,5 +29,8 @@ describe('computeALWorkEntry', () => {
         expect(entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(6_000);
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(36_000);
         expect(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds).toBe(1_000);
+        // The audit field named `date` holds a plain time: the UTC wall time of the observed instant, one second
+        // past midnight for 1 000 ms.
+        expect(entry.audit.date.toString()).toBe('00:00:01');
     });
 });

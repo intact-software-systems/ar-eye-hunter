@@ -23,6 +23,16 @@ function computeWork(kind: ALReceiptRecordWorkKind) {
     });
 }
 
+function captureRefusal(decode: () => void): Error | undefined {
+    try {
+        decode();
+        return undefined;
+    }
+    catch (error) {
+        return error instanceof Error ? error : undefined;
+    }
+}
+
 describe('al-receipt-record work entry', () => {
     // A worker claims by type id: a type shared with another AL owner would hand that owner's rows to the record's
     // worker, and a shared topic would let a record key collide with an outbound or inbound key.
@@ -54,6 +64,14 @@ describe('al-receipt-record work entry', () => {
         for (const { entry, namespace } of foreignEntries) {
             expect(() => decodeALReceiptRecordWorkEntry(entry, namespace)).toThrow(ALAdmissionCorruptionError);
         }
+
+        // A kind no record writes is not a scope mismatch: the refusal must name the kind, so an operator reading
+        // the corruption looks at the row's kind rather than at its namespace.
+        const unknownKind = { ...deadline, resource: JSON.stringify({ namespace: 'ns', kind: 'later', ...ref }) };
+        const refusal = captureRefusal(() => decodeALReceiptRecordWorkEntry(unknownKind, 'ns'));
+        expect(refusal).toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(refusal?.cause instanceof Error ? refusal.cause.message : '').toContain('later');
+        expect(refusal?.cause instanceof Error ? refusal.cause.message : '').not.toContain('record scope');
     });
 
     // Joining the two ids with a separator would give both refs the context 'o:m:x'; the JSON pair keeps them apart.

@@ -10,9 +10,19 @@ export interface RecordedPostgresStatement {
     readonly rowCount: number;
 }
 
+/** What a statement-count pin compares: the statement's leading verb and the transaction it ran in. */
+export interface RecordedPostgresStatementShape {
+    readonly verb: string;
+    readonly transaction: number | null;
+}
+
 export interface PostgresStatementLog {
     readonly statements: RecordedPostgresStatement[];
     transactions: number;
+}
+
+export function toRecordedPostgresStatementShape(statement: RecordedPostgresStatement): RecordedPostgresStatementShape {
+    return { verb: statement.text.split(' ', 1)[0] ?? '', transaction: statement.transaction };
 }
 
 /**

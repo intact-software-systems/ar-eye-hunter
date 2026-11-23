@@ -42,9 +42,10 @@ const ENDED_HEAD_FIELDS = [
     'outsideAudienceRecipientPeerIds',
     'endedAtEpochMs'
 ];
+const HEAD_FIELDS_BESIDE_PHASE = ENDED_HEAD_FIELDS.filter((field) => field !== 'phase');
 
 export function decodeALReceiptRecordHead(value: unknown, key: string): ALReceiptRecordHead {
-    const { phase } = decodeALAdmissionRecord(value, ['phase'], ENDED_HEAD_FIELDS);
+    const { phase } = decodeALAdmissionRecord(value, ['phase'], HEAD_FIELDS_BESIDE_PHASE);
     if (phase === 'open') {
         const head = decodeALAdmissionRecord(value, OPEN_HEAD_FIELDS);
         return { phase, opening: decodeALReceiptRecordOpening(head.opening, key) };

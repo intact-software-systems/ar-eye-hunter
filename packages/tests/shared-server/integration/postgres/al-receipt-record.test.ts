@@ -27,7 +27,11 @@ import {
 import { holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
 import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
 import { racePastHeldCommit } from './test-support/race-past-held-commit.ts';
-import { recordPostgresStatements, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
+import {
+    recordPostgresStatements,
+    toRecordedPostgresStatementShape,
+    type PostgresStatementLog
+} from './test-support/record-postgres-statements.ts';
 
 /** Far longer than one uncontended count; a count still running after it is waiting on another's uncommitted row. */
 const BLOCKED_AFTER_MS = 5_000;
@@ -67,10 +71,13 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
         );
 
         expect(results.filter((result) => result.left !== undefined)).toEqual([]);
+        expect(results.map((result) => result.right?.disposition)).toEqual(recipients.map(() => 'counted'));
         expect(await readStoredRecipients(scope, opening)).toEqual(recipients);
         const ended = await Promise.all(scope.instances.map((instance) => instance.record.end(opening)));
         const committed = ended.flatMap((result) => result.right === undefined ? [] : [result.right]);
         expect(committed).toHaveLength(1);
+        expect(ended.filter((result) => result.left !== undefined).map((result) => result.left))
+            .toEqual([{ kind: 'conflict' }, { kind: 'conflict' }]);
         expect(committed[0]?.phase).toBe('complete');
         expect(committed[0]?.confirmedRecipientPeerIds).toEqual(recipients);
     }, 60_000);
@@ -109,7 +116,11 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
 
         expect(counted.right?.disposition).toBe('counted');
         expect(log.transactions).toBe(1);
-        expect(log.statements.map((statement) => statement.transaction)).toEqual([null, 1, null]);
+        expect(log.statements.map(toRecordedPostgresStatementShape)).toEqual([
+            { verb: 'select', transaction: null },
+            { verb: 'insert', transaction: 1 },
+            { verb: 'select', transaction: null }
+        ]);
     }, 60_000);
 });
 
@@ -140,14 +151,17 @@ async function createPostgresScope(opened: OpenedPostgresScope[]): Promise<Postg
     };
 }
 
+/** Deletes every run's rows before asserting any, so one run's leftover rows cannot keep a later run's rows. */
 async function closePostgresScopes(scopes: readonly OpenedPostgresScope[]): Promise<void> {
     try {
-        for (const { runId, clients } of scopes) {
-            if (clients[0] !== undefined) {
-                await deletePostgresRunRows(clients[0], runId);
-                expect(await readPostgresRunRowCounts(clients[0], runId)).toEqual(NO_POSTGRES_RUN_ROWS);
-            }
+        const written = scopes.flatMap(({ runId, clients }) => clients[0] === undefined ? [] : [{ runId, client: clients[0] }]);
+        for (const { runId, client } of written) {
+            await deletePostgresRunRows(client, runId);
         }
+        const counts = await Promise.all(
+            written.map(async ({ runId, client }) => await readPostgresRunRowCounts(client, runId))
+        );
+        expect(counts).toEqual(written.map(() => NO_POSTGRES_RUN_ROWS));
     }
     finally {
         await Promise.all(scopes.flatMap(({ clients }) => clients).map(async (client) => await client.end()));

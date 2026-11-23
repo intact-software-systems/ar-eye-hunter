@@ -1,4 +1,6 @@
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+
+import { createPostgresSqlCall } from './create-postgres-sql-call.ts';
 
 export interface PostgresWorkerTransactionGateTrace {
     barrierWaitCount: number;
@@ -15,20 +17,7 @@ export function createPostgresWorkerTransactionGate(
 ): Readonly<{ sql: PSqlSql; arm(): void; }> {
     let armed = false;
     let consumed = false;
-    function gated(values: readonly PSqlParameter[]): object;
-    function gated<Rows extends PSqlRows>(
-        strings: TemplateStringsArray,
-        ...values: readonly PSqlParameter[]
-    ): Promise<Rows>;
-    function gated<Rows extends PSqlRows>(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
-        ...values: readonly PSqlParameter[]
-    ): Promise<Rows> | object {
-        return isTemplateStringsArray(stringsOrValues)
-            ? input.sql<Rows>(stringsOrValues, ...values)
-            : input.sql(stringsOrValues);
-    }
-    const sql = Object.assign(gated, {
+    const sql = Object.assign(createPostgresSqlCall(input.sql, input.sql), {
         begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
             if (armed && !consumed && input.beforeMutationTransaction) {
                 consumed = true;
@@ -39,10 +28,4 @@ export function createPostgresWorkerTransactionGate(
         }
     });
     return { sql, arm: () => (armed = true) };
-}
-
-function isTemplateStringsArray(
-    value: TemplateStringsArray | readonly PSqlParameter[]
-): value is TemplateStringsArray {
-    return Array.isArray(value) && Object.hasOwn(value, 'raw');
 }

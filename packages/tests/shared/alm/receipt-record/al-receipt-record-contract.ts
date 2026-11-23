@@ -465,5 +465,26 @@ export function describeALReceiptRecordContract(
             });
             await expect(f.b.record.read(f.ref)).rejects.toThrow(ALAdmissionCorruptionError);
         });
+
+        // An audience that names r1 twice must not wait for a second ACK from r1, nor name r1 twice in any set the
+        // tally, the terminal head or a later read reports.
+        it('names a repeated recipient once', async () => {
+            const f = await fixture();
+            await f.a.record.open(toOpening(f.ref, ['r1', 'r1', 'r2'], f.startMs + 5_000));
+
+            const first = await confirm(f, f.b, 'r1');
+            expect(first.right?.view.tally).toEqual({
+                confirmedRecipientPeerIds: ['r1'],
+                outsideAudienceRecipientPeerIds: [],
+                complete: false
+            });
+            expect((await confirm(f, f.c, 'r2')).right?.view.tally.complete).toBe(true);
+
+            const ended = await f.a.record.end(f.ref);
+            expect(ended.right?.phase).toBe('complete');
+            expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+            expect(toTally((await f.b.record.read(f.ref)).right))
+                .toEqual({ confirmed: ['r1', 'r2'], outside: [], complete: true });
+        });
     });
 }
