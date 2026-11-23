@@ -611,6 +611,23 @@ describe('ALM ordered subscription entry conformance', () => {
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
+        'the readiness probe observes each attempt for the slow-path window and its loop fits the phase budget over %s',
+        (carrier) => {
+            for (const scenarioId of ORDERED_SCENARIO_IDS) {
+                const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), 'sender');
+                const probe = findStep(producer, 'probe-ready');
+                const attempt = probe.kind === 'loop' ? probe.commands : [];
+
+                expect(attempt.find(({ kind }) => kind === 'messages.observe'), scenarioId)
+                    .toMatchObject({ state: ['acknowledged'], timeoutMs: 15_000 });
+                // Attempts start for one phase, and the last one started may observe its whole window.
+                expect(probe.kind === 'loop' && (probe.count ?? 0) * (probe.intervalMs ?? 0), scenarioId).toBe(SUBSCRIPTION_PHASE_MS);
+                expect(probe.timeoutMs, scenarioId).toBe(SUBSCRIPTION_PHASE_MS + 15_000);
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
         'subscribes the sibling over %s once the receiver relays both producers\' p2, then publishes p3',
         (carrier) => {
             const scenario = findOrderedScenario(carrier, 'subscription-ordered-entry');

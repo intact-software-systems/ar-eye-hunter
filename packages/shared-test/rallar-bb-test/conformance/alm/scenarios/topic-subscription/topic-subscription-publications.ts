@@ -26,8 +26,12 @@ import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-confor
 import { toGrantedSend } from './to-granted-send.ts';
 import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 
-/** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
-const CONFIRMATION_WAIT_MS = 3_000;
+/**
+ * How long one attempt of a publish loop observes its copy before the next attempt sends a new one. The origin's
+ * admission of acknowledgements reached 12.1 s on GitHub runners, with a p90 of 4.3 to 5.8 s on the failing jobs of the
+ * full-scope runs of 2026-11-22, so an attempt that misses this window met a short audience, not a slow lane.
+ */
+const SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS = 15_000;
 
 /**
  * A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. The S3-ii
@@ -100,6 +104,10 @@ export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string):
     return toCueWait(step, toConfirmedCue(name));
 }
 
+/**
+ * Attempts start for one phase; an attempt's longest command is its observe, so the poll's last attempt may observe
+ * its whole window beyond the phase.
+ */
 function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): RallarBlackBoxTestCommand {
     const { step, name } = publication;
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
@@ -108,7 +116,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commandTimeoutMs: SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS,
         commands: [
             { ...toPublicationSend(publication), commandId: toCommandId(step, `${name}-send`), handleId },
             {
@@ -117,7 +125,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
                 connection: toConnectionName(step),
                 handleId,
                 state: ['acknowledged'],
-                timeoutMs: CONFIRMATION_WAIT_MS
+                timeoutMs: SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS
             },
             ...toReceiptCountFacts(publication, toPollResult({ step, name, index: 2, childId: observe }))
         ]
