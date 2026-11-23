@@ -9,6 +9,7 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { ALM_LANE_FAMILY_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/lane/alm-lane-family-timeout-ms.ts';
 import { computeSendLoopBudgetMs } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/to-send-loop-command.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
@@ -430,6 +431,35 @@ describe('computeAlmRecipeRunTimeoutMs', () => {
 
         expect(() => computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: { almRecipeRunExtensionMs: value } }, 5_000))
             .toThrow(/almRecipeRunExtensionMs/);
+    });
+});
+
+describe('ALM_LANE_FAMILY_TIMEOUT_MS', () => {
+    /**
+     * The lane's ordinary recipe budget and the grace it gives a recipe's own result are private to
+     * `tests/playwright/rallar-black-box/full-stack-helpers.ts`, which exports neither; their values are pinned through
+     * the lane's behaviour by `full-stack-helper-boundaries.test.ts` and `full-stack-reload-pair.test.ts`, and are
+     * restated here.
+     */
+    const LANE_RECIPE_RUN_MS = 180_000;
+    const LANE_RESULT_GRACE_MS = 30_000;
+
+    /** The longest the lane waits on a pair of the cell's recipes over rtc: the longer role's budget and the grace. */
+    function computeWorstCaseRecipeMs(scenarioId: FairnessScenarioId): number {
+        const scenario = findScenario('rtc', scenarioId);
+        const budgetsMs = [scenario.sender, scenario.receiver]
+            .map((recipe) => computeAlmRecipeRunTimeoutMs(recipe, LANE_RECIPE_RUN_MS));
+        return Math.max(...budgetsMs) + LANE_RESULT_GRACE_MS;
+    }
+
+    it('clears the rtc two-agent family\'s measured time with its two extended cells at their worst', () => {
+        // Run 45009025510 took 846 s for the family over rtc, of which an estimated 150 s was churn-bounded-tracks and
+        // 90 s buffered-track-drains.
+        const measuredBaseMs = 846_000 - 150_000 - 90_000;
+        const worstCaseMs = measuredBaseMs + computeWorstCaseRecipeMs('churn-bounded-tracks') +
+            computeWorstCaseRecipeMs('buffered-track-drains');
+
+        expect(worstCaseMs).toBeLessThan(ALM_LANE_FAMILY_TIMEOUT_MS);
     });
 });
 

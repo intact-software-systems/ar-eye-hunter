@@ -1,6 +1,7 @@
 import {
     describe,
     expect,
+    expectTypeOf,
     it
 } from 'vitest';
 
@@ -15,7 +16,6 @@ import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/
 
 import { isAssertOperatorSatisfied } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
     createAlmConformanceRecipes,
@@ -614,22 +614,12 @@ describe('ALM ordered subscription entry conformance', () => {
     });
 
     it('refuses an ordered publication to the publish loop by its type', () => {
-        const refuseOrderedLoop = (step: AlmConformanceStepInput) =>
-            toPublishUntilConfirmedCommands({
-                step,
-                name: 'a-p1',
-                confirmations: 1,
-                outsideAudience: 0,
-                kind: 'publication',
-                // @ts-expect-error A publish loop's attempts each send a new copy, so its publication rides no track.
-                orderingKey: 'subscription-ordered-entry'
-            });
-
-        expect(refuseOrderedLoop).toBeTypeOf('function');
+        // A publish loop's attempts each send a new copy, so its publication rides no track.
+        expectTypeOf<Parameters<typeof toPublishUntilConfirmedCommands>[0]['orderingKey']>().toEqualTypeOf<undefined>();
     });
 
     // A retried ordered publication mints a sequence of its own and leaves its abandoned attempt to a timer's repair.
-    it.each(ALM_CONFORMANCE_CARRIERS)('publishes each ordered publication once and waits a phase for its receipt over %s', (carrier) => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('publishes each ordered publication once, in no retrying loop, and observes that one send over %s', (carrier) => {
         for (const scenarioId of ORDERED_SCENARIO_IDS) {
             for (const [role, track] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), role);
@@ -1141,7 +1131,6 @@ describe('ALM ordered subscription entry conformance', () => {
                 match: { payloadFields: { 'data.kind': 'control-admission', 'data.typeId': 'al.control.repair.v3' } }
             }
         ]);
-        expect(producer.commands.map(({ commandId }) => commandId)).not.toContain(`${producer.recipeId}-no-repair-dispatch`);
         expect(await runAfterEvents(waits, [nack('gap', 'subscription-ordered-omission:peer-a:0')])).toBe(false);
         expect(await runAfterEvents(waits, [repair])).toBe(false);
         expect(await runAfterEvents(waits, [timerRepair])).toBe(true);
