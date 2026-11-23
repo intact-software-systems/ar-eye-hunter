@@ -16,7 +16,7 @@ import {
     RESPONSE_MARGIN_MS
 } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toSenderStorageBaselineCommand } from '../../alm-conformance-cell-parts.ts';
+import { computeSenderBodyMs } from '../../alm-conformance-cell-parts.ts';
 import { ALM_STORAGE_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
@@ -28,7 +28,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
-import { computeCommandsTimeoutMs } from '../../cell/compute-commands-timeout-ms.ts';
 import { toBoundReconnectCommands } from '../volatile-bound/volatile-bound-commands.ts';
 import { toSendLoopCommand } from './to-send-loop-command.ts';
 
@@ -150,31 +149,22 @@ function toTrackSend(sender: AlmConformanceStepInput, track: string): RallarBlac
  * and one send, which is longer than any later track takes after the one before it: one send and its pause.
  */
 function toChurnArrivalsCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestMessagesReceivedCommand {
-    const sender: AlmConformanceStepInput = { ...receiver, role: 'sender' };
     const windowMs = computeChurnSenderBodyMs(receiver);
     return {
         ...toReceivedCommand({ ...receiver, index: 1, count: CHURN_TRACK_COUNT, absent: false }),
-        stallMs: computeCommandsTimeoutMs([
-            toSenderStorageBaselineCommand(sender),
-            ...toChurnReconnectCommands(sender),
-            toTrackSend(sender, '0')
-        ], CHURN_COUNT_COVERS),
+        stallMs: computeSenderBodyMs(
+            receiver,
+            (sender) => [...toChurnReconnectCommands(sender), toTrackSend(sender, '0')],
+            CHURN_COUNT_COVERS
+        ),
         windowMs,
         timeoutMs: windowMs + RESPONSE_MARGIN_MS
     };
 }
 
-/**
- * The sender's body up to its last track, its storage baseline first. A command's timeout reads only the cell's input,
- * so any role's step sizes the sender's commands. It is the cell's longest step: each role's recipe runs that much
- * longer than an ordinary one.
- */
+/** The sender's body up to its last track: the cell's longest step, so each role's recipe runs that much longer. */
 function computeChurnSenderBodyMs(step: AlmConformanceStepInput): number {
-    const sender: AlmConformanceStepInput = { ...step, role: 'sender' };
-    return computeCommandsTimeoutMs(
-        [toSenderStorageBaselineCommand(sender), ...toChurnSends(sender)],
-        CHURN_COUNT_COVERS
-    );
+    return computeSenderBodyMs(step, toChurnSends, CHURN_COUNT_COVERS);
 }
 
 /**

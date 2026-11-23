@@ -10,6 +10,7 @@ import {
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from './alm-conformance-step-identities.ts';
+import { computeCommandsTimeoutMs } from './cell/compute-commands-timeout-ms.ts';
 import { isAlmCellCueSubscription } from './cell/to-alm-cell-arming.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { toPathTopologyConfigCommand } from './cell/to-path-topology-config-command.ts';
@@ -112,6 +113,20 @@ function toBaselinedCommands(input: AlmConformanceCellPartsInput): readonly Rall
 /** The sender's storage counters read before its definition's commands, after any cue subscription leading them. */
 export function toSenderStorageBaselineCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return toStorageCountersCommand(sender, 'storage-counters-connected', false);
+}
+
+/**
+ * The time the sender's body may take up to the end of the commands `toSends` builds, its storage baseline first, for
+ * a step of another role that opens with that body and must outlast it (`coveredBy`). A command's timeout reads only
+ * the cell's input, so any role's step sizes the sender's commands.
+ */
+export function computeSenderBodyMs(
+    step: AlmConformanceStepInput,
+    toSends: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[],
+    coveredBy: string
+): number {
+    const sender: AlmConformanceStepInput = { ...step, role: 'sender' };
+    return computeCommandsTimeoutMs([toSenderStorageBaselineCommand(sender), ...toSends(sender)], coveredBy);
 }
 
 /** The page is fresh: none of these has been emitted on it yet, so these read the page's whole history. */
