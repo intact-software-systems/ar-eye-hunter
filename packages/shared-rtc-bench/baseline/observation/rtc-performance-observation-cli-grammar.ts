@@ -77,6 +77,12 @@ interface RtcPerformanceObservationCommandInput {
     readonly outputDirectory: string;
 }
 
+/** A run command's inputs once parsed, before its source ref is resolved. */
+interface RtcPerformanceObservationNormalizedInput extends Omit<RtcPerformanceObservationCommandInput, 'sourceRef'> {
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly jobBudgetSeconds?: number;
+}
+
 export function isRtcPerformanceObservationCommand(command: string | undefined) {
     return command === 'observe-browser' ||
         command === 'observe-live-rtc' ||
@@ -134,22 +140,51 @@ function parseVerificationPaths(
         };
 }
 
+type RtcPerformanceObservationRunCommand = 'observe-browser' | 'observe-live-rtc' | 'capture-live-rtc';
+
 function parseObservationInputs(
-    name: 'observe-browser' | 'observe-live-rtc' | 'capture-live-rtc',
+    name: RtcPerformanceObservationRunCommand,
     options: RtcBaselineCliOptions,
     issues: RtcBaselineCliIssue[]
 ): RtcBaselineResult<RtcPerformanceObservationParsedCommand> {
     const runId = parsePositiveInteger(options['github-run-id'] ?? '', 'github-run-id');
-    const runAttempt = parsePositiveInteger(
-        options['github-run-attempt'] ?? '',
-        'github-run-attempt'
+    const runAttempt = parsePositiveInteger(options['github-run-attempt'] ?? '', 'github-run-attempt');
+    for (const parsed of [runId, runAttempt]) {
+        if (!parsed.ok) {
+            issues.push(...parsed.issues);
+        }
+    }
+    validateObservationSourceRef(name, options, issues);
+    validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
+    issues.push(
+        ...validateCaptureEnvironment(name === 'capture-live-rtc' ? options.environment ?? 'E3-memory' : 'E3-memory')
     );
-    if (!runId.ok) {
-        issues.push(...runId.issues);
+    const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
+    for (const captureIssue of capture.left ?? []) {
+        issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
     }
-    if (!runAttempt.ok) {
-        issues.push(...runAttempt.issues);
+    const jobBudgetSeconds = parseJobBudgetSeconds(options, issues);
+    if (issues.length > 0 || !runId.ok || !runAttempt.ok) {
+        return { ok: false, issues };
     }
+    return toParsedObservationCommand(name, options, {
+        githubRunId: runId.value,
+        githubRunAttempt: runAttempt.value,
+        githubRunUrl: options['github-run-url']!,
+        outputDirectory: options.output!,
+        ...(name !== 'observe-browser' && capture.right?.mode !== undefined
+            ? { rtcCaptureMode: capture.right.mode }
+            : {}),
+        ...(jobBudgetSeconds === undefined ? {} : { jobBudgetSeconds })
+    });
+}
+
+/** An observation records main; a governed capture records the nonempty branch it was asked to. */
+function validateObservationSourceRef(
+    name: RtcPerformanceObservationRunCommand,
+    options: RtcBaselineCliOptions,
+    issues: RtcBaselineCliIssue[]
+) {
     if (name !== 'capture-live-rtc' && options['source-ref'] !== undefined && options['source-ref'] !== 'main') {
         issues.push(
             createRtcBaselineCliIssue('$.source-ref', 'unsupported-source-ref', 'Observation source ref must be main.')
@@ -160,27 +195,13 @@ function parseObservationInputs(
             createRtcBaselineCliIssue('$.source-ref', 'empty-source-ref', 'Capture source ref must be nonempty.')
         );
     }
-    validateObservationOptions(options, runId.ok ? runId.value : undefined, issues);
-    const environmentId = options.environment ?? 'E3-memory';
-    issues.push(...validateCaptureEnvironment(name === 'capture-live-rtc' ? environmentId : 'E3-memory'));
-    const capture = parseRtcCaptureMode(name !== 'observe-browser' ? options['rtc-capture-mode'] : undefined);
-    for (const captureIssue of capture.left ?? []) {
-        issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
-    }
-    const jobBudgetSeconds = parseJobBudgetSeconds(options, issues);
-    if (issues.length > 0 || !runId.ok || !runAttempt.ok) {
-        return { ok: false, issues };
-    }
-    const normalized = {
-        githubRunId: runId.value,
-        githubRunAttempt: runAttempt.value,
-        githubRunUrl: options['github-run-url']!,
-        outputDirectory: options.output!,
-        ...(name !== 'observe-browser' && capture.right?.mode !== undefined
-            ? { rtcCaptureMode: capture.right.mode }
-            : {}),
-        ...(jobBudgetSeconds === undefined ? {} : { jobBudgetSeconds })
-    };
+}
+
+function toParsedObservationCommand(
+    name: RtcPerformanceObservationRunCommand,
+    options: RtcBaselineCliOptions,
+    normalized: RtcPerformanceObservationNormalizedInput
+): RtcBaselineResult<RtcPerformanceObservationParsedCommand> {
     return name === 'capture-live-rtc'
         ? {
             ok: true,
@@ -188,7 +209,7 @@ function parseObservationInputs(
                 ...normalized,
                 kind: name,
                 sourceRef: options['source-ref']!,
-                environmentId: environmentId as 'E3-memory' | 'E4-pg'
+                environmentId: (options.environment ?? 'E3-memory') as 'E3-memory' | 'E4-pg'
             }
         }
         : { ok: true, value: { ...normalized, kind: name, sourceRef: 'main' } };
