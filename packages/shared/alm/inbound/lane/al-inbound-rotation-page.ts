@@ -23,6 +23,8 @@ export interface ALInboundRotationRead {
     readonly readAtMs: number;
     /** Due rows the page held back. */
     readonly deferred: readonly ALInboundDeferredEffect[];
+    /** The page holds work a batch can claim. */
+    readonly readyNow: boolean;
 }
 
 interface ALInboundHeldRead<TRead extends ALInboundRotationRead> {
@@ -64,11 +66,17 @@ export namespace ALInboundRotationPage {
     }
 
     /**
-     * What passing a probed page did: moved the rotation on, brought it back to the head of NEW, served a
-     * commit's head read, or stored nothing because a commit or a batch took the rotation elsewhere meanwhile.
+     * Where a walk stopped: at a page a batch can claim from, now held for it; at the read that brought
+     * the rotation back to the head of NEW; or at a read a commit or a batch took from it meanwhile.
      */
-    export type Pass = 'advanced' | 'wrapped' | 'head-read' | 'dropped';
+    export type Walk<TRead> =
+        | Readonly<{ kind: 'ready'; }>
+        | Readonly<{ kind: 'wrapped'; read: TRead; }>
+        | Readonly<{ kind: 'dropped'; }>;
 }
+
+/** What passing a walked page did: moved the rotation on, wrapped it, served a head read, or stored nothing. */
+type ALInboundRotationPass = 'advanced' | 'wrapped' | 'head-read' | 'dropped';
 
 /**
  * The one page held between a readiness probe and the batch that follows it, and the position the
@@ -91,8 +99,35 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         this.dependencies = dependencies;
     }
 
-    readSelection(port: ALWorkQueuePort, pageSize: number): Promise<TRead> {
-        return this.readHeld(port, pageSize).selection;
+    /**
+     * Reads pages back to back from the stored position until one holds work a batch can claim, or
+     * the rotation is back at the head of NEW. A read a commit or a batch took meanwhile ends the walk:
+     * that commit owes a head read, and the batch it starts runs it. Every other read moves the stored
+     * position on or is the one head read allowed between two of those, so a walk ends within one
+     * rotation of the position it started at.
+     */
+    async walkToReadyPage(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundRotationPage.Walk<TRead>> {
+        for (;;) {
+            const read = this.readHeld(port, pageSize);
+            let selection: TRead;
+            try {
+                selection = await read.selection;
+            }
+            catch (error) {
+                this.dropSelection(read);
+                throw error;
+            }
+            if (selection.readyNow) {
+                return { kind: 'ready' };
+            }
+            const pass = this.passSelection(read, selection);
+            if (pass === 'wrapped') {
+                return { kind: 'wrapped', read: selection };
+            }
+            if (pass === 'dropped') {
+                return { kind: 'dropped' };
+            }
+        }
     }
 
     async takeSelection(port: ALWorkQueuePort, pageSize: number): Promise<TRead> {
@@ -111,25 +146,6 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
             this.headRead = 'pending';
             this.headSinceRotation = false;
             throw error;
-        }
-    }
-
-    passSelection(pending: Promise<TRead>, selection: TRead): ALInboundRotationPage.Pass {
-        const read = this.held;
-        if (read?.selection !== pending) {
-            return 'dropped';
-        }
-        this.held = undefined;
-        if (read.head) {
-            this.consumeHeadRead();
-            return 'head-read';
-        }
-        return this.advance(read, selection);
-    }
-
-    dropSelection(pending: Promise<TRead>): void {
-        if (this.held?.selection === pending) {
-            this.held = undefined;
         }
     }
 
@@ -167,12 +183,30 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         return this.held;
     }
 
+    private passSelection(read: ALInboundHeldRead<TRead>, selection: TRead): ALInboundRotationPass {
+        if (this.held !== read) {
+            return 'dropped';
+        }
+        this.held = undefined;
+        if (read.head) {
+            this.consumeHeadRead();
+            return 'head-read';
+        }
+        return this.advance(read, selection);
+    }
+
+    private dropSelection(read: ALInboundHeldRead<TRead>): void {
+        if (this.held === read) {
+            this.held = undefined;
+        }
+    }
+
     private consumeHeadRead(): void {
         this.headRead = 'none';
         this.headSinceRotation = true;
     }
 
-    private advance(read: ALInboundHeldRead<TRead>, selection: TRead): ALInboundRotationPage.Pass {
+    private advance(read: ALInboundHeldRead<TRead>, selection: TRead): ALInboundRotationPass {
         if (read.from !== this.scan) {
             return 'dropped';
         }

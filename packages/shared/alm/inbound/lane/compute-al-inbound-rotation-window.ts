@@ -17,6 +17,12 @@ export type ALInboundRotationAlive = Omit<
     'kind' | 'lane' | 'workerId'
 >;
 
+/** The window after one more completed rotation, and the event that rotation closed it into, if it did. */
+export interface ALInboundRecordedRotationWindow {
+    readonly window: ALInboundRotationWindow;
+    readonly alive: ALInboundRotationAlive | undefined;
+}
+
 export const AL_INBOUND_ROTATION_WINDOW_UNOPENED: ALInboundRotationWindow = {
     openedAtMs: undefined,
     rotationCount: 0,
@@ -35,7 +41,7 @@ export const AL_INBOUND_ROTATION_WINDOW_UNOPENED: ALInboundRotationWindow = {
 export function computeALInboundRotationWindow(
     window: ALInboundRotationWindow,
     rotation: ALInboundRotationPage.CompletedRotation
-): Readonly<{ window: ALInboundRotationWindow; alive: ALInboundRotationAlive | undefined; }> {
+): ALInboundRecordedRotationWindow {
     const openedAtMs = window.openedAtMs ?? rotation.startedAtMs;
     const durationMs = Math.max(0, rotation.completedAtMs - openedAtMs);
     const heldBack = rotation.deferred.length > 0;

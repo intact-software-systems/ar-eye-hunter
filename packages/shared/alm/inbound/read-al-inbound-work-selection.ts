@@ -375,38 +375,17 @@ export function createALInboundWorkSelector(
 }
 
 /**
- * The probe's own answer: `nowMs` for a page it can claim from, held for the batch that follows, and
- * otherwise the earliest readiness the rotation scanned once it is back at the head of NEW. A page a
- * commit or a batch took from the probe mid-read ends the walk as due: that commit owes a head read,
- * and the batch it starts runs it. Every other read either moves the stored position on or is the one
- * head read allowed between two of those, so the walk ends within one rotation of the page it started at.
+ * The probe's own answer: `nowMs` for a page it can claim from, held for the batch that follows, or
+ * for a read a commit took from it, and otherwise the earliest readiness the rotation scanned once it
+ * is back at the head of NEW.
  */
 async function readALInboundNextReadyAtMs(
     page: ALInboundRotationPage<ALInboundWorkSelection>,
     port: ALWorkQueuePort,
     nowMs: number
 ): Promise<number | undefined> {
-    for (;;) {
-        const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
-        let selection: ALInboundWorkSelection;
-        try {
-            selection = await pending;
-        }
-        catch (error) {
-            page.dropSelection(pending);
-            throw error;
-        }
-        if (selection.readyNow) {
-            return nowMs;
-        }
-        const pass = page.passSelection(pending, selection);
-        if (pass === 'dropped') {
-            return nowMs;
-        }
-        if (pass === 'wrapped') {
-            return selection.nextReadyAtMs;
-        }
-    }
+    const walk = await page.walkToReadyPage(port, AL_INBOUND_WORK_PAGE_SIZE);
+    return walk.kind === 'wrapped' ? walk.read.nextReadyAtMs : nowMs;
 }
 
 /**
