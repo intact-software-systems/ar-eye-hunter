@@ -2,6 +2,7 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 
 import { isRtcBaselineJobBudgetOutcome } from '../acceptance/rtc-baseline-job-budget-not-started.ts';
 import type {
+    RtcBaselineAttemptInputLocatorDto,
     RtcBaselineAttemptLocatorDto,
     RtcBaselineConditionalEnvironmentDecisionDto,
     RtcBaselineResult
@@ -317,7 +318,7 @@ function fitsJobDeadline(
         run.deadlineMs - dependencies.monotonicNowMs() >= toRtcB06AttemptTestTimeoutMs(attempt.caseId);
 }
 
-function toAttemptInputLocator(attempt: RtcBaselineAttemptLocatorDto) {
+function toAttemptInputLocator(attempt: RtcBaselineAttemptLocatorDto): RtcBaselineAttemptInputLocatorDto {
     return {
         workloadId: attempt.workloadId,
         caseId: attempt.caseId,
