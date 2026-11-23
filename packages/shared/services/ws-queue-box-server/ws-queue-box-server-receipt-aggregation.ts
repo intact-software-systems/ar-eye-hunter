@@ -6,7 +6,6 @@ import {
     type ALAckPayload,
     type ALReceiptPayload
 } from '../../al-contracts/al-control.ts';
-import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import {
     decodePersistedALMessageValue,
     type ALMessageRejection
@@ -44,13 +43,16 @@ import {
     type ALReceiptRecordConfirmationIssue,
     type ALReceiptRecordConfirmationIssueCode
 } from '../../alm/receipt-record/validate-al-receipt-record-confirmation.ts';
-import {
-    AL_RECEIPT_RECORD_WINDOW_MS,
-    type ALReceiptRecordOpeningIssue
-} from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
+import type { ALReceiptRecordOpeningIssue } from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
+import {
+    toWsQueueBoxServerCopyReceiptOpening,
+    toWsQueueBoxServerFrozenAudience,
+    toWsQueueBoxServerReceiptOpening,
+    type WsQueueBoxServerReceiptTerms
+} from './receipt/to-ws-queue-box-server-receipt-opening.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import {
@@ -85,25 +87,6 @@ interface WsQueueBoxServerAckRefusal {
     ];
     /** The deadline of the head the refusal read; absent when it read none. */
     readonly deadlineAtMs: number | undefined;
-}
-
-/** The receipt a message asks the server for: its own deadline, else the ACK timeout its policy resolves to. */
-interface WsQueueBoxServerReceiptTerms {
-    readonly ownDeadlineAtMs: number | undefined;
-    readonly ackTimeoutMs: number;
-}
-
-/** A head opened from one admitted message, for the audience it answers for. */
-interface WsQueueBoxServerOpeningInput {
-    readonly admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage;
-    readonly roomAudience: WsServerRoomAudience;
-    readonly terms: WsQueueBoxServerReceiptTerms;
-    readonly nowMs: number;
-}
-
-interface WsQueueBoxServerCopyOpeningInput extends WsQueueBoxServerOpeningInput {
-    /** The audience the copy's admission row holds; undefined when no admission of it committed. */
-    readonly ingressAudience: readonly string[] | undefined;
 }
 
 type WsQueueBoxServerReceiptSets = Pick<
@@ -275,7 +258,7 @@ export class WsQueueBoxServerReceiptAggregation {
      * silence; a copy that finds no head opens the record its admission never opened.
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
-        const { roomAudience, acceptance } = admitted;
+        const { message, originPeerId, neverSentRecipientPeerIds, roomAudience, acceptance } = admitted;
         if (roomAudience === undefined) {
             return;
         }
@@ -284,7 +267,14 @@ export class WsQueueBoxServerReceiptAggregation {
             return;
         }
         if (acceptance?.kind === 'admitted') {
-            await this.openAdmittedReceipt(toAdmissionOpening({ admitted, roomAudience, terms, nowMs: this.nowMs() }));
+            await this.openAdmittedReceipt(toWsQueueBoxServerReceiptOpening({
+                message,
+                originPeerId,
+                neverSentRecipientPeerIds,
+                roomAudience,
+                terms,
+                nowMs: this.nowMs()
+            }));
         }
         else if (acceptance?.kind === 'duplicate' || acceptance?.kind === 'pending-admission') {
             await this.answerCopy(admitted, roomAudience, terms);
@@ -479,18 +469,26 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     private async answerCopy(
-        admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
+        { message, originPeerId, neverSentRecipientPeerIds }: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
         roomAudience: WsServerRoomAudience,
         terms: WsQueueBoxServerReceiptTerms
     ): Promise<void> {
-        const ref = { originPeerId: admitted.originPeerId, msgId: admitted.message.id.msgId };
+        const ref = { originPeerId, msgId: message.id.msgId };
         const read = await this.#record.read(ref);
         if (read.right !== undefined) {
             await this.answerFromView(read.right);
             return;
         }
         const ingressAudience = await this.#dependencies.readIngressAudience(ref.msgId, ref.originPeerId);
-        const opening = toCopyOpening({ admitted, roomAudience, ingressAudience, terms, nowMs: this.nowMs() });
+        const opening = toWsQueueBoxServerCopyReceiptOpening({
+            message,
+            originPeerId,
+            neverSentRecipientPeerIds,
+            roomAudience,
+            ingressAudience,
+            terms,
+            nowMs: this.nowMs()
+        });
         const opened = opening === undefined || !this.isEncodable(opening)
             ? undefined
             : await this.#record.open(opening);
@@ -629,7 +627,7 @@ export function toWsQueueBoxServerReplayedAdmittedMessage(
         acceptance: { kind: 'admitted' },
         neverSentRecipientPeerIds: captured === undefined
             ? []
-            : toFrozenAudience(replayed.msg, source.peerId, captured)
+            : toWsQueueBoxServerFrozenAudience(replayed.msg, source.peerId, captured)
     };
 }
 
@@ -642,8 +640,8 @@ function resolveCapturedRecipientPeerIds(
         return undefined;
     }
     const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
-    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
-            toFrozenAudience(msg, originPeerId, captured).length > 0
+    return toWsQueueBoxServerFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
+            toWsQueueBoxServerFrozenAudience(msg, originPeerId, captured).length > 0
         ? captured
         : undefined;
 }
@@ -681,50 +679,6 @@ function toCountedAck(
             return { outcome: head.phase === 'open' && tally.complete ? 'complete' : 'partial', view: written.view };
         }
     );
-}
-
-/**
- * The head a first admission opens: the message's own deadline, else its ACK timeout from now, and never beyond the
- * record's window, whatever deadline the client named.
- */
-function toAdmissionOpening(
-    { admitted, roomAudience, terms, nowMs }: WsQueueBoxServerOpeningInput
-): ALReceiptRecordOpening {
-    const { message, originPeerId, neverSentRecipientPeerIds } = admitted;
-    return {
-        msgId: message.id.msgId,
-        originPeerId,
-        traceId: message.id.traceId,
-        expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
-        neverSentRecipientPeerIds,
-        snapshotVersion: roomAudience.snapshotVersion,
-        deadlineAtMs: Math.min(terms.ownDeadlineAtMs ?? nowMs + terms.ackTimeoutMs, nowMs + AL_RECEIPT_RECORD_WINDOW_MS)
-    };
-}
-
-/**
- * The head a re-sent copy opens for an admission that committed and never opened one (decision 14): the audience its
- * admission row holds, and the message's own deadline. A message that names no deadline, names one beyond the window,
- * or is as old as the window by its own stamp opens nothing, since its first head may have ended and expired; so does
- * a row that freezes to nobody.
- */
-function toCopyOpening(input: WsQueueBoxServerCopyOpeningInput): ALReceiptRecordOpening | undefined {
-    const { admitted, roomAudience, ingressAudience, terms, nowMs } = input;
-    const { ownDeadlineAtMs } = terms;
-    if (
-        ingressAudience === undefined || ownDeadlineAtMs === undefined ||
-        ownDeadlineAtMs > nowMs + AL_RECEIPT_RECORD_WINDOW_MS ||
-        nowMs - admitted.message.id.ts >= AL_RECEIPT_RECORD_WINDOW_MS
-    ) {
-        return undefined;
-    }
-    const opening = toAdmissionOpening({
-        admitted: { ...admitted, neverSentRecipientPeerIds: [] },
-        roomAudience: { recipientPeerIds: ingressAudience, snapshotVersion: roomAudience.snapshotVersion },
-        terms,
-        nowMs
-    });
-    return opening.expectedRecipientPeerIds.length === 0 ? undefined : opening;
 }
 
 /**
@@ -792,36 +746,6 @@ function toReceiptControlMessage(
             expiresAtMs: Math.max(opening.deadlineAtMs, receipt.observedAtEpochMs) + AL_RECEIPT_DEADLINE_GRACE_MS
         }
     });
-}
-
-/**
- * The unicast addressee alone when the room admitted it (D53); a room send's authorized sessions but its origin.
- * A multicast the origin froze (an RTC leg handed to WS) keeps that audience verbatim, so a session that left since
- * reads unconfirmed (Q12); delivery stays the authorized sessions, so the expected set may exceed the delivered set by
- * design.
- */
-function toFrozenAudience(
-    message: ALMessage,
-    originPeerId: string,
-    authorizedPeerIds: readonly string[]
-): readonly string[] {
-    const targets = message.targets;
-    if (targets?.mode === 'unicast') {
-        return targets.toPeerId !== originPeerId && authorizedPeerIds.includes(targets.toPeerId)
-            ? [targets.toPeerId]
-            : [];
-    }
-    const frozen = resolveALFrozenMulticastAudience(targets);
-    if (frozen !== undefined) {
-        return frozen.recipientPeerIds.filter((peerId) => peerId !== originPeerId);
-    }
-    return [...new Set(authorizedPeerIds)].filter((peerId) =>
-        peerId !== originPeerId &&
-        (targets?.mode !== 'broadcast' ||
-            (!targets.exceptPeerIds?.includes(peerId) &&
-                (targets.recipientPeerIds === undefined ||
-                    targets.recipientPeerIds.includes(peerId))))
-    );
 }
 
 function toReceiptPayload(opening: ALReceiptRecordOpening, state: WsQueueBoxServerReceiptState): ALReceiptPayload {
