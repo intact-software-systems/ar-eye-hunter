@@ -5,12 +5,10 @@ import {
 } from 'vitest';
 
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
-import { assertPrivateRoomAccessNotice, readDirectResourceOutboxEntries } from '../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
-import { assertWorkerOutboxLifecycle } from '../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { readDirectResourceOutboxEntries } from '../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
+import { assertMembershipWorkerOutbox, assertWorkerOutboxLifecycle } from '../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresDatabaseUrl,
@@ -128,17 +126,8 @@ describe('Postgres group join convergence across AppInbox servers', () => {
                 .toEqual([1, 2, 1].map((attempts) => ({ status: EntityStatus.COMPLETED, attempts, hasResult: true })));
             const joins = [[firstReceipt, 'dave'], [secondReceipt, 'erin']] as const;
             for (const [receipt, principalId] of joins) {
-                const entries = await readDirectResourceOutboxEntries(setupSql, receipt.outboxIds);
-                const notices = entries.filter(entry => entry.topicId === AppTopics.viewInvalidated);
-                expect(notices).toHaveLength(1);
-                const [notice] = notices;
-                expect(notice).toMatchObject({ typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW });
-                assertPrivateRoomAccessNotice(decodePersistedALMessage(notice!.resource), fixture.groupRef, principalId);
-                expect(receipt.outboxIds).toHaveLength(2);
-                assertWorkerOutboxLifecycle({
-                    entries: entries.filter(entry => entry !== notice),
-                    outputs: [{ outboxIds: receipt.outboxIds.filter(id => id !== notice!.resourceId), domainStatus: receipt.outcome }],
-                    kind: 'group', effects: ['group-presence-summary']
+                await assertMembershipWorkerOutbox(setupSql, fixture.groupRef, principalId, {
+                    outboxIds: receipt.outboxIds, domainStatus: receipt.outcome
                 });
             }
             assertWorkerOutboxLifecycle({
