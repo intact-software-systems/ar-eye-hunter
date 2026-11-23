@@ -842,7 +842,8 @@ function createAggregation(
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
         },
         acceptServerControl: async () => ({ kind: 'not-handled' }),
-        acceptServerReceipt: async () => ({ kind: 'not-handled' })
+        acceptServerReceipt: async () => ({ kind: 'not-handled' }),
+        readOwnPendingReceipt: async () => undefined
     });
     onTestFinished(() => aggregation.dispose());
     const record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs });

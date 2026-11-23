@@ -229,6 +229,7 @@ async function createRetransmissionServer(clock: ReceiptClock, options: Retransm
         },
         outboundBackend: options.outboundBackend?.(new InMemoryAdmissionBackend(state, nowMs)),
         capturedRecipientEligibilityFilters: options.capturedRecipientEligibilityFilters,
+        receiptObserver: undefined,
         outbox,
         state,
         peerIds: [ORIGIN, 'r1', 'r2'],

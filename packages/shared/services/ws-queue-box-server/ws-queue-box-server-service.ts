@@ -72,6 +72,7 @@ import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerOwnPendingReceipt } from './receipt/to-ws-queue-box-server-own-receipt-opening.ts';
 import { toWsQueueBoxServerUnconfirmedRepairRequest } from './receipt/to-ws-queue-box-server-unconfirmed-repair-request.ts';
 import {
     toWsQueueBoxServerCapturedSendInput,
@@ -368,7 +369,8 @@ export class WsQueueBoxServerService {
                     await inboundRuntime.admissionStore.readIngressAudience(msgId, originPeerId),
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
-            acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
+            acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control),
+            readOwnPendingReceipt: (msgId) => this.readOwnPendingReceipt(msgId)
         });
         const controlDelivery = new WsQueueBoxServerControlDelivery({
             clock: this.clock,
@@ -387,9 +389,18 @@ export class WsQueueBoxServerService {
             receipts: this.receipts,
             outboundPlanning: this.outboundPlanning,
             name: this.name,
-            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
-            diagnostics: dependencies.outboundDiagnostics
+            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId
         });
+    }
+
+    /** Two reads for a logically receipted row of the server's own, one for any other. */
+    private async readOwnPendingReceipt(msgId: string): Promise<WsQueueBoxServerOwnPendingReceipt | undefined> {
+        const pending = await this.admissionStore.readPendingAck({ originPeerId: this.name, msgId });
+        if (pending === undefined || !isALLogicalReceiptMode(pending.mode)) {
+            return undefined;
+        }
+        const sent = await this.admissionStore.readSentMessage(msgId);
+        return sent === undefined ? undefined : { message: sent.msg, pending };
     }
 
     private createInboundAuthority(
@@ -468,16 +479,41 @@ export class WsQueueBoxServerService {
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
             afterDequeueAdmission: async (message, entry, admission) => {
-                await this.clusterPublication.writeDequeuedRow(message, entry, {
-                    committedPolicy: admission.committedPolicy,
-                    judgedDrops: toWsQueueBoxServerJudgedDrops(admission.committedPolicy, admission.dequeueAuthority)
-                });
-                await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
+                try {
+                    await this.writeOwnReceiptOpening(message);
+                }
+                finally {
+                    await this.clusterPublication.writeDequeuedRow(message, entry, {
+                        committedPolicy: admission.committedPolicy,
+                        judgedDrops: toWsQueueBoxServerJudgedDrops(
+                            admission.committedPolicy,
+                            admission.dequeueAuthority
+                        )
+                    });
+                    await this.deferUnpublishedRowToAwaitedRecipients(message, entry, admission.committedPolicy);
+                }
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: async (message, request) => await this.planRepairMessage(message, request)
         });
+    }
+
+    /**
+     * A logically receipted publication of the server's own opens its receipt from the pending row its dequeue commit
+     * wrote, before any copy a cluster notice publishes can be confirmed. A failed `open` still lets the hook publish.
+     */
+    private async writeOwnReceiptOpening(message: ALMessage): Promise<void> {
+        if (
+            message.id.senderId !== this.name ||
+            !isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo)
+        ) {
+            return;
+        }
+        const pending = await this.admissionStore.readPendingAck({ originPeerId: this.name, msgId: message.id.msgId });
+        if (pending !== undefined) {
+            await this.receipts.writeOwnReceiptOpening({ message, pending });
+        }
     }
 
     /**

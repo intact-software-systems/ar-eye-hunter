@@ -9,6 +9,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 
 import {
     countCopies,
@@ -32,17 +33,22 @@ const CLOCK_STEP_MS = 1_000;
 
 describe('receipts of the server\'s own room notifications', () => {
     it('sends only to the audience frozen at publish and records who confirmed, then that the rest never did', async () => {
+        // Pins the receipt of a notification counting someone outside the audience it was frozen to, or the admin read
+        // stating the row's own exhaustion for a receipt the record ended.
         const clock = installClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
             capacity: 256
         });
         const outbox = createReceiptOutbox(clock);
+        const stores = createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs);
+        const record = new ALReceiptRecord({ ...stores.receiptRecordStores, nowMs: () => clock.nowMs });
         const local = await createReceiptServer({
-            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            ...stores,
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -66,24 +72,23 @@ describe('receipts of the server\'s own room notifications', () => {
         expect(countCopies(local.sockets.c, 'snapshot-1')).toBe(0);
 
         await local.service.acceptIncomingMessage(sessionAck('snapshot-1', 'a'), 'a');
+        expect(recorder.readDiagnostics().messages).toEqual([]);
+        expect((await record.read({ originPeerId: RECEIPT_SERVER_PEER_ID, msgId: 'snapshot-1' })).right?.tally.confirmedRecipientPeerIds)
+            .toEqual(['a']);
+
+        await expect.poll(async () => {
+            clock.nowMs += CLOCK_STEP_MS;
+            await local.engine.executeOnce();
+            return recorder.readDiagnostics().messages[0]?.lastSettlementKind;
+        }, { timeout: 5_000 }).toBe('acknowledgement');
         expect(recorder.readDiagnostics().messages).toEqual([expect.objectContaining({
             msgId: 'snapshot-1',
             mode: 'receiver',
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
+            lastSettlementKind: 'acknowledgement',
             receiptExhausted: false
         })]);
-
-        await expect.poll(async () => {
-            clock.nowMs += CLOCK_STEP_MS;
-            await local.engine.executeOnce();
-            return recorder.readDiagnostics().messages[0]?.receiptExhausted;
-        }, { timeout: 5_000 }).toBe(true);
-        expect(recorder.readDiagnostics().messages[0]).toMatchObject({
-            confirmedPeerIds: ['a'],
-            unconfirmedPeerIds: ['b'],
-            lastSettlementKind: 'receipt-exhausted'
-        });
     });
 
     it('keeps a session that left in the receipt, where it reads unconfirmed, while the retries reach the rest', async () => {
@@ -98,6 +103,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -120,12 +126,13 @@ describe('receipts of the server\'s own room notifications', () => {
         await expect.poll(async () => {
             clock.nowMs += CLOCK_STEP_MS;
             await local.engine.executeOnce();
-            return recorder.readDiagnostics().messages[0]?.receiptExhausted;
-        }, { timeout: 5_000 }).toBe(true);
+            return recorder.readDiagnostics().messages[0]?.lastSettlementKind;
+        }, { timeout: 5_000 }).toBe('acknowledgement');
         expect(countCopies(local.sockets.b, 'snapshot-3')).toBeGreaterThan(1);
         expect(recorder.readDiagnostics().messages[0]).toMatchObject({
             confirmedPeerIds: ['a'],
-            unconfirmedPeerIds: ['b', 'c']
+            unconfirmedPeerIds: ['b', 'c'],
+            receiptExhausted: false
         });
     });
 
@@ -143,6 +150,7 @@ describe('receipts of the server\'s own room notifications', () => {
                 inboundVolatileStores: undefined,
                 outboundBackend: undefined,
                 capturedRecipientEligibilityFilters: undefined,
+                receiptObserver: undefined,
                 outbox,
                 state: createInMemoryALAdmissionState(outbox),
                 peerIds: ['a', 'b'],
@@ -190,6 +198,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['a'],
@@ -201,6 +210,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['c'],
@@ -236,6 +246,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -247,6 +258,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],
@@ -278,6 +290,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -289,6 +302,7 @@ describe('receipts of the server\'s own room notifications', () => {
             inboundVolatileStores: undefined,
             outboundBackend: undefined,
             capturedRecipientEligibilityFilters: undefined,
+            receiptObserver: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],

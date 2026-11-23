@@ -74,6 +74,7 @@ export interface CreateReceiptServerInput {
     readonly outboundBackend: ALAdmissionWorkBackend | undefined;
     /** Durable presence and its siblings; undefined, no filter, so every captured session stays eligible. */
     readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
+    readonly receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
 }
 
 /** The inbound admission and receipt record state every instance of one test shares, as instances share PostgreSQL. */
@@ -237,6 +238,7 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
             outboundBackend: input.outboundBackend ?? new InMemoryAdmissionBackend(input.state, input.nowMs)
         }),
         capturedRecipientEligibilityFilters: input.capturedRecipientEligibilityFilters,
+        receiptObserver: input.receiptObserver,
         outboundSettlements: input.recorder?.settlements,
         targetResolver: {
             requiresFrozenAudience: () => false,

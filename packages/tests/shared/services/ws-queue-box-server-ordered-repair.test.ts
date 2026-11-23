@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi, type MockInstance } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -14,6 +14,8 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -72,6 +74,8 @@ interface OrderedServer {
     readonly outbox: InMemoryQueueBox;
     readonly outboundBackend: InMemoryAdmissionBackend;
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    /** The test's own reader of the receipt record the server counts its own publications in. */
+    readonly record: ALReceiptRecord;
     /**
      * The authority each producer-written row's provenance proves, by message id; `'corrupt'` cannot be read, and
      * `'non-retryable'` fails its dequeue for good.
@@ -454,7 +458,8 @@ describe.each([
 
         expect(readFrames(server.sockets.c, 's-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
         expect(readFrames(server.sockets.b, 's-event-1')).toEqual([]);
-        expect((await server.stores.admissionStore.readReceiptState({ originPeerId: SERVER_ID, msgId: 's-event-1' }))?.outsideAudiencePeerIds)
+        // The record holds the skip: counted in the head, or, where the skip preceded the head, counted ahead of it.
+        expect((await server.record.read({ originPeerId: SERVER_ID, msgId: 's-event-1' })).right?.tally.outsideAudienceRecipientPeerIds)
             .toEqual(['b']);
 
         await server.service.acceptIncomingMessage(toReceiverAck(server, 's-event-1', 'c'), 'c');
@@ -462,20 +467,27 @@ describe.each([
             .toBeUndefined();
         await settle(server);
         expect(server.settlements).not.toContainEqual(expect.objectContaining({ kind: 'receipt-exhausted', msgId: 's-event-1' }));
-        expect((await server.stores.admissionStore.readReceiptState({ originPeerId: SERVER_ID, msgId: 's-event-1' }))?.attempts).toBe(0);
+        expect(await server.stores.admissionStore.readReceiptState({ originPeerId: SERVER_ID, msgId: 's-event-1' })).toMatchObject({
+            outsideAudiencePeerIds: ['b'],
+            attempts: 0
+        });
     });
 
     it('retries a producer row\'s receipt only for the recipient still unconfirmed, not the one it recorded outside', async () => {
+        // Pins the retry resending to a recipient the server skipped below its position, which the record holds outside.
         const server = await createOrderedServer({ cluster });
-        const commitBundle = vi.spyOn(server.stores.admissionStore, 'commitBundle');
         await writeProducerRow(server, producerEvent(2), ['b']);
         await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b))).toEqual(['s-event-2']);
         await writeProducerRow(server, producerEvent(1), ['b', 'c']);
         await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.c))).toEqual(['s-event-1']);
         await settle(server);
 
-        await expect.poll(() => runEngineAdvancing(server, () => readRetriedPeerIds(commitBundle, 's-event-1')), { timeout: 4_000 })
-            .toEqual([['c']]);
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.c)), { timeout: 4_000 })
+            .toEqual(['s-event-1', 's-event-1']);
+        await settle(server);
+        expect(readFrames(server.sockets.b, 's-event-1')).toEqual([]);
+        expect((await server.record.read({ originPeerId: SERVER_ID, msgId: 's-event-1' })).right?.tally.outsideAudienceRecipientPeerIds)
+            .toEqual(['b']);
     });
 
     it('holds a producer row claimed without its track\'s earlier producer row, still unrecorded after a failed re-check, until it records; both deliver in order', async () => {
@@ -581,6 +593,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         decodePrepared: decodeWsQueueBoxServerPreparedMessage,
         outboundBackend
     });
+    const receiptRecordStores = createInMemoryALReceiptRecordStores('ordered-repair', nowMs);
     const producerRows = new Map<string, WsOutboxProducerAuthority | 'corrupt' | 'non-retryable'>();
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
@@ -606,6 +619,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         outboundStores,
+        receiptRecordStores,
         readProducerProvenance: async (message) => {
             const authority = producerRows.get(message.id.msgId);
             if (authority === 'non-retryable') {
@@ -657,6 +671,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         outbox,
         outboundBackend,
         stores: outboundStores,
+        record: new ALReceiptRecord({ ...receiptRecordStores, nowMs }),
         producerRows
     };
 }
@@ -847,19 +862,6 @@ function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: str
 }
 
 /** The peers each committed receipt retry of a message asked its repair to resend to, in commit order. */
-function readRetriedPeerIds(
-    commitBundle: MockInstance<ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>['admissionStore']['commitBundle']>,
-    msgId: string
-): readonly (readonly string[])[] {
-    return commitBundle.mock.calls.flatMap(([bundle]) =>
-        bundle.durableEffects.flatMap((effect) =>
-            effect.payload.kind === 'repair-hint' && effect.payload.msgId === msgId && effect.payload.request.trigger === 'ack-timeout'
-                ? [effect.payload.request.failedPeerIds ?? []]
-                : []
-        )
-    );
-}
-
 /** One engine pass, then the observation: the poll that calls it waits for the server's asynchronous sends. */
 async function runEngine<T>(server: OrderedServer, observe: () => T): Promise<T> {
     await server.engine.executeOnce();

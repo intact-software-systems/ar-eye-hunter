@@ -12,6 +12,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 
 import {
     createClientEventStateSync,
@@ -36,7 +37,9 @@ const DELTA_TRACE_ID = 'trace-delta-1';
 const CLOCK_STEP_MS = 1_000;
 
 describe('receipts of the group-state deltas the server publishes', () => {
-    it('records the delta\'s trace on the session that acknowledged it, then on the receipt the rest never gave', async () => {
+    it('records the delta\'s trace on the receipt it ends, naming the session that acknowledged it and the one that never did', async () => {
+        // Pins the admin read losing the delta's trace, or stating the row's own exhaustion: the receipt is counted in
+        // the record, and the admin read learns it when the record's terminal receipt settles the row.
         const clock = installClock();
         const recorder = createReceiptRecorder(clock);
         const local = await createDeltaServer(clock, recorder);
@@ -63,6 +66,15 @@ describe('receipts of the group-state deltas the server publishes', () => {
 
         const acknowledgedAtEpochMs = clock.nowMs;
         await local.service.acceptIncomingMessage(sessionAck(delta, 'a'), 'a');
+        expect(recorder.readDiagnostics().messages).toEqual([]);
+        expect((await local.record.read({ originPeerId: RECEIPT_SERVER_PEER_ID, msgId: delta.id.msgId })).right?.tally.confirmedRecipientPeerIds)
+            .toEqual(['a']);
+
+        await expect.poll(async () => {
+            clock.nowMs += CLOCK_STEP_MS;
+            await local.engine.executeOnce();
+            return recorder.readDiagnostics().messages[0]?.lastSettlementKind;
+        }, { timeout: 5_000 }).toBe('acknowledgement');
         expect(recorder.readDiagnostics().messages).toEqual([{
             msgId: delta.id.msgId,
             mode: 'receiver',
@@ -70,22 +82,6 @@ describe('receipts of the group-state deltas the server publishes', () => {
             unconfirmedPeerIds: ['b'],
             lastSettlementKind: 'acknowledgement',
             receiptExhausted: false,
-            traceId: DELTA_TRACE_ID,
-            updatedAtEpochMs: acknowledgedAtEpochMs
-        }]);
-
-        await expect.poll(async () => {
-            clock.nowMs += CLOCK_STEP_MS;
-            await local.engine.executeOnce();
-            return recorder.readDiagnostics().messages[0]?.receiptExhausted;
-        }, { timeout: 5_000 }).toBe(true);
-        expect(recorder.readDiagnostics().messages).toEqual([{
-            msgId: delta.id.msgId,
-            mode: 'receiver',
-            confirmedPeerIds: ['a'],
-            unconfirmedPeerIds: ['b'],
-            lastSettlementKind: 'receipt-exhausted',
-            receiptExhausted: true,
             traceId: DELTA_TRACE_ID,
             updatedAtEpochMs: expect.any(Number)
         }]);
@@ -123,22 +119,31 @@ function createReceiptRecorder(clock: ReceiptClock): RallarAlmReceiptDiagnostics
     return createRallarAlmReceiptDiagnosticsRecorder({ nowEpochMs: () => clock.nowMs, capacity: 256 });
 }
 
+/** The server, and the test's own reader of the receipt record it counts in. */
+interface DeltaServer extends ReceiptServerInstance {
+    readonly record: ALReceiptRecord;
+}
+
 async function createDeltaServer(
     clock: ReceiptClock,
     recorder: RallarAlmReceiptDiagnosticsRecorder
-): Promise<ReceiptServerInstance> {
+): Promise<DeltaServer> {
     const outbox = createReceiptOutbox(clock);
-    return await createReceiptServer({
-        ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+    const nowMs = () => clock.nowMs;
+    const stores = createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs);
+    const server = await createReceiptServer({
+        ...stores,
         inboundVolatileStores: undefined,
         outboundBackend: undefined,
         capturedRecipientEligibilityFilters: undefined,
+        receiptObserver: undefined,
         outbox,
         state: createInMemoryALAdmissionState(outbox),
         peerIds: STATE_SYNC_FIXTURE_SESSION_IDS,
         recorder,
-        nowMs: () => clock.nowMs
+        nowMs
     });
+    return { ...server, record: new ALReceiptRecord({ ...stores.receiptRecordStores, nowMs }) };
 }
 
 /** The browser addresses its ACK to the delta's sender and stamps it with the delta's trace. */
