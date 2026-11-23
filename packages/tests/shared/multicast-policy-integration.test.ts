@@ -1027,7 +1027,8 @@ function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPe
         peerSessionId: peerId,
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     const channel = new shared.QRtcDataChannel(connection, {
         faultPort: createPassThroughTransportFaultPort(),

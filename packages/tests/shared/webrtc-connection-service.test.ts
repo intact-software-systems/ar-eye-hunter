@@ -72,6 +72,7 @@ function offer(peerId = 'z-peer'): QRtcSignalingMessage {
         token: 'private-peer-token',
         signalType: QRtcSignalingType.Offer,
         offerId: 'offer-1',
+        offerGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'private-offer-sdp' }, candidate: null }
     };
 }
@@ -184,7 +185,12 @@ describe('WebRtcConnectionService signaling and creation', () => {
         await expect(fixture.receive({ ...offer(), toId: 'other' })).rejects.toThrow('RTC signaling identity does not match its AL envelope');
         await fixture.receive(offer('a-self'));
         await fixture.receive({
-            ...offer(),
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'z-peer',
+            toId: 'a-self',
+            sessionId: 'z-peer',
+            token: 'private-peer-token',
             signalType: 'Answer',
             offerId: 'offer-1',
             payload: { description: { type: 'answer', sdp: 'answer' }, candidate: null }
@@ -1107,16 +1113,57 @@ describe('WebRtcConnectionService injected epoch clock', () => {
             }
         );
     });
+
+    it('stamps each new connection to a peer with a rising offer generation, even when the clock steps back', async () => {
+        let selectedEpochMs = 0;
+        await withClockService(createInput(), () => selectedEpochMs, async (service, sentSignals) => {
+            for (const epochMs of [5_000, 4_000, 4_000, 6_000.5]) {
+                selectedEpochMs = epochMs;
+                service.removePeerIfPresent('z-peer');
+                expect(service.ensurePeerConnectionStarted('z-peer', true).right?.outcome).toBe('setup-started');
+                const native = runtime.createdConnections[runtime.createdConnections.length - 1];
+                await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+            }
+            const current = runtime.createdConnections[runtime.createdConnections.length - 1];
+            const lastOfferId = sentOffers(sentSignals).at(-1)?.offerId ?? 'missing-offer';
+            await service.readPeer('z-peer')?.connection.handleSignal({
+                signalType: QRtcSignalingType.Answer,
+                offerId: lastOfferId,
+                payload: { description: { type: 'answer', sdp: 'answer-sdp' }, candidate: null }
+            });
+            current.restartIce();
+            await current.onnegotiationneeded?.call(current, new Event('negotiationneeded'));
+
+            expect(sentOffers(sentSignals).map((sent) => [sent.offerId, sent.offerGeneration])).toEqual([
+                ['offer-1', 5_000],
+                ['offer-2', 5_001],
+                ['offer-3', 5_002],
+                ['offer-4', 6_000],
+                ['offer-5', 6_000]
+            ]);
+        });
+    });
 });
+
+function sentOffers(
+    sentSignals: readonly QRtcSignalingMessage[]
+): readonly Extract<QRtcSignalingMessage, { signalType: typeof QRtcSignalingType.Offer; }>[] {
+    return sentSignals.filter((
+        signal
+    ): signal is Extract<QRtcSignalingMessage, { signalType: typeof QRtcSignalingType.Offer; }> => signal.signalType === QRtcSignalingType.Offer);
+}
 
 async function withClockService(
     input: WebRtcConnectionService.InputDto,
     nowEpochMs: () => number,
-    exercise: (service: WebRtcConnectionService) => void | Promise<void>
+    exercise: (service: WebRtcConnectionService, sentSignals: readonly QRtcSignalingMessage[]) => void | Promise<void>
 ): Promise<void> {
+    const sentSignals: QRtcSignalingMessage[] = [];
     const signaler: QRtcSignalingTransport = {
         connect: async () => {},
-        send: async () => {}
+        send: async (message) => {
+            sentSignals.push(message);
+        }
     };
     const dependencies = {
         nowEpochMs,
@@ -1127,7 +1174,7 @@ async function withClockService(
     };
     const service = new WebRtcConnectionService(signaler, input, dependencies);
     try {
-        await exercise(service);
+        await exercise(service, sentSignals);
     }
     finally {
         for (const peerId of service.knownPeerIds()) {

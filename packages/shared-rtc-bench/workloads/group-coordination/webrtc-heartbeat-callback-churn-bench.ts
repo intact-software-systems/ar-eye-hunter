@@ -70,7 +70,8 @@ export function runWebRtcHeartbeatCallbackChurn(
             token: 'benchmark-token',
             peerSessionId,
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            isPolite: true
+            isPolite: true,
+            offerGeneration: 1
         }, { createOfferId: () => crypto.randomUUID() });
         return new QRtcDataChannel(peer, {
             faultPort: createPassThroughTransportFaultPort(),

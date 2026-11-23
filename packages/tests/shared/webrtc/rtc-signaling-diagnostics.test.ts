@@ -170,7 +170,12 @@ describe('owned RTC signaling observations', () => {
         expect(native.receivedCandidates).toEqual([]);
         expect(events).toContainEqual(expect.objectContaining({ disposition: 'ice-queued', signalType: 'IceCandidate' }));
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-        await peer.handleSignal({ signalType: 'Offer', offerId: 'remote', payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null } });
+        await peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote',
+            offerGeneration: 1,
+            payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
+        });
         expect(native.receivedDescriptions).toEqual([]);
         expect(events).toContainEqual(expect.objectContaining({ disposition: 'impolite-offer-ignored' }));
         expect(JSON.stringify(events)).not.toContain('private-');
@@ -238,7 +243,7 @@ describe('owned RTC signaling observations', () => {
         await expect(receive({ resource: '{"private-token": BROKEN}', senderId: 'peer', sessionId: 'self', recipientId: 'self' })).rejects.toBeInstanceOf(
             TypeError
         );
-        await receive({ resource: JSON.stringify({ ...offer(), ...answer('offer') }), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
+        await receive({ resource: JSON.stringify({ ...signalEnvelope(), ...answer('offer') }), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
         inboundPolicy = 'deny';
         await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
         inboundPolicy = 'throw';
@@ -315,7 +320,12 @@ describe('owned RTC signaling observations', () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
         const { peer, native } = createObservedPeer((event) => events.push(event), () => 7, true);
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
-        await peer.handleSignal({ signalType: 'Offer', offerId: 'remote', payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null } });
+        await peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote',
+            offerGeneration: 1,
+            payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
+        });
         await peer.handleSignal({ signalType: 'IceCandidate', payload: { description: null, candidate: { candidate: 'private-ice' } } });
         expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'private-offer' }]);
         expect(native.localDescription?.type).toBe('answer');
@@ -333,7 +343,8 @@ describe('owned RTC signaling observations', () => {
             token: 'private-token',
             peerSessionId: 'peer',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 100 },
-            isPolite: true
+            isPolite: true,
+            offerGeneration: 1
         }, new DeterministicRtcOfferIds());
         onTestFinished(() => {
             try {
@@ -344,13 +355,19 @@ describe('owned RTC signaling observations', () => {
             }
         });
         peer.connect();
-        await peer.handleSignal({ signalType: 'Offer', offerId: 'remote', payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null } });
+        await peer.handleSignal({
+            signalType: 'Offer',
+            offerId: 'remote',
+            offerGeneration: 1,
+            payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
+        });
         expect(runtime.createdConnections[0].receivedDescriptions).toHaveLength(1);
         const events: RtcSignalingDiagnostics.Event[] = [];
         const enabled = createObservedPeer((event) => events.push(event), () => Number.NaN, true);
         await enabled.peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote',
+            offerGeneration: 1,
             payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
         });
         expect(enabled.native.receivedDescriptions).toHaveLength(1);
@@ -394,7 +411,8 @@ function createObservedPeer(record: RtcSignalingDiagnostics['record'], nowEpochM
         token: 'private-token',
         peerSessionId: 'peer',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 100 },
-        isPolite
+        isPolite,
+        offerGeneration: 1
     }, dependencies);
     onTestFinished(() => {
         try {
@@ -408,16 +426,23 @@ function createObservedPeer(record: RtcSignalingDiagnostics['record'], nowEpochM
     return { peer, native: runtime.createdConnections[0], runtime };
 }
 
-function offer() {
+function signalEnvelope() {
     return {
         channel: 'RtcSignal',
         type: 'Signal',
         fromId: 'peer',
         toId: 'self',
         sessionId: 'peer',
-        token: 'private-token',
+        token: 'private-token'
+    } as const;
+}
+
+function offer() {
+    return {
+        ...signalEnvelope(),
         signalType: 'Offer',
         offerId: 'remote',
+        offerGeneration: 1,
         payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
     } as const;
 }

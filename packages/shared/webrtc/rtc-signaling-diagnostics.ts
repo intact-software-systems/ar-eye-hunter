@@ -25,6 +25,7 @@ export const RTC_NATIVE_SIGNAL_DISPOSITIONS = [
     'retired-before-application',
     'application-started',
     'answer-ineligible',
+    'offer-superseded',
     'impolite-offer-ignored',
     'rollback-and-remote-description-returned',
     'remote-description-returned',
@@ -340,11 +341,25 @@ export namespace RtcSignalingDiagnostics {
                 | {
                     readonly kind: 'native-signal-decision';
                     readonly nativeIdentity: NativeIdentity;
-                    readonly disposition: NativeDisposition;
+                    readonly disposition: Exclude<NativeDisposition, 'offer-superseded'>;
                     readonly capturedPeerConnection: boolean;
                     readonly currentPeerConnection: boolean | undefined;
                     readonly offerMatches: boolean | undefined;
                     readonly signalingState: RTCSignalingState | undefined;
+                }
+                | {
+                    readonly kind: 'native-signal-decision';
+                    readonly nativeIdentity: NativeIdentity;
+                    /** An offer below the highest generation this connection applied, refused unanswered. */
+                    readonly disposition: 'offer-superseded';
+                    readonly capturedPeerConnection: true;
+                    readonly currentPeerConnection: boolean;
+                    readonly offerMatches: undefined;
+                    readonly signalingState: RTCSignalingState;
+                    /** The refused offer's generation. */
+                    readonly offerGeneration: number;
+                    /** The highest offer generation this connection has applied. */
+                    readonly appliedOfferGeneration: number;
                 }
                 | {
                     readonly kind: 'signal-caller-release';

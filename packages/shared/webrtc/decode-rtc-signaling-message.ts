@@ -49,6 +49,9 @@ export function decodeRtcSignalingMessage(serialized: string): QRtcSignalingMess
         if (message.signalType !== 'IceCandidate') {
             fields.push('offerId');
         }
+        if (message.signalType === 'Offer') {
+            fields.push('offerGeneration');
+        }
         requirePersistedALFields(message, fields, fields);
         if (message.channel !== 'RtcSignal' || message.type !== 'Signal') {
             throw new RtcSignalingDecodeError('Invalid RTC signaling channel or type');
@@ -91,7 +94,7 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
         if (value.description !== null) {
             throw new RtcSignalingDecodeError('Unexpected ICE description');
         }
-        if ('offerId' in signal) {
+        if ('offerId' in signal || 'offerGeneration' in signal) {
             throw new RtcSignalingDecodeError('Unexpected RTC ICE offer identity');
         }
         return {
@@ -102,7 +105,10 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
     if (value.candidate !== null) {
         throw new RtcSignalingDecodeError('Unexpected description candidate');
     }
-    const description = value.description;
+    return decodeRtcDescriptionSignal(signal, value.description);
+}
+
+function decodeRtcDescriptionSignal(signal: QRtcSignal | Record<string, unknown>, description: unknown): QRtcSignal {
     if (
         (signal.signalType !== 'Offer' && signal.signalType !== 'Answer') ||
         !('offerId' in signal) || typeof signal.offerId !== 'string' || signal.offerId.trim().length === 0
@@ -117,17 +123,30 @@ export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): Q
         throw new RtcSignalingDecodeError('Invalid RTC session description');
     }
     assertRtcSignalingFields(description, ['type', 'sdp']);
-    return signal.signalType === 'Offer'
-        ? {
-            signalType: 'Offer',
-            offerId: signal.offerId,
-            payload: { description: { type: 'offer', sdp: description.sdp }, candidate: null }
+    if (signal.signalType === 'Answer') {
+        if ('offerGeneration' in signal) {
+            throw new RtcSignalingDecodeError('Unexpected RTC answer offer generation');
         }
-        : {
+        return {
             signalType: 'Answer',
             offerId: signal.offerId,
             payload: { description: { type: 'answer', sdp: description.sdp }, candidate: null }
         };
+    }
+    return {
+        signalType: 'Offer',
+        offerId: signal.offerId,
+        offerGeneration: decodeOfferGeneration(signal),
+        payload: { description: { type: 'offer', sdp: description.sdp }, candidate: null }
+    };
+}
+
+function decodeOfferGeneration(signal: object): number {
+    const offerGeneration = 'offerGeneration' in signal ? signal.offerGeneration : undefined;
+    if (typeof offerGeneration !== 'number' || !Number.isSafeInteger(offerGeneration) || offerGeneration < 0) {
+        throw new RtcSignalingDecodeError('Invalid RTC offer generation');
+    }
+    return offerGeneration;
 }
 
 function decodeIceCandidate(value: unknown): RTCIceCandidateInit {

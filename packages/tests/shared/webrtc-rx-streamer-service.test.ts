@@ -165,7 +165,8 @@ function createMediaPeerFixture(): MediaPeerFixture {
         peerSessionId: 'peer-1',
         token: 'test-token',
         iceCandidates,
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const media = new QRtcMediaChannel(connection, { peerId: 'peer-1' });

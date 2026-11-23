@@ -169,7 +169,8 @@ function runListenerCleanup(peers: number, runtime: RtcBenchmarkNativeRuntime): 
                 token: 'token',
                 peerSessionId: `peer-${index}`,
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-                isPolite: true
+                isPolite: true,
+                offerGeneration: 1
             },
             { createOfferId: () => crypto.randomUUID() }
         );

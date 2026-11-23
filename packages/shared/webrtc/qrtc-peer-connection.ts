@@ -175,6 +175,8 @@ export namespace QRtcPeerConnection {
         readonly peerSessionId: string;
         readonly iceCandidates: IceConfig;
         readonly isPolite: boolean;
+        /** Carried on every offer this connection sends; the offering runtime raises it for each new connection. */
+        readonly offerGeneration: number;
     }
 
     export interface Diagnostics {
@@ -241,6 +243,8 @@ export class QRtcPeerConnection {
     private signalingLifetime = new AbortController();
     private outboundSignalingChain = Promise.resolve();
     private outstandingOfferId: string | undefined;
+    /** Kept across `reset()`: an offer from a superseded remote connection stays refused while this connection lives. */
+    private highestAppliedOfferGeneration: number | undefined;
 
     private nativeObservation: QRtcPeerConnection.NativeBinding | undefined;
     private nativeObservationBatch: QRtcPeerConnection.NativeObservationBatch | undefined;
@@ -991,6 +995,7 @@ export class QRtcPeerConnection {
             await this.sendSignal(pc, {
                 signalType: 'Offer',
                 offerId,
+                offerGeneration: this.input.offerGeneration,
                 payload: {
                     description: { type: 'offer', sdp: description.sdp },
                     candidate: null
@@ -1206,7 +1211,7 @@ export class QRtcPeerConnection {
     }
 
     private observeNativeSignal(
-        disposition: RtcSignalingDiagnostics.NativeDisposition,
+        disposition: Exclude<RtcSignalingDiagnostics.NativeDisposition, 'offer-superseded'>,
         capture: QRtcPeerConnection.SignalCapture,
         signal: QRtcSignal
     ): void {
@@ -1305,6 +1310,11 @@ export class QRtcPeerConnection {
     ): Promise<void> {
         const pc = capture.pc;
         this.diagnostics.inboundOfferCount++;
+        const appliedOfferGeneration = this.highestAppliedOfferGeneration;
+        if (appliedOfferGeneration !== undefined && signal.offerGeneration < appliedOfferGeneration) {
+            this.observeSupersededOffer(capture, signal, appliedOfferGeneration);
+            return;
+        }
         const collision = this.status.makingOffer || pc.signalingState !== 'stable';
         if (collision) {
             this.diagnostics.offerCollisionCount++;
@@ -1328,6 +1338,7 @@ export class QRtcPeerConnection {
             await this.applyRemoteDescription(pc, signal.payload.description, capture.nativeBatch);
             this.observeNativeSignal('remote-description-returned', capture, signal);
         }
+        this.highestAppliedOfferGeneration = signal.offerGeneration;
         if (this.status.pc !== pc) {
             this.observeNativeSignal('retired-after-remote-description', capture, signal);
             return;
@@ -1346,6 +1357,28 @@ export class QRtcPeerConnection {
         this.status.makingOffer = false;
         this.status.ignoreOffer = false;
         await this.sendAnswer(pc, signal.offerId);
+    }
+
+    private observeSupersededOffer(
+        capture: QRtcPeerConnection.NativeSignalCapture,
+        signal: Extract<QRtcSignal, { signalType: 'Offer'; }>,
+        appliedOfferGeneration: number
+    ): void {
+        recordRtcSignalingObservation(this.dependencies.signalingDiagnostics, {
+            kind: 'native-signal-decision',
+            disposition: 'offer-superseded',
+            localSessionId: this.input.sessionId,
+            peerSessionId: this.input.peerSessionId,
+            signalType: signal.signalType,
+            offerId: signal.offerId,
+            nativeIdentity: capture.nativeIdentity,
+            capturedPeerConnection: true,
+            currentPeerConnection: this.status.pc === capture.pc,
+            offerMatches: undefined,
+            signalingState: capture.pc.signalingState,
+            offerGeneration: signal.offerGeneration,
+            appliedOfferGeneration
+        });
     }
 
     private async flushIceCandidates(

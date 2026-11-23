@@ -1019,7 +1019,8 @@ function createNativeDataChannelFixture(): NativeDataChannelFixture {
         token: 'fixture-token',
         peerSessionId: 'peer-1',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        isPolite: false
+        isPolite: false,
+        offerGeneration: 1
     }, new DeterministicRtcOfferIds());
     peerConnection.connect();
     peers.push(peerConnection);

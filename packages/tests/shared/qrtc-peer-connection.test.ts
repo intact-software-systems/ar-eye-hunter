@@ -18,6 +18,7 @@ import {
     QRtcSignalingSender,
     QRtcSignalingType
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import {
     installNativeRtcRuntime,
@@ -152,6 +153,7 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote-offer-id',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'remote-offer' },
                 candidate: null
@@ -199,6 +201,7 @@ describe('QRtcPeerConnection', () => {
             ? peer.handleSignal({
                 signalType,
                 offerId: 'remote-offer',
+                offerGeneration: 1,
                 payload: {
                     description: { type: 'offer', sdp: 'old-offer' },
                     candidate: null
@@ -216,6 +219,7 @@ describe('QRtcPeerConnection', () => {
         const queued = peer.handleSignal({
             signalType: 'Offer',
             offerId: 'queued-offer',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'queued-old-offer' },
                 candidate: null
@@ -312,6 +316,7 @@ describe('QRtcPeerConnection', () => {
         const applying = peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote-offer-id',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'retired-remote-offer' },
                 candidate: null
@@ -426,6 +431,7 @@ describe('QRtcPeerConnection', () => {
                 token: 'token-1',
                 signalType: 'Offer',
                 offerId: 'offer-1',
+                offerGeneration: 7,
                 payload: {
                     description: { type: 'offer', sdp: 'offer-sdp' },
                     candidate: null
@@ -495,6 +501,7 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'remote-offer' },
                 candidate: null
@@ -529,6 +536,77 @@ describe('QRtcPeerConnection', () => {
         }]);
     });
 
+    it('refuses an offer below the highest generation it applied, without applying or answering it', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const { peer, native, sentSignals } = createPeerFixture(true, {}, createObservedOfferIds(events));
+        await peer.handleSignal(createRemoteOffer('current-offer', 20, 'current-offer-sdp'));
+        await peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
+
+        expect(native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'current-offer-sdp' }]);
+        expect(sentSignals.map((signal) => [signal.signalType, 'offerId' in signal ? signal.offerId : undefined]))
+            .toEqual([['Answer', 'current-offer']]);
+        expect(events.filter((event) => event.kind === 'native-signal-decision' && event.offerId === 'superseded-offer'))
+            .toEqual([
+                expect.objectContaining({ disposition: 'application-started' }),
+                expect.objectContaining({
+                    disposition: 'offer-superseded',
+                    capturedPeerConnection: true,
+                    currentPeerConnection: true,
+                    signalingState: 'stable',
+                    offerGeneration: 19,
+                    appliedOfferGeneration: 20
+                }),
+                expect.objectContaining({ disposition: 'application-returned' })
+            ]);
+    });
+
+    it('answers a renegotiation of the generation it applied', async () => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        await peer.handleSignal(createRemoteOffer('first-offer', 20, 'first-offer-sdp'));
+        await peer.handleSignal(createRemoteOffer('renegotiation-offer', 20, 'renegotiation-offer-sdp'));
+
+        expect(native.receivedDescriptions).toEqual([
+            { type: 'offer', sdp: 'first-offer-sdp' },
+            { type: 'offer', sdp: 'renegotiation-offer-sdp' }
+        ]);
+        expect(sentSignals.map((signal) => 'offerId' in signal ? signal.offerId : undefined))
+            .toEqual(['first-offer', 'renegotiation-offer']);
+    });
+
+    it('applies a higher generation and refuses the generations below it', async () => {
+        const { peer, native, sentSignals } = createPeerFixture(true);
+        await peer.handleSignal(createRemoteOffer('older-offer', 10, 'older-offer-sdp'));
+        await peer.handleSignal(createRemoteOffer('newer-offer', 20, 'newer-offer-sdp'));
+        await peer.handleSignal(createRemoteOffer('between-offer', 15, 'between-offer-sdp'));
+
+        expect(native.receivedDescriptions).toEqual([
+            { type: 'offer', sdp: 'older-offer-sdp' },
+            { type: 'offer', sdp: 'newer-offer-sdp' }
+        ]);
+        expect(sentSignals.map((signal) => 'offerId' in signal ? signal.offerId : undefined))
+            .toEqual(['older-offer', 'newer-offer']);
+    });
+
+    it('keeps the applied generation across a native reset but not into another connection', async () => {
+        const { peer, sentSignals } = createPeerFixture(true);
+        await peer.handleSignal(createRemoteOffer('current-offer', 20, 'current-offer-sdp'));
+        peer.reset();
+        peer.connect();
+        const replacement = peer.status.pc;
+        if (!(replacement instanceof SimulatedNativeRtcPeerConnection)) {
+            throw new Error('Expected replacement native peer');
+        }
+        await peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
+        expect(replacement.receivedDescriptions).toEqual([]);
+        expect(sentSignals.map((signal) => 'offerId' in signal ? signal.offerId : undefined)).toEqual(['current-offer']);
+
+        const successor = createPeerFixture(true);
+        await successor.peer.handleSignal(createRemoteOffer('superseded-offer', 19, 'superseded-offer-sdp'));
+        expect(successor.native.receivedDescriptions).toEqual([{ type: 'offer', sdp: 'superseded-offer-sdp' }]);
+        expect(successor.sentSignals.map((signal) => 'offerId' in signal ? signal.offerId : undefined))
+            .toEqual(['superseded-offer']);
+    });
+
     it('accounts successful queued ICE against diagnostics reset during a native addition', async () => {
         const { peer, native } = createPeerFixture(true);
         for (const candidate of ['first', 'second']) {
@@ -545,6 +623,7 @@ describe('QRtcPeerConnection', () => {
         const offer = peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'remote-offer' },
                 candidate: null
@@ -576,6 +655,7 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal({
             signalType: 'Offer',
             offerId: 'remote-offer',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'colliding-offer' },
                 candidate: null
@@ -623,6 +703,7 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'colliding-offer' },
                 candidate: null
@@ -739,6 +820,7 @@ describe('QRtcPeerConnection', () => {
         await expect(peer.handleSignal({
             signalType: QRtcSignalingType.Offer,
             offerId: 'offer-1',
+            offerGeneration: 1,
             payload: {
                 description: { type: 'offer', sdp: 'remote-offer' },
                 candidate: null
@@ -959,7 +1041,11 @@ interface PeerConnectionFixture {
     readonly sentSignals: readonly QRtcSignalingMessage[];
 }
 
-function createPeerFixture(isPolite: boolean, callbacks: QRtcPeerConnection.StateCallbacks = {}): PeerConnectionFixture {
+function createPeerFixture(
+    isPolite: boolean,
+    callbacks: QRtcPeerConnection.StateCallbacks = {},
+    dependencies: QRtcPeerConnection.Dependencies = new DeterministicRtcOfferIds()
+): PeerConnectionFixture {
     const runtime = installNativeRtcRuntime();
     const sentSignals: QRtcSignalingMessage[] = [];
     const signaler: QRtcSignalingSender = {
@@ -967,7 +1053,7 @@ function createPeerFixture(isPolite: boolean, callbacks: QRtcPeerConnection.Stat
             sentSignals.push(decodeRtcSignalingMessage(JSON.stringify(message)));
         }
     };
-    const peer = new QRtcPeerConnection(signaler, createPeerInput(isPolite), new DeterministicRtcOfferIds());
+    const peer = new QRtcPeerConnection(signaler, createPeerInput(isPolite), dependencies);
     onTestFinished(() => {
         try {
             peer.reset();
@@ -984,6 +1070,22 @@ function createPeerFixture(isPolite: boolean, callbacks: QRtcPeerConnection.Stat
     return { peer, native, sentSignals };
 }
 
+function createObservedOfferIds(events: RtcSignalingDiagnostics.Event[]): QRtcPeerConnection.Dependencies {
+    return {
+        createOfferId: new DeterministicRtcOfferIds().createOfferId,
+        signalingDiagnostics: { nowEpochMs: () => 1, record: (event) => events.push(event) }
+    };
+}
+
+function createRemoteOffer(offerId: string, offerGeneration: number, sdp: string): QRtcSignal {
+    return {
+        signalType: 'Offer',
+        offerId,
+        offerGeneration,
+        payload: { description: { type: 'offer', sdp }, candidate: null }
+    };
+}
+
 function createPeerInput(isPolite: boolean): QRtcPeerConnection.InputDto {
     return {
         sessionId: 'self',
@@ -993,7 +1095,8 @@ function createPeerInput(isPolite: boolean): QRtcPeerConnection.InputDto {
             iceServers: [],
             expiresAtEpochMs: Date.now() + 1_000
         },
-        isPolite
+        isPolite,
+        offerGeneration: 7
     };
 }
 

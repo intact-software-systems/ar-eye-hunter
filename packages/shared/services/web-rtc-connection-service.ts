@@ -383,6 +383,7 @@ export class WebRtcConnectionService {
     private readonly heldInboundSignals: HeldInboundRtcSignals;
     private readonly peerEstablishmentWatchdog: AsyncCommand<PeerId, WebRtcConnectionService.Peer>;
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
+    private lastOfferGeneration = 0;
 
     public readonly signaler: QRtcSignalingTransport;
     public readonly input: WebRtcConnectionService.InputDto;
@@ -1072,6 +1073,7 @@ export class WebRtcConnectionService {
     }
 
     private createPeerHandle(peerId: PeerId): WebRtcConnectionService.Peer {
+        this.lastOfferGeneration = computeNextOfferGeneration(this.dependencies.nowEpochMs(), this.lastOfferGeneration);
         const connection = new QRtcPeerConnection(
             this.signaler,
             {
@@ -1079,7 +1081,8 @@ export class WebRtcConnectionService {
                 token: this.input.token,
                 peerSessionId: peerId,
                 iceCandidates: this.input.iceCandidates,
-                isPolite: this.isPolite(peerId)
+                isPolite: this.isPolite(peerId),
+                offerGeneration: this.lastOfferGeneration
             },
             this.dependencies
         );
@@ -1516,4 +1519,12 @@ function toInboundAdmissionInput(
     signal: QRtcSignalingMessage
 ): WebRtcConnectionService.InboundAdmissionInput {
     return { peerId: signal.fromId, signalType: signal.signalType, message: signal };
+}
+
+/**
+ * Epoch-based, so a rebuilt runtime's connections also outrank the ones it replaced; the increment
+ * keeps successive connections rising when the clock repeats or steps back.
+ */
+function computeNextOfferGeneration(nowEpochMs: number, lastOfferGeneration: number): number {
+    return Math.max(Math.floor(nowEpochMs), lastOfferGeneration + 1);
 }

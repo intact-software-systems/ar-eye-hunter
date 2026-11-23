@@ -182,7 +182,7 @@ describe('browser RTC runtime composition', () => {
         });
         onTestFinished(() => queueBox.close());
         await expect(initialiseRtcConnectionService({
-        creationEpochMs: Date.now,
+            creationEpochMs: Date.now,
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -795,6 +795,7 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
         token: 'fixture-token',
         signalType: 'Offer',
         offerId: 'offer-1',
+        offerGeneration: 1,
         payload: { description: { type: 'offer', sdp: `${peerId}-offer` }, candidate: null }
     };
     const message: ALMessage = newALUnicastMessage(
