@@ -1,0 +1,401 @@
+import { describe, expect, it } from 'vitest';
+
+import { createDefaultPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+
+import type { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
+import {
+    connect,
+    countCopies,
+    RECEIPT_SERVER_PEER_ID,
+    serverNotification,
+    sessionAck
+} from '../../../shared/services/ws-queue-box-server-receipt-fixture.ts';
+import { createPostgresSqlCall } from './test-support/create-postgres-sql-call.ts';
+import {
+    countTogether,
+    createReceiptCluster,
+    expectStoredEnd,
+    instanceInput,
+    loseInstance,
+    POLL,
+    readCountOutcomes,
+    readHeadCount,
+    startInstance,
+    waitForQuietStatements,
+    type ReceiptCluster,
+    type ReceiptInstance
+} from './test-support/create-receipt-cluster.ts';
+import { holdPostgresAfterCommit, holdPostgresCommit } from './test-support/hold-postgres-commit.ts';
+import { createWorkerHold, type WorkerHold } from './test-support/postgres-worker-hold.ts';
+import { toRecordedPostgresStatementShape, type PostgresStatementLog } from './test-support/record-postgres-statements.ts';
+
+const LIFETIME_MS = 60_000;
+/** An ACK timeout no case outlasts, so no `ack-timeout` window falls due inside a case that does not retry. */
+const NO_WINDOW_QOS: ALQosPolicyRequest = { ack: { algo: 'receiver', opts: { timeoutMs: 20_000 } } };
+/** The default 2 s ACK timeout and its retries. */
+const RETRYING_QOS: ALQosPolicyRequest = { ack: { algo: 'receiver' } };
+const CASE_TIMEOUT_MS = 90_000;
+
+type OwnReceiptStore = ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
+
+type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
+
+/** A session of the room and the instance it is connected to. */
+interface ConnectedSession {
+    readonly sessionId: string;
+    readonly instance: ReceiptInstance;
+    readonly socket: SimulatedWebSocket;
+}
+
+/** The publication and the sessions it is admitted to. */
+interface Publication {
+    readonly sent: ALMessage;
+    readonly sessions: readonly ConnectedSession[];
+}
+
+describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL receipt of a server publication', () => {
+    // Pins fifty concurrent confirmations of one publication conflicting on one row, so some are lost and the receipt
+    // never completes, or ends twice.
+    it('completes when fifty sessions on three instances confirm at once', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(50);
+        const trio = await startTrio(cluster, sessionIds);
+        const sessions = await connectSpread(trio, sessionIds);
+        const sent = publication(cluster, 'fifty', NO_WINDOW_QOS);
+
+        await publish(trio.a, { sent, sessions });
+        await confirmTogether(sessions, sent);
+
+        await expect.poll(async () => (await cluster.reader.read(ownRef(sent))).right?.head.phase, POLL).toBe('complete');
+        await expectStoredEnd(cluster, ownRef(sent), {
+            phase: 'complete',
+            confirmedRecipientPeerIds: sessionIds,
+            outsideAudienceRecipientPeerIds: []
+        });
+        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+        expect(await readHeadCount(cluster, ownRef(sent))).toBe(1);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins a fenced commit on the server's one version row per confirmation of its publication. The one move is the
+    // terminal receipt's admission into the server's row.
+    it('moves the server\'s version row as often for fifty confirmations as for ten', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(50);
+        const trio = await startTrio(cluster, sessionIds);
+        const sessions = await connectSpread(trio, sessionIds);
+        const store = readOwnReceiptStore(cluster);
+
+        const movedForTen = await measureVersionMoves(store, trio.a, { sent: publication(cluster, 'ten', NO_WINDOW_QOS), sessions: sessions.slice(0, 10) });
+        const movedForFifty = await measureVersionMoves(store, trio.a, { sent: publication(cluster, 'fifty', NO_WINDOW_QOS), sessions });
+
+        expect(movedForFifty).toBe(movedForTen);
+        expect(movedForFifty).toBe(1);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins what one ACK of a server publication costs when its head is open and it does not complete the set: the
+    // record's count alone (the head and the confirmation key in one read, the insert in one transaction, the prefix
+    // read for the tally), five round trips with BEGIN and COMMIT. A change that adds a statement or a transaction to
+    // every such ACK shows here.
+    it('counts an ACK that finds its head and does not complete the set in a pinned number of statements', async () => {
+        const cluster = await createReceiptCluster();
+        const log: PostgresStatementLog = { statements: [], transactions: 0 };
+        const sessionIds = toSessionIds(3);
+        const only = await startInstance(cluster, { ...instanceInput('a', sessionIds), log, starts: false });
+        const sessions = await connectAll(only, sessionIds);
+        const sent = publication(cluster, 'pin', NO_WINDOW_QOS);
+        await enqueue(only, { sent, sessions });
+        // A server publication's head opens only at its dequeue, which this instance's engine runs.
+        await expect.poll(async () => {
+            await only.engine.executeOnce();
+            return (await cluster.reader.read(ownRef(sent))).right?.head.phase;
+        }, POLL).toBe('open');
+        // An instance's first inbound work also sweeps once per lease for work whose lease lapsed (a claim in its own
+        // transaction and a read of the held page); s2's ACK spends that sweep, as a client's admission does before
+        // its first ACK.
+        await confirmTogether(sessions.slice(2), sent);
+        await waitForQuietStatements(log);
+        log.statements.splice(0);
+        log.transactions = 0;
+
+        expect((await only.service.acceptIncomingMessage(sessionAck(sent, 's0', 'delivered'), 's0')).left).toBeUndefined();
+        // A statement the ACK starts after it answers is pinned too, never left to race the assertion.
+        await waitForQuietStatements(log);
+
+        expect(log.transactions).toBe(1);
+        expect(log.statements.map(toRecordedPostgresStatementShape)).toEqual([
+            { verb: 'select', transaction: null },
+            { verb: 'insert', transaction: 1 },
+            { verb: 'select', transaction: null }
+        ]);
+        expect((await cluster.reader.read(ownRef(sent))).right?.tally.confirmedRecipientPeerIds).toEqual(['s0', 's2']);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins a retransmission that resends to every recipient, the confirmed ones included.
+    it('resends inside the window only to the session that has not confirmed', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(3);
+        const only = await startInstance(cluster, instanceInput('a', sessionIds));
+        const sessions = await connectAll(only, sessionIds);
+        const sent = publication(cluster, 'narrowed', RETRYING_QOS);
+        await publish(only, { sent, sessions });
+
+        await confirmTogether(sessions.slice(0, 2), sent);
+
+        await expect.poll(() => readCopies(sessions, sent)[2], POLL).toBe(2);
+        expect(readCopies(sessions, sent)).toEqual([1, 1, 2]);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins a receipt that dies with the instance that dequeued its publication and opened its head.
+    it('completes on the survivors when the instance that dequeued it is disposed', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(4);
+        // `b` and `c` start once `a` is lost, so `a` dequeues.
+        const a = await startInstance(cluster, instanceInput('a', sessionIds));
+        const b = await startInstance(cluster, { ...instanceInput('b', sessionIds), starts: false });
+        const c = await startInstance(cluster, { ...instanceInput('c', sessionIds), starts: false });
+        const sessions = [...await connectAll(b, ['s0', 's1']), ...await connectAll(c, ['s2', 's3'])];
+        const sent = publication(cluster, 'disposed', NO_WINDOW_QOS);
+        await publish(a, { sent, sessions });
+
+        await loseInstance(a);
+        b.engine.start();
+        c.engine.start();
+        await confirmTogether(sessions, sent);
+
+        await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
+        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins a losing `end` that settles the server's row twice or surfaces as a failure. Both counts commit before
+    // either reads its tally, so both read a complete set and both call `end`.
+    it('ends once when the last two confirmations are counted at once on two instances', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(3);
+        const holds = { b: createWorkerHold(), c: createWorkerHold() };
+        const a = await startInstance(cluster, instanceInput('a', sessionIds));
+        const b = await startInstance(cluster, {
+            ...instanceInput('b', sessionIds),
+            toRecordSql: (sql) => holdPostgresAfterCommit(sql, holds.b),
+            starts: false
+        });
+        const c = await startInstance(cluster, {
+            ...instanceInput('c', sessionIds),
+            toRecordSql: (sql) => holdPostgresAfterCommit(sql, holds.c),
+            starts: false
+        });
+        const sessions = [...await connectAll(a, ['s0']), ...await connectAll(b, ['s1']), ...await connectAll(c, ['s2'])];
+        const sent = publication(cluster, 'both-end', NO_WINDOW_QOS);
+        await publish(a, { sent, sessions });
+        await confirmTogether(sessions.slice(0, 1), sent);
+
+        const results = await countTogether([
+            { hold: holds.b, count: () => b.service.acceptIncomingMessage(sessionAck(sent, 's1', 'delivered'), 's1') },
+            { hold: holds.c, count: () => c.service.acceptIncomingMessage(sessionAck(sent, 's2', 'delivered'), 's2') }
+        ]);
+
+        expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
+        await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
+        await pollRowEnded(readOwnReceiptStore(cluster), sent);
+        expect(readCountOutcomes(cluster, sent.id.msgId)).toEqual<ReturnType<typeof readCountOutcomes>>(['partial', 'complete', 'complete']);
+    }, CASE_TIMEOUT_MS);
+
+    // Pins a publication whose dequeuing instance died between the dequeue commit and its head's `open`: no head is
+    // ever opened, so its confirmations are never counted and the receipt waits for the row's budget.
+    it('opens the head at a survivor\'s window when the instance that dequeued it was lost before its open', async () => {
+        const cluster = await createReceiptCluster();
+        const sessionIds = toSessionIds(3);
+        const loss: HeldLoss = { hold: createWorkerHold(), lost: Promise.withResolvers<void>() };
+        const a = await startInstance(cluster, { ...instanceInput('a', sessionIds), toRecordSql: (sql) => toLostInsideTransaction(sql, loss) });
+        const b = await startInstance(cluster, { ...instanceInput('b', sessionIds), starts: false });
+        // `c` stays stopped, so the window is `b`'s and its retransmission reaches the sessions connected to `b`.
+        await startInstance(cluster, { ...instanceInput('c', sessionIds), starts: false });
+        const sessions = await connectAll(b, sessionIds);
+        const sent = publication(cluster, 'lost-open', RETRYING_QOS);
+        const store = readOwnReceiptStore(cluster);
+
+        const release = await loseInsideHeldDequeue(a, loss, { sent, sessions });
+        try {
+            expect((await cluster.reader.read(ownRef(sent))).left).toEqual({ kind: 'head-absent' });
+            expect(readCopies(sessions, sent)).toEqual([0, 0, 0]);
+            b.engine.start();
+            await expect.poll(() => readCopies(sessions, sent).every((copies) => copies > 0), POLL).toBe(true);
+            await confirmTogether(sessions, sent);
+
+            await expectStoredEnd(cluster, ownRef(sent), { phase: 'complete', confirmedRecipientPeerIds: sessionIds, outsideAudienceRecipientPeerIds: [] });
+            expect(await readHeadCount(cluster, ownRef(sent))).toBe(1);
+            await pollRowEnded(store, sent);
+            expect(await store.readPendingAck(ownRef(sent))).toBeUndefined();
+            // A window charged an attempt; a second dequeue would have rewritten the row with none.
+            expect((await store.readReceiptState(ownRef(sent)))?.attempts).toBeGreaterThanOrEqual(1);
+        }
+        finally {
+            await release();
+        }
+    }, CASE_TIMEOUT_MS);
+});
+
+function toSessionIds(count: number): readonly string[] {
+    return Array.from({ length: count }, (_, index) => `s${index}`);
+}
+
+/** Three started instances whose room is `sessionIds`. */
+async function startTrio(cluster: ReceiptCluster, sessionIds: readonly string[]): Promise<ReceiptTrio> {
+    return {
+        a: await startInstance(cluster, instanceInput('a', sessionIds)),
+        b: await startInstance(cluster, instanceInput('b', sessionIds)),
+        c: await startInstance(cluster, instanceInput('c', sessionIds))
+    };
+}
+
+/** The sessions spread over the three instances in turn, in the order of `sessionIds`. */
+async function connectSpread(trio: ReceiptTrio, sessionIds: readonly string[]): Promise<readonly ConnectedSession[]> {
+    return await Promise.all(sessionIds.map(async (sessionId, index) => {
+        const instance = index % 3 === 0 ? trio.a : index % 3 === 1 ? trio.b : trio.c;
+        return { sessionId, instance, socket: await connect(instance, sessionId) };
+    }));
+}
+
+async function connectAll(instance: ReceiptInstance, sessionIds: readonly string[]): Promise<readonly ConnectedSession[]> {
+    return await Promise.all(sessionIds.map(async (sessionId) => ({ sessionId, instance, socket: await connect(instance, sessionId) })));
+}
+
+/** A room broadcast of the instances' shared server name; its message id carries the run id. */
+function publication(cluster: ReceiptCluster, name: string, qos: ALQosPolicyRequest): ALMessage {
+    return {
+        ...serverNotification(`own-${cluster.runId}-${name}`, 'receiver', LIFETIME_MS),
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        qos
+    };
+}
+
+/** The router's enqueue: the committed policy expects nobody, and the dequeue's pending row expects the sessions. */
+async function enqueue(instance: ReceiptInstance, { sent, sessions }: Publication): Promise<void> {
+    const admittedAudience = sessions.map(({ sessionId }) => sessionId);
+    const result = await instance.service.enqueueOutboxIfAbsent(sent, {
+        admittedAudience,
+        admittedConnectionGenerationIds: undefined,
+        recipientScope: undefined
+    });
+    expect(result.verdict.kind).toBe('admitted');
+}
+
+/**
+ * Enqueues on `instance` and waits until every session holds the dequeue's copy, which the dequeue hook publishes
+ * after the head's `open`.
+ */
+async function publish(instance: ReceiptInstance, publication: Publication): Promise<void> {
+    await enqueue(instance, publication);
+    await expect.poll(() => readCopies(publication.sessions, publication.sent), POLL).toEqual(publication.sessions.map(() => 1));
+}
+
+function readCopies(sessions: readonly ConnectedSession[], sent: ALMessage): readonly number[] {
+    return sessions.map(({ socket }) => countCopies(socket, sent.id.msgId));
+}
+
+/** The hold an instance's record transactions stop at, and the loss its callers wait for once stopped there. */
+interface HeldLoss {
+    readonly hold: WorkerHold;
+    readonly lost: PromiseWithResolvers<void>;
+}
+
+/**
+ * The record client of an instance that is lost inside a transaction: every `begin` runs its write and stops at
+ * `loss.hold` uncommitted, and its caller waits for `loss.lost` however the transaction ended, as a lost process runs
+ * nothing after it.
+ */
+function toLostInsideTransaction(source: PSqlSql, loss: HeldLoss): PSqlSql {
+    const held = holdPostgresCommit(source, loss.hold);
+    return Object.assign(createPostgresSqlCall(held, held), {
+        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            const [ended] = await Promise.allSettled([held.begin(write)]);
+            await loss.lost.promise;
+            if (ended.status === 'rejected') {
+                throw ended.reason;
+            }
+            return ended.value;
+        }
+    });
+}
+
+/**
+ * Enqueues on `instance`, whose record client is `toLostInsideTransaction`'s, and once its dequeue's `open` is written
+ * and uncommitted loses the instance: its engine claims nothing more and its record client is terminated, so
+ * PostgreSQL rolls the `open` back, and the dequeue waits at the loss, so no copy leaves the instance. Disposing the
+ * instance would wait for that dequeue, so it is not disposed here. The returned release lets the dequeue run out once
+ * the case has asserted; what it then does is the lost instance's own.
+ */
+async function loseInsideHeldDequeue(instance: ReceiptInstance, loss: HeldLoss, publication: Publication): Promise<() => Promise<void>> {
+    let arrived = false;
+    void loss.hold.arrived.then(() => {
+        arrived = true;
+    });
+    await enqueue(instance, publication);
+    await expect.poll(() => arrived, POLL).toBe(true);
+    const stopping = instance.engine.stop();
+    await instance.recordClient.terminate();
+    return async () => {
+        loss.hold.release();
+        loss.lost.resolve();
+        await Promise.allSettled([stopping]);
+    };
+}
+
+/** Every session's ACK, accepted at once on the instance it is connected to. */
+async function confirmTogether(sessions: readonly ConnectedSession[], sent: ALMessage): Promise<void> {
+    const results = await Promise.all(
+        sessions.map(async ({ sessionId, instance }) => await instance.service.acceptIncomingMessage(sessionAck(sent, sessionId, 'delivered'), sessionId))
+    );
+    expect(results.map((result) => result.left)).toEqual(sessions.map(() => undefined));
+}
+
+/**
+ * How often the server's version row moved from the settled dequeue until the head ended and its terminal receipt
+ * settled the server's row.
+ */
+async function measureVersionMoves(store: OwnReceiptStore, instance: ReceiptInstance, publication: Publication): Promise<number> {
+    const { sent, sessions } = publication;
+    await publish(instance, publication);
+    const before = await readServerVersion(store, sent);
+    await confirmTogether(sessions, sent);
+    await pollRowEnded(store, sent);
+    return await readServerVersion(store, sent) - before;
+}
+
+async function readServerVersion(store: OwnReceiptStore, sent: ALMessage): Promise<number> {
+    const read = { msgId: sent.id.msgId, originPeerId: RECEIPT_SERVER_PEER_ID, phase: 'admitted', expectedRecipientPeerIds: [] } as const;
+    const version = (await store.readReceiptAdmission(read)).clientRecord?.version;
+    if (version === undefined) {
+        throw new Error('The server has no version row');
+    }
+    return version;
+}
+
+/** The server's stored row of the publication is ended: its terminal receipt, or its own budget, ended it. */
+async function pollRowEnded(store: OwnReceiptStore, sent: ALMessage): Promise<void> {
+    await expect.poll(async () => (await store.readStoredMessage(sent.id.msgId))?.ended, POLL).toBe(true);
+}
+
+/** The server's outbound admission state, read through the client no instance uses. */
+function readOwnReceiptStore(cluster: ReceiptCluster): OwnReceiptStore {
+    const [reader] = cluster.clients;
+    if (reader === undefined) {
+        throw new Error('The cluster has no reader client');
+    }
+    return createDefaultPSqlALOutboundRuntimeStores({
+        repository: new PSqlRuntimeStateRepository(reader),
+        namespace: cluster.storeId,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    }).admissionStore;
+}
+
+function ownRef(sent: ALMessage): ALReceiptRecordRef {
+    return { originPeerId: RECEIPT_SERVER_PEER_ID, msgId: sent.id.msgId };
+}
