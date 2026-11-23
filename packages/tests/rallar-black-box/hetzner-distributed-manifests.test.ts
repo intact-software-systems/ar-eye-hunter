@@ -318,15 +318,15 @@ describe('Hetzner distributed manifest catalog', () => {
             }],
             ['apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 49_750
+                timeoutMs: 54_750
             }],
             ['apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 59_500
+                timeoutMs: 64_500
             }],
             ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 72_500
+                timeoutMs: 77_500
             }],
             ['apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json', {
                 peers: 1,

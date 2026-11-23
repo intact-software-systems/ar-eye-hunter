@@ -683,7 +683,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 8400
     },
-    "recommendedTerminalTimeoutSeconds": 392
+    "recommendedTerminalTimeoutSeconds": 437
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 14 receivers through the default mesh topology."
 }

@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
+import { computeRtcConnectReadinessTimeoutMs } from '../recipe/compute-rtc-connect-readiness-timeout-ms.ts';
 import { decodePositiveInteger } from '../runtime/decode-runtime-result-values.ts';
 import { computeEffectiveFrameCount } from './distributed-recipe-command-preview.ts';
 
@@ -10,7 +11,7 @@ export function toRtcConnectCommandDetails(
     }
 
     const minReadyPeers = decodePositiveInteger(command.readiness.minReadyPeers) ?? 1;
-    const timeoutMs = decodePositiveInteger(command.readiness.timeoutMs) ?? 5_000;
+    const timeoutMs = computeRtcConnectReadinessTimeoutMs(command);
     const intervalMs = decodePositiveInteger(command.readiness.intervalMs) ?? 100;
     return [`readiness: min ${minReadyPeers} ready peer(s), timeout ${timeoutMs} ms, poll ${intervalMs} ms`];
 }

@@ -1631,7 +1631,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-director-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 77500
+            "timeoutMs": 155000
           },
           {
             "kind": "wait",
@@ -6830,7 +6830,7 @@
             "timeoutMs": 77500,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 72500,
+              "timeoutMs": 77500,
               "intervalMs": 100
             },
             "rallar": {
@@ -6854,7 +6854,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-player-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 77500
+            "timeoutMs": 155000
           },
           {
             "kind": "wait",

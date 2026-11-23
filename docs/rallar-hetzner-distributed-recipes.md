@@ -213,9 +213,11 @@ joins it, connects without an RTC readiness wait, and appoints itself before the
 rooted at the director and no rebuild follows the appointment; its stable-layout
 wait gates its traffic instead. The wait also reads the formation view once the layout has settled, and
 waits a reshape the gate holds out, up to 60 s longer. Each player joins the open group inside its
-`rtc.connect` room join, under the whole setup allowance; the players' connect
-and the `connected` barrier get the setup allowance plus 650 ms per participant,
-because the hosted lane admits about 1.5 joining players per second at 50 members. A `director.status`
+`rtc.connect` room join, under the whole setup allowance; a player's connect
+and its RTC readiness wait each get the setup allowance plus 650 ms per participant,
+because the hosted lane admits about 1.5 joining players per second at 50 members. The runtime
+waits for readiness only after the connect's own timeout, so the `connected` barrier covers both,
+one after the other. A `director.status`
 with `refresh: true` refreshes the one room under one deadline (its cached group
 read and the topology read-through) instead of listing every client and group of
 the workspace.

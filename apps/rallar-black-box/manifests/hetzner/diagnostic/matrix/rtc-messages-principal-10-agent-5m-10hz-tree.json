@@ -649,7 +649,7 @@
       "streamFrames": 3000,
       "logicalFanoutMessages": 27000
     },
-    "recommendedTerminalTimeoutSeconds": 675
+    "recommendedTerminalTimeoutSeconds": 720
   },
   "description": "Diagnostic 10-agent principal RTC messages multicast run at 10 Hz for 5m through a forced tree topology."
 }

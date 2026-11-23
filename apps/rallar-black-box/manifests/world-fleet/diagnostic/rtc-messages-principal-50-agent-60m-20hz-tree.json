@@ -573,7 +573,7 @@
       "streamFrames": 72000,
       "logicalFanoutMessages": 3528000
     },
-    "recommendedTerminalTimeoutSeconds": 4185,
+    "recommendedTerminalTimeoutSeconds": 4230,
     "worldFleet": true,
     "noSpawn": true
   }

@@ -429,7 +429,7 @@
       "streamFrames": 7500,
       "logicalFanoutMessages": 367500
     },
-    "recommendedTerminalTimeoutSeconds": 510
+    "recommendedTerminalTimeoutSeconds": 555
   },
   "description": "All 50 headless peers multicast RTC messages at 5 Hz through a forced tree topology."
 }

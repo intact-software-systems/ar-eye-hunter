@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
+import { computeRtcConnectReadinessTimeoutMs } from '../../../recipe/compute-rtc-connect-readiness-timeout-ms.ts';
 
 /**
  * The sum of the timeouts `commands` name, one after another: each command's own timeout, and a connect's readiness
@@ -12,26 +13,16 @@ export function computeCommandsTimeoutMs(commands: readonly RallarBlackBoxTestCo
             return sum;
         }
         assertCommandTimeoutStated(command, coveredBy);
-        return sum + command.timeoutMs + computeReadinessTimeoutMs(command, coveredBy);
+        assertReadinessTimeoutStated(command, coveredBy);
+        return sum + command.timeoutMs + computeRtcConnectReadinessTimeoutMs(command);
     }, 0);
 }
 
-/** A connect that names readiness waits for it after its own timeout; a readiness with no timeout waits a default. */
-function computeReadinessTimeoutMs(command: RallarBlackBoxTestCommand, coveredBy: string): number {
-    if (command.kind !== 'rtc.connect' || command.readiness === undefined) {
-        return 0;
-    }
-    const readinessTimeoutMs = command.readiness.timeoutMs;
-    assertReadinessTimeoutStated(command, readinessTimeoutMs, coveredBy);
-    return readinessTimeoutMs;
-}
-
-function assertReadinessTimeoutStated(
-    command: RallarBlackBoxTestCommand,
-    readinessTimeoutMs: number | undefined,
-    coveredBy: string
-): asserts readinessTimeoutMs is number {
-    if (readinessTimeoutMs === undefined) {
+/** A readiness with no timeout of its own waits the runtime's default, which no recipe of a cell may leave unstated. */
+function assertReadinessTimeoutStated(command: RallarBlackBoxTestCommand, coveredBy: string): void {
+    if (
+        command.kind === 'rtc.connect' && command.readiness !== undefined && command.readiness.timeoutMs === undefined
+    ) {
         throw new Error(
             `${command.commandId ?? command.kind}'s readiness names no timeout, so ${coveredBy} cannot cover it.`
         );

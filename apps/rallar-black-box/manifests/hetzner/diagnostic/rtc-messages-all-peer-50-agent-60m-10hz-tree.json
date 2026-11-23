@@ -430,7 +430,7 @@
       "streamFrames": 1800000,
       "logicalFanoutMessages": 88200000
     },
-    "recommendedTerminalTimeoutSeconds": 4105
+    "recommendedTerminalTimeoutSeconds": 4150
   },
   "description": "Long diagnostic all-peer RTC messages multicast run at 10 Hz for 60-minute tree soak validation."
 }

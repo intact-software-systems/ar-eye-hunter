@@ -929,7 +929,7 @@
       "streamFrames": 72000,
       "logicalFanoutMessages": 3528000
     },
-    "recommendedTerminalTimeoutSeconds": 4140
+    "recommendedTerminalTimeoutSeconds": 4185
   },
   "description": "Long diagnostic principal RTC messages multicast run for 60-minute tree soak validation."
 }

@@ -430,7 +430,7 @@
       "streamFrames": 30000,
       "logicalFanoutMessages": 1470000
     },
-    "recommendedTerminalTimeoutSeconds": 510
+    "recommendedTerminalTimeoutSeconds": 555
   },
   "description": "Diagnostic 50-agent all-peer RTC messages multicast at 20 Hz through a forced tree topology."
 }

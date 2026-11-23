@@ -933,7 +933,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 29400
     },
-    "recommendedTerminalTimeoutSeconds": 392
+    "recommendedTerminalTimeoutSeconds": 437
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 49 receivers through a forced tree topology."
 }

@@ -95,9 +95,10 @@ describe('Hetzner multicast workloads', () => {
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
             // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
-            // 115 s (two 30 s server completion waits and a 5 s margin for the SDK connect, 45 s readiness, 5 s margin),
-            // 31 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
-            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + (65 + 45 + 5) + 155 + 7,
+            // 115 s (two 30 s server completion waits and a 5 s margin for the SDK connect, 45 s readiness, 5 s margin)
+            // and the 45 s readiness wait the runtime runs after it, 31 delivery-poll pauses of 5 s and 7 relay-hold
+            // pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + (65 + 45 + 5) + 45 + 155 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -123,10 +124,12 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 115 s, 5 settle
-            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 24 delivery-poll pauses of 5 s and 120
-            // relay-hold pauses of 1 s, rounded up to the second.
-            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + (65 + 45 + 5) + 5 + 29.8 + 5 + 120 + 120),
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 115 s and the
+            // 45 s readiness wait after it, 5 settle pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 24
+            // delivery-poll pauses of 5 s and 120 relay-hold pauses of 1 s, rounded up to the second.
+            recommendedTerminalTimeoutSeconds: Math.ceil(
+                30 + 15 + 35 + 35 + (65 + 45 + 5) + 45 + 5 + 29.8 + 5 + 120 + 120
+            ),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,

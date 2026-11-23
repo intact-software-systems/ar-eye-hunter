@@ -240,7 +240,7 @@ describe('ALM scale recipes', () => {
     });
 
     it.each([[15, 54_750], [30, 64_500], [50, 77_500]] as const)(
-        'allows the %i-member cohort\'s player connect and connected barrier %i ms, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members',
+        'allows the %i-member cohort\'s player connect and its readiness %i ms each, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members; the connected barrier covers both, one after the other',
         (participantCount, allowanceMs) => {
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
             const [director, player] = scale.recipes.map((recipe) => toNestedCommands(recipe.commands));
@@ -248,13 +248,13 @@ describe('ALM scale recipes', () => {
 
             expect(byId(player, 'alm-scale-player-connect')).toMatchObject({
                 timeoutMs: allowanceMs,
-                readiness: { minReadyPeers: 1, timeoutMs: allowanceMs - 5_000 },
+                readiness: { minReadyPeers: 1, timeoutMs: allowanceMs },
                 rallar: { timeoutMs: 45_000 }
             });
             expect(byId(director, 'alm-scale-director-connect')).toMatchObject({ timeoutMs: 50_000, rallar: { timeoutMs: 45_000 } });
             expect([byId(director, 'alm-scale-director-connected'), byId(player, 'alm-scale-player-connected')]).toEqual([
-                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs }),
-                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs })
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: 2 * allowanceMs }),
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: 2 * allowanceMs })
             ]);
             expect(byId(player, 'alm-scale-player-group-created')).toMatchObject({ timeoutMs: 45_000 });
         }
