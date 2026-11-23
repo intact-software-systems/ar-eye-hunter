@@ -7,37 +7,39 @@ import {
 } from '../../websocket/outbox/compute-view-invalidation-publication.ts';
 import type { GroupMutationWriteInput } from '../mutation/group-mutation-result.ts';
 
-/** Program revisions reach durable members even when their only presence is in another room. */
-export function computeGroupProgramPublication(
+/** Notify durable members about named programs and notify the affected principal when access changes. */
+export function computeGroupObservationPublication(
     { command, read, facts, members }: GroupMutationWriteInput,
     group: Group
 ): ViewInvalidationPublication {
-    const operation = command.operation === 'updateGroup' ? command.input.roomClock?.operation : undefined;
-    const changed = operation === 'publish-schedule' || operation === 'pause-program' || operation === 'resume-program';
+    const clock = command.operation === 'updateGroup' ? command.input.roomClock : undefined;
     const deleted = group.status === 'deleted' && read.group?.value.status !== 'deleted';
-    if (!changed && !deleted && !members.length) {
+    if (!clock && !deleted && !members.length) {
         return { outbox: [], provenance: [] };
     }
-    if (!changed && !readRoomTimeRecords(group.metadata).some(record => 'phases' in record)) {
-        return { outbox: [], provenance: [] };
-    }
+    const program = clock && readRoomTimeRecords(group.metadata).find(record =>
+        record.name === clock.name && ('phases' in record || 'phase' in record)
+    );
     let principalIds: string[];
-    if (changed || deleted) {
+    if (program || deleted) {
         if (read.activeMembers === null) {
-            throw new TypeError('Room program publication requires its captured membership');
+            throw new TypeError('Room observation publication requires its captured membership');
         }
         principalIds = read.activeMembers.map(member => member.principalId);
     }
     else {
-        const previous = read.activeMembers ?? [read.targetMember, read.actorMember, read.authorityMember, read.directorMember];
+        const previous = read.group === null ? [] :
+            read.activeMembers ?? [read.targetMember, read.actorMember, read.authorityMember, read.directorMember];
         principalIds = members.filter(member => {
             const previouslyActive = previous.some(row => row?.principalId === member.principalId && row.status === 'active');
             return previouslyActive !== (member.status === 'active');
         }).map(member => member.principalId);
     }
+    if (!principalIds.length) {
+        return { outbox: [], provenance: [] };
+    }
     return computeViewInvalidationPublication({
-        resource: 'room-program',
-        reason: changed && !deleted ? 'program-changed' : 'access-changed',
+        ...(program && !deleted ? { resource: 'room-program', name: program.name } : { resource: 'room-access' }),
         groupId: group.groupId,
         scope: { applicationId: group.applicationId, workspaceId: group.workspaceId },
         principalIds,

@@ -46,6 +46,7 @@ describe('group-state AppInbox transaction failure boundaries', () => {
             'transaction-commit-return'
         );
 
+        const before = [...harness.outboxEntries.entries()];
         await expect(harness.handler.processGroupStateMutation(harness.context)).rejects.toThrow(
             'controlled transaction-commit-return failure'
         );
@@ -53,7 +54,7 @@ describe('group-state AppInbox transaction failure boundaries', () => {
         expect(harness.reachedStages).toContain('transaction-commit-return');
         expect((await harness.repository.readSnapshot(harness.groupRef))?.group.lifecycleState).toBe('active');
         expect(await harness.repository.listEvents(harness.groupRef)).toHaveLength(1);
-        expect(harness.outboxEntries.size).toBe(1);
+        expect([...harness.outboxEntries.entries()]).toEqual(before);
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
         expect(harness.transactionWriter.read(harness.context)).toEqual({ state: 'pending' });
         expect(harness.readWakeCount()).toBe(1);

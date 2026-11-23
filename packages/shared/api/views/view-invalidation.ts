@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AppTopics } from '../api-config.ts';
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
 import { decodeStateScope, type StateScope } from '../state-types.ts';
+import { assertRoomDeadlineName } from '../group-deadlines/room-deadline.ts';
 import { hasServerRoomSnapshotTopic } from './server-room-snapshot.ts';
 
 export namespace ViewInvalidation {
@@ -20,14 +21,19 @@ export namespace ViewInvalidation {
         readonly principalId: string;
         readonly changeId: string;
     }
-    export interface RoomProgram {
+    interface RoomAccount {
         readonly version: 1;
-        readonly resource: 'room-program';
         readonly scope: StateScope;
         readonly principalId: string;
         readonly groupId: string;
-        readonly reason: 'program-changed' | 'access-changed';
         readonly changeId: string;
+    }
+    export interface RoomAccess extends RoomAccount {
+        readonly resource: 'room-access';
+    }
+    export interface RoomProgram extends RoomAccount {
+        readonly resource: 'room-program';
+        readonly name: string;
     }
 
     export interface PublicCatalog {
@@ -47,6 +53,7 @@ export namespace ViewInvalidation {
 }
 
 export type ViewInvalidation =
+    | ViewInvalidation.RoomAccess
     | ViewInvalidation.RoomProgram
     | ViewInvalidation.ScopedAccount
     | ViewInvalidation.Account
@@ -56,7 +63,13 @@ export type ViewInvalidation =
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     const record = requireRecord(value, 'View invalidation');
     const keys = ['version', 'resource', 'scope', 'principalId', 'changeId'];
-    requireExactKeys(record, record.resource === 'room-program' ? [...keys, 'groupId', 'reason'] : keys, 'View invalidation');
+    if (record.resource === 'room-access' || record.resource === 'room-program') {
+        keys.push('groupId');
+    }
+    if (record.resource === 'room-program') {
+        keys.push('name');
+    }
+    requireExactKeys(record, keys, 'View invalidation');
     if (record.version !== 1) {
         throw new TypeError('Unsupported view invalidation version');
     }
@@ -92,12 +105,13 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
         principalId: record.principalId,
         changeId: record.changeId
     };
-    if (record.resource === 'room-program') {
-        requireString(record.groupId, 'Program room');
-        return {
-            ...account, resource: record.resource, groupId: record.groupId,
-            reason: requireOneOf(record.reason, ['program-changed', 'access-changed'], 'Program notice')
-        };
+    if (record.resource === 'room-access' || record.resource === 'room-program') {
+        requireString(record.groupId, 'View room');
+        if (record.resource === 'room-access') {
+            return { ...account, resource: record.resource, groupId: record.groupId };
+        }
+        assertRoomDeadlineName(record.name);
+        return { ...account, resource: record.resource, groupId: record.groupId, name: record.name };
     }
     return {
         ...account,
