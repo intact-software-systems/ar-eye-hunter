@@ -38,7 +38,10 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
 /**
  * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
  * trigger: it reuses the first handle's captured envelope on the other carrier.
- * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
+ * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`. The first send asks
+ * a `receiver` receipt, and RTC carries a receipted room send only as an audience its origin freezes, which it signs
+ * (D756): a room-wide WS copy names no audience, so RTC would refuse its replay. The send therefore lists the receiver,
+ * an audience the origin freezes and signs at the replay's own RTC admission.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
  * duplicate-outcome wait proves the second copy arrived and was refused, in both orders.
@@ -54,6 +57,7 @@ function toCrossCarrierDuplicateSenderCommands(
         payload: { marker: sender.scenarioId, order },
         delivery: {
             ack: 'receiver',
+            recipientPeers: ['receiver'],
             durability: 'local-outbox',
             ttlMs: NON_EXPIRING_TTL_MS,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS

@@ -9113,6 +9113,9 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "recipientPeers": [
+              "receiver"
+            ],
             "durability": "local-outbox",
             "ttlMs": 30000
           },
@@ -9209,6 +9212,9 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "recipientPeers": [
+              "receiver"
+            ],
             "durability": "local-outbox",
             "ttlMs": 30000
           },

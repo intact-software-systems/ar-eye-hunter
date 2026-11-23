@@ -1708,6 +1708,19 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    // D756: RTC carries a receipted room send only as an audience its origin freezes, so the WS copy RTC replays must
+    // name its audience; a room-wide one is refused at the replay.
+    it('lists the receiver as the audience of each cross-carrier duplicate\'s receipted first send, so its RTC copy is signed', () => {
+        const duplicates = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
+
+        expect(duplicates.map((scenario) => scenario.sender.commands.find((command) => command.kind === 'messages.send')))
+            .toMatchObject([
+                { carrier: 'rtc', ack: 'receiver', recipientPeers: ['receiver'] },
+                { carrier: 'ws', ack: 'receiver', recipientPeers: ['receiver'] }
+            ]);
+    });
+
     it('starts every cell that reshapes its room from the reshaped room settled on every page: the owner\'s reshape request leads its formation poll, and every role that sends or waits for a publication applies the head after it and reads its path in force, before its first send or publication wait', () => {
         const reshaped: string[] = [];
         const unsettled: string[] = [];

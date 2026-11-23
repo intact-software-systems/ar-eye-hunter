@@ -786,7 +786,11 @@ The `cross-carrier-duplicate` conformance scenario replays in both orders over
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
 refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
 envelope, which the api-v1 WS server routes to the room's other members, so the
-receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
+receiver refuses it on carrier `ws`. The first send asks a `receiver` receipt and
+lists the receiver (`recipientPeers: ['receiver']`): RTC carries a receipted room
+send only as an audience its origin freezes and signs (D756), so in `ws-then-rtc`
+the RTC replay of a room-wide WS copy would be refused, while a listed one is frozen
+and signed at the replay's RTC admission. The Hetzner two-agent manifest runs both
 orders.
 
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
