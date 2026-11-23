@@ -288,7 +288,7 @@ export type RequestOptions = Readonly<{
     session?: ProofSession;
     body?: object;
     headers?: Readonly<Record<string, string>>;
-    expectedStatus?: number;
+    expectedStatus?: number | readonly number[];
     signal?: AbortSignal;
 }>;
 
@@ -314,7 +314,8 @@ export async function requestJson(
         ...(options.signal === undefined ? {} : { signal: options.signal })
     });
     const expectedStatus = options.expectedStatus ?? 200;
-    if (response.status !== expectedStatus) {
+    const accepted = typeof expectedStatus === 'number' ? response.status === expectedStatus : expectedStatus.includes(response.status);
+    if (!accepted) {
         await response.body?.cancel().catch(() => undefined);
         throw new Error(
             `${options.method} ${path} returned ${response.status}; expected ${expectedStatus}.`
