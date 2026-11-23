@@ -9,6 +9,8 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores, createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALReceiptRecordConfirmationPrefix, toALReceiptRecordHeadKey, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { computeALReceiptRecordWorkEntry, toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
@@ -40,7 +42,8 @@ import {
 
 import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { createWorkerHold, type WorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
-import { holdALAdmissionWrite } from '../alm/receipt-record/hold-al-admission-write.ts';
+import { createDelegatingALAdmissionWorkBackend } from '../alm/create-delegating-al-admission-work-backend.ts';
+import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 
 const MSG_ID = 'room-message-record';
 const ORIGIN = 'o';
@@ -70,9 +73,15 @@ interface StartInstanceInput {
     readonly roomPeerIds: readonly string[];
     /** The instance's record stores as built over the shared state; a case may wrap their backend. */
     readonly toRecordStores: (stores: ALReceiptRecordStores) => ALReceiptRecordStores;
+    /** The instance's inbound stores as built over the shared state; a case may wrap their admission store. */
+    readonly toInboundStores: (stores: ALInboundRuntimeStores) => ALInboundRuntimeStores;
     readonly volatile: boolean;
     readonly starts: boolean;
 }
+
+type AckVerdict =
+    | { readonly refused: readonly string[]; }
+    | { readonly recipient: string; readonly outcome: string; readonly after: boolean; };
 
 interface SentReceipt {
     readonly controlId: string;
@@ -80,6 +89,7 @@ interface SentReceipt {
 }
 
 describe('the WS server counts a receipt through the record every instance shares', () => {
+    // Pins an instance refusing or not counting an ACK for a receipt another instance admitted.
     it('completes a receipt admitted on one instance from ACKs counted on two others', async () => {
         const cluster = createRecordCluster();
         const { a, b, c } = await startThree(cluster);
@@ -94,6 +104,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
     });
 
+    // Pins a receipt that dies with the instance that admitted it.
     it('completes a receipt after the instance that admitted it is disposed', async () => {
         const cluster = createRecordCluster();
         const { a, b, c } = await startThree(cluster);
@@ -111,6 +122,7 @@ describe('the WS server counts a receipt through the record every instance share
             .toEqual(['r1', 'r2']);
     });
 
+    // Pins a receipt that is never ended when the instance that admitted it is gone at its deadline.
     it('a surviving instance ends the receipt timed-out at its deadline', async () => {
         const cluster = createRecordCluster();
         const { a, b } = await startThree(cluster);
@@ -130,6 +142,7 @@ describe('the WS server counts a receipt through the record every instance share
         });
     });
 
+    // Pins a copy re-sent to another instance going unanswered, or answered under a control id already used.
     it('answers a re-sent copy on another instance from the record', async () => {
         const cluster = createRecordCluster();
         const { a, b, c } = await startThree(cluster);
@@ -157,6 +170,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(toSets(again!.receipt)).toEqual(toSets(ended!.receipt));
     });
 
+    // Pins an ACK that overtakes its head being refused or lost instead of counted ahead.
     it('counts an ACK that arrives before its head', async () => {
         const cluster = createRecordCluster();
         const hold = createWorkerHold();
@@ -175,6 +189,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readOriginReceipts(cluster)[0]!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
     });
 
+    // Pins a headless ACK counted from a sender the origin's admission row does not hold.
     it('refuses an ACK for a message its sender was never admitted to', async () => {
         const cluster = createRecordCluster();
         const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingFirstWrite });
@@ -189,6 +204,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readConfirmationKeys(cluster)).toEqual([]);
     });
 
+    // Pins a repeated ACK on another instance writing a second confirmation or a second terminal receipt.
     it('counts a repeated ACK once', async () => {
         const cluster = createRecordCluster();
         const { a, b, c } = await startThree(cluster);
@@ -206,6 +222,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(phases(cluster)).toEqual(['admitted', 'complete']);
     });
 
+    // Pins the server's own `not-sent` from another instance being lost instead of recorded outside the audience.
     it('records a session the server sent nothing outside the audience, from any instance', async () => {
         const cluster = createRecordCluster();
         const { a, b, c } = await startThree(cluster);
@@ -244,6 +261,28 @@ describe('the WS server counts a receipt through the record every instance share
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
     });
 
+    // Pins the hook stopping at the volatile pair's `undefined` instead of falling back to the durable admission row.
+    it('counts an ACK ahead of its head for a durable message while a volatile inbound pair is configured', async () => {
+        const cluster = createRecordCluster();
+        const hold = createWorkerHold();
+        const a = await startInstance(cluster, {
+            ...instanceInput('a', ['o', 'r1']),
+            toRecordStores: holding(hold),
+            volatile: true
+        });
+        await connectOrigin(cluster, a);
+        await connect(a, 'r1');
+
+        const admitting = a.service.acceptIncomingMessage(durableMessage(cluster), ORIGIN);
+        await hold.arrived;
+        expect(await a.inboundStores.admissionStore.readIngressAudience(MSG_ID, ORIGIN)).toEqual(['o', 'r1']);
+        expect((await a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        hold.release();
+
+        expect((await admitting).right?.kind).toBe('admitted');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+    });
+
     // Review Focus 2: a receipt control carries at most 256 recipients, so a larger audience opens no receipt.
     it('admits a room message of 257 recipients and starts no receipt for it', async () => {
         const cluster = createRecordCluster();
@@ -269,12 +308,60 @@ describe('the WS server counts a receipt through the record every instance share
 
         await expect(a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).rejects.toThrow('storage down');
 
-        expect(cluster.observations.filter((observation) => observation.kind === 'ack-count' && observation.outcome === 'rejected'))
-            .toEqual([]);
+        expect(readAckVerdicts(cluster)).toEqual([]);
     });
 
-    // Review Focus 5: the last ACK's count, held past the deadline, never turns a timed-out receipt complete.
-    it('ends a receipt timed-out when the last ACK is counted after another instance ended it', async () => {
+    // Pins a store failure in the hook's record read turned into a refusal, or into "no rejection" and a count.
+    it.each(['read', 'list'] as const)(
+        'rejects an ACK whose hook read of the record fails at its %s, and observes no refusal and no count',
+        async (failing) => {
+            const cluster = createRecordCluster();
+            const b = await startInstance(cluster, instanceInput('b', ROOM));
+            const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingRecordReads(failing) });
+            await connectOrigin(cluster, b);
+            await b.service.acceptIncomingMessage(message(cluster), ORIGIN);
+            await connect(a, 'r1');
+
+            await expect(a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).rejects.toThrow('storage down');
+
+            expect(readAckVerdicts(cluster)).toEqual([]);
+            expect(readConfirmationKeys(cluster)).toEqual([]);
+        }
+    );
+
+    // Pins a store failure in the admission row's read, on the no-head path, turned into a refusal or a count.
+    it('rejects a headless ACK whose ingress audience read fails, and observes no refusal and no count', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toInboundStores: failingIngressAudience });
+        await connect(a, 'r1');
+
+        await expect(a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).rejects.toThrow('storage down');
+
+        expect(readAckVerdicts(cluster)).toEqual([]);
+        expect(readConfirmationKeys(cluster)).toEqual([]);
+    });
+
+    // Pins a store failure in the record's read, while a re-sent copy is answered, swallowed into silence or an answer.
+    it('rejects a re-sent copy whose record read fails, and answers nothing', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, instanceInput('a', ROOM));
+        const c = await startInstance(cluster, { ...instanceInput('c', ROOM), toRecordStores: failingRecordReads('read') });
+        await connectOrigin(cluster, a);
+        await connectOrigin(cluster, c);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+        const answered = cluster.observations.length;
+
+        await expect(c.service.acceptIncomingMessage(message(cluster), ORIGIN)).rejects.toThrow('storage down');
+        await settleEngines([a, c]);
+
+        expect(cluster.observations.slice(answered)).toEqual([]);
+        expect(phases(cluster)).toEqual(['admitted']);
+    });
+
+    // Review Focus 5: a count that starts after another instance ended the receipt never turns it complete. Memory
+    // serialises writes, so it cannot hold a count that read an open head until after `end`; PostgreSQL's task does.
+    it('a count that starts after another instance ended the receipt cannot complete it', async () => {
         const cluster = createRecordCluster();
         const hold = createWorkerHold();
         const b = await startInstance(cluster, instanceInput('b', ROOM));
@@ -290,9 +377,10 @@ describe('the WS server counts a receipt through the record every instance share
         cluster.clock.nowMs += LIFETIME_MS;
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'timed-out']);
         hold.release();
-        await counting;
+        expect((await counting).left).toBeUndefined();
         await settleEngines([a, b]);
 
+        expect(readAckVerdicts(cluster).at(-1)).toEqual({ recipient: 'r2', outcome: 'rejected', after: false });
         expect(phases(cluster)).toEqual(['admitted', 'timed-out']);
         expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
     });
@@ -310,7 +398,7 @@ describe('the WS server counts a receipt through the record every instance share
         cluster.clock.nowMs += AL_WORK_READINESS_MEMORY_MS + 1;
 
         await expect.poll(() => readEndedOutboxVerdicts(cluster, controlId)).toEqual(['admitted', 'duplicate']);
-        expect((await cluster.state.record.workQueue.getItem(workKey))?.status).toBe(EntityStatus.COMPLETED);
+        await expect.poll(async () => (await cluster.state.record.workQueue.getItem(workKey))?.status).toBe(EntityStatus.COMPLETED);
         await settleEngines(Object.values(instances));
         expect(new Set(readReceipts([origin]).filter(({ receipt }) => receipt.phase === 'complete').map((sent) => sent.controlId)))
             .toEqual(new Set([controlId]));
@@ -318,23 +406,27 @@ describe('the WS server counts a receipt through the record every instance share
             .not.toBe(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o:m', msgId: 'x' }));
     });
 
+    // Pins a restarted instance that counts from receipt state of its own, so it misses what was counted before it.
     it('keeps no receipt state on the instance', async () => {
         const cluster = createRecordCluster();
-        const { a, b, c } = await startThree(cluster);
+        const { a, b } = await startThree(cluster);
         await connectOrigin(cluster, a);
         await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
 
         await a.service.dispose();
         const restarted = await startInstance(cluster, instanceInput('a', ROOM));
         await connectOrigin(cluster, restarted);
-        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
-        await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+        await connect(restarted, 'r2');
+        expect((await restarted.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')).left).toBeUndefined();
 
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
         expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect(readAckVerdicts(cluster).at(-1)).toEqual({ recipient: 'r2', outcome: 'complete', after: true });
     });
 
+    // Pins a receipt never started when the admission committed and its `open` was lost.
     it.each(['the store failed at its open', 'its instance was disposed inside its open'] as const)(
         'a re-sent copy opens the record its admission never opened: %s',
         async (lost) => {
@@ -364,6 +456,7 @@ describe('the WS server counts a receipt through the record every instance share
         }
     );
 
+    // Pins a copy after the end reopening the ended head or giving it new deadline work.
     it('a re-sent copy after the end does not reopen it', async () => {
         const cluster = createRecordCluster();
         const instances = await startThree(cluster);
@@ -382,7 +475,8 @@ describe('the WS server counts a receipt through the record every instance share
         expect([deadlineWork, undefined]).toContainEqual(await cluster.state.record.workQueue.getItem(deadlineKey));
 
         cluster.clock.nowMs += LIFETIME_MS + 30_001;
-        await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        // Past its own lifetime the copy is not admitted at all, so nothing reaches the record.
+        expect((await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('not-admitted');
         await settleEngines(Object.values(instances));
 
         expect(phases(cluster)).toEqual(['admitted', 'complete', 'complete']);
@@ -390,6 +484,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(await cluster.state.record.workQueue.getItem(deadlineKey)).toBeUndefined();
     });
 
+    // Pins a copy of a kept send opening a head before the replay admits the message.
     it('a copy of a send still kept for admission opens nothing', async () => {
         const cluster = createRecordCluster();
         const a = await startInstance(cluster, { ...instanceInput('a', ROOM), starts: false });
@@ -410,6 +505,7 @@ describe('the WS server counts a receipt through the record every instance share
         expect(readOriginReceipts(cluster)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
     });
 
+    // Pins a copy opening a head whose deadline the record's window cannot hold (R15).
     it('a re-sent copy of a send whose deadline lies beyond the window opens nothing', async () => {
         const cluster = createRecordCluster();
         const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingFirstWrite });
@@ -428,11 +524,13 @@ describe('the WS server counts a receipt through the record every instance share
             .toBeUndefined();
     });
 
+    // Pins a copy reopening a receipt whose ended head expired while its admission row lives on.
     it('a re-sent copy as old as the window gives an ended receipt no second life', async () => {
         const cluster = createRecordCluster();
         const instances = await startThree(cluster);
         const longLived = message(cluster, 45 * 60_000);
         await connectOrigin(cluster, instances.a);
+        await connectOrigin(cluster, instances.c);
         await instances.a.service.acceptIncomingMessage(longLived, ORIGIN);
         await instances.b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
         await instances.c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
@@ -441,7 +539,7 @@ describe('the WS server counts a receipt through the record every instance share
         // The head, clamped to the window, and its rows expire; the admission row lives on.
         cluster.clock.nowMs += 31 * 60_000 + 1_000;
         expect(await instances.c.inboundStores.admissionStore.readIngressAudience(MSG_ID, ORIGIN)).toEqual(ROOM);
-        await instances.c.service.acceptIncomingMessage(longLived, ORIGIN);
+        expect((await instances.c.service.acceptIncomingMessage(longLived, ORIGIN)).right?.kind).toBe('duplicate');
         await settleEngines(Object.values(instances));
 
         expect(phases(cluster)).toEqual(['admitted', 'complete']);
@@ -450,6 +548,7 @@ describe('the WS server counts a receipt through the record every instance share
             .toBeUndefined();
     });
 
+    // Pins a losing `end` recording a failure, delivering a second terminal receipt, or changing its count's outcome.
     it('a losing end is silent', async () => {
         const cluster = createRecordCluster();
         const counted = Promise.withResolvers<void>();
@@ -473,8 +572,10 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines([a, b, c]);
         expect(readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
         expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
-        const counts = cluster.observations.filter((observation) => observation.kind === 'ack-count');
-        expect(counts.map((count) => [count.outcome, count.after !== undefined])).toEqual([['complete', true], ['complete', true]]);
+        expect(new Set(readAckVerdicts(cluster))).toEqual(
+            new Set([{ recipient: 'r1', outcome: 'complete', after: true }, { recipient: 'r2', outcome: 'complete', after: true }])
+        );
+        expect(readAckVerdicts(cluster)).toHaveLength(2);
         expect(
             cluster.observations.filter((observation) => observation.kind === 'receipt-outbox' && observation.receipt.phase === 'complete')
         ).toHaveLength(1);
@@ -503,7 +604,7 @@ function createRecordCluster(): RecordCluster {
 }
 
 function instanceInput(name: string, roomPeerIds: readonly string[]): StartInstanceInput {
-    return { name, roomPeerIds, toRecordStores: (stores) => stores, volatile: false, starts: true };
+    return { name, roomPeerIds, toRecordStores: (stores) => stores, toInboundStores: (stores) => stores, volatile: false, starts: true };
 }
 
 type RecordInstance = ClusterInstance & ReturnType<typeof createReceiptInstanceStores>;
@@ -520,7 +621,7 @@ async function startInstance(cluster: RecordCluster, input: StartInstanceInput):
     const instance = await createClusterInstance({
         name: RECEIPT_SERVER_PEER_ID,
         outboundStores,
-        inboundStores: stores.inboundStores,
+        inboundStores: input.toInboundStores(stores.inboundStores),
         inboundVolatileStores: input.volatile ? createVolatileALInboundRuntimeStores({ nowMs }, undefined) : undefined,
         receiptRecordStores: input.toRecordStores(stores.receiptRecordStores),
         receiptObserver: (observation) => cluster.observations.push(observation),
@@ -583,6 +684,10 @@ function volatileMessage(cluster: RecordCluster): ALMessage {
     return { ...message(cluster), qos: { durability: { algo: 'volatile' } } };
 }
 
+function durableMessage(cluster: RecordCluster): ALMessage {
+    return { ...message(cluster), qos: { durability: { algo: 'local-inbox' } } };
+}
+
 function ackOf(cluster: RecordCluster, recipient: string): ALMessage {
     return receiverAck({ msgId: MSG_ID, originPeerId: ORIGIN, recipient, nowMs: cluster.clock.nowMs });
 }
@@ -605,12 +710,7 @@ function failingFirstWrite(stores: ALReceiptRecordStores): ALReceiptRecordStores
 
 function withFailingWrites(backend: ALAdmissionWorkBackend, failures: number): ALAdmissionWorkBackend {
     let failed = 0;
-    return {
-        workQueue: backend.workQueue,
-        ready: () => backend.ready(),
-        read: (key, decode) => backend.read(key, decode),
-        list: (prefix, decode) => backend.list(prefix, decode),
-        readWithin: (read) => backend.readWithin(read),
+    return createDelegatingALAdmissionWorkBackend(backend, {
         write: async (operation, executionExpiresAtMs) => {
             if (failed < failures) {
                 failed += 1;
@@ -618,7 +718,27 @@ function withFailingWrites(backend: ALAdmissionWorkBackend, failures: number): A
             }
             return await backend.write(operation, executionExpiresAtMs);
         }
+    });
+}
+
+function failingRecordReads(failing: 'read' | 'list'): (stores: ALReceiptRecordStores) => ALReceiptRecordStores {
+    const fail = async (): Promise<never> => {
+        throw new Error('storage down');
     };
+    return (stores) => ({ ...stores, backend: createDelegatingALAdmissionWorkBackend(stores.backend, { [failing]: fail }) });
+}
+
+/** The instance's inbound stores, whose admission store fails every read of an admission row's audience. */
+function failingIngressAudience(stores: ALInboundRuntimeStores): ALInboundRuntimeStores {
+    const failing: ALInboundAdmissionStore = new Proxy(stores.admissionStore, {
+        get: (target, property, receiver) =>
+            property === 'readIngressAudience'
+                ? async () => {
+                    throw new Error('storage down');
+                }
+                : Reflect.get(target, property, receiver)
+    });
+    return { ...stores, admissionStore: failing };
 }
 
 interface ViewGate {
@@ -644,9 +764,7 @@ function createViewGate(released: Promise<void>): ViewGate {
             };
             return {
                 ...stores,
-                backend: {
-                    workQueue: backend.workQueue,
-                    ready: () => backend.ready(),
+                backend: createDelegatingALAdmissionWorkBackend(backend, {
                     read: async (key, decode) => {
                         await afterWrite();
                         return await backend.read(key, decode);
@@ -655,14 +773,13 @@ function createViewGate(released: Promise<void>): ViewGate {
                         await afterWrite();
                         return await backend.list(prefix, decode);
                     },
-                    readWithin: (read) => backend.readWithin(read),
                     write: async (operation, executionExpiresAtMs) => {
                         const result = await backend.write(operation, executionExpiresAtMs);
                         wrote = true;
                         written[name].resolve();
                         return result;
                     }
-                }
+                })
             };
         }
     };
@@ -715,6 +832,18 @@ function readOriginReceipts(cluster: RecordCluster): readonly SentReceipt[] {
         const [leftAtMs, leftRank] = toOrder(left);
         const [rightAtMs, rightRank] = toOrder(right);
         return leftAtMs - rightAtMs || leftRank - rightRank;
+    });
+}
+
+/** Every refusal and every count the server observed for an ACK: refusals by their guards, counts by their outcome. */
+function readAckVerdicts(cluster: RecordCluster): readonly AckVerdict[] {
+    return cluster.observations.flatMap((observation): AckVerdict[] => {
+        if (observation.kind === 'ack-rejection') {
+            return [{ refused: observation.failedGuards }];
+        }
+        return observation.kind === 'ack-count'
+            ? [{ recipient: observation.ack.logicalRecipientPeerId, outcome: observation.outcome, after: observation.after !== undefined }]
+            : [];
     });
 }
 

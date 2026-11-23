@@ -26,7 +26,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALReceiptRecordHeadKey } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
 import { createInMemoryALReceiptRecordStores, type ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
@@ -41,7 +41,7 @@ import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } fr
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createWorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
-import { holdALAdmissionWrite } from '../alm/receipt-record/hold-al-admission-write.ts';
+import { holdALAdmissionWrite } from '../alm/hold-al-admission-write.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
@@ -68,6 +68,8 @@ interface ReceiptFixture {
     readonly remoteOrigin: SimulatedWebSocket | undefined;
     /** What the server's own outbound owner stated about the messages it originated. */
     readonly settlements: ALDeliverySettlement[];
+    /** What the server's own outbound owner recorded through its diagnostics sink. */
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     /** The server's own outbound admission store, where its pending row for a fanned-out message lives. */
     readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
 }
@@ -420,11 +422,17 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
-        await expect.poll(() => conflicts).toBe(RECEIPT_ADMISSION_ATTEMPTS);
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
             return fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete);
         }).toEqual([expect.objectContaining({ msgId: 'room-message-1', confirmedRecipientPeerIds: ['b', 'c'] })]);
+        // The terminal receipt's three inline attempts conflicted, so it was retained as work; its replay committed.
+        expect(readReceiptConfirmationOutcomes(fixture, 'room-message-1')).toEqual([
+            [1, 'conflict'],
+            [2, 'conflict'],
+            [3, 'conflict'],
+            [1, 'committed']
+        ]);
     });
 });
 
@@ -723,6 +731,7 @@ describe('WS server receipt aggregation of recipients never sent the message (#8
 });
 
 describe('WS server receipt aggregation of a re-sent copy whose admission opened no head (ruling R11)', () => {
+    // Pins a copy opening from its own room audience or never-sent list instead of the audience its admission row froze.
     it('opens the record for a copy whose admission row names recipients and whose head is absent', async () => {
         const fixture = createAggregation({ ingressAudience: ['a', 'b', 'c'], recordStores: undefined });
 
@@ -741,6 +750,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
         });
     });
 
+    // Pins a copy opening a head, or answering, for an admission whose audience leaves nobody to expect.
     it('opens nothing for a copy whose admission row freezes to nobody', async () => {
         const fixture = createAggregation({ ingressAudience: ['a'], recordStores: undefined });
 
@@ -750,6 +760,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
         expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
     });
 
+    // Pins a copy giving a second life to a receipt whose first head may already have ended and expired.
     it.each([
         { name: 'names no deadline', toMessage: (message: ALMessage): ALMessage => ({ ...message, constraints: undefined }) },
         {
@@ -770,6 +781,7 @@ describe('WS server receipt aggregation of a re-sent copy whose admission opened
         expect((await fixture.record.read(RECORD_REF)).left).toEqual({ kind: 'head-absent' });
     });
 
+    // Pins a copy that loses its `open` to another instance answering nothing instead of the winner's head.
     it('answers from the record when the copy\'s open loses to another instance\'s', async () => {
         const hold = createWorkerHold();
         const recordStores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => 1_000);
@@ -915,6 +927,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const nowMs = () => clock.nowMs;
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
@@ -939,7 +952,8 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         },
         inboundStores: { admissionStore: createTestInboundStore(admission, clock), workQueue: admission.workQueue },
         outboundStores,
-        outboundSettlements: (settlement) => settlements.push(settlement)
+        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundDiagnostics: (event) => diagnostics.push(event)
     });
     const remoteOrigin = options.origin === 'remote'
         ? await createRemoteOriginInstance(service, outbox, outboundStores)
@@ -950,7 +964,26 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         await engine.stop();
         vi.restoreAllMocks();
     });
-    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
+    return {
+        service,
+        engine,
+        outbox,
+        sockets,
+        clock,
+        remoteOrigin,
+        settlements,
+        diagnostics,
+        admissionStore: outboundStores.admissionStore
+    };
+}
+
+/** Each attempt of the server's own row to take a terminal receipt of `msgId`, with its commit's outcome. */
+function readReceiptConfirmationOutcomes(fixture: ReceiptFixture, msgId: string): readonly (readonly [number, string])[] {
+    return fixture.diagnostics.flatMap((event) =>
+        event.kind === 'receipt-confirmation' && event.targetMsgId === msgId && event.phase !== 'admitted'
+            ? [[event.attempt, event.commitOutcome] as const]
+            : []
+    );
 }
 
 function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options: ReceiptFixtureOptions): void {

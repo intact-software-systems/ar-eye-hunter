@@ -40,7 +40,8 @@ import { ALReceiptRecord } from '../../alm/receipt-record/al-receipt-record.ts';
 import type { ALReceiptRecordTally } from '../../alm/receipt-record/compute-al-receipt-record-tally.ts';
 import {
     validateALReceiptRecordConfirmation,
-    type ALReceiptRecordConfirmationDto
+    type ALReceiptRecordConfirmationDto,
+    type ALReceiptRecordConfirmationIssue
 } from '../../alm/receipt-record/validate-al-receipt-record-confirmation.ts';
 import { AL_RECEIPT_RECORD_WINDOW_MS } from '../../alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
@@ -63,6 +64,14 @@ type WsQueueBoxServerAckCountObservation = Extract<WsQueueBoxServerReceiptObserv
 interface WsQueueBoxServerCountedAck {
     readonly outcome: WsQueueBoxServerAckCountObservation['outcome'];
     readonly view: ALReceiptRecord.View | undefined;
+}
+
+/** One ACK's count, as its `ack-count` observation states it. */
+interface WsQueueBoxServerCountObservationInput {
+    readonly control: ALMessage['id'];
+    readonly ack: ALAckPayload;
+    readonly counted: WsQueueBoxServerCountedAck;
+    readonly countAtEpochMs: number;
 }
 
 interface WsQueueBoxServerAckRefusal {
@@ -253,8 +262,11 @@ export class WsQueueBoxServerReceiptAggregation {
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const { roomAudience, acceptance } = admitted;
-        const terms = this.readReceiptTerms(admitted);
-        if (roomAudience === undefined || terms === undefined) {
+        if (roomAudience === undefined) {
+            return;
+        }
+        const terms = this.resolveReceiptTerms(admitted);
+        if (terms === undefined) {
             return;
         }
         if (acceptance?.kind === 'admitted') {
@@ -285,7 +297,7 @@ export class WsQueueBoxServerReceiptAggregation {
             }
         }
         finally {
-            this.recordCountObservation(message.id, ack, counted, countAtEpochMs);
+            this.recordCountObservation({ control: message.id, ack, counted, countAtEpochMs });
         }
     }
 
@@ -302,12 +314,10 @@ export class WsQueueBoxServerReceiptAggregation {
                 : { issues: [UNPROVEN_SENDER], deadlineAtMs: undefined };
         }
         const issues = validateALReceiptRecordConfirmation(head, this.toConfirmation(ack), nowMs);
-        if (issues.some(({ code }) => code === 'head-ended')) {
+        if (!isOpenReceiptIssueList(issues)) {
             return { issues: [ENDED_RECEIPT], deadlineAtMs: undefined };
         }
-        const [first, ...rest] = issues.flatMap((issue) =>
-            issue.code === 'head-ended' ? [] : [{ code: issue.code, message: issue.message }]
-        );
+        const [first, ...rest] = issues;
         return first === undefined ? undefined : { issues: [first, ...rest], deadlineAtMs: head.opening.deadlineAtMs };
     }
 
@@ -381,15 +391,11 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    private recordCountObservation(
-        control: ALMessage['id'],
-        ack: ALAckPayload,
-        counted: WsQueueBoxServerCountedAck,
-        countAtEpochMs: number
-    ): void {
+    private recordCountObservation(input: WsQueueBoxServerCountObservationInput): void {
         if (this.#dependencies.receiptObserver === undefined) {
             return;
         }
+        const { control, ack, counted, countAtEpochMs } = input;
         const { view } = counted;
         recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
             kind: 'ack-count',
@@ -415,7 +421,7 @@ export class WsQueueBoxServerReceiptAggregation {
      * A `receiver` room message is aggregated, and a `leader` one as the receipt of its one leader. A message
      * addressed to the server itself is answered by the server's own ACK, never aggregated.
      */
-    private readReceiptTerms(
+    private resolveReceiptTerms(
         { message, originPeerId }: WsQueueBoxServerReceiptAggregation.AdmittedMessage
     ): WsQueueBoxServerReceiptTerms | undefined {
         const { serverPeerId, qosProvider } = this.#dependencies;
@@ -433,7 +439,6 @@ export class WsQueueBoxServerReceiptAggregation {
             };
     }
 
-    /** An empty expected audience is answered at once and opens nothing; an opening the record refuses is logged. */
     private async openAdmittedReceipt(opening: ALReceiptRecordOpening): Promise<void> {
         if (opening.expectedRecipientPeerIds.length === 0) {
             await this.writeAnswer(opening, NO_CONFIRMATIONS, 'admitted');
@@ -461,7 +466,6 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    /** What a re-sent copy is answered: from the record, else from the head the copy opens. */
     private async answerCopy(
         admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
         roomAudience: WsServerRoomAudience,
@@ -487,7 +491,6 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    /** An open head is answered `admitted` with its confirmations so far, an ended one with its terminal phase. */
     private async answerFromView({ head, tally }: ALReceiptRecord.View): Promise<void> {
         await this.writeAnswer(head.opening, tally, head.phase === 'open' ? 'admitted' : head.phase);
     }
@@ -510,7 +513,7 @@ export class WsQueueBoxServerReceiptAggregation {
         });
     }
 
-    /** The ended work delivers at least once, so its receipt is the same message every time it is delivered. */
+    /** The ended work delivers at least once: one control id per receipt makes each repeat the outbox's duplicate. */
     private async writeEndedReceipt(ended: ALReceiptRecordEndedHead): Promise<void> {
         await this.writeReceipt({
             receipt: toReceiptPayload(ended.opening, { ...ended, observedAtEpochMs: ended.endedAtEpochMs }),
@@ -620,6 +623,12 @@ function resolveCapturedRecipientPeerIds(
             toFrozenAudience(msg, originPeerId, captured).length > 0
         ? captured
         : undefined;
+}
+
+function isOpenReceiptIssueList(
+    issues: readonly ALReceiptRecordConfirmationIssue[]
+): issues is readonly (ALReceiptRecordConfirmationIssue & WsQueueBoxServerReceiptAggregation.AckValidationIssue)[] {
+    return issues.every(({ code }) => code !== 'head-ended');
 }
 
 function toReceiptRecordRef(ack: ALAckPayload): ALReceiptRecordRef {

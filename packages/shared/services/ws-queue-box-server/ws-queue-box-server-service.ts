@@ -1073,6 +1073,12 @@ export class WsQueueBoxServerService {
 
 export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerService.Input): WsQueueBoxServerService {
     const creationNow = input.creationNow ?? Temporal.Now.instant;
+    const outboundRuntime = createDefaultALOutboundRuntimeResources({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        canonicalQueue: input.outbox,
+        stores: input.outboundStores,
+        queueEngine: input.queueEngine
+    });
     return new WsQueueBoxServerService({
         creationNow,
         socket: input.socket,
@@ -1091,14 +1097,9 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
                 QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, creationNow())
         }),
         keepsVolatileMessageInMemory: input.keepsVolatileMessageInMemory,
-        outboundRuntime: createDefaultALOutboundRuntimeResources({
-            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            canonicalQueue: input.outbox,
-            stores: input.outboundStores,
-            queueEngine: input.queueEngine
-        }),
+        outboundRuntime,
         receiptRecordStores: input.receiptRecordStores ??
-            createInMemoryALReceiptRecordStores(input.name, () => Date.now()),
+            createInMemoryALReceiptRecordStores(input.name, () => outboundRuntime.clock.nowMs()),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
