@@ -26,4 +26,16 @@ describe('computeCommandsTimeoutMs', () => {
         expect(() => computeCommandsTimeoutMs([untimed], 'the cell\'s barrier over the receiver\'s commands'))
             .toThrow('untimed names no timeout, so the cell\'s barrier over the receiver\'s commands cannot cover it.');
     });
+
+    it('refuses a connect whose readiness names no timeout, whose wait then runs the runtime\'s default', () => {
+        const connect: RallarBlackBoxTestCommand = {
+            kind: 'rtc.connect',
+            commandId: 'connect',
+            timeoutMs: 45_000,
+            readiness: { minReadyPeers: 1 }
+        };
+
+        expect(() => computeCommandsTimeoutMs([connect], 'the test\'s wait'))
+            .toThrow('connect names no timeout, so the test\'s wait cannot cover it.');
+    });
 });

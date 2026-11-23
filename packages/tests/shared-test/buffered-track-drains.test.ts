@@ -16,6 +16,8 @@ vi.mock('@shared-test/rallar-bb-test/conformance/alm/alm-conformance-fault-comma
 
 describe('buffered-track-drains', () => {
     it('refuses to size the track\'s lifetime when the held block no longer carries seq 2\'s own send', () => {
-        expect(() => createAlmConformanceRecipes(toConformanceInput('ws'))).toThrow(/seq 2/);
+        expect(() => createAlmConformanceRecipes(toConformanceInput('ws'))).toThrow(
+            'The held block no longer carries seq 2\'s own send, so the track\'s lifetime cannot count from it.'
+        );
     });
 });
