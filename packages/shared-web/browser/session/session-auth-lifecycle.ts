@@ -75,7 +75,6 @@ export interface RallarSessionAuthLifecycle {
 export namespace BrowserSessionAuthLifecycle {
     export interface Input {
         readonly sessionDeliveries: BrowserSessionDeliveries;
-        readonly nowMs: () => number;
         readonly newRequestId: () => string;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
@@ -96,7 +95,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
-        this.timers = { ...createDefaultTimers(), nowMs: input.nowMs };
+        this.timers = createDefaultTimers();
     }
 
     public async connect(
@@ -308,15 +307,17 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
     }
 
+    /** Without a calibrated connection clock the server judges the session on its next request. */
     private scheduleAuthExpiry(session: AuthSession | undefined): void {
         this.input.authRuntime.clearAuthExpiryTimer();
-        if (!session) {
+        const serverNowEpochMs = this.readServerExpiryEpochMs();
+        if (!session || serverNowEpochMs === undefined) {
             return;
         }
         this.input.authRuntime.setAuthExpiryTimer(
             scheduleAtDeadline(
                 this.timers,
-                session.expiresAtEpochMs,
+                this.timers.nowMs() + session.expiresAtEpochMs - serverNowEpochMs,
                 () =>
                     void this.expireAuthSessionIfCurrent(session).catch((error) =>
                         console.error('Failed to expire the Rallar auth session', error)
@@ -331,7 +332,8 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             this.scheduleAuthExpiry(currentSession);
             return;
         }
-        if (currentSession && currentSession.expiresAtEpochMs > this.input.nowMs()) {
+        const serverNowEpochMs = this.readServerExpiryEpochMs();
+        if (currentSession && (serverNowEpochMs === undefined || currentSession.expiresAtEpochMs > serverNowEpochMs)) {
             this.scheduleAuthExpiry(currentSession);
             return;
         }
@@ -339,6 +341,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             revoke: false,
             session: currentSession ?? expectedSession
         });
+    }
+
+    private readServerExpiryEpochMs(): number | undefined {
+        return this.input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right?.latestEpochMs;
     }
 
     private async terminateAuthSession(
