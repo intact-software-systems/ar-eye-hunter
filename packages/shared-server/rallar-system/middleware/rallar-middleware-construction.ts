@@ -157,10 +157,16 @@ export interface CreateRallarMiddlewareOptions {
         InstallLiveWsNoticeSubscriberInput,
         'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
     >;
-    /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
+    /**
+     * The notice channel of a deployment with other instances; absent on a single instance. Its presence keeps only
+     * instance-local RTC signals in the volatile inbound pair.
+     */
     readonly relayedAckNotices?: RelayedAckNoticeChannel;
-    /** The receipt record every instance of one deployment shares; absent, the WS server keeps one in memory. */
-    readonly receiptRecordStores?: ALReceiptRecordStores;
+    /**
+     * The receipt record the WS server counts receipts in, which every instance of one deployment shares. Required, so
+     * no composition that shares its other stores falls back to a record of its own.
+     */
+    readonly receiptRecordStores: ALReceiptRecordStores;
     /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
     readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;

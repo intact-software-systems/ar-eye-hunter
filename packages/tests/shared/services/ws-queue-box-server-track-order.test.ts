@@ -49,7 +49,7 @@ const TRACK_KEY = toALOrderingTrackKey(trackedMessage(1))!;
 interface TrackFixture {
     readonly backend: InMemoryAdmissionBackend;
     readonly admissionStore: ReturnType<typeof createALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>>;
-    /** The logical recipient each outside-audience ACK the relay was handed names. */
+    /** The logical recipient each outside-audience ACK the receipts were handed names. */
     readonly outsideAcks: string[];
     readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     readonly trackOrder: WsQueueBoxServerTrackOrder;
@@ -74,7 +74,7 @@ function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
         }
     });
     const outsideAcks: string[] = [];
-    const writeServerAck = async (ack: ALMessage) => {
+    const acceptControlMessage = async (ack: ALMessage) => {
         const control = parseALControlMessage(ack);
         outsideAcks.push(control?.type === 'ack' ? control.payload.logicalRecipientPeerId ?? '' : '');
     };
@@ -83,7 +83,7 @@ function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
         admissionStore,
         clock: { nowMs: () => NOW_MS },
         socket: options.socket ?? new JsonWebSocketServer(),
-        ackRelay: { writeServerAck },
+        receipts: { acceptControlMessage },
         outboundPlanning: {
             resolvePolicy: options.resolvePolicy ?? (() => {
                 throw new TypeError('The wait resolves no policy');

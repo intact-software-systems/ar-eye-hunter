@@ -19,7 +19,8 @@ import {
     type WsReceiptedSendServerControl
 } from './ws-receipted-send-link-fixture.ts';
 
-const NO_RECEIPT = 'names no receipt this server aggregates';
+/** An ACK for a send no admission committed yet: the record holds no head, and no admission row proves its sender. */
+const NOT_ADMITTED = 'names no message its origin admitted to this sender';
 
 describe('a WS sender\'s reading of a room send its server kept', () => {
     beforeEach(() => {
@@ -35,7 +36,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         const link = await createWsReceiptedSendLink('behind');
         const sent = await link.send(toRoomNotice());
         await link.advance(1_000);
-        expect((await link.acknowledge(sent)).left?.message).toContain(NO_RECEIPT);
+        // The room view behind refuses the ACK as a control: only a data message is kept for its view.
+        expect((await link.acknowledge(sent)).left?.message).toBe('Room snapshot is catching up');
 
         link.setRoomView('in-sync');
         await link.advance(200);
@@ -124,7 +126,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
     it('kept after a lost race, then admitted: no receipt exists before the replay, then admitted and complete', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
-        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        expect((await link.acknowledge(second)).left?.message).toContain(NOT_ADMITTED);
 
         await link.advance(0);
         await link.advance(200);
@@ -146,7 +148,8 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
 
         expect(link.readReceiptsToOrigin(second)).toEqual([]);
         expect(link.deliveredToPeer(second)).toBe(0);
-        expect((await link.acknowledge(second)).left?.message).toContain(NO_RECEIPT);
+        // The fenced room refuses its sender's peer before the receipt record is read.
+        expect((await link.acknowledge(second)).left?.message).toBe('Sender left the room');
         expect(toControlsOf(link, second)).toEqual([{ control: 'nack:membership-fenced', admission: 'committed' }]);
         expect(link.settlements.filter((fact) => fact.msgId === second.id.msgId).at(-1)?.kind).toBe('relay-rejected');
         expect((await link.readSenderRows(second)).ended).toBe(true);
@@ -227,6 +230,7 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         })]);
     });
 
+    // #869 (D708): the replay sent peer-b nothing, so its own ACK cannot count, and the receipt times out.
     it('in a send kept after a lost race whose captured audience has left, an ACK from peer-b, which was never sent the frame, is refused and the handle reads expired', async () => {
         const link = await createWsReceiptedSendLink('in-sync');
         const [, second] = await sendTwoOrderedSideBySide(link);
@@ -246,32 +250,6 @@ describe('a WS sender\'s reading of a room send its server kept', () => {
         ]);
         expect(readHandleState(link, second)).toBe('expired');
         expect(link.deliveredToPeer(second)).toBe(0);
-    });
-
-    it('in a send kept after a lost race whose captured audience has left, peer-b, who rejoins right after the replay admitted the send, is never sent its frame, and its ACK is refused', async () => {
-        const link = await createWsReceiptedSendLink('in-sync');
-        const [, second] = await sendTwoOrderedSideBySide(link);
-        link.setRoomView('peer-b-left');
-        // Read 1 was ingress, read 2 the replay's: every read after it, the dispatch's and any retry's, finds peer-b back.
-        link.setRoomViewAfterReadsOf(second, 2, 'in-sync');
-        await link.advance(0);
-        await link.advance(200);
-        await link.advance(200);
-
-        expect(link.readReceiptsToOrigin(second)).toEqual([expect.objectContaining({
-            phase: 'admitted',
-            expectedRecipientPeerIds: ['peer-b'],
-            snapshotVersion: 3
-        })]);
-        expect((await link.acknowledge(second)).left?.message).toContain('never sent the message');
-
-        await advanceInSecondsTo(link, LINK_MESSAGE_TTL_MS + 31_000);
-        expect(link.deliveredToPeer(second)).toBe(0);
-        expect(toControlsOf(link, second)).toEqual([
-            { control: 'receipt:admitted', admission: 'committed' },
-            { control: 'receipt:timed-out', admission: 'committed' }
-        ]);
-        expect(readHandleState(link, second)).toBe('expired');
     });
 
     it('a copy written while the original is kept behind the view: one admitted, delivered once', async () => {

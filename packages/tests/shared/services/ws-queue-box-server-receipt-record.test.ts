@@ -1,0 +1,759 @@
+import { describe, expect, it } from 'vitest';
+
+import { Temporal } from '@js-temporal/polyfill';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores, createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { toALReceiptRecordConfirmationPrefix, toALReceiptRecordHeadKey, type ALReceiptRecordRef } from '@shared/alm/receipt-record/al-receipt-record-keys.ts';
+import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
+import { computeALReceiptRecordWorkEntry, toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
+import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
+import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+
+import type { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import {
+    connect,
+    createBridgeBus,
+    createClusterInstance,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
+    installClock,
+    RECEIPT_SERVER_PEER_ID,
+    receiverAck,
+    roomMessage,
+    type ClusterInstance,
+    type ReceiptClock,
+    type ReceiptClusterState,
+    type ReceiptRoomView
+} from './ws-queue-box-server-receipt-fixture.ts';
+
+import { AL_RECEIPT_RECORD_WINDOW_MS } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
+import { createWorkerHold, type WorkerHold } from '../../shared-server/integration/postgres/test-support/postgres-worker-hold.ts';
+import { holdALAdmissionWrite } from '../alm/receipt-record/hold-al-admission-write.ts';
+
+const MSG_ID = 'room-message-record';
+const ORIGIN = 'o';
+const LIFETIME_MS = 30_000;
+const ROOM = ['o', 'r1', 'r2'];
+const ref: ALReceiptRecordRef = { originPeerId: ORIGIN, msgId: MSG_ID };
+
+interface RecordCluster {
+    readonly clock: ReceiptClock;
+    /** When the origin sent the message: every copy it sends again is the same message. */
+    readonly sentAtMs: number;
+    readonly state: ReceiptClusterState;
+    readonly outbound: ReturnType<typeof createInMemoryALAdmissionState>;
+    readonly bus: ReturnType<typeof createBridgeBus>;
+    readonly roomView: ReceiptRoomView;
+    readonly observations: WsQueueBoxServerReceiptObservation[];
+    readonly originSockets: SimulatedWebSocket[];
+    /** The test's own reader of the record every instance shares. */
+    readonly record: ALReceiptRecord;
+    readonly recordBackend: InMemoryAdmissionBackend;
+    readonly recordNamespace: string;
+}
+
+interface StartInstanceInput {
+    /** The instance's cluster publisher id. */
+    readonly name: string;
+    readonly roomPeerIds: readonly string[];
+    /** The instance's record stores as built over the shared state; a case may wrap their backend. */
+    readonly toRecordStores: (stores: ALReceiptRecordStores) => ALReceiptRecordStores;
+    readonly volatile: boolean;
+    readonly starts: boolean;
+}
+
+interface SentReceipt {
+    readonly controlId: string;
+    readonly receipt: ALReceiptPayload;
+}
+
+describe('the WS server counts a receipt through the record every instance shares', () => {
+    it('completes a receipt admitted on one instance from ACKs counted on two others', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('admitted');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+        expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        expect((await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')).left).toBeUndefined();
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+    });
+
+    it('completes a receipt after the instance that admitted it is disposed', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+
+        await a.service.dispose();
+        const onB = await connectOrigin(cluster, b);
+        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+        await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+
+        await expect.poll(() => readReceipts([onB]).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
+        expect(readReceipts([onB]).find(({ receipt }) => receipt.phase === 'complete')?.receipt.confirmedRecipientPeerIds)
+            .toEqual(['r1', 'r2']);
+    });
+
+    it('a surviving instance ends the receipt timed-out at its deadline', async () => {
+        const cluster = createRecordCluster();
+        const { a, b } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+
+        await a.service.dispose();
+        await connectOrigin(cluster, b);
+        cluster.clock.nowMs += LIFETIME_MS;
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'timed-out']);
+        expect(terminal(cluster)).toMatchObject({
+            expectedRecipientPeerIds: ['r1', 'r2'],
+            confirmedRecipientPeerIds: ['r1']
+        });
+    });
+
+    it('answers a re-sent copy on another instance from the record', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await connectOrigin(cluster, c);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+        cluster.clock.nowMs += 1;
+
+        expect((await c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('duplicate');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted']);
+        const [first, second] = readOriginReceipts(cluster);
+        expect(second!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
+        expect(second!.controlId).not.toBe(first!.controlId);
+
+        await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted', 'complete']);
+        cluster.clock.nowMs += 1;
+        await c.service.acceptIncomingMessage(message(cluster), ORIGIN);
+
+        // Ruling 5: an ended head answers a copy with its terminal phase, from the head's own sets.
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted', 'complete', 'complete']);
+        const [ended, again] = readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete');
+        expect(again!.controlId).not.toBe(ended!.controlId);
+        expect(toSets(again!.receipt)).toEqual(toSets(ended!.receipt));
+    });
+
+    it('counts an ACK that arrives before its head', async () => {
+        const cluster = createRecordCluster();
+        const hold = createWorkerHold();
+        const a = await startInstance(cluster, { ...instanceInput('a', ['o', 'r1']), toRecordStores: holding(hold) });
+        const b = await startInstance(cluster, instanceInput('b', ['o', 'r1']));
+        await connectOrigin(cluster, a);
+        await connect(b, 'r1');
+
+        const admitting = a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await hold.arrived;
+        expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        hold.release();
+
+        expect((await admitting).right?.kind).toBe('admitted');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        expect(readOriginReceipts(cluster)[0]!.receipt.confirmedRecipientPeerIds).toEqual(['r1']);
+    });
+
+    it('refuses an ACK for a message its sender was never admitted to', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingFirstWrite });
+        const b = await startInstance(cluster, instanceInput('b', ROOM));
+        await connectOrigin(cluster, a);
+        await connect(b, 'stranger');
+        await expect(a.service.acceptIncomingMessage(message(cluster), ORIGIN)).rejects.toThrow('storage down');
+
+        const refused = await b.service.acceptIncomingMessage(ackOf(cluster, 'stranger'), 'stranger');
+
+        expect(refused.left?.message).toBe('AL acknowledgement names no message its origin admitted to this sender');
+        expect(readConfirmationKeys(cluster)).toEqual([]);
+    });
+
+    it('counts a repeated ACK once', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await connect(c, 'r1');
+
+        expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        expect((await c.service.acceptIncomingMessage(renamed(ackOf(cluster, 'r1'), 'ack-r1-again'), 'r1')).left).toBeUndefined();
+        expect(readConfirmationKeys(cluster)).toHaveLength(1);
+        await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        await settleEngines([a, b, c]);
+        expect(phases(cluster)).toEqual(['admitted', 'complete']);
+    });
+
+    it('records a session the server sent nothing outside the audience, from any instance', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+
+        await c.service.writeOutsideAudience(message(cluster), ['r2'], 'durable');
+        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        expect(terminal(cluster)).toMatchObject({
+            confirmedRecipientPeerIds: ['r1'],
+            outsideAudienceRecipientPeerIds: ['r2']
+        });
+    });
+
+    // Review Focus 1: an ACK for a message the volatile pair admitted is proven from that pair, not the durable store.
+    it('counts an ACK ahead of its head for a message only the volatile inbound pair holds', async () => {
+        const cluster = createRecordCluster();
+        const hold = createWorkerHold();
+        const a = await startInstance(cluster, {
+            ...instanceInput('a', ['o', 'r1']),
+            toRecordStores: holding(hold),
+            volatile: true
+        });
+        await connectOrigin(cluster, a);
+        await connect(a, 'r1');
+
+        const admitting = a.service.acceptIncomingMessage(volatileMessage(cluster), ORIGIN);
+        await hold.arrived;
+        expect(await a.inboundStores.admissionStore.readIngressAudience(MSG_ID, ORIGIN)).toBeUndefined();
+        expect((await a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        hold.release();
+
+        expect((await admitting).right?.kind).toBe('admitted');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+    });
+
+    // Review Focus 2: a receipt control carries at most 256 recipients, so a larger audience opens no receipt.
+    it('admits a room message of 257 recipients and starts no receipt for it', async () => {
+        const cluster = createRecordCluster();
+        const recipients = Array.from({ length: 257 }, (_unused, index) => `r${index + 1}`);
+        const a = await startInstance(cluster, instanceInput('a', [ORIGIN, ...recipients]));
+        await connectOrigin(cluster, a);
+
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
+        await settleEngines([a]);
+
+        expect(phases(cluster)).toEqual([]);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Review Focus 3: a store failure is an operational exception, never a refusal and never a count.
+    it('rejects an ACK whose count the record store fails, and observes no refused count', async () => {
+        const cluster = createRecordCluster();
+        const b = await startInstance(cluster, instanceInput('b', ROOM));
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingWrites });
+        await connectOrigin(cluster, b);
+        await b.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await connect(a, 'r1');
+
+        await expect(a.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).rejects.toThrow('storage down');
+
+        expect(cluster.observations.filter((observation) => observation.kind === 'ack-count' && observation.outcome === 'rejected'))
+            .toEqual([]);
+    });
+
+    // Review Focus 5: the last ACK's count, held past the deadline, never turns a timed-out receipt complete.
+    it('ends a receipt timed-out when the last ACK is counted after another instance ended it', async () => {
+        const cluster = createRecordCluster();
+        const hold = createWorkerHold();
+        const b = await startInstance(cluster, instanceInput('b', ROOM));
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: holding(hold) });
+        await connectOrigin(cluster, b);
+        await connect(b, 'r1');
+        await b.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+        await connect(a, 'r2');
+
+        const counting = a.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+        await hold.arrived;
+        cluster.clock.nowMs += LIFETIME_MS;
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'timed-out']);
+        hold.release();
+        await counting;
+        await settleEngines([a, b]);
+
+        expect(phases(cluster)).toEqual(['admitted', 'timed-out']);
+        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1'] });
+    });
+
+    // R21: ended work delivers at least once, so a second delivery must enqueue nothing new and end quietly.
+    it('enqueues one terminal receipt for an ended work row claimed twice', async () => {
+        const cluster = createRecordCluster();
+        const instances = await startThree(cluster);
+        const origin = await completeOneReceipt(cluster, instances);
+        const controlId = toWsQueueBoxServerEndedReceiptControlId(ref);
+        const workKey = toALReceiptRecordWorkKey(cluster.recordNamespace, 'ended', ref);
+        await expect.poll(async () => (await cluster.state.record.workQueue.getItem(workKey))?.status).toBe(EntityStatus.COMPLETED);
+
+        await writeWorkAgain(cluster, 'ended');
+        cluster.clock.nowMs += AL_WORK_READINESS_MEMORY_MS + 1;
+
+        await expect.poll(() => readEndedOutboxVerdicts(cluster, controlId)).toEqual(['admitted', 'duplicate']);
+        expect((await cluster.state.record.workQueue.getItem(workKey))?.status).toBe(EntityStatus.COMPLETED);
+        await settleEngines(Object.values(instances));
+        expect(new Set(readReceipts([origin]).filter(({ receipt }) => receipt.phase === 'complete').map((sent) => sent.controlId)))
+            .toEqual(new Set([controlId]));
+        expect(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o', msgId: 'm:x' }))
+            .not.toBe(toWsQueueBoxServerEndedReceiptControlId({ originPeerId: 'o:m', msgId: 'x' }));
+    });
+
+    it('keeps no receipt state on the instance', async () => {
+        const cluster = createRecordCluster();
+        const { a, b, c } = await startThree(cluster);
+        await connectOrigin(cluster, a);
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+
+        await a.service.dispose();
+        const restarted = await startInstance(cluster, instanceInput('a', ROOM));
+        await connectOrigin(cluster, restarted);
+        await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+        await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+    });
+
+    it.each(['the store failed at its open', 'its instance was disposed inside its open'] as const)(
+        'a re-sent copy opens the record its admission never opened: %s',
+        async (lost) => {
+            const cluster = createRecordCluster();
+            const hold = createWorkerHold();
+            const a = await startInstance(cluster, {
+                ...instanceInput('a', ROOM),
+                toRecordStores: lost === 'the store failed at its open' ? failingFirstWrite : holding(hold)
+            });
+            const b = await startInstance(cluster, instanceInput('b', ROOM));
+            const c = await startInstance(cluster, instanceInput('c', ROOM));
+            await connectOrigin(cluster, a);
+            await connectOrigin(cluster, c);
+            await connect(b, 'r1');
+            await connect(c, 'r2');
+            await loseOpen(cluster, a, lost === 'the store failed at its open' ? undefined : hold);
+
+            expect((await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1')).left).toBeUndefined();
+            expect((await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')).left).toBeUndefined();
+            expect((await c.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('duplicate');
+
+            await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+            const [admitted, complete] = readOriginReceipts(cluster);
+            expect(admitted!.receipt).toMatchObject({ expectedRecipientPeerIds: ['r1', 'r2'], confirmedRecipientPeerIds: ['r1', 'r2'] });
+            expect(complete!.receipt.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
+            expect(readHeadKeys(cluster)).toHaveLength(1);
+        }
+    );
+
+    it('a re-sent copy after the end does not reopen it', async () => {
+        const cluster = createRecordCluster();
+        const instances = await startThree(cluster);
+        await connectOrigin(cluster, instances.c);
+        await completeOneReceipt(cluster, instances);
+        const ended = (await cluster.record.read(ref)).right?.head;
+        const deadlineKey = toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref);
+        const deadlineWork = await cluster.state.record.workQueue.getItem(deadlineKey);
+
+        await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN);
+
+        await expect.poll(() => tickPhases(cluster), { timeout: 2_000 }).toEqual(['admitted', 'complete', 'complete']);
+        const [first, again] = readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete');
+        expect(toSets(again!.receipt)).toEqual(toSets(first!.receipt));
+        expect((await cluster.record.read(ref)).right?.head).toEqual(ended);
+        expect([deadlineWork, undefined]).toContainEqual(await cluster.state.record.workQueue.getItem(deadlineKey));
+
+        cluster.clock.nowMs += LIFETIME_MS + 30_001;
+        await instances.c.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        await settleEngines(Object.values(instances));
+
+        expect(phases(cluster)).toEqual(['admitted', 'complete', 'complete']);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+        expect(await cluster.state.record.workQueue.getItem(deadlineKey)).toBeUndefined();
+    });
+
+    it('a copy of a send still kept for admission opens nothing', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), starts: false });
+        await connectOrigin(cluster, a);
+        cluster.roomView.inSync = false;
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('pending-admission');
+        expect(await a.inboundStores.admissionStore.readIngressAudience(MSG_ID, ORIGIN)).toBeUndefined();
+
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right?.kind).toBe('pending-admission');
+        await settleEngines([a]);
+        expect(phases(cluster)).toEqual([]);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+
+        cluster.roomView.inSync = true;
+        a.engine.start();
+        cluster.clock.nowMs += 1_000;
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted']);
+        expect(readOriginReceipts(cluster)[0]!.receipt.expectedRecipientPeerIds).toEqual(['r1', 'r2']);
+    });
+
+    it('a re-sent copy of a send whose deadline lies beyond the window opens nothing', async () => {
+        const cluster = createRecordCluster();
+        const a = await startInstance(cluster, { ...instanceInput('a', ROOM), toRecordStores: failingFirstWrite });
+        const c = await startInstance(cluster, instanceInput('c', ROOM));
+        await connectOrigin(cluster, a);
+        await connectOrigin(cluster, c);
+        const longLived = message(cluster, 45 * 60_000);
+        await expect(a.service.acceptIncomingMessage(longLived, ORIGIN)).rejects.toThrow('storage down');
+
+        expect((await c.service.acceptIncomingMessage(longLived, ORIGIN)).right?.kind).toBe('duplicate');
+        await settleEngines([a, c]);
+
+        expect(phases(cluster)).toEqual([]);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+        expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
+            .toBeUndefined();
+    });
+
+    it('a re-sent copy as old as the window gives an ended receipt no second life', async () => {
+        const cluster = createRecordCluster();
+        const instances = await startThree(cluster);
+        const longLived = message(cluster, 45 * 60_000);
+        await connectOrigin(cluster, instances.a);
+        await instances.a.service.acceptIncomingMessage(longLived, ORIGIN);
+        await instances.b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+        await instances.c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+
+        // The head, clamped to the window, and its rows expire; the admission row lives on.
+        cluster.clock.nowMs += 31 * 60_000 + 1_000;
+        expect(await instances.c.inboundStores.admissionStore.readIngressAudience(MSG_ID, ORIGIN)).toEqual(ROOM);
+        await instances.c.service.acceptIncomingMessage(longLived, ORIGIN);
+        await settleEngines(Object.values(instances));
+
+        expect(phases(cluster)).toEqual(['admitted', 'complete']);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+        expect(await cluster.state.record.workQueue.getItem(toALReceiptRecordWorkKey(cluster.recordNamespace, 'deadline', ref)))
+            .toBeUndefined();
+    });
+
+    it('a losing end is silent', async () => {
+        const cluster = createRecordCluster();
+        const counted = Promise.withResolvers<void>();
+        const views = createViewGate(counted.promise);
+        const a = await startInstance(cluster, instanceInput('a', ROOM));
+        const b = await startInstance(cluster, { ...instanceInput('b', ROOM), toRecordStores: views.gate('b') });
+        const c = await startInstance(cluster, { ...instanceInput('c', ROOM), toRecordStores: views.gate('c') });
+        await connectOrigin(cluster, a);
+        await connect(b, 'r1');
+        await connect(c, 'r2');
+        await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+        void views.bothWritten.then(() => counted.resolve());
+
+        const results = await Promise.all([
+            b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1'),
+            c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2')
+        ]);
+
+        expect(results.map((result) => result.left)).toEqual([undefined, undefined]);
+        await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+        await settleEngines([a, b, c]);
+        expect(readOriginReceipts(cluster).filter(({ receipt }) => receipt.phase === 'complete')).toHaveLength(1);
+        expect(terminal(cluster)).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        const counts = cluster.observations.filter((observation) => observation.kind === 'ack-count');
+        expect(counts.map((count) => [count.outcome, count.after !== undefined])).toEqual([['complete', true], ['complete', true]]);
+        expect(
+            cluster.observations.filter((observation) => observation.kind === 'receipt-outbox' && observation.receipt.phase === 'complete')
+        ).toHaveLength(1);
+    });
+});
+
+function createRecordCluster(): RecordCluster {
+    const clock = installClock();
+    const nowMs = () => clock.nowMs;
+    const state = createReceiptClusterState(nowMs);
+    const { receiptRecordStores } = createReceiptInstanceStores(state, nowMs);
+    const recordBackend = new InMemoryAdmissionBackend(state.record, nowMs);
+    return {
+        clock,
+        sentAtMs: clock.nowMs,
+        state,
+        outbound: createInMemoryALAdmissionState(new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs))),
+        bus: createBridgeBus(),
+        roomView: { inSync: true },
+        observations: [],
+        originSockets: [],
+        record: new ALReceiptRecord({ backend: recordBackend, namespace: receiptRecordStores.namespace, nowMs }),
+        recordBackend,
+        recordNamespace: receiptRecordStores.namespace
+    };
+}
+
+function instanceInput(name: string, roomPeerIds: readonly string[]): StartInstanceInput {
+    return { name, roomPeerIds, toRecordStores: (stores) => stores, volatile: false, starts: true };
+}
+
+type RecordInstance = ClusterInstance & ReturnType<typeof createReceiptInstanceStores>;
+
+async function startInstance(cluster: RecordCluster, input: StartInstanceInput): Promise<RecordInstance> {
+    const nowMs = () => cluster.clock.nowMs;
+    const stores = createReceiptInstanceStores(cluster.state, nowMs);
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        outboundBackend: new InMemoryAdmissionBackend(cluster.outbound, nowMs)
+    });
+    // Every instance of one deployment shares the server's name, as api-v1's instances share `wsRuntimeName`.
+    const instance = await createClusterInstance({
+        name: RECEIPT_SERVER_PEER_ID,
+        outboundStores,
+        inboundStores: stores.inboundStores,
+        inboundVolatileStores: input.volatile ? createVolatileALInboundRuntimeStores({ nowMs }, undefined) : undefined,
+        receiptRecordStores: input.toRecordStores(stores.receiptRecordStores),
+        receiptObserver: (observation) => cluster.observations.push(observation),
+        roomView: cluster.roomView,
+        bus: cluster.bus,
+        publisherId: input.name,
+        engine: new InboxOutboxEngine(),
+        roomPeerIds: input.roomPeerIds
+    });
+    if (input.starts) {
+        instance.engine.start();
+    }
+    return { ...instance, ...stores };
+}
+
+async function startThree(cluster: RecordCluster): Promise<Readonly<Record<'a' | 'b' | 'c', RecordInstance>>> {
+    const a = await startInstance(cluster, instanceInput('a', ROOM));
+    const b = await startInstance(cluster, instanceInput('b', ROOM));
+    const c = await startInstance(cluster, instanceInput('c', ROOM));
+    await connect(b, 'r1');
+    await connect(c, 'r2');
+    return { a, b, c };
+}
+
+async function connectOrigin(cluster: RecordCluster, instance: ClusterInstance): Promise<SimulatedWebSocket> {
+    const socket = await connect(instance, ORIGIN);
+    cluster.originSockets.push(socket);
+    return socket;
+}
+
+/** Case 1's flow: admitted on `a`, r1 counted on `b` and r2 on `c`, its complete receipt read by the origin on `a`. */
+async function completeOneReceipt(
+    cluster: RecordCluster,
+    { a, b, c }: Readonly<Record<'a' | 'b' | 'c', RecordInstance>>
+): Promise<SimulatedWebSocket> {
+    const origin = await connectOrigin(cluster, a);
+    await a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+    await b.service.acceptIncomingMessage(ackOf(cluster, 'r1'), 'r1');
+    await c.service.acceptIncomingMessage(ackOf(cluster, 'r2'), 'r2');
+    await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'complete']);
+    return origin;
+}
+
+/** The admission commits and its `open` never does: the store fails it, or its instance is disposed inside it. */
+async function loseOpen(cluster: RecordCluster, a: RecordInstance, hold: WorkerHold | undefined): Promise<void> {
+    if (hold === undefined) {
+        await expect(a.service.acceptIncomingMessage(message(cluster), ORIGIN)).rejects.toThrow('storage down');
+        return;
+    }
+    void a.service.acceptIncomingMessage(message(cluster), ORIGIN);
+    await hold.arrived;
+    await a.service.dispose();
+}
+
+function message(cluster: RecordCluster, lifetimeMs = LIFETIME_MS): ALMessage {
+    return roomMessage({ msgId: MSG_ID, originPeerId: ORIGIN, nowMs: cluster.sentAtMs, lifetimeMs });
+}
+
+function volatileMessage(cluster: RecordCluster): ALMessage {
+    return { ...message(cluster), qos: { durability: { algo: 'volatile' } } };
+}
+
+function ackOf(cluster: RecordCluster, recipient: string): ALMessage {
+    return receiverAck({ msgId: MSG_ID, originPeerId: ORIGIN, recipient, nowMs: cluster.clock.nowMs });
+}
+
+function renamed(control: ALMessage, msgId: string): ALMessage {
+    return { ...control, id: { ...control.id, msgId } };
+}
+
+function holding(hold: WorkerHold): (stores: ALReceiptRecordStores) => ALReceiptRecordStores {
+    return (stores) => ({ ...stores, backend: holdALAdmissionWrite(stores.backend, hold) });
+}
+
+function failingWrites(stores: ALReceiptRecordStores): ALReceiptRecordStores {
+    return { ...stores, backend: withFailingWrites(stores.backend, Number.POSITIVE_INFINITY) };
+}
+
+function failingFirstWrite(stores: ALReceiptRecordStores): ALReceiptRecordStores {
+    return { ...stores, backend: withFailingWrites(stores.backend, 1) };
+}
+
+function withFailingWrites(backend: ALAdmissionWorkBackend, failures: number): ALAdmissionWorkBackend {
+    let failed = 0;
+    return {
+        workQueue: backend.workQueue,
+        ready: () => backend.ready(),
+        read: (key, decode) => backend.read(key, decode),
+        list: (prefix, decode) => backend.list(prefix, decode),
+        readWithin: (read) => backend.readWithin(read),
+        write: async (operation, executionExpiresAtMs) => {
+            if (failed < failures) {
+                failed += 1;
+                throw new Error('storage down');
+            }
+            return await backend.write(operation, executionExpiresAtMs);
+        }
+    };
+}
+
+interface ViewGate {
+    readonly bothWritten: Promise<void>;
+    gate(name: 'b' | 'c'): (stores: ALReceiptRecordStores) => ALReceiptRecordStores;
+}
+
+/**
+ * Two instances' counts both commit before either reads its view, so both read a complete set and both call `end`,
+ * as the last two ACKs of a message did for most messages of slice 1's measurement.
+ */
+function createViewGate(released: Promise<void>): ViewGate {
+    const written = { b: Promise.withResolvers<void>(), c: Promise.withResolvers<void>() };
+    return {
+        bothWritten: Promise.all([written.b.promise, written.c.promise]).then(() => undefined),
+        gate: (name) => (stores) => {
+            const { backend } = stores;
+            let wrote = false;
+            const afterWrite = async () => {
+                if (wrote) {
+                    await released;
+                }
+            };
+            return {
+                ...stores,
+                backend: {
+                    workQueue: backend.workQueue,
+                    ready: () => backend.ready(),
+                    read: async (key, decode) => {
+                        await afterWrite();
+                        return await backend.read(key, decode);
+                    },
+                    list: async (prefix, decode) => {
+                        await afterWrite();
+                        return await backend.list(prefix, decode);
+                    },
+                    readWithin: (read) => backend.readWithin(read),
+                    write: async (operation, executionExpiresAtMs) => {
+                        const result = await backend.write(operation, executionExpiresAtMs);
+                        wrote = true;
+                        written[name].resolve();
+                        return result;
+                    }
+                }
+            };
+        }
+    };
+}
+
+/** Writes the record's `kind` work row of `ref` again, as a lease that ran out would leave it claimable. */
+async function writeWorkAgain(cluster: RecordCluster, kind: 'ended'): Promise<void> {
+    const nowMs = cluster.clock.nowMs;
+    const entry = computeALReceiptRecordWorkEntry({
+        namespace: cluster.recordNamespace,
+        work: { kind, ref },
+        observedAtMs: nowMs,
+        readyAtMs: nowMs,
+        expireAtTimestamp: nowMs + AL_RECEIPT_RECORD_WINDOW_MS
+    });
+    await cluster.recordBackend.write(async (transaction) => {
+        await transaction.readWork(entry.key);
+        transaction.writeWork(entry);
+    });
+}
+
+async function settleEngines(instances: readonly ClusterInstance[]): Promise<void> {
+    for (let round = 0; round < 6; round += 1) {
+        for (const { engine } of instances) {
+            await engine.executeOnce();
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
+function readReceipts(sockets: readonly SimulatedWebSocket[]): readonly SentReceipt[] {
+    return sockets.flatMap((socket) =>
+        socket.sent
+            .map((frame) => decodePersistedALMessage(frame))
+            .filter((control) => control.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+            .map((control) => ({ controlId: control.id.msgId, receipt: decodeALReceiptPayload(JSON.parse(control.payload.resource)) }))
+            .filter(({ receipt }) => receipt.msgId === MSG_ID)
+    );
+}
+
+/**
+ * The origin's receipts for the message, each once whichever of its sockets carried it, in the order the server observed
+ * them: a receipt row released for a retry may arrive after a later one, and an `admitted` observed at the same instant
+ * as a terminal receipt precedes it.
+ */
+function readOriginReceipts(cluster: RecordCluster): readonly SentReceipt[] {
+    const unique = new Map(readReceipts(cluster.originSockets).map((sent) => [sent.controlId, sent]));
+    const toOrder = ({ receipt }: SentReceipt) => [receipt.observedAtEpochMs, receipt.phase === 'admitted' ? 0 : 1] as const;
+    return [...unique.values()].sort((left, right) => {
+        const [leftAtMs, leftRank] = toOrder(left);
+        const [rightAtMs, rightRank] = toOrder(right);
+        return leftAtMs - rightAtMs || leftRank - rightRank;
+    });
+}
+
+/** The outbox verdict of each delivery of the ended work's terminal receipt. */
+function readEndedOutboxVerdicts(cluster: RecordCluster, controlId: string): readonly string[] {
+    return cluster.observations.flatMap((observation) =>
+        observation.kind === 'receipt-outbox' && observation.receiptControlMsgId === controlId ? [observation.verdict.kind] : []
+    );
+}
+
+/**
+ * The phases a poll reads, a few milliseconds later each time: the test clock stands still, and a row released for
+ * an immediate retry comes due only once it moves, as a real clock would.
+ */
+function tickPhases(cluster: RecordCluster): readonly ALReceiptPayload['phase'][] {
+    cluster.clock.nowMs += 5;
+    return phases(cluster);
+}
+
+function phases(cluster: RecordCluster): readonly ALReceiptPayload['phase'][] {
+    return readOriginReceipts(cluster).map(({ receipt }) => receipt.phase);
+}
+
+function terminal(cluster: RecordCluster): ALReceiptPayload | undefined {
+    return readOriginReceipts(cluster).find(({ receipt }) => receipt.phase !== 'admitted')?.receipt;
+}
+
+function toSets(
+    receipt: ALReceiptPayload
+): Pick<ALReceiptPayload, 'expectedRecipientPeerIds' | 'confirmedRecipientPeerIds' | 'outsideAudienceRecipientPeerIds'> {
+    const { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds } = receipt;
+    return { expectedRecipientPeerIds, confirmedRecipientPeerIds, outsideAudienceRecipientPeerIds };
+}
+
+function readConfirmationKeys(cluster: RecordCluster): readonly string[] {
+    const prefix = toALReceiptRecordConfirmationPrefix(cluster.recordNamespace, ref);
+    return cluster.recordBackend.peekKeys().filter((key) => key.startsWith(prefix));
+}
+
+function readHeadKeys(cluster: RecordCluster): readonly string[] {
+    return cluster.recordBackend.peekKeys().filter((key) => key === toALReceiptRecordHeadKey(cluster.recordNamespace, ref));
+}

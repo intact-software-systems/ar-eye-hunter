@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { decodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { installRelayedAckNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice-subscriber.ts';
 import {
-    createRelayedAckPublisher,
     decodeRelayedAckNotice,
     toRelayedAckNotice,
     type RelayedAckNotice,
@@ -165,59 +164,7 @@ describe('relayed ACK notice codec', () => {
     });
 });
 
-describe('relayed ACK publisher and subscriber', () => {
-    it('publishes one notice per relayed ACK and hands it to the other instances only', async () => {
-        const transport = createMemoryTransport();
-        const acceptedByA: ALMessage[] = [];
-        const acceptedByB: ALMessage[] = [];
-        await installRelayedAckNoticeSubscriber({
-            transport,
-            channel: 'ws-channel',
-            publisherId: 'server-a',
-            acceptRelayedAck: async (message) => {
-                acceptedByA.push(message);
-            }
-        });
-        await installRelayedAckNoticeSubscriber({
-            transport,
-            channel: 'ws-channel',
-            publisherId: 'server-b',
-            acceptRelayedAck: async (message) => {
-                acceptedByB.push(message);
-            }
-        });
-
-        const published = await createRelayedAckPublisher({
-            transport,
-            channel: 'ws-channel',
-            publisherId: 'server-b'
-        })(
-            receiverAck()
-        );
-
-        expect(published.right).toBe('published');
-        expect(transport.published).toHaveLength(1);
-        expect(acceptedByA).toEqual([receiverAck()]);
-        expect(acceptedByB).toEqual([]);
-    });
-
-    it('answers a failed or oversized relay as a value', async () => {
-        const failing: RelayedAckNoticeTransport = {
-            publish: async () => {
-                throw new Error('notify failed');
-            },
-            subscribe: async () => {}
-        };
-        const publish = createRelayedAckPublisher({
-            transport: failing,
-            channel: 'ws-channel',
-            publisherId: 'server-b'
-        });
-
-        expect((await publish(receiverAck())).left).toBe('notify failed');
-        expect((await publish(receiverAck('x'.repeat(8_000)))).left).toMatch(/oversized/);
-    });
-
+describe('relayed ACK subscriber', () => {
     it('keeps the subscriber listening when counting one relayed ACK fails', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const transport = createMemoryTransport();

@@ -13,6 +13,8 @@ import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend
 import {
     countCopies,
     createBridgeBus,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
     createReceiptOutbox,
     createReceiptServer,
     installClock,
@@ -37,6 +39,8 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         const outbox = createReceiptOutbox(clock);
         const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -88,6 +92,8 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         const outbox = createReceiptOutbox(clock);
         const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -129,6 +135,8 @@ describe('receipts of the server\'s own room notifications', () => {
             });
             const outbox = createReceiptOutbox(clock);
             const local = await createReceiptServer({
+                ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+                inboundVolatileStores: undefined,
                 outbox,
                 state: createInMemoryALAdmissionState(outbox),
                 peerIds: ['a', 'b'],
@@ -171,8 +179,24 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
-        const local = await createReceiptServer({ outbox, state, peerIds: ['a'], recorder, nowMs: () => clock.nowMs });
-        const remote = await createReceiptServer({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
+        const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            outbox,
+            state,
+            peerIds: ['a'],
+            recorder,
+            nowMs: () => clock.nowMs
+        });
+        const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+            inboundVolatileStores: undefined,
+            outbox,
+            state,
+            peerIds: ['c'],
+            recorder: undefined,
+            nowMs: () => clock.nowMs
+        });
         await joinCluster(local, remote);
 
         const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), {
@@ -197,8 +221,24 @@ describe('receipts of the server\'s own room notifications', () => {
         const outbox = createReceiptOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
-        const local = await createReceiptServer({ outbox, state, peerIds: ['a', 'b'], recorder: undefined, nowMs });
-        const remote = await createReceiptServer({ outbox, state, peerIds: ['c', 'd'], recorder: undefined, nowMs });
+        const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outbox,
+            state,
+            peerIds: ['a', 'b'],
+            recorder: undefined,
+            nowMs
+        });
+        const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
+            outbox,
+            state,
+            peerIds: ['c', 'd'],
+            recorder: undefined,
+            nowMs
+        });
         await joinCluster(local, remote);
 
         await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured'));
@@ -220,6 +260,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const state = createInMemoryALAdmissionState(outbox);
         const nowMs = () => clock.nowMs;
         const local = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -227,6 +269,8 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs
         });
         const remote = await createReceiptServer({
+            ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
+            inboundVolatileStores: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],

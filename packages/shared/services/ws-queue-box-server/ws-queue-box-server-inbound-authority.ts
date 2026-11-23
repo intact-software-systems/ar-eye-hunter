@@ -3,6 +3,7 @@ import {
     isRoomScopedALMessage,
     type ALMessage
 } from '../../al-contracts/al-contract.ts';
+import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import {
     prepareALNackControlMessage,
     type ALAckPayload,
@@ -24,7 +25,6 @@ import {
     type WsQueueBoxServerScopeRefusal
 } from './scope/to-ws-queue-box-server-scope-authorization.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
-import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
     WsServerInboundAuthorization,
     WsServerInboundAuthorizer,
@@ -32,6 +32,7 @@ import type {
     WsServerInboundConnectionScopeReader
 } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerControlDelivery } from './ws-queue-box-server-control-delivery.ts';
+import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 import type { WsQueueBoxServerReceiptSocketFacts } from './ws-queue-box-server-receipt-observation.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
@@ -54,7 +55,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly newControlId: () => string;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly controlDelivery: WsQueueBoxServerControlDelivery;
-        readonly ackRelay: WsQueueBoxServerAckRelay;
+        readonly receipts: WsQueueBoxServerReceiptAggregation;
         readonly readRelayedRepairRequestRejection: ALInboundReceiver['readRelayedRepairRequestRejection'];
         readonly authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
@@ -123,7 +124,7 @@ export class WsQueueBoxServerInboundAuthority {
     readonly #newControlId: () => string;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #controlDelivery: WsQueueBoxServerControlDelivery;
-    readonly #ackRelay: WsQueueBoxServerAckRelay;
+    readonly #receipts: WsQueueBoxServerReceiptAggregation;
     readonly #readRelayedRepairRequestRejection: ALInboundReceiver['readRelayedRepairRequestRejection'];
     readonly #authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     readonly #readAuthenticatedConnectionScope:
@@ -140,7 +141,7 @@ export class WsQueueBoxServerInboundAuthority {
         this.#newControlId = dependencies.newControlId;
         this.#targetResolution = dependencies.targetResolution;
         this.#controlDelivery = dependencies.controlDelivery;
-        this.#ackRelay = dependencies.ackRelay;
+        this.#receipts = dependencies.receipts;
         this.#readRelayedRepairRequestRejection = dependencies.readRelayedRepairRequestRejection;
         this.#authorizeInboundMessage = dependencies.authorizeInboundMessage;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
@@ -197,7 +198,8 @@ export class WsQueueBoxServerInboundAuthority {
             return { ...current, socketFacts: origin.value.socketFacts };
         }
         if (!authorization.authorized) {
-            return authorization.reason === 'not-yet-in-sync'
+            // Only a data message waits for its room view: a control has no pending admission to be kept in.
+            return authorization.reason === 'not-yet-in-sync' && !isALControlTypeId(message.payload.typeId)
                 ? await this.readRetainDecision(origin.value, authorization)
                 : {
                     kind: 'finished',
@@ -314,10 +316,10 @@ export class WsQueueBoxServerInboundAuthority {
         ack: ALAckPayload,
         controlIdentity?: ALMessage['id']
     ): Promise<ALMessageRejection | undefined> {
-        return await this.#ackRelay.readRelayedAckRejection(
-            ack,
-            !this.#observesReceipts ? undefined : { stage: 'ingress-protocol', controlIdentity }
-        );
+        return await this.#receipts.readRelayedAckRejection(ack, {
+            stage: 'ingress-protocol',
+            controlIdentity: this.#observesReceipts ? controlIdentity : undefined
+        });
     }
 
     private readScopeAuthorization(

@@ -22,8 +22,6 @@ import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber, sendReceivedLiveWsNotice } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
-import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
-import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -99,12 +97,6 @@ export function createRallarMiddlewareInfrastructure(
             targetResolver,
             wsQBoxServerService
         }),
-        options.relayedAckNotices
-            ? installRelayedAckNoticeSubscriber({
-                ...options.relayedAckNotices,
-                acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
-            })
-            : Promise.resolve(),
         installMiddlewareAppInboxCompletionNoticeSubscriber(options)
     ]).then(() => undefined);
 
@@ -200,9 +192,6 @@ function createMiddlewareWsQueueBoxServer(
         receiptObserver: options.wsReceiptObserver,
         dequeueTiming: options.wsDequeueTiming,
         authorizeInboundMessage: authorizeMiddlewareALIngress,
-        publishRelayedAck: options.relayedAckNotices
-            ? createRelayedAckPublisher(options.relayedAckNotices)
-            : undefined,
         forwardsRoomScopedMessages: false
     });
 }

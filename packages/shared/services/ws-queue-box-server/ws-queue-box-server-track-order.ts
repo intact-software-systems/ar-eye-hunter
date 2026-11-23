@@ -16,11 +16,11 @@ import {
 } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { toWsQueueBoxServerOutsideAudienceAck } from './scope/to-ws-queue-box-server-outside-audience-ack.ts';
-import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
     WsQueueBoxServerOutboundPlanning,
     WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
+import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 
 export namespace WsQueueBoxServerTrackOrder {
     export interface Dependencies {
@@ -34,7 +34,7 @@ export namespace WsQueueBoxServerTrackOrder {
         >;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly socket: Pick<JsonWebSocketServer, 'connections'>;
-        readonly ackRelay: Pick<WsQueueBoxServerAckRelay, 'writeServerAck'>;
+        readonly receipts: Pick<WsQueueBoxServerReceiptAggregation, 'acceptControlMessage'>;
         readonly outboundPlanning: Pick<WsQueueBoxServerOutboundPlanning, 'resolvePolicy'>;
         readonly name: string;
         readonly newControlId: () => string;
@@ -120,7 +120,7 @@ export class WsQueueBoxServerTrackOrder {
         sessionIds: readonly string[],
         judgement: WsOutsideAudienceJudgement
     ): Promise<void> {
-        const { name, outboundPlanning, socket, ackRelay, clock } = this.dependencies;
+        const { name, outboundPlanning, socket, receipts, clock } = this.dependencies;
         const originPeerId = message.id.senderId;
         if (!isALLogicalReceiptMode(outboundPlanning.resolvePolicy(message).effective.ack.algo)) {
             return;
@@ -134,7 +134,7 @@ export class WsQueueBoxServerTrackOrder {
             return;
         }
         for (const recipientPeerId of judged) {
-            await ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
+            await receipts.acceptControlMessage(toWsQueueBoxServerOutsideAudienceAck({
                 message,
                 recipientPeerId,
                 serverPeerId: name,

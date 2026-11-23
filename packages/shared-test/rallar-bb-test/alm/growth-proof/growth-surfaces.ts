@@ -388,13 +388,13 @@ export const GROWTH_SURFACES: readonly GrowthSurface[] = [
     ),
     toServerHeapSurface(
         37,
-        'WS server receipt aggregates',
+        'WS server receipt aggregates (none since the receipt record, surface 85)',
         'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts'
     ),
     toServerHeapSurface(
         38,
-        'WS server ACK relay budgets',
-        'packages/shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts'
+        'WS server ACK relay budgets (none since the relay was deleted)',
+        'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts'
     ),
     toServerHeapSurface(
         39,

@@ -20,6 +20,8 @@ import {
 } from '../../shared-server/rallar-system/state-sync/create-state-sync-effect-fixture.ts';
 import {
     countCopies,
+    createReceiptClusterState,
+    createReceiptInstanceStores,
     createReceiptOutbox,
     createReceiptServer,
     installClock,
@@ -127,6 +129,8 @@ async function createDeltaServer(
 ): Promise<ReceiptServerInstance> {
     const outbox = createReceiptOutbox(clock);
     return await createReceiptServer({
+        ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
+        inboundVolatileStores: undefined,
         outbox,
         state: createInMemoryALAdmissionState(outbox),
         peerIds: STATE_SYNC_FIXTURE_SESSION_IDS,

@@ -50,7 +50,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
                 'apps/rallar-black-box/src/schema-authoring.ts',
                 'packages/shared-test/rallar-bb-test/schema.ts',
                 'packages/shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts',
-                'packages/shared-test/rallar-bb-test/alm/rallar-black-box-alm-command-capabilities.ts'
+                'packages/shared-test/rallar-bb-test/alm/rallar-black-box-alm-command-capabilities.ts',
+                // The receipt record is server state (decision 17).
+                'packages/shared/alm/receipt-record/'
             ]
         ) {
             expect(inputs, `headless bundle should not include ${forbidden}`).not.toContainEqual(

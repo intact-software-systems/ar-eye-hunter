@@ -207,13 +207,14 @@ class ReceiptOwnerFixture {
             outboundDeliveryOutcome: undefined,
             deliveryDiagnostics: undefined,
             authorizeInboundMessage: Either.ofRight,
-            publishRelayedAck: undefined,
             forwardsRoomScopedMessages: true
         });
     }
 
     async run(evidencePath: string, scenario: ReceiptOwnerScenario): Promise<void> {
         await generateCompleteReceipt(this.service);
+        // The record's ended work delivers the complete receipt, whose first commit conflicts and is retained as work.
+        await drainReceipt(this.engine, () => this.effects.conflicted);
         const pending = this.observations.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
         if (this.sink !== 'disabled') {
             assert.equal(pending?.kind === 'receipt-outbox' && pending.verdict.kind, 'pending');

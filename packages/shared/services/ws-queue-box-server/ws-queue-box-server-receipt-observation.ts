@@ -146,10 +146,11 @@ export type WsQueueBoxServerReceiptObservation =
     | (WsQueueBoxServerReceiptAckFacts & WsQueueBoxServerReceiptCountSource & {
         readonly kind: 'ack-count';
         readonly serverPeerId: string;
-        readonly before: WsQueueBoxServerReceiptAggregateFacts | undefined;
+        /** The view a counted ACK returned; absent for a refused or conflicting count, and for one counted ahead. */
         readonly after: WsQueueBoxServerReceiptAggregateFacts | undefined;
         readonly countAtEpochMs: number;
-        readonly outcome: 'rejected' | 'partial' | 'complete';
+        /** `conflict`: the record refused the write, and the origin's retry recovers it. */
+        readonly outcome: 'rejected' | 'conflict' | 'partial' | 'complete';
         readonly rejectionCode: ALMessageRejection['code'] | undefined;
     })
     | (WsQueueBoxServerReceiptAckFacts & {

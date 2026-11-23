@@ -3,7 +3,6 @@ import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -87,29 +86,6 @@ export function decodeRelayedAckNotice(
         ? undefined
         : toRelayedAckNotice({ channel: expectedChannel, publisherId: wire.publisherId, message })
             .right;
-}
-
-/** The WS service's relay port over one notice channel. */
-export function createRelayedAckPublisher(
-    channel: RelayedAckNoticeChannel
-): WsServerAckRelayPublisher {
-    return async (message) => {
-        const notice = toRelayedAckNotice({
-            channel: channel.channel,
-            publisherId: channel.publisherId,
-            message
-        });
-        if (notice.left !== undefined) {
-            return Either.ofLeft(notice.left);
-        }
-        try {
-            await channel.transport.publish(notice.right!);
-            return Either.ofRight('published');
-        }
-        catch (error) {
-            return Either.ofLeft(error instanceof Error ? error.message : String(error));
-        }
-    };
 }
 
 function isRelayedAckNoticeRecord(

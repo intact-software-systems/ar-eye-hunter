@@ -216,6 +216,12 @@ describe('shared-web browser bundle boundaries', () => {
         }
     );
 
+    // The receipt record is server state (decision 17): no browser entry may bundle it.
+    it.each(budgetedEntries)('keeps the receipt record out of $label', (entry) => {
+        const inputs = Object.keys(bundleForBoundary(entry).metafile.inputs);
+        expect(inputs).not.toContainEqual(expect.stringContaining('packages/shared/alm/receipt-record/'));
+    });
+
     it('keeps measured browser entry points under their Brotli budgets', () => {
         for (const entry of budgetedEntries) {
             const result = bundleForBoundary(entry);
