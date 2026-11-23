@@ -76,6 +76,28 @@ describe('computeALReceiptRecordTally', () => {
         });
     });
 
+    // A row written ahead of its head was never checked against the deadline; one counted at or after it is an ACK
+    // that `count` would have refused, so the tally of an open head must not count it either.
+    it('ignores a row counted at or after the deadline, of either kind', () => {
+        const toRow = (recipientPeerId: string, kind: ALReceiptRecordConfirmation['kind'], countedAtEpochMs: number) => ({
+            recipientPeerId,
+            kind,
+            countedAtEpochMs
+        });
+        const rows = [
+            toRow('r1', 'confirmed', opening.deadlineAtMs - 1),
+            toRow('r2', 'outside', opening.deadlineAtMs - 1),
+            toRow('r3', 'confirmed', opening.deadlineAtMs)
+        ];
+        expect(computeALReceiptRecordTally(openHead, rows)).toEqual({
+            confirmedRecipientPeerIds: ['r1'],
+            outsideAudienceRecipientPeerIds: ['r2'],
+            complete: false
+        });
+        const lateOutside = [toRow('r1', 'confirmed', NOW), toRow('r2', 'outside', opening.deadlineAtMs)];
+        expect(computeALReceiptRecordTally(openHead, lateOutside).outsideAudienceRecipientPeerIds).toEqual([]);
+    });
+
     // An ended head is the final word: a row written after the ending (r3) must not change it.
     it('reads an ended head from its own sets and ignores rows', () => {
         const head: ALReceiptRecordEndedHead = {

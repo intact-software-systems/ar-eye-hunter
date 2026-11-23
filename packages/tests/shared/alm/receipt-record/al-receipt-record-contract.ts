@@ -604,5 +604,19 @@ export function describeALReceiptRecordContract(
             setClocks(f, f.startMs + 65_000);
             expect(await readStoredConfirmations(f)).toEqual([]);
         });
+
+        // `countAhead` with no head checks no deadline. An ACK that arrived a second after a deadline, before its
+        // still-graced head was opened, is one `count` would refuse: the head must neither count it nor complete on it.
+        it('ignores an ACK that arrived ahead but after the deadline', async () => {
+            const f = await fixture();
+            setClocks(f, f.startMs + 6_000);
+            expect((await f.a.record.countAhead(toConfirmation(f.ref, 'r1'))).right).toEqual({ disposition: 'ahead' });
+
+            const opened = await f.b.record.open(toOpening(f.ref, ['r1'], f.startMs + 5_000));
+            expect(toTally(opened.right)).toEqual({ confirmed: [], outside: [], complete: false });
+            const ended = await f.c.record.end(f.ref);
+            expect(ended.right?.phase).toBe('timed-out');
+            expect(ended.right?.confirmedRecipientPeerIds).toEqual([]);
+        });
     });
 }
