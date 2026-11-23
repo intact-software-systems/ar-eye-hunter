@@ -1,4 +1,4 @@
-import { decodeALReceiptMessageId, decodeALReceiptPeerId } from '../../al-contracts/al-control-value-codec.ts';
+import { decodeALReceiptIdentifier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALTraceId } from '../../al-contracts/trace/al-trace-id.ts';
 import {
     decodeALAdmissionArray,
@@ -106,8 +106,8 @@ export function decodeALReceiptRecordOpening(value: unknown, key: string): ALRec
         'deadlineAtMs'
     ]);
     const ref = {
-        originPeerId: decodeALReceiptPeerId(opening.originPeerId, 'Stored receipt origin'),
-        msgId: decodeALReceiptMessageId(opening.msgId, 'Stored receipt message id')
+        originPeerId: decodeALReceiptIdentifier(opening.originPeerId, 'Stored receipt origin', 'peer-id'),
+        msgId: decodeALReceiptIdentifier(opening.msgId, 'Stored receipt message id', 'message-id')
     };
     if (!key.endsWith(toALReceiptRecordHeadKey('', ref))) {
         throw new TypeError('Stored receipt head belongs to another message');
@@ -124,7 +124,7 @@ export function decodeALReceiptRecordOpening(value: unknown, key: string): ALRec
 
 /** A receipt control names every identity of its head, so a stored row holds only identities the control accepts. */
 function decodeRecipientPeerId(value: unknown): string {
-    return decodeALReceiptPeerId(value, 'Stored receipt recipient');
+    return decodeALReceiptIdentifier(value, 'Stored receipt recipient', 'peer-id');
 }
 
 /** The receipt control carries the opening's trace as its own trace. */
