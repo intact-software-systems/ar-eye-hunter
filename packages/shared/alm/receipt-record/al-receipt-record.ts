@@ -215,7 +215,7 @@ export class ALReceiptRecord {
         const decode = toALReceiptRecordConfirmationDecoder(this.namespace, confirmation);
         const row: ALReceiptRecordConfirmation = {
             recipientPeerId: confirmation.recipientPeerId,
-            kind: confirmation.kind,
+            kind: confirmation.kind === 'confirmed' ? 'confirmed' : 'outside',
             countedAtEpochMs: nowMs
         };
         const written = await this.writeUnlessConflict(async (transaction) => {

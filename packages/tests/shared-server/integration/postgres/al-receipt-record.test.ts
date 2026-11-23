@@ -226,6 +226,7 @@ function toOpening(scope: PostgresReceiptRecordScope, expectedRecipientPeerIds: 
         msgId: `msg-${crypto.randomUUID()}`,
         traceId: 'trace',
         expectedRecipientPeerIds,
+        neverSentRecipientPeerIds: [],
         snapshotVersion: 1,
         deadlineAtMs: scope.instances[0].clock.nowMs + 30_000
     };

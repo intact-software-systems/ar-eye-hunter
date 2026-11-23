@@ -8,6 +8,7 @@ const opening: ALReceiptRecordOpening = {
     msgId: 'm',
     traceId: 't',
     expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+    neverSentRecipientPeerIds: [],
     snapshotVersion: 7,
     deadlineAtMs: NOW + 5_000
 };
@@ -70,6 +71,12 @@ describe('validateALReceiptRecordOpening', () => {
     it('reports an audience above the limit as unreadable too', () => {
         expect(toIssueCodes({ expectedRecipientPeerIds: toRecipientPeerIds(257) }))
             .toEqual(['audience-over-limit', 'malformed-opening']);
+    });
+
+    // The never-sent list is stored with the head, so a list the decoder would refuse would leave a head no read could
+    // take; 257 is one past the collection limit.
+    it('refuses never-sent recipients past the collection limit as unreadable', () => {
+        expect(toIssueCodes({ neverSentRecipientPeerIds: toRecipientPeerIds(257) })).toEqual(['malformed-opening']);
     });
 
     it('reports every issue, not only the first', () => {

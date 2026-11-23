@@ -10,6 +10,8 @@ import { toALReceiptRecordHeadKey, type ALReceiptRecordRef } from './al-receipt-
 export interface ALReceiptRecordOpening extends ALReceiptRecordRef {
     readonly traceId: string;
     readonly expectedRecipientPeerIds: readonly string[];
+    /** Expected recipients the record's owner never sent the message: only the owner's `not-sent` counts for them. */
+    readonly neverSentRecipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly deadlineAtMs: number;
 }
@@ -86,6 +88,7 @@ export function toALReceiptRecordStoredOpening(opening: ALReceiptRecordOpening):
         msgId: opening.msgId,
         traceId: opening.traceId,
         expectedRecipientPeerIds: [...opening.expectedRecipientPeerIds],
+        neverSentRecipientPeerIds: [...opening.neverSentRecipientPeerIds],
         snapshotVersion: opening.snapshotVersion,
         deadlineAtMs: opening.deadlineAtMs
     };
@@ -97,6 +100,7 @@ export function decodeALReceiptRecordOpening(value: unknown, key: string): ALRec
         'msgId',
         'traceId',
         'expectedRecipientPeerIds',
+        'neverSentRecipientPeerIds',
         'snapshotVersion',
         'deadlineAtMs'
     ]);
@@ -111,6 +115,7 @@ export function decodeALReceiptRecordOpening(value: unknown, key: string): ALRec
         ...ref,
         traceId: decodeALAdmissionString(opening.traceId),
         expectedRecipientPeerIds: decodeALAdmissionArray(opening.expectedRecipientPeerIds, decodeALAdmissionString),
+        neverSentRecipientPeerIds: decodeALAdmissionArray(opening.neverSentRecipientPeerIds, decodeALAdmissionString),
         snapshotVersion: decodeALAdmissionNumber(opening.snapshotVersion),
         deadlineAtMs: decodeALAdmissionNumber(opening.deadlineAtMs)
     };

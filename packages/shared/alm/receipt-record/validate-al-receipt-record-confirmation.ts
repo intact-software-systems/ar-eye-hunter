@@ -3,10 +3,15 @@ import type { ALReceiptRecordHead } from './al-receipt-record-rows.ts';
 
 export interface ALReceiptRecordConfirmationDto extends ALReceiptRecordRef {
     readonly recipientPeerId: string;
-    readonly kind: 'confirmed' | 'outside';
+    /** `not-sent` is the owner's statement that it sent the recipient nothing; it is stored as `outside`. */
+    readonly kind: 'confirmed' | 'outside' | 'not-sent';
 }
 
-export type ALReceiptRecordConfirmationIssueCode = 'head-ended' | 'outside-frozen-audience' | 'deadline-expired';
+export type ALReceiptRecordConfirmationIssueCode =
+    | 'head-ended'
+    | 'outside-frozen-audience'
+    | 'deadline-expired'
+    | 'never-sent';
 
 export interface ALReceiptRecordConfirmationIssue {
     readonly code: ALReceiptRecordConfirmationIssueCode;
@@ -30,6 +35,15 @@ export function validateALReceiptRecordConfirmation(
     }
     if (head.phase === 'open' && head.opening.deadlineAtMs <= nowMs) {
         issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
+    }
+    if (
+        confirmation.kind !== 'not-sent' &&
+        head.opening.neverSentRecipientPeerIds.includes(confirmation.recipientPeerId)
+    ) {
+        issues.push({
+            code: 'never-sent',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
     }
     return issues;
 }

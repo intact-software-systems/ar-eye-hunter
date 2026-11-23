@@ -25,10 +25,12 @@ const opening: ALReceiptRecordOpening = {
     ...ref,
     traceId: 'trace-1',
     expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+    neverSentRecipientPeerIds: [],
     snapshotVersion: 4,
     deadlineAtMs: 10_000
 };
 const openHead: ALReceiptRecordOpenHead = { phase: 'open', opening };
+const neverSentHead: ALReceiptRecordOpenHead = { phase: 'open', opening: { ...opening, neverSentRecipientPeerIds: ['r2'] } };
 // r3 confirmed from outside the audience snapshot, so both terminal sets are present and non-empty.
 const endedHead: ALReceiptRecordEndedHead = {
     phase: 'timed-out',
@@ -83,6 +85,32 @@ const refusals: readonly RefusalCase[] = [
         key: headKey,
         decode: decodeALReceiptRecordHead
     },
+    // The never-sent list decides which recipients' own word counts; a head that lost it would count them all.
+    {
+        name: 'an opening without its never-sent recipients',
+        value: {
+            phase: 'open',
+            opening: {
+                originPeerId: opening.originPeerId,
+                msgId: opening.msgId,
+                traceId: opening.traceId,
+                expectedRecipientPeerIds: opening.expectedRecipientPeerIds,
+                snapshotVersion: opening.snapshotVersion,
+                deadlineAtMs: opening.deadlineAtMs
+            }
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
+        name: 'never-sent recipients past the collection limit',
+        value: {
+            ...openHead,
+            opening: { ...opening, neverSentRecipientPeerIds: Array.from({ length: 257 }, (_, index) => `r${index}`) }
+        },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
     {
         name: 'a negative deadline',
         value: { ...openHead, opening: { ...opening, deadlineAtMs: -1 } },
@@ -108,6 +136,7 @@ describe('receipt record rows', () => {
     it('reads back an open head and an ended head as written', () => {
         expect(decodeALAdmissionValue(openHead, headKey, decodeALReceiptRecordHead)).toEqual(openHead);
         expect(decodeALAdmissionValue(endedHead, headKey, decodeALReceiptRecordHead)).toEqual(endedHead);
+        expect(decodeALAdmissionValue(neverSentHead, headKey, decodeALReceiptRecordHead)).toEqual(neverSentHead);
         expect(decodeALAdmissionValue(confirmation, confirmationKey, decodeALReceiptRecordConfirmation))
             .toEqual(confirmation);
     });

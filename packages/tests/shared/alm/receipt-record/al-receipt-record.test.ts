@@ -59,6 +59,7 @@ describe('ALReceiptRecord at its storage boundary', () => {
             ...ref,
             traceId: 'trace',
             expectedRecipientPeerIds: ['r1'],
+            neverSentRecipientPeerIds: [],
             snapshotVersion: 1,
             deadlineAtMs: Date.now() + 5_000
         };

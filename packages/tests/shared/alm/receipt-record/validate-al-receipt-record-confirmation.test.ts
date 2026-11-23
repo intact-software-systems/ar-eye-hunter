@@ -15,6 +15,7 @@ const opening: ALReceiptRecordOpening = {
     msgId: 'm',
     traceId: 't',
     expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+    neverSentRecipientPeerIds: [],
     snapshotVersion: 7,
     deadlineAtMs: NOW + 5_000
 };
@@ -62,5 +63,32 @@ describe('validateALReceiptRecordConfirmation', () => {
     it('refuses any confirmation against an ended head, with every other issue', () => {
         expect(toEndedHeadIssueCodes('r1')).toEqual(['head-ended']);
         expect(toEndedHeadIssueCodes('stranger')).toEqual(['head-ended', 'outside-frozen-audience']);
+    });
+
+    // D708: a recipient its owner never sent the message cannot have received it, so only the owner's own
+    // `not-sent` word counts for it; its ACK, or a claim it is outside the audience, would be a forged answer.
+    it('accepts only the owner\'s word for a recipient it never sent', () => {
+        const neverSent = { ...opening, neverSentRecipientPeerIds: ['r2'] };
+        const toCodes = (
+            head: ALReceiptRecordOpenHead | ALReceiptRecordEndedHead,
+            recipientPeerId: string,
+            kind: ALReceiptRecordConfirmationDto['kind']
+        ) => validateALReceiptRecordConfirmation(
+            { ...head, opening: neverSent },
+            { originPeerId: 'o', msgId: 'm', recipientPeerId, kind },
+            NOW
+        ).map((issue) => issue.code);
+
+        expect(validateALReceiptRecordConfirmation({ ...openHead, opening: neverSent }, toConfirmation('r2'), NOW)).toEqual([
+            {
+                code: 'never-sent',
+                message: 'AL acknowledgement comes from a recipient this server never sent the message'
+            }
+        ]);
+        expect(toCodes(openHead, 'r2', 'outside')).toEqual(['never-sent']);
+        expect(toCodes(openHead, 'r2', 'not-sent')).toEqual([]);
+        expect(toCodes(openHead, 'r1', 'not-sent')).toEqual([]);
+        expect(toCodes(openHead, 'stranger', 'not-sent')).toEqual(['outside-frozen-audience']);
+        expect(toCodes(timedOutHead, 'r2', 'confirmed')).toEqual(['head-ended', 'never-sent']);
     });
 });

@@ -77,7 +77,14 @@ function toOpening(
     expectedRecipientPeerIds: readonly string[],
     deadlineAtMs: number
 ): ALReceiptRecordOpening {
-    return { ...ref, traceId: 'trace', expectedRecipientPeerIds, snapshotVersion: 1, deadlineAtMs };
+    return {
+        ...ref,
+        traceId: 'trace',
+        expectedRecipientPeerIds,
+        neverSentRecipientPeerIds: [],
+        snapshotVersion: 1,
+        deadlineAtMs
+    };
 }
 
 function toConfirmation(
@@ -632,6 +639,40 @@ export function describeALReceiptRecordContract(
             const withExtraField = { ...f.opening, carrier: 'ws' };
             expect((await f.a.record.open(withExtraField)).right?.head).toEqual({ phase: 'open', opening: f.opening });
             expect((await f.b.record.read(f.ref)).right?.head).toEqual({ phase: 'open', opening: f.opening });
+        });
+
+        // D708: a recipient its owner never sent cannot have received the message. Its own ACK is refused and writes
+        // nothing; the owner's `not-sent` word counts it outside, so the set completes on the recipients that got it.
+        it('counts only the owner\'s word for a recipient it never sent', async () => {
+            const f = await fixture();
+            await f.a.record.open({ ...f.opening, neverSentRecipientPeerIds: ['r2'] });
+
+            const forged = await confirm(f, f.a, 'r2');
+            expect(forged.left?.kind).toBe('invalid-confirmation');
+            expect(forged.left?.kind === 'invalid-confirmation' ? forged.left.issues.map(({ code }) => code) : [])
+                .toEqual(['never-sent']);
+            expect(await readStoredConfirmations(f)).toEqual([]);
+
+            const notSent = await f.b.record.count(toConfirmation(f.ref, 'r2', 'not-sent'));
+            expect(notSent.right?.disposition).toBe('counted');
+            expect((await readStoredConfirmations(f)).map(({ value }) => value.kind)).toEqual(['outside']);
+            const counted = await confirm(f, f.c, 'r1');
+            expect(toTally(counted.right?.view)).toEqual({ confirmed: ['r1'], outside: ['r2'], complete: true });
+        });
+
+        // Ruling R14: `countAhead` with no head validates nothing, so a forged ACK from a never-sent recipient is
+        // stored; the head that opens later must not count it, nor complete on it.
+        it('an ACK that arrived ahead from a recipient its owner never sent does not count', async () => {
+            const f = await fixture();
+            const ahead = await f.a.record.countAhead(toConfirmation(f.ref, 'r2'));
+            expect(ahead.right).toEqual({ disposition: 'ahead' });
+
+            const opened = await f.b.record.open({ ...f.opening, neverSentRecipientPeerIds: ['r2'] });
+            expect(toTally(opened.right)).toEqual({ confirmed: [], outside: [], complete: false });
+            const counted = await confirm(f, f.c, 'r1');
+            expect(toTally(counted.right?.view)).toEqual({ confirmed: ['r1'], outside: [], complete: false });
+            const stored = await readStoredConfirmations(f);
+            expect(stored.map(({ value }) => value.recipientPeerId).sort()).toEqual(['r1', 'r2']);
         });
     });
 }

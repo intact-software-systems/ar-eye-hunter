@@ -11,6 +11,7 @@ const head: ALReceiptRecordOpenHead = {
         msgId: 'm',
         traceId: 't',
         expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+        neverSentRecipientPeerIds: [],
         snapshotVersion: 7,
         deadlineAtMs: NOW + 5_000
     }

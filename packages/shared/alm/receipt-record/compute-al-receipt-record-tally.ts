@@ -20,11 +20,13 @@ export function computeALReceiptRecordTally(
             complete: head.phase === 'complete'
         };
     }
-    const beforeDeadline = confirmations.filter(({ countedAtEpochMs }) => countedAtEpochMs < head.opening.deadlineAtMs);
+    const { deadlineAtMs, neverSentRecipientPeerIds } = head.opening;
+    const counted = confirmations.filter(({ recipientPeerId, kind, countedAtEpochMs }) =>
+        countedAtEpochMs < deadlineAtMs &&
+        (kind === 'outside' || !neverSentRecipientPeerIds.includes(recipientPeerId))
+    );
     const toRecipientPeerIds = (kind: ALReceiptRecordConfirmation['kind']) =>
-        beforeDeadline.filter((confirmation) => confirmation.kind === kind).map(({ recipientPeerId }) =>
-            recipientPeerId
-        );
+        counted.filter((confirmation) => confirmation.kind === kind).map(({ recipientPeerId }) => recipientPeerId);
     const receipt = {
         expectedPeerIds: [...new Set(head.opening.expectedRecipientPeerIds)],
         ackedPeerIds: toRecipientPeerIds('confirmed'),

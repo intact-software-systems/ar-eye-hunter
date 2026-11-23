@@ -13,6 +13,7 @@ const opening: ALReceiptRecordOpening = {
     msgId: 'm',
     traceId: 't',
     expectedRecipientPeerIds: ['r1', 'r2', 'r3'],
+    neverSentRecipientPeerIds: [],
     snapshotVersion: 7,
     deadlineAtMs: NOW + 5_000
 };
@@ -96,6 +97,25 @@ describe('computeALReceiptRecordTally', () => {
         });
         const lateOutside = [toRow('r1', 'confirmed', NOW), toRow('r2', 'outside', opening.deadlineAtMs)];
         expect(computeALReceiptRecordTally(openHead, lateOutside).outsideAudienceRecipientPeerIds).toEqual([]);
+    });
+
+    // Ruling R14: a row written ahead of its head passed no validator, so the tally itself must leave out an ACK from
+    // a recipient the owner never sent; that recipient's `outside` row is the owner's word and counts.
+    it('leaves out a confirmation from a recipient its owner never sent, and counts its outside row', () => {
+        const head: ALReceiptRecordOpenHead = {
+            phase: 'open',
+            opening: { ...opening, expectedRecipientPeerIds: ['r1', 'r2'], neverSentRecipientPeerIds: ['r2'] }
+        };
+        expect(computeALReceiptRecordTally(head, toRows(['r1', 'confirmed'], ['r2', 'confirmed']))).toEqual({
+            confirmedRecipientPeerIds: ['r1'],
+            outsideAudienceRecipientPeerIds: [],
+            complete: false
+        });
+        expect(computeALReceiptRecordTally(head, toRows(['r1', 'confirmed'], ['r2', 'outside']))).toEqual({
+            confirmedRecipientPeerIds: ['r1'],
+            outsideAudienceRecipientPeerIds: ['r2'],
+            complete: true
+        });
     });
 
     // An ended head is the final word: a row written after the ending (r3) must not change it.
