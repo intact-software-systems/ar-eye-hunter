@@ -1012,8 +1012,7 @@ arrive with a `messages.received` whose window covers the sender's body up to it
 included (each role's recipe runs that much longer than an ordinary one), and whose `stallMs` is the time the sender
 may take to reach its first track: its baseline, its reconnect and one send. The count reads the arrivals logged
 before it started too, and needs no cue from the sender, which leaves right after its last track. The receiver then
-waits in
-its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
+waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction pass a newly opened track
 runs after its admission commit states it, not the delivery the arrivals count), and its `stats` reads
 `rallar.alm.orderingTracks` both `lte` and
 `gte` 256 (D191): the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile

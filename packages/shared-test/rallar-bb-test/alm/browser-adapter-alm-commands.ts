@@ -9,14 +9,12 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestEvent,
     RallarBlackBoxTestFaultInjectCommand,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
-import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
@@ -33,6 +31,7 @@ import {
     decodeAlmMessagesSubscriptionsResultValue,
     decodeAlmTopicSubscriptionResultValue
 } from './decode-alm-topic-subscription-result.ts';
+import { observeAlmMatchingMessages } from './messages-received/observe-alm-matching-messages.ts';
 import type {
     AlmReceivedMessageIdentity,
     RallarBlackBoxTestFaultInjectResultValue,
@@ -100,31 +99,6 @@ interface AlmFailureOutcomeInput {
     readonly error: Error;
 }
 
-interface AlmReceivedMessageMatch {
-    readonly connection: string;
-    readonly typeId: string;
-    readonly msgId: string | undefined;
-}
-
-interface ObserveAlmMatchingMessagesInput {
-    readonly port: RallarBlackBoxAlmBrowserPort;
-    readonly context: RallarBlackBoxTestCommandContext;
-    readonly holdFullWindow: boolean;
-    readonly count: number;
-    readonly match: AlmReceivedMessageMatch;
-    readonly deadlineEpochMs: number;
-    /** `undefined` when only the deadline ends the observation. */
-    readonly stallMs: number | undefined;
-    readonly signal: AbortSignal | undefined;
-}
-
-interface AlmMatchingMessages {
-    /** Each matched inbound event's message `data`, in arrival order. */
-    readonly copies: readonly RallarBlackBoxTestRecord[];
-    /** Whether the stall window ended the observation before its deadline. */
-    readonly stalled: boolean;
-}
-
 interface AlmReceivedOutcomeInput {
     readonly command: Extract<RallarBlackBoxAlmCommandWithId, Readonly<{ kind: 'messages.received'; }>>;
     readonly context: RallarBlackBoxTestCommandContext;
@@ -185,13 +159,6 @@ const ALM_ABORTED_ERROR_NAMES: readonly string[] = [
     'RALLAR_BLACK_BOX_ABORTED',
     'RALLAR_BLACK_BOX_TIMEOUT'
 ];
-
-const ALM_INBOUND_MESSAGE_TOPICS: readonly string[] = [
-    'rallar.browser.ws.message',
-    'rallar.browser.messages.rtc.message'
-];
-
-const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
 
 /**
  * The page ends a reply or subscription wait this long before the command's own budget, so a timeout comes back as
@@ -561,54 +528,6 @@ async function countAlmReceivedMessages(
     }
 }
 
-/**
- * Parity with the wait command: an absence claim holds the whole window and only then scans the
- * buffer, while a presence claim settles as soon as the recipe's count is on the log. Each poll
- * tick races the abort signal, so a recipe cancellation interrupts the hold instead of always
- * running the full window. A stall window ends a presence claim early once that long passed with
- * no new copy since the observation started or since its latest copy.
- */
-async function observeAlmMatchingMessages(input: ObserveAlmMatchingMessagesInput): Promise<AlmMatchingMessages> {
-    let copies = resolveAlmMatchingMessages(input.context.state().events, input.match);
-    let progressEpochMs = input.port.now();
-    while (input.port.now() < input.deadlineEpochMs) {
-        if (!input.holdFullWindow && copies.length >= input.count) {
-            return { copies, stalled: false };
-        }
-        if (input.stallMs !== undefined && input.port.now() - progressEpochMs >= input.stallMs) {
-            return { copies, stalled: true };
-        }
-        const remainingMs = input.deadlineEpochMs - input.port.now();
-        await input.port.withAbort(
-            input.port.sleep(Math.min(ALM_RECEIVED_POLL_INTERVAL_MS, remainingMs)),
-            input.signal
-        );
-        const observed = resolveAlmMatchingMessages(input.context.state().events, input.match);
-        progressEpochMs = observed.length > copies.length ? input.port.now() : progressEpochMs;
-        copies = observed;
-    }
-    return { copies, stalled: false };
-}
-
-/** Each matched inbound event's message `data`, in arrival order. */
-function resolveAlmMatchingMessages(
-    events: readonly RallarBlackBoxTestEvent[],
-    match: AlmReceivedMessageMatch
-): readonly RallarBlackBoxTestRecord[] {
-    return events.flatMap((event) => {
-        if (
-            !ALM_INBOUND_MESSAGE_TOPICS.includes(event.topic) ||
-            (event.connection !== undefined && event.connection !== match.connection)
-        ) {
-            return [];
-        }
-        const data = decodeAlmRuntimeRecord(decodeAlmRuntimeRecord(event.payload).data);
-        const matches = toAlmEventStringField(data, 'typeId') === match.typeId &&
-            (match.msgId === undefined || toAlmEventStringField(data, 'msgId') === match.msgId);
-        return matches ? [data] : [];
-    });
-}
-
 /** A copy whose payload lacks the field, or holds anything but a finite number there, ascends nothing. */
 function computeAlmPayloadFieldAscends(copies: readonly RallarBlackBoxTestRecord[], field: string): boolean {
     let previous = Number.NEGATIVE_INFINITY;
@@ -749,9 +668,4 @@ function toAlmPageRuntimeErrorCode(message: string): string {
         message.startsWith(BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES[key])
     );
     return prefixed === undefined ? ALM_ERROR_CODES.invalidCommandInput : ALM_ERROR_CODES[prefixed];
-}
-
-function toAlmEventStringField(record: RallarBlackBoxTestRecord, key: string): string {
-    const value = record[key];
-    return typeof value === 'string' ? value : '';
 }

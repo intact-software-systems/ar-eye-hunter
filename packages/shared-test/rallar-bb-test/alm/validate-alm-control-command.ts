@@ -20,6 +20,7 @@ import {
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
 import { decodeAlmFaultRewrite } from './decode-alm-fault-rewrite.ts';
+import { validateAlmMessagesReceivedCommand } from './messages-received/validate-alm-messages-received-command.ts';
 
 export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.send'
@@ -50,7 +51,7 @@ export function validateAlmControlCommand(
         case 'messages.receipts':
             return validateMessagesHandleCommand(command, kind);
         case 'messages.received':
-            return validateMessagesReceivedCommand(command);
+            return validateAlmMessagesReceivedCommand(command);
         case 'messages.control':
             return validateMessagesControlCommand(command);
         case 'messages.awaitReply':
@@ -306,47 +307,6 @@ function validateDeliveryStateField(command: RallarBlackBoxTestRecord): readonly
     return state.every((entry) => AL_DELIVERY_STATES.some((deliveryState) => deliveryState === entry))
         ? []
         : [toControlCommandIssue(`messages.observe.state must list only ${AL_DELIVERY_STATES.join(', ')}.`)];
-}
-
-function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
-    const path = 'messages.received';
-    return [
-        ...validateStringField(command, 'connection', path),
-        ...validateStringField(command, 'typeId', path),
-        ...validateStringField(command, 'msgId', path),
-        ...validateIntegerField({ record: command, key: 'count', path, minimum: 0 }),
-        ...validateBooleanField(command, 'absent', path),
-        ...validateMessagesReceivedOrderField(command),
-        ...validateMessagesReceivedStallField(command),
-        ...validateIntegerField({ record: command, key: 'windowMs', path, minimum: 0 })
-    ];
-}
-
-function validateMessagesReceivedStallField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
-    const issues = validateIntegerField({ record: command, key: 'stallMs', path: 'messages.received', minimum: 1 });
-    if (issues.length > 0 || command.stallMs === undefined || command.absent !== true) {
-        return issues;
-    }
-    return [
-        toControlCommandIssue(
-            'messages.received.stallMs ends a count that stops arriving, which an absence claim (absent: true) never ' +
-                'ends early.'
-        )
-    ];
-}
-
-function validateMessagesReceivedOrderField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
-    const field = command.ascendingBy;
-    const path = 'messages.received.ascendingBy';
-    if (typeof field !== 'string') {
-        return validateStringField(command, 'ascendingBy', 'messages.received');
-    }
-    if (field.trim() === '') {
-        return [toControlCommandIssue(`${path} must name a payload field.`)];
-    }
-    return command.absent === true
-        ? [toControlCommandIssue(`${path} claims an order, which an absence claim (absent: true) has none of.`)]
-        : [];
 }
 
 function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
