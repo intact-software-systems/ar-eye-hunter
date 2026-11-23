@@ -294,7 +294,7 @@ test('a server-producer outbox row skips a subscriber revoked before dequeue, ne
         assert.deepEqual(pending?.outsideAudiencePeerIds, []);
 
         await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
-        await settle();
+        await waitFor(async () => await harness.stores.admissionStore.readPendingAck(receipt) === undefined);
 
         assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
     });
@@ -324,6 +324,12 @@ test('a server-producer outbox row skips a subscriber revoked before its retry, 
         assert.deepEqual(row?.expectedPeerIds, ['bob', 'carol']);
         assert.deepEqual(row?.outsideAudiencePeerIds, ['carol']);
         assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
+        // A head that timed out also settles the row: only its phase shows bob's ACK completed the receipt.
+        const head = (await harness.record.read(receipt)).right?.head;
+        assert.deepEqual(
+            head?.phase === 'open' ? head.phase : [head?.phase, head?.confirmedRecipientPeerIds, head?.outsideAudienceRecipientPeerIds],
+            ['complete', ['bob'], ['carol']]
+        );
     });
 });
 

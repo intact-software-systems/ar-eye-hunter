@@ -8,10 +8,10 @@ import {
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
-import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, type ALAckStatus, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
@@ -370,6 +370,37 @@ export function receiverAck(input: ReceiverAckInput): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: nowMs
+        })
+    );
+}
+
+/** A room notification of the server's own that asks the receipt `ack` and lives `ttlMs`. */
+export function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree', ttlMs: number): ALMessage {
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: RECEIPT_SERVER_PEER_ID,
+        route: newALRoute('room.snapshot', ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'snapshot.v1',
+        resource: { msgId },
+        options: { groupRef: ROOM, reliability: 'at-least-once', qos: { ack: { algo: ack } }, ttlMs }
+    });
+    return { ...message, id: { ...message.id, msgId } };
+}
+
+/** A session's ACK of a publication of the server's: addressed to the server, its origin, under the message's trace. */
+export function sessionAck(message: ALMessage, recipient: string, status: ALAckStatus): ALMessage {
+    return newALAckControlMessage(
+        { v: 4, msgId: `ack-${message.id.msgId}-${recipient}-${status}`, senderId: recipient, ts: Date.now(), traceId: message.id.traceId },
+        toTestALAckPayload({
+            ackedMsgId: message.id.msgId,
+            fromPeerId: recipient,
+            toPeerId: RECEIPT_SERVER_PEER_ID,
+            originPeerId: RECEIPT_SERVER_PEER_ID,
+            logicalRecipientPeerId: recipient,
+            carrier: 'ws',
+            status,
+            observedAtEpochMs: Date.now()
         })
     );
 }

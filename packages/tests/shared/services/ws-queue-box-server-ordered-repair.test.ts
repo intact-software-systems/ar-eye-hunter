@@ -475,6 +475,7 @@ describe.each([
 
     it('retries a producer row\'s receipt only for the recipient still unconfirmed, not the one it recorded outside', async () => {
         // Pins the retry resending to a recipient the server skipped below its position, which the record holds outside.
+        // The send-time skip drops such a copy anyway, so the retry's stored sends, not `b`'s socket, show the narrowing.
         const server = await createOrderedServer({ cluster });
         await writeProducerRow(server, producerEvent(2), ['b']);
         await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b))).toEqual(['s-event-2']);
@@ -485,6 +486,7 @@ describe.each([
         await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.c)), { timeout: 4_000 })
             .toEqual(['s-event-1', 's-event-1']);
         await settle(server);
+        expect([...new Set(await readRetrySendPeerIds(server, 's-event-1'))]).toEqual(['c']);
         expect(readFrames(server.sockets.b, 's-event-1')).toEqual([]);
         expect((await server.record.read({ originPeerId: SERVER_ID, msgId: 's-event-1' })).right?.tally.outsideAudienceRecipientPeerIds)
             .toEqual(['b']);
@@ -861,7 +863,21 @@ function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: str
     );
 }
 
-/** The peers each committed receipt retry of a message asked its repair to resend to, in commit order. */
+/** The peers the stored sends of a message's receipt retries name: a repair plans its sends in the immediate phase. */
+async function readRetrySendPeerIds(server: OrderedServer, msgId: string): Promise<readonly string[]> {
+    const rows = await Promise.all((await server.outbox.getAllKeys()).map((key) => server.outbox.getItem(key)));
+    const work = await Promise.all(
+        rows.flatMap((row) => row?.key.topicId === 'AL_OUTBOUND' ? [row] : [])
+            .map(async (row) => await server.stores.admissionStore.readWorkSnapshot(row, undefined))
+    );
+    return work.flatMap(({ payload, canonicalMessage }) =>
+        payload.kind === 'send-prepared' && payload.phase === 'immediate' && canonicalMessage?.id.msgId === msgId &&
+            'peerId' in payload.prepared
+            ? [payload.prepared.peerId]
+            : []
+    );
+}
+
 /** One engine pass, then the observation: the poll that calls it waits for the server's asynchronous sends. */
 async function runEngine<T>(server: OrderedServer, observe: () => T): Promise<T> {
     await server.engine.executeOnce();

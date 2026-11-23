@@ -6,13 +6,8 @@ import {
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALNackControlMessage,
-    type ALAckStatus,
-    type ALNackReason
-} from '@shared/al-contracts/al-control.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -24,7 +19,8 @@ import { decodeALReceiptRecordConfirmation, type ALReceiptRecordConfirmation } f
 import { toALReceiptRecordWorkKey } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -47,8 +43,9 @@ import {
     createReceiptServer,
     installClock,
     readReceiptAggregationVerdicts,
-    readSocketReceipts,
     RECEIPT_SERVER_PEER_ID,
+    serverNotification,
+    sessionAck,
     type ClusterInstance,
     type ReceiptClock,
     type ReceiptServerInstance
@@ -63,6 +60,7 @@ const ACK_TIMEOUT_MS = 2_000;
 /** The head's deadline after the dequeue: the row's four windows less half of one. */
 const HEAD_LIFETIME_MS = 7_000;
 const CLOCK_STEP_MS = 1_000;
+const NOTIFICATION_TTL_MS = 60_000;
 
 /** A case's own backend over the base one the server would use. */
 type BackendWrapper = (base: ALAdmissionWorkBackend) => ALAdmissionWorkBackend;
@@ -92,7 +90,14 @@ interface OwnReceiptServer extends ReceiptServerInstance, OwnReceiptReaders {
 
 interface OwnReceiptCluster extends OwnReceiptReaders {
     readonly instance: ClusterInstance;
+    readonly outbox: InMemoryQueueBox;
     readonly sockets: Readonly<Record<'a' | 'b', SimulatedWebSocket>>;
+}
+
+interface FailedHookPublication {
+    readonly cluster: OwnReceiptCluster;
+    readonly delta: ALMessage;
+    readonly failing: { readonly armed: boolean; };
 }
 
 describe('the receipt of a server publication is counted in the receipt record', () => {
@@ -108,7 +113,7 @@ describe('the receipt of a server publication is counted in the receipt record',
             phase: 'open',
             opening: { originPeerId: RECEIPT_SERVER_PEER_ID, expectedRecipientPeerIds: ['a', 'b'], snapshotVersion: 0 }
         });
-        expect(readSocketReceipts(Object.values(server.sockets), delta.id.msgId)).toEqual([]);
+        expect(server.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
     });
 
     it('2 counts a session\'s ACK in the record and leaves the server\'s row and version as they were', async () => {
@@ -118,6 +123,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         const delta = await publishDelta(server, clock, ['a', 'b']);
         const read = { msgId: delta.id.msgId, originPeerId: RECEIPT_SERVER_PEER_ID, phase: 'admitted', expectedRecipientPeerIds: ['a', 'b'] } as const;
         const before = await server.store.readReceiptAdmission(read);
+        expect(typeof before.clientRecord?.version).toBe('number');
 
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
 
@@ -254,7 +260,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         // Pins an ACK of a receipt no record counts being written into the record, where nothing reads it.
         const clock = installClock();
         const server = await createOwnReceiptServer(clock, defaultOptions(['a', 'b']));
-        const notification = serverNotification('snapshot-hop', 'hop');
+        const notification = serverNotification('snapshot-hop', 'hop', NOTIFICATION_TTL_MS);
         await server.service.enqueueOutboxIfAbsent(notification, audience(['a', 'b']));
         await expect.poll(async () => {
             await server.engine.executeOnce();
@@ -271,20 +277,12 @@ describe('the receipt of a server publication is counted in the receipt record',
 
     it('9 publishes the publication when the record cannot be written at the dequeue, and the failure propagates', async () => {
         // Pins a failed `open` stopping the dequeue hook: a cluster's copies all go out inside the hook, so the
-        // publication went unsent. The failed attempt is dequeued again, and its retry opens the head.
+        // publication went unsent. The failure propagates, so the attempt is dequeued again, and its retry opens the head.
         const clock = installClock();
-        const failing = { armed: false };
-        const cluster = await createOwnReceiptCluster(clock, { recordBackend: toFailingOnce(failing), bus: createBridgeBus() });
-        const delta = createDelta(clock);
-        await cluster.instance.service.enqueueOutboxIfAbsent(delta, audience(['a', 'b']));
-        failing.armed = true;
+        const { cluster, delta, failing } = await publishThroughFailedHook(clock);
 
-        // The clock stands still, so the failed attempt's retry is not yet due.
-        await expect.poll(async () => {
-            await cluster.instance.engine.executeOnce();
-            return copiesOf(cluster.sockets, delta);
-        }).toEqual([1, 1]);
         expect(failing.armed).toBe(false);
+        expect(copiesOf(cluster.sockets, delta)).toEqual([1, 1]);
         expect(await cluster.store.readPendingAck(ownRef(delta))).toMatchObject({ expectedPeerIds: ['a', 'b'] });
         expect((await cluster.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
         await expect.poll(async () => {
@@ -292,8 +290,20 @@ describe('the receipt of a server publication is counted in the receipt record',
             await cluster.instance.engine.executeOnce();
             return (await cluster.record.read(ownRef(delta))).right?.head.phase;
         }).toBe('open');
-        // The retry dispatched the row again, so each session holds the copy of each attempt.
-        expect(copiesOf(cluster.sockets, delta)).toEqual([2, 2]);
+        expect((await readOutboxRow(cluster.outbox))?.dequeueAudit.attempts).toBe(2);
+    });
+
+    it('9b a dequeue retried after a failed hook sends every copy again', async () => {
+        // Pins what a propagated record failure costs: the retry dispatches the row again, so each session holds the
+        // copy of each attempt.
+        const clock = installClock();
+        const { cluster, delta } = await publishThroughFailedHook(clock);
+
+        await expect.poll(async () => {
+            clock.nowMs += 5;
+            await cluster.instance.engine.executeOnce();
+            return copiesOf(cluster.sockets, delta);
+        }).toEqual([2, 2]);
     });
 
     it('10 a row dequeued again changes no head', async () => {
@@ -381,7 +391,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         const delta = await publishWithFailedOpens(server, clock, failing);
         await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
         await server.service.acceptIncomingMessage(sessionAck(delta, 'b', 'delivered'), 'b');
-        const sent = countCopies(server.sockets.a!, delta.id.msgId);
+        const sent = countCopies(getSessionSocket(server, 'a'), delta.id.msgId);
 
         await runRowWindow(server, clock, delta);
 
@@ -401,7 +411,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         for (const sessionId of ['a', 'b', 'c']) {
             await server.service.acceptIncomingMessage(sessionAck(delta, sessionId, 'delivered'), sessionId);
         }
-        const sent = countCopies(server.sockets.a!, delta.id.msgId);
+        const sent = countCopies(getSessionSocket(server, 'a'), delta.id.msgId);
         const attempts = (await server.store.readReceiptState(ownRef(delta)))?.attempts;
         if (attempts === undefined) {
             throw new Error('The server has no receipt row for the publication');
@@ -424,7 +434,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         const clock = installClock();
         const sessions = Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1 }, (_, index) => `s${index}`);
         const server = await createOwnReceiptServer(clock, defaultOptions(sessions));
-        const notification = serverNotification('snapshot-crowd', 'receiver');
+        const notification = serverNotification('snapshot-crowd', 'receiver', NOTIFICATION_TTL_MS);
         await server.service.enqueueOutboxIfAbsent(notification, audience(undefined));
         await expect.poll(async () => {
             await server.engine.executeOnce();
@@ -477,20 +487,6 @@ function createDelta(clock: ReceiptClock): ALMessage {
     return decodePersistedALMessage(entry.resource);
 }
 
-/** A room notification of the server's own that asks the receipt `ack`. */
-function serverNotification(msgId: string, ack: 'receiver' | 'hop'): ALMessage {
-    const message = newALBroadcastMessage({
-        createdAtEpochMs: Date.now(),
-        senderId: RECEIPT_SERVER_PEER_ID,
-        route: newALRoute('room.snapshot', ROOM.groupId, msgId),
-        scope: 'room',
-        typeId: 'snapshot.v1',
-        resource: { msgId },
-        options: { groupRef: ROOM, reliability: 'at-least-once', qos: { ack: { algo: ack } }, ttlMs: 60_000 }
-    });
-    return { ...message, id: { ...message.id, msgId } };
-}
-
 function audience(admittedAudience: readonly string[] | undefined): WsQueueBoxServerService.EnqueueAuthority {
     return { admittedAudience, admittedConnectionGenerationIds: undefined, recipientScope: undefined };
 }
@@ -503,6 +499,14 @@ function defaultOptions(peerIds: readonly string[]): OwnReceiptServerOptions {
     return { peerIds, recordBackend: undefined, left: undefined };
 }
 
+function getSessionSocket(server: OwnReceiptServer, sessionId: string): SimulatedWebSocket {
+    const socket = server.sockets[sessionId];
+    if (socket === undefined) {
+        throw new Error(`The server has no session ${sessionId}`);
+    }
+    return socket;
+}
+
 function copiesOf(sockets: Readonly<Record<string, SimulatedWebSocket>>, message: ALMessage): readonly number[] {
     return Object.values(sockets).map((socket) => countCopies(socket, message.id.msgId));
 }
@@ -513,26 +517,9 @@ async function publishDelta(server: OwnReceiptServer, clock: ReceiptClock, sessi
     expect((await server.service.enqueueOutboxIfAbsent(delta, audience(sessions))).verdict.kind).toBe('admitted');
     await expect.poll(async () => {
         await server.engine.executeOnce();
-        return sessions.map((sessionId) => countCopies(server.sockets[sessionId]!, delta.id.msgId));
+        return sessions.map((sessionId) => countCopies(getSessionSocket(server, sessionId), delta.id.msgId));
     }).toEqual(sessions.map(() => 1));
     return delta;
-}
-
-/** The session addresses its ACK to the server, which sent the publication, and stamps it with its trace. */
-function sessionAck(message: ALMessage, recipient: string, status: ALAckStatus): ALMessage {
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${message.id.msgId}-${recipient}-${status}`, senderId: recipient, ts: Date.now(), traceId: message.id.traceId },
-        toTestALAckPayload({
-            ackedMsgId: message.id.msgId,
-            fromPeerId: recipient,
-            toPeerId: RECEIPT_SERVER_PEER_ID,
-            originPeerId: RECEIPT_SERVER_PEER_ID,
-            logicalRecipientPeerId: recipient,
-            carrier: 'ws',
-            status,
-            observedAtEpochMs: Date.now()
-        })
-    );
 }
 
 function sessionNack(message: ALMessage, recipient: string, reason: ALNackReason): ALMessage {
@@ -593,8 +580,8 @@ function toFailingWhileArmed(failing: { readonly armed: boolean; }): BackendWrap
 
 /**
  * Publishes the delta to a, b and c while the record fails, so its dequeue opens no head, and steps the clock to each
- * retry the failure causes until the next one falls after the row's first window; then disarms. Each retry dispatches
- * the row again and moves that window.
+ * retry the failure causes until the next one falls after the instant `runRowWindow` runs the row's window; then
+ * disarms. Each retry dispatches the row again and moves that window.
  */
 async function publishWithFailedOpens(
     server: OwnReceiptServer,
@@ -604,21 +591,25 @@ async function publishWithFailedOpens(
     const delta = createDelta(clock);
     await server.service.enqueueOutboxIfAbsent(delta, audience(['a', 'b', 'c']));
     failing.armed = true;
-    for (;;) {
+    for (let attempt = 1; attempt <= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
         await settleDueWork(server, clock);
-        const retryAtMs = (await readOutboxRow(server))?.dequeueAudit.nextTs?.epochMilliseconds;
+        const row = await readOutboxRow(server.outbox);
+        const retryAtMs = row?.dequeueAudit.nextTs?.epochMilliseconds;
         const windowAtMs = (await server.store.readPendingAck(ownRef(delta)))?.deadlineAtMs;
-        if (retryAtMs === undefined || windowAtMs === undefined) {
-            throw new Error('The failed dequeue left no retry or no pending row');
+        if (
+            row === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(row.status) || retryAtMs === undefined || retryAtMs <= clock.nowMs ||
+            windowAtMs === undefined
+        ) {
+            throw new Error('Assumed each failed dequeue leaves its row retryable later, beside the pending row it wrote');
         }
-        if (retryAtMs > windowAtMs) {
-            break;
+        if (retryAtMs > windowAtMs + 1) {
+            failing.armed = false;
+            expect((await server.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
+            return delta;
         }
         clock.nowMs = retryAtMs;
     }
-    failing.armed = false;
-    expect((await server.record.read(ownRef(delta))).left).toEqual({ kind: 'head-absent' });
-    return delta;
+    throw new Error('Assumed a failed dequeue\'s retry falls after the row\'s window within the work port\'s attempts');
 }
 
 /** Steps the clock just past the row's window, which falls before the dequeue's next retry, and runs what is due. */
@@ -631,9 +622,27 @@ async function runRowWindow(server: OwnReceiptServer, clock: ReceiptClock, messa
     await settleDueWork(server, clock);
 }
 
-async function readOutboxRow(server: OwnReceiptServer) {
-    const rows = await Promise.all((await server.outbox.getAllKeys()).map((key) => server.outbox.getItem(key)));
+/** The publication's own WS_OUTBOX row, which the dequeue claims and retries. */
+async function readOutboxRow(outbox: InMemoryQueueBox): Promise<ResourceEntry | undefined> {
+    const rows = await Promise.all((await outbox.getAllKeys()).map((key) => outbox.getItem(key)));
     return rows.find((row) => row?.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE);
+}
+
+/**
+ * A cluster publication whose dequeue hook fails once, at the record's first write: the attempt publishes and the
+ * failure propagates. The clock stands still, so the failed attempt's retry is not yet due.
+ */
+async function publishThroughFailedHook(clock: ReceiptClock): Promise<FailedHookPublication> {
+    const failing = { armed: false };
+    const cluster = await createOwnReceiptCluster(clock, { recordBackend: toFailingOnce(failing), bus: createBridgeBus() });
+    const delta = createDelta(clock);
+    await cluster.instance.service.enqueueOutboxIfAbsent(delta, audience(['a', 'b']));
+    failing.armed = true;
+    await expect.poll(async () => {
+        await cluster.instance.engine.executeOnce();
+        return copiesOf(cluster.sockets, delta);
+    }).toEqual([1, 1]);
+    return { cluster, delta, failing };
 }
 
 /** Runs the engine until no work row of the server or of its record is in flight or due by the clock. */
@@ -714,10 +723,11 @@ async function createOwnReceiptCluster(
     const nowMs = () => receiptClock.nowMs;
     const clusterState = createReceiptClusterState(nowMs);
     const stores = createReceiptInstanceStores(clusterState, nowMs);
+    const outbox = createReceiptOutbox(receiptClock);
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(createReceiptOutbox(receiptClock)), nowMs)
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
     });
     const instance = await createClusterInstance({
         name: RECEIPT_SERVER_PEER_ID,
@@ -735,6 +745,7 @@ async function createOwnReceiptCluster(
     const recordBackend = new InMemoryAdmissionBackend(clusterState.record, nowMs);
     return {
         instance,
+        outbox,
         sockets: { a: await connect(instance, 'a'), b: await connect(instance, 'b') },
         record: new ALReceiptRecord({ backend: recordBackend, namespace: stores.receiptRecordStores.namespace, nowMs }),
         recordBackend,

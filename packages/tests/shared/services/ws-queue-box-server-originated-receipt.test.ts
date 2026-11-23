@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { createRallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import {
-    newALBroadcastMessage,
-    newALRoute,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
 
@@ -20,13 +14,11 @@ import {
     createReceiptServer,
     installClock,
     RECEIPT_SERVER_PEER_ID,
+    serverNotification,
+    sessionAck,
     type ReceiptServerInstance
 } from './ws-queue-box-server-receipt-fixture.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
-
-const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
-const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** Long enough that the receipt budget (four 2 s windows) ends first. */
 const NOTIFICATION_TTL_MS = 60_000;
 const CLOCK_STEP_MS = 1_000;
@@ -56,8 +48,10 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs: () => clock.nowMs
         });
 
+        const notification = serverNotification('snapshot-1', 'receiver', NOTIFICATION_TTL_MS);
+
         const enqueued = await local.service.enqueueOutboxIfAbsent(
-            serverNotification('snapshot-1'),
+            notification,
             { admittedAudience: ['a', 'b'], admittedConnectionGenerationIds: undefined, recipientScope: undefined }
         );
 
@@ -71,10 +65,10 @@ describe('receipts of the server\'s own room notifications', () => {
         }).toEqual([1, 1]);
         expect(countCopies(local.sockets.c, 'snapshot-1')).toBe(0);
 
-        await local.service.acceptIncomingMessage(sessionAck('snapshot-1', 'a'), 'a');
-        expect(recorder.readDiagnostics().messages).toEqual([]);
+        await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
         expect((await record.read({ originPeerId: RECEIPT_SERVER_PEER_ID, msgId: 'snapshot-1' })).right?.tally.confirmedRecipientPeerIds)
             .toEqual(['a']);
+        expect(recorder.readDiagnostics().messages).toEqual([]);
 
         await expect.poll(async () => {
             clock.nowMs += CLOCK_STEP_MS;
@@ -111,7 +105,8 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs: () => clock.nowMs
         });
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-3'), {
+        const notification = serverNotification('snapshot-3', 'receiver', NOTIFICATION_TTL_MS);
+        await local.service.enqueueOutboxIfAbsent(notification, {
             admittedAudience: ['a', 'b', 'c'],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -121,7 +116,7 @@ describe('receipts of the server\'s own room notifications', () => {
             return ['a', 'b', 'c'].map((peerId) => countCopies(local.sockets[peerId], 'snapshot-3'));
         }).toEqual([1, 1, 1]);
         await local.sockets.c.receiveClose(1000, 'left');
-        await local.service.acceptIncomingMessage(sessionAck('snapshot-3', 'a'), 'a');
+        await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
 
         await expect.poll(async () => {
             clock.nowMs += CLOCK_STEP_MS;
@@ -158,8 +153,9 @@ describe('receipts of the server\'s own room notifications', () => {
                 nowMs: () => clock.nowMs
             });
             const msgId = `snapshot-${ack}`;
+            const notification = serverNotification(msgId, ack, NOTIFICATION_TTL_MS);
 
-            await local.service.enqueueOutboxIfAbsent(serverNotification(msgId, ack), {
+            await local.service.enqueueOutboxIfAbsent(notification, {
                 admittedAudience: ['a', 'b'],
                 admittedConnectionGenerationIds: undefined,
                 recipientScope: undefined
@@ -168,7 +164,7 @@ describe('receipts of the server\'s own room notifications', () => {
                 await local.engine.executeOnce();
                 return [countCopies(local.sockets.a, msgId), countCopies(local.sockets.b, msgId)];
             }).toEqual([1, 1]);
-            await local.service.acceptIncomingMessage(sessionAck(msgId, 'a'), 'a');
+            await local.service.acceptIncomingMessage(sessionAck(notification, 'a', 'delivered'), 'a');
 
             await expect.poll(async () => {
                 clock.nowMs += CLOCK_STEP_MS;
@@ -219,7 +215,7 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         await joinCluster(local, remote);
 
-        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), {
+        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty', 'receiver', NOTIFICATION_TTL_MS), {
             admittedAudience: [],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -267,7 +263,7 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         await joinCluster(local, remote);
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured'));
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured', 'receiver', NOTIFICATION_TTL_MS));
 
         await expect.poll(async () => {
             await local.engine.executeOnce();
@@ -311,7 +307,7 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         await joinCluster(local, remote);
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2'), {
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2', 'receiver', NOTIFICATION_TTL_MS), {
             admittedAudience: ['a', 'c'],
             admittedConnectionGenerationIds: undefined,
             recipientScope: undefined
@@ -333,40 +329,4 @@ async function joinCluster(local: ReceiptServerInstance, remote: ReceiptServerIn
     const bus = createBridgeBus();
     await installQueueBoxPubSubBridge({ wsQBoxServerService: local.service, bridge: bus, channel: 'ws', publisherId: 'local' });
     await installQueueBoxPubSubBridge({ wsQBoxServerService: remote.service, bridge: bus, channel: 'ws', publisherId: 'remote' });
-}
-
-function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' = 'receiver'): ALMessage {
-    const message = newALBroadcastMessage(
-        {
-            createdAtEpochMs: Date.now(),
-            senderId: RECEIPT_SERVER_PEER_ID,
-            route: newALRoute('room.snapshot', ROOM.groupId, msgId),
-            scope: 'room',
-            typeId: 'snapshot.v1',
-            resource: { msgId },
-            options: {
-                groupRef: ROOM,
-                reliability: 'at-least-once',
-                qos: { ack: { algo: ack } },
-                ttlMs: NOTIFICATION_TTL_MS
-            }
-        }
-    );
-    return { ...message, id: { ...message.id, msgId } };
-}
-
-function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-originated-receipt' },
-        toTestALAckPayload({
-            ackedMsgId,
-            fromPeerId: recipient,
-            toPeerId: RECEIPT_SERVER_PEER_ID,
-            originPeerId: RECEIPT_SERVER_PEER_ID,
-            logicalRecipientPeerId: recipient,
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: Date.now()
-        })
-    );
 }

@@ -8,8 +8,6 @@ import {
     computeClientStateSyncEntries,
     computeGroupStateSyncEntries
 } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState } from '@shared/alm/al-admission-backend.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
@@ -27,11 +25,10 @@ import {
     createReceiptServer,
     installClock,
     RECEIPT_SERVER_PEER_ID,
+    sessionAck,
     type ReceiptClock,
     type ReceiptServerInstance
 } from './ws-queue-box-server-receipt-fixture.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const DELTA_TRACE_ID = 'trace-delta-1';
 const CLOCK_STEP_MS = 1_000;
@@ -65,10 +62,10 @@ describe('receipts of the group-state deltas the server publishes', () => {
         }).toEqual([1, 1]);
 
         const acknowledgedAtEpochMs = clock.nowMs;
-        await local.service.acceptIncomingMessage(sessionAck(delta, 'a'), 'a');
-        expect(recorder.readDiagnostics().messages).toEqual([]);
+        await local.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
         expect((await local.record.read({ originPeerId: RECEIPT_SERVER_PEER_ID, msgId: delta.id.msgId })).right?.tally.confirmedRecipientPeerIds)
             .toEqual(['a']);
+        expect(recorder.readDiagnostics().messages).toEqual([]);
 
         await expect.poll(async () => {
             clock.nowMs += CLOCK_STEP_MS;
@@ -147,18 +144,3 @@ async function createDeltaServer(
 }
 
 /** The browser addresses its ACK to the delta's sender and stamps it with the delta's trace. */
-function sessionAck(delta: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${delta.id.msgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: delta.id.traceId },
-        toTestALAckPayload({
-            ackedMsgId: delta.id.msgId,
-            fromPeerId: recipient,
-            toPeerId: delta.id.senderId,
-            originPeerId: delta.id.senderId,
-            logicalRecipientPeerId: recipient,
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: Date.now()
-        })
-    );
-}
