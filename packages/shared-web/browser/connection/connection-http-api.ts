@@ -43,24 +43,21 @@ export async function readIceCandidates(
         body: undefined,
         options
     });
-    const issues = validateIceConfigResponse(response, Date.now());
+    const issues = validateIceConfigResponse(response);
     if (issues.length > 0) {
         throw new Error(issues.join('; '));
     }
     return response as ApiJsonObject & IceConfig;
 }
 
-function validateIceConfigResponse(response: ApiJsonValue, nowEpochMs: number): readonly string[] {
+function validateIceConfigResponse(response: ApiJsonValue): readonly string[] {
     if (response === null || typeof response !== 'object' || Array.isArray(response)) {
         return ['ICE configuration must be an object.'];
     }
     const config = response as ApiJsonObject;
     const issues: string[] = [];
-    if (
-        typeof config.expiresAtEpochMs !== 'number' || !Number.isFinite(config.expiresAtEpochMs) ||
-        config.expiresAtEpochMs <= nowEpochMs
-    ) {
-        issues.push('ICE configuration must have a finite future expiry.');
+    if (typeof config.expiresAtEpochMs !== 'number' || !Number.isFinite(config.expiresAtEpochMs)) {
+        issues.push('ICE configuration must have a finite expiry.');
     }
     if (!Array.isArray(config.iceServers)) {
         issues.push('ICE configuration must have an iceServers array.');

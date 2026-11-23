@@ -152,7 +152,8 @@ export interface MiddlewareInitOptions {
 /** One connect's options: the caller's, and the connect's claim on its session's durable work. */
 export interface BrowserConnectOptions extends MiddlewareInitOptions {
     readonly durableWorkOwnership: ALDurableWorkOwnership;
-    readIceCandidates(signal?: AbortSignal): Promise<IceConfig>;
+    /** The ICE expiry is server-issued, so the connect judges it with its calibrated server time. */
+    readIceCandidates(signal: AbortSignal | undefined, serverNowEpochMs: () => number): Promise<IceConfig>;
 }
 
 /** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
@@ -664,7 +665,7 @@ async function initialiseBrowserRtcTransport(
     input: InitialiseBrowserRtcTransportInput
 ): Promise<BrowserRtcTransport> {
     const iceCandidates: IceConfig = await runMiddlewareCommand(
-        (signal) => input.options.readIceCandidates(signal),
+        (signal) => input.options.readIceCandidates(signal, input.nowEpochMs),
         input.options
     );
     const connection = await initialiseBrowserRtcConnection(input, iceCandidates);
