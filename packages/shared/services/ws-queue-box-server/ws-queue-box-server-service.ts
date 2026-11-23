@@ -552,11 +552,11 @@ export class WsQueueBoxServerService {
         });
     }
 
-    private readRuntimeProtocolAckRejection(
+    private async readRuntimeProtocolAckRejection(
         ack: ALAckPayload,
         controlIdentity?: ALMessage['id']
-    ): ALMessageRejection | undefined {
-        return this.ackRelay.readRelayedAckRejection(
+    ): Promise<ALMessageRejection | undefined> {
+        return await this.ackRelay.readRelayedAckRejection(
             ack,
             this.receiptObserver === undefined ? undefined : { stage: 'runtime-protocol', controlIdentity }
         );

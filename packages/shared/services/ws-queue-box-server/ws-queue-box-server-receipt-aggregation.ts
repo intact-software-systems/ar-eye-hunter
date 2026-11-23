@@ -227,10 +227,10 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** The typed reason a relayed receiver ACK may not count, read against the live aggregate at ingress. */
-    readRelayedAckRejection(
+    async readRelayedAckRejection(
         ack: ALAckPayload,
         observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
-    ): ALMessageRejection | undefined {
+    ): Promise<ALMessageRejection | undefined> {
         const nowMs = this.#dependencies.clock.nowMs();
         const aggregate = this.#aggregates.readAt(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId), nowMs);
         const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.toAckValidationContext(nowMs));

@@ -878,7 +878,7 @@ describe('owned receipt count observation', () => {
         clock.value = 30000;
         const invalid = { ...payload, toPeerId: 'wrong', fromPeerId: 'other' };
         const identity: ALMessage['id'] = { v: 4, msgId: 'repeated', senderId: 'other', ts: 900, traceId: 'trace-receipt-control-1' };
-        expect(aggregation.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
+        expect(await aggregation.readRelayedAckRejection(invalid, { stage: 'ingress-protocol', controlIdentity: identity })).toEqual({
             code: 'unauthorized',
             message:
                 'AL acknowledgement is not addressed to the origin it names; AL acknowledgement speaks for another recipient than its sender; AL acknowledgement confirms a peer the receipt already counted; AL acknowledgement arrived after its receipt deadline'
@@ -900,7 +900,7 @@ describe('owned receipt count observation', () => {
         await aggregation.acceptControlMessage(newALAckControlMessage(identity, invalid));
         expect(events.at(-1)).toMatchObject({ kind: 'ack-count', controlMsgId: 'repeated', outcome: 'rejected' });
         const outside = { ...invalid, logicalRecipientPeerId: 'outside' };
-        expect(aggregation.readRelayedAckRejection(outside, { stage: 'runtime-protocol', controlIdentity: identity })?.code).toBe('unauthorized');
+        expect((await aggregation.readRelayedAckRejection(outside, { stage: 'runtime-protocol', controlIdentity: identity }))?.code).toBe('unauthorized');
         expect(events).toContainEqual(expect.objectContaining({
             kind: 'ack-rejection',
             stage: 'runtime-protocol',
@@ -908,7 +908,7 @@ describe('owned receipt count observation', () => {
         }));
     });
 
-    it('preserves rejection and skips identity projection when the observer or control identity is absent', () => {
+    it('preserves rejection and skips identity projection when the observer or control identity is absent', async () => {
         for (const sink of ['absent', 'throwing'] as const) {
             let identityReads = 0;
             let clockReads = 0;
@@ -940,12 +940,12 @@ describe('owned receipt count observation', () => {
             );
             aggregation.sweep(30000);
             clockReads = 0;
-            expect(aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload(), { stage: 'ingress-protocol', controlIdentity: identity }))
+            expect(await aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload(), { stage: 'ingress-protocol', controlIdentity: identity }))
                 .toEqual({
                     code: 'unauthorized',
                     message: 'AL acknowledgement names no receipt this server aggregates'
                 });
-            expect(aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload())).toEqual({
+            expect(await aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload())).toEqual({
                 code: 'unauthorized',
                 message: 'AL acknowledgement names no receipt this server aggregates'
             });
@@ -1029,7 +1029,7 @@ describe('owned receipt count observation', () => {
 });
 
 describe('owned ACK relay observation', () => {
-    it('keeps an unowned fixed-address refusal at its actual relay owner without a parallel provenance classification', () => {
+    it('keeps an unowned fixed-address refusal at its actual relay owner without a parallel provenance classification', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
             throw new Error('no enqueue expected');
@@ -1044,7 +1044,7 @@ describe('owned ACK relay observation', () => {
         });
         const invalid = { ...createReceiverAcknowledgementPayload(), ackedMsgId: 'unowned', toPeerId: 'wrong' };
         expect(
-            relay.readRelayedAckRejection(invalid, {
+            await relay.readRelayedAckRejection(invalid, {
                 stage: 'ingress-protocol',
                 controlIdentity: { v: 4, msgId: 'ack-relay', senderId: 'recipient', ts: 900, traceId: 'trace-receipt-control-1' }
             })
@@ -1064,7 +1064,7 @@ describe('owned ACK relay observation', () => {
             failedGuards: ['origin-addressee-mismatch'],
             traceId: 'trace-receipt-control-1'
         }]);
-        expect(relay.readRelayedAckRejection(invalid)?.code).toBe('unauthorized');
+        expect((await relay.readRelayedAckRejection(invalid))?.code).toBe('unauthorized');
         expect(events).toHaveLength(1);
     });
 
@@ -1125,7 +1125,7 @@ describe('private evidence does not control delivery', () => {
             );
             await aggregation.acceptControlMessage(createReceiverAcknowledgement());
             await expect(aggregation.acceptControlMessage(createReceiverAcknowledgement('other'))).rejects.toThrow('mandatory settlement failed');
-            expect(aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload())?.message).toBe(
+            expect((await aggregation.readRelayedAckRejection(createReceiverAcknowledgementPayload()))?.message).toBe(
                 'AL acknowledgement names no receipt this server aggregates'
             );
             if (sink !== 'absent') {
@@ -1428,20 +1428,20 @@ describe('receipt observations name the trace', () => {
             ]);
     });
 
-    it('names the control trace on an aggregate refusal and records nothing for a refusal without a control identity', () => {
+    it('names the control trace on an aggregate refusal and records nothing for a refusal without a control identity', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
             throw new Error('no receipt expected');
         });
         const outside = { ...createReceiverAcknowledgementPayload(), fromPeerId: 'outside', logicalRecipientPeerId: 'outside' };
 
-        expect(aggregation.readRelayedAckRejection(outside)?.code).toBe('unauthorized');
+        expect((await aggregation.readRelayedAckRejection(outside))?.code).toBe('unauthorized');
         expect(events).toEqual([]);
         expect(
-            aggregation.readRelayedAckRejection(outside, {
+            (await aggregation.readRelayedAckRejection(outside, {
                 stage: 'ingress-protocol',
                 controlIdentity: { v: 4, msgId: 'ack-outside', senderId: 'outside', ts: 900, traceId: CONTROL_TRACE }
-            })?.code
+            }))?.code
         ).toBe('unauthorized');
         expect(events).toEqual([expect.objectContaining({ kind: 'ack-rejection', controlMsgId: 'ack-outside', traceId: CONTROL_TRACE })]);
     });

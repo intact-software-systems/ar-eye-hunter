@@ -471,7 +471,7 @@ describe('WS server receipt aggregate', () => {
         const aggregation = createAggregation(enqueued);
         aggregation.recordAdmission(admission());
 
-        expect(aggregation.readRelayedAckRejection(aggregateAck(ack))).toEqual({ code: 'unauthorized', message: reason });
+        expect(await aggregation.readRelayedAckRejection(aggregateAck(ack))).toEqual({ code: 'unauthorized', message: reason });
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck(ack)));
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
 
@@ -484,7 +484,7 @@ describe('WS server receipt aggregate', () => {
         aggregation.recordAdmission(admission());
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
 
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })))?.message)
             .toBe('AL acknowledgement confirms a peer the receipt already counted');
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })));
@@ -493,7 +493,7 @@ describe('WS server receipt aggregate', () => {
         expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource))))
             .toMatchObject([{ phase: 'complete', confirmedRecipientPeerIds: ['b', 'c'] }]);
         expect(enqueued.map((message) => message.id.traceId)).toEqual(['trace-room-message-1']);
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
@@ -505,7 +505,7 @@ describe('WS server receipt aggregate', () => {
         const notSubscribed = aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' });
 
         await aggregation.acceptControlMessage(aggregateAckControl(notSubscribed));
-        const repeated = aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }));
+        const repeated = await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }));
         await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
 
         expect(repeated?.message).toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
@@ -535,16 +535,16 @@ describe('WS server receipt aggregate', () => {
         }]);
     });
 
-    it('refuses a server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', () => {
+    it('refuses a server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', async () => {
         const aggregation = createAggregation();
         aggregation.recordAdmission(admission());
 
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' })))?.message)
             .toBe('AL acknowledgement speaks for another recipient than its sender');
         expect(
-            aggregation.readRelayedAckRejection(
+            (await aggregation.readRelayedAckRejection(
                 aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' })
-            )?.message
+            ))?.message
         ).toBe('AL acknowledgement speaks for another recipient than its sender');
     });
 
@@ -625,7 +625,7 @@ describe('WS server receipt aggregate', () => {
 
         expect(enqueued).toEqual([]);
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
     });
 
@@ -677,18 +677,18 @@ describe('WS server receipt aggregate', () => {
 
         expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase)).toEqual(['admitted']);
         expect(other.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
-        expect(other.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+        expect((await other.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
     });
 
-    it('answers an empty audience complete at admission and keeps nothing to sweep', () => {
+    it('answers an empty audience complete at admission and keeps nothing to sweep', async () => {
         const aggregation = createAggregation();
 
         expect(aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: [] }).admitted).toMatchObject({
             phase: 'admitted',
             expectedRecipientPeerIds: []
         });
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
@@ -726,7 +726,7 @@ describe('WS server receipt aggregates at their cap', () => {
             deadlineAtMs: 30_000,
             traceId: 'trace-room-message-1'
         });
-        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }))?.message)
+        expect((await aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' })))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         const swept = aggregation.sweep(Number.MAX_SAFE_INTEGER);
         expect(swept).toHaveLength(WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES);

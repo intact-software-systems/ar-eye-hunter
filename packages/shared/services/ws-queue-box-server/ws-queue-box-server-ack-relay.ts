@@ -82,12 +82,12 @@ export class WsQueueBoxServerAckRelay {
     }
 
     /** The ingress check; an ACK this instance will hand over is checked only for what needs no aggregate. */
-    readRelayedAckRejection(
+    async readRelayedAckRejection(
         ack: ALAckPayload,
         observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
-    ): ALMessageRejection | undefined {
+    ): Promise<ALMessageRejection | undefined> {
         if (this.#publishRelayedAck === undefined || this.#receipts.holdsReceiptFor(ack)) {
-            return this.#receipts.readRelayedAckRejection(ack, observation);
+            return await this.#receipts.readRelayedAckRejection(ack, observation);
         }
         if (ack.toPeerId === ack.originPeerId) {
             return undefined;

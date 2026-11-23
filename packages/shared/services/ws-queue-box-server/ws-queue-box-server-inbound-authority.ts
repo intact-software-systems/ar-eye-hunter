@@ -310,11 +310,11 @@ export class WsQueueBoxServerInboundAuthority {
         return { kind: 'origin', value: { message, connection, fromPeerId, socketFacts } };
     }
 
-    private readIngressProtocolAckRejection(
+    private async readIngressProtocolAckRejection(
         ack: ALAckPayload,
         controlIdentity?: ALMessage['id']
-    ): ALMessageRejection | undefined {
-        return this.#ackRelay.readRelayedAckRejection(
+    ): Promise<ALMessageRejection | undefined> {
+        return await this.#ackRelay.readRelayedAckRejection(
             ack,
             !this.#observesReceipts ? undefined : { stage: 'ingress-protocol', controlIdentity }
         );

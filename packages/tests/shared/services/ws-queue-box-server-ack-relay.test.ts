@@ -412,7 +412,7 @@ describe('the server own ACK for a session it sent nothing', () => {
             status: 'delivered',
             observedAtEpochMs: 1_000
         });
-        expect(relay.readRelayedAckRejection(lateConfirmation)?.message)
+        expect((await relay.readRelayedAckRejection(lateConfirmation))?.message)
             .toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
     });
 
