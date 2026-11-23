@@ -41,6 +41,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const local = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -94,6 +96,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const local = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state: createInMemoryALAdmissionState(outbox),
             peerIds: ['a', 'b', 'c'],
@@ -137,6 +141,8 @@ describe('receipts of the server\'s own room notifications', () => {
             const local = await createReceiptServer({
                 ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
                 inboundVolatileStores: undefined,
+                outboundBackend: undefined,
+                capturedRecipientEligibilityFilters: undefined,
                 outbox,
                 state: createInMemoryALAdmissionState(outbox),
                 peerIds: ['a', 'b'],
@@ -182,6 +188,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const local = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['a'],
@@ -191,6 +199,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const remote = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['c'],
@@ -224,6 +234,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const local = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -233,6 +245,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const remote = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],
@@ -262,6 +276,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const local = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['a', 'b'],
@@ -271,6 +287,8 @@ describe('receipts of the server\'s own room notifications', () => {
         const remote = await createReceiptServer({
             ...createReceiptInstanceStores(createReceiptClusterState(nowMs), nowMs),
             inboundVolatileStores: undefined,
+            outboundBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined,
             outbox,
             state,
             peerIds: ['c', 'd'],

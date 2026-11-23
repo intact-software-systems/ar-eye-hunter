@@ -22,6 +22,7 @@ import {
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALInboundMessageRuntime,
@@ -70,6 +71,7 @@ import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerUnconfirmedRepairRequest } from './receipt/to-ws-queue-box-server-unconfirmed-repair-request.ts';
 import {
     toWsQueueBoxServerCapturedSendInput,
     toWsQueueBoxServerHeldSessionPolicy
@@ -473,19 +475,36 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
-            planRepairMessage: async (message, request) => {
-                const audience = await this.dequeueAuthority.readCurrentAudience(message, request, 'durable');
-                await this.trackOrder.writeOutsideAudience(
-                    message,
-                    toRepairOutsideDrops(audience.dropped, request),
-                    'durable'
-                );
-                return this.outboundPlanning.planRepairMessage(message, {
-                    ...request,
-                    admittedAudience: audience.eligible
-                });
-            }
+            planRepairMessage: async (message, request) => await this.planRepairMessage(message, request)
         });
+    }
+
+    /** A receipt retry is narrowed by the record first, so a drop it records and the resend it plans skip the answered. */
+    private async planRepairMessage(
+        message: ALMessage,
+        request: ALOutboundRepairRequest
+    ): Promise<ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined> {
+        const narrowed = await this.readUnconfirmedRepairRequest(message, request);
+        if (narrowed === undefined) {
+            return undefined;
+        }
+        const audience = await this.dequeueAuthority.readCurrentAudience(message, narrowed, 'durable');
+        await this.trackOrder.writeOutsideAudience(
+            message,
+            toRepairOutsideDrops(audience.dropped, narrowed),
+            'durable'
+        );
+        return this.outboundPlanning.planRepairMessage(message, { ...narrowed, admittedAudience: audience.eligible });
+    }
+
+    private async readUnconfirmedRepairRequest(
+        message: ALMessage,
+        request: ALOutboundRepairRequest
+    ): Promise<ALOutboundRepairRequest | undefined> {
+        const readsRecord = request.trigger === 'ack-timeout' &&
+            isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo);
+        const view = readsRecord ? await this.receipts.readRepairView(message) : undefined;
+        return toWsQueueBoxServerUnconfirmedRepairRequest(request, view, this.clock.nowMs());
     }
 
     /** The work runtime's authority becomes the WS planner's phase-specific request. */

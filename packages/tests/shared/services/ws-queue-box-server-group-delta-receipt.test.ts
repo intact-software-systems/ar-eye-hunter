@@ -131,6 +131,8 @@ async function createDeltaServer(
     return await createReceiptServer({
         ...createReceiptInstanceStores(createReceiptClusterState(() => clock.nowMs), () => clock.nowMs),
         inboundVolatileStores: undefined,
+        outboundBackend: undefined,
+        capturedRecipientEligibilityFilters: undefined,
         outbox,
         state: createInMemoryALAdmissionState(outbox),
         peerIds: STATE_SYNC_FIXTURE_SESSION_IDS,

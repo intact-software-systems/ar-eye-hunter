@@ -14,6 +14,7 @@ import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-co
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundRuntimeStores, ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -22,7 +23,10 @@ import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receip
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsCapturedRecipientEligibilityFilters,
+    WsServerInboundAuthorization
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type {
     WsQueueBoxServerReceiptObservation,
@@ -66,6 +70,10 @@ export interface CreateReceiptServerInput {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
     readonly receiptRecordStores: ALReceiptRecordStores;
+    /** The backend the outbound owner writes through; undefined, a memory backend over `state`. */
+    readonly outboundBackend: ALAdmissionWorkBackend | undefined;
+    /** Durable presence and its siblings; undefined, no filter, so every captured session stays eligible. */
+    readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
 }
 
 /** The inbound admission and receipt record state every instance of one test shares, as instances share PostgreSQL. */
@@ -226,8 +234,9 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
             nowMs: input.nowMs,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            outboundBackend: new InMemoryAdmissionBackend(input.state, input.nowMs)
+            outboundBackend: input.outboundBackend ?? new InMemoryAdmissionBackend(input.state, input.nowMs)
         }),
+        capturedRecipientEligibilityFilters: input.capturedRecipientEligibilityFilters,
         outboundSettlements: input.recorder?.settlements,
         targetResolver: {
             requiresFrozenAudience: () => false,

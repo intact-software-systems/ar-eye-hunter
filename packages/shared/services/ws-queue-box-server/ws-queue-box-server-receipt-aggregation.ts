@@ -305,6 +305,11 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
+    /** The record's view of the receipt a retry of `message` serves; undefined when the message opened none. */
+    async readRepairView(message: ALMessage): Promise<ALReceiptRecord.View | undefined> {
+        return (await this.#record.read({ originPeerId: message.id.senderId, msgId: message.id.msgId })).right;
+    }
+
     private nowMs(): number {
         return this.#dependencies.clock.nowMs();
     }
