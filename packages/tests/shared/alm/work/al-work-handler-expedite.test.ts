@@ -22,6 +22,8 @@ interface ExpediteHarness {
     readonly answers: Map<string, () => ALWorkOutcome>;
     /** Each row read for an expedited claim and each claim run, in order: `read:<id>` and `run:<id>`. */
     readonly log: string[];
+    /** Each claim run as the handler states it to the run: `<id>` with whether it is expedited, and its run number. */
+    readonly claimRuns: string[];
     /** Holds the claim of a row until the returned gate opens. */
     hold(effectId: string): () => void;
 }
@@ -29,6 +31,7 @@ interface ExpediteHarness {
 function createExpediteHarness(pageSize: number): ExpediteHarness {
     const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(NOW_MS));
     const log: string[] = [];
+    const claimRuns: string[] = [];
     const gates = new Map<string, Promise<void>>();
     const answers = new Map<string, () => ALWorkOutcome>();
     const queuePort = createALWorkQueuePort({
@@ -61,6 +64,8 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
         claimSuccessor: undefined,
         runClaim: async (claim) => {
             log.push(`run:${claim.entry.key.contextId}`);
+            const { expedited, run } = handler.getClaimRun(claim);
+            claimRuns.push(`${claim.entry.key.contextId}:${expedited ? 'expedited' : 'claimed'}:${run}`);
             await gates.get(claim.entry.key.contextId);
             return answers.get(claim.entry.key.contextId)?.() ?? { status: 'completed' };
         },
@@ -73,6 +78,7 @@ function createExpediteHarness(pageSize: number): ExpediteHarness {
         port,
         answers,
         log,
+        claimRuns,
         hold: (effectId) => {
             const gate = Promise.withResolvers<void>();
             gates.set(effectId, gate.promise);
@@ -158,6 +164,20 @@ it('gives an expedited row that keeps answering retry its runs, then leaves its 
         .toBe(EntityStatus.RETRY);
     await harness.handler.dispose();
     expect(harness.log).toEqual(['run:in-flight', 'read:parked', 'run:parked', 'run:parked', 'run:parked']);
+});
+
+it('states each run of an expedited row to that run: the first run, then each re-run, and a batch claim as claimed', async () => {
+    const harness = createExpediteHarness(16);
+    harness.answers.set('parked', () => ({ status: 'retry' }));
+    const open = await startBatchHeldOn(harness, 'in-flight');
+
+    await retainExpedited(harness, ['parked']);
+    open();
+
+    await expect.poll(async () => (await harness.queue.getItem(newWorkEntry('AL_TEST', 'parked').key))?.status)
+        .toBe(EntityStatus.RETRY);
+    await harness.handler.dispose();
+    expect(harness.claimRuns).toEqual(['in-flight:claimed:1', 'parked:expedited:1', 'parked:expedited:2', 'parked:expedited:3']);
 });
 
 it('runs an expedited row no more once the handler is disposed', async () => {

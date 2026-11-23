@@ -436,7 +436,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 return { status: 'completed' };
             }
             observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
-            observed.payloadKind = work.payload.kind;
+            observed.work = { effectId: work.effectId, payloadKind: work.payload.kind };
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
@@ -479,6 +479,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private async settleOutboundClaim(settlement: ALOutboundClaimAttemptSettlement): Promise<ALWorkAttemptResult> {
         const settled = await settleALOutboundClaim({
             ...settlement,
+            claimRun: this.work.getClaimRun(settlement.claim),
             capture: this.input.runtime.receiptWorkCapture,
             readNowMs: () => this.input.runtime.workClock.nowMs(),
             timed: this.input.runtime.diagnostics !== undefined

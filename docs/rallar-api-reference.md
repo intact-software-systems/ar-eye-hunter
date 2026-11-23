@@ -2369,7 +2369,7 @@ shared service exposes `WebRtcConnectionService.PeerLaneOpenStatus: 'exhausted'`
 
 `ws.onStatus(listener, options?)` subscribes to status snapshots.
 
-`ws.onLifecycle(listener, options?)` subscribes to events such as `open`, `close`, `error`, `connected`, and `disconnected`.
+`ws.onLifecycle(listener, options?)` subscribes to events such as `open`, `close`, `error`, `connected`, and `disconnected`. A `disconnected` event's `reason` names why the connection ended: `rallar-disconnect` for the session's own disconnect, or `server-clock-ended: <cause>` when its server clock's lifetime ended it outside any command (the page was hidden, frozen or left, or the clock could no longer be calibrated).
 
 `ws.waitForOpen(options?)` waits until the websocket is open or returns a non-open status.
 

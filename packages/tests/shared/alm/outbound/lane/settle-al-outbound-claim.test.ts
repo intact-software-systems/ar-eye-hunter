@@ -11,7 +11,11 @@ const CLAIM = {
 
 it.each([
     { timed: false, clockReadCount: 0, runs: [] },
-    { timed: true, clockReadCount: 2, runs: [{ payloadKind: 'send-prepared', durationMs: 6 }] }
+    {
+        timed: true,
+        clockReadCount: 2,
+        runs: [{ payloadKind: 'send-prepared', effectId: 'effect-1', expedited: true, run: 2, durationMs: 6 }]
+    }
 ])('reads the clock $clockReadCount times for a claim whose timing is wanted: $timed', async ({ timed, clockReadCount, runs }) => {
     // The clock read is itself the requirement: a lane with no diagnostics sink pays for no timing.
     const clockReads: number[] = [];
@@ -22,8 +26,9 @@ it.each([
 
     const settled = await settleALOutboundClaim({
         attempt: Promise.resolve({ status: 'completed' }),
-        observed: { evidence: undefined, payloadKind: 'send-prepared' },
+        observed: { evidence: undefined, work: { effectId: 'effect-1', payloadKind: 'send-prepared' } },
         claim: CLAIM,
+        claimRun: { expedited: true, run: 2 },
         batchIndex: 0,
         capture: undefined,
         readNowMs,

@@ -17,7 +17,7 @@ import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
-import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import { createRallarLifecycleCoordinator, type RallarConnectionEnd } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
@@ -223,6 +223,45 @@ describe('Browser transport cleanup', () => {
             'detached',
             'room-cleared',
             'disconnected'
+        ]);
+    });
+
+    it('states why a connection ended: its server clock lifetime with that lifetime\'s reason, or its own disconnect', async () => {
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockImplementation(async () => ({
+            middleware: middleware.middleware,
+            rtcCaptureReceipt,
+            checkpoints: [],
+            serverClock: createDefaultBrowserServerClockFixture()
+        }));
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        const lifecycle = createRallarLifecycleCoordinator();
+        const ends: RallarConnectionEnd[] = [];
+        lifecycle.register({ id: 'end-observer', order: 10, disconnected: (end) => ends.push(end) });
+        const connection = new BrowserSessionConnectionLifecycle({
+            ...createDefaultBrowserSessionQosInputs(),
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            onResyncRequired: () => {},
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
+            transportRuntime,
+            lifecycle,
+            clearCurrentRoom: () => {}
+        });
+        onTestFinished(() => connection.disconnect());
+        const first = await connection.connect(toConnectionInput(middleware.session));
+
+        await first.serverClock.close(new Error('Remote clock observation has expired.'));
+        await connection.connect(toConnectionInput(middleware.session));
+        await connection.disconnect();
+
+        expect(ends).toEqual([
+            { kind: 'server-clock-ended', reason: 'Remote clock observation has expired.' },
+            { kind: 'disconnect' }
         ]);
     });
 

@@ -96,6 +96,14 @@ normalized `message` of a bridged diagnostic is its topic. This bridge is
 intentionally scoped to known WS/RTC warning patterns so the runtime does not
 turn arbitrary console output into test evidence.
 
+## WS Lifecycle Diagnostics
+
+`rallar.browser.ws.lifecycle` carries one public WS lifecycle event per emission. A `disconnected` event's `reason`
+says why the connection ended: `rallar-disconnect` for the session's own disconnect, and
+`server-clock-ended: <cause>` when the connection's server clock ended it outside any command, with the clock's own
+reason (`Browser page suspension invalidated its server clock.`, `Remote clock observation has expired.` and the
+like). A page that leaves its room with no command and no auth end therefore names the clock as the cause.
+
 ## RTC Lifecycle Diagnostics
 
 `rallar.browser.rtc.lifecycle` carries one RTC lifecycle event per emission. Its
@@ -440,10 +448,15 @@ every session the page opens. The event's `data` is the event itself:
   below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
   `startedAtMs`. It has no `selectionDurationMs` or `queueWaitMs`: the outbound
   owner reserves straight from the queue, so it reads no page and sees no row's
-  due time. Then `claims`, one `{ payloadKind, durationMs }` for each run of a
-  claim whose row's work decoded, in the order the runs settled. A parked
-  control's replay the batch runs again appears once per run, up to three
-  times, so `claims` can be longer than `claimedCount`. `payloadKind` is the
+  due time. Then `claims`, one `{ payloadKind, effectId, expedited, run,
+  durationMs }` for each run of a claim whose row's work decoded, in the order
+  the runs settled. `effectId` is the claimed row's effect. `expedited` is true
+  for a row `expedite()` claimed ahead of the batch's remaining claims (a parked
+  control's replay), and `run` counts that claim's runs in the batch from 1: a
+  replay the batch runs again appears once per run, up to three times, with
+  `run` 2 and 3 for its re-runs, so `claims` can be longer than `claimedCount`
+  by exactly the entries whose `run` exceeds 1. A claim the batch took from its
+  page states `expedited: false` and `run: 1`. `payloadKind` is the
   effect the row held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
   `ack-timeout`, `first-hop-timeout`, `repair-hint` or `nack-retry`) and
   `durationMs` what running it cost the batch, from the moment the batch awaited

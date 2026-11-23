@@ -187,6 +187,12 @@ interface ALWorkCounts {
     rejectedCount: number;
 }
 
+/** How a claim's run came to run: whether `expedite()` claimed it, and which of its runs in the batch it is (from 1). */
+export interface ALWorkClaimRun {
+    readonly expedited: boolean;
+    readonly run: number;
+}
+
 /** A row `expedite()` named, and how many runs the batch that claims it gives it. */
 interface ALWorkExpeditedRow {
     readonly key: Key;
@@ -244,6 +250,8 @@ export class ALWorkHandler {
     private readonly expedited = new Map<string, ALWorkExpeditedRow>();
     /** The running batch's expedited claims, by queue key: the runs each has left when it answers `retry`. */
     private readonly expeditedRunsLeft = new Map<string, number>();
+    /** The running batch's expedited claims, by queue key: the runs each has started. */
+    private readonly expeditedRunsStarted = new Map<string, number>();
     private readonly shutdown = new AbortController();
     private readonly engine: ALWorkEngineMembership;
 
@@ -328,6 +336,12 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             keys.forEach((key) => this.expedited.set(toKeyAsString(key), { key, maxRuns }));
         }
+    }
+
+    /** The run a claim is in while it runs: one the batch claimed runs once, an expedited one up to its runs. */
+    getClaimRun(claim: ALWorkClaim): ALWorkClaimRun {
+        const started = this.expeditedRunsStarted.get(toKeyAsString(claim.entry.key));
+        return started === undefined ? { expedited: false, run: 1 } : { expedited: true, run: started };
     }
 
     /**
@@ -424,6 +438,7 @@ export class ALWorkHandler {
         // A row named after the batch's last claim is claimed by the batch its commit owes.
         this.expedited.clear();
         this.expeditedRunsLeft.clear();
+        this.expeditedRunsStarted.clear();
         let following: Promise<void> | undefined;
         try {
             following = this.runPendingCommit();
@@ -681,6 +696,7 @@ export class ALWorkHandler {
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
+        this.countExpeditedRun(claim);
         let result: ALWorkAttemptResult;
         try {
             result = await (turn.attempt ?? runClaim(claim, turn.runStartedAtMs, turn.deferObservation));
@@ -705,6 +721,13 @@ export class ALWorkHandler {
                 break;
         }
         return { claim, outcome: result };
+    }
+
+    private countExpeditedRun(claim: ALWorkClaim): void {
+        const key = toKeyAsString(claim.entry.key);
+        if (this.expeditedRunsLeft.has(key)) {
+            this.expeditedRunsStarted.set(key, (this.expeditedRunsStarted.get(key) ?? 0) + 1);
+        }
     }
 
     private async flushReleases(

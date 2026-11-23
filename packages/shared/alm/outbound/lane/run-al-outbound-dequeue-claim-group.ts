@@ -71,7 +71,7 @@ function startDequeueClaim<TPrepared>(
     claim: ALWorkClaim,
     batchIndex: number
 ): ALOutboundDequeueStart<TPrepared> {
-    const observation: ALOutboundClaimObservation = { evidence: undefined, payloadKind: undefined };
+    const observation: ALOutboundClaimObservation = { evidence: undefined, work: undefined };
     if (input.timing !== undefined) {
         observation.timing = input.timing;
     }
@@ -90,7 +90,7 @@ function startDequeueClaim<TPrepared>(
         return { kind: 'settled', observation, attempt };
     }
     observation.evidence = input.createEvidence(work);
-    observation.payloadKind = work.payload.kind;
+    observation.work = { effectId: work.effectId, payloadKind: work.payload.kind };
     const member = {
         effect: work,
         evidence: observation.evidence,

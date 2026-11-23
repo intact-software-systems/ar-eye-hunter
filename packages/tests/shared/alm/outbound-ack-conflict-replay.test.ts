@@ -20,10 +20,12 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundDispatchPlan,
-    ALOutboundPreparedSendResult
+    ALOutboundPreparedSendResult,
+    ALOutboundRuntimeDiagnosticsEvent
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
+import type { ALOutboundClaimRun } from '@shared/alm/outbound/lane/settle-al-outbound-claim.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -188,18 +190,18 @@ it.each(
 // A peer ACK parks on its first lost commit and a server receipt on its third; each further one is a replay's in the batch.
 it.each(
     [
-        { path: 'peer ACK', lostCommits: 1, state: 'acknowledged', confirmed: ['receiver'] },
-        { path: 'peer ACK', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'] },
+        { path: 'peer ACK', lostCommits: 1, state: 'acknowledged', confirmed: ['receiver'], replayRuns: [1] },
+        { path: 'peer ACK', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'], replayRuns: [1, 2, 3] },
         // Its three runs spent, the replay's retry waits for the batch's release.
-        { path: 'peer ACK', lostCommits: 4, state: 'transport-accepted', confirmed: [] },
-        { path: 'server receipt', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'] },
-        { path: 'server receipt', lostCommits: 5, state: 'acknowledged', confirmed: ['receiver'] },
+        { path: 'peer ACK', lostCommits: 4, state: 'transport-accepted', confirmed: [], replayRuns: [1, 2, 3] },
+        { path: 'server receipt', lostCommits: 3, state: 'acknowledged', confirmed: ['receiver'], replayRuns: [1] },
+        { path: 'server receipt', lostCommits: 5, state: 'acknowledged', confirmed: ['receiver'], replayRuns: [1] },
         // Each run makes three attempts: the first replay loses all of its own and the batch runs it again.
-        { path: 'server receipt', lostCommits: 7, state: 'acknowledged', confirmed: ['receiver'] }
+        { path: 'server receipt', lostCommits: 7, state: 'acknowledged', confirmed: ['receiver'], replayRuns: [1, 2] }
     ] as const
 )(
     'reads a parked $path that lost $lostCommits commits as $state when the claim queued behind the in-flight one starts',
-    async ({ path, lostCommits, state, confirmed }) => {
+    async ({ path, lostCommits, state, confirmed, replayRuns }) => {
         const nowMs = 10_000;
         const clock = () => nowMs;
         vi.spyOn(Date, 'now').mockImplementation(clock);
@@ -226,7 +228,9 @@ it.each(
         const handle = registry.open({ message, carrier: 'rtc', readDeadlineEpochMs: clock });
         // Each copy of the held message keeps its claim in flight until its gate opens: the batch's slowness.
         const gates = new Map<string, () => void>();
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
         const runtime = createOutboundTestRuntimeFor({
+            diagnostics: (event) => diagnostics.push(event),
             stores: { admissionStore, workQueue },
             queueEngine: new InboxOutboxEngine(),
             nowMs: clock,
@@ -288,8 +292,18 @@ it.each(
 
         expect(handle.lifecycle()).toMatchObject({ state, evidence: { confirmedRecipientPeerIds: confirmed } });
         expect(competingRepairs).toBe(lostCommits);
+        gates.get('second')!();
+        await waitUntil(() => diagnostics.some((event) => event.kind === 'effect-drain' && event.claims.some(isReplay)));
+        const drain = diagnostics.find((event) => event.kind === 'effect-drain' && event.claims.some(isReplay));
+        const replays = drain?.kind === 'effect-drain' ? drain.claims.filter(isReplay) : [];
+        expect(new Set(replays.map((claim) => claim.effectId)).size).toBe(1);
+        expect(replays.map(({ expedited, run }) => ({ expedited, run }))).toEqual(replayRuns.map((run) => ({ expedited: true, run })));
     }
 );
+
+function isReplay(claim: ALOutboundClaimRun): boolean {
+    return claim.payloadKind === 'admit-control';
+}
 
 function toCompleteServerReceipt(message: ALMessage, nowMs: number): ALMessage {
     return newALReceiptControlMessage(

@@ -1,6 +1,6 @@
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
-import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
+import type { ALWorkAttemptResult, ALWorkClaimRun } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim } from '../../work/al-work-queue-port.ts';
 import type { ALOutboundDurableEffect } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
@@ -11,7 +11,7 @@ import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timi
 export interface ALOutboundClaimObservation {
     evidence: ALOutboundReceiptWorkEvidence | undefined;
     /** The effect the claimed row held, once its work decoded. */
-    payloadKind: ALOutboundClaimRun['payloadKind'] | undefined;
+    work: ALOutboundClaimWork | undefined;
     timing?: ALOutboundDequeuedAdmission.TimingSink;
     terminalReason?: string;
     verdict?: ALDeliveryAdmissionVerdict['kind'];
@@ -20,9 +20,17 @@ export interface ALOutboundClaimObservation {
 /** The effects an outbound work row holds; a kind does not depend on the type of the prepared copy a send carries. */
 export type ALOutboundDurableEffectKind = ALOutboundDurableEffect<never>['kind'];
 
-/** One claim of an outbound batch as its drain states it: the effect its row held and what running it cost. */
-export interface ALOutboundClaimRun {
+/** The effect a claimed outbound row held. */
+export interface ALOutboundClaimWork {
+    readonly effectId: string;
     readonly payloadKind: ALOutboundDurableEffectKind;
+}
+
+/**
+ * One run of a claim of an outbound batch as its drain states it: the effect its row held, whether `expedite()` claimed
+ * it and which of its runs this is, and what running it cost.
+ */
+export interface ALOutboundClaimRun extends ALOutboundClaimWork, ALWorkClaimRun {
     readonly durationMs: number;
 }
 
@@ -42,6 +50,8 @@ export interface ALOutboundClaimAttemptSettlement {
 }
 
 export interface ALOutboundClaimSettlement<TPrepared> extends ALOutboundClaimAttemptSettlement {
+    /** The run the work handler states the claim is in. */
+    readonly claimRun: ALWorkClaimRun;
     readonly capture: ALOutboundReceiptWorkEvidence.Capture<TPrepared> | undefined;
     readonly readNowMs: () => number;
     /** Whether anyone reads the claim's run: without a diagnostics sink the clock is not read for it. */
@@ -54,7 +64,7 @@ export function createALOutboundClaimObservation(
     timing: ALOutboundDequeuedAdmission.TimingSink | undefined,
     dequeueTypes: ReadonlySet<string>
 ): ALOutboundClaimObservation {
-    const observed: ALOutboundClaimObservation = { evidence: undefined, payloadKind: undefined };
+    const observed: ALOutboundClaimObservation = { evidence: undefined, work: undefined };
     if (timing !== undefined && dequeueTypes.has(claim.entry.typeId)) {
         observed.timing = timing;
     }
@@ -103,12 +113,12 @@ export async function settleALOutboundClaim<TPrepared>(
 ): Promise<ALOutboundSettledClaim> {
     const startedAtMs = settlement.timed ? settlement.readNowMs() : undefined;
     const outcome = await settleALOutboundAttempt(settlement);
-    const { payloadKind } = settlement.observed;
+    const { work } = settlement.observed;
     return {
         outcome,
-        runs: startedAtMs === undefined || payloadKind === undefined
+        runs: startedAtMs === undefined || work === undefined
             ? []
-            : [{ payloadKind, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }]
+            : [{ ...work, ...settlement.claimRun, durationMs: Math.max(0, settlement.readNowMs() - startedAtMs) }]
     };
 }
 

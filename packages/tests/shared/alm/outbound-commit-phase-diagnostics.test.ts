@@ -354,8 +354,8 @@ it('states each claim of an outbound drain with the effect its row held and what
             claimedCount: 2,
             runDurationMs: 37,
             claims: [
-                { payloadKind: 'send-prepared', durationMs: 7 },
-                { payloadKind: 'send-prepared', durationMs: 30 }
+                { payloadKind: 'send-prepared', effectId: expect.any(String), expedited: false, run: 1, durationMs: 7 },
+                { payloadKind: 'send-prepared', effectId: expect.any(String), expedited: false, run: 1, durationMs: 30 }
             ]
         }))
     );

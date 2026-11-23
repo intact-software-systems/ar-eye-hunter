@@ -222,7 +222,7 @@ describe('group formation metrics recorder', () => {
             runDurationMs: 2,
             releaseDurationMs: 1,
             startedAtMs: 1,
-            claims: [{ payloadKind: 'send-prepared', durationMs: 2 }]
+            claims: [{ payloadKind: 'send-prepared', effectId: 'effect-1', expedited: false, run: 1, durationMs: 2 }]
         });
 
         expect(recorder.readMetrics().wsOutboundRejectedWorkCount).toBe(1);
