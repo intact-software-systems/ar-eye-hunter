@@ -650,7 +650,7 @@ describe('ALM ordered subscription entry conformance', () => {
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'gives each ordered publication\'s one send the slow-path window while the probe and cue sends keep one command\'s over %s',
+        'gives each ordered publication\'s one send the durable-lane admission window while the probe and cue sends keep one command\'s over %s',
         (carrier) => {
             for (const scenarioId of ORDERED_SCENARIO_IDS) {
                 for (const [role, track] of PRODUCER_TRACKS) {
@@ -680,7 +680,7 @@ describe('ALM ordered subscription entry conformance', () => {
     );
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'the readiness probe observes each attempt for the slow-path window and starts attempts for one phase over %s',
+        'the readiness probe observes each attempt for the durable-lane admission window and starts attempts for one phase over %s',
         (carrier) => {
             for (const scenarioId of ORDERED_SCENARIO_IDS) {
                 const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), 'sender');
