@@ -55,6 +55,8 @@ export namespace ALInboundGapRenewal {
         readonly orderingObserver: ALOrderingObserver;
         /** Plans a bounded hold's lowest copy as the copy it enters at, as the runtime plans every admission. */
         readonly planIncomingMessage: ALInboundPlanner;
+        /** Awaited on the copy before it is planned, as the runtime verifies every message object it plans; absent as there. */
+        readonly verifyPublicationProof?: ALInboundMessageRuntime.Dependencies['verifyPublicationProof'];
         readonly workPort: Pick<ALWorkQueuePort, 'retainIfAbsent'>;
         readonly clock: ALInboundMessageRuntime.Clock;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
@@ -172,6 +174,8 @@ export class ALInboundGapRenewal {
         if (surface === undefined) {
             return HELD_ENTRY_RETRIED;
         }
+        // A carrier that signs its copies reads the proof verdict of the very object it plans; every plan below is of it.
+        await this.dependencies.verifyPublicationProof?.(surface.msg);
         const read = await admissionStore.readIncomingMessage({
             msg: surface.msg,
             source: surface.source,
@@ -192,7 +196,7 @@ export class ALInboundGapRenewal {
         const held = computeALInboundHeldTrackEntry({
             read,
             entry,
-            plan: planIncomingMessage(entry.msg, read.source, { nowMs, orderingObservation: entry.observation }),
+            plan: planIncomingMessage(surface.msg, read.source, { nowMs, orderingObservation: entry.observation }),
             facts
         });
         const ended = await this.commitHoldEnd(held.bundle);

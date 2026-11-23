@@ -42,6 +42,7 @@ import {
     readInboundTestWorkRows,
     runInboundWorkDueNow,
     setNextInboundCommitConflicted,
+    type CreateInboundTestRuntimeInput,
     type InboundTestRuntime,
     type InboundTestStorage
 } from '../../inbound-runtime-test-fixture.ts';
@@ -85,6 +86,10 @@ interface RenewalFixtureInput {
     readonly stores?: ALInboundRuntimeStores;
     /** Absent, every message is dispatched as soon as it is released. */
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
+    /** Absent leaves the policy's plan as it stands. */
+    readonly plan?: CreateInboundTestRuntimeInput['plan'];
+    /** Absent verifies no publication proof. */
+    readonly verifyPublicationProof?: CreateInboundTestRuntimeInput['verifyPublicationProof'];
 }
 
 interface OrderedMessageInput {
@@ -397,6 +402,27 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         expect(readOrderingPositions(fixture)).toEqual([]);
     });
 
+    // A carrier whose planner reads a proof verdict per message object (a signed receipted RTC room copy, #887) plans a
+    // copy no one verified as unauthorized: the hold's end verifies each copy it plans, as an admission and a release do.
+    it('verifies the copy it enters at before planning it, as a carrier that signs its copies needs, and states the entry', async () => {
+        const verified = new WeakSet<ALMessage>();
+        const fixture = createRenewalFixture('memory', {
+            verifyPublicationProof: async (msg) => {
+                verified.add(msg);
+                return true;
+            },
+            plan: (plan, msg) => verified.has(msg) ? plan : { ...plan, dropReason: 'unauthorized' }
+        });
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+
+        await advanceThrough(fixture, [1_000, 3_000, 7_000]);
+
+        expect(readOrderingPositions(fixture)).toMatchObject([{ status: 'entered', seq: 2, priorSeq: 1 }]);
+        expect(fixture.deliveredMessages.map((message) => message.ordering?.seq)).toEqual([2, 3]);
+    });
+
     it('refuses the late first copy as before its entry once the hold has ended', async () => {
         const fixture = createRenewalFixture('memory');
         for (const seq of [2, 3]) {
@@ -625,6 +651,8 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
         effectWorkerId: `al-inbound:gap-renewal-${fixtureCount}`,
         receiptProofs: input.receiptProofs,
         canDispatchMessage: input.canDispatchMessage,
+        plan: input.plan,
+        verifyPublicationProof: input.verifyPublicationProof,
         random: input.random ?? (() => 0)
     });
 }
