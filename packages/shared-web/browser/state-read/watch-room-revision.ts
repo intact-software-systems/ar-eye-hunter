@@ -81,6 +81,7 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
             queued = true;
             return;
         }
+        queued = false;
         const attempt = new AbortController();
         request = attempt;
         let next: T | null;
@@ -104,12 +105,10 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
             return;
         }
         request = undefined;
-        if (queued) {
-            queued = false;
-            void refresh();
-            return;
-        }
         publish('current', next);
+        if (queued) {
+            void refresh();
+        }
     }
     function handleReadFailure(attempt: AbortController, accessLost: boolean): void {
         if (request !== attempt) {
@@ -149,10 +148,10 @@ export function watchRoomRevision<T extends { readonly revision: number; }>(
     window.addEventListener('offline', suspend, options);
     window.addEventListener('online', wake, options);
     const unsubscribeRoom = input.subscribeInvalidation?.(room, (reason) => {
-        request?.abort();
-        request = undefined;
-        queued = false;
         if (reason === 'access-changed') {
+            request?.abort();
+            request = undefined;
+            queued = false;
             announcedRevision = 0;
             publish('stale', null);
         }
