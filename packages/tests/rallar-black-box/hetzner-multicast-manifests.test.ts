@@ -95,10 +95,11 @@ describe('Hetzner multicast workloads', () => {
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
             // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
-            // 115 s (two 30 s server completion waits and a 5 s margin for the SDK connect, 45 s readiness, 5 s margin)
-            // and the 45 s readiness wait the runtime runs after it, 31 delivery-poll pauses of 5 s and 7 relay-hold
-            // pauses of 1 s.
-            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + (65 + 45 + 5) + 45 + 155 + 7,
+            // 135 s (the SDK connect and the room join, each under the 65 s SDK timeout of two 30 s server completion
+            // waits and a 5 s margin, then a 5 s margin) and the 45 s readiness wait the runtime runs after it, 44
+            // delivery-poll pauses of 5 s (the 180 s connect spread, the 5 s warmup, the 30 s stream and the 5 s tail)
+            // and 7 relay-hold pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + (65 + 65 + 5) + 45 + 220 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -124,11 +125,12 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 115 s and the
-            // 45 s readiness wait after it, 5 settle pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 24
-            // delivery-poll pauses of 5 s and 120 relay-hold pauses of 1 s, rounded up to the second.
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 135 s and the
+            // 45 s readiness wait after it, 5 settle pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 37
+            // delivery-poll pauses of 5 s and 185 relay-hold pauses of 1 s (the 180 s connect spread and the 5 s
+            // tail each), rounded up to the second.
             recommendedTerminalTimeoutSeconds: Math.ceil(
-                30 + 15 + 35 + 35 + (65 + 45 + 5) + 45 + 5 + 29.8 + 5 + 120 + 120
+                30 + 15 + 35 + 35 + (65 + 65 + 5) + 45 + 5 + 29.8 + 5 + 185 + 185
             ),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
@@ -293,7 +295,7 @@ describe('Hetzner multicast workloads', () => {
         expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
             commandId: 'rtc-messages-principal-receiver-delivery-poll',
             until: 'first-success',
-            count: 162,
+            count: 164,
             intervalMs: 30_000
         });
         for (const selection of entry?.manifest.recipes ?? []) {

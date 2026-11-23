@@ -240,21 +240,27 @@ describe('ALM scale recipes', () => {
     });
 
     it.each([[15, 54_750], [30, 64_500], [50, 77_500]] as const)(
-        'allows the %i-member cohort\'s player connect and its readiness %i ms each, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members; the connected barrier covers both, one after the other',
+        'allows the %i-member cohort\'s player readiness %i ms, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members; each connect covers its SDK connect and room join under the 45 s SDK timeout and a 5 s margin, and the connected barrier covers a player\'s connect and readiness, one after the other',
         (participantCount, allowanceMs) => {
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
             const [director, player] = scale.recipes.map((recipe) => toNestedCommands(recipe.commands));
             const byId = (commands: readonly RallarBlackBoxTestCommand[], commandId: string) => commands.find((command) => command.commandId === commandId);
+            const connectTimeoutMs = 45_000 + 45_000 + 5_000;
 
             expect(byId(player, 'alm-scale-player-connect')).toMatchObject({
-                timeoutMs: allowanceMs,
+                roomId: 'scale-room',
+                timeoutMs: connectTimeoutMs,
                 readiness: { minReadyPeers: 1, timeoutMs: allowanceMs },
                 rallar: { timeoutMs: 45_000 }
             });
-            expect(byId(director, 'alm-scale-director-connect')).toMatchObject({ timeoutMs: 50_000, rallar: { timeoutMs: 45_000 } });
+            expect(byId(director, 'alm-scale-director-connect')).toMatchObject({
+                roomId: 'scale-room',
+                timeoutMs: connectTimeoutMs,
+                rallar: { timeoutMs: 45_000 }
+            });
             expect([byId(director, 'alm-scale-director-connected'), byId(player, 'alm-scale-player-connected')]).toEqual([
-                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: 2 * allowanceMs }),
-                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: 2 * allowanceMs })
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: connectTimeoutMs + allowanceMs }),
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: connectTimeoutMs + allowanceMs })
             ]);
             expect(byId(player, 'alm-scale-player-group-created')).toMatchObject({ timeoutMs: 45_000 });
         }

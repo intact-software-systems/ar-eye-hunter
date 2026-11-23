@@ -1593,7 +1593,7 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "messages.rtc",
-            "timeoutMs": 50000,
+            "timeoutMs": 95000,
             "rallar": {
               "username": "{auth.username}",
               "password": "",
@@ -1631,7 +1631,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-director-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 155000
+            "timeoutMs": 172500
           },
           {
             "kind": "wait",
@@ -6827,7 +6827,7 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "messages.rtc",
-            "timeoutMs": 77500,
+            "timeoutMs": 95000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 77500,
@@ -6854,7 +6854,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-player-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 155000
+            "timeoutMs": 172500
           },
           {
             "kind": "wait",
@@ -14082,7 +14082,7 @@
         }
       ]
     },
-    "recommendedTerminalTimeoutSeconds": 893
+    "recommendedTerminalTimeoutSeconds": 928
   },
   "description": "One director and 49 players send reliable AR Eye match payloads within a 30-second workload deadline, with seven bounded ALM samples and native per-agent delivery evidence."
 }

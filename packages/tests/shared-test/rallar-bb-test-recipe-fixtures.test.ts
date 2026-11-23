@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    computeRtcEstablishAndReadyCommandTimeoutMs,
+    computeRtcConnectOwnTimeoutMs,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
@@ -30,8 +30,10 @@ import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json
 
 /** The SDK connect runs the ticket request and then the connect mutation, each bounded by the server's completion wait. */
 const EXPECTED_SDK_CONNECT_TIMEOUT_MS = 2 * API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS + 5_000;
-/** The SDK connect, the 45 s readiness wait and the 5 s completion margin, one after another. */
-const EXPECTED_CONNECT_COMMAND_TIMEOUT_MS = EXPECTED_SDK_CONNECT_TIMEOUT_MS + 45_000 + 5_000;
+/** The SDK connect and the room join, each under the SDK timeout, then the 5 s completion margin. */
+const EXPECTED_CONNECT_COMMAND_TIMEOUT_MS = 2 * EXPECTED_SDK_CONNECT_TIMEOUT_MS + 5_000;
+/** The latest peer connects once another's connect and its 45 s readiness wait, run one after the other, are over. */
+const EXPECTED_CONNECT_SPREAD_MS = EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 45_000;
 
 const EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR = {
     typeId: 'black-box.group.multicast.position',
@@ -64,6 +66,11 @@ describe('rallar-bb-test recipe fixtures', () => {
         expect(RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS).toBeGreaterThan(API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS);
     });
 
+    it('bounds a connect by the SDK connect, the room join when it names a room, and the completion margin', () => {
+        expect(computeRtcConnectOwnTimeoutMs({ sdkTimeoutMs: 65_000, joinsRoom: true })).toBe(65_000 + 65_000 + 5_000);
+        expect(computeRtcConnectOwnTimeoutMs({ sdkTimeoutMs: 65_000, joinsRoom: false })).toBe(65_000 + 5_000);
+    });
+
     it('builds principal messages.rtc multicast sender and receiver recipes for 50-agent runs', () => {
         const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
             participantCount: 50,
@@ -94,11 +101,11 @@ describe('rallar-bb-test recipe fixtures', () => {
             frameCount: 600
         });
         expect(senderConnect).toMatchObject({
-            timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS),
+            roomId: expect.any(String),
+            timeoutMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS,
             readiness: { timeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS }
         });
         expect(EXPECTED_SDK_CONNECT_TIMEOUT_MS).toBe(30_000 + 30_000 + 5_000);
-        expect(computeRtcEstablishAndReadyCommandTimeoutMs(45_000)).toBe(EXPECTED_SDK_CONNECT_TIMEOUT_MS + 45_000 + 5_000);
         // The recipe names the SDK connect bound it budgets for, so the SDK's shorter default cannot end the connect first.
         expect(receiverConnect?.kind === 'rtc.connect' ? receiverConnect.rallar : undefined)
             .toEqual({ ...EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR, timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS });
@@ -197,7 +204,7 @@ describe('rallar-bb-test recipe fixtures', () => {
 
         // The receiver polls straight after its connect, so its window covers the connect spread, the sender's warmup,
         // the whole stream and the tail.
-        expect(windowMs).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 30_000 + 5_000);
+        expect(windowMs).toBe(EXPECTED_CONNECT_SPREAD_MS + 5_000 + 30_000 + 5_000);
         expect(poll).toMatchObject({
             kind: 'loop',
             until: 'first-success',
@@ -245,7 +252,7 @@ describe('rallar-bb-test recipe fixtures', () => {
             intervalMs: 50,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
-            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 30_000
+            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_SPREAD_MS + 5_000 + 30_000
         })).toBe(1_500 + 5_000);
         expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 }, count: 8 });
         // Manifest 09: the 735-message shortfall exceeds one sender's 150 frames, so a sender may not have started when
@@ -256,8 +263,8 @@ describe('rallar-bb-test recipe fixtures', () => {
             intervalMs: 200,
             expectedInboundMessages: 7_350,
             minExpectedInboundMessages: 6_615,
-            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS
-        })).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000);
+            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_SPREAD_MS
+        })).toBe(EXPECTED_CONNECT_SPREAD_MS + 5_000);
     });
 
     it('paces the principal delivery poll at the mid-stream stats interval and stays inside the command limits for long runs', () => {
@@ -273,8 +280,8 @@ describe('rallar-bb-test recipe fixtures', () => {
             (command): command is RallarBlackBoxTestLoopCommand => command.commandId === 'rtc-messages-principal-receiver-delivery-poll'
         );
 
-        const pollCount = Math.ceil((EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 4_680_000 + 5_000) / 30_000) + 1;
-        expect(pollCount).toBe(162);
+        const pollCount = Math.ceil((EXPECTED_CONNECT_SPREAD_MS + 5_000 + 4_680_000 + 5_000) / 30_000) + 1;
+        expect(pollCount).toBe(164);
         expect(poll).toMatchObject({ until: 'first-success', intervalMs: 30_000, count: pollCount, maxCommands: pollCount * 2 });
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, receiver).ok).toBe(true);
     });
@@ -373,7 +380,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         // Each peer polls only after its own settle and stream, which the latest other sender's settle and stream match,
         // so its window covers the connect spread and the tail, each phase once.
-        expect(pollWindowMs).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000);
+        expect(pollWindowMs).toBe(EXPECTED_CONNECT_SPREAD_MS + 5_000);
         const allPeerPollIndex = recipe.commands.findIndex(
             (command) => command.commandId === 'rtc-messages-all-peer-delivery-poll'
         );
@@ -381,9 +388,9 @@ describe('rallar-bb-test recipe fixtures', () => {
             kind: 'loop',
             commandId: 'rtc-messages-all-peer-relay-hold',
             intervalMs: 1_000,
-            count: (EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000) / 1_000 + 1,
-            maxCommands: (EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000) / 1_000 + 1,
-            metadata: { purpose: 'relay-hold', relayHoldMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 },
+            count: (EXPECTED_CONNECT_SPREAD_MS + 5_000) / 1_000 + 1,
+            maxCommands: (EXPECTED_CONNECT_SPREAD_MS + 5_000) / 1_000 + 1,
+            metadata: { purpose: 'relay-hold', relayHoldMs: EXPECTED_CONNECT_SPREAD_MS + 5_000 },
             commands: [{ kind: 'stats', commandId: 'rtc-messages-all-peer-relay-hold-stats' }]
         });
         expect(recipe.commands[allPeerPollIndex + 2]).toMatchObject({

@@ -78,10 +78,6 @@ export function rtcConnectReadiness(
     };
 }
 
-function computeReadinessCommandTimeoutMs(readinessTimeoutMs: number): number {
-    return readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
-}
-
 // Bounds a command that runs only the readiness wait (the SDK connect is not part of it).
 export function computeRtcConnectCommandTimeoutMs(
     options: Readonly<{
@@ -93,13 +89,23 @@ export function computeRtcConnectCommandTimeoutMs(
     const readiness = rtcConnectReadiness(options);
     return readiness === undefined
         ? fallbackTimeoutMs
-        : computeReadinessCommandTimeoutMs(readiness.timeoutMs);
+        : readiness.timeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
 }
 
-// Bounds a command that runs the SDK establishment and then the readiness wait sequentially.
-export function computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs: number): number {
-    return RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS +
-        computeReadinessCommandTimeoutMs(readinessTimeoutMs);
+export interface RtcConnectOwnTimeoutInput {
+    /** The connect's `rallar.timeoutMs`, which bounds the SDK connect and, apart, the room join. */
+    readonly sdkTimeoutMs: number;
+    /** Whether the connect names a room, which the runtime joins once the SDK connect completed. */
+    readonly joinsRoom: boolean;
+}
+
+/**
+ * A connect's own timeout: the runtime runs the SDK connect and then, when the connect names a room, the room join,
+ * each under the SDK timeout, and only after both its readiness wait, under the readiness's own timeout.
+ */
+export function computeRtcConnectOwnTimeoutMs(input: RtcConnectOwnTimeoutInput): number {
+    const sdkOperationCount = input.joinsRoom ? 2 : 1;
+    return sdkOperationCount * input.sdkTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
 }
 
 export function createRallarBlackBoxEnsureGroupRequestId(
