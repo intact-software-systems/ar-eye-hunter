@@ -148,7 +148,7 @@ When the countdown expires, the server starts the configured successor at the sc
 resumes later or every browser has left. A late command cannot extend the old phase. The successor has its own duration
 and no further automatic transition. Reconnecting participants recover the committed occurrence and clock together.
 
-An empty temporary room stays available through the successor’s end. A paused temporary room with a planned successor
+An empty temporary room stays available through the successor’s end. A temporary room with a paused named timeline
 uses its `retention.pausedTimelineRetentionMs` window, one hour by default, starting when it is both empty and paused.
 Entering interrupts cleanup. Watching from another room leaves that deadline unchanged. Explicit room deletion still takes effect.
 

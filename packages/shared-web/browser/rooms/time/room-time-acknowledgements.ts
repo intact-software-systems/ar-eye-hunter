@@ -4,17 +4,21 @@ import { readRoomDeadline, type RoomDeadlineChange } from '@shared/api/group-dea
 import { sameSchedulePhases, type RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 
-export function acknowledgedTimeline(metadata: ApiJsonObject, roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase'; }>) {
+export function acknowledgedTimeline(metadata: ApiJsonObject, roomClock: Extract<RoomClockMutation, { operation: 'advance-phase' | 'extend-phase' | 'set-successor'; }>) {
     const timeline = readRoomTimeline(metadata, roomClock.name);
     if (!timeline || timeline.revision !== roomClock.expectedRevision + 1) {
         throw new Error('Timeline acknowledgement has an unexpected revision.');
     }
     const sameOccurrence = timeline.startedAtRevision <= roomClock.expectedRevision;
-    if (roomClock.operation === 'extend-phase' && !sameOccurrence) {
-        throw new Error('Extension acknowledgement started a new phase.');
+    if (roomClock.operation !== 'advance-phase' && !sameOccurrence) {
+        throw new Error('Timeline acknowledgement started a new phase.');
     }
     if (roomClock.operation === 'advance-phase' && (sameOccurrence || timeline.status !== 'running' || timeline.phase !== roomClock.phase)) {
         throw new Error('Timeline acknowledgement does not match the requested phase.');
+    }
+    if (roomClock.operation !== 'extend-phase' &&
+        (roomClock.successor?.phase !== timeline.successor?.phase || roomClock.successor?.durationMs !== timeline.successor?.durationMs)) {
+        throw new Error('Timeline acknowledgement does not match the requested successor.');
     }
     return timeline;
 }

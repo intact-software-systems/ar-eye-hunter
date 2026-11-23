@@ -37,7 +37,8 @@ it('starts the next phase clock while the previous period still has time', () =>
         expectedDirectorEpoch: 1, expectedRevision: 1
     };
     expect(computeGroupClockChange([period], advance, 10_000)).toEqual({
-        name: 'match', revision: 2, phase: 'halftime', startedAtRevision: 2, status: 'running', endsAtEpochMs: 190_000
+        name: 'match', revision: 2, phase: 'halftime', startedAtRevision: 2, startedAtEpochMs: 10_000, startedBy: 'director', successor: null,
+        status: 'running', endsAtEpochMs: 190_000
     });
     expect(computeGroupClockChange([period], { ...advance, expectedRevision: 0 }, 10_000))
         .toMatchObject({ rejectionCode: 'room-clock-revision-conflict' });

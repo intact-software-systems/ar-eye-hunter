@@ -351,7 +351,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomTimeline',
                 'RoomTimelineAdvance',
                 'RoomTimelineExtension',
-                'RoomTimelineObservation'
+                'RoomTimelineObservation',
+                'RoomTimelineSuccessorChange'
             ],
             starExports: [],
             namespaceExports: []
@@ -524,7 +525,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RoomTimeline',
                 'RoomTimelineAdvance',
                 'RoomTimelineExtension',
-                'RoomTimelineObservation'
+                'RoomTimelineObservation',
+                'RoomTimelineSuccessorChange'
             ],
             starExports: [],
             namespaceExports: []
