@@ -130,8 +130,11 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly takeOverSubscription: Unsubscribe | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
-    /** The running batch's settled claims; its selection empties it, so a batch that never ended leaves nothing here. */
-    private claimRuns: ALOutboundClaimRun[] = [];
+    /**
+     * The running batch's settled claims' runs, undefined where a claim took none; its selection empties it, so a batch
+     * that never ended leaves nothing here.
+     */
+    private claimRuns: (ALOutboundClaimRun | undefined)[] = [];
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
@@ -483,9 +486,7 @@ export class ALOutboundStoreLane<TPrepared> {
             readNowMs: () => this.input.runtime.workClock.nowMs(),
             timed: this.input.runtime.diagnostics !== undefined
         });
-        if (settled.run !== undefined) {
-            this.claimRuns.push(settled.run);
-        }
+        this.claimRuns.push(settled.run);
         return settled.outcome;
     }
 
@@ -686,7 +687,7 @@ export class ALOutboundStoreLane<TPrepared> {
             runDurationMs: event.runDurationMs,
             releaseDurationMs: event.releaseDurationMs,
             startedAtMs: event.startedAtMs,
-            claims: this.claimRuns
+            claims: this.claimRuns.filter((run) => run !== undefined)
         });
     }
 
