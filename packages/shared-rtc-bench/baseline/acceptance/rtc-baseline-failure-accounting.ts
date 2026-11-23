@@ -477,27 +477,45 @@ export function createRtcBaselineNotRunArtifact(
     };
 }
 
-function createRtcBaselineBlockedCohortFailures(
+const RTC_BASELINE_COHORT_MEMBERS_UNAVAILABLE_ISSUE = rtcBaselineIssue(
+    '$.identity.memberSampleIds',
+    'cohort-members-unavailable',
+    'Cohort assertion cannot run after a member sample failed or was causally not run.'
+);
+
+/** What stopped the samples a sequence leaves unrun, and what each cohort they block reports. */
+export interface RtcBaselineBlockingCause {
+    readonly causalFailureId: string;
+    readonly cohortIssue: RtcBaselineIssueDto;
+}
+
+/** The owner's sample and every later sample of its workload, in the manifest's order. */
+export function deriveRtcBaselineSampleIdentitiesFromOwner(
+    manifest: RtcBaselineCaptureManifestDto,
+    ownerIdentity: RtcBaselineSampleIdentityDto
+): RtcBaselineSampleIdentityDto[] {
+    const identities = deriveRtcBaselineSampleIdentities(manifest.outerAttempts).filter(
+        (identity) => identity.workloadId === ownerIdentity.workloadId
+    );
+    const ownerIndex = identities.findIndex((identity) => rtcBaselineSampleIdentityEquals(identity, ownerIdentity));
+    return identities.slice(ownerIndex);
+}
+
+/** A cohort with any blocked sample among its members cannot be asserted. */
+export function createRtcBaselineBlockedCohortFailures(
     manifest: RtcBaselineCaptureManifestDto,
     blockedSampleIds: ReadonlySet<string>,
-    causalFailureId: string
+    cause: RtcBaselineBlockingCause
 ): RtcBaselineFailureArtifact[] {
     return manifest.expectedCohorts.flatMap((identity) => {
         const blockedMemberSampleIds = identity.memberSampleIds.filter((sampleId) => blockedSampleIds.has(sampleId));
         return blockedMemberSampleIds.length === 0
             ? []
             : [
-                createRtcBaselineFailureArtifact(
-                    { kind: 'cohort', identity },
-                    [
-                        rtcBaselineIssue(
-                            '$.identity.memberSampleIds',
-                            'cohort-members-unavailable',
-                            'Cohort assertion cannot run after a member sample failed or was causally not run.'
-                        )
-                    ],
-                    { causalFailureId, blockedMemberSampleIds }
-                )
+                createRtcBaselineFailureArtifact({ kind: 'cohort', identity }, [cause.cohortIssue], {
+                    causalFailureId: cause.causalFailureId,
+                    blockedMemberSampleIds
+                })
             ];
     });
 }
@@ -510,19 +528,14 @@ export function buildRtcBaselineFailureSequence(
     if (input.owner.kind !== 'sample' || !input.manifest) {
         return [failure];
     }
-    const ownerIdentity = input.owner.identity;
-    const identities = deriveRtcBaselineSampleIdentities(input.manifest.outerAttempts).filter(
-        (identity) => identity.workloadId === ownerIdentity.workloadId
-    );
-    const ownerIndex = identities.findIndex((identity) => rtcBaselineSampleIdentityEquals(identity, ownerIdentity));
-    const notRunIdentities = identities.slice(ownerIndex + 1);
-    const blockedSampleIds = new Set([
-        ownerIdentity.sampleId,
-        ...notRunIdentities.map((identity) => identity.sampleId)
-    ]);
+    const blockedIdentities = deriveRtcBaselineSampleIdentitiesFromOwner(input.manifest, input.owner.identity);
+    const blockedSampleIds = new Set(blockedIdentities.map((identity) => identity.sampleId));
     return [
         failure,
-        ...notRunIdentities.map((identity) => createRtcBaselineNotRunArtifact(identity, failureId)),
-        ...createRtcBaselineBlockedCohortFailures(input.manifest, blockedSampleIds, failureId)
+        ...blockedIdentities.slice(1).map((identity) => createRtcBaselineNotRunArtifact(identity, failureId)),
+        ...createRtcBaselineBlockedCohortFailures(input.manifest, blockedSampleIds, {
+            causalFailureId: failureId,
+            cohortIssue: RTC_BASELINE_COHORT_MEMBERS_UNAVAILABLE_ISSUE
+        })
     ];
 }

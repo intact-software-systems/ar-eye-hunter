@@ -7,10 +7,9 @@ import type {
 } from '../contracts/rtc-baseline-contracts.ts';
 import { rtcBaselineIssue } from '../contracts/rtc-baseline-contracts.ts';
 import {
-    createRtcBaselineFailureArtifact,
+    createRtcBaselineBlockedCohortFailures,
     createRtcBaselineNotRunArtifact,
-    deriveRtcBaselineSampleIdentities,
-    rtcBaselineSampleIdentityEquals
+    deriveRtcBaselineSampleIdentitiesFromOwner
 } from './rtc-baseline-failure-accounting.ts';
 
 /**
@@ -44,28 +43,16 @@ export function buildRtcBaselineJobBudgetNotStartedSequence(
     manifest: RtcBaselineCaptureManifestDto,
     owner: RtcBaselineSampleFailureOwner
 ): (RtcBaselineNotRunArtifact | RtcBaselineFailureArtifact)[] {
-    const identities = deriveRtcBaselineSampleIdentities(manifest.outerAttempts).filter(
-        (identity) => identity.workloadId === owner.identity.workloadId
-    );
-    const ownerIndex = identities.findIndex((identity) => rtcBaselineSampleIdentityEquals(identity, owner.identity));
-    const notStarted = identities.slice(ownerIndex);
-    const notStartedSampleIds = new Set(notStarted.map((identity) => identity.sampleId));
+    const notStarted = deriveRtcBaselineSampleIdentitiesFromOwner(manifest, owner.identity);
     return [
         ...notStarted.map((identity) =>
             createRtcBaselineNotRunArtifact(identity, RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ID, [
                 RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ISSUE
             ])
         ),
-        ...manifest.expectedCohorts.flatMap((identity) => {
-            const blockedMemberSampleIds = identity.memberSampleIds.filter((sampleId) =>
-                notStartedSampleIds.has(sampleId)
-            );
-            return blockedMemberSampleIds.length === 0 ? [] : [
-                createRtcBaselineFailureArtifact({ kind: 'cohort', identity }, [RTC_BASELINE_JOB_BUDGET_COHORT_ISSUE], {
-                    causalFailureId: RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ID,
-                    blockedMemberSampleIds
-                })
-            ];
+        ...createRtcBaselineBlockedCohortFailures(manifest, new Set(notStarted.map((identity) => identity.sampleId)), {
+            causalFailureId: RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ID,
+            cohortIssue: RTC_BASELINE_JOB_BUDGET_COHORT_ISSUE
         })
     ];
 }
