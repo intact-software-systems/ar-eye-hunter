@@ -23,6 +23,7 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
+import type { ALOutboundPendingAckSnapshot } from '../../alm/al-runtime-state-stores.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALInboundMessageRuntime,
@@ -370,7 +371,8 @@ export class WsQueueBoxServerService {
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
             acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control),
-            readOwnPendingReceipt: (msgId) => this.readOwnPendingReceipt(msgId)
+            readOwnPendingReceipt: (msgId) => this.readOwnPendingReceipt(msgId),
+            readOwnPendingAck: (msgId) => this.readOwnPendingAck(msgId)
         });
         const controlDelivery = new WsQueueBoxServerControlDelivery({
             clock: this.clock,
@@ -395,12 +397,17 @@ export class WsQueueBoxServerService {
 
     /** Two reads for a logically receipted row of the server's own, one for any other. */
     private async readOwnPendingReceipt(msgId: string): Promise<WsQueueBoxServerOwnPendingReceipt | undefined> {
-        const pending = await this.admissionStore.readPendingAck({ originPeerId: this.name, msgId });
-        if (pending === undefined || !isALLogicalReceiptMode(pending.mode)) {
+        const pending = await this.readOwnPendingAck(msgId);
+        if (pending === undefined) {
             return undefined;
         }
         const sent = await this.admissionStore.readSentMessage(msgId);
         return sent === undefined ? undefined : { message: sent.msg, pending };
+    }
+
+    private async readOwnPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        const pending = await this.admissionStore.readPendingAck({ originPeerId: this.name, msgId });
+        return pending !== undefined && isALLogicalReceiptMode(pending.mode) ? pending : undefined;
     }
 
     private createInboundAuthority(
@@ -501,7 +508,9 @@ export class WsQueueBoxServerService {
 
     /**
      * A logically receipted publication of the server's own opens its receipt from the pending row its dequeue commit
-     * wrote, before any copy a cluster notice publishes can be confirmed. A failed `open` still lets the hook publish.
+     * wrote, before any copy a cluster notice publishes can be confirmed. A record failure propagates: the outbound
+     * work dequeues the failed attempt again, which re-sends every copy and rewrites the pending row with its attempts
+     * reset, while the hook's `try`/`finally` still sends this attempt's cluster copies.
      */
     private async writeOwnReceiptOpening(message: ALMessage): Promise<void> {
         if (

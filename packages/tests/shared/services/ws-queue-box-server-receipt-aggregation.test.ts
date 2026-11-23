@@ -474,6 +474,27 @@ describe('WS server receipt aggregation over the receipt record', () => {
         });
     });
 
+    // Pins an ACK addressed to the server that is no recipient's own word being refused by the record, which counts
+    // only that word, instead of reaching the server's outbound owner, which judges every other control addressed to it.
+    it('leaves to the outbound owner an ACK of a server publication that is no recipient\'s own word', async () => {
+        const fixture = createAggregation();
+        const relayed = aggregateAckControl(toTestALAckPayload({
+            ackedMsgId: 'delta-1',
+            fromPeerId: 'relay',
+            toPeerId: 'server',
+            originPeerId: 'server',
+            logicalRecipientPeerId: 'b',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: 1_000
+        }));
+
+        await fixture.aggregation.acceptControlMessage(relayed);
+
+        expect(fixture.ownerControls).toEqual([relayed]);
+        expect((await fixture.record.read({ originPeerId: 'server', msgId: 'delta-1' })).left).toEqual({ kind: 'head-absent' });
+    });
+
     it('counts a repeat once and answers complete exactly once', async () => {
         const fixture = createAggregation();
         await fixture.aggregation.writeAdmittedReceipt(admittedRoomMessage({ kind: 'admitted' }));
@@ -808,6 +829,8 @@ interface AggregationFixture {
     readonly aggregation: WsQueueBoxServerReceiptAggregation;
     readonly engine: InboxOutboxEngine;
     readonly enqueued: ALMessage[];
+    /** The controls the aggregation handed to the server's own outbound owner. */
+    readonly ownerControls: ALMessage[];
     readonly clock: { nowMs: number; };
     readonly recordStores: ALReceiptRecordStores;
     /** The test's own reader of the record the aggregation counts in. */
@@ -827,6 +850,7 @@ function createAggregation(
     const clock = { nowMs: 1_000 };
     const engine = new InboxOutboxEngine({ nowEpochMs: () => clock.nowMs, random: () => 0, reportTaskFailure: () => undefined });
     const enqueued: ALMessage[] = [];
+    const ownerControls: ALMessage[] = [];
     const recordStores = options.recordStores ?? createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => clock.nowMs);
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
@@ -841,13 +865,17 @@ function createAggregation(
             enqueued.push(message);
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
         },
-        acceptServerControl: async () => ({ kind: 'not-handled' }),
+        acceptServerControl: async (message) => {
+            ownerControls.push(message);
+            return { kind: 'not-handled' };
+        },
         acceptServerReceipt: async () => ({ kind: 'not-handled' }),
-        readOwnPendingReceipt: async () => undefined
+        readOwnPendingReceipt: async () => undefined,
+        readOwnPendingAck: async () => undefined
     });
     onTestFinished(() => aggregation.dispose());
     const record = new ALReceiptRecord({ ...recordStores, nowMs: () => clock.nowMs });
-    return { aggregation, engine, enqueued, clock, recordStores, record };
+    return { aggregation, engine, enqueued, ownerControls, clock, recordStores, record };
 }
 
 /** Drives the record's worker as its own tests do: `executeOnce` starts a batch it does not wait for. */

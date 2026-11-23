@@ -793,6 +793,7 @@ async function createObservedAggregation(
         acceptServerControl: async () => ({ kind: 'not-handled' }),
         acceptServerReceipt: effects.acceptServerReceipt ?? (async () => ({ kind: 'not-handled' })),
         readOwnPendingReceipt: async () => undefined,
+        readOwnPendingAck: async () => undefined,
         receiptObserver: observe
     });
     onTestFinished(() => aggregation.dispose());

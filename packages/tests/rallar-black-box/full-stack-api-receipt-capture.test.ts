@@ -159,6 +159,7 @@ function toReceiptOwnerChildSource({ msgId, expectedRecipientPeerIds }: ReceiptO
             acceptServerControl: async () => ({ kind: 'not-handled' }),
             acceptServerReceipt: async () => ({ kind: 'not-handled' }),
             readOwnPendingReceipt: async () => undefined,
+            readOwnPendingAck: async () => undefined,
             receiptObserver: createApiV1WsReceiptObserver({
                 enabled: true, timing, serviceId: 'api-process', publisherId: 'publisher-1'
             })

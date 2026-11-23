@@ -274,19 +274,7 @@ describe('the receipt of a server publication is counted in the receipt record',
         // publication went unsent. The failed attempt is dequeued again, and its retry opens the head.
         const clock = installClock();
         const failing = { armed: false };
-        const cluster = await createOwnReceiptCluster(clock, {
-            recordBackend: (base) =>
-                createDelegatingALAdmissionWorkBackend(base, {
-                    write: async (operation, executionExpiresAtMs) => {
-                        if (failing.armed) {
-                            failing.armed = false;
-                            throw new Error('Receipt record store unavailable');
-                        }
-                        return await base.write(operation, executionExpiresAtMs);
-                    }
-                }),
-            bus: createBridgeBus()
-        });
+        const cluster = await createOwnReceiptCluster(clock, { recordBackend: toFailingOnce(failing), bus: createBridgeBus() });
         const delta = createDelta(clock);
         await cluster.instance.service.enqueueOutboxIfAbsent(delta, audience(['a', 'b']));
         failing.armed = true;
@@ -449,6 +437,32 @@ describe('the receipt of a server publication is counted in the receipt record',
         expect(await readConfirmations(server, notification)).toEqual([]);
         expect((await server.store.readReceiptState(ownRef(notification)))?.ackedPeerIds).toEqual(['s0']);
     });
+
+    it('15 counts at the next window an outside-audience NACK whose record write failed, and ends complete at once', async () => {
+        // Pins the record's outside confirmation of an admitted NACK being one-shot: a write that failed after the
+        // server's row admitted the NACK was never tried again, so the receipt waited for its deadline.
+        const clock = installClock();
+        const failing = { armed: false };
+        const server = await createOwnReceiptServer(clock, { ...defaultOptions(['a', 'b']), recordBackend: toFailingOnce(failing) });
+        const delta = await publishDelta(server, clock, ['a', 'b']);
+        await server.service.acceptIncomingMessage(sessionAck(delta, 'a', 'delivered'), 'a');
+        failing.armed = true;
+
+        await expect(server.service.acceptIncomingMessage(sessionNack(delta, 'b', 'before-entry'), 'b'))
+            .rejects.toThrow('Receipt record store unavailable');
+
+        expect((await server.store.readReceiptState(ownRef(delta)))?.outsideAudiencePeerIds).toEqual(['b']);
+        expect((await server.record.read(ownRef(delta))).right?.tally.outsideAudienceRecipientPeerIds).toEqual([]);
+        await runRowWindow(server, clock, delta);
+
+        expect((await server.record.read(ownRef(delta))).right?.head).toMatchObject({
+            phase: 'complete',
+            confirmedRecipientPeerIds: ['a'],
+            outsideAudienceRecipientPeerIds: ['b']
+        });
+        expect((await server.store.readStoredMessage(delta.id.msgId))?.ended).toBe(true);
+        expect(copiesOf(server.sockets, delta)).toEqual([1, 1]);
+    });
 });
 
 /** The delta the state sync computes for the room, as its producer row carries it. */
@@ -548,6 +562,20 @@ async function readConfirmations(server: OwnReceiptServer, message: ALMessage): 
 /** The record holds its first write, which is the dequeue's `open` when nothing else writes it first. */
 function toHeldOnce(hold: WorkerHold): BackendWrapper {
     return (base) => holdALAdmissionWrite(base, hold);
+}
+
+/** The record's next write fails with a store error, not a conflict, once armed; the failure disarms it. */
+function toFailingOnce(failing: { armed: boolean; }): BackendWrapper {
+    return (base) =>
+        createDelegatingALAdmissionWorkBackend(base, {
+            write: async (operation, executionExpiresAtMs) => {
+                if (failing.armed) {
+                    failing.armed = false;
+                    throw new Error('Receipt record store unavailable');
+                }
+                return await base.write(operation, executionExpiresAtMs);
+            }
+        });
 }
 
 /** Every write of the record fails with a store error, not a conflict, while armed. */
