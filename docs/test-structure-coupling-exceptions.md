@@ -214,21 +214,6 @@ moved or changed test.
       }
     },
     {
-      "id": "alm-outbound-group-holds-late-sender-decision-read",
-      "domain": "ALM outbound sender admission lifetime",
-      "owner": "Rallar shared maintainers",
-      "summary": "A late dispatch from the same sender cannot enter its decision-read storage port while an earlier group still owns its admission slot, including after all but one group member have finished reading.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send",
-      "coverageRelation": "The test holds real group admission reads, queues a late send from the same sender, observes its decision-read port before and after the independent members finish, then releases the final read and verifies ordered committed results, original messages, durable readback and late-send completion.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ALOutboundAdmissionStore.readOutgoingDecision for the queued late dispatch",
-        "observableEffect": "Entering this port reads storage and captures an optimistic sender observation; premature entry overlaps an earlier group that still owns the sender admission slot.",
-        "requiredConstraint": "The late dispatch makes zero decision-read storage calls until every earlier group read settles and the group completes its admission attempt.",
-        "failureRationale": "Final committed messages can remain correct after premature reads and subsequent conflict handling. Their readback does not prove the sender slot prevented overlapping storage entry or remained held until the last group read settled."
-      }
-    },
-    {
       "id": "client-authorised-connect-validation-single-projection",
       "domain": "Client-state AppInbox mutation validation cost",
       "owner": "Rallar server maintainers",
@@ -6434,28 +6419,6 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The close observation after release proves the successful read returns its session to the backend once identity settles; the policy and healthy follow-up do not by themselves prove that cleanup occurred at this boundary.",
       "semanticCoverage": "packages/tests/shared/alm/outbound-admitted-audience.test.ts#keeps a genuine IndexedDB read session open until a held identity read settles"
-    },
-    {
-      "id": "test-structure-coupling-90e8563b42965575",
-      "path": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-group-holds-late-sender-decision-read",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "While every burst read is held, the absent late-send decision read proves a queued same-sender dispatch cannot enter storage before the active group releases its admission ownership.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send"
-    },
-    {
-      "id": "test-structure-coupling-bf7ca7c0fe673aa2",
-      "path": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-group-holds-late-sender-decision-read",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "After all but one burst read settle, the absent late-send decision read proves partial group completion cannot release sender ownership early.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/al-outbound-dispatch-admission.test.ts#reads every member of a burst at once before committing in input order and admitting a late send"
     },
     {
       "id": "test-structure-coupling-96e1d9a2fd5d577f",

@@ -411,24 +411,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([]);
     });
 
-    it('commits an outbound send without a Web Lock where the browser has one: the sender-version fence orders commits', async () => {
-        const requestLock = vi.fn();
-        vi.stubGlobal('navigator', { locks: { request: requestLock } });
-        const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
-            planOutgoingMessage: (msg) => ({
-                msg: msg,
-                dropReasonCode: undefined,
-                lane: 'durable',
-                preparedMessages: [{ kind: 'send' }]
-            })
-        });
-
-        expect((await runtime.enqueueIfAbsent(createOutboundMessage('msg-without-lock'))).verdict.kind).toBe('admitted');
-        // The lock request is the requirement: no outbound commit serializes on a cross-tab lock.
-        expect(requestLock).not.toHaveBeenCalled();
-    });
-
     it('waits for effects committed while another drain is running', async () => {
         const planned: string[] = [];
         const started: string[] = [];

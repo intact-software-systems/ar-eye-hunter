@@ -9,7 +9,8 @@ import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
     ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
-    toOrderingPositionWait
+    toOrderingPositionWait,
+    toVerdictTimeoutMs
 } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import {
@@ -123,7 +124,7 @@ function toGapRequestAdmissionWait(
         contains: `"nackGapRequestNumber":${requestNumber},"nackLogicalRecipientPeerId":"${logicalRecipientPeerId}"`,
         payloadFields: { 'data.kind': 'control-admission', 'data.outcome': 'committed', 'data.nackReason': 'gap' }
     });
-    return { ...wait, timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, wait.timeoutMs) };
+    return { ...wait, timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, toVerdictTimeoutMs(step.input.deadlineMs)) };
 }
 
 /** The name of an origin's wait for the gap request numbered `requestNumber` that speaks for `recipient`. */
