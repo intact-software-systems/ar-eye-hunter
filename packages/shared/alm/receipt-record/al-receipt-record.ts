@@ -1,7 +1,7 @@
 import { AL_RECEIPT_DEADLINE_GRACE_MS } from '../../al-contracts/al-control.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALAdmissionReadContext } from '../al-admission-backend.ts';
-import type { ALAdmissionDecoder } from '../al-admission-decoder.ts';
+import { decodeALAdmissionValue, type ALAdmissionDecoder } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import { computeALReceiptRetentionExpiryMs } from '../delivery/compute-al-receipt-retention-expiry-ms.ts';
@@ -230,6 +230,8 @@ export class ALReceiptRecord {
             if (head !== undefined && issues.length > 0) {
                 return { kind: 'invalid-confirmation', issues, head } as const;
             }
+            // A row no read could take back would fail every later read of the receipt, so it fails closed here.
+            decodeALAdmissionValue(row, key, decode);
             const writes = stored === undefined || isReplacedByConfirmation(head, stored, confirmation);
             if (writes) {
                 await transaction.set(key, row, computeConfirmationExpiryMs(head, nowMs));

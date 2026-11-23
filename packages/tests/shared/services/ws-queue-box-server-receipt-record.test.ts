@@ -6,6 +6,7 @@ import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores, createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -294,6 +295,21 @@ describe('the WS server counts a receipt through the record every instance share
         await settleEngines([a]);
 
         expect(phases(cluster)).toEqual([]);
+        expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
+    });
+
+    // Ruling R26: pins a room member whose identity no receipt control can name opening a head whose answer throws.
+    it('admits a room message whose audience holds an identity a receipt cannot name, and starts no receipt for it', async () => {
+        const cluster = createRecordCluster();
+        const unnameable = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1);
+        const a = await startInstance(cluster, instanceInput('a', [...ROOM, unnameable]));
+        await connectOrigin(cluster, a);
+
+        expect((await a.service.acceptIncomingMessage(message(cluster), ORIGIN)).right).toEqual({ kind: 'admitted' });
+        await settleEngines([a]);
+
+        expect(phases(cluster)).toEqual([]);
+        expect(cluster.observations.filter((observation) => observation.kind === 'receipt-outbox')).toEqual([]);
         expect((await cluster.record.read(ref)).left).toEqual({ kind: 'head-absent' });
     });
 

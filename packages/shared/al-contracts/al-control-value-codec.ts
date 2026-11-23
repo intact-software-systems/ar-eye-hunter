@@ -59,8 +59,8 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         'observedAtEpochMs'
     ]);
     return {
-        msgId: decodeControlIdentifier(record.msgId, 'receipt message ID', AL_MESSAGE_RESOURCE_LIMITS.payloadBytes),
-        originPeerId: decodeControlIdentifier(record.originPeerId, 'receipt origin identity'),
+        msgId: decodeALReceiptMessageId(record.msgId, 'receipt message ID'),
+        originPeerId: decodeALReceiptPeerId(record.originPeerId, 'receipt origin identity'),
         expectedRecipientPeerIds: decodeControlIdentifierArray(
             record.expectedRecipientPeerIds,
             'receipt expected recipient identity'
@@ -77,6 +77,16 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         phase: decodeReceiptPhase(record.phase),
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'receipt observation time')
     };
+}
+
+/** A message id a receipt names: what the receipt control accepts, else a `TypeError`. */
+export function decodeALReceiptMessageId(value: unknown, label: string): string {
+    return decodeControlIdentifier(value, label, AL_MESSAGE_RESOURCE_LIMITS.payloadBytes);
+}
+
+/** A peer identity a receipt names, its origin or a recipient: what the receipt control accepts, else a `TypeError`. */
+export function decodeALReceiptPeerId(value: unknown, label: string): string {
+    return decodeControlIdentifier(value, label);
 }
 
 export function decodeALNackPayload(value: unknown): ALNackPayload {

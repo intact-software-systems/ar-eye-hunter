@@ -1,8 +1,9 @@
+import { decodeALReceiptMessageId, decodeALReceiptPeerId } from '../../al-contracts/al-control-value-codec.ts';
+import { decodeALTraceId } from '../../al-contracts/trace/al-trace-id.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord,
-    decodeALAdmissionString
+    decodeALAdmissionRecord
 } from '../al-admission-value-validation.ts';
 
 import { toALReceiptRecordHeadKey, type ALReceiptRecordRef } from './al-receipt-record-keys.ts';
@@ -59,10 +60,10 @@ export function decodeALReceiptRecordHead(value: unknown, key: string): ALReceip
     return {
         phase,
         opening: decodeALReceiptRecordOpening(head.opening, key),
-        confirmedRecipientPeerIds: decodeALAdmissionArray(head.confirmedRecipientPeerIds, decodeALAdmissionString),
+        confirmedRecipientPeerIds: decodeALAdmissionArray(head.confirmedRecipientPeerIds, decodeRecipientPeerId),
         outsideAudienceRecipientPeerIds: decodeALAdmissionArray(
             head.outsideAudienceRecipientPeerIds,
-            decodeALAdmissionString
+            decodeRecipientPeerId
         ),
         endedAtEpochMs: decodeALAdmissionNumber(head.endedAtEpochMs)
     };
@@ -70,7 +71,7 @@ export function decodeALReceiptRecordHead(value: unknown, key: string): ALReceip
 
 export function decodeALReceiptRecordConfirmation(value: unknown, key: string): ALReceiptRecordConfirmation {
     const confirmation = decodeALAdmissionRecord(value, ['recipientPeerId', 'kind', 'countedAtEpochMs']);
-    const recipientPeerId = decodeALAdmissionString(confirmation.recipientPeerId);
+    const recipientPeerId = decodeRecipientPeerId(confirmation.recipientPeerId);
     if (!key.endsWith(`:${recipientPeerId}`)) {
         throw new TypeError('Stored receipt confirmation belongs to another recipient');
     }
@@ -105,18 +106,33 @@ export function decodeALReceiptRecordOpening(value: unknown, key: string): ALRec
         'deadlineAtMs'
     ]);
     const ref = {
-        originPeerId: decodeALAdmissionString(opening.originPeerId),
-        msgId: decodeALAdmissionString(opening.msgId)
+        originPeerId: decodeALReceiptPeerId(opening.originPeerId, 'Stored receipt origin'),
+        msgId: decodeALReceiptMessageId(opening.msgId, 'Stored receipt message id')
     };
     if (!key.endsWith(toALReceiptRecordHeadKey('', ref))) {
         throw new TypeError('Stored receipt head belongs to another message');
     }
     return {
         ...ref,
-        traceId: decodeALAdmissionString(opening.traceId),
-        expectedRecipientPeerIds: decodeALAdmissionArray(opening.expectedRecipientPeerIds, decodeALAdmissionString),
-        neverSentRecipientPeerIds: decodeALAdmissionArray(opening.neverSentRecipientPeerIds, decodeALAdmissionString),
+        traceId: decodeStoredTraceId(opening.traceId),
+        expectedRecipientPeerIds: decodeALAdmissionArray(opening.expectedRecipientPeerIds, decodeRecipientPeerId),
+        neverSentRecipientPeerIds: decodeALAdmissionArray(opening.neverSentRecipientPeerIds, decodeRecipientPeerId),
         snapshotVersion: decodeALAdmissionNumber(opening.snapshotVersion),
         deadlineAtMs: decodeALAdmissionNumber(opening.deadlineAtMs)
     };
+}
+
+/** A receipt control names every identity of its head, so a stored row holds only identities the control accepts. */
+function decodeRecipientPeerId(value: unknown): string {
+    return decodeALReceiptPeerId(value, 'Stored receipt recipient');
+}
+
+/** The receipt control carries the opening's trace as its own trace. */
+function decodeStoredTraceId(value: unknown): string {
+    return decodeALTraceId(value).fold(
+        (issue) => {
+            throw new TypeError(`Stored receipt trace is invalid: ${issue.message}`);
+        },
+        (traceId) => traceId
+    );
 }

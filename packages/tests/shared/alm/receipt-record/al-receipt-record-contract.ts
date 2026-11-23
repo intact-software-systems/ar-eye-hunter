@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
@@ -707,6 +708,37 @@ export function describeALReceiptRecordContract(
             expect(ordinary.right?.disposition).toBe('repeated');
             const afterOrdinary = await readStoredConfirmations(f);
             expect(afterOrdinary.find(({ value }) => value.recipientPeerId === 'r1')?.value.kind).toBe('confirmed');
+        });
+
+        // Ruling R26: a head naming an identity no receipt control can carry could never be answered: its `admitted`
+        // answer would throw. Such an opening is refused before any row exists.
+        it('refuses an opening a receipt could not name', async () => {
+            const f = await fixture();
+            const peerPastLimit = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1);
+
+            const refused = await f.a.record.open({ ...f.opening, expectedRecipientPeerIds: ['r1', peerPastLimit] });
+
+            expect(refused.left?.kind === 'invalid-opening' ? refused.left.issues.map(({ code }) => code) : [])
+                .toEqual(['malformed-opening']);
+            expect((await f.b.record.read(f.ref)).left).toEqual({ kind: 'head-absent' });
+            expect(await readWork(f, 'deadline')).toBeUndefined();
+        });
+
+        // Ruling R26: a confirmation row naming a recipient no receipt control can carry would fail every later read of
+        // the receipt. Under a head it is refused as outside the frozen audience; ahead of its head it fails closed at
+        // the storage boundary, before anything is written.
+        it('stores no confirmation for a recipient a receipt could not name', async () => {
+            const f = await fixture();
+            const peerPastLimit = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1);
+
+            await expect(f.a.record.countAhead(toConfirmation(f.ref, peerPastLimit))).rejects.toThrow(ALAdmissionCorruptionError);
+            expect(await readStoredConfirmations(f)).toEqual([]);
+
+            await f.a.record.open(f.opening);
+            const counted = await confirm(f, f.b, peerPastLimit);
+            expect(counted.left?.kind === 'invalid-confirmation' ? counted.left.issues.map(({ code }) => code) : [])
+                .toEqual(['outside-frozen-audience']);
+            expect(await readStoredConfirmations(f)).toEqual([]);
         });
     });
 }

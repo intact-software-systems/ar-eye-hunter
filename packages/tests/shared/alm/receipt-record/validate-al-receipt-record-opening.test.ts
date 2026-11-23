@@ -1,3 +1,4 @@
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALReceiptRecordOpening } from '@shared/alm/receipt-record/al-receipt-record-rows.ts';
 import { validateALReceiptRecordOpening } from '@shared/alm/receipt-record/validate-al-receipt-record-opening.ts';
 import { describe, expect, it } from 'vitest';
@@ -84,5 +85,11 @@ describe('validateALReceiptRecordOpening', () => {
             'empty-audience',
             'receipt-expired'
         ]);
+    });
+
+    // Pins an opening whose recipient no receipt control can name being accepted: its `admitted` answer would throw.
+    it('refuses an opening a receipt could not name as unreadable', () => {
+        const peerPastLimit = 'p'.repeat(AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters + 1);
+        expect(toIssueCodes({ expectedRecipientPeerIds: ['r1', peerPastLimit] })).toEqual(['malformed-opening']);
     });
 });
