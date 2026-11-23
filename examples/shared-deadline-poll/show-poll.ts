@@ -33,7 +33,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const view = new PollView(root);
     const { yes, no, extend } = view;
     let submitting = false;
-    let refreshing = false;
+    let activeRefresh: AbortController | undefined;
     let retryAt = 0;
     let deadlineStale = false;
     let watchedRevision = 0;
@@ -44,20 +44,22 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let generation = away ? 1 : 0;
     let restored = 0;
     async function refreshSnapshot(): Promise<void> {
-        refreshing = true;
+        const attempt = new AbortController();
+        activeRefresh = attempt;
+        const refreshSignal = AbortSignal.any([signal, attempt.signal]);
         const current = generation;
         try {
             if (restored !== current) {
-                const options = { signal };
+                const options = { signal: refreshSignal };
                 await rallar.connect(options);
-                signal.throwIfAborted();
+                refreshSignal.throwIfAborted();
                 if (current !== generation) {
                     return;
                 }
                 await rallar.rooms.enter(roomRef, options);
             }
-            const snapshot = await requestPollSnapshot(input, signal, { previous: record });
-            signal.throwIfAborted();
+            const snapshot = await requestPollSnapshot(input, refreshSignal, { previous: record });
+            refreshSignal.throwIfAborted();
             if (current !== generation) {
                 return;
             }
@@ -73,8 +75,10 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             // A failed read leaves the receipt or closing tally unresolved.
         }
         finally {
-            refreshing = false;
-            retryAt = performance.now() + 2_000;
+            if (activeRefresh === attempt) {
+                activeRefresh = undefined;
+                retryAt = performance.now() + 2_000;
+            }
         }
     }
     function render(): void {
@@ -92,13 +96,13 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         const revisionDue = watchedRevision > (record.revision ?? 0);
         const needsSnapshot = restoring || checkingReceipt || extensionUnconfirmed ||
             currentPhase === 'Voting closed' || revisionDue;
-        if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
+        if (!away && needsSnapshot && !submitting && !activeRefresh && performance.now() >= retryAt) {
             void refreshSnapshot();
         }
         if (deadlineStale || revisionDue || extensionUnconfirmed) {
             currentPhase = 'Recovering room poll';
         }
-        view.render({ record, currentPhase, checkingReceipt, refreshing, submitting, unacknowledged, retryAt });
+        view.render({ record, currentPhase, checkingReceipt, refreshing: activeRefresh !== undefined, submitting, unacknowledged, retryAt });
     }
     async function submit(choice: PollAuthority.Choice): Promise<void> {
         render();
@@ -128,6 +132,8 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     function suspend(): void {
         generation++;
         away = true;
+        activeRefresh?.abort();
+        activeRefresh = undefined;
         render();
     }
     function resume(): void {

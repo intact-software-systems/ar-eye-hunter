@@ -168,7 +168,13 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await expect(spectator.getByText('Voting closed · Results')).toBeVisible();
         releaseVote.resolve();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
-        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+        // Reconnection and room re-entry can each retry before the poll authority is reachable.
+        const [restoredSnapshot] = await Promise.all([
+            page.waitForResponse(response => response.url() === poll.url && response.request().method() === 'GET' && response.ok(),
+                { timeout: 0 }),
+            page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+        ]);
+        expect(await restoredSnapshot.json()).toMatchObject({ closed: true, yes: 1, no: 0, disposition: 'accepted' });
         await expect(page.getByText('Voting closed · Results')).toBeVisible();
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
         await expect(page.locator('time')).toHaveText(schedule);
