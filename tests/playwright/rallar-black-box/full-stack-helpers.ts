@@ -1052,7 +1052,8 @@ function toRecipeRunRequest(recipe: RallarBlackBoxTestRecipe): RecipeRunRequest 
     return { recipe, timeoutMs: computeAlmRecipeRunTimeoutMs(recipe, RECIPE_RUN_TIMEOUT_MS) };
 }
 
-function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
+/** The id the lane enqueues a recipe's root under, which its result and every outcome of it carry. */
+export function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {
     return `${recipe.recipeId}-run`;
 }
 
@@ -1263,19 +1264,6 @@ async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Prom
 /** A recipe a cancel ended says so in its result, whether it stopped between commands or an abort was thrown out of it. */
 function isCancelledResult(result: ControlResultEnvelope): boolean {
     return result.result?.status === 'cancelled';
-}
-
-/** A recipe the lane held back because a root of its scenario ended not ok first: it never ran, so it never passed. */
-export function toNotStartedRecipeRunOutcome(
-    recipe: RallarBlackBoxTestRecipe,
-    peer: RecipeRunOutcome
-): RecipeRunOutcome {
-    return {
-        commandId: toRecipeRunCommandId(recipe),
-        ok: false,
-        summary: 'not started',
-        cancelledAfter: peer.commandId
-    };
 }
 
 function toRecipeRunOutcome(

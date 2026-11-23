@@ -274,8 +274,10 @@ describe('ALM run on an agent per role', () => {
             const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
 
             expect(fixture.posted().includes(runIds.continuation)).toBe(continued);
-            expect(outcome.continuation).toEqual(
-                continued ? { commandId: runIds.continuation, ok: true, summary: 'ok' } : undefined
+            expect(outcome.continuation).toStrictEqual(
+                continued
+                    ? { commandId: runIds.continuation, ok: true, summary: 'ok', cancelledAfter: undefined }
+                    : { commandId: runIds.continuation, ok: false, summary: 'not started', cancelledAfter: runIds.sibling }
             );
             expect(outcome.roles.get('sibling')).toMatchObject({ commandId: runIds.sibling, ok });
         }
@@ -526,7 +528,12 @@ describe('ALM run on an agent per role', () => {
             const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
 
             expect(fixture.posted()).not.toContain(runIds.continuation);
-            expect(outcome.continuation).toBeUndefined();
+            expect(outcome.continuation).toStrictEqual({
+                commandId: runIds.continuation,
+                ok: false,
+                summary: 'not started',
+                cancelledAfter: runIds.receiver
+            });
             expect(outcome.roles.get('receiver')).toMatchObject({ ok: false, cancelledAfter: undefined });
         }
         finally {
@@ -551,7 +558,12 @@ describe('ALM run on an agent per role', () => {
             const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
 
             expect(fixture.posted()).not.toContain(runIds.continuation);
-            expect(outcome.continuation).toBeUndefined();
+            expect(outcome.continuation).toStrictEqual({
+                commandId: runIds.continuation,
+                ok: false,
+                summary: 'not started',
+                cancelledAfter: runIds.sender
+            });
             expect(outcome.roles.get('receiver')).toMatchObject({ ok: false, cancelledAfter: runIds.sender });
             expect(outcome.roles.get('sibling')).toMatchObject({ ok: true, cancelledAfter: undefined });
         }

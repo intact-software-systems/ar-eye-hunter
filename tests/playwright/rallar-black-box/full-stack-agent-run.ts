@@ -32,6 +32,7 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { waitForRecipeGate } from './full-stack-recipe-gate.ts';
+import { toNotStartedRecipeRunOutcome } from './to-not-started-recipe-run-outcome.ts';
 
 /** A run's agents by the role each plays in its scenarios; the sender and the receiver are always among them. */
 export interface AgentRecipeRun extends RecipeRun {
@@ -85,12 +86,13 @@ export async function createAgentRun(input: CreateAgentRunInput): Promise<AgentR
 }
 
 /**
- * Each role's recipe outcome, and the outcome of a role's continuation when the scenario holds one back and the role's
- * first recipe passed: a continuation after a failed first recipe, or once any role's recipe ended not ok, never
- * starts, so the role's failure is its own.
+ * Each role's recipe outcome, and the outcome of the role's continuation when the scenario holds one back: a
+ * continuation after a failed first recipe, or once any role's recipe ended not ok, never starts and is reported not
+ * started after that failure, so the role's failure is its own.
  */
 export interface AgentRunOutcomes {
     readonly roles: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>;
+    /** Undefined only when the scenario holds no continuation back. */
     readonly continuation: RecipeRunOutcome | undefined;
 }
 
@@ -149,24 +151,24 @@ function requireSettled<T>(settled: PromiseSettledResult<T>): T {
  * The continuation is its role's later steps, so it starts once that role's first recipe passed and the gate passed: a
  * page runs its recipes side by side, and a gate that passes early must not let the later steps overtake the first.
  * After a failed, cancelled or timed-out first recipe, or once any role's recipe ended not ok, it does not start, since
- * its steps would fail for that reason alone and hide it.
+ * its steps would fail for that reason alone and hide it; a first recipe not ok is already the scenario's failure.
  */
 async function runContinuation(
     run: AgentRecipeRun,
     { continuation, started, scenario }: ScenarioContinuation
-): Promise<RecipeRunOutcome | undefined> {
+): Promise<RecipeRunOutcome> {
     const first = await scenario.readOutcome(requireRoleValue(started, continuation.role));
-    if (!first.ok) {
-        return undefined;
+    if (first.ok) {
+        await waitForRecipeGate(run, {
+            commandId: continuation.gate.commandId,
+            gatingRun: requireRoleValue(started, continuation.gate.role),
+            scenario,
+            timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
+        });
     }
-    await waitForRecipeGate(run, {
-        commandId: continuation.gate.commandId,
-        gatingRun: requireRoleValue(started, continuation.gate.role),
-        scenario,
-        timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
-    });
-    if (scenario.getFailure() !== undefined) {
-        return undefined;
+    const failure = scenario.getFailure();
+    if (failure !== undefined) {
+        return toNotStartedRecipeRunOutcome(continuation.recipe, failure);
     }
     const continued = await startRecipeRun(run, requireRoleValue(run.agents, continuation.role), continuation.recipe);
     return await scenario.readOutcome(continued);

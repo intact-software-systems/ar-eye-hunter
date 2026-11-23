@@ -11,7 +11,6 @@ import {
     readFullStackConfig,
     startRecipeRun,
     startRecipientRecipeRun,
-    toNotStartedRecipeRunOutcome,
     uniqueAgentId,
     waitForControlRunAgent,
     type FullStackTestIdentity,
@@ -25,6 +24,7 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { waitForRecipeGate } from './full-stack-recipe-gate.ts';
+import { toNotStartedRecipeRunOutcome } from './to-not-started-recipe-run-outcome.ts';
 
 /** The page that owns the sender's session for one scenario, and the page of the same context that follows it. */
 export interface SameContextPages {
