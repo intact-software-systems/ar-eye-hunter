@@ -13,6 +13,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { createInMemoryALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
@@ -137,6 +138,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             nowMs: () => fixture.clock.nowMs()
         }),
+        receiptRecordStores: createInMemoryALReceiptRecordStores('server', () => fixture.clock.nowMs()),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,

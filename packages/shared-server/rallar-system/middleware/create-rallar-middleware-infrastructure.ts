@@ -191,6 +191,7 @@ function createMiddlewareWsQueueBoxServer(
         inboundVolatileStores: options.inboundVolatileStores,
         keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
         outboundStores: options.outboundStores,
+        receiptRecordStores: options.receiptRecordStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         outboundDiagnostics: options.wsOutboundDiagnostics,

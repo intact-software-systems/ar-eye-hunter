@@ -20,6 +20,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../../shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { createInMemoryALReceiptRecordStores } from '../../shared/alm/receipt-record/al-receipt-record-stores.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
 import { Either } from '../../shared/resilience/Either.ts';
 import { createDefaultBackgroundTimers } from '../../shared/resilience/timers.ts';
@@ -188,6 +189,7 @@ class ReceiptOwnerFixture {
                     return this.clock.nowMs;
                 }
             }),
+            receiptRecordStores: createInMemoryALReceiptRecordStores('server', () => this.clock.nowMs),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             receiptObserver: this.observe,
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),

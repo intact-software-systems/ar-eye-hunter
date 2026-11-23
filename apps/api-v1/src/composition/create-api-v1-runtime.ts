@@ -1,6 +1,4 @@
-import { installDurableDeadline } from '@shared-server/rallar-system/app-outbox/install-durable-deadline.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { decodeGroupTimelineDeadline, GROUP_TIMELINE_DEADLINE_TOPIC, groupTimelineDeadlineRoute, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/group-timeline-deadline.ts';
+import { createServerWsQBoxALReceiptRecordStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-receipt-record-stores.ts';
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
@@ -19,6 +17,7 @@ import {
     validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
     DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS,
@@ -27,7 +26,6 @@ import {
 import {
     startGroupRetentionReconciliation
 } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
-import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import { GroupSessionDeadlineService } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
 import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/schedule/group-session-view-watch.ts';
 import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/install-group-session-deadline.ts';
@@ -245,8 +243,12 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     startGroupMaintenance({ runtime, mutation, input });
     startSessionDeadlines({ appInbox, runtime, mutation, input });
     const lobbyExpiry = new GroupLobbyExpiry({
-        appInbox, database: input.database, groups: mutation.groupsRepository, nowEpochMs: input.nowEpochMs,
-        serviceId: input.serviceId, retentionMs: input.appInboxFinishedRetentionMs
+        appInbox,
+        database: input.database,
+        groups: mutation.groupsRepository,
+        nowEpochMs: input.nowEpochMs,
+        serviceId: input.serviceId,
+        retentionMs: input.appInboxFinishedRetentionMs
     });
     lobbyExpiry.listen(runtime.outboxQueueReader);
     installDurableDeadline({
@@ -457,6 +459,10 @@ function createSharedMiddleware(
         inboundStores,
         inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
+        receiptRecordStores: createServerWsQBoxALReceiptRecordStores(
+            input.wsRuntimeName,
+            mutation.runtimeStateRepository
+        ),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,

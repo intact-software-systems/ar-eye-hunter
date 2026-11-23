@@ -7,6 +7,7 @@ import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inb
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
+import type { ALReceiptRecordStores } from '@shared/alm/receipt-record/al-receipt-record-stores.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -158,6 +159,8 @@ export interface CreateRallarMiddlewareOptions {
     >;
     /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
     readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    /** The receipt record every instance of one deployment shares; absent, the WS server keeps one in memory. */
+    readonly receiptRecordStores?: ALReceiptRecordStores;
     /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
     readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;

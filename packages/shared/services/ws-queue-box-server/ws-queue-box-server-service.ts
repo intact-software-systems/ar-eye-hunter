@@ -51,6 +51,10 @@ import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import {
+    createInMemoryALReceiptRecordStores,
+    type ALReceiptRecordStores
+} from '../../alm/receipt-record/al-receipt-record-stores.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -160,6 +164,7 @@ export namespace WsQueueBoxServerService {
         /** Absent on a single instance: every volatile message then stays in `inboundVolatileStores`. */
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+        readonly receiptRecordStores?: ALReceiptRecordStores;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
@@ -228,6 +233,7 @@ export namespace WsQueueBoxServerService {
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
+        readonly receiptRecordStores: ALReceiptRecordStores;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
@@ -1113,6 +1119,8 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             stores: input.outboundStores,
             queueEngine: input.queueEngine
         }),
+        receiptRecordStores: input.receiptRecordStores ??
+            createInMemoryALReceiptRecordStores(input.name, () => Date.now()),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
