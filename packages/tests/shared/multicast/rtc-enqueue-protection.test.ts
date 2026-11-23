@@ -37,7 +37,7 @@ function createInstantSigningCrypto(): PublicationCrypto {
             if (property === 'sign') {
                 return async () => signature;
             }
-            const member: unknown = Reflect.get(target, property, target);
+            const member = Reflect.get(target, property, target) as SubtleCrypto[keyof SubtleCrypto];
             return typeof member === 'function' ? member.bind(target) : member;
         }
     });
