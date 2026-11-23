@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import type { RoomAccessObservation } from '@shared-web/browser/rooms/watch-room-access.ts';
+import type { RoomTimelineObservation } from '@shared-web/browser/rooms/time/room-time-operations.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { readFullStackConfig, type FullStackUser } from './full-stack-helpers.ts';
 
@@ -21,6 +23,33 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
         await lobby.start();
         return { lobby, rooms: rallar.rooms, rallar };
     }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
+}
+
+async function controlConnection(page: Page) {
+    let cutConnection: (() => Promise<void>) | undefined;
+    let disconnected = false;
+    await page.routeWebSocket(url => url.host === new URL(config.apiBaseUrl).host, async socket => {
+        if (disconnected) {
+            await socket.close({ code: 1001 });
+            return;
+        }
+        const server = socket.connectToServer();
+        cutConnection = async () => {
+            await Promise.all([socket.close({ code: 1001 }), server.close({ code: 1001 })]);
+        };
+    });
+    return {
+        async disconnect() {
+            expect(cutConnection).toBeDefined();
+            disconnected = true;
+            await page.context().setOffline(true);
+            await cutConnection!();
+        },
+        async reconnect() {
+            disconnected = false;
+            await page.context().setOffline(false);
+        }
+    };
 }
 
 for (const feature of ['lobby', 'director succession'] as const) {
@@ -112,18 +141,7 @@ test('a member follows court A from B through pause, a missed resume and access 
     guestPage.on('request', request => {
         if (request.method() === 'GET' && new URL(request.url()).pathname === roomPath) roomReads.push(request.url());
     });
-    let cutConnection: (() => Promise<void>) | undefined;
-    let disconnected = false;
-    await guestPage.routeWebSocket(url => url.host === new URL(config.apiBaseUrl).host, async socket => {
-        if (disconnected) {
-            await socket.close({ code: 1001 });
-            return;
-        }
-        const server = socket.connectToServer();
-        cutConnection = async () => {
-            await Promise.all([socket.close({ code: 1001 }), server.close({ code: 1001 })]);
-        };
-    });
+    const network = await controlConnection(guestPage);
     try {
         const host = await signIn(page, config.userA, scope);
         const guest = await signIn(guestPage, config.userB, scope);
@@ -142,7 +160,9 @@ test('a member follows court A from B through pause, a missed resume and access 
             await rooms.enter(lounge, { preserveCurrentMembership: true });
             const history: import('@shared/api/group-deadlines/room-schedule.ts').RoomSchedule.Observation[] = [];
             const stop = rooms.watchSchedule(court, 'match', value => history.push(value));
-            return { history, stop, principalId: rallar.session()!.clientId, room: () => rooms.current()?.group.groupId };
+            const timelines: RoomTimelineObservation[] = [];
+            const stopTimeline = rooms.watchTimeline(court, 'period', value => timelines.push(value));
+            return { history, timelines, stop: () => { stop(); stopTimeline(); }, principalId: rallar.session()!.clientId, room: () => rooms.current()?.group.groupId };
         }, { court, lounge });
         const latest = () => observer.evaluate(state => state.history.at(-1));
         const selected = () => observer.evaluate(state => state.room());
@@ -151,28 +171,48 @@ test('a member follows court A from B through pause, a missed resume and access 
         await host.evaluate(({ rooms }, { court, control }) =>
             rooms.pauseProgram(court, { ...control, expectedRevision: 1 }, crypto.randomUUID()), { court, control });
         await expect.poll(latest).toMatchObject({ status: 'current', schedule: { revision: 2, status: 'program-paused' } });
+        const timeline = () => observer.evaluate(state => state.timelines.at(-1));
+        const period = { ...control, name: 'period' };
+        await expect.poll(timeline).toEqual({ status: 'current', timeline: null });
+        const started = await host.evaluate(({ rooms }, { court, period }) => rooms.advanceTimeline(court,
+            { ...period, phase: 'halftime', durationMs: 180000, expectedRevision: 0 }, crypto.randomUUID()), { court, period });
+        await expect.poll(timeline).toEqual({ status: 'current', timeline: started });
+        const paused = await host.evaluate(async ({ rooms }, { court, period }) => {
+            await rooms.changeClock(court, { ...period, operation: 'pause', expectedRevision: 1 }, crypto.randomUUID());
+            return rooms.readTimeline(court, period.name);
+        }, { court, period });
+        await expect.poll(timeline).toEqual({ status: 'current', timeline: paused });
+        const extended = await host.evaluate(({ rooms }, { court, period }) => rooms.extendTimeline(court,
+            { ...period, durationMs: 30000, expectedRevision: 2 }, crypto.randomUUID()), { court, period });
+        expect(extended).toMatchObject({ phase: 'halftime', startedAtRevision: started.startedAtRevision, status: 'paused' });
+        await expect.poll(timeline).toEqual({ status: 'current', timeline: extended });
         const beforeIdle = roomReads.length;
+        await host.evaluate(({ rooms }, { court, period }) => rooms.advanceTimeline(court,
+            { ...period, name: 'side-court', phase: 'warmup', durationMs: 20000, expectedRevision: 0 }, crypto.randomUUID()), { court, period });
         // Longer than the historical five-second polling interval. The observer stays mounted throughout.
         await new Promise(resolve => setTimeout(resolve, 5500));
         expect(roomReads.length).toBe(beforeIdle);
         expect(await selected()).toBe(lounge.groupId);
-        expect(cutConnection).toBeDefined();
-        disconnected = true;
-        await guestPage.context().setOffline(true);
-        await cutConnection!();
+        await network.disconnect();
         await expect.poll(latest).toMatchObject({ status: 'stale' });
         const resumed = await host.evaluate(({ rooms }, { court, control }) =>
             rooms.resumeProgram(court, { ...control, expectedRevision: 2 }, crypto.randomUUID()), { court, control });
         expect(await latest()).toMatchObject({ status: 'stale', schedule: { revision: 2 } });
-        disconnected = false;
-        await guestPage.context().setOffline(false);
+        const resumedPeriod = await host.evaluate(async ({ rooms }, { court, period }) => {
+            await rooms.changeClock(court, { ...period, operation: 'resume', expectedRevision: 3 }, crypto.randomUUID());
+            return rooms.readTimeline(court, period.name);
+        }, { court, period });
+        expect(await timeline()).toEqual({ status: 'stale', timeline: extended });
+        await network.reconnect();
         await expect.poll(latest, { timeout: 20000 }).toEqual({ status: 'current', schedule: resumed });
         expect(await selected()).toBe(lounge.groupId);
+        await expect.poll(timeline).toEqual({ status: 'current', timeline: resumedPeriod });
         const principalId = await observer.evaluate(state => state.principalId);
         const deniedRead = guestPage.waitForResponse(response =>
             new URL(response.url()).pathname === roomPath && [403, 404].includes(response.status()));
         await host.evaluate(({ rooms }, { court, principalId }) => rooms.banMember(court, principalId), { court, principalId });
         await deniedRead;
+        await expect.poll(timeline).toEqual({ status: 'stale', timeline: null });
         await expect.poll(latest).toEqual({ status: 'stale', schedule: null });
         await host.evaluate(({ rooms }, { court, control }) =>
             rooms.pauseProgram(court, { ...control, expectedRevision: 3 }, crypto.randomUUID()), { court, control });
@@ -183,6 +223,49 @@ test('a member follows court A from B through pause, a missed resume and access 
         await guestPage.close();
     }
 });
+
+for (const offline of [false, true]) {
+    test(`a member observes a ban from an ordinary room ${offline ? 'after reconnect' : 'while online'}`, async ({ page, browser, baseURL }) => {
+        test.skip(!config.enabled, config.skipReason);
+        const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+        const court = { ...scope, groupId: 'ordinary' };
+        const guestPage = await browser.newPage({ baseURL });
+        const network = await controlConnection(guestPage);
+        try {
+            const host = await signIn(page, config.userA, scope);
+            const guest = await signIn(guestPage, config.userB, scope);
+            await host.evaluate(({ rooms }, room) => rooms.createAndSwitch({ ...room, displayName: 'Court', joinMode: 'open' }), court);
+            const observer = await guest.evaluateHandle(async ({ rooms, rallar }, room) => {
+                await rooms.enter(room);
+                const history: RoomAccessObservation[] = [];
+                const stop = rooms.watchAccess(room, value => history.push(value));
+                return { history, stop, principalId: rallar.session()!.clientId };
+            }, court);
+            const latest = () => observer.evaluate(state => state.history.at(-1));
+            await expect.poll(latest).toMatchObject({ status: 'current' });
+            if (offline) {
+                await network.disconnect();
+                await expect.poll(latest).toMatchObject({ status: 'stale' });
+            } else {
+                const path = '/api/state/apps/club/workspaces/' + scope.workspaceId + '/groups/ordinary';
+                const reads: string[] = [];
+                guestPage.on('request', request => {
+                    if (request.method() === 'GET' && new URL(request.url()).pathname === path) reads.push(request.url());
+                });
+                await new Promise(resolve => setTimeout(resolve, 5500));
+                expect(reads).toHaveLength(0);
+            }
+            const principalId = await observer.evaluate(state => state.principalId);
+            await host.evaluate(({ rooms }, { court, principalId }) => rooms.banMember(court, principalId), { court, principalId });
+            if (offline) await network.reconnect();
+            await expect.poll(latest, { timeout: 20000 }).toMatchObject({ status: 'denied', reason: 'banned' });
+            await expect.poll(() => guest.evaluate(({ rooms }) => rooms.current()?.group.groupId)).toBeUndefined();
+            await observer.evaluate(state => state.stop());
+        } finally {
+            await guestPage.close();
+        }
+    });
+}
 
 test('waiting players receive exclusive offers in order while visiting another room', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);

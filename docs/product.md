@@ -126,8 +126,10 @@ A phase is an application-defined identifier of 1–64 ASCII letters, digits, do
 
 `rooms.readTimeline` and `rooms.watchTimeline` accept the room and clock name. Each observation combines the phase identifier,
 its `startedAtRevision`, the current clock revision and either `endsAtEpochMs` or `remainingMs` from one room snapshot.
-A missing timeline returns null. A fresh watch on returning to the room recovers changes missed while away. Live updates reuse
-the room WebSocket. Idle watches make no periodic reads. Use the existing clock pause/resume commands with the same name.
+A missing timeline returns null. Members can keep room B selected while following a named timeline in A.
+Private WebSocket notices identify the affected room and program. The SDK reads the phase and clock together
+at startup, on matching changes and after reconnect. A change to a different clock leaves the watch idle.
+Access loss clears the cached timeline. Use the existing clock pause/resume commands with the same name.
 The occurrence stays stable across those changes. At zero the current phase remains until the director advances it.
 
 Use `rooms.extendTimeline(roomRef, { name: 'match', durationMs, expectedRevision, expectedDirectorEpoch }, requestId)`
@@ -182,9 +184,10 @@ cannot be removed; admins cannot moderate other admins, and nobody can target th
 Remove requires a new invitation to return. Unban permits a fresh admission attempt and never
 joins the player automatically. Explicit revocation stops the affected player's room participation,
 explains the loss of access and leaves other rooms available. Leaving locally never erases a ban.
-The games observe authoritative roster updates and check current-room access every five seconds
-after the preceding check completes; browser suspension and network failures can delay detection.
-A missing snapshot or failed connection alone is not reported as a ban. Relic's existing Keeper
+Both games use the SDK's `rooms.watchAccess(roomRef, listener)` to observe membership, including in ordinary
+rooms. It checks the authorized room snapshot on startup, private access notifications, and recovery.
+Idle observation makes no periodic access requests. A disconnect marks the observation stale.
+An authoritative refusal distinguishes a ban, removal or unavailable access. Relic's existing Keeper
 takeover and round timeout preserve ongoing play; accepted plans and saved expedition progress remain.
 
 Both games refresh public room discovery automatically while signed in, visible, and online.
