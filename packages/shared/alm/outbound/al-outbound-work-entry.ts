@@ -1,5 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
-
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -12,8 +10,10 @@ import {
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
-import { isALWorkLeaseSweepDeferred, type ALWorkLeaseSweepState } from '../work/al-work-lease-recovery.ts';
-import { computeALWorkLeaseUntilMs, type ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import type { ALWorkLeaseSweepState } from '../work/al-work-lease-recovery.ts';
+import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import { computeALWorkEntry } from '../work/compute-al-work-entry.ts';
+import { readALWorkReadyAt, resolveALWorkEntryReadyAt } from '../work/read-al-work-ready-at.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -22,16 +22,6 @@ import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al
 
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;
 export const AL_OUTBOUND_WORK_PAGE_SIZE = 16;
-
-/**
- * Pending rows are read in due order, so the page holds the earliest of them. A reserved row is due at its lease end,
- * which no store orders by: its page stays in key order.
- */
-const AL_OUTBOUND_SCANS = [
-    { status: EntityStatus.NEW, order: 'due' },
-    { status: EntityStatus.RETRY, order: 'due' },
-    { status: EntityStatus.RESERVED, order: 'key' }
-] as const;
 
 export interface ALOutboundWorkEntryInput<TPrepared> {
     readonly namespace: string;
@@ -66,8 +56,7 @@ function toALOutboundStoredEffectPayload<TPrepared>(
 }
 
 export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntryInput<TPrepared>): ResourceEntry {
-    const createdTs = Temporal.Instant.fromEpochMilliseconds(input.observedAtMs).toZonedDateTimeISO('UTC');
-    return {
+    return computeALWorkEntry({
         key: toALOutboundWorkKey(input.namespace, input.effectId),
         typeId: toALOutboundWorkType(input.namespace),
         resource: JSON.stringify({
@@ -75,16 +64,10 @@ export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntry
             effectId: input.effectId,
             payload: toALOutboundStoredEffectPayload(input.payload)
         }),
-        audit: {
-            createdBy: 'ALM',
-            createdTs: createdTs.toPlainDateTime(),
-            date: createdTs.toPlainTime(),
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(input.expireAtTimestamp)
-        },
-        status: EntityStatus.NEW,
-        dequeueAudit: { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(input.retryAtMs) },
-        db: undefined
-    };
+        observedAtMs: input.observedAtMs,
+        readyAtMs: input.retryAtMs,
+        expireAtTimestamp: input.expireAtTimestamp
+    });
 }
 
 export function decodeALOutboundWorkEntry<TPrepared>(
@@ -125,7 +108,7 @@ export function decodeALOutboundWorkEntry<TPrepared>(
             ),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
             leaseUntilMs: entry.status === EntityStatus.RESERVED
-                ? resolveALOutboundWorkReadyAt(entry)
+                ? resolveALWorkEntryReadyAt(entry, AL_OUTBOUND_WORK_LEASE_MS)
                 : undefined
         };
     }
@@ -147,55 +130,19 @@ export interface ALOutboundWorkDeferral {
     readonly leaseSweeps: ALWorkLeaseSweepState;
 }
 
-/**
- * Retained work is due now, retried work at its own `nextTs`, gated dequeue work no earlier than the
- * breaker allows, and an expired row is never advertised. A reserved row is advertised at its lease end
- * only while the sweep that recovers it may run: a closed sweep would leave every batch it started empty.
- * A page that held more rows than it returned and holds a due row answers `nowMs`: one status never
- * hides the next. A pending status's page holds each work type's earliest live rows: the queue reads a `due` page
- * past expired rows, so expired rows awaiting the queue's expiry cleanup never hide a due row, and the port keeps
- * every type's page whole, so a gated type's rows, rated later than their own next time, never take the place of
- * another type's due row. The reserved page stays in key order and still returns expired rows: a truncated page
- * whose visible rows are all expired or gated answers from those rows alone. Every status is read in one scan, so
- * the probe the engine runs on each round costs one round trip to storage.
- */
+/** The outbound lane's readiness: the shared scan, with the dequeue circuit as the gate it holds rows to. */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
     nowMs: number,
     deferral: ALOutboundWorkDeferral
 ): Promise<number | undefined> {
-    const scans = await port.readPages(
-        AL_OUTBOUND_SCANS.map((scan) => ({ ...scan, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
-    );
-    let readyAtMs: number | undefined;
-    for (const scan of scans) {
-        let hasDueEntry = false;
-        for (const entry of scan.entries) {
-            if (
-                entry.audit.expiryTs.epochMilliseconds <= nowMs ||
-                isALWorkLeaseSweepDeferred(entry, deferral.leaseSweeps)
-            ) {
-                continue;
-            }
-            const candidateAtMs = computeALOutboundEntryReadyAt(entry, deferral.dequeue);
-            hasDueEntry ||= candidateAtMs <= nowMs;
-            readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
-        }
-        if (hasDueEntry && scan.hasMoreEntries) {
-            return nowMs;
-        }
-    }
-    return readyAtMs;
-}
-
-function computeALOutboundEntryReadyAt(
-    entry: ResourceEntry,
-    deferral: ALOutboundDequeueDeferral
-): number {
-    const readyAtMs = resolveALOutboundWorkReadyAt(entry);
-    return deferral.readyAtMs !== undefined && deferral.types.has(entry.typeId)
-        ? Math.max(readyAtMs, deferral.readyAtMs)
-        : readyAtMs;
+    return await readALWorkReadyAt(port, {
+        nowMs,
+        pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
+        leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
+        leaseSweeps: deferral.leaseSweeps,
+        readHeldUntilMs: (entry) => deferral.dequeue.types.has(entry.typeId) ? deferral.dequeue.readyAtMs : undefined
+    });
 }
 
 /**
@@ -217,7 +164,9 @@ export function toALOutboundDequeueWork<TPrepared>(
                 entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
         ),
         expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-        leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALOutboundWorkReadyAt(entry) : undefined
+        leaseUntilMs: entry.status === EntityStatus.RESERVED
+            ? resolveALWorkEntryReadyAt(entry, AL_OUTBOUND_WORK_LEASE_MS)
+            : undefined
     };
 }
 
@@ -239,15 +188,4 @@ function readALOutboundQueuedMessage(
 export function isPendingALOutboundWork(entry: ResourceEntry): boolean {
     return entry.status === EntityStatus.NEW || entry.status === EntityStatus.RETRY ||
         entry.status === EntityStatus.RESERVED;
-}
-
-/** When a pending row can next be claimed: its lease's end while reserved, else its due time. */
-export function resolveALOutboundWorkReadyAt(entry: ResourceEntry): number {
-    if (entry.status === EntityStatus.RESERVED) {
-        return computeALWorkLeaseUntilMs(entry, AL_OUTBOUND_WORK_LEASE_MS);
-    }
-    return Number(
-        entry.dequeueAudit.nextTs?.epochMilliseconds ??
-            entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
-    );
 }
