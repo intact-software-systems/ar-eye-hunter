@@ -45,21 +45,21 @@ function toSessionGonePollCommand(step: AlmConformanceStepInput, sessionId: stri
     const name = 'sibling-session-gone';
     const readName = `${name}-read`;
     const attemptRead = toPollChildId({ step, name, index: 1, childId: toCommandId(step, readName) });
-    const absent = toResultTextWait({
-        step,
-        name: `${name}-absent`,
-        commandId: attemptRead,
-        topic: 'rallar.bb.http.response',
-        text: `"sessionId":"${sessionId}"`,
-        absent: true
-    });
     return toPollCommand({
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
         commands: [
             toRoomSnapshotCommand(step, readName),
-            { ...absent, match: { ...absent.match, payloadPath: 'body.activeSessions' } }
+            toResultTextWait({
+                step,
+                name: `${name}-absent`,
+                commandId: attemptRead,
+                topic: 'rallar.bb.http.response',
+                text: `"sessionId":"${sessionId}"`,
+                absent: true,
+                payloadPath: 'body.activeSessions'
+            })
         ]
     });
 }

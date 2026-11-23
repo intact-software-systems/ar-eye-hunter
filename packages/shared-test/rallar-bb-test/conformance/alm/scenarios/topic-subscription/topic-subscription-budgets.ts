@@ -15,6 +15,8 @@ export interface ResultTextInput {
     /** May name `{resultCache.<commandId>.<path>}`, so two reads can be compared. */
     readonly text: string;
     readonly absent: boolean;
+    /** The part of the event's payload the text is looked for in; absent, the whole payload. */
+    readonly payloadPath?: string;
 }
 
 /** Whether an earlier command's result event carries `text`: how a cell compares one read's value with another's. */
@@ -22,7 +24,12 @@ export function toResultTextWait(input: ResultTextInput): RallarBlackBoxTestWait
     return {
         kind: 'wait',
         commandId: toCommandId(input.step, input.name),
-        match: { commandId: input.commandId, topic: input.topic, contains: input.text },
+        match: {
+            commandId: input.commandId,
+            topic: input.topic,
+            contains: input.text,
+            ...(input.payloadPath === undefined ? {} : { payloadPath: input.payloadPath })
+        },
         ...(input.absent ? { absent: true } : {}),
         timeoutMs: 0
     };
