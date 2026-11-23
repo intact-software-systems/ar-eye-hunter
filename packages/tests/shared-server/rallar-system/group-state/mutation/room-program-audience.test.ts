@@ -93,3 +93,28 @@ it('rolls back a ban and its receipt when the private access notice cannot commi
         await fixture.storage.close();
     }
 });
+
+it('wakes the full member audience only when the room purge time changes', async () => {
+    const runtime = new GroupBarrierRepository();
+    const groupId = 'court';
+    const nowEpochMs = Date.now();
+    await seedOpenGroup(runtime, groupId);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
+    const actor = { actorPrincipalId: 'alice', actorSessionId: 'alice-session' };
+    await service.joinGroup(SCOPE, groupId, { actorPrincipalId: 'bob', requestId: 'join' });
+    async function update(purgeAfterEpochMs: number, displayName: string) {
+        const request = { ...actor, requestId: crypto.randomUUID(), displayName, purgeAfterEpochMs };
+        const descriptor = mutationDescriptor({ operation: 'updateGroup', scope: SCOPE, groupId, request });
+        const { computed } = await computeDescriptorMutation({ runtime, actorPrincipalId: 'alice', descriptor, nowEpochMs });
+        const notices = requireWrite(computed).outboxWrites.map(write => decodePersistedALMessage(write.entry.resource))
+            .filter(message => message.payload.typeId === AppTopics.viewInvalidated).map(decodeViewInvalidationMessage);
+        await service.updateGroup(SCOPE, groupId, request);
+        return notices;
+    }
+    const audience = ['alice', 'bob'].map(principalId => ({
+        version: 1, resource: 'room-access', scope: SCOPE, groupId, principalId, changeId: expect.any(String)
+    }));
+    expect(await update(nowEpochMs + 100000, 'Court')).toEqual(audience);
+    expect(await update(nowEpochMs + 200000, 'Court')).toEqual(audience);
+    expect(await update(nowEpochMs + 200000, 'New court')).toEqual([]);
+});

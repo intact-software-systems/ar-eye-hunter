@@ -179,6 +179,7 @@ export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/con
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 
 export type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
+export type { RoomAccessObservation } from './state-read/watch-room-access.ts';
 export type { RoomClockObservation, RoomDeadlineObservation, RoomTimelineObservation } from './rooms/time/room-time-operations.ts';
 export type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 export type { RoomTimeline, RoomTimelineAdvance, RoomTimelineExtension } from '@shared/api/group-deadlines/room-timeline.ts';

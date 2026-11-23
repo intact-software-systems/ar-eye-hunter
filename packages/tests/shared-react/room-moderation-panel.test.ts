@@ -203,7 +203,6 @@ it.each(['banned', 'removed'] as const)('explains an authoritative %s roster upd
 });
 
 it.each(['read', 'roster'] as const)('preserves a newer admission when an obsolete %s reports revocation', async (delivery) => {
-    vi.useFakeTimers();
     const fixture = createModerationFixture();
     const joining = Promise.withResolvers<GroupSnapshot>();
     const entry = createRoomEntry(fixture.props, (room) => room.groupId === 'next-room' ? joining.promise : Promise.resolve(fixture.snapshot));
@@ -239,7 +238,6 @@ it.each(['read', 'roster'] as const)('preserves a newer admission when an obsole
     finally {
         entry.stop();
         await view.close();
-        vi.useRealTimers();
     }
 });
 
@@ -262,9 +260,7 @@ function createRoomEntry(props: RoomModerationPanelProps, join: (room: GroupRef)
 }
 
 it('does not treat a failed access read as revocation', async () => {
-    vi.useFakeTimers();
     const fixture = createModerationFixture();
-
     const view = await renderModeration(fixture.props);
     try {
         await act(async () => fixture.access({ status: 'stale' }));
@@ -273,7 +269,6 @@ it('does not treat a failed access read as revocation', async () => {
     }
     finally {
         await view.close();
-        vi.useRealTimers();
     }
 });
 

@@ -13,15 +13,17 @@ export function computeGroupObservationPublication(
     group: Group
 ): ViewInvalidationPublication {
     const clock = command.operation === 'updateGroup' ? command.input.roomClock : undefined;
-    const deleted = group.status === 'deleted' && read.group?.value.status !== 'deleted';
-    if (!clock && !deleted && !members.length) {
+    const prior = read.group?.value;
+    const roomAccessChanged = prior !== undefined &&
+        (group.purgeAfterEpochMs !== prior.purgeAfterEpochMs || (group.status === 'deleted' && prior.status !== 'deleted'));
+    if (!clock && !roomAccessChanged && !members.length) {
         return { outbox: [], provenance: [] };
     }
     const program = clock && readRoomTimeRecords(group.metadata).find(record =>
         record.name === clock.name && ('phases' in record || 'phase' in record)
     );
     let principalIds: string[];
-    if (program || deleted) {
+    if (program || roomAccessChanged) {
         if (read.activeMembers === null) {
             throw new TypeError('Room observation publication requires its captured membership');
         }
@@ -39,7 +41,7 @@ export function computeGroupObservationPublication(
         return { outbox: [], provenance: [] };
     }
     return computeViewInvalidationPublication({
-        ...(program && !deleted ? { resource: 'room-program', name: program.name } : { resource: 'room-access' }),
+        ...(program && !roomAccessChanged ? { resource: 'room-program', name: program.name } : { resource: 'room-access' }),
         groupId: group.groupId,
         scope: { applicationId: group.applicationId, workspaceId: group.workspaceId },
         principalIds,
