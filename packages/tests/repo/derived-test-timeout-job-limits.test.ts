@@ -4,12 +4,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { createViewPushManifestEntry } from '../../../apps/rallar-black-box/src/hetzner/create-view-push-manifest-entry.ts';
 import { createExecuteManifestDraft } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import { DEFAULT_EXECUTE_RECIPE_ID } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 import {
@@ -77,15 +77,6 @@ const POSTGRES_INTEGRATION_JOB_SETUP_MS = 12 * 60_000;
  */
 const B06_DIAGNOSTIC_JOB_SETUP_MS = 10 * 60_000;
 
-function readManifest(manifestPath: string): RallarBlackBoxDistributedRunManifest {
-    return decodeDistributedRunManifest(JSON.parse(readFileSync(path.join(repoRoot, manifestPath), 'utf8'))).fold(
-        () => {
-            throw new Error(`${manifestPath} could not be decoded.`);
-        },
-        (manifest) => manifest
-    );
-}
-
 /** The manifest the Console's Execute view builds for its default recipe, as the Native console test starts it. */
 function toConsoleNativeManifest(): RallarBlackBoxDistributedRunManifest {
     const selectedRecipe = projectDistributedRecipeCatalog({
@@ -151,9 +142,7 @@ describe('jobs that run tests whose timeouts are derived', () => {
     });
 
     it('gives the Postgres integration job room for its other steps and the view push test', () => {
-        const { testTimeoutMs } = computeViewPushTestDeadlines(
-            readManifest('apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json')
-        );
+        const { testTimeoutMs } = computeViewPushTestDeadlines(createViewPushManifestEntry().manifest);
 
         expect(readJobTimeoutMs('.github/workflows/release-gate.yml', 'postgres-integration'))
             .toBeGreaterThan(POSTGRES_INTEGRATION_JOB_SETUP_MS + testTimeoutMs);
