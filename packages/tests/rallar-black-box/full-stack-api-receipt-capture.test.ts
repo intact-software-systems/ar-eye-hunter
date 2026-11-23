@@ -121,19 +121,6 @@ const CURRENTNESS_ACK_REJECTION = {
     traceId: 'trace-receipt-control-1'
 };
 
-const RELAY_ACK_REJECTION = {
-    kind: 'ack-rejection',
-    serverPeerId: 'server',
-    controlMsgId: 'ack-A',
-    controlSenderId: 'recipient',
-    controlCreatedAtEpochMs: 900,
-    rejectionCode: 'unauthorized',
-    owner: 'ack-relay',
-    stage: 'ingress-protocol',
-    failedGuards: ['origin-addressee-mismatch'],
-    traceId: 'trace-receipt-control-1'
-};
-
 /** The receipt subject the child admits: its message id and the recipients its room audience holds beside the origin. */
 interface ReceiptOwnerSubject {
     readonly msgId: string;
@@ -384,12 +371,36 @@ const ACK = toTestALAckPayload({
     observedAtEpochMs: 900
 });
 
+/** A count states no source: every instance counts the ACKs it receives, and none is relayed to it. */
+const ACK_COUNT = {
+    kind: 'ack-count',
+    serverPeerId: 'server',
+    ack: ACK,
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    traceId: 'trace-receipt-subject-1',
+    outcome: 'partial',
+    countAtEpochMs: 1000
+};
+
+/** A record of the deleted ACK relay's own kind, as its last producer wrote it. */
+const ACK_RELAY = {
+    kind: 'ack-relay',
+    serverPeerId: 'server',
+    ack: ACK,
+    controlMsgId: 'ack-A',
+    controlSenderId: 'recipient',
+    controlCreatedAtEpochMs: 900,
+    traceId: 'trace-receipt-control-1',
+    outcome: 'published'
+};
+
 /** One closed record of every kind, each naming its trace. */
 const TRACED_OBSERVATIONS = [
     BUSINESS_SOCKET_DECISION,
     ACK_REJECTION,
     CURRENTNESS_ACK_REJECTION,
-    RELAY_ACK_REJECTION,
     {
         kind: 'socket-decision',
         serverPeerId: 'server',
@@ -403,18 +414,7 @@ const TRACED_OBSERVATIONS = [
         outcome: 'control',
         handled: true
     },
-    {
-        kind: 'ack-count',
-        serverPeerId: 'server',
-        ack: ACK,
-        controlMsgId: 'ack-A',
-        controlSenderId: 'recipient',
-        controlCreatedAtEpochMs: 900,
-        traceId: 'trace-receipt-subject-1',
-        source: 'local',
-        outcome: 'partial',
-        countAtEpochMs: 1000
-    },
+    ACK_COUNT,
     {
         kind: 'ack-count',
         serverPeerId: 'server',
@@ -423,19 +423,8 @@ const TRACED_OBSERVATIONS = [
         controlSenderId: 'recipient',
         controlCreatedAtEpochMs: 900,
         traceId: 'trace-receipt-control-1',
-        source: 'local',
         outcome: 'conflict',
         countAtEpochMs: 1000
-    },
-    {
-        kind: 'ack-relay',
-        serverPeerId: 'server',
-        ack: ACK,
-        controlMsgId: 'ack-A',
-        controlSenderId: 'recipient',
-        controlCreatedAtEpochMs: 900,
-        traceId: 'trace-receipt-control-1',
-        outcome: 'published'
     },
     {
         kind: 'receipt-outbox',
@@ -506,16 +495,15 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it.each(['accepted', 'delivered', 'forwarded', 'subtree-complete', 'subtree-complete-not-subscribed'])(
-        'keeps an ACK relay record whose ACK has status %s',
+        'keeps an ACK count record whose ACK has status %s',
         (status) => {
-            const relay = TRACED_OBSERVATIONS.find((observation) => observation.kind === 'ack-relay')!;
-            const record = { ...relay, ack: { ...ACK, status } };
+            const record = { ...ACK_COUNT, ack: { ...ACK, status } };
 
             expect(toSafeApiWsReceiptObservation(record)).toEqual(record);
         }
     );
 
-    it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
+    it('retains closed terminal aggregate and currentness refusals with their actual owner and stage', () => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };
         expect(toSafeApiWsReceiptObservation(absent)).toEqual({
@@ -554,19 +542,23 @@ describe('full-stack private upstream receipt capture', () => {
                 expect(toSafeApiWsReceiptObservation(current)).toEqual(current);
             }
         }
-        const relay = {
-            kind: 'ack-rejection',
-            serverPeerId: 'server',
-            controlMsgId: 'ack-A',
-            controlSenderId: 'recipient',
-            controlCreatedAtEpochMs: 900,
-            rejectionCode: 'unauthorized',
+    });
+
+    // Pins the relay's deletion: a record of its kind, its refusal owner or a count stating a relayed source would
+    // otherwise still pass the projection as evidence of a path no instance runs.
+    it('refuses every record of the deleted ACK relay: its kind, its refusal owner and a count that states a source', () => {
+        expect(toSafeApiWsReceiptObservation({ ...ACK_RELAY })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation({
+            ...ACK_REJECTION,
             owner: 'ack-relay',
             stage: 'ingress-protocol',
             failedGuards: ['origin-addressee-mismatch'],
-            traceId: 'trace-receipt-control-1'
-        };
-        expect(toSafeApiWsReceiptObservation(relay)).toEqual(relay);
+            validationAtEpochMs: undefined,
+            deadlineAtMs: undefined
+        })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation(ACK_COUNT)).toEqual(ACK_COUNT);
+        expect(toSafeApiWsReceiptObservation({ ...ACK_COUNT, source: 'relayed' })).toBeUndefined();
+        expect(toSafeApiWsReceiptObservation({ ...ACK_COUNT, relayPublisherId: 'publisher-1' })).toBeUndefined();
     });
 
     it.each([
@@ -652,19 +644,8 @@ describe('full-stack private upstream receipt capture', () => {
     });
 
     it.each([
-        { stage: 'admission-currentness' },
-        { failedGuards: ['origin-addressee-mismatch', 'origin-addressee-mismatch'] },
-        { failedGuards: ['aggregate-absent'] }
-    ])('refuses an invalid relay requirement independently of aggregate clocks %j', (corruption) => {
-        expect(toSafeApiWsReceiptObservation(RELAY_ACK_REJECTION)).toEqual(RELAY_ACK_REJECTION);
-        expect(toSafeApiWsReceiptObservation({ ...RELAY_ACK_REJECTION, ...corruption })).toBeUndefined();
-    });
-
-    it.each([
         { baseline: CURRENTNESS_ACK_REJECTION, clock: 'validationAtEpochMs' },
-        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'deadlineAtMs' },
-        { baseline: RELAY_ACK_REJECTION, clock: 'validationAtEpochMs' },
-        { baseline: RELAY_ACK_REJECTION, clock: 'deadlineAtMs' }
+        { baseline: CURRENTNESS_ACK_REJECTION, clock: 'deadlineAtMs' }
     ])('refuses supplied $clock at the non-aggregate owner $baseline.owner', ({ baseline, clock }) => {
         expect(toSafeApiWsReceiptObservation(baseline)).toEqual(baseline);
         expect(toSafeApiWsReceiptObservation({ ...baseline, [clock]: 30000 })).toBeUndefined();
@@ -749,7 +730,6 @@ describe('full-stack private upstream receipt capture', () => {
                 serverPeerId: 'server',
                 controlMsgId: 'ack-1',
                 traceId: 'trace-full-stack-api-receipt-owner-fixture',
-                source: 'local',
                 outcome: 'complete',
                 ack: expect.objectContaining({ ackedMsgId: 'subject', logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered' }),
                 after: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'], snapshotVersion: 7 })
@@ -1066,7 +1046,6 @@ describe('full-stack private upstream receipt capture', () => {
                 wsReceipt: {
                     kind: 'ack-count',
                     controlMsgId: 'ack-1',
-                    source: 'local',
                     countAtEpochMs: 1000,
                     outcome: 'complete',
                     ack: { ackedMsgId: 'subject', observedAtEpochMs: 901 },
@@ -1095,6 +1074,9 @@ describe('full-stack private upstream receipt capture', () => {
             }
         ]);
         expect(records[1]?.wsReceipt).not.toHaveProperty('before');
+        // The count is this instance's own; no relay remains to name a source or a publisher.
+        expect(records[1]?.wsReceipt).not.toHaveProperty('source');
+        expect(records[1]?.wsReceipt).not.toHaveProperty('relayPublisherId');
         expect(captured.text).not.toMatch(/AUTH_SENTINEL|ERROR_SENTINEL|authorization|headers/);
         expect(captured.mode).toBe(0o600);
         expect(captured.summary).toMatchObject({

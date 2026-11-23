@@ -419,8 +419,6 @@ export class WsQueueBoxServerReceiptAggregation {
             controlSenderId: control.senderId,
             controlCreatedAtEpochMs: control.ts,
             traceId: view?.head.opening.traceId ?? control.traceId,
-            source: 'local',
-            relayPublisherId: undefined,
             after: view === undefined ? undefined : toImmutableWsQueueBoxServerReceiptAggregate({
                 ...view.head.opening,
                 confirmedRecipientPeerIds: view.tally.confirmedRecipientPeerIds

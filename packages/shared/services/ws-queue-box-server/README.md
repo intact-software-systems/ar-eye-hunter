@@ -58,9 +58,12 @@ invalidation, a row admitted to no audience) hands no judgement: the authority's
 ## Private receipt evidence
 
 [`WsQueueBoxServerReceiptObservation`](./ws-queue-box-server-receipt-observation.ts)
-is the private typed union for socket decision, count, receipt outbox, receipt
-work, transport and publication results. The authority carries its already-read peer/scope/clock facts; the
-service reports its final actual socket result.
+is the private typed union for socket decision, ACK refusal, count, receipt
+outbox, receipt work, transport and publication results. An ACK refusal names its
+owner, the inbound authority (currentness) or the receipt aggregation (the hook's
+guards); a count names no source, since every instance counts the ACKs it receives
+and none is relayed to another. The authority carries its already-read
+peer/scope/clock facts; the service reports its final actual socket result.
 
 `acceptControlMessage`, the one count path, reports what its count read (the
 outcome, and the view a counted ACK returned) in `finally` after any `end`; a

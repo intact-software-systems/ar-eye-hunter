@@ -291,12 +291,14 @@ describe('private upstream receipt observation', () => {
             expect.objectContaining({
                 kind: 'ack-count',
                 controlMsgId: 'ack-1',
-                source: 'local',
                 outcome: 'complete',
                 after: expect.objectContaining({ expectedRecipientPeerIds: ['recipient'], confirmedRecipientPeerIds: ['recipient'] })
             })
         ]));
         expect(events.find((event) => event.kind === 'ack-count')).not.toHaveProperty('before');
+        // The count is this instance's own; no relay remains to name a source or a publisher.
+        expect(events.find((event) => event.kind === 'ack-count')).not.toHaveProperty('source');
+        expect(events.find((event) => event.kind === 'ack-count')).not.toHaveProperty('relayPublisherId');
         await waitForReceiptCompletion(service, engine, ['admitted', 'complete']);
         expect(events).toContainEqual(expect.objectContaining({
             kind: 'receipt-outbox',
@@ -1029,14 +1031,16 @@ describe('owned receipt count observation', () => {
         expect(enqueued.map((message) => decodeALControlMessage(message).right)).toMatchObject([
             { type: 'receipt', payload: { phase: 'timed-out', confirmedRecipientPeerIds: ['recipient'] } }
         ]);
-        expect(events.flatMap((event) => event.kind === 'ack-count' ? [{ source: event.source, clock: event.countAtEpochMs, outcome: event.outcome }] : []))
+        expect(events.flatMap((event) => event.kind === 'ack-count' ? [{ clock: event.countAtEpochMs, outcome: event.outcome }] : []))
             .toEqual([
-                { source: 'local', clock: 1000, outcome: 'partial' },
-                { source: 'local', clock: 1000, outcome: 'partial' },
-                { source: 'local', clock: 1000, outcome: 'rejected' },
-                { source: 'local', clock: 30000, outcome: 'rejected' }
+                { clock: 1000, outcome: 'partial' },
+                { clock: 1000, outcome: 'partial' },
+                { clock: 1000, outcome: 'rejected' },
+                { clock: 30000, outcome: 'rejected' }
             ]);
         const counts = events.filter((event) => event.kind === 'ack-count');
+        // Every outcome, counted or refused, records no relay source: the relay that stated one is deleted.
+        expect(counts.filter((count) => 'source' in count || 'relayPublisherId' in count)).toEqual([]);
         expect(counts[0]).toMatchObject({
             after: { expectedRecipientPeerIds: ['recipient', 'other'], confirmedRecipientPeerIds: ['recipient'], deadlineAtMs: 30000 }
         });

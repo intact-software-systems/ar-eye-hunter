@@ -36,11 +36,6 @@ export type WsQueueBoxServerReceiptAckRejectionObservation =
             readonly validationAtEpochMs: number;
             readonly deadlineAtMs: number | undefined;
         }
-        | {
-            readonly owner: 'ack-relay';
-            readonly stage: WsQueueBoxServerReceiptAggregation.ProtocolObservation['stage'];
-            readonly failedGuards: readonly ['origin-addressee-mismatch'];
-        }
     );
 
 export interface WsQueueBoxServerReceiptSocketFacts {
@@ -77,11 +72,6 @@ export interface WsQueueBoxServerReceiptAggregateFacts {
     readonly confirmedRecipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly deadlineAtMs: number;
-}
-
-export interface WsQueueBoxServerReceiptCountSource {
-    readonly source: 'local' | 'relayed';
-    readonly relayPublisherId: string | undefined;
 }
 
 export interface WsQueueBoxServerReceiptOutboxVerdict {
@@ -143,7 +133,7 @@ export type WsQueueBoxServerReceiptObservation =
         readonly rejectionCode: ALMessageRejection['code'] | undefined;
         readonly handled: boolean | undefined;
     })
-    | (WsQueueBoxServerReceiptAckFacts & WsQueueBoxServerReceiptCountSource & {
+    | (WsQueueBoxServerReceiptAckFacts & {
         readonly kind: 'ack-count';
         readonly serverPeerId: string;
         /** The view a counted ACK returned; absent for a refused or conflicting count, and for one counted ahead. */
@@ -152,11 +142,6 @@ export type WsQueueBoxServerReceiptObservation =
         /** `conflict`: the record refused the write, and the origin's retry recovers it. */
         readonly outcome: 'rejected' | 'conflict' | 'partial' | 'complete';
         readonly rejectionCode: ALMessageRejection['code'] | undefined;
-    })
-    | (WsQueueBoxServerReceiptAckFacts & {
-        readonly kind: 'ack-relay';
-        readonly serverPeerId: string;
-        readonly outcome: 'provenance-refused' | 'budget-refused' | 'published' | 'publication-failed';
     })
     | {
         readonly kind: 'receipt-outbox';

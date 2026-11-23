@@ -2335,11 +2335,6 @@ export const reviewedDispositions = Object.freeze([
     Object.freeze({
         path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
         rule: 'boundary.unknown',
-        symbol: 'toSafeAckRelay'
-    }),
-    Object.freeze({
-        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
-        rule: 'boundary.unknown',
         symbol: 'toSafeReceiptOutbox'
     }),
     Object.freeze({
