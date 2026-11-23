@@ -668,10 +668,10 @@ async function runAlmConformanceScenarios(
 
 async function runPairCell(run: TwoAgentRun, scenario: AlmConformanceScenario): Promise<void> {
     const outcome = await runPairWatchingReloads(run, scenario);
-    expect.soft(outcome.receiver.ok, `${scenario.scenarioKey} receiver: ${outcome.receiver.summary}`)
-        .toBe(true);
-    expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
-        .toBe(true);
+    expectRecipeRunsPassed(scenario, [
+        { label: 'receiver', outcome: outcome.receiver },
+        { label: 'sender', outcome: outcome.sender }
+    ]);
     if (hasAlmIdentityEvidence(scenario.sender)) {
         await assertScenarioIdentity(run, scenario, [
             { role: 'sender', agent: run.sender, outcome: outcome.sender },
@@ -737,17 +737,30 @@ async function runAgentScenario(run: AgentRun, scenario: AlmConformanceScenario)
         agent: requireRoleAgent(run, role),
         outcome: requireRoleOutcome(outcomes.roles, role)
     }));
-    for (const { role, outcome } of evidence) {
-        expect.soft(outcome.ok, `${scenario.scenarioKey} ${role}: ${outcome.summary}`).toBe(true);
-    }
-    if (outcomes.continuation !== undefined) {
-        expect.soft(
-            outcomes.continuation.ok,
-            `${scenario.scenarioKey} ${scenario.continuation?.role} continuation: ${outcomes.continuation.summary}`
-        )
-            .toBe(true);
-    }
+    expectRecipeRunsPassed(scenario, [
+        ...evidence.map(({ role, outcome }) => ({ label: role, outcome })),
+        ...(outcomes.continuation === undefined
+            ? []
+            : [{ label: `${scenario.continuation?.role} continuation`, outcome: outcomes.continuation }])
+    ]);
     await assertScenarioEvidence(run, scenario, evidence);
+}
+
+/**
+ * A recipe cancelled after a peer's failure reports after the recipes that ended on their own, so the scenario's first
+ * failure is the one that caused the others.
+ */
+function expectRecipeRunsPassed(
+    scenario: AlmConformanceScenario,
+    runs: readonly Readonly<{ label: string; outcome: RecipeRunOutcome; }>[]
+): void {
+    const cancelledLast = [
+        ...runs.filter(({ outcome }) => outcome.cancelledAfter === undefined),
+        ...runs.filter(({ outcome }) => outcome.cancelledAfter !== undefined)
+    ];
+    for (const { label, outcome } of cancelledLast) {
+        expect.soft(outcome.ok, `${scenario.scenarioKey} ${label}: ${outcome.summary}`).toBe(true);
+    }
 }
 
 /** The identity rules and the unconfirmed-role receipt check, each selected by the sender recipe's metadata. */
@@ -844,9 +857,10 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
                 ...scenario,
                 successor: scenario.successor
             });
-            for (const role of ['receiver', 'sender', 'successor'] as const) {
-                expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
-            }
+            expectRecipeRunsPassed(
+                scenario,
+                (['receiver', 'sender', 'successor'] as const).map((role) => ({ label: role, outcome: outcome[role] }))
+            );
             owner = successor;
         });
     }

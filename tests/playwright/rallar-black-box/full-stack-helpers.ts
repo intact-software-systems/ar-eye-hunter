@@ -41,6 +41,7 @@ import type {
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { closeParticipantContext } from './close-participant-context.ts';
+import { createScenarioRoots } from './create-scenario-roots.ts';
 import { readControlGetResponse } from './read-control-get-response.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
 import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
@@ -120,6 +121,8 @@ export interface RecipeRunOutcome {
     readonly commandId: string;
     readonly ok: boolean;
     readonly summary: string;
+    /** The root of a peer role whose failure cancelled this one; undefined when no peer's failure did. */
+    readonly cancelledAfter: string | undefined;
 }
 
 export interface RecipePairOutcome {
@@ -136,6 +139,11 @@ export interface RecipePair {
 export interface StartedRecipeRun {
     readonly commandId: string;
     readOutcome(): Promise<RecipeRunOutcome>;
+    /**
+     * Cancels the root because a peer role's recipe ended not ok: its outcome read sends the cancel once it finds no
+     * result. The first peer named wins; a root whose result its read already found is not cancelled.
+     */
+    cancelAfter(peer: RecipeRunOutcome): void;
 }
 
 export interface BrowserControlAgentInput {
@@ -285,6 +293,19 @@ interface RecipeRunRoot {
     /** The run timeout its recipe.run command names. */
     readonly timeoutMs: number;
     readonly cancel: RallarBlackBoxTestRecipeCancelCommand;
+}
+
+/** A root's outcome read: the root, the deadline it captured when it started, and the peer failure that cancels it. */
+interface RecipeRunWatch {
+    readonly root: RecipeRunRoot;
+    readonly deadlineAtMs: number;
+    readonly getPeerFailure: () => RecipeRunOutcome | undefined;
+}
+
+/** The cancel the lane sends a root, and the failure that stops the family when the root is still live after it. */
+interface RecipeRunCancellation {
+    readonly command: RallarBlackBoxTestRecipeCancelCommand;
+    readonly stillLive: string;
 }
 
 interface ReceiverConnectBarrierInput {
@@ -676,15 +697,6 @@ export async function createTwoAgentRun(
     };
 }
 
-export async function runRecipeOnAgent(
-    run: RecipeRun,
-    agent: RecipeRunAgent,
-    recipe: RallarBlackBoxTestRecipe
-): Promise<RecipeRunOutcome> {
-    const started = await startRecipeRun(run, agent, recipe);
-    return await started.readOutcome();
-}
-
 /**
  * Authored paired reload roots are bound and enqueued together; control owns their causal checkpoints.
  * For ordinary recipes, the receiver's prologue creates the group and owns it, so its recipe starts first and the
@@ -706,7 +718,7 @@ export async function runRecipePairOnTwoAgents(
     }
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const senderRun = await startRecipeRun(run, run.sender, recipes.sender);
-    return requireRecipePairOutcome(await Promise.allSettled([senderRun.readOutcome(), receiverRun.readOutcome()]));
+    return await readRecipePairOutcome(senderRun, receiverRun);
 }
 
 /**
@@ -735,10 +747,15 @@ export async function startRecipeRun(
 
 function startRecipeRoot(run: RecipeRun, root: RecipeRunRoot): StartedRecipeRun {
     const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + root.timeoutMs;
+    let peerFailure: RecipeRunOutcome | undefined;
     let outcome: Promise<RecipeRunOutcome> | undefined;
     const started = {
         commandId: root.commandId,
-        readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs)
+        readOutcome: () =>
+            outcome ??= readRecipeRunOutcome(run, { root, deadlineAtMs, getPeerFailure: () => peerFailure }),
+        cancelAfter: (peer: RecipeRunOutcome) => {
+            peerFailure ??= peer;
+        }
     };
     run.startedRoots.push(started);
     return started;
@@ -1188,7 +1205,7 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         run,
         toReloadRunRoot(run.receiver, pair.receiver.commandId, receiverRequest.timeoutMs)
     );
-    return requireRecipePairOutcome(await Promise.allSettled([sender.readOutcome(), receiver.readOutcome()]));
+    return await readRecipePairOutcome(sender, receiver);
 }
 
 /** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */
@@ -1205,6 +1222,13 @@ function toRecipeCancelReason(commandId: string, timeoutMs: number): string {
     return `${commandId} outlived its ${timeoutMs} ms deadline and ${RECIPE_RESULT_GRACE_MS} ms grace.`;
 }
 
+async function readRecipePairOutcome(sender: StartedRecipeRun, receiver: StartedRecipeRun): Promise<RecipePairOutcome> {
+    const scenario = createScenarioRoots();
+    return requireRecipePairOutcome(
+        await Promise.allSettled([scenario.readOutcome(sender), scenario.readOutcome(receiver)])
+    );
+}
+
 function requireRecipePairOutcome(
     [sender, receiver]: readonly [PromiseSettledResult<RecipeRunOutcome>, PromiseSettledResult<RecipeRunOutcome>]
 ): RecipePairOutcome {
@@ -1219,31 +1243,59 @@ function requireRecipePairOutcome(
 
 /**
  * The agent bounds the recipe by the same deadline from its dispatch, so its own timeout result arrives within the
- * grace. A root with no result by then is cancelled; one still live after the cancel's grace stops the family, since a
- * live recipe's later cleanup closes connections under whatever cell runs next on its page.
+ * grace. A root with no result by then, or once a peer's failure cancels it, is cancelled; one still live after the
+ * cancel's grace stops the family, since a live recipe's later cleanup closes connections under whatever cell runs next
+ * on its page.
  */
-async function readRecipeRunOutcome(
-    run: RecipeRun,
-    root: RecipeRunRoot,
-    deadlineAtMs: number
-): Promise<RecipeRunOutcome> {
-    const result = await readRecipeRunResult(run, root.commandId, deadlineAtMs + RECIPE_RESULT_GRACE_MS) ??
-        await cancelRecipeRun(run, root);
+async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Promise<RecipeRunOutcome> {
+    const { root } = watch;
+    const ended = await readRecipeRunResult(run, watch);
+    if (ended !== undefined) {
+        return toRecipeRunOutcome(root.commandId, ended, undefined);
+    }
+    const peer = watch.getPeerFailure();
+    const cancellation = peer === undefined ? toDeadlineCancellation(root) : toPeerCancellation(root, peer);
+    const result = await cancelRecipeRun(run, root, cancellation);
+    return toRecipeRunOutcome(root.commandId, result, result.ok === true ? undefined : peer?.commandId);
+}
+
+function toRecipeRunOutcome(
+    commandId: string,
+    result: ControlResultEnvelope,
+    cancelledAfter: string | undefined
+): RecipeRunOutcome {
+    return { commandId, ok: result.ok === true, summary: toControlResultSummary(result), cancelledAfter };
+}
+
+function toDeadlineCancellation(root: RecipeRunRoot): RecipeRunCancellation {
     return {
-        commandId: root.commandId,
-        ok: result.ok === true,
-        summary: toControlResultSummary(result)
+        command: root.cancel,
+        stillLive:
+            `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
     };
 }
 
-async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<ControlResultEnvelope> {
+/** The failing peer leads the family's failure, since its error, not the cancelled root's, is the scenario's cause. */
+function toPeerCancellation(root: RecipeRunRoot, peer: RecipeRunOutcome): RecipeRunCancellation {
+    return {
+        command: { ...root.cancel, reason: `${root.commandId} cancelled after ${peer.commandId} ended not ok.` },
+        stillLive: `${peer.commandId} ended not ok (${peer.summary}), and ${root.commandId}, cancelled after it, is ` +
+            'still running; no later cell may run on its page.'
+    };
+}
+
+async function cancelRecipeRun(
+    run: RecipeRun,
+    root: RecipeRunRoot,
+    cancellation: RecipeRunCancellation
+): Promise<ControlResultEnvelope> {
     const cancelCommandId = `cancel-${root.commandId}`;
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
         agentId: root.agentId,
         commandId: cancelCommandId,
-        command: root.cancel
+        command: cancellation.command
     });
     const read = await readControlRunUntil(run, {
         timeoutMs: RECIPE_RESULT_GRACE_MS,
@@ -1263,20 +1315,15 @@ async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<Con
     if (read.kind === 'accepted') {
         throw new Error(read.value.failure);
     }
-    throw new Error(
-        `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
-    );
+    throw new Error(cancellation.stillLive);
 }
 
-async function readRecipeRunResult(
-    run: RecipeRun,
-    commandId: string,
-    deadlineAtMs: number
-): Promise<ControlResultEnvelope | undefined> {
+/** The root's result, or undefined once its deadline and grace passed or a peer's failure cancels it without one. */
+async function readRecipeRunResult(run: RecipeRun, watch: RecipeRunWatch): Promise<ControlResultEnvelope | undefined> {
     const read = await readControlRunUntil(run, {
-        timeoutMs: deadlineAtMs - CONTROL_POLL_TIMERS.nowMs(),
-        select: (snapshot) => findControlResult(snapshot, commandId),
-        accept: (result) => result !== undefined
+        timeoutMs: watch.deadlineAtMs + RECIPE_RESULT_GRACE_MS - CONTROL_POLL_TIMERS.nowMs(),
+        select: (snapshot) => findControlResult(snapshot, watch.root.commandId),
+        accept: (result) => result !== undefined || watch.getPeerFailure() !== undefined
     });
     return read.kind === 'accepted' ? read.value : undefined;
 }

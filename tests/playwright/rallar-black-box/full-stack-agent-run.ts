@@ -10,6 +10,7 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { closeParticipantContext, PAGE_CLOSE_TIMEOUT_MS } from './close-participant-context.ts';
+import { createScenarioRoots, type ScenarioRoots } from './create-scenario-roots.ts';
 import {
     cleanupRallarPage,
     createTwoAgentRun,
@@ -85,7 +86,8 @@ export async function createAgentRun(input: CreateAgentRunInput): Promise<AgentR
 
 /**
  * Each role's recipe outcome, and the outcome of a role's continuation when the scenario holds one back and the role's
- * first recipe passed: a continuation after a failed first recipe never starts, so the role's failure is its own.
+ * first recipe passed: a continuation after a failed first recipe, or once any role's recipe ended not ok, never
+ * starts, so the role's failure is its own.
  */
 export interface AgentRunOutcomes {
     readonly roles: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>;
@@ -103,7 +105,8 @@ const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
  * never its only owner, whose leave is refused, and the owner's grants name a room that exists. Every other recipient
  * starts once the one before it connected, and the sender last. The order only keeps that ownership: a barriered
  * cell's roles start their bodies once the cell's settle passed, whatever order they started in. A continuation starts
- * on its role's agent after that role's first recipe passed, once its gate passed.
+ * on its role's agent after that role's first recipe passed, once its gate passed. The roles' outcomes are read while the
+ * continuation waits, so one role that ends not ok cancels the others still running.
  */
 export async function runRecipesOnAgents(
     run: AgentRecipeRun,
@@ -121,12 +124,18 @@ export async function runRecipesOnAgents(
                 : await startRecipientRecipeRun(run, agent, recipe)
         );
     }
-    const continued = continuation === undefined ? undefined : await startContinuation(run, continuation, started);
+    const scenario = createScenarioRoots();
     const [roles, continuationOutcome] = await Promise.allSettled([
-        readRoleOutcomes(started),
-        continued?.readOutcome()
+        readRoleOutcomes(started, scenario),
+        continuation === undefined ? undefined : runContinuation(run, { continuation, started, scenario })
     ]);
     return { roles: requireSettled(roles), continuation: requireSettled(continuationOutcome) };
+}
+
+interface ScenarioContinuation {
+    readonly continuation: AlmConformanceContinuation;
+    readonly started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>;
+    readonly scenario: ScenarioRoots;
 }
 
 function requireSettled<T>(settled: PromiseSettledResult<T>): T {
@@ -139,15 +148,14 @@ function requireSettled<T>(settled: PromiseSettledResult<T>): T {
 /**
  * The continuation is its role's later steps, so it starts once that role's first recipe passed and the gate passed: a
  * page runs its recipes side by side, and a gate that passes early must not let the later steps overtake the first.
- * After a failed, cancelled or timed-out first recipe it does not start, since its steps would fail for that reason
- * alone and hide it.
+ * After a failed, cancelled or timed-out first recipe, or once any role's recipe ended not ok, it does not start, since
+ * its steps would fail for that reason alone and hide it.
  */
-async function startContinuation(
+async function runContinuation(
     run: AgentRecipeRun,
-    continuation: AlmConformanceContinuation,
-    started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
-): Promise<StartedRecipeRun | undefined> {
-    const first = await requireRoleValue(started, continuation.role).readOutcome();
+    { continuation, started, scenario }: ScenarioContinuation
+): Promise<RecipeRunOutcome | undefined> {
+    const first = await scenario.readOutcome(requireRoleValue(started, continuation.role));
     if (!first.ok) {
         return undefined;
     }
@@ -156,14 +164,19 @@ async function startContinuation(
         gatingRun: requireRoleValue(started, continuation.gate.role),
         timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
     });
-    return await startRecipeRun(run, requireRoleValue(run.agents, continuation.role), continuation.recipe);
+    if (scenario.getFailure() !== undefined) {
+        return undefined;
+    }
+    const continued = await startRecipeRun(run, requireRoleValue(run.agents, continuation.role), continuation.recipe);
+    return await scenario.readOutcome(continued);
 }
 
 async function readRoleOutcomes(
-    started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
+    started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>,
+    scenario: ScenarioRoots
 ): Promise<ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>> {
     const settled = await Promise.allSettled(
-        [...started].map(async ([role, recipeRun]) => [role, await recipeRun.readOutcome()] as const)
+        [...started].map(async ([role, recipeRun]) => [role, await scenario.readOutcome(recipeRun)] as const)
     );
     const rejected = settled.find((result) => result.status === 'rejected');
     if (rejected !== undefined) {

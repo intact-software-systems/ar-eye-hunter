@@ -2,11 +2,11 @@ import type { Page } from '@playwright/test';
 
 import type { AlmConformanceOwnerEnd } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createScenarioRoots, type ScenarioRoots } from './create-scenario-roots.ts';
 import {
     closeBrowserControlAgentPage,
     openBrowserControlAgentInContext,
     readFullStackConfig,
-    runRecipeOnAgent,
     startRecipeRun,
     startRecipientRecipeRun,
     uniqueAgentId,
@@ -105,21 +105,27 @@ export async function openSuccessorPage(input: OpenSuccessorPageInput): Promise<
 /**
  * The server keeps one socket per auth session and a second one replaces the first. Without a gate the two pages never
  * connect at once: the owner runs the sender recipe and ends, and only then does the successor run. With one, the
- * successor's connect replaces the running owner's socket, which stays closed, as a replaced tab's does.
+ * successor's connect replaces the running owner's socket, which stays closed, as a replaced tab's does. The three roots
+ * are one scenario's: a root that ends not ok cancels the others once they are read, and a successor started after it.
  */
 export async function runRecipeTrioOnSameContext(
     run: RecipePairRun,
     pages: SameContextPages,
     recipes: SameContextRecipes
 ): Promise<SameContextOutcome> {
+    const scenario = createScenarioRoots();
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const pageRuns = pages.successorGate === undefined
-        ? await runOwnerThenSuccessor(run, pages, recipes)
-        : await runSuccessorBesideOwner(run, { ...pages, successorGate: pages.successorGate }, recipes);
+        ? await runOwnerThenSuccessor(run, { pages, recipes, scenario })
+        : await runSuccessorBesideOwner(run, {
+            pages: { ...pages, successorGate: pages.successorGate },
+            recipes,
+            scenario
+        });
     const [sender, successor, receiver] = await Promise.allSettled([
         pageRuns.sender,
-        pageRuns.successor.readOutcome(),
-        receiverRun.readOutcome()
+        scenario.readOutcome(pageRuns.successor),
+        scenario.readOutcome(receiverRun)
     ]);
     if (pages.successorGate !== undefined) {
         await endOwnerPage(pages.owner.page, pages.ownerEnd);
@@ -132,12 +138,17 @@ interface SameContextPageRuns {
     readonly successor: StartedRecipeRun;
 }
 
+interface SameContextPageRunInput<P extends SameContextPages> {
+    readonly pages: P;
+    readonly recipes: SameContextRecipes;
+    readonly scenario: ScenarioRoots;
+}
+
 async function runOwnerThenSuccessor(
     run: RecipePairRun,
-    pages: SameContextPages,
-    recipes: SameContextRecipes
+    { pages, recipes, scenario }: SameContextPageRunInput<SameContextPages>
 ): Promise<SameContextPageRuns> {
-    const sender = await runRecipeOnAgent(run, pages.owner, recipes.sender);
+    const sender = await scenario.readOutcome(await startRecipeRun(run, pages.owner, recipes.sender));
     await endOwnerPage(pages.owner.page, pages.ownerEnd);
     return {
         sender: Promise.resolve(sender),
@@ -151,8 +162,7 @@ async function runOwnerThenSuccessor(
  */
 async function runSuccessorBesideOwner(
     run: RecipePairRun,
-    pages: SameContextPages & Readonly<{ successorGate: string; }>,
-    recipes: SameContextRecipes
+    { pages, recipes, scenario }: SameContextPageRunInput<SameContextPages & Readonly<{ successorGate: string; }>>
 ): Promise<SameContextPageRuns> {
     const ownerRun = await startRecipeRun(run, pages.owner, recipes.sender);
     await waitForRecipeGate(run, {
@@ -161,7 +171,7 @@ async function runSuccessorBesideOwner(
         timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
     });
     const successor = await startRecipeRun(run, pages.successor, recipes.successor);
-    return { sender: ownerRun.readOutcome(), successor };
+    return { sender: scenario.readOutcome(ownerRun), successor };
 }
 
 function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {

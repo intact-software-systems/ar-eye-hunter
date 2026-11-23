@@ -9,6 +9,7 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { ALM_CONFORMANCE_LANE_FAMILIES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import type { RallarBlackBoxTestError } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
     closeAgentConnections,
@@ -20,6 +21,10 @@ import {
 import { openRecordingControlRequest } from './recording-control-request-fixture.ts';
 
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+const SENDER_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the sender\'s reconnect failed' };
+/** What an agent reports for a recipe the lane cancelled. */
+const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'cancelled by the lane' };
 
 function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
     return createAlmConformanceRecipes({
@@ -416,6 +421,109 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
+    it('cancels every role still running once one ended not ok, reporting the failing role\'s own error and the cancelled role as cancelled after it', async () => {
+        // The sender fails and the receiver passes at once; the sibling runs until the lane cancels it.
+        const fixture = await createSiblingContinuationFixture('peer-failure-run', (posted, runIds) => ({
+            gateOpen: false,
+            results: [
+                ...posted.filter((commandId) => commandId === runIds.sender).map((commandId) => ({ commandId, ok: false, error: SENDER_FAILURE })),
+                ...posted.filter((commandId) => commandId === runIds.receiver).map((commandId) => ({ commandId, ok: true })),
+                ...(posted.includes(`cancel-${runIds.sibling}`) ? [{ commandId: runIds.sibling, ok: false, error: LANE_CANCELLED }] : [])
+            ]
+        }));
+        const { control, runIds } = fixture;
+        try {
+            const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, undefined);
+
+            expect(
+                control.posted.filter(({ command }) => command.kind === 'recipe.cancel')
+                    .map(({ agentId, commandId, command }) => ({ agentId, commandId, command }))
+            ).toEqual([{
+                agentId: 'sibling-agent',
+                commandId: `cancel-${runIds.sibling}`,
+                command: {
+                    kind: 'recipe.cancel',
+                    targetCommandId: runIds.sibling,
+                    reason: `${runIds.sibling} cancelled after ${runIds.sender} ended not ok.`
+                }
+            }]);
+            expect(Object.fromEntries(outcome.roles)).toStrictEqual({
+                sender: {
+                    commandId: runIds.sender,
+                    ok: false,
+                    summary: 'RALLAR_BLACK_BOX_COMMAND_FAILED: the sender\'s reconnect failed',
+                    cancelledAfter: undefined
+                },
+                receiver: { commandId: runIds.receiver, ok: true, summary: 'ok', cancelledAfter: undefined },
+                sibling: {
+                    commandId: runIds.sibling,
+                    ok: false,
+                    summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: cancelled by the lane',
+                    cancelledAfter: runIds.sender
+                }
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('fails the family, naming the failing role\'s error first, when a role cancelled after it is still live after its cancel', async () => {
+        let nowEpochMs = 1_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        // Each read moves the clock 10 s. The sender fails and the receiver passes at once; the sibling never ends.
+        const fixture = await createSiblingContinuationFixture('peer-failure-live-run', (posted, runIds) => {
+            nowEpochMs += 10_000;
+            return {
+                gateOpen: false,
+                results: [
+                    ...posted.filter((commandId) => commandId === runIds.sender).map((commandId) => ({ commandId, ok: false, error: SENDER_FAILURE })),
+                    ...posted.filter((commandId) => commandId === runIds.receiver).map((commandId) => ({ commandId, ok: true }))
+                ]
+            };
+        });
+        const { control, runIds } = fixture;
+        try {
+            await expect(runRecipesOnAgents(fixture.run, fixture.recipes, undefined)).rejects.toThrow(
+                `${runIds.sender} ended not ok (RALLAR_BLACK_BOX_COMMAND_FAILED: the sender's reconnect failed), and ` +
+                    `${runIds.sibling}, cancelled after it, is still running; no later cell may run on its page.`
+            );
+
+            expect(fixture.posted().filter((commandId) => commandId.startsWith('cancel-'))).toEqual([`cancel-${runIds.sibling}`]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('does not start a continuation once a peer of its role ended not ok', async () => {
+        // The sibling's first recipe passes and the sender fails at once; the receiver, whose recipe holds the gate, runs
+        // until the lane cancels it, so the gate passes only once the sender's failure is known.
+        const fixture = await createSiblingContinuationFixture('peer-failure-continuation-run', (posted, runIds) => ({
+            gateOpen: false,
+            results: [
+                ...posted.filter((commandId) => commandId === runIds.sibling).map((commandId) => ({ commandId, ok: true })),
+                ...posted.filter((commandId) => commandId === runIds.sender).map((commandId) => ({ commandId, ok: false, error: SENDER_FAILURE })),
+                ...(posted.includes(`cancel-${runIds.receiver}`) ? [{ commandId: runIds.receiver, ok: false, error: LANE_CANCELLED }] : [])
+            ]
+        }));
+        const { control, runIds } = fixture;
+        try {
+            const outcome = await runRecipesOnAgents(fixture.run, fixture.recipes, fixture.continuation);
+
+            expect(fixture.posted()).not.toContain(runIds.continuation);
+            expect(outcome.continuation).toBeUndefined();
+            expect(outcome.roles.get('receiver')).toMatchObject({ ok: false, cancelledAfter: runIds.sender });
+            expect(outcome.roles.get('sibling')).toMatchObject({ ok: true, cancelledAfter: undefined });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('throws when an agent\'s close has not passed within the close timeout, reading no snapshot after it', async () => {
         const control = await openRecordingControlRequest('close-timeout-run');
         const request = control.request;
@@ -470,6 +578,7 @@ describe('ALM run on an agent per role', () => {
 });
 
 interface SiblingContinuationRunIds {
+    readonly sender: string;
     readonly receiver: string;
     readonly sibling: string;
     readonly continuation: string;
@@ -478,7 +587,14 @@ interface SiblingContinuationRunIds {
 /** What a snapshot read of the sibling-continuation run states: whether the receiver passed the gate, and the results. */
 interface SiblingContinuationSnapshot {
     readonly gateOpen: boolean;
-    readonly results: readonly Readonly<{ commandId: string; ok: boolean; }>[];
+    readonly results: readonly SiblingContinuationResult[];
+}
+
+/** A root's result; one that is not ok carries the agent's error, or none. */
+interface SiblingContinuationResult {
+    readonly commandId: string;
+    readonly ok: boolean;
+    readonly error?: RallarBlackBoxTestError;
 }
 
 type ReadSiblingContinuationSnapshot = (
@@ -496,6 +612,7 @@ function toSiblingContinuationRecipes() {
         recipe: { ...sibling, recipeId: `${sibling.recipeId}-continuation` }
     } as const;
     const runIds: SiblingContinuationRunIds = {
+        sender: `${baseline.sender.recipeId}-run`,
         receiver: `${baseline.receiver.recipeId}-run`,
         sibling: `${sibling.recipeId}-run`,
         continuation: `${continuation.recipe.recipeId}-run`
@@ -531,13 +648,14 @@ function toSiblingContinuationSnapshot(runId: string, connect: string, snapshot:
         stats: [],
         reports: [],
         heartbeats: [],
-        results: snapshot.results.map(({ commandId, ok }) => ({
+        results: snapshot.results.map(({ commandId, ok, error }) => ({
             kind: 'result' as const,
             protocolVersion: 1 as const,
             runId,
             agentId: 'observed-agent',
             commandId,
-            ok
+            ok,
+            ...(error === undefined ? {} : { error })
         }))
     };
 }
