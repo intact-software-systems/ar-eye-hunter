@@ -1,4 +1,7 @@
-import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import {
+    bindAlmReloadPair,
+    hasAuthoredAlmReloadCheckpoints
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlCommandEnvelope
@@ -11,10 +14,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import {
-    computeDistributedRunRootBudgetMs,
-    isRootBoundDistributedRecipe
-} from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
+import { computeDistributedRunRootBudgetMs } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
 import { toDistributedRecipeKey } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 import { toCommandIdSegment } from '../control-command-queue-policy.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
@@ -80,10 +80,7 @@ export function bindDistributedAlmReloadCommands(
     distributedRun: ControlDistributedRunState,
     commands: readonly DistributedPhaseCommand[]
 ): Either<readonly string[], readonly DistributedPhaseCommand[]> {
-    const reloads = commands.filter((entry) =>
-        entry.command.kind === 'recipe.run' && entry.command.recipe !== undefined &&
-        isRootBoundDistributedRecipe(entry.command.recipe)
-    );
+    const reloads = commands.filter((entry) => hasAuthoredAlmReloadCheckpoints(entry.command));
     if (reloads.length === 0) {
         return Either.ofRight(commands);
     }
@@ -200,8 +197,9 @@ export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributed
 }
 
 /**
- * A reload root starts after the run's ack and barrier, so it gets what the run's terminal timeout leaves after them;
- * absent when the manifest names no terminal timeout that leaves the roots any time.
+ * The controllers stage the run, wait for its ack and barrier, and only then call `/start` and begin their terminal
+ * wait, so a reload root bound to the terminal timeout less the ack and barrier ends with that much of the wait left
+ * over; absent when the manifest names no terminal timeout that leaves the roots any time.
  */
 function toDistributedReloadRootBudgetMs(distributedRun: ControlDistributedRunState): number | undefined {
     const { manifest } = distributedRun;

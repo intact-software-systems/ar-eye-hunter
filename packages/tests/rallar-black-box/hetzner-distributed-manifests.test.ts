@@ -7,16 +7,17 @@ import {
 } from 'vitest';
 
 import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
+import { hasAuthoredAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import {
     computeDistributedRunRootBudgetMs,
-    computeRootBoundTerminalTimeoutSeconds,
-    isRootBoundDistributedRecipe
+    computeRootBoundTerminalTimeoutSeconds
 } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -59,6 +60,11 @@ function toRecipes(manifest: RallarBlackBoxDistributedRunManifest) {
     return manifest.recipes.flatMap((selection) => selection.recipe === undefined ? [] : [selection.recipe]);
 }
 
+/** A recipe the control server starts as a reload root, which it binds to the run's terminal timeout. */
+function isReloadRoot(recipe: RallarBlackBoxTestRecipe): boolean {
+    return hasAuthoredAlmReloadCheckpoints({ kind: 'recipe.run', recipe });
+}
+
 function toWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
     return computeDistributedRunTerminalTimeoutSeconds({
         recipes: toRecipes(manifest),
@@ -73,7 +79,7 @@ function toWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManife
  */
 function toBoundedWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
     const worstCaseSeconds = toWorstCaseTerminalSeconds(manifest);
-    if (!toRecipes(manifest).some(isRootBoundDistributedRecipe)) {
+    if (!toRecipes(manifest).some(isReloadRoot)) {
         return worstCaseSeconds;
     }
     const rootBudgetMs = computeDistributedRunRootBudgetMs({
@@ -117,7 +123,7 @@ describe('hosted distributed manifest terminal timeouts', () => {
         const manifest = createHetznerDistributedManifestCatalog()
             .find((entry) => entry.filePath.endsWith('/18-alm-conformance-2-agent.json'))!.manifest;
 
-        expect(toRecipes(manifest).every(isRootBoundDistributedRecipe)).toBe(true);
+        expect(toRecipes(manifest).every(isReloadRoot)).toBe(true);
         expect(manifest.metadata.recommendedTerminalTimeoutSeconds).toBe(1_800 + 30 + 15);
         expect(computeDistributedRunRootBudgetMs({
             terminalTimeoutSeconds: 1_845,
