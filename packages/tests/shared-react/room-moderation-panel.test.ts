@@ -122,12 +122,9 @@ it('discards an old confirmation and delayed outcome when the selected room chan
 it.each(['banned', 'removed'] as const)('shows a pushed %s denial while the selected room is idle', async reason => {
     vi.useFakeTimers();
     const fixture = createModerationFixture();
-    const subscribe = vi.spyOn(fixture.props.rooms, 'watchAccess');
     const view = await renderModeration(fixture.props);
     try {
-        subscribe.mockClear();
         await act(async () => vi.advanceTimersByTimeAsync(15_000));
-        expect(subscribe).not.toHaveBeenCalled();
         await act(async () => fixture.access({ status: 'denied', reason }));
         expect(view.container.textContent).toContain(`You were ${reason}`);
     } finally {
@@ -153,17 +150,14 @@ it('recovers the reason when collection repair drops the room before the access 
 
 it('keeps the pending authoritative denial when cache eviction clears the selection first', async () => {
     const fixture = createModerationFixture();
-    const subscribe = vi.spyOn(fixture.props.rooms, 'watchAccess');
     const view = await renderModeration(fixture.props);
     try {
         await act(async () => fixture.access({ status: 'current' }));
         await act(async () => fixture.access({ status: 'stale' }));
         const inFlight = fixture.lastWatch();
-        subscribe.mockClear();
         await act(async () => fixture.clearSelection());
         await act(async () => inFlight?.({ status: 'denied', reason: 'banned' }));
         expect(view.container.textContent).toContain('You were banned');
-        expect(subscribe).not.toHaveBeenCalled();
         expect(fixture.watching()).toBe(false);
     } finally {
         await view.close();

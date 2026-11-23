@@ -2,6 +2,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { newALBroadcastMessage, newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { RoomTimelineObservation } from '@shared-web/browser/rallar.ts';
 import type { RoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -216,10 +217,10 @@ it('updates the named timeline from its account notice and clears it when room a
     let stored: RoomTimeline | null = { ...occurrence, revision: 2, status: 'running', endsAtEpochMs: 180_000 };
     const read = vi.fn(async () => stored ? response(stored) : Response.json({ error: 'Forbidden' }, { status: 403 }));
     vi.stubGlobal('fetch', read);
-    const observe = vi.fn();
-    const stop = facade.rooms.watchTimeline(room, 'match', observe);
+    let observed: RoomTimelineObservation | undefined;
+    const stop = facade.rooms.watchTimeline(room, 'match', value => { observed = value; });
     try {
-        await vi.waitFor(() => expect(observe).toHaveBeenLastCalledWith({ status: 'current', timeline: stored }));
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'current', timeline: stored }));
         await notify({ resource: 'room-program', name: 'practice' });
         await notify({ resource: 'room-program', name: 'match' }, 'another-room');
         await notify({ resource: 'room-access' }, 'another-room');
@@ -227,10 +228,10 @@ it('updates the named timeline from its account notice and clears it when room a
 
         stored = { ...occurrence, revision: 4, status: 'paused', remainingMs: 210_000 };
         await notify({ resource: 'room-program', name: 'match' });
-        await vi.waitFor(() => expect(observe).toHaveBeenLastCalledWith({ status: 'current', timeline: stored }));
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'current', timeline: stored }));
         stored = null;
         await notify({ resource: 'room-access' });
-        await vi.waitFor(() => expect(observe).toHaveBeenLastCalledWith({ status: 'stale', timeline: null }));
+        await vi.waitFor(() => expect(observed).toEqual({ status: 'stale', timeline: null }));
     }
     finally {
         stop();

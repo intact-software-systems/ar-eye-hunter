@@ -1,3 +1,4 @@
+import type { RoomAccessObservation } from '@shared-web/browser/rallar.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newALUntargetedMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
@@ -93,19 +94,19 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
                 'rallar-group-revision': String(destination.causalRevision.groupRevision),
                 'rallar-presence-revision': String(destination.causalRevision.presenceRevision)
             } }));
-        const observed = vi.fn();
-        const stop = facade.rooms.watchAccess(destination.group, observed);
+        let observed: RoomAccessObservation | undefined;
+        const stop = facade.rooms.watchAccess(destination.group, value => { observed = value; });
         try {
-            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'current' }));
+            await vi.waitFor(() => expect(observed).toEqual({ status: 'current' }));
             access = 503;
             page.dispatchEvent(new Event('pageshow'));
-            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'stale' }));
+            await vi.waitFor(() => expect(observed).toEqual({ status: 'stale' }));
             expect(facade.rooms.selected()?.groupId).toBe('destination');
             page.dispatchEvent(new Event('pagehide'));
-            expect(observed).toHaveBeenLastCalledWith({ status: 'stale' });
+            expect(observed).toEqual({ status: 'stale' });
             access = 403;
             page.dispatchEvent(new Event('pageshow'));
-            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({
+            await vi.waitFor(() => expect(observed).toEqual({
                 status: 'denied', reason: code === 'member-banned' ? 'banned' : 'removed'
             }));
             expect(facade.rooms.selected()).toBeUndefined();
@@ -124,7 +125,7 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
             const { webSocketQueueBox } = runtime.context.middleware;
             const inbox = vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mock.calls.at(-1)![1];
             await inbox.onMessage(targeted, toResourceEntry(topic, targeted));
-            await vi.waitFor(() => expect(observed).toHaveBeenLastCalledWith({ status: 'current' }));
+            await vi.waitFor(() => expect(observed).toEqual({ status: 'current' }));
             expect(facade.rooms.selected()).toBeUndefined();
         }
         finally {

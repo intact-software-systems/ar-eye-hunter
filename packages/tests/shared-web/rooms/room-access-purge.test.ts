@@ -1,3 +1,4 @@
+import type { RoomAccessObservation } from '@shared-web/browser/rallar.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Either } from '@shared/resilience/Either.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
@@ -43,15 +44,15 @@ describe('watchAccess room purge', () => {
                 'rallar-presence-revision': String(snapshot.causalRevision.presenceRevision)
             } }));
         vi.stubGlobal('fetch', fetch);
-        const access = vi.fn();
-        const stop = facade.rooms.watchAccess(snapshot.group, access);
+        let observed: RoomAccessObservation | undefined;
+        const stop = facade.rooms.watchAccess(snapshot.group, value => { observed = value; });
         try {
             await vi.advanceTimersByTimeAsync(delay - 1);
-            expect(access).toHaveBeenLastCalledWith({ status: 'current' });
+            expect(observed).toEqual({ status: 'current' });
             expect(fetch).toHaveBeenCalledTimes(1);
             await vi.advanceTimersByTimeAsync(1);
             expect(fetch).toHaveBeenCalledTimes(2);
-            expect(access).toHaveBeenLastCalledWith(denied ? { status: 'denied', reason: 'unavailable' } : { status: 'current' });
+            expect(observed).toEqual(denied ? { status: 'denied', reason: 'unavailable' } : { status: 'current' });
             await vi.advanceTimersByTimeAsync(60_000);
             expect(fetch).toHaveBeenCalledTimes(2);
         } finally {
