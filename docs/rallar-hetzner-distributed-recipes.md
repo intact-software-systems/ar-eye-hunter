@@ -326,9 +326,11 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f npm_ci=false \
   -f wait_for_agents=true \
   -f ready_timeout_seconds=60 \
-  -f terminal_timeout_seconds=180 \
   -f stop_after_run=true
 ```
+
+Leave `terminal_timeout_seconds` out so the workflow takes the manifest's
+`metadata.recommendedTerminalTimeoutSeconds`.
 
 The rollout records `/var/lib/rallar-black-box-control/deployment-readiness.json`
 (deployed commit, `package-lock.json` sha256, Playwright version, browser
