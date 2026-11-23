@@ -18,7 +18,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type { SimulatedWebSocket } from '../native-websocket-fixture.ts';

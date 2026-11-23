@@ -24,7 +24,7 @@ import {
 import { AL_STORAGE_UNAVAILABLE_CAUSES } from '../../shared/alm/storage/al-storage-unavailable.ts';
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
-import { toWsQueueBoxServerEndedReceiptControlId } from '../../shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '../../shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 
 import type { ReceiptOwnerScenario, ReceiptOwnerSink } from './full-stack-api-receipt-owner-fixture.ts';
 

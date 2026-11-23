@@ -29,13 +29,11 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerEndedReceiptControlId } from '@shared/services/ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-control.ts';
 import type { WsServerInboundAuthorizer } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
 import { WsQueueBoxServerInboundAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts';
-import {
-    toWsQueueBoxServerEndedReceiptControlId,
-    WsQueueBoxServerReceiptAggregation
-} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import {
     toWsQueueBoxServerReceiptAckFacts,
     type WsQueueBoxServerReceiptObservation,
