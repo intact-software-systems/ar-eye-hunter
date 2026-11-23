@@ -9089,7 +9089,8 @@
           "evidenceSampleLimit": 1,
           "expectedEffectsByCommandType": {
             "GROUP_MEMBER_UPSERT": [
-              "group-presence-summary"
+              "group-presence-summary",
+              "room-access"
             ],
             "TOPOLOGY_CONFIG_PUT": [
               "rtc-topology-recompute"

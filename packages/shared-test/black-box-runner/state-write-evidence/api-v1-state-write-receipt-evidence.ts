@@ -52,6 +52,7 @@ import {
 } from './api-v1-state-write-command-codecs.ts';
 import type { ApiV1StateWriteEvidenceQuery } from './api-v1-state-write-evidence-contracts.ts';
 import type { PublicResultReceiptIdentity } from './api-v1-state-write-group-causal-evidence.ts';
+import { computeRoomAccessEvidenceIdentity } from './room-access-effect-evidence.ts';
 import { toAuthoritativeReceiptEvidence } from './api-v1-state-write-receipt-projection.ts';
 import type { AuthoritativeTopologyReceipt, ReceiptEffectIdentityKind } from './api-v1-state-write-result-evidence.ts';
 
@@ -74,6 +75,7 @@ export interface PersistedCommandEvidence {
     readonly commandIds: readonly string[];
     readonly commandScope?: GroupScope & Partial<Pick<GroupRef, 'groupId'>>;
     readonly adminPruneCommand?: AdminPruneCommand;
+    readonly roomAccessIdentity?: ReturnType<typeof computeRoomAccessEvidenceIdentity>;
     readonly receipt?: AuthoritativeReceiptEvidence;
     readonly failure?: string;
 }
@@ -448,6 +450,14 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
         valid: true,
         commandType,
         commandIds: [command.commandId],
+        ...(command.operation === 'createGroup' || command.operation === 'upsertMember' ? {
+            roomAccessIdentity: computeRoomAccessEvidenceIdentity({
+                commandId: command.commandId,
+                ref: command.aggregateRef,
+                revision: stored.receipt.snapshotVersion,
+                principalId: command.operation === 'createGroup' ? command.input.createdByPrincipalId : command.targetPrincipalId
+            })
+        } : {}),
         receipt: toAuthoritativeReceiptEvidence(
             row.ri_resource_id,
             stored.receipt,
