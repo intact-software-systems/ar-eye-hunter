@@ -32,6 +32,8 @@ export const RTC_NATIVE_SIGNAL_DISPOSITIONS = [
     'local-answer-description-returned',
     'ice-ignored',
     'ice-queued',
+    'ice-displaced',
+    'ice-superseded',
     'ice-added',
     'retired-after-remote-description',
     'retired-after-ice-flush',
@@ -317,6 +319,8 @@ export namespace RtcSignalingDiagnostics {
 
     export type ServiceDisposition = typeof RTC_SERVICE_SIGNAL_DISPOSITIONS[number];
     export type NativeDisposition = typeof RTC_NATIVE_SIGNAL_DISPOSITIONS[number];
+    /** Native refusals whose rows also carry the two connection generations they compared. */
+    export type GenerationRefusal = 'offer-superseded' | 'ice-superseded';
     export type CallerRelease = typeof RTC_SIGNAL_CALLER_RELEASES[number];
 
     export interface SignalIdentity {
@@ -341,7 +345,7 @@ export namespace RtcSignalingDiagnostics {
                 | {
                     readonly kind: 'native-signal-decision';
                     readonly nativeIdentity: NativeIdentity;
-                    readonly disposition: Exclude<NativeDisposition, 'offer-superseded'>;
+                    readonly disposition: Exclude<NativeDisposition, GenerationRefusal>;
                     readonly capturedPeerConnection: boolean;
                     readonly currentPeerConnection: boolean | undefined;
                     readonly offerMatches: boolean | undefined;
@@ -360,6 +364,20 @@ export namespace RtcSignalingDiagnostics {
                     readonly offerGeneration: number;
                     /** The highest offer generation this connection has applied. */
                     readonly appliedOfferGeneration: number;
+                }
+                | {
+                    readonly kind: 'native-signal-decision';
+                    readonly nativeIdentity: NativeIdentity;
+                    /** A candidate older than the remote description the native connection holds, dropped unapplied. */
+                    readonly disposition: 'ice-superseded';
+                    readonly capturedPeerConnection: true;
+                    readonly currentPeerConnection: true;
+                    readonly offerMatches: undefined;
+                    readonly signalingState: RTCSignalingState;
+                    /** The dropped candidate's connection generation. */
+                    readonly candidateGeneration: number;
+                    /** The connection generation of the remote description the native connection holds. */
+                    readonly remoteDescriptionGeneration: number;
                 }
                 | {
                     readonly kind: 'signal-caller-release';

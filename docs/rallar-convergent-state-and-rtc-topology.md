@@ -610,21 +610,37 @@ data/media lane startup; deletion observers run after owned teardown. Reentrant
 observers therefore see a complete lifetime boundary and cannot lose a replacement
 or allocate through a half-created peer record.
 
-Signals carry no ordering key, so one peer's offers can reach the other side out
-of order. Every Offer signal therefore carries a required `offerGeneration`, a
-non-negative integer; Answer and ICE signals carry none, and the shared decoder
-used by the browser and the server route refuses an Offer without it and the
-field on any other signal. The offering runtime assigns each new native peer
-connection the generation `max(now, last + 1)` from its epoch clock, so a
-redial outranks the connection it replaced even when the clock repeats or steps
-back, and every offer that connection sends, an ICE restart's included, carries
-it. The answering connection keeps the highest generation it has applied, for
-its own lifetime, across native resets. It refuses an offer below that mark
-before the collision handling: no remote description, no answer, and a
+Signals carry no ordering key, so one peer's signals can reach the other side
+out of order. Every Offer, Answer and IceCandidate signal therefore carries a
+required `connectionGeneration`, the sending connection's generation, a
+non-negative integer; the shared decoder used by the browser and the server
+route refuses a signal without it. Each runtime assigns each new peer
+connection it opens the generation `max(now, last + 1)` from its epoch clock,
+so a redial outranks the connection it replaced even when the clock repeats or
+steps back, and every signal that connection sends, an ICE restart's included,
+carries it. Generations from the two sides' clocks are never compared with each
+other: a receiver compares only generations the same remote runtime assigned.
+
+A connection keeps the highest offer generation it has applied, for its own
+lifetime, across native resets. It refuses an offer below that mark before the
+collision handling: no remote description, no answer, and a
 `native-signal-decision` row with disposition `offer-superseded` carrying the
 refused `offerGeneration` and the `appliedOfferGeneration`. An equal generation
 is the same connection renegotiating and is applied as before; a higher one is
 applied and raises the mark.
+
+A native connection also records the generation of the remote description it
+holds, from the applied Offer or Answer, and judges each remote candidate
+against it. A candidate of that generation is applied. A candidate of a newer
+generation belongs to a remote connection whose description has not arrived
+yet, so it is held, as a candidate before any remote description is, until a
+description of its generation is applied. A candidate of an older generation
+belongs to a superseded remote connection; it is dropped, held or not, with a
+`native-signal-decision` row with disposition `ice-superseded` carrying the
+`candidateGeneration` and the `remoteDescriptionGeneration`. At most 64
+candidates are held; a further one displaces the oldest, recorded as
+`ice-displaced`. Held candidates and the recorded generation belong to the
+native connection and end with it.
 
 Before targeted, heartbeat, or complete collection reads, browser repair
 captures the observed snapshot identity. An authoritative `404`, heartbeat

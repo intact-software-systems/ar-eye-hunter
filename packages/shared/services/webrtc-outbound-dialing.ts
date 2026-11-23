@@ -148,9 +148,9 @@ function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): n
 /**
  * Drops a desired peer's dial that is still in flight under an `overlay-transition` retention, on the offering side,
  * with its own offer unanswered, so the peer is dialled again. The rule keys on the retention reason, not on whether
- * the remote side went away. A late answer to the dropped offer is discarded by its offer id, and the dropped offer,
- * should it reach the answering side after the redial's, is refused by its lower connection generation. The attempt
- * budget is kept, so the redial counts as an attempt.
+ * the remote side went away. A late answer to the dropped offer is discarded by its offer id, and the dropped offer
+ * and its candidates, should they reach the answering side after the redial's, are refused by their lower connection
+ * generation. The attempt budget is kept, so the redial counts as an attempt.
  */
 export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
     for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {

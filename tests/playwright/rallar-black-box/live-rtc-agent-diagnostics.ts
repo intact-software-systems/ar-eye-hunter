@@ -728,12 +728,7 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
             currentPeerConnection: toLifecycleBoolean(event.currentPeerConnection),
             offerMatches: toLifecycleBoolean(event.offerMatches),
             signalingState: toAllowedLifecycleState(event.signalingState, RTC_SIGNALING_STATES),
-            ...(disposition === 'offer-superseded'
-                ? {
-                    offerGeneration: toFiniteNonnegativeObservation(event.offerGeneration),
-                    appliedOfferGeneration: toFiniteNonnegativeObservation(event.appliedOfferGeneration)
-                }
-                : {})
+            ...toRtcGenerationRefusalObservation(disposition, event)
         };
     }
     if (event.kind === 'signal-caller-release') {
@@ -747,6 +742,23 @@ function toRtcSignalingObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord 
         };
     }
     return null;
+}
+
+/** The two connection generations a refusal compared; other dispositions carry none. */
+function toRtcGenerationRefusalObservation(disposition: string, event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    if (disposition === 'offer-superseded') {
+        return {
+            offerGeneration: toFiniteNonnegativeObservation(event.offerGeneration),
+            appliedOfferGeneration: toFiniteNonnegativeObservation(event.appliedOfferGeneration)
+        };
+    }
+    if (disposition === 'ice-superseded') {
+        return {
+            candidateGeneration: toFiniteNonnegativeObservation(event.candidateGeneration),
+            remoteDescriptionGeneration: toFiniteNonnegativeObservation(event.remoteDescriptionGeneration)
+        };
+    }
+    return {};
 }
 
 function toHttpRequestFailureObservation(event: LiveRtcJsonRecord): LiveRtcJsonRecord {

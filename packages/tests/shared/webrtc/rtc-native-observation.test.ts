@@ -455,7 +455,12 @@ describe('original native owner evidence', () => {
                 })).rejects.toBe(failure);
             }
             else {
-                await native.setRemoteDescription({ type: 'offer' });
+                await peer.connection.handleSignal({
+                    signalType: 'Offer',
+                    offerId: 'offer',
+                    connectionGeneration: 1,
+                    payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+                });
                 vi.spyOn(native, 'addIceCandidate').mockRejectedValue(failure);
                 await expect(peer.connection.handleSignal({
                     signalType: 'IceCandidate',
@@ -976,7 +981,12 @@ describe('original native owner evidence', () => {
         Object.defineProperty(native, 'sctp', { configurable: true, value: sctp });
         native.dispatchEvent(new Event('signalingstatechange'));
         expect(peer.connection.readNativeSnapshot().state).toMatchObject({ transportObjectOrdinal: { status: 'observed', value: 1 }, attachmentGap: false });
-        await native.setRemoteDescription({ type: 'offer', sdp: 'private-sdp' });
+        await peer.connection.handleSignal({
+            signalType: 'Offer',
+            offerId: 'offer',
+            connectionGeneration: 1,
+            payload: { description: { type: 'offer', sdp: 'private-sdp' }, candidate: null }
+        });
         await peer.connection.handleSignal({
             signalType: 'IceCandidate',
             connectionGeneration: 1,

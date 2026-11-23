@@ -217,6 +217,7 @@ describe('QRtcPeerConnection', () => {
             : peer.handleSignal({
                 signalType,
                 offerId: 'offer-1',
+                connectionGeneration: 1,
                 payload: {
                     description: { type: 'answer', sdp: 'old-answer' },
                     candidate: null
@@ -694,11 +695,11 @@ describe('QRtcPeerConnection', () => {
                     signalType: 'IceCandidate',
                     capturedPeerConnection: true,
                     currentPeerConnection: true,
-                    signalingState: 'stable',
+                    signalingState: 'have-remote-offer',
                     candidateGeneration: 10,
                     remoteDescriptionGeneration: 20
                 }),
-                expect.objectContaining({ candidateGeneration: 10, remoteDescriptionGeneration: 20 })
+                expect.objectContaining({ signalingState: 'stable', candidateGeneration: 10, remoteDescriptionGeneration: 20 })
             ]);
     });
 

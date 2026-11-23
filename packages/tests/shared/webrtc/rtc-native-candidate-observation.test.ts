@@ -104,7 +104,12 @@ it.each(cases)('observes $name at the real direct and spliced-drain invocations 
             }
         };
         if (source === 'direct') {
-            await native.setRemoteDescription({ type: 'offer' });
+            await peer.handleSignal({
+                signalType: 'Offer',
+                offerId: 'offer',
+                connectionGeneration: 1,
+                payload: { description: { type: 'offer', sdp: 'private-offer' }, candidate: null }
+            });
         }
         for (let index = 0; index < 3; index++) {
             const applying = peer.handleSignal({ signalType: 'IceCandidate', connectionGeneration: 1, payload: { description: null, candidate } });
