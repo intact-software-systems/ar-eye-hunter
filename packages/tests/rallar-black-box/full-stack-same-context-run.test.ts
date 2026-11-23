@@ -356,7 +356,12 @@ it('cancels the running owner after the page steps when the gated successor\'s e
     try {
         await expect(runRecipeTrioOnSameContext(
             run,
-            { owner: { ...run.sender, page: {} as Playwright.Page }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
+            {
+                owner: { ...run.sender, page: {} as Playwright.Page },
+                successor: { agentId: 'successor-agent' },
+                ownerEnd: 'close',
+                successorGate: 'owner-gate'
+            },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
         )).rejects.toBe(failure);
         expect(cancels()).toEqual([
