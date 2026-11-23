@@ -19,7 +19,6 @@ import {
     type AgentHandle
 } from './distributed-recipes/browser-agents.ts';
 import {
-    computeDistributedRunsTestTimeoutMs,
     executeOk,
     readDistributedArtifact,
     runToPassed,
@@ -27,12 +26,12 @@ import {
     waitForDistributedState
 } from './distributed-recipes/distributed-control.ts';
 import {
+    computeLiveDistributedRecipesTestTimeoutMs,
+    computeSimulatedAckTestTimeoutMs,
     createLiveDistributedRecipeRuns,
     createSimulatedAckManifest,
-    LIVE_RECIPES_STEPS_TIMEOUT_MS,
-    SIMULATED_ACK_STEPS_TIMEOUT_MS,
-    SIMULATED_FAILURES_TEST_TIMEOUT_MS,
-    toLiveDistributedRecipeManifests
+    SIMULATED_ACK_PANEL_TIMEOUT_MS,
+    SIMULATED_FAILURES_TEST_TIMEOUT_MS
 } from './distributed-recipes/distributed-recipe-test-runs.ts';
 import { createDistributedManifest, healthRecipe } from './distributed-recipes/recipe-manifests.ts';
 import {
@@ -71,7 +70,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             groupId: `dist-sim-group-${suffix}`
         };
         const manifest = createSimulatedAckManifest({ suffix, controlRunId: runId, group });
-        test.setTimeout(computeDistributedRunsTestTimeoutMs(SIMULATED_ACK_STEPS_TIMEOUT_MS, [manifest]));
+        test.setTimeout(computeSimulatedAckTestTimeoutMs(manifest));
         const handles: AgentHandle[] = [];
 
         try {
@@ -108,7 +107,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 exact: true
             }).click();
             await panel.getByRole('button', { name: 'Refresh' }).click();
-            await expect(panel).toContainText(manifest.distributedRunId, { timeout: 15_000 });
+            await expect(panel).toContainText(manifest.distributedRunId, { timeout: SIMULATED_ACK_PANEL_TIMEOUT_MS });
             await expect(panel).toContainText('passed');
         }
         finally {
@@ -372,9 +371,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             group,
             agentIds: prefixes.map(toAgentId)
         });
-        test.setTimeout(
-            computeDistributedRunsTestTimeoutMs(LIVE_RECIPES_STEPS_TIMEOUT_MS, toLiveDistributedRecipeManifests(runs))
-        );
+        test.setTimeout(computeLiveDistributedRecipesTestTimeoutMs(runs));
         const handles: AgentHandle[] = [];
         const consoleArtifacts = new DistributedRecipeConsoleRecorder(Date.now);
 

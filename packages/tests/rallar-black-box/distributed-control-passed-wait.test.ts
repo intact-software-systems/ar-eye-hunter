@@ -6,14 +6,14 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/ralla
 
 import {
     computeDistributedRunPassedWaitMs,
-    computeDistributedRunsTestTimeoutMs,
+    computeDistributedRunToPassedWaitMs,
     DISTRIBUTED_STATE_POLL_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-control.ts';
 import {
+    computeLiveDistributedRecipesTestTimeoutMs,
+    computeSimulatedAckTestTimeoutMs,
     createLiveDistributedRecipeRuns,
     createSimulatedAckManifest,
-    LIVE_RECIPES_STEPS_TIMEOUT_MS,
-    SIMULATED_ACK_STEPS_TIMEOUT_MS,
     toLiveDistributedRecipeManifests
 } from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-recipe-test-runs.ts';
 import {
@@ -73,17 +73,25 @@ describe('computeDistributedRunPassedWaitMs', () => {
     });
 });
 
-describe('computeDistributedRunsTestTimeoutMs', () => {
+describe('distributed recipe test timeouts', () => {
     const runs = createLiveDistributedRecipeRuns({
         suffix: 'timeouts',
         controlRunId: 'passed-wait-run',
         group,
         agentIds: ['agent-a', 'agent-b', 'agent-c']
     });
+    const manifests = toLiveDistributedRecipeManifests(runs);
+    const margin = 60_000;
+    /** Each agent's 30 s Advanced tab and 30 s registration, then the 20 s poll for all of them in the group. */
+    const threeAgents = 3 * 2 * 30_000 + 20_000;
 
-    it('adds every run\'s passed wait to the test\'s other steps', () => {
-        const manifests = toLiveDistributedRecipeManifests(runs);
+    it('waits for a run to become ready, then to pass', () => {
+        const manifest = toManifest(healthRecipe('health'));
 
+        expect(computeDistributedRunToPassedWaitMs(manifest)).toBe(45_000 + computeDistributedRunPassedWaitMs(manifest));
+    });
+
+    it('runs the live test\'s six runs in order', () => {
         expect(manifests.map((manifest) => manifest.distributedRunId)).toEqual([
             'dist-live-ack-timeouts',
             'dist-live-ws-primer-timeouts',
@@ -92,17 +100,22 @@ describe('computeDistributedRunsTestTimeoutMs', () => {
             'dist-live-rtc-send-timeouts',
             'dist-live-rtc-realtime-timeouts'
         ]);
-        expect(computeDistributedRunsTestTimeoutMs(1_000, manifests)).toBe(
-            manifests.reduce((sum, manifest) => sum + computeDistributedRunPassedWaitMs(manifest), 1_000)
-        );
+        expect(manifests.map(computeDistributedRunPassedWaitMs)).toEqual([55_000, 100_000, 100_000, 220_000, 115_000, 256_000]);
     });
 
-    // The live test's 420 s covered its six runs' former 45 s passed waits and the simulated ACK test's 120 s its one;
-    // only what remained besides them is each test's allowance, so no passed wait is counted twice.
-    it('gives the live and simulated ACK tests only what their former limits left besides their passed waits', () => {
-        expect(LIVE_RECIPES_STEPS_TIMEOUT_MS).toBe(420_000 - 6 * 45_000);
-        expect(SIMULATED_ACK_STEPS_TIMEOUT_MS).toBe(120_000 - 45_000);
-        expect(createSimulatedAckManifest({ suffix: 'timeouts', controlRunId: 'passed-wait-run', group }).recipes)
-            .toHaveLength(1);
+    // The live test's 150 s besides its passed waits still held its six 45 s ready waits.
+    it('gives the live test its agents, six ready and passed waits, the message polls and the warning diagnostics', () => {
+        const readyAndPassed = 6 * 45_000 + 55_000 + 100_000 + 100_000 + 220_000 + 115_000 + 256_000;
+
+        expect(computeLiveDistributedRecipesTestTimeoutMs(runs))
+            .toBe(margin + threeAgents + readyAndPassed + 2 * 75_000 + 75_000 + 30_000);
+    });
+
+    // The simulated ACK test's 75 s besides its passed wait held its three agents' 180 s of registration waits.
+    it('gives the simulated ACK test its agents, its run and the 15 s panel wait', () => {
+        const manifest = createSimulatedAckManifest({ suffix: 'timeouts', controlRunId: 'passed-wait-run', group });
+
+        expect(computeDistributedRunPassedWaitMs(manifest)).toBe(57_000);
+        expect(computeSimulatedAckTestTimeoutMs(manifest)).toBe(margin + threeAgents + 45_000 + 57_000 + 15_000);
     });
 });

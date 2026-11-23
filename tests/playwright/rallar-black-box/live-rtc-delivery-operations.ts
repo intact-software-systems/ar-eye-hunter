@@ -28,6 +28,14 @@ import type {
     LiveRtcNackProbeStage,
     LiveRtcPerformanceTiming
 } from './live-rtc-performance-evidence.ts';
+import {
+    MATRIX_INBOX_TIMEOUT_MS,
+    MATRIX_SEND_TIMEOUT_MS,
+    NACK_PROBE_SEND_TIMEOUT_MS,
+    NACK_RECEIPT_POLL_TIMEOUT_MS,
+    STALE_SEND_TIMEOUT_MS,
+    WS_OPEN_TIMEOUT_MS
+} from './live-rtc-wait-budgets.ts';
 import { hasLiveRtcNotYetInSyncNack, type LiveRtcReceivedNackProbe } from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';
@@ -370,7 +378,7 @@ async function runWebSocketOpenSendCloseMatrix(
                 kind: 'ws.open',
                 connection,
                 url: toApiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
-                timeoutMs: 15_000
+                timeoutMs: WS_OPEN_TIMEOUT_MS
             },
             timeoutMs: 30_000
         });
@@ -415,7 +423,7 @@ async function sendMatrixPayload(
                 workspaceId: runtime.workspaceId,
                 groupId: input.groupId
             },
-            timeoutMs: 60_000,
+            timeoutMs: MATRIX_SEND_TIMEOUT_MS,
             send: toRtcSendInput(runtime, {
                 transport: input.transport,
                 groupId: input.groupId,
@@ -614,7 +622,7 @@ async function waitForReceivedNack(
                 return observation.matchingFrames.length > 0;
             },
             {
-                timeout: 15_000,
+                timeout: NACK_RECEIPT_POLL_TIMEOUT_MS,
                 message: 'Expected a received not-yet-in-sync NACK for the probe message.'
             }
         )
@@ -679,7 +687,7 @@ async function expectClosedTransportFailure(
             kind: 'rtc.send',
             connection: `${input.agent.connection}-messages-rtc`,
             transport: 'messages.rtc',
-            timeoutMs: 10_000,
+            timeoutMs: STALE_SEND_TIMEOUT_MS,
             send: toRtcSendInput(runtime, {
                 transport: 'messages.rtc',
                 groupId: input.groupId,
@@ -984,7 +992,7 @@ async function observeVisibleInbox(
     await expect(
         agent.page.locator('#panel-manual-rallar .received-inbox-panel')
     ).toContainText(matrixId, {
-        timeout: 30_000
+        timeout: MATRIX_INBOX_TIMEOUT_MS
     });
 }
 function toReadinessTimings(
@@ -1070,7 +1078,7 @@ function toNackProbeCommand(
             groupId: input.groupId
         },
         minSnapshotVersion: 9_999_999,
-        timeoutMs: 45_000,
+        timeoutMs: NACK_PROBE_SEND_TIMEOUT_MS,
         send: toRtcSendInput(runtime, {
             transport: 'messages.rtc',
             groupId: input.groupId,

@@ -42,9 +42,11 @@ import {
 } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import {
+    CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
+    MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
     RETENTION_RECONNECT_CYCLES
 } from './live-rtc-matrix-test-timeouts.ts';
 import {
@@ -396,7 +398,10 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         browser,
         request
     }, testInfo) => {
-        test.setTimeout(LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS);
+        test.setTimeout(
+            LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS +
+                (readLiveRtcClusterApiOrigins() ? CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS : 0)
+        );
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -622,7 +627,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         };
                     },
                     {
-                        timeout: 20_000
+                        timeout: MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS
                     }
                 )
                 .toEqual({
@@ -981,7 +986,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                             scenarioCount: scenarios.length
                         };
                     },
-                    { timeout: 20_000 }
+                    { timeout: MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS }
                 )
                 .toEqual({
                     agents: allHandles.length,

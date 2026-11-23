@@ -49,10 +49,7 @@ import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
-import {
-    computeDistributedRunPassedWaitMs,
-    computeDistributedRunsTestTimeoutMs
-} from './distributed-recipes/distributed-control.ts';
+import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
 import {
     cleanupRallarPage,
     decodeFullStackAuthSession,
@@ -67,8 +64,15 @@ import {
 } from './full-stack-helpers.ts';
 import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 import {
+    computeConsoleNativeTestTimeoutMs,
+    CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS,
+    CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS,
     CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
-    CONSOLE_NATIVE_STEPS_TIMEOUT_MS
+    CONSOLE_MONITOR_VERDICT_TIMEOUT_MS,
+    CONSOLE_NATIVE_SETUP_TIMEOUT_MS,
+    CONSOLE_SERVICE_PROBE_TIMEOUT_MS,
+    CONSOLE_STAGE_READY_TIMEOUT_MS,
+    CONSOLE_TARGETS_TIMEOUT_MS
 } from './recipe-console-monitor-test-timeouts.ts';
 
 interface OperatorUrlInput {
@@ -255,7 +259,7 @@ test('applies Console Full native run intent through real browser agents', async
         (await configuredPostgresStackAvailability(request)) === 'unavailable',
         CONFIGURED_LIVE_SKIP_REASON
     );
-    test.setTimeout(CONSOLE_NATIVE_STEPS_TIMEOUT_MS);
+    test.setTimeout(CONSOLE_NATIVE_SETUP_TIMEOUT_MS);
     await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
     const groupId = uniqueGroupId(testInfo);
     const controlRunId = uniqueRunId(testInfo);
@@ -309,7 +313,7 @@ test('applies Console Full native run intent through real browser agents', async
         // The started run joins the room under the stability recipe's connect, then streams; it may take its whole
         // terminal budget on top of the test's other steps.
         const passedWaitMs = computeDistributedRunPassedWaitMs(original);
-        test.setTimeout(computeDistributedRunsTestTimeoutMs(CONSOLE_NATIVE_STEPS_TIMEOUT_MS, [original]));
+        test.setTimeout(computeConsoleNativeTestTimeoutMs(original));
         await writeFile(
             testInfo.outputPath('console-native-original-manifest.json'),
             JSON.stringify(original, null, 2)
@@ -750,11 +754,11 @@ async function configuredPostgresStackAvailability(
         request.get(`${CONFIGURED_POSTGRES.apiBaseUrl}/api/config`, {
             failOnStatusCode: false,
             headers: { origin: FULL_STACK_SPA_ORIGIN },
-            timeout: 5_000
+            timeout: CONSOLE_SERVICE_PROBE_TIMEOUT_MS
         }),
         request.get(`${CONFIGURED_POSTGRES.controlBaseUrl}/health`, {
             failOnStatusCode: false,
-            timeout: 5_000
+            timeout: CONSOLE_SERVICE_PROBE_TIMEOUT_MS
         })
     ]);
     return await evaluateFullStackConfiguredServiceEvidence({
@@ -793,7 +797,7 @@ async function assertLiveExecuteTargets(
     const targets = page.locator('[data-execute-targets]');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(
         agentIds.length,
-        { timeout: 30_000 }
+        { timeout: CONSOLE_TARGETS_TIMEOUT_MS }
     );
     for (const agentId of agentIds) {
         await expect(targets).toContainText(agentId);
@@ -823,7 +827,7 @@ async function launchBrowserAgentsThroughVisibleControls(
         }).click();
         await expect.poll(
             () => context.pages().filter((candidate) => !existingPages.has(candidate)).length,
-            { timeout: 30_000 }
+            { timeout: CONSOLE_AGENT_PAGES_POLL_TIMEOUT_MS }
         ).toBe(input.count);
         const agentPages = context.pages().filter((candidate) => !existingPages.has(candidate));
         await Promise.all(
@@ -838,7 +842,7 @@ async function launchBrowserAgentsThroughVisibleControls(
         const agentIds = readLaunchedAgentIds(agentPages, input);
         await expect(setup.getByRole('status')).toContainText(
             `${input.count} launched browser agents are ready and selected as targets.`,
-            { timeout: 60_000 }
+            { timeout: CONSOLE_AGENTS_READY_STATUS_TIMEOUT_MS }
         );
         return { pages: agentPages, agentIds };
     }
@@ -885,7 +889,7 @@ async function stageThroughVisibleExecuteControls(page: Page): Promise<void> {
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'ready',
-        { timeout: 60_000 }
+        { timeout: CONSOLE_STAGE_READY_TIMEOUT_MS }
     );
 }
 
@@ -919,7 +923,7 @@ async function navigateToMonitor(
     );
     await expect(
         page.locator('[data-monitor-section="verdict"]')
-    ).toHaveAttribute('data-run-state', state, { timeout: 30_000 });
+    ).toHaveAttribute('data-run-state', state, { timeout: CONSOLE_MONITOR_VERDICT_TIMEOUT_MS });
 }
 
 async function exportMonitorArtifact(

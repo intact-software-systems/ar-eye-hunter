@@ -16,12 +16,10 @@ import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
-import {
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
-    type LiveRtcControlClient
-} from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from '../../../tests/playwright/rallar-black-box/live-rtc-wait-budgets.ts';
 
 const appliedNativeCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> = {
     status: 'observed',

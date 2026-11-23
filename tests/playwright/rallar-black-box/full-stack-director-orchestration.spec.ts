@@ -9,17 +9,20 @@ import {
 } from '@playwright/test';
 
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRtcConnectCommand
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
+import {
+    DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS,
+    DIRECTOR_CONNECT_TIMING,
+    DIRECTOR_EVENT_POLL_TIMEOUT_MS,
+    DIRECTOR_INTENT_RESULT_TIMEOUT_MS,
+    DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS,
+    DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS,
+    DIRECTOR_STALE_HOLD_MS
+} from './director-orchestration-test-timeouts.ts';
 import {
     cleanupRallarPage,
     enqueueControlCommand,
@@ -103,17 +106,6 @@ interface DirectorRoomFields {
 const config = readFullStackConfig();
 const directorEnabled = booleanEnv('RALLAR_BLACK_BOX_DIRECTOR');
 
-/** How long a command's result is polled for when the caller names no wait of its own. */
-const COMMAND_RESULT_POLL_TIMEOUT_MS = 45_000;
-
-/** Each agent joins the room under the establishment SDK timeout and waits for no readiness. */
-const DIRECTOR_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
-    kind: 'rtc.connect',
-    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-};
-
-/** Opening three agents, membership, readiness, the director's relays, snapshots and the stale marking. */
-const DIRECTOR_STEPS_TIMEOUT_MS = 240_000;
 const hasDirectorConfig = config.enabled && directorEnabled;
 
 test.describe('full-stack SPA-appointed director orchestration', () => {
@@ -126,11 +118,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
         browser,
         request
     }, testInfo) => {
-        // The three agents connect side by side, so the connects add one connect's wait.
-        test.setTimeout(
-            DIRECTOR_STEPS_TIMEOUT_MS +
-                computeCommandResultWaitMs(DIRECTOR_CONNECT_TIMING, COMMAND_RESULT_POLL_TIMEOUT_MS)
-        );
+        test.setTimeout(DIRECTOR_ORCHESTRATION_TEST_TIMEOUT_MS);
 
         const runId = uniqueRunId(testInfo);
         const groupId = uniqueGroupId(testInfo);
@@ -264,7 +252,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                         action: 'pose'
                     }
                 },
-                timeout: 30_000
+                timeout: DIRECTOR_INTENT_RESULT_TIMEOUT_MS
             });
             const sentC = await executeOk({
                 request,
@@ -280,7 +268,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                         action: 'shot'
                     }
                 },
-                timeout: 30_000
+                timeout: DIRECTOR_INTENT_RESULT_TIMEOUT_MS
             });
             // A relay command reports sent only once the director's receipt arrives; it carries its one handle.
             expectDirectorConfirmed(sentB);
@@ -370,7 +358,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     handle: relayHandle
                 }
             });
-            await agentA.page.waitForTimeout(1_900);
+            await agentA.page.waitForTimeout(DIRECTOR_STALE_HOLD_MS);
 
             const staleB = await executeOk({
                 request,
@@ -540,7 +528,7 @@ function toDirectorGroupCreateCommand(
 }
 
 async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
-    const { request, runId, commandId, timeout = COMMAND_RESULT_POLL_TIMEOUT_MS } = input;
+    const { request, runId, commandId, timeout = DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS } = input;
     let latest: ControlResultEnvelope | undefined;
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
@@ -584,7 +572,7 @@ async function waitForDirectorEvent(
                 input.contains.every((fragment) => text.includes(fragment));
         });
     }, {
-        timeout: 60_000
+        timeout: DIRECTOR_EVENT_POLL_TIMEOUT_MS
     }).toBe(true);
 }
 
@@ -723,7 +711,7 @@ async function connectAgent(input: ConnectAgentInput): Promise<DirectorConnectio
         agentId: agent.agentId,
         commandId,
         command,
-        timeout: computeCommandResultWaitMs(command, COMMAND_RESULT_POLL_TIMEOUT_MS)
+        timeout: computeCommandResultWaitMs(command, DIRECTOR_COMMAND_RESULT_POLL_TIMEOUT_MS)
     });
     const sessionId = stringValue(resultValue(result).sessionId);
     if (!sessionId) {
@@ -751,7 +739,7 @@ async function waitForPeerReadiness(input: WaitForPeerReadinessInput): Promise<v
             requireRecord(requireRecord(resultValue(result).rallar).rtcStatus).readyPeerIds
         );
     }, {
-        timeout: 60_000
+        timeout: DIRECTOR_PEER_READINESS_POLL_TIMEOUT_MS
     }).toEqual(expect.arrayContaining([...expectedPeerIds]));
 }
 

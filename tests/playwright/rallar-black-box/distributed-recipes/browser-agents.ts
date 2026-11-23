@@ -104,6 +104,12 @@ interface SetupGroupMembershipInput {
 
 export const config = readFullStackConfig();
 
+/** How long an opened control agent may take to select its Advanced tab, and then to register. */
+export const CONTROL_AGENT_REGISTRATION_TIMEOUT_MS = 30_000;
+
+/** Opening a control agent waits for its Advanced tab, then for its registration. */
+export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_REGISTRATION_TIMEOUT_MS;
+
 const liveDistributedEnabled = booleanEnv('RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES') ||
     booleanEnv('RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES');
 
@@ -254,10 +260,10 @@ export async function openControlAgent(
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
             'aria-selected',
             'true',
-            { timeout: 30_000 }
+            { timeout: CONTROL_AGENT_REGISTRATION_TIMEOUT_MS }
         );
         await expect(page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: 30_000 });
+            .toContainText('registered', { timeout: CONTROL_AGENT_REGISTRATION_TIMEOUT_MS });
 
         return {
             context,

@@ -31,7 +31,7 @@ import type {
 
 import { waitForHeadlessWorkerAgentRegistration } from '../../../apps/rallar-black-box/src/headless-worker/headless-worker-runtime.ts';
 import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS, LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
     optionalJsonArray,
@@ -39,6 +39,7 @@ import {
     requiredString,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from './live-rtc-wait-budgets.ts';
 
 /** A worker connect joins the room under the establishment SDK timeout, then waits for its one peer to be ready. */
 const WORKER_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {

@@ -1,12 +1,18 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from './browser-test-harness-margin.ts';
 import { toRecommendedTerminalTimeoutMs } from './distributed-recipes/to-recommended-terminal-timeout-ms.ts';
+import {
+    BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
+    CONTROL_RUN_AGENT_POLL_TIMEOUT_MS
+} from './full-stack-helpers.ts';
 
 /** The operator waits for the staged run to become ready or start running. */
 const VIEW_PUSH_READINESS_TIMEOUT_MS = 90_000;
 
-/** Opening the two agents, staging and the evidence export besides the run's readiness and terminal waits. */
-const VIEW_PUSH_STEPS_TIMEOUT_MS = 180_000;
+/** Each of the two agents is opened, then seen connected by the control run. */
+const VIEW_PUSH_AGENTS_BOUNDED_WAITS_MS = 2 *
+    (BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS + CONTROL_RUN_AGENT_POLL_TIMEOUT_MS);
 
 export interface ViewPushTestDeadlines {
     readonly readinessTimeoutMs: number;
@@ -15,11 +21,14 @@ export interface ViewPushTestDeadlines {
     readonly testTimeoutMs: number;
 }
 
+/** The two agents, then the operator's readiness and terminal waits. */
 export function computeViewPushTestDeadlines(manifest: RallarBlackBoxDistributedRunManifest): ViewPushTestDeadlines {
     const terminalTimeoutMs = toRecommendedTerminalTimeoutMs(manifest);
     return {
         readinessTimeoutMs: VIEW_PUSH_READINESS_TIMEOUT_MS,
         terminalTimeoutMs,
-        testTimeoutMs: VIEW_PUSH_STEPS_TIMEOUT_MS + VIEW_PUSH_READINESS_TIMEOUT_MS + terminalTimeoutMs
+        testTimeoutMs: BROWSER_TEST_HARNESS_MARGIN_MS + VIEW_PUSH_AGENTS_BOUNDED_WAITS_MS +
+            VIEW_PUSH_READINESS_TIMEOUT_MS +
+            terminalTimeoutMs
     };
 }

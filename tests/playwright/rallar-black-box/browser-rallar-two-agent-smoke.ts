@@ -33,6 +33,15 @@ const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 /** How long the smoke polls the run for a command's result once the command may have ended. */
 const RESULT_POLL_TIMEOUT_MS = 45_000;
 
+/** How long the smoke polls the run for a delivered message once its send returned. */
+export const TWO_AGENT_MESSAGE_POLL_TIMEOUT_MS = 45_000;
+
+/** How long a reloaded agent may take to show its workbench, then to register again. */
+export const TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS = 30_000;
+
+/** How long the run is polled for the smoke's complete evidence. */
+export const TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS = 20_000;
+
 /** A connect joins the room under the establishment SDK timeout, then waits for its readiness. */
 function toConnectTiming(
     readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
@@ -286,7 +295,7 @@ export class BrowserRallarTwoAgentSmoke {
         await expect.poll(async () => {
             const run = await this.readRun();
             return run.events.some((event) => isMessageFor(event, message));
-        }, { timeout: 45_000 }).toBe(true);
+        }, { timeout: TWO_AGENT_MESSAGE_POLL_TIMEOUT_MS }).toBe(true);
         if (delivery.visibleInbox) {
             const page = delivery.receiver.agent.page;
             await page.getByRole('button', { name: 'Manual Rallar', exact: true }).click();
@@ -323,11 +332,11 @@ export class BrowserRallarTwoAgentSmoke {
     async reloadAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
         await agent.page.reload({ waitUntil: 'domcontentloaded' });
         await expect(agent.page.getByRole('button', { name: 'Local Workbench', exact: true })).toBeVisible({
-            timeout: 30_000
+            timeout: TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS
         });
         await agent.page.getByRole('button', { name: 'Local Workbench', exact: true }).click();
         await expect(agent.page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: 30_000 });
+            .toContainText('registered', { timeout: TWO_AGENT_RELOAD_SCREEN_TIMEOUT_MS });
     }
 
     async disconnectAgent(agent: BrowserRallarTwoAgentSmoke.Agent): Promise<void> {
@@ -396,7 +405,7 @@ export class BrowserRallarTwoAgentSmoke {
                     run.reports.map((event) => event.agentId).filter((id) => id !== undefined && agentIds.has(id))
                 ).size
             };
-        }, { timeout: 20_000 }).toEqual({
+        }, { timeout: TWO_AGENT_EVIDENCE_POLL_TIMEOUT_MS }).toEqual({
             resultsComplete: true,
             messagesReceived: true,
             ...(kind !== 'disconnect' ? { agents: 2, fakeTopicCount: 0 } : {}),

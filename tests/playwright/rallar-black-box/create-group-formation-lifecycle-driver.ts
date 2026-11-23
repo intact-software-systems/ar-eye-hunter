@@ -6,10 +6,7 @@ import type {
     RtcNativeAcquisitionProof,
     RtcNativeCapturedConnection
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
-import {
-    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectCommand
@@ -30,9 +27,15 @@ import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baselin
 
 import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS, type LiveRtcControlClient } from './live-rtc-control-client.ts';
+import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
+import {
+    FORMATION_CONNECT_TIMING,
+    FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
+    FORMATION_PRESENCE_POLL_TIMEOUT_MS,
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
+} from './live-rtc-wait-budgets.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
 
@@ -248,21 +251,6 @@ interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
     readonly connection: string;
     readonly transport: TransportUnderTest;
 }
-
-/** A formation connect joins the room under the establishment SDK timeout; the driver waits for readiness apart. */
-const FORMATION_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
-    kind: 'rtc.connect',
-    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-};
-
-/** How long the driver waits for one formation connect's result, so a test can cover each connect it runs. */
-export const FORMATION_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
-    FORMATION_CONNECT_TIMING,
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
-);
-
-/** A formation run connects A, B and C one after another. */
-export const FORMATION_RUN_CONNECT_RESULT_WAIT_MS = 3 * FORMATION_CONNECT_RESULT_WAIT_MS;
 
 /**
  * The policy every live three-browser group is created with. The driver commands each boundary
@@ -976,7 +964,7 @@ async function waitForPlannedLayout(
                             ', '
                         )
                     }`,
-                timeout: 30_000
+                timeout: FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS
             }
         )
         .toBe(true);
@@ -1016,7 +1004,7 @@ async function waitForActiveSessions(
             },
             {
                 message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
-                timeout: 30_000
+                timeout: FORMATION_PRESENCE_POLL_TIMEOUT_MS
             }
         )
         .toEqual(expectedSessionIds);

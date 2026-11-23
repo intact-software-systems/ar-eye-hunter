@@ -21,7 +21,6 @@ import {
     type LiveRtcLayoutSwitchEvidence,
     type LiveRtcLayoutSwitchStream
 } from './compute-live-rtc-layout-switch-evidence.ts';
-import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from './create-group-formation-lifecycle-driver.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -40,6 +39,7 @@ import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamQos } from './live-rtc-layout-switch-operations.ts';
+import { FORMATION_RUN_CONNECT_RESULT_WAIT_MS } from './live-rtc-wait-budgets.ts';
 import {
     resolveLiveRtcLayoutShape,
     toLiveRtcAcceptedLayout,

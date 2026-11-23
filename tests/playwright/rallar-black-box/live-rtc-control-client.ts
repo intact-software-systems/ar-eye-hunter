@@ -64,6 +64,12 @@ import type {
     LiveRtcNackProbeStage
 } from './live-rtc-performance-evidence.ts';
 import { readLiveRtcRecorderJsonl, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
+import {
+    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
+    LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
+    LIVE_RTC_PEER_READINESS_TIMEOUT_MS
+} from './live-rtc-wait-budgets.ts';
 import { summarizeLiveRtcNackWireObservation } from './live-rtc-wire-observation.ts';
 import { readDisposedResponse } from './read-disposed-response.ts';
 
@@ -81,9 +87,6 @@ interface FirstMessageFailureCase {
 }
 
 const MAX_RETAINED_MESSAGE_FAILURES = 2;
-
-/** How long a command's result is polled for when the caller names no wait of its own. */
-export const LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS = 45_000;
 
 export namespace LiveRtcControlClient {
     export interface FormationAgent {
@@ -387,7 +390,7 @@ export class LiveRtcControlClient {
                     {
                         message:
                             `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
-                        timeout: input.timeoutMs ?? 60_000
+                        timeout: input.timeoutMs ?? LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS
                     }
                 )
                 .toBe(true);
@@ -512,7 +515,7 @@ export class LiveRtcControlClient {
     async waitForPeerReadiness(
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> {
-        const deadlineMs = this.#monotonicNow() + 60_000;
+        const deadlineMs = this.#monotonicNow() + LIVE_RTC_PEER_READINESS_TIMEOUT_MS;
         const readyAtMs = await this.#observeRtcReadiness(input, deadlineMs);
         if (readyAtMs >= deadlineMs) {
             throw new Error(
@@ -542,7 +545,7 @@ export class LiveRtcControlClient {
                                 ', '
                             )
                         } for ${input.suffix}`,
-                        timeout: 60_000
+                        timeout: LIVE_RTC_PEER_READINESS_TIMEOUT_MS
                     }
                 )
                 .toBe(true);
@@ -681,7 +684,7 @@ export class LiveRtcControlClient {
                             ', '
                         )
                     } for ${input.suffix}`,
-                    timeout: 60_000
+                    timeout: LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS
                 }
             )
             .toEqual([]);

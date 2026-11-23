@@ -158,7 +158,7 @@ jobs:
   e2e-app:
     name: Browser tests (app)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -338,7 +338,7 @@ jobs:
   e2e-live-recipes:
     name: Browser tests (live distributed recipes and Console)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:16
@@ -420,7 +420,7 @@ jobs:
   postgres-integration:
     name: Postgres integration
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16

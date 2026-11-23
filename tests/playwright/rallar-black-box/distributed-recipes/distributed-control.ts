@@ -54,6 +54,9 @@ interface WaitForDistributedStateInput {
 /** How long a state wait polls when no recipe command runs before that state, such as a staged run becoming ready. */
 export const DISTRIBUTED_STATE_POLL_TIMEOUT_MS = 45_000;
 
+/** How long the control run is polled until every agent reports the distributed group. */
+export const AGENTS_IN_GROUP_POLL_TIMEOUT_MS = 20_000;
+
 async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
     const { request, runId, commandId, timeout } = input;
 
@@ -90,7 +93,7 @@ export async function waitForAgentsInGroup(input: WaitForAgentsInGroupInput): Pr
                 agent.identity.workspaceId === group.workspaceId &&
                 agent.identity.groupId === group.groupId;
         });
-    }, { timeout: 20_000 }).toBe(true);
+    }, { timeout: AGENTS_IN_GROUP_POLL_TIMEOUT_MS }).toBe(true);
 }
 
 async function readDistributedRun(
@@ -163,15 +166,9 @@ export function computeDistributedRunPassedWaitMs(manifest: RallarBlackBoxDistri
     return terminalTimeoutSeconds * 1_000 + DISTRIBUTED_STATE_POLL_TIMEOUT_MS;
 }
 
-/**
- * A test that starts these runs one after another may take its other steps and then every run's passed wait; the
- * caller sets it as its timeout before it starts the first run.
- */
-export function computeDistributedRunsTestTimeoutMs(
-    stepsTimeoutMs: number,
-    manifests: readonly RallarBlackBoxDistributedRunManifest[]
-): number {
-    return manifests.reduce((sum, manifest) => sum + computeDistributedRunPassedWaitMs(manifest), stepsTimeoutMs);
+/** What `runToPassed` waits: the staged run becoming ready, then the started run passing. */
+export function computeDistributedRunToPassedWaitMs(manifest: RallarBlackBoxDistributedRunManifest): number {
+    return DISTRIBUTED_STATE_POLL_TIMEOUT_MS + computeDistributedRunPassedWaitMs(manifest);
 }
 
 /** Runs the manifest to passed, waiting for passed as long as the run may take. */

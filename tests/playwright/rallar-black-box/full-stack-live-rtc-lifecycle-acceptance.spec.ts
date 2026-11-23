@@ -11,10 +11,19 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     computeLiveRtcLifecycleScenarioTimeoutMs,
+    LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS,
+    LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
+    LIFECYCLE_HOLD_MS,
+    LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS,
+    LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS,
+    LIFECYCLE_PRESENCE_SETTLE_MS,
+    LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS,
+    LIFECYCLE_ROOM_HELD_ATTEMPTS,
+    LIFECYCLE_ROOM_HELD_INTERVAL_MS,
+    LIFECYCLE_STAGE_WAIT_MS,
+    LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS,
     PRESENCE_CONNECT_RESULT_WAIT_MS,
-    PRESENCE_CONNECT_TIMING,
-    REOPENING_SCENARIO_PRESENCE_CONNECTS,
-    TRIO_PRESENCE_CONNECTS
+    PRESENCE_CONNECT_TIMING
 } from './compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
@@ -49,10 +58,6 @@ import { validateProgressSeries } from './live-rtc-readiness-progress.ts';
  * Presence restores the same session; readiness explicitly refreshes the current room before waiting.
  */
 
-const HOLD_MS = 5_000;
-const STAGE_WAIT_MS = 45_000;
-const PRESENCE_SETTLE_MS = 5_000;
-
 const formationOperations = createLiveRtcFormationOperations();
 const deliveryOperations = createLiveRtcDeliveryOperations({
     apiBaseUrl,
@@ -68,7 +73,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     test.skip(!hasThreeAgentConfig, LIVE_RTC_SKIP_MESSAGE);
 
     test('holds every dial while a managed lobby discovers itself, then dials on connect', async ({ browser, request }) => {
-        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('discovery'));
         const scenario = await openScenario(browser, request, 'discovery');
         try {
             const { agents } = scenario;
@@ -77,7 +82,7 @@ test.describe('live RTC lifecycle acceptance', () => {
                 await connectPresence(scenario, agent);
             }
 
-            await holdFor(agents[0], HOLD_MS);
+            await holdFor(agents[0], LIFECYCLE_HOLD_MS);
 
             for (const agent of agents) {
                 const base = agentInput(scenario, agent);
@@ -104,7 +109,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }, testInfo) => {
-        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('monotonic-readiness'));
         const scenario = await openScenario(browser, request, 'progress');
         try {
             await activateGroup(scenario);
@@ -141,7 +146,7 @@ test.describe('live RTC lifecycle acceptance', () => {
                         sinceEpochMs: reopenedAt
                     });
                     return validateProgressSeries(samples, 'successive-revisions');
-                }, { timeout: 15000, intervals: [250] }).toEqual([]);
+                }, { timeout: LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS, intervals: [250] }).toEqual([]);
             }
             finally {
                 const evidencePath = testInfo.outputPath('reopening-readiness.json');
@@ -155,7 +160,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
-        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('accepted-layout-barrier'));
         const scenario = await openScenario(browser, request, 'barrier');
         try {
             await activateGroup(scenario);
@@ -199,7 +204,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('drops every lane on reset and dials again on the next series', async ({ browser, request }) => {
-        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('reset'));
         const scenario = await openScenario(browser, request, 'reset');
         try {
             await activateGroup(scenario);
@@ -222,7 +227,7 @@ test.describe('live RTC lifecycle acceptance', () => {
                 await formationOperations.waitForStage({
                     ...agentInput(scenario, agent),
                     stage: 'dormant',
-                    timeoutMs: STAGE_WAIT_MS,
+                    timeoutMs: LIFECYCLE_STAGE_WAIT_MS,
                     sinceEpochMs: resetAt
                 });
                 // The stage reaches `dormant` before the lanes finish closing, so the teardown is
@@ -240,7 +245,7 @@ test.describe('live RTC lifecycle acceptance', () => {
                                 ...sampled.rtcStatus.readyPeerIds
                             ].length;
                         },
-                        { timeout: 60_000, intervals: [1_000] }
+                        { timeout: LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS, intervals: [1_000] }
                     )
                     .toBe(0);
                 const health = await formationOperations.health(
@@ -251,7 +256,7 @@ test.describe('live RTC lifecycle acceptance', () => {
                 expect(health.formation.planned).toBeUndefined();
             }
 
-            await holdFor(scenario.agents[0], HOLD_MS);
+            await holdFor(scenario.agents[0], LIFECYCLE_HOLD_MS);
             for (const [index, agent] of scenario.agents.entries()) {
                 expect(
                     await formationOperations.countPeerCreated(
@@ -277,7 +282,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
-        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs('hydration'));
         const scenario = await openScenario(browser, request, 'hydration');
         try {
             await activateGroup(scenario);
@@ -289,7 +294,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             await formationOperations.waitForStage({
                 ...agentInput(scenario, scenario.agents[0]),
                 stage: 'dormant',
-                timeoutMs: STAGE_WAIT_MS,
+                timeoutMs: LIFECYCLE_STAGE_WAIT_MS,
                 sinceEpochMs: resetAt
             });
 
@@ -307,7 +312,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             );
             expectDormantAndEmpty(hydrated);
 
-            await reopened.refreshRoom({ refresh: 'always', timeoutMs: 15_000 });
+            await reopened.refreshRoom({ refresh: 'always', timeoutMs: LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS });
             const refreshed = await formationOperations.health(
                 agentInput(scenario, reopened)
             );
@@ -418,7 +423,7 @@ async function activateGroup(scenario: AcceptanceScenario): Promise<void> {
     }
     // Presence is what the planner plans over, and it propagates asynchronously; planning before it
     // settles yields a cycle with nothing to publish, so the group never gains a planned layout.
-    await holdFor(scenario.agents[0], PRESENCE_SETTLE_MS);
+    await holdFor(scenario.agents[0], LIFECYCLE_PRESENCE_SETTLE_MS);
     // `readiness` is an after-activation instrument: the room's transport state is derived from the
     // ACCEPTED layout, which the promotion at `activate` creates, so before that it reads `idle` and
     // the barrier can never resolve. The dials are therefore awaited by their own evidence here, and
@@ -486,7 +491,7 @@ async function expectRoomHeld(
     agent: LiveRtcControlClient.Agent
 ): Promise<void> {
     let lastFailure = 'the room was never read';
-    for (let attempt = 0; attempt < 15; attempt++) {
+    for (let attempt = 0; attempt < LIFECYCLE_ROOM_HELD_ATTEMPTS; attempt++) {
         try {
             await formationOperations.health(agentInput(scenario, agent));
             return;
@@ -494,7 +499,7 @@ async function expectRoomHeld(
         catch (error) {
             lastFailure = error instanceof Error ? error.message : String(error);
         }
-        await agent.page.waitForTimeout(2_000);
+        await agent.page.waitForTimeout(LIFECYCLE_ROOM_HELD_INTERVAL_MS);
     }
     throw new Error(
         `Agent ${agent.prefix} reopened without taking the room. ${lastFailure}`
@@ -511,7 +516,7 @@ async function settleSurvivors(
 ): Promise<void> {
     for (const agent of scenario.agents) {
         if (agent.agentId !== reopened.agentId) {
-            await agent.refreshRoom({ refresh: 'always', timeoutMs: 20_000 });
+            await agent.refreshRoom({ refresh: 'always', timeoutMs: LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS });
         }
     }
 }
@@ -527,7 +532,7 @@ async function connectWhenPlanned(
     scenario: AcceptanceScenario,
     agent: LiveRtcControlClient.Agent
 ): Promise<void> {
-    const deadline = Date.now() + 60_000;
+    const deadline = Date.now() + LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS;
     let lastError = 'the connect was never attempted';
     while (Date.now() < deadline) {
         const result = await formationOperations.tryCommand({
@@ -556,7 +561,7 @@ async function expectDialed(
         .poll(
             async () => await formationOperations.countPeerCreated(agentInput(scenario, agent)),
             {
-                timeout: 90_000,
+                timeout: LIFECYCLE_DIAL_POLL_TIMEOUT_MS,
                 intervals: [500]
             }
         )

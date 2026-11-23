@@ -25,6 +25,7 @@ import {
     jsonRecord,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
+import { FORMATION_READINESS_TIMEOUT_MS } from './live-rtc-wait-budgets.ts';
 
 /** Everything a command id is built from: the agent it addresses and the scenario it belongs to. */
 export interface FormationCommandIdInput {
@@ -100,7 +101,6 @@ export interface FormationReopenInput extends Pick<FormationAgentInput, 'runId' 
 }
 
 const PEER_CREATED_TOPIC = 'rallar.browser.rtc.lifecycle';
-const READINESS_TIMEOUT_MS = 60_000;
 
 export class LiveRtcFormationOperations {
     private issuedCommandCount = 0;
@@ -147,7 +147,7 @@ export class LiveRtcFormationOperations {
     }
 
     async readiness(input: FormationReadinessInput): Promise<FormationReadiness> {
-        const timeoutMs = input.timeoutMs ?? READINESS_TIMEOUT_MS;
+        const timeoutMs = input.timeoutMs ?? FORMATION_READINESS_TIMEOUT_MS;
         const deadlineMs = performance.now() + timeoutMs;
         await input.agent.refreshRoom({ refresh: 'always', timeoutMs });
         return await this.waitForFormationPeers(input, deadlineMs);

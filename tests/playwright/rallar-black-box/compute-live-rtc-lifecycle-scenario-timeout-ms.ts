@@ -1,8 +1,9 @@
 import { RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestRtcConnectCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from './browser-test-harness-margin.ts';
 import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from './live-rtc-control-client.ts';
+import { FORMATION_READINESS_TIMEOUT_MS, LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS } from './live-rtc-wait-budgets.ts';
 
 /** A presence connect joins the room under the establishment SDK timeout and waits for no readiness. */
 export const PRESENCE_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
@@ -15,16 +16,77 @@ export const PRESENCE_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
 );
 
-/** A scenario's steps besides its presence connects. */
-const SCENARIO_STEPS_TIMEOUT_MS = 30_000;
+/** How long a scenario holds to show that nothing dials. */
+export const LIFECYCLE_HOLD_MS = 5_000;
 
-/** Every agent of the trio connects its presence, one after another. */
-export const TRIO_PRESENCE_CONNECTS = 3;
+/** How long activation waits for the trio's presence to reach the planner before planning. */
+export const LIFECYCLE_PRESENCE_SETTLE_MS = 5_000;
 
-/** The trio connects, then the member the scenario reopens connects again. */
-export const REOPENING_SCENARIO_PRESENCE_CONNECTS = TRIO_PRESENCE_CONNECTS + 1;
+/** How long the owner retries a connect the topology worker has not yet published a layout for. */
+export const LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS = 60_000;
 
-/** A scenario's presence connects run one after another, so each adds its whole wait to the scenario's steps. */
-export function computeLiveRtcLifecycleScenarioTimeoutMs(presenceConnects: number): number {
-    return SCENARIO_STEPS_TIMEOUT_MS + presenceConnects * PRESENCE_CONNECT_RESULT_WAIT_MS;
+/** How long an agent's recorded dials are polled for after a connect. */
+export const LIFECYCLE_DIAL_POLL_TIMEOUT_MS = 90_000;
+
+/** How long an agent waits for the group to report a lifecycle stage. */
+export const LIFECYCLE_STAGE_WAIT_MS = 45_000;
+
+/** How long a reset agent's lanes are polled until they have all closed. */
+export const LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS = 60_000;
+
+/** How long each surviving member refreshes its room after a member reopens. */
+export const LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS = 20_000;
+
+/** How long the reopened member's readiness diagnostics are polled for a valid progress series. */
+export const LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS = 15_000;
+
+/** How many times, and how far apart, a reopened member's health is read until it holds the room. */
+export const LIFECYCLE_ROOM_HELD_ATTEMPTS = 15;
+export const LIFECYCLE_ROOM_HELD_INTERVAL_MS = 2_000;
+
+/** How long the reopened member of a dormant group refreshes its room. */
+export const LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS = 15_000;
+
+/** The trio's members, each of which connects its presence, one after another. */
+const TRIO_SIZE = 3;
+
+/** The connect after planning, then each member's dial poll. */
+const DIAL_BOUNDED_WAITS_MS = LIFECYCLE_CONNECT_WHEN_PLANNED_TIMEOUT_MS + TRIO_SIZE * LIFECYCLE_DIAL_POLL_TIMEOUT_MS;
+
+/** The trio connects, presence settles, and the plan's connect dials every member. */
+const ACTIVATION_BOUNDED_WAITS_MS = TRIO_SIZE * PRESENCE_CONNECT_RESULT_WAIT_MS + LIFECYCLE_PRESENCE_SETTLE_MS +
+    DIAL_BOUNDED_WAITS_MS;
+
+/** A member reopens, connects its presence again, and the two survivors refresh their rooms in turn. */
+const REOPENING_BOUNDED_WAITS_MS = PRESENCE_CONNECT_RESULT_WAIT_MS + 2 * LIFECYCLE_SURVIVOR_REFRESH_TIMEOUT_MS;
+
+export type LiveRtcLifecycleScenario =
+    | 'discovery'
+    | 'monotonic-readiness'
+    | 'accepted-layout-barrier'
+    | 'reset'
+    | 'hydration';
+
+/** The bounded waits each scenario runs in order. */
+const SCENARIO_BOUNDED_WAITS_MS: Readonly<Record<LiveRtcLifecycleScenario, number>> = {
+    /** The trio connects and holds undialed, then the plan's connect dials every member. */
+    discovery: TRIO_SIZE * PRESENCE_CONNECT_RESULT_WAIT_MS + LIFECYCLE_HOLD_MS + DIAL_BOUNDED_WAITS_MS,
+    /** Activation, a reopening, the reopened member's readiness and its progress diagnostics. */
+    'monotonic-readiness': ACTIVATION_BOUNDED_WAITS_MS + REOPENING_BOUNDED_WAITS_MS + FORMATION_READINESS_TIMEOUT_MS +
+        LIFECYCLE_PROGRESS_DIAGNOSTICS_POLL_TIMEOUT_MS,
+    /** Activation, a reopening, the reopened member taking the room, then its readiness. */
+    'accepted-layout-barrier': ACTIVATION_BOUNDED_WAITS_MS + REOPENING_BOUNDED_WAITS_MS +
+        LIFECYCLE_ROOM_HELD_ATTEMPTS * LIFECYCLE_ROOM_HELD_INTERVAL_MS + FORMATION_READINESS_TIMEOUT_MS,
+    /** Activation, every member's dormant stage and lane teardown, a hold, then the next series dials again. */
+    reset: ACTIVATION_BOUNDED_WAITS_MS +
+        TRIO_SIZE * (LIFECYCLE_STAGE_WAIT_MS + LIFECYCLE_LANE_TEARDOWN_POLL_TIMEOUT_MS) +
+        LIFECYCLE_HOLD_MS + DIAL_BOUNDED_WAITS_MS,
+    /** Activation, the owner's dormant stage, a reopening member's presence and its room refresh. */
+    hydration: ACTIVATION_BOUNDED_WAITS_MS + LIFECYCLE_STAGE_WAIT_MS + PRESENCE_CONNECT_RESULT_WAIT_MS +
+        LIFECYCLE_HYDRATION_REFRESH_TIMEOUT_MS
+};
+
+/** A scenario's timeout: the bounded waits it runs in order, and the harness margin. */
+export function computeLiveRtcLifecycleScenarioTimeoutMs(scenario: LiveRtcLifecycleScenario): number {
+    return BROWSER_TEST_HARNESS_MARGIN_MS + SCENARIO_BOUNDED_WAITS_MS[scenario];
 }

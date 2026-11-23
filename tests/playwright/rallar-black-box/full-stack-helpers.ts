@@ -373,6 +373,18 @@ const RECIPE_RUN_TIMEOUT_MS = 180_000;
 const RECIPE_RESULT_GRACE_MS = 30_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
 const CONTROL_POLL_INTERVAL_MS = 250;
+
+/** How long a signed-in page may take to show its run header. */
+export const LOGIN_RUN_HEADER_TIMEOUT_MS = 30_000;
+
+/** How long the control run is polled until an agent reports itself connected. */
+export const CONTROL_RUN_AGENT_POLL_TIMEOUT_MS = 30_000;
+
+/** How long an opened browser control agent may take to show its login gate or workbench, its tab, then registration. */
+export const BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS = 30_000;
+
+/** Opening a browser control agent waits for the login gate or workbench, the Advanced tab, then registration. */
+export const BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 3 * BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS;
 const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
@@ -477,7 +489,7 @@ export async function loginUser(input: LoginUserInput): Promise<AuthSession> {
         })
     });
     await signInFullStackUser({ ...input, query });
-    await expect(page.locator('.run-header')).toContainText(user.username, { timeout: 30_000 });
+    await expect(page.locator('.run-header')).toContainText(user.username, { timeout: LOGIN_RUN_HEADER_TIMEOUT_MS });
     await openTab(page, input.tab ?? 'rallar-server', input.workspace);
     return await readBrowserAuthSession(page);
 }
@@ -613,7 +625,7 @@ export async function waitForControlRunAgent(
         const run = await readControlRun(request, runId);
         return run.agents.some((agent) => agent.agentId === agentId && agent.connected);
     }, {
-        timeout: 30_000
+        timeout: CONTROL_RUN_AGENT_POLL_TIMEOUT_MS
     }).toBe(true);
 }
 
@@ -661,10 +673,10 @@ export async function openBrowserControlAgentInContext(
         await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
         await signInIfLoginGateIsVisible(page);
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true', {
-            timeout: 30_000
+            timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS
         });
         await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered', {
-            timeout: 30_000
+            timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS
         });
         return { context, page, session: await readBrowserAuthSession(page), diagnostics };
     }
@@ -1098,7 +1110,7 @@ function normalizeBaseUrl(value: string): string {
 async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
     const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
     const workbench = page.getByRole('tab', { name: 'Advanced' });
-    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: 30_000 });
+    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS });
     if (await loginGate.isVisible()) {
         await page.getByRole('button', { name: 'Sign in' }).click();
     }

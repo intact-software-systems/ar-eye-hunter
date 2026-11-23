@@ -4,6 +4,9 @@ import {
 } from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { BROWSER_TEST_HARNESS_MARGIN_MS } from '../browser-test-harness-margin.ts';
+import { CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS } from './browser-agents.ts';
+import { AGENTS_IN_GROUP_POLL_TIMEOUT_MS, computeDistributedRunToPassedWaitMs } from './distributed-control.ts';
 import {
     compositeEvidenceRecipe,
     createDistributedManifest,
@@ -13,18 +16,40 @@ import {
     rtcSendRecipe,
     wsSendRecipe
 } from './recipe-manifests.ts';
+import {
+    BROWSER_MESSAGE_POLL_TIMEOUT_MS,
+    REALTIME_POSITION_POLL_TIMEOUT_MS,
+    RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS
+} from './runtime-observations.ts';
 
-/** The simulated ACK test's steps besides its run's passed wait: opening three agents, artifacts and the panel. */
-export const SIMULATED_ACK_STEPS_TIMEOUT_MS = 75_000;
+/** How long the simulated test's Distributed Recipes panel may take to list its run. */
+export const SIMULATED_ACK_PANEL_TIMEOUT_MS = 15_000;
 
 /** The simulated failure test bounds each of its runs by an explicit state wait of its own. */
 export const SIMULATED_FAILURES_TEST_TIMEOUT_MS = 180_000;
 
+/** The test's agents: each is opened, then all are seen in the group. */
+const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
+
+/** Three simulated agents, the run to passed, then the panel listing it. */
+export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
+    return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS +
+        computeDistributedRunToPassedWaitMs(manifest) +
+        SIMULATED_ACK_PANEL_TIMEOUT_MS;
+}
+
 /**
- * The live test's steps besides its runs' passed waits: opening and configuring three agents, membership, each run's
- * staging, the message and diagnostic reads, artifacts and the panel.
+ * Three browser agents, each run to passed in turn, the WS and RTC receivers' messages (each pair side by side), then
+ * the realtime position payload and the two warning diagnostics side by side.
  */
-export const LIVE_RECIPES_STEPS_TIMEOUT_MS = 150_000;
+export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributedRecipeRuns): number {
+    const toPassedMs = toLiveDistributedRecipeManifests(runs).reduce(
+        (sum, manifest) => sum + computeDistributedRunToPassedWaitMs(manifest),
+        0
+    );
+    return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS + toPassedMs +
+        2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS + REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS;
+}
 
 interface DistributedRecipeTestRunInput {
     readonly suffix: string;
