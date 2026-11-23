@@ -83,6 +83,8 @@ interface ReceiptFixtureOptions {
     readonly authorizedPeerIds?: readonly string[];
     /** The audience the router admits an outbox-fanned message to, which its dequeue records; none when absent. */
     readonly admittedAudience?: readonly string[];
+    /** The messages the router fans out to the outbox; every admitted message when absent. */
+    readonly fannedOutMsgIds?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -374,11 +376,13 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         }
     );
 
-    // Filling the cap takes about four seconds of admissions; the case states the eviction, not their pace.
+    // Filling the cap takes about six seconds of admissions; the case states the eviction, not their pace. Only the
+    // subject fans out: the fillers' own outbox rows are not under test, and dequeuing 4096 of them costs the case its
+    // timeout.
     it(
         'characterization: a cap-evicted timed-out that confirmed nobody ends the server\'s own row of an outbox-fanned room message, which sends its recipients nothing more',
         async () => {
-            const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
+            const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local', fannedOutMsgIds: ['room-message-1'] });
             await admitRoomMessage(fixture);
             await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
 
@@ -390,6 +394,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
                 fillers.push(
                     (await fixture.service.acceptIncomingMessage({ ...filler, id: { ...filler.id, msgId: `room-message-${offset + 2}` } }, 'a')).right?.kind
                 );
+                await yieldToTimers();
             }
             await settleQueueEngine(fixture.engine);
 
@@ -916,7 +921,7 @@ function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options
     });
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
-            if (options.fanout === 'outbox') {
+            if (options.fanout === 'outbox' && (options.fannedOutMsgIds?.includes(message.id.msgId) ?? true)) {
                 await service.enqueueOutboxIfAbsent(message, toRouterAuthority(options.admittedAudience));
             }
         }
@@ -992,6 +997,14 @@ function createTestInboundStore(admission: ALAdmissionMemoryState, clock: { nowM
         maxOrderingTracks: undefined,
         maxDeliveredMarkers: undefined
     });
+}
+
+/**
+ * The in-memory stores never leave the microtask queue, so a loop of admissions would starve every timer: a commit
+ * retry's backoff and the engine's next pass would wait until the loop ended, and the case's pace would depend on that.
+ */
+async function yieldToTimers(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function admitRoomMessage(fixture: ReceiptFixture): Promise<void> {
