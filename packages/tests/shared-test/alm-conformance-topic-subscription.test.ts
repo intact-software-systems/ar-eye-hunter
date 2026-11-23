@@ -647,18 +647,22 @@ describe('ALM ordered subscription entry conformance', () => {
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'the readiness probe observes each attempt for the slow-path window and its loop fits the phase budget over %s',
+        'the readiness probe observes each attempt for the slow-path window and starts attempts for one phase over %s',
         (carrier) => {
             for (const scenarioId of ORDERED_SCENARIO_IDS) {
                 const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), 'sender');
                 const probe = findStep(producer, 'probe-ready');
                 const attempt = probe.kind === 'loop' ? probe.commands : [];
 
+                // 15 000 ms is the pinned slow-path measurement, not a number derived from another budget.
                 expect(attempt.find(({ kind }) => kind === 'messages.observe'), scenarioId)
                     .toMatchObject({ state: ['acknowledged'], timeoutMs: 15_000 });
-                // Attempts start for one phase, and the last one started may observe its whole window.
-                expect(probe.kind === 'loop' && (probe.count ?? 0) * (probe.intervalMs ?? 0), scenarioId).toBe(SUBSCRIPTION_PHASE_MS);
-                expect(probe.timeoutMs, scenarioId).toBe(SUBSCRIPTION_PHASE_MS + 15_000);
+                // Attempts start for one phase; the deadline adds one attempt's budget, its send's 5 000 ms and its
+                // observe's window, so the last attempt started inside the phase observes its whole window.
+                expect(probe, scenarioId).toMatchObject({
+                    durationMs: SUBSCRIPTION_PHASE_MS,
+                    timeoutMs: SUBSCRIPTION_PHASE_MS + 5_000 + 15_000
+                });
             }
         }
     );

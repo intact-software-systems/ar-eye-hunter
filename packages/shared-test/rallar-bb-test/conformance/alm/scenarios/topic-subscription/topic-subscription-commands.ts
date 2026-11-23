@@ -60,7 +60,6 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 kind: 'messages.subscribe',

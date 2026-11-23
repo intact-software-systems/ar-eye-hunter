@@ -105,8 +105,8 @@ export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string):
 }
 
 /**
- * Attempts start for one phase; an attempt's longest command is its observe, so the poll's last attempt may observe
- * its whole window beyond the phase.
+ * Attempts start for one phase; the poll's deadline adds one attempt's budget, its send's and its observe's timeouts,
+ * so the last attempt started inside the phase observes its whole window.
  */
 function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): RallarBlackBoxTestCommand {
     const { step, name } = publication;
@@ -116,7 +116,6 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SLOW_PATH_ACKNOWLEDGEMENT_WAIT_MS,
         commands: [
             { ...toPublicationSend(publication), commandId: toCommandId(step, `${name}-send`), handleId },
             {

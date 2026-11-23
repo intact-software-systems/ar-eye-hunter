@@ -582,7 +582,7 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
-        // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
+        // The poll is 30 000 ms of attempts and one attempt's budget, its two 5 000 ms reads; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
         // 5 000 ms request: four grants for granted-rtc-delivered, the path alone for receipted-relay-path, six grants for
         // subscription-delivery; a reshaped cell's in-force poll is 90 000 ms of attempts and one 5 000 ms read on each
@@ -591,11 +591,11 @@ describe('alm-conformance cell parts', () => {
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
-        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
-        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 305_000]);
-        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
+        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([50_000, 45_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([70_000, 55_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([55_000, 305_000]);
+        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([50_000, 103_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([80_000, 135_000]);
     });
 
     it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {
