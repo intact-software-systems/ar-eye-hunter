@@ -106,11 +106,12 @@ function toBaselinedCommands(input: AlmConformanceCellPartsInput): readonly Rall
     }
     const subscriptionEnd = input.commands.findIndex((command) => !isAlmCellCueSubscription(command));
     const end = subscriptionEnd < 0 ? input.commands.length : subscriptionEnd;
-    return [
-        ...input.commands.slice(0, end),
-        toStorageCountersCommand(input, 'storage-counters-connected', false),
-        ...input.commands.slice(end)
-    ];
+    return [...input.commands.slice(0, end), toSenderStorageBaselineCommand(input), ...input.commands.slice(end)];
+}
+
+/** The sender's storage counters read before its definition's commands, after any cue subscription leading them. */
+export function toSenderStorageBaselineCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toStorageCountersCommand(sender, 'storage-counters-connected', false);
 }
 
 /** The page is fresh: none of these has been emitted on it yet, so these read the page's whole history. */

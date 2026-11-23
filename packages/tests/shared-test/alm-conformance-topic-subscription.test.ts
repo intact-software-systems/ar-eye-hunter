@@ -1,9 +1,20 @@
 import {
     describe,
     expect,
+    expectTypeOf,
     it
 } from 'vitest';
 
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALNackControlMessage,
+    newALRepairControlMessage,
+    parseALControlMessage
+} from '@shared/al-contracts/al-control.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { writeALOutboundControlAdmissionDiagnostic } from '@shared/alm/outbound/control/write-al-outbound-control-admission-diagnostic.ts';
+
+import { isAssertOperatorSatisfied } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
@@ -11,12 +22,14 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { SUBSCRIPTION_PHASE_MS } from '@shared-test/rallar-bb-test/conformance/alm/granted-topic/subscription-phase-budgets.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import {
     assessAlmUnconfirmedReceiptRole,
     toAlmUnconfirmedReceiptRole
 } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
+import { toPublishUntilConfirmedCommands } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/topic-subscription-publications.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
@@ -28,6 +41,7 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { toTestALNackPayload } from '../al-control-test-payloads.ts';
 import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import {
     describeDeclaredStartStates,
@@ -38,6 +52,7 @@ import {
     type Permissions,
     type StartStateTable
 } from './describe-declared-start-states.ts';
+
 import { toNestedCommands } from './to-nested-commands.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
@@ -408,6 +423,12 @@ const START_STATE_STEPS = [
 ] as const;
 
 type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission' | 'subscription-ordered-reconnect';
+
+const ORDERED_SCENARIO_IDS: readonly OrderedScenarioId[] = [
+    'subscription-ordered-entry',
+    'subscription-ordered-omission',
+    'subscription-ordered-reconnect'
+];
 type ProducerRole = 'sender' | 'publisher-b';
 
 /** Each producer's own track: `a` names the sender's publications, `c` publisher-b's. */
@@ -449,20 +470,40 @@ function findStep(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBo
     return command;
 }
 
-/** The expected, confirmed and outside counts a publish loop ends on, in the order it asserts them. */
-function toLoopCounts(recipe: RallarBlackBoxTestRecipe, name: string): readonly (RallarBlackBoxTestJsonValue | undefined)[] {
-    const loop = findStep(recipe, name);
-    return (loop.kind === 'loop' ? loop.commands : []).flatMap((command) => command.kind === 'assert' ? [command.expected] : []);
+/**
+ * The expected, confirmed and outside counts a publication's receipt is held to, in the order it asserts them: a
+ * publish loop's attempt, or the asserts after a single publication's observe.
+ */
+function toPublicationCounts(recipe: RallarBlackBoxTestRecipe, name: string): readonly (RallarBlackBoxTestJsonValue | undefined)[] {
+    const loop = recipe.commands.find(({ commandId }) => commandId === `${recipe.recipeId}-${name}`);
+    const asserts = loop?.kind === 'loop'
+        ? loop.commands
+        : ['expected', 'confirmed', 'outsideAudience'].map((list) => findStep(recipe, `assert-${name}-${list}`));
+    return asserts.flatMap((command) => command.kind === 'assert' && 'expected' in command ? [command.expected] : []);
 }
 
-function toLoopSend(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand | undefined {
-    const loop = findStep(recipe, name);
-    return (loop.kind === 'loop' ? loop.commands : []).find(({ kind }) => kind === 'messages.send');
+/** A publish loop's send, or a single publication's. */
+function toPublicationSend(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand | undefined {
+    const loop = recipe.commands.find(({ commandId }) => commandId === `${recipe.recipeId}-${name}`);
+    return loop?.kind === 'loop' ? loop.commands.find(({ kind }) => kind === 'messages.send') : findStep(recipe, `${name}-send`);
 }
 
 /** One publish loop, its confirmed cue and the cue's leaving. */
 function toPublishSteps(name: string): readonly string[] {
     return [name, `cue-${name}-confirmed`, `cue-${name}-confirmed-sent`];
+}
+
+/** One ordered publication: its single send, its observe, its receipt's three counts, its confirmed cue. */
+function toPublishOnceSteps(name: string): readonly string[] {
+    return [
+        `${name}-send`,
+        `${name}-observe`,
+        `assert-${name}-expected`,
+        `assert-${name}-confirmed`,
+        `assert-${name}-outsideAudience`,
+        `cue-${name}-confirmed`,
+        `cue-${name}-confirmed-sent`
+    ];
 }
 
 function toPublicationSteps(state: 'received' | 'absent', track: 'a' | 'c', publications: readonly number[]): readonly string[] {
@@ -489,6 +530,31 @@ function findBarrieredReconnectScenario(carrier: (typeof ALM_CONFORMANCE_CARRIER
         throw new Error(`${carrier} creates no barriered subscription-ordered-reconnect cell.`);
     }
     return scenario;
+}
+
+/** The control id the diagnostic writer's own tests use for a control a recipient sent. */
+const CONTROL_ID = newALUnicastMessage({
+    createdAtEpochMs: 1,
+    senderId: 'peer-r',
+    route: newALRoute('control', 'room-1', 'nack'),
+    toPeerId: 'peer-a',
+    typeId: 'chat.v1',
+    resource: {}
+}).id;
+
+function toOutboundDiagnosticEvent(data: Readonly<Record<string, RallarBlackBoxTestJsonValue>>) {
+    return { kind: 'diagnostic' as const, topic: 'rallar.browser.alm.outbound_diagnostics', payload: { data } };
+}
+
+/** The producer's `control-admission` event for `control`, as its runtime's own writer states a committed one. */
+function toAdmittedControlEvent(control: ALMessage) {
+    const events: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    writeALOutboundControlAdmissionDiagnostic((event) => events.push(event), {
+        control,
+        parsed: parseALControlMessage(control)!,
+        admitted: { kind: 'committed' }
+    });
+    return toOutboundDiagnosticEvent(JSON.parse(JSON.stringify(events[0])));
 }
 
 /** Runs one wait on a page whose history holds `events` in order; the wait gets 1 ms, the history being complete. */
@@ -532,19 +598,107 @@ describe('ALM ordered subscription entry conformance', () => {
             const scenario = findOrderedScenario(carrier, scenarioId);
             for (const [role, track] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(scenario, role);
-                const ordered = toStepNames(producer).filter((name) => name.startsWith(`${track}-p`));
+                const ordered = toStepNames(producer).filter((name) => new RegExp(`^${track}-p\\d+-send$`).test(name))
+                    .map((send) => send.replace(/-send$/, ''));
 
                 expect(ordered.length, producer.recipeId).toBeGreaterThan(0);
                 for (const name of ordered) {
-                    const send = toLoopSend(producer, name);
+                    const send = toPublicationSend(producer, name);
                     expect(send, `${producer.recipeId} ${name}`).toMatchObject({ orderingKey: scenarioId, ack: 'all-logical-recipients' });
                     expect(send, `${producer.recipeId} ${name}`).not.toHaveProperty('seq');
                 }
                 // The readiness probe rides no track, so it moves no recipient's position.
-                expect(toLoopSend(producer, 'probe-ready'), producer.recipeId).not.toHaveProperty('orderingKey');
+                expect(toPublicationSend(producer, 'probe-ready'), producer.recipeId).not.toHaveProperty('orderingKey');
             }
         }
     });
+
+    it('refuses an ordered publication to the publish loop by its type', () => {
+        // A publish loop's attempts each send a new copy, so its publication rides no track.
+        expectTypeOf<Parameters<typeof toPublishUntilConfirmedCommands>[0]['orderingKey']>().toEqualTypeOf<undefined>();
+    });
+
+    // A retried ordered publication mints a sequence of its own and leaves its abandoned attempt to a timer's repair.
+    it.each(ALM_CONFORMANCE_CARRIERS)('publishes each ordered publication once, in no retrying loop, and observes that one send over %s', (carrier) => {
+        for (const scenarioId of ORDERED_SCENARIO_IDS) {
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), role);
+                const publications = toStepNames(producer).filter((name) => new RegExp(`^${track}-p\\d+-send$`).test(name));
+                const loopSends = toNestedCommands(producer.commands.filter(({ kind }) => kind === 'loop'))
+                    .filter((command) => command.kind === 'messages.send' && 'orderingKey' in command);
+
+                expect(publications.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                expect(loopSends, `${scenarioId} ${role}`).toEqual([]);
+                for (const name of publications.map((send) => send.replace(/-send$/, ''))) {
+                    const send = findStep(producer, `${name}-send`);
+                    const observe = findStep(producer, `${name}-observe`);
+                    expect(observe).toMatchObject({
+                        kind: 'messages.observe',
+                        handleId: send.commandId,
+                        state: ['acknowledged'],
+                        timeoutMs: SUBSCRIPTION_PHASE_MS
+                    });
+                    expect(['expected', 'confirmed', 'outsideAudience'].map((list) => findStep(producer, `assert-${name}-${list}`)))
+                        .toMatchObject(['expected', 'confirmed', 'outsideAudience'].map((list) => ({
+                            kind: 'assert',
+                            source: `resultCache.${observe.commandId}.value.${list}RecipientPeerIds`,
+                            operator: 'length'
+                        })));
+                }
+            }
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'gives each ordered publication\'s one send the durable-lane admission window while the probe and cue sends keep one command\'s over %s',
+        (carrier) => {
+            for (const scenarioId of ORDERED_SCENARIO_IDS) {
+                for (const [role, track] of PRODUCER_TRACKS) {
+                    const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), role);
+                    const sends = toNestedCommands(producer.commands).filter(({ kind }) => kind === 'messages.send');
+                    const isPublication = ({ commandId }: RallarBlackBoxTestCommand): boolean =>
+                        new RegExp(`^${producer.recipeId}-${track}-p\\d+-send$`).test(commandId ?? '');
+                    const publications = sends.filter(isPublication);
+                    const others = sends.filter((send) => !isPublication(send));
+                    const loopSends = toNestedCommands(producer.commands.filter(({ kind }) => kind === 'loop'))
+                        .filter(({ kind }) => kind === 'messages.send');
+                    const cueSends = others.filter(({ commandId }) => commandId?.startsWith(`${producer.recipeId}-cue-`));
+
+                    expect(publications.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    expect(cueSends.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    expect(loopSends.length, `${scenarioId} ${role}`).toBeGreaterThan(0);
+                    // 15 000 ms is the pinned slow-path measurement, not a number derived from another budget: a
+                    // publication's one send waits as long as a probe attempt's observe, on the same durable lane.
+                    expect(publications.map(({ timeoutMs }) => timeoutMs), `${scenarioId} ${role}`)
+                        .toEqual(publications.map(() => 15_000));
+                    // A probe's attempt is retried and a cue is not a publication: each keeps one command's 5 000 ms.
+                    expect(others.map(({ timeoutMs }) => timeoutMs), `${scenarioId} ${role}`)
+                        .toEqual(others.map(() => 5_000));
+                }
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'the readiness probe observes each attempt for the durable-lane admission window and starts attempts for one phase over %s',
+        (carrier) => {
+            for (const scenarioId of ORDERED_SCENARIO_IDS) {
+                const producer = requireRoleRecipe(findOrderedScenario(carrier, scenarioId), 'sender');
+                const probe = findStep(producer, 'probe-ready');
+                const attempt = probe.kind === 'loop' ? probe.commands : [];
+
+                // 15 000 ms is the pinned slow-path measurement, not a number derived from another budget.
+                expect(attempt.find(({ kind }) => kind === 'messages.observe'), scenarioId)
+                    .toMatchObject({ state: ['acknowledged'], timeoutMs: 15_000 });
+                // Attempts start for one phase; the deadline adds one attempt's budget, its send's 5 000 ms and its
+                // observe's window, so the last attempt started inside the phase observes its whole window.
+                expect(probe, scenarioId).toMatchObject({
+                    durationMs: SUBSCRIPTION_PHASE_MS,
+                    timeoutMs: SUBSCRIPTION_PHASE_MS + 5_000 + 15_000
+                });
+            }
+        }
+    );
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
         'subscribes the sibling over %s once the receiver relays both producers\' p2, then publishes p3',
@@ -560,12 +714,12 @@ describe('ALM ordered subscription entry conformance', () => {
                     'cue-listen',
                     'cue-listen-sent',
                     ...toPublishSteps('probe-ready'),
-                    ...toPublishSteps(`${track}-p1`),
-                    ...toPublishSteps(`${track}-p2`),
+                    ...toPublishOnceSteps(`${track}-p1`),
+                    ...toPublishOnceSteps(`${track}-p2`),
                     'cue-entered-applied-by-receiver-received',
-                    ...toPublishSteps(`${track}-p3`),
-                    'no-repair-dispatch',
-                    'no-gap-nack'
+                    ...toPublishOnceSteps(`${track}-p3`),
+                    'no-gap-nack',
+                    'no-repair-control'
                 ]);
             }
             // Publisher-b may publish both before the sibling listens, so the receiver, listening first, relays them.
@@ -622,10 +776,10 @@ describe('ALM ordered subscription entry conformance', () => {
             for (const [role, track] of PRODUCER_TRACKS) {
                 const producer = requireRoleRecipe(scenario, role);
 
-                expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p1`), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p2`), role).toEqual(toCounts(1, frozenOut));
-                expect(toLoopCounts(producer, `${track}-p3`), role).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, 'probe-ready'), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p1`), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p2`), role).toEqual(toCounts(1, frozenOut));
+                expect(toPublicationCounts(producer, `${track}-p3`), role).toEqual(toCounts(2, unelected));
             }
         }
     );
@@ -639,17 +793,20 @@ describe('ALM ordered subscription entry conformance', () => {
                 'cue-listen',
                 'cue-listen-sent',
                 ...toPublishSteps('probe-ready'),
-                ...toPublishSteps(`${track}-p1`),
-                ...toPublishSteps(`${track}-p2`),
+                ...toPublishOnceSteps(`${track}-p1`),
+                ...toPublishOnceSteps(`${track}-p2`),
                 'cue-revoked-received',
                 'revoke-head-read',
                 'revoke-head-applied',
-                ...toPublishSteps(`${track}-p3`),
-                ...toPublishSteps(`${track}-p4`),
+                ...toPublishOnceSteps(`${track}-p3`),
+                ...toPublishOnceSteps(`${track}-p4`),
                 'cue-resubscribed-applied-by-receiver-received',
-                ...toPublishSteps(`${track}-p5`),
-                'no-repair-dispatch',
-                'no-gap-nack'
+                // The producer applies the head carrying the re-grant before p5, as it applied the revoke's before p3.
+                'regrant-head-read',
+                'regrant-head-applied',
+                ...toPublishOnceSteps(`${track}-p5`),
+                'no-gap-nack',
+                'no-repair-control'
             ]);
         }
         expect(toStepNames(receiver)).toEqual([
@@ -690,7 +847,7 @@ describe('ALM ordered subscription entry conformance', () => {
             ...toPublicationSteps('received', 'c', [1, 2]),
             'cue-regranted-received',
             'unsubscribe-sibling',
-            'assert-unsubscribe-sibling-lapsed',
+            'assert-unsubscribe-sibling-lapsed-or-refused',
             'subscribe-sibling-regranted',
             'cue-resubscribed',
             'cue-resubscribed-sent',
@@ -712,6 +869,40 @@ describe('ALM ordered subscription entry conformance', () => {
             ]);
         expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
     });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('accepts the omission sibling\'s first release as lapsed or refused over %s', (carrier) => {
+        const sibling = requireRoleRecipe(findOrderedScenario(carrier, 'subscription-ordered-omission'), 'sibling');
+        const release = findStep(sibling, 'unsubscribe-sibling');
+        const fact = sibling.commands[sibling.commands.indexOf(release) + 1]!;
+        const accepts = (status: string | undefined): boolean =>
+            fact.kind === 'assert' && 'expected' in fact &&
+            fact.source === `resultCache.${release.commandId}.value.status` &&
+            isAssertOperatorSatisfied(
+                status === undefined ? { exists: false } : { exists: true, value: status },
+                fact.operator,
+                fact.expected
+            );
+
+        expect(['lapsed', 'refused'].map(accepts)).toEqual([true, true]);
+        expect([undefined, 'released', 'active', 'pending', 'lapsed-refused'].map(accepts))
+            .toEqual([false, false, false, false, false]);
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'each producer applies the head carrying the re-grant after the receiver\'s cue and before it publishes p5 over %s',
+        (carrier) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const names = toStepNames(requireRoleRecipe(scenario, role));
+                const cue = names.indexOf('cue-resubscribed-applied-by-receiver-received');
+                const read = names.indexOf('regrant-head-read');
+                const applied = names.indexOf('regrant-head-applied');
+
+                expect([cue, read, applied].every((index) => index >= 0), role).toBe(true);
+                expect(cue < read && read < applied && applied < names.indexOf(`${track}-p5-send`), role).toBe(true);
+            }
+        }
+    );
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
         'subscription-ordered-omission: every page the revoke must reach waits for its applied revision after its cue or its own write instead of a fixed pause over %s',
@@ -808,11 +999,15 @@ describe('ALM ordered subscription entry conformance', () => {
                 for (const [role, track] of PRODUCER_TRACKS) {
                     const producerNames = toStepNames(requireRoleRecipe(scenario, role));
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
-                    const before = producerNames.indexOf(toPublishSteps(first)[0]!);
+                    const before = producerNames.indexOf((first.startsWith('probe') ? toPublishSteps(first) : toPublishOnceSteps(first))[0]!);
                     // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
+                    // An omission producer applies the head that carries the re-grant before p5.
+                    const regranted = scenarioId === 'subscription-ordered-omission'
+                        ? ['regrant-head-read', 'regrant-head-applied']
+                        : [];
                     const applied = reasserted
                         ? [`cue-${elected}-applied-by-sibling-received`, `${elected}-head-read`, `${elected}-head-applied`]
-                        : [];
+                        : regranted;
                     expect(producerNames.slice(before - 1 - applied.length, before), `${carrier} ${scenarioId} ${role}`)
                         .toEqual([`cue-${elected}-applied-by-receiver-received`, ...applied]);
                     expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);
@@ -837,12 +1032,12 @@ describe('ALM ordered subscription entry conformance', () => {
             const producer = requireRoleRecipe(scenario, role);
             const revokedOutside = role === 'sender' ? unelected : 0;
 
-            expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(2, unelected));
+            expect(toPublicationCounts(producer, 'probe-ready'), role).toEqual(toCounts(2, unelected));
             for (const publication of [1, 2, 5]) {
-                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(2, unelected));
             }
             for (const publication of [3, 4]) {
-                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(1, revokedOutside));
+                expect(toPublicationCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(1, revokedOutside));
             }
         }
     });
@@ -914,40 +1109,99 @@ describe('ALM ordered subscription entry conformance', () => {
         ]);
     });
 
-    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'] as const)(
-        'asserts in %s that no gap NACK about the cell\'s tracks reached either producer, from the history the repair wait kept',
+    it('the no-repair-request wait matches an admitted gap NACK on the track or an admitted repair control, and nothing a timer sends', async () => {
+        const scenario = findOrderedScenario('rtc', 'subscription-ordered-omission');
+        const producer = requireRoleRecipe(scenario, 'sender');
+        const waits = [findStep(producer, 'no-gap-nack'), findStep(producer, 'no-repair-control')];
+        const nack = (reason: 'gap' | 'not-subscribed', orderingKey: string | undefined) =>
+            toAdmittedControlEvent(newALNackControlMessage(
+                CONTROL_ID,
+                toTestALNackPayload({
+                    msgId: 'sent-3',
+                    fromPeerId: 'peer-r',
+                    toPeerId: 'peer-a',
+                    reason,
+                    ...(orderingKey === undefined ? {} : { orderingKey, expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] })
+                })
+            ));
+        const repair = toAdmittedControlEvent(newALRepairControlMessage(CONTROL_ID, {
+            msgId: 'sent-3',
+            fromPeerId: 'peer-r',
+            toPeerId: 'peer-a',
+            reason: 'missing-seq',
+            observedAtEpochMs: 1,
+            orderingKey: 'subscription-ordered-omission:peer-a:0',
+            expectedSeq: 2,
+            missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1
+        }));
+        // A timer retransmission's commit as the rtc run 45068154152 stated it, under this cell's type.
+        const timerRepair = toOutboundDiagnosticEvent({
+            kind: 'commit-phases',
+            lane: 'volatile',
+            senderId: 'session-erQI2w2Prw7hwhgrKzguJ-qb',
+            msgId: 'c2e1a3ce-2df8-4aeb-8460-b1e4116c02ee',
+            typeId: 'alm.conformance.rtc.subscription-ordered-omission',
+            origin: 'repair',
+            readDurationMs: 2,
+            readOperationCount: 9,
+            commitDurationMs: 1,
+            commitOutcome: 'committed',
+            traceId: '1cb912c7-5f27-496a-aece-5d1fe837ce9a',
+            corrId: 'c2e1a3ce-2df8-4aeb-8460-b1e4116c02ee'
+        });
+
+        expect(waits).toMatchObject([
+            {
+                absent: true,
+                match: { contains: '"nackReason":"gap","nackOrderingKey":"subscription-ordered-omission:' }
+            },
+            {
+                absent: true,
+                match: { payloadFields: { 'data.kind': 'control-admission', 'data.typeId': 'al.control.repair.v3' } }
+            }
+        ]);
+        expect(await runAfterEvents(waits, [nack('gap', 'subscription-ordered-omission:peer-a:0')])).toBe(false);
+        expect(await runAfterEvents(waits, [repair])).toBe(false);
+        expect(await runAfterEvents(waits, [timerRepair])).toBe(true);
+        expect(await runAfterEvents(waits, [nack('gap', 'subscription-ordered-entry:peer-a:0')])).toBe(true);
+        expect(await runAfterEvents(waits, [nack('not-subscribed', undefined)])).toBe(true);
+    });
+
+    it.each(ORDERED_SCENARIO_IDS)(
+        'asserts in %s that no gap NACK about the cell\'s tracks and no repair control reached either producer, listening one window',
         (cell) => {
-            const scenario = findOrderedScenario('rtc', cell);
-            for (const [role] of PRODUCER_TRACKS) {
-                expect(findStep(requireRoleRecipe(scenario, role), 'no-gap-nack')).toMatchObject({
-                    kind: 'wait',
-                    absent: true,
-                    timeoutMs: 0,
-                    match: {
-                        kind: 'diagnostic',
-                        topic: 'rallar.browser.alm.outbound_diagnostics',
-                        contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
-                    }
-                });
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                for (const [role] of PRODUCER_TRACKS) {
+                    const producer = requireRoleRecipe(findOrderedScenario(carrier, cell), role);
+                    expect(toStepNames(producer).slice(-2), `${carrier} ${role}`).toEqual(['no-gap-nack', 'no-repair-control']);
+                    expect([findStep(producer, 'no-gap-nack'), findStep(producer, 'no-repair-control')], `${carrier} ${role}`)
+                        .toMatchObject([
+                            {
+                                kind: 'wait',
+                                absent: true,
+                                timeoutMs: 5_000,
+                                match: {
+                                    kind: 'diagnostic',
+                                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                                    contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
+                                }
+                            },
+                            {
+                                kind: 'wait',
+                                absent: true,
+                                timeoutMs: 0,
+                                match: {
+                                    kind: 'diagnostic',
+                                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                                    payloadFields: { 'data.kind': 'control-admission', 'data.typeId': 'al.control.repair.v3' }
+                                }
+                            }
+                        ]);
+                }
             }
         }
     );
-
-    it('asserts no repair dispatch of the cell\'s type on either producer', () => {
-        const scenario = findOrderedScenario('rtc-with-ws-fallback', 'subscription-ordered-omission');
-        for (const [role] of PRODUCER_TRACKS) {
-            expect(findStep(requireRoleRecipe(scenario, role), 'no-repair-dispatch')).toMatchObject({
-                kind: 'wait',
-                absent: true,
-                timeoutMs: 5_000,
-                match: {
-                    kind: 'diagnostic',
-                    topic: 'rallar.browser.alm.outbound_diagnostics',
-                    contains: '"typeId":"alm.conformance.rtc-with-ws-fallback.subscription-ordered-omission","origin":"repair"'
-                }
-            });
-        }
-    });
 });
 
 /** The continuation's steps up to its stats read, named without its role's prefix, which its recipe id extends. */
@@ -996,20 +1250,20 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 'cue-listen',
                 'cue-listen-sent',
                 ...toPublishSteps('probe-ready'),
-                ...toPublishSteps(`${track}-p1`),
-                ...toPublishSteps(`${track}-p2`),
+                ...toPublishOnceSteps(`${track}-p1`),
+                ...toPublishOnceSteps(`${track}-p2`),
                 'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
-                ...toPublishSteps(`${track}-p3`),
-                ...toPublishSteps(`${track}-p4`),
+                ...toPublishOnceSteps(`${track}-p3`),
+                ...toPublishOnceSteps(`${track}-p4`),
                 'cue-reentered-applied-by-receiver-received',
                 'cue-reentered-applied-by-sibling-received',
                 'reentered-head-read',
                 'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
-                ...toPublishSteps(`${track}-p5`),
-                'no-repair-dispatch',
-                'no-gap-nack'
+                ...toPublishOnceSteps(`${track}-p5`),
+                'no-gap-nack',
+                'no-repair-control'
             ]);
         }
         expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
@@ -1079,7 +1333,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 const commandIds = producer.commands.map(({ commandId }) => commandId);
                 const left = findStep(producer, 'sibling-left');
 
-                const lastPublication = `${producer.recipeId}-${track}-p2`;
+                const lastPublication = `${producer.recipeId}-${track}-p2-send`;
                 const alone = `${producer.recipeId}-probe-receiver-alone`;
 
                 expect(commandIds.indexOf(armed), `${carrier} ${role}`).toBeGreaterThan(-1);
@@ -1163,14 +1417,14 @@ describe('ALM ordered subscription reconnect conformance', () => {
             const producer = requireRoleRecipe(scenario, role);
 
             for (const name of ['probe-ready', `${track}-p1`, `${track}-p2`, 'probe-reentered', `${track}-p5`]) {
-                expect(toLoopCounts(producer, name), `${role} ${name}`).toEqual(toCounts(2, unelected));
+                expect(toPublicationCounts(producer, name), `${role} ${name}`).toEqual(toCounts(2, unelected));
             }
             for (const name of ['probe-receiver-alone', `${track}-p3`, `${track}-p4`]) {
-                expect(toLoopCounts(producer, name), `${role} ${name}`).toEqual(toCounts(1, unelected));
+                expect(toPublicationCounts(producer, name), `${role} ${name}`).toEqual(toCounts(1, unelected));
             }
-            expect(toLoopSend(producer, 'probe-receiver-alone'), role).not.toHaveProperty('orderingKey');
-            expect(toLoopSend(producer, 'probe-reentered'), role).not.toHaveProperty('orderingKey');
-            expect(toLoopSend(producer, `${track}-p5`), role).toMatchObject({ orderingKey: 'subscription-ordered-reconnect' });
+            expect(toPublicationSend(producer, 'probe-receiver-alone'), role).not.toHaveProperty('orderingKey');
+            expect(toPublicationSend(producer, 'probe-reentered'), role).not.toHaveProperty('orderingKey');
+            expect(toPublicationSend(producer, `${track}-p5`), role).toMatchObject({ orderingKey: 'subscription-ordered-reconnect' });
         }
     });
 

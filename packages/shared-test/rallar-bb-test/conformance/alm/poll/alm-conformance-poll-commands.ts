@@ -5,16 +5,15 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
+import { computeCommandsTimeoutMs } from '../cell/compute-commands-timeout-ms.ts';
 
 const POLL_INTERVAL_MS = 250;
 
 export interface PollCommandInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** How long the poll starts attempts; its last attempt may run one command budget beyond. */
+    /** How long the poll starts attempts; the last one started runs its whole budget past it. */
     readonly phaseMs: number;
-    /** The caller's budget for one command of an attempt, which the poll's last attempt may also spend. */
-    readonly commandTimeoutMs: number;
     /** One attempt's commands, in order. */
     readonly commands: readonly RallarBlackBoxTestCommand[];
 }
@@ -44,7 +43,7 @@ export interface ReadPollInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly phaseMs: number;
-    /** Each read builds its own timeout; each fact and the poll's last attempt take this one. */
+    /** Each read builds its own timeout; each fact takes this one. */
     readonly commandTimeoutMs: number;
     readonly reads: readonly PollRead[];
     readonly facts: readonly PollFact[];
@@ -77,19 +76,32 @@ export interface PollChildInput {
     readonly childId: string;
 }
 
-/** Each attempt runs every child in order and stops at its first failure; the first complete attempt ends the poll. */
-export function toPollCommand(
-    { step, name, phaseMs, commandTimeoutMs, commands }: PollCommandInput
-): RallarBlackBoxTestCommand {
+/**
+ * Each attempt runs every child in order and stops at its first failure; the first complete attempt ends the poll. A
+ * failed attempt waits `POLL_INTERVAL_MS` before the next, and the loop starts no attempt once `phaseMs` passed (its
+ * `durationMs`). Its deadline is the phase plus one attempt's budget, the timeouts of the children that wait (an assert
+ * reads results already cached), so the last attempt started inside the phase runs its whole budget. The count caps
+ * attempts at those a phase starts when each fails at once, which the phase reaches first.
+ */
+export function toPollCommand({ step, name, phaseMs, commands }: PollCommandInput): RallarBlackBoxTestCommand {
+    const commandId = toCommandId(step, name);
     return {
         kind: 'loop',
-        commandId: toCommandId(step, name),
+        commandId,
         until: 'first-success',
         count: phaseMs / POLL_INTERVAL_MS,
         intervalMs: POLL_INTERVAL_MS,
-        timeoutMs: phaseMs + commandTimeoutMs,
+        durationMs: phaseMs,
+        timeoutMs: phaseMs + computeAttemptTimeoutMs(commands, commandId),
         commands
     };
+}
+
+function computeAttemptTimeoutMs(commands: readonly RallarBlackBoxTestCommand[], commandId: string): number {
+    return computeCommandsTimeoutMs(
+        commands.filter(({ kind }) => kind !== 'assert'),
+        `the deadline of ${commandId}`
+    );
 }
 
 /** Repeats the reads, in order, until every fact holds on one attempt's reads. */
@@ -108,7 +120,6 @@ export function toReadPollCommand(
         step,
         name,
         phaseMs,
-        commandTimeoutMs,
         commands: [
             ...reads.map(({ name: read, read: toRead }) => toRead(toReadName(read))),
             ...facts.map((fact) =>

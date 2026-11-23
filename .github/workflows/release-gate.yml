@@ -531,6 +531,9 @@ jobs:
       - name: Verify room deadline race and PostgreSQL restart recovery
         run: npm run test:api-v1:black-box:postgres:room-deadlines
 
+      - name: Verify seat claim timing and expiry worker recovery on one host
+        run: npm run test:api-v1:black-box:postgres:seat-deadline
+
       - name: Verify concurrent lobby commitments and overdue seat recovery
         run: npm run test:api-v1:black-box:postgres:room-lobbies
 

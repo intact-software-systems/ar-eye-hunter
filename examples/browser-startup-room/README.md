@@ -294,3 +294,75 @@ Unavailable observations remain in the series. The exit code is 2 if any
 observation was unavailable, otherwise 1 if any was outside or inconclusive,
 otherwise 0. This measures the probe's requests; browser startup and refresh
 traffic must be measured on the actual browser connection.
+
+### Qualify a lobby seat deadline under load
+
+Use the [seat deadline proof](../../packages/shared-test/black-box-runner/cluster-proofs/api-v1-seat-deadline-proof.mts)
+on a disposable installation before making a cross-host fairness claim. The two
+API processes share a migrated PostgreSQL database and use different
+`RALLAR_SERVER_CLOCK_PEER_ID` values. Use direct HTTPS origins for remote APIs.
+Loopback HTTP is supported for disposable local runs. Disable
+`RALLAR_API_QUEUE_WORKERS` on the claim node and every other replica except the
+expiry node. Enable the workers on that expiry node. Enable PostgreSQL pub/sub
+for account-view invalidations. Record each node's VM or machine identity,
+the worker configuration, the maintained offset budget and the workload the
+deployment intends to support. Distinct URLs and peer IDs alone establish
+which API answered. Physical host independence requires deployment evidence.
+
+The fixture needs three distinct test accounts and a controller for the
+disposable expiry process. Supply `SEAT_PROOF_OWNER_USERNAME` and
+`SEAT_PROOF_OWNER_PASSWORD`, with corresponding `PLAYER` and `NEXT` pairs.
+Set `SEAT_PROOF_WORKER_CONTROL` to an absolute executable path. It receives
+one argument, either `stop` or `start`. Stop must return after the expiry
+process stops responding. Start must return after its replacement serves the
+same pinned clock identity. Start must also succeed when the worker is already running,
+because cleanup runs after a partial or unacknowledged stop. The claim process and shared database stay
+available through the interruption.
+
+From the repository root, run the following command with your direct origins,
+pinned clock identities and millisecond budget. Save stdout alongside the
+topology record. Budget 25 below is illustrative.
+
+```sh
+bun run packages/shared-test/black-box-runner/cluster-proofs/api-v1-seat-deadline-proof.mts \
+  --direct "$CLAIM_ORIGIN" "$CLAIM_CLOCK_ID" "$EXPIRY_ORIGIN" "$EXPIRY_CLOCK_ID" 25 \
+  > seat-deadline.jsonl
+```
+
+Each case creates a fresh workspace and a one-place room, offers the place
+to one queued player, and leaves another waiting. Authenticated sockets on
+both nodes exchange clock frames with 50 ms between completed exchanges.
+The restart case keeps the claim socket loaded across the expiry-node outage.
+The load records give the actual exchanges and elapsed times. This models
+connected timing traffic and a contested seat in one room. Compare those
+conditions with the deployment's traffic before drawing conclusions.
+
+The first two cases aim 750 ms before and 100 ms after the five-second offer
+deadline. A claim-node time reading before dispatch and another after the
+response bound the real presence mutation. Both nodes must return the same
+private seats for both players after expiry. A third case holds the exact
+offer's PostgreSQL deadline row across the cutoff. Supply
+`SEAT_PROOF_DATABASE_URL` through the operator environment for a trusted
+connection to the same disposable database with row-lock privileges on
+`resource_inbox`. The claim API captures ingress and returns the AppInbox
+result. The enabled worker executes the command while the independent expiry
+wake is held. The proof checks the original stored offer and waiting successor
+immediately before the late claim, then verifies refusal and releases the
+row. A separate restart case takes the
+worker down across the deadline, verifies that the original offer is still
+committed, and observes promotion after restart before sending the late
+claim. The observer reads on startup and on scoped account invalidations.
+The qualification does not change the application's network cadence.
+
+Each `offset` row records a point measurement with its interval and budget.
+A straddling interval is inconclusive. Missing observations and intervals
+outside budget also leave the clock unqualified. An interval is evidence
+only for its sampled instant. The `claim`, `overdue-offer-refused`, `worker-recovery` and
+`allocation` rows give the independent seat outcomes. A completed allocation
+proof with an unqualified clock prints both results and exits nonzero.
+An unexpected allocation, unusable identity or claim that missed its
+target side of the deadline fails the run.
+
+`npm run test:api-v1:black-box:postgres:seat-deadline` runs the same cases
+in the release gate on disposable local API processes and a fresh database.
+Its 100 ms budget and one-host results qualify the fixture only.

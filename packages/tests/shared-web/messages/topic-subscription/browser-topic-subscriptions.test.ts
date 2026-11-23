@@ -189,6 +189,26 @@ describe('browser topic subscriptions', () => {
         expect(calls).toEqual([subscribeCall('room.feed', 'generation-1', 'request-1')]);
     });
 
+    it('a hold after a renewal refused no-subscribe-grant subscribes anew and settles active once the grant is back', async () => {
+        const owner = createAttachedOwner();
+        const first = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+        await first.wait();
+        answer = async () => {
+            throw toPolicyDenial('no-subscribe-grant');
+        };
+        await vi.advanceTimersByTimeAsync(20_000);
+        answer = async () => ({ outcome: 'subscribed' });
+
+        const second = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });
+
+        expect([first.status(), await second.wait(), second.status()]).toEqual(['refused', 'active', 'active']);
+        expect(calls).toEqual([
+            subscribeCall('room.feed', 'generation-1', 'request-1'),
+            subscribeCall('room.feed', 'generation-1', 'request-2'),
+            subscribeCall('room.feed', 'generation-1', 'request-3')
+        ]);
+    });
+
     it('a renewal answering member-not-active after a departure refuses the token', async () => {
         const owner = createAttachedOwner();
         const token = owner.hold({ roomRef: ROOM_REF, topicId: 'room.feed' });

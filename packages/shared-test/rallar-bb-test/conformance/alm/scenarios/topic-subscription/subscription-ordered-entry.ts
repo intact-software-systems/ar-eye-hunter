@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoRepairRequestWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -8,6 +8,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
+    computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -25,7 +26,6 @@ import {
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
 import {
-    computeUnelectedOutsideCount,
     toCueListenCommands,
     toCueSendCommands,
     toCueWait
@@ -43,7 +43,8 @@ const ENTERED = 'entered';
  * only once the receiver said both were confirmed and then hears `p3` of each and neither earlier publication. Over ws
  * the server's first copy to the sibling records no position for it, so the sibling enters at `p3` with prior `0`.
  * Over RTC the origin freezes the sibling into `p1` and `p2`, which it witnesses with each prior the origin recorded,
- * so `p3` follows in order. No producer is asked a gap or dispatches a repair, and each loop holds the count identity.
+ * so `p3` follows in order. No receiver asks a producer for a repair, by gap NACK or repair control, and each
+ * publication's receipt holds the count identity.
  */
 export const subscriptionOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-ordered-entry',
@@ -82,7 +83,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
             confirmations: 2,
             outsideAudience: computeUnelectedOutsideCount(producer, 1)
         }),
-        ...toNoGapRepairWaits(producer)
+        ...toNoRepairRequestWaits(producer)
     ];
 }
 

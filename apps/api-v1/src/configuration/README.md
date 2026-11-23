@@ -37,6 +37,11 @@ A separate SPA origin is expected and remains governed by CORS. Do not substitut
 `Origin` header or an untrusted proxy header for the configured API authority. A reverse proxy's
 public addresses belong in the two configuration settings, independently of the internal listen port.
 
+An independently addressed API node can set `RALLAR_SERVER_CLOCK_PEER_ID` to a unique public
+identifier. The browser reads `clockPeerId` from `/api/config` and verifies it on both HTTP and
+authenticated WebSocket clock samples. If the setting is absent, clock samples use the existing WS
+peer ID. Route both transports to the named node when using this setting.
+
 ## Replaced-layout overlap
 
 `publicApi.rtcReplacedLayoutOverlapMs` (default 15 000, range 0 to 15 000) is how long an RTC browser
@@ -53,7 +58,7 @@ The configuration reader recognizes only these operational overrides:
 
 - Profile: `RALLAR_API_CONFIGURATION_PROFILE`.
 - HTTP and public URLs: `RALLAR_HTTP_HOSTNAME`, `RALLAR_API_REPLICA_COUNT`, `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
-  `RALLAR_WS_BASE_URL`, `RALLAR_SHUTDOWN_DEADLINE_MS`. `RALLAR_HTTP_HOSTNAME`
+  `RALLAR_WS_BASE_URL`, `RALLAR_SERVER_CLOCK_PEER_ID`, `RALLAR_SHUTDOWN_DEADLINE_MS`. `RALLAR_HTTP_HOSTNAME`
   (`http.hostname`) is the bind address. No committed profile names it: the
   decoder binds every interface (`0.0.0.0`), as local dev, CI and containers
   need, and the Hetzner replica units set `127.0.0.1` because Caddy fronts them.

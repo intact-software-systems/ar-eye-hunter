@@ -10,11 +10,10 @@ import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { subscribeViewRecovery, type SubscribeViewRecovery } from './subscribe-view-recovery.ts';
 
 export namespace SubscribeViewInvalidations {
-    export interface Input {
-        readonly browser: SubscribeViewRecovery.Browser;
+    export interface Input extends SubscribeViewRecovery.Input {
         readonly scope: StateScope;
         readonly resource: ViewInvalidation['resource'];
-        readonly changed: () => void;
+        readonly changed: (notice?: ViewInvalidation) => void;
     }
 }
 
@@ -32,13 +31,14 @@ export function subscribeViewInvalidations(input: SubscribeViewInvalidations.Inp
         catch {
             return;
         }
+        const session = input.browser.session();
         if (
             notice.resource === input.resource &&
             (notice.scope === null || isSameGroupScope(notice.scope, input.scope)) &&
-            input.browser.session() !== undefined &&
-            (notice.principalId === null || notice.principalId === input.browser.session()?.clientId)
+            session !== undefined &&
+            (notice.principalId === null || notice.principalId === session.clientId)
         ) {
-            input.changed();
+            input.changed(notice);
         }
     }));
     subscriptions.add(subscribeViewRecovery(input));

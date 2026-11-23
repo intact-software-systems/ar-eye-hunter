@@ -80,7 +80,6 @@ export function toPublishUntilCueCommand(step: AlmConformanceStepInput, cue: str
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
             { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
@@ -106,7 +105,6 @@ export function toRewritingPublisherCommands(
             step: sender,
             name: 'rewrite-hold',
             phaseMs: SUBSCRIPTION_PHASE_MS,
-            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             commands: [
                 toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
             ]
@@ -173,7 +171,6 @@ export function toGrantedRefusalPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 kind: 'rtc.send',

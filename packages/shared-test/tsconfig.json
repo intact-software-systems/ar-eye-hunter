@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
     "erasableSyntaxOnly": true,
     "noEmit": true,
     "target": "ES2024",

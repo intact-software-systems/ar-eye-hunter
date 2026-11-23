@@ -7,6 +7,7 @@ export function toApiV1PublicConfiguration(
     configuration: ApiV1PublicApiConfiguration
 ): ApiConfig {
     return {
+        ...(configuration.clockPeerId === undefined ? {} : { clockPeerId: configuration.clockPeerId }),
         apiBaseUrl: configuration.apiBaseUrl,
         wsBaseUrl: configuration.wsBaseUrl,
         endpoints: {

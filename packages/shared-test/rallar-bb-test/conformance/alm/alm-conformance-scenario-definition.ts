@@ -137,7 +137,9 @@ export type AlmConformanceScenarioId =
     | 'world-routing'
     | 'ws-unicast-receipt';
 
-export type AlmConformanceTag = 'smoke' | 'full';
+export const ALM_CONFORMANCE_TAGS = ['smoke', 'full'] as const;
+
+export type AlmConformanceTag = typeof ALM_CONFORMANCE_TAGS[number];
 
 /**
  * How the lane ends a same-context owner page before its successor owns the session: closed, or through a lifecycle
@@ -337,6 +339,12 @@ interface AlmConformanceScenarioCore {
     readonly unconfirmedReceiptRole?: AlmConformanceRole;
     /** Absent when every role runs one recipe; otherwise one role's later steps, which wait for another role. */
     readonly continuation?: AlmConformanceContinuationDefinition;
+    /**
+     * Absent when each role's recipe runs within the lane's ordinary recipe budget. Otherwise the whole budget of the
+     * cell's longest step, which every role's recipe metadata states (`toAlmRecipeRunExtensionMetadata`) and the lane
+     * adds on top of the ordinary budget.
+     */
+    readonly toRecipeRunExtensionMs?: (step: AlmConformanceStepInput) => number;
 }
 
 /** The origins of a relayed gap renewal and the request number each waits for from every other page of the cell. */

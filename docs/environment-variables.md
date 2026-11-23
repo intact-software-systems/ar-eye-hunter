@@ -584,7 +584,8 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_ALM_ORDER`                | No       | `declared`                       | ALM lane cell order. Supported values: `declared`, `shuffled`.                                        |
 | `RALLAR_BLACK_BOX_ALM_SEED`                 | No       | Minted per family                | Seed of a shuffled ALM lane order, an integer from 0 to 4294967295; only with `shuffled`.             |
 | `RALLAR_BLACK_BOX_ALM_ROOMS`                | No       | `family`                         | ALM lane room per `family` or per `cell`; a declared own-room cell `cell`, same-context `family`.     |
-| `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins, a key no selected scope or carrier runs is refused.  |
+| `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins; each must run in a selected scope, carrier, family.  |
+| `RALLAR_BLACK_BOX_ALM_FAMILIES`             | No       | All families                     | Comma-separated ALM lane families whose tests run; the plan file names every family; others refused.  |
 | `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                                               |
 | `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke.                           |
 | `VITE_RALLAR_EXPIRES_AT_EPOCH_MS`           | No       | Future test fallback             | Expiry timestamp for generic restored-session smoke.                                                  |
@@ -605,16 +606,19 @@ The ALM conformance lane reads its parameters once, when the spec loads, and onl
 (`RALLAR_BLACK_BOX_API_MODE`) the same way, so a skipped lane decodes nothing. An empty or blank
 value takes the default: `test:rallar:full-stack:memory:alm` sets no scope and runs the `smoke`
 scope over every carrier, and `test:rallar:full-stack:postgres:alm` sets `full`. In CI the
-`.github/actions/alm-conformance-lane` action sets the scope and one carrier per runner. A value
-outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and `RALLAR_BLACK_BOX_ALM_CARRIERS` included,
-a `RALLAR_BLACK_BOX_ALM_SEED` without `RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a
-`RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key
-that no cell of the selected scope and carriers runs throws a `RangeError` that names the value and
-what is accepted, before any browser starts. A `shuffled` family shuffles its cells with the seed; a
-family that names none mints one in `0` to `2147483647`. The same seed gives the same order of the
-same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell whose definition
-declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
-no page rejoins a room it left. The lane prints
+`.github/actions/alm-conformance-lane` action sets the scope and one carrier per runner, and for a
+carrier split by family (`ws` and `rtc` in the `full` scope) `RALLAR_BLACK_BOX_ALM_FAMILIES` with
+the job's family list. A value outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and
+`RALLAR_BLACK_BOX_ALM_CARRIERS` included, a `RALLAR_BLACK_BOX_ALM_SEED` without
+`RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario
+ID, or a `RALLAR_BLACK_BOX_ALM_ONLY` key that no cell of the selected scope, carriers and families
+runs throws a `RangeError` that names the value and what is accepted, before any browser starts.
+`RALLAR_BLACK_BOX_ALM_FAMILIES` selects which family tests run; a key `RALLAR_BLACK_BOX_ALM_ONLY`
+names must run in at least one selected family, or the run is refused. A `shuffled` family shuffles
+its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same seed
+gives the same order of the same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a
+cell whose definition declares a room of its own runs in one, and the family's later cells run in a
+fresh shared room, so no page rejoins a room it left. The lane prints
 `ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
 family's first cell, the observation artifact records the same plan as `cellOrder`, and the
 `alm-lane-result/` files record each planned scenario's outcome

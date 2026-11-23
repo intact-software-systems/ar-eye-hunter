@@ -3,6 +3,7 @@ import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesObserveCommand,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
@@ -25,8 +26,16 @@ import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-confor
 import { toGrantedSend } from './to-granted-send.ts';
 import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 
-/** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
-const CONFIRMATION_WAIT_MS = 3_000;
+/**
+ * How long a page's durable lane on a GitHub runner may take to admit: what a publish loop's attempt observes its copy
+ * for before the next attempt sends a new one, and what a publication published once waits for its one send. The
+ * origin's admission of acknowledgements reached 12.1 s on GitHub runners, with a p90 of 4.3 to 5.8 s on the failing
+ * jobs of the full-scope runs of 2026-11-22. In run 45104862538 three single-publication sends over `rtc` outlasted a
+ * 5 s timeout, taking 5.4 to 5.9 s, with the durable read ending up to 8.07 s after the send started. A short audience
+ * completes at once and fails the count facts; a probe attempt whose observe misses this window waited on an expected
+ * recipient that cannot answer, not on a slow lane.
+ */
+const SLOW_DURABLE_LANE_ADMISSION_MS = 15_000;
 
 /**
  * A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. The S3-ii
@@ -38,7 +47,7 @@ const REJECTION_WAIT_MS = 30_000;
 export interface TopicPublicationInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** How many recipients one copy must confirm before the loop ends. */
+    /** How many recipients one copy must confirm. */
     readonly confirmations: number;
     /**
      * How many more the copy's receipt must expect and record outside its audience: granted sessions that answered
@@ -53,6 +62,17 @@ export interface TopicPublicationInput {
     readonly audience?: AlmConformanceSendAudience;
 }
 
+/**
+ * A publish loop's publication: it rides no track, since each attempt sends a new copy and a track would mint a
+ * sequence for each.
+ */
+type UnorderedTopicPublicationInput =
+    & Omit<TopicPublicationInput, 'orderingKey'>
+    & Readonly<{ orderingKey?: undefined; }>;
+
+/** What a publication's one send is built from. */
+type TopicPublicationSendInput = Pick<TopicPublicationInput, 'step' | 'name' | 'kind' | 'orderingKey' | 'audience'>;
+
 interface PayloadWaitInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
@@ -66,10 +86,11 @@ interface PayloadWaitInput {
  * subscriber's election holds, an attempt reaches fewer, or none when the page's own room snapshot does not yet hold
  * its publish grant: a probe makes those attempts without a publication's payload. A recipient that drops out of the
  * audience before the cue would leave every later attempt short, so each recipient holds its election and its socket
- * until `toConfirmedCueWait` hears the cue.
+ * until `toConfirmedCueWait` hears the cue. Each attempt sends a new message, so an ordered publication, whose retry
+ * would mint a sequence of its own, publishes once through `toPublishOnceCommands` instead.
  */
 export function toPublishUntilConfirmedCommands(
-    publication: TopicPublicationInput
+    publication: UnorderedTopicPublicationInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toPublishUntilConfirmedPoll(publication),
@@ -78,64 +99,95 @@ export function toPublishUntilConfirmedCommands(
 }
 
 /**
- * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
- * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
- * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ * Publishes once, observes the copy until it ends and holds its receipt to the counts `toPublishUntilConfirmedCommands`
+ * holds an attempt to, then tells the recipients so. A receipt that names another audience fails the cell. The send
+ * states no receipt policy, so the product's default receipt budget ends an unconfirmed copy first: its handle reads
+ * `failed` about 8 s after admission for a frame that leaves at once (`packages/shared/alm/outbound/README.md`,
+ * "Budget exhaustion"), later only as gap repairs renew it, and the copy's 30 s lifetime ends it otherwise. The
+ * observe's own timeout of one phase is only an upper cap. The send itself returns once the page's durable outbound
+ * lane admits the copy, which it waits for over the durable-lane admission window, since no later attempt absorbs a
+ * slow admission.
  */
-export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
-    return step.input.carrier === 'ws' ? 0 : unelected;
+export function toPublishOnceCommands(publication: TopicPublicationInput): readonly RallarBlackBoxTestCommand[] {
+    const { step, name } = publication;
+    const observe = toPublicationObserveCommand(step, name, 'acknowledged');
+    return [
+        { ...toNamedPublicationSend(publication), timeoutMs: SLOW_DURABLE_LANE_ADMISSION_MS },
+        observe,
+        ...toReceiptCountFacts(publication, `resultCache.${observe.commandId}.value`),
+        ...toCueSendCommands(step, toConfirmedCue(name))
+    ];
 }
 
-/** The producer's loop `name` ended: every recipient it waited for confirmed one copy. */
+/** The producer's publication or probe `name` ended: every recipient it waited for confirmed one copy. */
 export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toCueWait(step, toConfirmedCue(name));
 }
 
-function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): RallarBlackBoxTestCommand {
+/**
+ * Attempts start for one phase; the poll's deadline adds one attempt's budget, its send's and its observe's timeouts,
+ * so the last attempt started inside the phase observes its whole window.
+ */
+function toPublishUntilConfirmedPoll(publication: UnorderedTopicPublicationInput): RallarBlackBoxTestCommand {
     const { step, name } = publication;
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
     const observe = toCommandId(step, `${name}-observe`);
-    const receipt = toPollResult({ step, name, index: 2, childId: observe });
     return toPollCommand({
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
-            {
-                ...toGrantedSend({
-                    step,
-                    payload: toPublicationPayload(step, name, publication.kind),
-                    orderingKey: publication.orderingKey,
-                    audience: publication.audience
-                }),
-                commandId: toCommandId(step, `${name}-send`),
-                handleId
-            },
+            { ...toPublicationSend(publication), commandId: toCommandId(step, `${name}-send`), handleId },
             {
                 kind: 'messages.observe',
                 commandId: observe,
                 connection: toConnectionName(step),
                 handleId,
                 state: ['acknowledged'],
-                timeoutMs: CONFIRMATION_WAIT_MS
+                timeoutMs: SLOW_DURABLE_LANE_ADMISSION_MS
             },
-            ...([
-                ['expected', publication.confirmations + publication.outsideAudience],
-                ['confirmed', publication.confirmations],
-                ['outsideAudience', publication.outsideAudience]
-            ] as const).map(([list, expected]) =>
-                toResultFact({
-                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-                    step,
-                    name: `${name}-${list}`,
-                    source: `${receipt}.${list}RecipientPeerIds`,
-                    operator: 'length',
-                    expected
-                })
-            )
+            ...toReceiptCountFacts(publication, toPollResult({ step, name, index: 2, childId: observe }))
         ]
     });
+}
+
+function toPublicationSend(
+    publication: TopicPublicationSendInput
+): Omit<RallarBlackBoxTestMessagesSendCommand, 'commandId'> {
+    return toGrantedSend({
+        step: publication.step,
+        payload: toPublicationPayload(publication.step, publication.name, publication.kind),
+        orderingKey: publication.orderingKey,
+        audience: publication.audience
+    });
+}
+
+/** A publication's one send, its handle named after it (`<name>-send`) so the cell can observe it and read its receipt. */
+function toNamedPublicationSend(publication: TopicPublicationSendInput): RallarBlackBoxTestMessagesSendCommand {
+    const send = toCommandId(publication.step, `${publication.name}-send`);
+    return { ...toPublicationSend(publication), commandId: send, handleId: send };
+}
+
+/** The receipt at `receipt` expects the audience and outside counts, and the audience confirmed it. */
+function toReceiptCountFacts(
+    publication: TopicPublicationInput,
+    receipt: string
+): readonly RallarBlackBoxTestCommand[] {
+    const { step, name, confirmations, outsideAudience } = publication;
+    return ([
+        ['expected', confirmations + outsideAudience],
+        ['confirmed', confirmations],
+        ['outsideAudience', outsideAudience]
+    ] as const).map(([list, expected]) =>
+        toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            step,
+            name: `${name}-${list}`,
+            source: `${receipt}.${list}RecipientPeerIds`,
+            operator: 'length',
+            expected
+        })
+    );
 }
 
 function toConfirmedCue(name: string): string {
@@ -144,18 +196,14 @@ function toConfirmedCue(name: string): string {
 
 /** One publication on the granted topic, its handle named after it so the cell can read its receipt. */
 export function toPublishCommands(step: AlmConformanceStepInput, name: string): readonly RallarBlackBoxTestCommand[] {
-    const send = toCommandId(step, `${name}-send`);
+    const send = toNamedPublicationSend({ step, name, kind: 'publication' });
     return [
-        {
-            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
-            commandId: send,
-            handleId: send
-        },
+        send,
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-admitted`,
-            source: `resultCache.${send}.value.status`,
+            source: `resultCache.${send.commandId}.value.status`,
             operator: 'notEquals',
             expected: 'rejected'
         })
@@ -172,14 +220,9 @@ export function toRejectedPublishCommands(
     name: string,
     reason: string
 ): readonly RallarBlackBoxTestCommand[] {
-    const send = toCommandId(step, `${name}-send`);
     const observe = toPublicationObserveCommand(step, name, 'rejected');
     return [
-        {
-            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
-            commandId: send,
-            handleId: send
-        },
+        toNamedPublicationSend({ step, name, kind: 'publication' }),
         observe,
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
@@ -214,7 +257,8 @@ export function toEndedReceiptCommands(
 
 /**
  * The publication's handle reaches `state` or any terminal state: a refusal within its rejection budget, a receipt
- * once its audience confirmed, which is one phase of the cell.
+ * once its audience confirmed or its receipt budget or lifetime ended it, whichever comes first, under a cap of one
+ * phase of the cell.
  */
 function toPublicationObserveCommand(
     step: AlmConformanceStepInput,

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { checkNodeClockOffset } from '../../../../examples/browser-startup-room/check-node-clock-offset.ts';
+import { checkNodeClockOffset } from '@shared-test/black-box-runner/cluster-proofs/check-node-clock-offset.ts';
 
 const calibration = { remoteEpochMs: 10_000, requestStartedAtMonotonicMs: 0, responseReceivedAtMonotonicMs: 0 };
 

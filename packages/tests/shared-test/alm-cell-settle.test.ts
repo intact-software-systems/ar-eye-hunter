@@ -122,11 +122,12 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('a connected barrier\'s timeout covers the other roles\' prologues', () => {
+    it('a connected barrier\'s timeout covers the other roles\' prologues, a connect\'s readiness wait included', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
                 const settleRoles = scenario.roles.filter((role) => role !== 'successor');
-                const prologueMs = (role: AlmConformanceRole) => scenario.partsByRole[role]!.prologue.reduce((sum, command) => sum + command.timeoutMs!, 0);
+                const prologueMs = (role: AlmConformanceRole) =>
+                    scenario.partsByRole[role]!.prologue.reduce((sum, command) => sum + command.timeoutMs! + toReadinessMs(command), 0);
                 const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + prologueMs(other), 0));
                 const timeouts = settleRoles.map((role) => toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[0]!.timeoutMs);
 
@@ -134,8 +135,9 @@ describe('alm-conformance cell parts', () => {
                 expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs) + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS]));
             }
         }
-        // Each settle prologue is 5 000 + 5 000 + 45 000 ms; the first arrival waits through every other one, then the
-        // 10 000 ms a barrier verdict and the pages' skew may take.
+        // Each settle prologue over rtc is 5 000 + 5 000 + 45 000 ms, and 30 000 ms more where its connect waits for
+        // ready peers, a wait that runs after the connect's own timeout ends; the first arrival waits through every other
+        // one, then the 10 000 ms a barrier verdict and the pages' skew may take.
         const timeoutOf = (scenarioKey: string, role: AlmConformanceRole) =>
             toBarrierCommands(
                 toAlmConformanceRoleRecipe(
@@ -143,9 +145,9 @@ describe('alm-conformance cell parts', () => {
                     role
                 )!
             )[0]?.timeoutMs;
-        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(65_000);
-        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(120_000);
-        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(175_000);
+        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(95_000);
+        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(150_000);
+        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(265_000);
     });
 
     it('a role recipe is its prologue then its body', () => {
@@ -202,7 +204,7 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
-        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 18, rtc: 53, 'rtc-with-ws-fallback': 19 });
+        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 19, rtc: 55, 'rtc-with-ws-fallback': 19 });
     });
 
     // A continuation carries no barrier and no arming run: it runs on the connection its role's first recipe opened,
@@ -580,7 +582,7 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
-        // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
+        // The poll is 30 000 ms of attempts and one attempt's budget, its two 5 000 ms reads; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
         // 5 000 ms request: four grants for granted-rtc-delivered, the path alone for receipted-relay-path, six grants for
         // subscription-delivery; a reshaped cell's in-force poll is 90 000 ms of attempts and one 5 000 ms read on each
@@ -589,11 +591,11 @@ describe('alm-conformance cell parts', () => {
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
-        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
-        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 305_000]);
-        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
+        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([50_000, 45_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([70_000, 55_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([55_000, 305_000]);
+        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([50_000, 103_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([80_000, 135_000]);
     });
 
     it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {
@@ -690,6 +692,11 @@ function isDeclaredStartCommand(command: RallarBlackBoxTestCommand): boolean {
 /** A role recipe's settle commands, in recipe order. */
 function toSettleCommands(recipe: RallarBlackBoxTestRecipe, rolePrefix: string): readonly RallarBlackBoxTestCommand[] {
     return recipe.commands.filter((command) => isSettleCommand(command, rolePrefix));
+}
+
+/** A connect waits for its peers' readiness after its own timeout, so that wait adds to the time it may take. */
+function toReadinessMs(command: RallarBlackBoxTestCommand): number {
+    return command.kind === 'rtc.connect' ? command.readiness?.timeoutMs ?? 0 : 0;
 }
 
 function toCommandsMs(commands: readonly RallarBlackBoxTestCommand[]): number {

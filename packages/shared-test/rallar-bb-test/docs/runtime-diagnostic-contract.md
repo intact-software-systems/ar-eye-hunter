@@ -236,8 +236,9 @@ current owner page as `sender`. Because the roots are trivial, a barrier reports
 only from a root's own result: a role whose recipe fails before a barrier leaves the others to the
 barrier's `timed-out`.
 
-**The formation poll** (`formation-poll`, the `receiver` only) repeats every 250 ms for up to
-`CONNECT_READINESS_TIMEOUT_MS` (30 s). Each attempt reads
+**The formation poll** (`formation-poll`, the `receiver` only) starts attempts for
+`CONNECT_READINESS_TIMEOUT_MS` (30 s), 250 ms after each failed one, and its deadline adds one
+attempt's two reads (10 s), so the last attempt started inside the 30 s completes. Each attempt reads
 `GET …/groups/{groupId}/formation` and then `GET …/groups/{groupId}` under the `receiver`'s session,
 and the first attempt in which every fact holds ends the poll:
 

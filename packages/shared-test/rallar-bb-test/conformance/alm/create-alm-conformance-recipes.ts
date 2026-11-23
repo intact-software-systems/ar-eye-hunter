@@ -39,6 +39,7 @@ import {
     toRoomRef,
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
+import { toAlmRecipeRunExtensionMetadata } from './alm-recipe-run-extension.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 import { toAlmCellSettledBody } from './cell/to-alm-cell-settled-body.ts';
@@ -201,6 +202,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceCellPartsInput {
     readonly relayedGapRenewalOrigins: AlmConformanceRelayedGapRenewalOrigins | undefined;
     /** Set only on the sender of a scenario none of whose receipts may confirm that role. */
     readonly unconfirmedReceiptRole: AlmConformanceRole | undefined;
+    /** Set on every role of a scenario whose longest step outlasts the lane's ordinary recipe budget. */
+    readonly recipeRunExtensionMs: number | undefined;
 }
 
 interface AlmConformanceRoleCell {
@@ -509,7 +512,8 @@ function toRoleCells(
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
             relayedGapRenewalOrigins: role === 'sender' ? definition.relayedGapRenewalOrigins : undefined,
-            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined
+            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined,
+            recipeRunExtensionMs: definition.toRecipeRunExtensionMs?.(step)
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });
@@ -589,7 +593,8 @@ function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): Rall
             }),
         ...(recipe.unconfirmedReceiptRole === undefined
             ? {}
-            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole })
+            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole }),
+        ...toAlmRecipeRunExtensionMetadata(recipe.recipeRunExtensionMs)
     };
 }
 
