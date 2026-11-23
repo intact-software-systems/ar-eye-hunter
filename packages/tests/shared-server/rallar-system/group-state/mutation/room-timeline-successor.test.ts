@@ -1,29 +1,48 @@
-import { expect, it } from 'vitest';
+import { computeGroupClockChange } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
 import { assertRoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
 import { readRoomTimeline, settleRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
-import { computeGroupClockChange } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { expect, it } from 'vitest';
 
 const next = { phase: 'play', durationMs: 600_000 };
 const warmup = {
-    name: 'match', phase: 'warmup', revision: 1, startedAtRevision: 1, startedAtEpochMs: 0,
-    startedBy: 'director' as const, status: 'running' as const, endsAtEpochMs: 1000, successor: next
+    name: 'match',
+    phase: 'warmup',
+    revision: 1,
+    startedAtRevision: 1,
+    startedAtEpochMs: 0,
+    startedBy: 'director' as const,
+    status: 'running' as const,
+    endsAtEpochMs: 1000,
+    successor: next
 };
 const base = { name: 'match', expectedDirectorEpoch: 1, expectedRevision: 1 };
 
 it('starts a timed successor at the revised boundary, once, even after a late wake', () => {
     const extended = computeGroupClockChange([warmup], { ...base, operation: 'extend-phase', durationMs: 300 }, 800);
     expect(extended).toEqual({ ...warmup, revision: 2, endsAtEpochMs: 1300 });
-    if (!('startedBy' in extended)) throw Error('missing timeline');
+    if (!('startedBy' in extended)) {
+        throw Error('missing timeline');
+    }
     expect(settleRoomTimeline(extended, 1000)).toBeNull();
     const started = settleRoomTimeline(extended, 3000);
-    expect(started).toEqual({ ...warmup, phase: 'play', startedAtRevision: 3, startedAtEpochMs: 1300,
-        startedBy: 'automatic', revision: 3, successor: null, endsAtEpochMs: 601300 });
+    expect(started).toEqual({
+        ...warmup,
+        phase: 'play',
+        startedAtRevision: 3,
+        startedAtEpochMs: 1300,
+        startedBy: 'automatic',
+        revision: 3,
+        successor: null,
+        endsAtEpochMs: 601300
+    });
     expect(settleRoomTimeline(started!, 700000)).toBeNull();
 });
 
 it('freezes the planned transition, resumes it under a new director, and clears it on early advancement', () => {
     const paused = computeGroupClockChange([warmup], { ...base, operation: 'pause' }, 700);
-    if (!('startedBy' in paused)) throw Error('missing timeline');
+    if (!('startedBy' in paused)) {
+        throw Error('missing timeline');
+    }
     expect(settleRoomTimeline(paused, 8000)).toBeNull();
     const resumed = computeGroupClockChange([paused], { ...base, operation: 'resume', expectedDirectorEpoch: 2, expectedRevision: 2 }, 8000);
     expect(resumed).toEqual({ ...warmup, revision: 3, endsAtEpochMs: 8300 });

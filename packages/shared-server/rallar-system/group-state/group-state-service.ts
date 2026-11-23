@@ -1,3 +1,7 @@
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { isExactlyAdmitted } from './mutation/aggregate/group-aggregate-mutation-policy.ts';
+import { GroupMutationRejectedError } from './mutation/group-mutation-contracts.ts';
+import { computeEmptyRoomLifetime, readPausedTimelineRetention } from './retention/compute-empty-room-lifetime.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { PartyRepository } from '../parties/persistence/party-repository.ts';
@@ -406,6 +410,10 @@ async function readGroupMutationFences(
     const { dependencies } = owners;
     const runtime = dependencies.runtimeRepository;
     const command = ingress.command;
+    if (command.operation === 'connectPresence' || command.operation === 'heartbeatPresence' ||
+        command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
+        await verifyPausedRoomAdmission(owners, ingress, initialRead);
+    }
     const connectTriggerLatch = command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null
         ? await new GroupConnectTriggerLatchRepository(runtime).read({
             groupRef: command.aggregateRef,
@@ -434,4 +442,24 @@ async function readGroupMutationFences(
             : null
     ]);
     return { ...read, plannedLayoutRow, acceptedLayoutRow };
+}
+
+async function verifyPausedRoomAdmission(
+    owners: GroupStateRuntimeOwners, ingress: GroupStateMutationCommand, read: GroupMutationRead
+): Promise<void> {
+    if (!read.group || read.idempotency) return;
+    const now = ingress.facts.attemptAtEpochMs;
+    const target = read.targetPresence?.value;
+    if (target?.status === 'active' && target.expiresAtEpochMs > now && read.targetMember?.status === 'active' &&
+        isExactlyAdmitted(read.targetAdmission?.value, target)) return;
+    const policy = readPausedTimelineRetention(read.group.value);
+    if (!policy) return;
+    const repository = owners.repositoryFor(owners.dependencies.runtimeRepository);
+    const authority = await repository.readPresenceSummaryEntries(ingress.command.aggregateRef);
+    if (authority.group?.entry.revision !== read.group.entry.revision) {
+        throw new RuntimeStateWriteConflictError();
+    }
+    if (computeEmptyRoomLifetime(authority, policy, now) === 'expired') {
+        throw new GroupMutationRejectedError('This room is no longer available.');
+    }
 }

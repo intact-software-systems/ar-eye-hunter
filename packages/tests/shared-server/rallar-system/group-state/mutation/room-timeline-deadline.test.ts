@@ -38,7 +38,7 @@ describe('automatic timeline deadline publication', () => {
         // The original delivery may already have settled as obsolete while the room was archived.
         const reactivated = computeRoomTimelineDeadlines({
             ...input,
-            before: { ...group, status: 'archived' },
+            before: { ...group, status: 'archived', archived: group.updated, deleted: null },
             after: { ...group, snapshotVersion: group.snapshotVersion + 2 }
         });
         expect(reactivated[0].entry.key).not.toEqual(original[0].entry.key);

@@ -1,6 +1,17 @@
-import { MAX_ROOM_CLOCKS, readRoomTimeRecords, ROOM_CLOCKS_METADATA_KEY, type RoomClock, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
+import {
+    MAX_ROOM_CLOCKS,
+    readRoomTimeRecords,
+    ROOM_CLOCKS_METADATA_KEY,
+    type RoomClock,
+    type RoomClockMutation
+} from '@shared/api/group-deadlines/room-clock.ts';
 import type { RoomSchedule } from '@shared/api/group-deadlines/room-schedule.ts';
-import { roomClockFitsRange, settleRoomTimeline, type RoomTimeline, type RoomTimelineOccurrence } from '@shared/api/group-deadlines/room-timeline.ts';
+import {
+    roomClockFitsRange,
+    settleRoomTimeline,
+    type RoomTimeline,
+    type RoomTimelineOccurrence
+} from '@shared/api/group-deadlines/room-timeline.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
 import { computeGroupProgramChange } from './compute-group-program-change.ts';
@@ -24,7 +35,10 @@ export function computeGroupClockChange(
     if (!Number.isSafeInteger(identity.revision) || (!previous && clocks.length >= MAX_ROOM_CLOCKS)) {
         return { rejectionCode: 'group-mutation-rejected', message: 'Clock capacity exhausted.' };
     }
-    if (command.operation === 'publish-schedule' || command.operation === 'pause-program' || command.operation === 'resume-program') {
+    if (
+        command.operation === 'publish-schedule' || command.operation === 'pause-program' ||
+        command.operation === 'resume-program'
+    ) {
         if (previous && !('phases' in previous)) {
             return { rejectionCode: 'group-mutation-rejected', message: 'A manual clock already owns this name.' };
         }
@@ -40,7 +54,8 @@ export function computeGroupClockChange(
     let occurrence: RoomTimelineOccurrence | undefined;
     if (timeline) {
         occurrence = {
-            phase: timeline.phase, startedAtRevision: timeline.startedAtRevision,
+            phase: timeline.phase,
+            startedAtRevision: timeline.startedAtRevision,
             ...(timeline.startedBy && { startedBy: timeline.startedBy, startedAtEpochMs: timeline.startedAtEpochMs }),
             ...(timeline.successor !== undefined && { successor: timeline.successor })
         };
@@ -49,7 +64,10 @@ export function computeGroupClockChange(
     switch (command.operation) {
         case 'start':
             if (occurrence) {
-                return { rejectionCode: 'group-mutation-rejected', message: 'Advance the timeline to start its next phase.' };
+                return {
+                    rejectionCode: 'group-mutation-rejected',
+                    message: 'Advance the timeline to start its next phase.'
+                };
             }
             if (previous && (previous.status === 'paused' || previous.endsAtEpochMs > now)) {
                 return { rejectionCode: 'group-mutation-rejected', message: 'This clock is already in use.' };
@@ -57,13 +75,21 @@ export function computeGroupClockChange(
             durationMs = command.durationMs;
             break;
         case 'advance-phase':
-            occurrence = { phase: command.phase, startedAtRevision: identity.revision, startedAtEpochMs: now,
-                startedBy: 'director', successor: command.successor ?? null };
+            occurrence = {
+                phase: command.phase,
+                startedAtRevision: identity.revision,
+                startedAtEpochMs: now,
+                startedBy: 'director',
+                successor: command.successor ?? null
+            };
             durationMs = command.durationMs;
             break;
         case 'set-successor': {
             if (!timeline || (timeline.status === 'running' && timeline.endsAtEpochMs <= now)) {
-                return { rejectionCode: 'group-mutation-rejected', message: 'Only a live or paused phase can change its successor.' };
+                return {
+                    rejectionCode: 'group-mutation-rejected',
+                    message: 'Only a live or paused phase can change its successor.'
+                };
             }
             const boundary = timeline.status === 'paused' ? now + timeline.remainingMs : timeline.endsAtEpochMs;
             if (!roomClockFitsRange(boundary, identity.revision, command.successor)) {
@@ -72,13 +98,21 @@ export function computeGroupClockChange(
             return { ...timeline, revision: identity.revision, successor: command.successor };
         }
         case 'extend-phase': {
-            if (!previous || !('phase' in previous) || (previous.status === 'running' && previous.endsAtEpochMs <= now)) {
-                return { rejectionCode: 'group-mutation-rejected', message: 'Only a live or paused phase can be extended.' };
+            if (
+                !previous || !('phase' in previous) || (previous.status === 'running' && previous.endsAtEpochMs <= now)
+            ) {
+                return {
+                    rejectionCode: 'group-mutation-rejected',
+                    message: 'Only a live or paused phase can be extended.'
+                };
             }
             if (previous.status === 'paused') {
                 const remainingMs = previous.remainingMs + command.durationMs;
                 if (!roomClockFitsRange(now + remainingMs, identity.revision, previous.successor)) {
-                    return { rejectionCode: 'group-mutation-rejected', message: 'Extended balance exceeds the supported UTC range.' };
+                    return {
+                        rejectionCode: 'group-mutation-rejected',
+                        message: 'Extended balance exceeds the supported UTC range.'
+                    };
                 }
                 return { ...previous, revision: identity.revision, remainingMs };
             }
@@ -93,8 +127,11 @@ export function computeGroupClockChange(
                 return { rejectionCode: 'group-mutation-rejected', message: 'The successor exceeds the clock range.' };
             }
             return {
-                ...identity, ...occurrence, ...(occurrence && { pausedAtEpochMs: now }),
-                status: 'paused', remainingMs: previous.endsAtEpochMs - now
+                ...identity,
+                ...occurrence,
+                ...(occurrence && { pausedAtEpochMs: now }),
+                status: 'paused',
+                remainingMs: previous.endsAtEpochMs - now
             };
         case 'resume':
             if (previous?.status !== 'paused') {
@@ -128,11 +165,19 @@ export function withRoomTimeRecord(
     clock: RoomClock | RoomTimeline | RoomSchedule,
     clocks = readRoomTimeRecords(group.metadata)
 ): Group {
-    const records = [...clocks.filter(previous => previous.name !== clock.name), clock];
-    return { ...group, metadata: {
-        ...group.metadata,
-        [ROOM_CLOCKS_METADATA_KEY]: records.map(record => 'phases' in record
-            ? { ...record, phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs })) }
-            : record)
-    } };
+    const records = [...clocks.filter((previous) => previous.name !== clock.name), clock];
+    return {
+        ...group,
+        metadata: {
+            ...group.metadata,
+            [ROOM_CLOCKS_METADATA_KEY]: records.map((record) =>
+                'phases' in record
+                    ? {
+                        ...record,
+                        phases: record.phases.map(({ phase, startsAtEpochMs }) => ({ phase, startsAtEpochMs }))
+                    }
+                    : record
+            )
+        }
+    };
 }

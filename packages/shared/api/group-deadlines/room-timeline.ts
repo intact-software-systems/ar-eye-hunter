@@ -1,7 +1,7 @@
 import type { ApiJsonObject } from '../api-json-value.ts';
 import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord } from '../exact-object-decoding.ts';
-import { assertRoomDeadlineName } from './room-deadline.ts';
 import { readRoomClock, type RoomClock } from './room-clock.ts';
+import { assertRoomDeadlineName } from './room-deadline.ts';
 
 export type RoomTimelineSuccessor = { readonly phase: string; readonly durationMs: number; };
 
@@ -50,15 +50,21 @@ export type RoomTimelineOccurrence = {
 export function readTimelineOccurrence(record: Record<string, unknown>, revision: number): RoomTimelineOccurrence {
     assertRoomDeadlineName(record.phase);
     requireEpoch(record.startedAtRevision, 'Phase starting revision');
-    if (!record.startedAtRevision || record.startedAtRevision > revision) throw new TypeError('Invalid phase starting revision.');
+    if (!record.startedAtRevision || record.startedAtRevision > revision) {
+        throw new TypeError('Invalid phase starting revision.');
+    }
     let occurrence: RoomTimelineOccurrence = { phase: record.phase, startedAtRevision: record.startedAtRevision };
     if (Object.hasOwn(record, 'startedBy') || Object.hasOwn(record, 'startedAtEpochMs')) {
-        if (record.startedBy !== 'director' && record.startedBy !== 'automatic') throw new TypeError('Invalid phase origin.');
+        if (record.startedBy !== 'director' && record.startedBy !== 'automatic') {
+            throw new TypeError('Invalid phase origin.');
+        }
         requireEpoch(record.startedAtEpochMs, 'Phase start');
         occurrence = { ...occurrence, startedBy: record.startedBy, startedAtEpochMs: record.startedAtEpochMs };
     }
     if (Object.hasOwn(record, 'successor')) {
-        if (record.successor !== null) assertRoomTimelineSuccessor(record.successor);
+        if (record.successor !== null) {
+            assertRoomTimelineSuccessor(record.successor);
+        }
         occurrence = { ...occurrence, successor: record.successor };
     }
     if (record.status === 'paused' && Object.hasOwn(record, 'pausedAtEpochMs')) {
@@ -79,12 +85,20 @@ export function roomClockFitsRange(
 }
 
 export function settleRoomTimeline(previous: RoomTimeline, nowEpochMs: number): RoomTimeline | null {
-    if (previous.status !== 'running' || !previous.successor || previous.endsAtEpochMs > nowEpochMs) return null;
+    if (previous.status !== 'running' || !previous.successor || previous.endsAtEpochMs > nowEpochMs) {
+        return null;
+    }
     const revision = previous.revision + 1;
     return {
-        name: previous.name, status: 'running', phase: previous.successor.phase, revision, startedAtRevision: revision,
-        startedBy: 'automatic', startedAtEpochMs: previous.endsAtEpochMs,
-        endsAtEpochMs: previous.endsAtEpochMs + previous.successor.durationMs, successor: null
+        name: previous.name,
+        status: 'running',
+        phase: previous.successor.phase,
+        revision,
+        startedAtRevision: revision,
+        startedBy: 'automatic',
+        startedAtEpochMs: previous.endsAtEpochMs,
+        endsAtEpochMs: previous.endsAtEpochMs + previous.successor.durationMs,
+        successor: null
     };
 }
 

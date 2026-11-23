@@ -145,11 +145,12 @@ and its duration through `watchTimeline`. Pausing freezes the countdown, extendi
 uses the saved balance. A replacement director inherits the plan. An early manual advance clears the previous plan.
 
 When the countdown expires, the server starts the configured successor at the scheduled boundary, even if processing
-resumes later or every browser has left. A late command cannot extend the old phase. The successor has its own duration
+resumes later or every browser has left. During a worker outage, reads return the last committed snapshot.
+A late command cannot extend the old phase. When processing recovers, the successor uses the original boundary. The successor has its own duration
 and no further automatic transition. Reconnecting participants recover the committed occurrence and clock together.
 
 An empty temporary room stays available through the successor’s end. A temporary room with a paused named timeline
-uses its `retention.pausedTimelineRetentionMs` window, one hour by default, starting when it is both empty and paused.
+uses its `retention.pausedTimelineRetentionMs` window (1 ms to 24 hours, one hour by default), starting when it is both empty and paused.
 Entering interrupts cleanup. Watching from another room leaves that deadline unchanged. Explicit room deletion still takes effect.
 
 Timelines share the room's 32 clock slots. An advance can adopt an existing clock at its current revision. Retry a command with

@@ -385,8 +385,10 @@ test('an empty court advances once and a returning director sees the lounge obse
         const extended = await host.evaluate(async ({ rooms }, { court, lounge, control, successor }) => {
             const pausedClock = { ...control, name: 'practice' };
             const practice = await rooms.advanceTimeline(court, { ...pausedClock, expectedRevision: 0,
-                phase: 'practice-warmup', durationMs: 4000, successor }, crypto.randomUUID());
-            await rooms.changeClock(court, { ...pausedClock, expectedRevision: practice.revision,
+                phase: 'practice-warmup', durationMs: 4000 }, crypto.randomUUID());
+            const planned = await rooms.setTimelineSuccessor(court, { ...pausedClock, expectedRevision: practice.revision,
+                successor }, crypto.randomUUID());
+            await rooms.changeClock(court, { ...pausedClock, expectedRevision: planned.revision,
                 operation: 'pause' }, crypto.randomUUID());
             const warmup = await rooms.advanceTimeline(court, { ...control, expectedRevision: 0,
                 phase: 'warmup', durationMs: 4000, successor }, crypto.randomUUID());
@@ -409,7 +411,7 @@ test('an empty court advances once and a returning director sees the lounge obse
             return { match: await rooms.readTimeline(court, 'match'), practice: await rooms.readTimeline(court, 'practice') };
         }, court);
         expect(returned.match).toMatchObject(expected);
-        expect(returned.practice).toMatchObject({ phase: 'practice-warmup', revision: 2, status: 'paused', successor });
+        expect(returned.practice).toMatchObject({ phase: 'practice-warmup', revision: 3, status: 'paused', successor });
         expect(await latest()).toEqual({ status: 'current', timeline: returned.match });
         await observer.evaluate(state => state.stop());
     }

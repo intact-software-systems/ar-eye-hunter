@@ -9045,6 +9045,12 @@ components:
               minimum: 1000
               maximum: 86400000
               default: 600000
+            pausedTimelineRetentionMs:
+              description: How long an empty, paused timeline remains recoverable. Observing the room remotely does not extend this window.
+              type: integer
+              minimum: 1
+              maximum: 86400000
+              default: 3600000
     GroupSessionSchedule:
       type: object
       additionalProperties: false
@@ -9271,14 +9277,21 @@ components:
         roomClock:
           type: object
           additionalProperties: false
-          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and records phase and startedAtRevision on the matching metadata.rallarRoomClocks record. A publish-schedule atomically replaces the named fixed schedule at the expected revision, preserving boundaries already reached by server time. An extend-phase adds durationMs to a running phase end or paused balance and preserves its occurrence. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
+          description: The active appointed director starts, pauses, resumes or advances the phase of one named countdown. An advance atomically starts a fresh countdown and optionally sets one timed successor. A set-successor changes or cancels it on the current occurrence. A running phase with a successor advances at its scheduled boundary, even after a late server wake. Pausing suspends the transition and resuming restores its remaining time. A publish-schedule atomically replaces the named fixed schedule at the expected revision, preserving boundaries already reached by server time. An extend-phase adds durationMs to a running phase end or paused balance and preserves its occurrence. Send this command alone with actor identity. A stale appointment or revision returns HTTP 409. Snapshots publish running clocks with endsAtEpochMs and paused clocks with remainingMs in metadata.rallarRoomClocks.
           required: [name, operation, expectedRevision, expectedDirectorEpoch]
           properties:
             name:
               type: string
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
-              enum: [start, pause, resume, advance-phase, extend-phase, publish-schedule, pause-program, resume-program]
+              enum: [start, pause, resume, advance-phase, extend-phase, set-successor, publish-schedule, pause-program, resume-program]
+            successor:
+              type: [object, 'null']
+              additionalProperties: false
+              required: [phase, durationMs]
+              properties:
+                phase: { type: string, pattern: '^[A-Za-z0-9._-]{1,64}$' }
+                durationMs: { type: integer, minimum: 1, maximum: 9007199254740991 }
             phases:
               type: array
               minItems: 1
@@ -9336,9 +9349,24 @@ components:
                     const: advance-phase
               then:
                 required: [phase]
+                properties:
+                  successor: { type: object }
               else:
                 not:
                   required: [phase]
+            - if:
+                properties:
+                  operation: { const: set-successor }
+              then:
+                required: [successor]
+              else:
+                if:
+                  properties:
+                    operation:
+                      not: { const: advance-phase }
+                then:
+                  not:
+                    required: [successor]
         roomDeadline:
           type: object
           additionalProperties: false
