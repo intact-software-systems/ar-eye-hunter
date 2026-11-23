@@ -1,9 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
-import type {
-    ALOutboundAdmissionStore,
-    ALOutboundCommitBundle
+import {
+    toALOutboundMessageFence,
+    type ALOutboundAdmissionStore,
+    type ALOutboundCommitBundle
 } from '../admission/al-outbound-admission-store.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
@@ -177,6 +178,7 @@ function toReceiptCommitBundle<TPrepared>(
     return {
         senderId: receipt.originPeerId,
         expectedVersion: read.clientRecord?.version,
+        message: toALOutboundMessageFence(receipt, read.messageVersion, stored?.reference.expiresAtMs),
         mutations: [
             toALOutboundReceiptMutation(write, receipt),
             ...toALOutboundReceiptTrackMutations(read.trackPositions, write),

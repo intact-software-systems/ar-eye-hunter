@@ -30,8 +30,8 @@ import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
 type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
 
-/** The admission read chain a first send walks: client record, stored message, canonical pair, control. */
-const FIRST_SEND_READ_OPERATIONS = 9;
+/** The admission read chain a first send walks: client record, message version, stored message, canonical pair, control. */
+const FIRST_SEND_READ_OPERATIONS = 10;
 
 afterEach(() => {
     vi.restoreAllMocks();

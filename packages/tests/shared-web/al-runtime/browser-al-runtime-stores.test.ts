@@ -346,8 +346,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             storage: diagnosticsPorts.storage
         });
 
-        // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count.
-        expect(result.scanned).toBe(5);
+        // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count. Each of the target's
+        // two messages keeps a live version row beside its sent row.
+        expect(result.scanned).toBe(7);
         expect(result.deleted).toBe(2);
         expect(await readBrowserALRuntimeEntryKeys(targetSentPrefix)).toEqual([
             `${targetSentPrefix}:target-fresh`
@@ -370,6 +371,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await stores.admissionStore.commitBundle({
             senderId: sessionId,
             expectedVersion: undefined,
+            message: { originPeerId: sessionId, msgId, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [
                 {
                     kind: 'set-msg-owner',
@@ -452,8 +454,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
             storage: diagnosticsPorts.storage
         });
 
-        expect(result.scanned).toBe(11);
-        expect(result.deleted).toBe(11);
+        // Each of the target's two sent messages adds its version row.
+        expect(result.scanned).toBe(13);
+        expect(result.deleted).toBe(13);
         expect(await readBrowserALRuntimeEntryKeys(targetWsSentPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetInboundPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetOverlaySentPrefix)).toEqual([]);
@@ -730,8 +733,11 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const earlier = Date.now();
         await vi.advanceTimersByTimeAsync(21);
         await initBrowserALRuntimeExpiryEviction({
-            currentScope: SCOPE, storage: diagnosticsPorts.storage, intervalMs: 50,
-            signal: original.signal, nowMs: () => earlier
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage,
+            intervalMs: 50,
+            signal: original.signal,
+            nowMs: () => earlier
         });
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:initial-expired`]);
 

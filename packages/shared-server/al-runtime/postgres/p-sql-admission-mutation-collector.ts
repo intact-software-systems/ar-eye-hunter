@@ -52,7 +52,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
 
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
     private readonly readEntry: (key: string) => Promise<RuntimeStateEntry | undefined>;
-    private readonly namespace: string;
+    protected readonly namespace: string;
     private readonly nowEpochMs: () => number;
 
     constructor(dependencies: PSqlAdmissionMutationCollector.Dependencies) {
@@ -125,15 +125,17 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
     }
 
     /**
-     * Every touched row as one write: the fence decides first and every other row is written only on it. A commit
+     * Every touched row as one write: the last of the fences in key order decides first and every other row is written
+     * only on it. Every other fence is one of those rows, and the commit locks it first: see `toFenceLockKeys`. A commit
      * that names no fence is fenced on its first row in key order, the row a write one row at a time wrote first.
      */
-    computeStateWrite(fenceKey: string | undefined): PSqlAdmissionStateWrite | undefined {
+    computeStateWrite(fenceKeys: ReadonlySet<string>): PSqlAdmissionStateWrite | undefined {
         const rows = this.mutations();
-        const fence = fenceKey === undefined ? rows[0] : rows.find((row) => row.key === fenceKey);
-        if (fenceKey !== undefined && fence === undefined) {
+        const fences = rows.filter((row) => fenceKeys.has(row.key));
+        if (fences.length < fenceKeys.size) {
             throw new TypeError('The fence of an admission commit writes no row');
         }
+        const fence = fences.at(-1) ?? rows[0];
         if (fence === undefined) {
             return undefined;
         }
@@ -145,6 +147,14 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
             effects: rows.filter((row) => row !== fence).map((row) => ({ ...row, effectId: row.key }))
         });
         return { kind: 'batch', batch: computeRuntimeStateGuardedBatchWrite(batch) };
+    }
+
+    /**
+     * The fences a commit locks before its write, in key order: all but the last, which its write decides on first.
+     * Every commit takes its shared fences in that one order, so two commits never wait on each other's fence.
+     */
+    toFenceLockKeys(fenceKeys: ReadonlySet<string>): readonly string[] {
+        return this.mutations().filter((row) => fenceKeys.has(row.key)).slice(0, -1).map((row) => row.key);
     }
 
     /** Every touched row in key order, as the conditional write its observation calls for. */

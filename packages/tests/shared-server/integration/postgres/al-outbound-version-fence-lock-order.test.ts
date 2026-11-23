@@ -12,6 +12,7 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundCommitBundle
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundReadCommitFences } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 
 import { createOutboundMessage, readOutboundTestAdmission } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
@@ -33,10 +34,11 @@ interface GateHolder {
 }
 
 describe('Postgres outbound sender version fence lock order', () => {
-    // A bundle that rewrites a message's pending acknowledgement fences on the sender version and so locks it first.
-    // A control commit for the same message that wrote the version as a key-ordered effect could lock the pending
-    // acknowledgement first: each then waited on the other's row, and Postgres aborted one with an untyped deadlock.
-    postgresIt('serializes a pending-ack bundle and a late acknowledgement on the sender version as a typed conflict', async () => {
+    // A bundle that rewrites a message's pending acknowledgement fences on the message's version and the sender version;
+    // a control of the message fences on the message's version alone. Were the bundle to lock its message's version as
+    // a key-ordered effect, it could lock the pending acknowledgement first: each then waited on the other's row, and
+    // Postgres aborted one with an untyped deadlock. The bundle locks the message's version before its sender version.
+    postgresIt('serializes a pending-ack bundle and a late acknowledgement on the message version as a typed conflict', async () => {
         const storage = await createResourceInboxTestStorage('fence_lock_order', 6);
         try {
             await installRowGate(storage.sql);
@@ -162,18 +164,24 @@ async function seedTwoPeerObligation(store: FenceLockOrderStore): Promise<ALMess
     return message;
 }
 
-/** A later send of the same sender whose bundle also rewrites the obligation, as a repair re-send does. */
+/** A later commit of the message that rewrites its obligation, as a receipt's next window does. */
 async function readPendingAckBundle(
     store: FenceLockOrderStore,
     message: ALMessage
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
-    const admission = await readOutboundTestAdmission({
-        store,
-        message: createOutboundMessage('lock-order-resend'),
-        creationNow: () => Temporal.Now.instant(),
-        clock: { nowMs: () => Date.now() }
-    });
-    return { ...admission, mutations: [...admission.mutations, toPendingAck(message, 1)] };
+    const read = await store.readRepairMessage(message.id.msgId, (planned) => ({
+        msg: planned,
+        dropReasonCode: undefined,
+        lane: 'durable',
+        preparedMessages: []
+    }));
+    return {
+        senderId: message.id.senderId,
+        ...toALOutboundReadCommitFences({ originPeerId: message.id.senderId, msgId: message.id.msgId }, read),
+        mutations: [toPendingAck(message, 1)],
+        durableEffects: [],
+        endedTimeoutEffectIds: []
+    };
 }
 
 function toPendingAck(

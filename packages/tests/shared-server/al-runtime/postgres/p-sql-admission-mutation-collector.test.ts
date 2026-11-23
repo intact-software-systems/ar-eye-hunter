@@ -43,7 +43,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             { key: 'version:peer-1', value: { senderId: 'peer-1', version: 1 } },
             { key: 'version:peer-2', value: { senderId: 'peer-2', version: 2 } }
         ]);
-        const computed = collector.computeStateWrite(undefined)!;
+        const computed = collector.computeStateWrite(new Set())!;
         await repository.begin((transaction) => writePSqlAdmissionState(transaction, computed));
         expect((await repository.findEntry('admission', 'version:peer-2'))?.value).toBe('{"senderId":"peer-2","version":2}');
     });
@@ -125,7 +125,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
         expect(await collector.list('version:', decodeSenderVersion)).toEqual([]);
         await collector.set('version:peer-1', { senderId: 'peer-1', version: 2 });
-        const computed = collector.computeStateWrite(undefined)!;
+        const computed = collector.computeStateWrite(new Set())!;
         await repository.begin((transaction) => writePSqlAdmissionState(transaction, computed));
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toEqual({ senderId: 'peer-1', version: 2 });
 
@@ -151,7 +151,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             value: '{"senderId":"peer-1","version":2}',
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        const computed = collector.computeStateWrite(undefined)!;
+        const computed = collector.computeStateWrite(new Set())!;
         await expect(repository.begin((transaction) => writePSqlAdmissionState(transaction, computed))).rejects.toBeInstanceOf(
             RuntimeStateWriteConflictError
         );
@@ -172,7 +172,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         };
 
         await collector.set('version:peer-1', { senderId: 'peer-1', version: 1 });
-        const computed = collector.computeStateWrite(undefined)!;
+        const computed = collector.computeStateWrite(new Set())!;
         await expect(repository.begin((transaction) => writePSqlAdmissionState(transaction, computed))).rejects.toBe(unavailable);
         expect(await repository.findAllEntries('admission')).toEqual([]);
     });

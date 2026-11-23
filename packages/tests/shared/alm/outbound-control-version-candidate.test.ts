@@ -17,6 +17,7 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { toALOutboundMessageVersionKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundSentMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { computeALOutboundControlAdmission, type ALControlAdmissionRead } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
@@ -30,7 +31,7 @@ import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-p
 describe('outbound control version candidate', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('computes and validates the ready version from frozen observations', async () => {
+    it('computes the fence on its message alone from frozen observations, and validates the candidate', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const store = createALOutboundAdmissionStore({
             nowMs: Date.now,
@@ -69,7 +70,7 @@ describe('outbound control version candidate', () => {
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
             owner: 'self',
-            ownerVersion: Object.freeze({ senderId: 'self', version: 7 }),
+            messageVersion: Object.freeze({ msgId: message.id.msgId, version: 7 }),
             sent: Object.freeze(sent),
             unreceiptedRepairAudience: undefined,
             isRoomRepairedRelayedGapNack: false,
@@ -79,11 +80,13 @@ describe('outbound control version candidate', () => {
         const retention = normalizeALRuntimeStoreRetention();
         const candidate = computeALOutboundControlAdmission(read, retention);
         expect(candidate).toEqual(computeALOutboundControlAdmission(read, retention));
-        expect(candidate).toMatchObject({ nextVersion: { senderId: 'self', version: 8 } });
+        expect(candidate.messageFence).toEqual({
+            originPeerId: 'self',
+            msgId: message.id.msgId,
+            expectedVersion: 7,
+            expiresAtMs: sent.reference.expiresAtMs
+        });
         expect(validateALOutboundControlAdmission(candidate)).toEqual([]);
-        expect(validateALOutboundControlAdmission({ ...candidate, nextVersion: { senderId: 'self', version: 9 } })).toContainEqual(
-            expect.objectContaining({ code: 'malformed' })
-        );
     });
 
     it('refuses an acknowledgement past its message deadline even while its receipt is still retained', async () => {
@@ -127,7 +130,7 @@ describe('outbound control version candidate', () => {
             targetMsgId: message.id.msgId,
             nowMs,
             owner: 'self',
-            ownerVersion: { senderId: 'self', version: 1 },
+            messageVersion: { msgId: message.id.msgId, version: 1 },
             sent,
             unreceiptedRepairAudience: undefined,
             isRoomRepairedRelayedGapNack: false,
@@ -154,7 +157,7 @@ describe('outbound control version candidate', () => {
         ]);
     });
 
-    it('rejects a changed owner version before installing control history and accepts a fresh observation', async () => {
+    it('rejects a changed message version before installing control history and accepts a fresh observation', async () => {
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
         const namespace = 'control-version-test';
         const store = createALOutboundAdmissionStore({
@@ -198,7 +201,11 @@ describe('outbound control version candidate', () => {
         let injected = false;
         vi.spyOn(backend, 'write').mockImplementationOnce(async (apply) => {
             await write(async (tx) => {
-                await tx.set(`${namespace}:version:self`, { senderId: 'self', version: 2 }, Date.now() + 60_000);
+                await tx.set(
+                    toALOutboundMessageVersionKey({ namespace, originPeerId: 'self', msgId: message.id.msgId }),
+                    { msgId: message.id.msgId, version: 2 },
+                    Date.now() + 60_000
+                );
             });
             injected = true;
             return await write(apply);
@@ -208,7 +215,9 @@ describe('outbound control version candidate', () => {
         expect(injected).toBe(true);
         expect(await backend.read(`${namespace}:control:nacks:${message.id.msgId}`, (value) => value)).toBeUndefined();
         expect(await controlAdmission.admit(control, 'peer')).toEqual({ kind: 'committed' });
-        expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 3 });
+        expect(await backend.read(toALOutboundMessageVersionKey({ namespace, originPeerId: 'self', msgId: message.id.msgId }), (value) => value))
+            .toEqual({ msgId: message.id.msgId, version: 3 });
+        expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 1 });
     });
 });
 
@@ -221,8 +230,7 @@ describe('the recipient proof verdict as a read fact (S8-R5)', () => {
         };
         const candidate = computeALOutboundControlAdmission(refused, normalizeALRuntimeStoreRetention());
 
-        expect(validateALOutboundControlAdmission({ ...candidate, nextVersion: { senderId: 'self', version: 9 } })).toEqual([
-            { code: 'malformed', message: 'AL control version differs from its captured owner observation', class: 'refusal' },
+        expect(validateALOutboundControlAdmission(candidate)).toEqual([
             { code: 'unauthorized', message: 'AL control proof is refused: unknown-key', class: 'refusal' }
         ]);
     });
@@ -273,7 +281,7 @@ async function createNackRead(namespace: string): Promise<ALControlAdmissionRead
         targetMsgId: message.id.msgId,
         nowMs: 1_000,
         owner: 'self',
-        ownerVersion: { senderId: 'self', version: 7 },
+        messageVersion: { msgId: message.id.msgId, version: 7 },
         sent,
         unreceiptedRepairAudience: undefined,
         isRoomRepairedRelayedGapNack: false,

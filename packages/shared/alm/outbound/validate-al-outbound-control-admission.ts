@@ -37,15 +37,6 @@ export function validateALOutboundControlAdmission(
         return [toALOutboundRefusalIssue('AL control has no retained outbound message obligation')];
     }
     const issues: ALOutboundControlIssue[] = [];
-    if (
-        candidate.nextVersion?.senderId !== read.owner ||
-        !Number.isSafeInteger(candidate.nextVersion.version) ||
-        candidate.nextVersion.version !== (read.ownerVersion?.version ?? 0) + 1
-    ) {
-        issues.push(
-            toALOutboundRefusalIssue('AL control version differs from its captured owner observation', 'malformed')
-        );
-    }
     if (read.parsed.payload.toPeerId !== read.owner) {
         issues.push(toALOutboundRefusalIssue('AL control is addressed to another outbound message owner'));
     }

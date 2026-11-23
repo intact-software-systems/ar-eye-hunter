@@ -2,11 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
-import {
-    assertALAdmissionFence,
-    type ALAdmissionReadSession,
-    type ALAdmissionWorkBackend,
-    type ALAdmissionWorkWriteContext
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
 } from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
@@ -157,8 +156,10 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 }
 
-/** A commit's state rows and the work rows it holds, inserts and replaces, all computed before it begins. */
+/** A commit's fences to lock, state rows and the work rows it holds, inserts and replaces, computed before it begins. */
 interface PSqlAdmissionCommit {
+    readonly namespace: string;
+    readonly fenceLocks: readonly string[];
     readonly state: PSqlAdmissionStateWrite | undefined;
     readonly holds: readonly ResourceInboxObservation[];
     readonly inserts: readonly ResourceInboxEntryInsertValues[];
@@ -177,7 +178,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     private readonly workObservations = new Map<string, ResourceEntry | undefined>();
     private readonly claimedSlots = new Map<string, ResourceEntry>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
-    private fenceKey: string | undefined;
+    private readonly fenceKeys = new Set<string>();
 
     constructor(input: PSqlAdmissionWorkWriteBuffer.Input) {
         super(input.collector);
@@ -217,8 +218,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     }
 
     async setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void> {
-        assertALAdmissionFence(this.fenceKey, key);
-        this.fenceKey = key;
+        this.fenceKeys.add(key);
         await this.set(key, value, expireAtTimestamp);
     }
 
@@ -229,7 +229,9 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
             expected: this.workObservations.get(key)
         }));
         return {
-            state: this.computeStateWrite(this.fenceKey),
+            namespace: this.namespace,
+            fenceLocks: this.toFenceLockKeys(this.fenceKeys),
+            state: this.computeStateWrite(this.fenceKeys),
             holds: [...this.claimedSlots]
                 .filter(([key]) => !this.pendingWork.has(key))
                 .map(([, claimed]) => computeResourceInboxObservation(claimed)),
@@ -248,16 +250,21 @@ function hasPSqlAdmissionWrites(computed: PSqlAdmissionCommit): boolean {
 }
 
 /**
- * The state rows first, their fence before every other row, then one statement for every held claim and one for
- * every new work row; a row that moved since its observation rolls the commit back as a conflict.
+ * The fences but the last locked in key order, then the state rows with the last fence before every other row, then
+ * one statement for every held claim and one for every new work row; a row that moved since its observation rolls the
+ * commit back as a conflict.
  */
 async function writePSqlAdmissionCommit(
     sql: PSqlSql,
     computed: PSqlAdmissionCommit,
     now: () => Date
 ): Promise<void> {
+    const repository = createTransactionBoundPSqlRuntimeStateRepository(sql);
+    if (computed.fenceLocks.length > 0) {
+        await repository.lockEntriesInKeyOrder(computed.namespace, computed.fenceLocks);
+    }
     if (computed.state !== undefined) {
-        await writePSqlAdmissionState(createTransactionBoundPSqlRuntimeStateRepository(sql), computed.state);
+        await writePSqlAdmissionState(repository, computed.state);
     }
     const work = new PSqlResourceInboxEntryRepository(sql, now);
     if (

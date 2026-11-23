@@ -61,7 +61,7 @@ interface StoredQueueRow {
 
 // A WS lane claims every WS_OUTBOX row of its database, so each test runs on the API schema of its own.
 describe('Postgres outbound admission bundle', () => {
-    postgresIt('commits a 16-row WS group in one statement per kind of write, with every row it wrote before', async () => {
+    postgresIt('commits a 16-row WS group in one statement per kind of write after its fence lock, with every row it wrote before', async () => {
         await withRunStorage(async ({ sql, runId }) => {
             const log: StatementLog = { statements: [], transactions: 0 };
             const lane = createWsDequeueLane(recordStatements(sql, log, null), runId);
@@ -93,8 +93,10 @@ describe('Postgres outbound admission bundle', () => {
             expect(await readQueueExpiries(sql, proved)).toEqual(proved.map(toQueueExpiries));
             const commits = readVersionCommits(log, lane);
             expect(commits).toHaveLength(1);
+            // The group's new messages hold no version row yet, so its fence lock finds none to lock.
             expect(commits[0]!.map(({ text, rowCount }) => [toStatementKind(text), rowCount])).toEqual([
-                ['state', 2 * GROUP_SIZE + 1],
+                ['fence-lock', 0],
+                ['state', 3 * GROUP_SIZE + 1],
                 ['hold', GROUP_SIZE],
                 ['insert', 2 * GROUP_SIZE]
             ]);
@@ -315,6 +317,11 @@ function toExpectedStateRows(lane: WsDequeueLane, messages: readonly ALMessage[]
             value: JSON.stringify(lane.senderId),
             revision: 0
         })),
+        ...messages.map((message) => ({
+            key: `msg-version:${JSON.stringify([lane.senderId, message.id.msgId])}`,
+            value: JSON.stringify({ msgId: message.id.msgId, version: 1 }),
+            revision: 0
+        })),
         ...messages.map((message) => ({ key: `sent:${message.id.msgId}`, value: undefined, revision: 0 })),
         { key: `version:${lane.senderId}`, value: JSON.stringify({ senderId: lane.senderId, version: 1 }), revision: 0 }
     ].sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
@@ -420,7 +427,7 @@ function createWorkEntry(runId: string): ResourceEntry {
 
 function toStatementKind(text: string): string {
     if (text.includes('runtime_state_store')) {
-        return 'state';
+        return text.includes('for update') ? 'fence-lock' : 'state';
     }
     return text.startsWith('insert into resource_inbox') ? 'insert' : text.includes('for update') ? 'hold' : text;
 }

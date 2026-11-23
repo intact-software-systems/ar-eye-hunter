@@ -26,7 +26,9 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
     toALOutboundMessageOwnerKey,
-    toALOutboundVersionKey
+    toALOutboundMessageVersionKey,
+    toALOutboundVersionKey,
+    type ALOutboundPendingAckRef
 } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
@@ -103,7 +105,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         expect(await fixture.readAdmissionState()).toBe(before);
     });
 
-    it('names the sender version as the fence of each commit', async () => {
+    it('names the sender version and the version of its message as the fences of each commit', async () => {
         const fixture = await createFenceFixture(storage);
         const bundle = await readOutboundTestAdmission({
             store: fixture.store,
@@ -126,20 +128,27 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
 
         expect(await fixture.store.commitBundle(bundle)).toBe('committed');
 
-        expect(fences).toEqual([toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId)]);
+        expect(fences).toEqual([
+            toALOutboundVersionKey(FENCE_NAMESPACE, bundle.senderId),
+            toALOutboundMessageVersionKey({
+                namespace: FENCE_NAMESPACE,
+                originPeerId: bundle.message.originPeerId,
+                msgId: bundle.message.msgId
+            })
+        ]);
     });
 
-    it('rejects a second fence in one commit and writes nothing', async () => {
+    it('writes every fence one commit names, and a fence named again once', async () => {
         const fixture = await createFenceFixture(storage);
-        const before = await fixture.readAdmissionState();
 
-        await expect(fixture.backend.write(async (transaction) => {
+        await fixture.backend.write(async (transaction) => {
             await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 1);
             await transaction.setFence(`${FENCE_NAMESPACE}:version:first`, 2);
             await transaction.setFence(`${FENCE_NAMESPACE}:version:second`, 1);
-        })).rejects.toThrow('An admission commit is fenced on one row');
+        });
 
-        expect(await fixture.readAdmissionState()).toBe(before);
+        expect(await fixture.backend.read(`${FENCE_NAMESPACE}:version:first`, (value) => value)).toBe(2);
+        expect(await fixture.backend.read(`${FENCE_NAMESPACE}:version:second`, (value) => value)).toBe(1);
     });
 
     it('aborts a moved supersedence observation without a write or a revision bump', async () => {
@@ -207,6 +216,79 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         });
 
         expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it.each(['control', 'send'] as const)(
+        'commits a control of one message while a %s of another message of its sender lands between its read and its write',
+        async (sibling) => {
+            const fixture = await createFenceFixture(storage);
+            const control = createFenceControlAdmission(fixture);
+            const message = await seedControlObligation(fixture.store);
+            const other = await seedControlObligation(fixture.store);
+            const write = fixture.backend.write.bind(fixture.backend);
+            vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+                expect(await commitSiblingOf(fixture, control, { sibling, other })).toBe('committed');
+                return await write(operation);
+            });
+
+            expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+
+            expect((await fixture.store.readReceiptState(toFenceReceipt(message)))?.ackedPeerIds).toEqual(['peer-1']);
+        }
+    );
+
+    it('commits a send of one message decided before a control of another message of its sender committed', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const send = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('decided-before-the-control'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await fixture.store.commitBundle(send)).toBe('committed');
+    });
+
+    it('aborts a control whose message a commit of its sender wrote between its read and its write', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const write = fixture.backend.write.bind(fixture.backend);
+        let before = '';
+        vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
+            expect(await fixture.store.commitOutsideAudience(toFenceReceipt(message), ['peer-1'])).toBe('committed');
+            before = await fixture.readAdmissionState();
+            return await write(operation);
+        });
+
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+
+        expect(await fixture.readAdmissionState()).toBe(before);
+    });
+
+    it('aborts a commit of a message decided before a control of that message committed', async () => {
+        const fixture = await createFenceFixture(storage);
+        const control = createFenceControlAdmission(fixture);
+        const message = await seedControlObligation(fixture.store);
+        const decided = toALOutboundReadMessageEndBundle<OutboundTestPayload>(
+            message,
+            await fixture.store.readRepairMessage(message.id.msgId, (planned) => ({
+                msg: planned,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: []
+            }))
+        );
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'committed' });
+        const before = await fixture.readAdmissionState();
+
+        expect(await fixture.store.commitBundle(decided)).toBe('conflict');
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -530,6 +612,36 @@ function toDeliveredAck(message: ALMessage, observedAtMs: number): ALMessage {
             status: 'delivered',
             observedAtEpochMs: observedAtMs,
             carrier: 'ws'
+        })
+    );
+}
+
+function toFenceReceipt(message: ALMessage): ALOutboundPendingAckRef {
+    return { originPeerId: message.id.senderId, msgId: message.id.msgId };
+}
+
+interface FenceSiblingCommit {
+    readonly sibling: 'control' | 'send';
+    /** A committed message of the same sender, whose receipt a sibling control acknowledges. */
+    readonly other: ALMessage;
+}
+
+/** A commit of the sender that writes none of the rows of the message under test: an ACK of another one, or a send. */
+async function commitSiblingOf(
+    fixture: FenceFixture,
+    control: ALOutboundControlAdmission<OutboundTestPayload>,
+    commit: FenceSiblingCommit
+): Promise<'committed' | 'conflict' | 'expired'> {
+    if (commit.sibling === 'control') {
+        const admitted = await control.admit(toDeliveredAck(commit.other, Date.now()), 'peer');
+        return admitted.kind === 'committed' ? 'committed' : 'conflict';
+    }
+    return await fixture.store.commitBundle(
+        await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('sibling-send'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
         })
     );
 }

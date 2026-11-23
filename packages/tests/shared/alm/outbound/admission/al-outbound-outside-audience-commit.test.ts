@@ -35,6 +35,7 @@ async function createOutsideFixture(stored: { readonly ended: boolean; } = { end
     expect(
         await store.commitBundle({
             senderId: ORIGIN,
+            message: { originPeerId: ORIGIN, msgId: MSG_ID, expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending(MSG_ID), expireAtTimestamp: LIVE_UNTIL_MS }],
             durableEffects: [],
             endedTimeoutEffectIds: []
@@ -137,6 +138,7 @@ describe('the server records its own skipped recipients outside its receipt', ()
                 await fixture.store.commitBundle({
                     senderId: ORIGIN,
                     expectedVersion: 1,
+                    message: { originPeerId: ORIGIN, msgId: 's-event-2', expectedVersion: undefined, expiresAtMs: undefined },
                     mutations: [{ kind: 'set-pending-ack', originPeerId: ORIGIN, snapshot: toPending('s-event-2'), expireAtTimestamp: LIVE_UNTIL_MS }],
                     durableEffects: [],
                     endedTimeoutEffectIds: []
@@ -168,6 +170,7 @@ describe('the server records its own skipped recipients outside its receipt', ()
             await fixture.store.commitBundle({
                 senderId: ORIGIN,
                 expectedVersion: 1,
+                message: { originPeerId: ORIGIN, msgId: MSG_ID, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [{
                     kind: 'set-pending-ack',
                     originPeerId: ORIGIN,

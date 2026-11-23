@@ -180,6 +180,35 @@ describe('AL admission persistence-ready queue work', () => {
         expect(await backend.read('effect:b', (value) => value)).toBe('b');
     });
 
+    it('locks every named fence but the last in key order in one statement, then writes the rows on the last', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
+        await backend.write(async (write) => {
+            await write.set('version:sender', 0);
+            await write.set('msg-version:second', 0);
+        });
+        const recorded = recordPGliteStatements(sql.raw);
+        onTestFinished(() => recorded.restore());
+
+        await backend.write(async (write) => {
+            await write.set('effect:a', 'a');
+            await write.setFence('version:sender', 1);
+            await write.setFence('msg-version:second', 1);
+            await write.setFence('msg-version:first', 1);
+            await write.setFence('msg-version:first', 1);
+        });
+
+        const [locks, stateWrite, ...rest] = recorded.inTransaction();
+        expect(rest).toEqual([]);
+        expect(locks!.query).toContain('for update');
+        expect(locks!.params).toContainEqual(['msg-version:first', 'msg-version:second']);
+        expect(stateWrite!.params[0]).toMatchObject({ operation: 'update', key: 'version:sender', expectedRevision: 0 });
+        for (const key of ['msg-version:first', 'msg-version:second', 'version:sender']) {
+            expect(await backend.read(key, (value) => value)).toBe(1);
+        }
+        expect(await backend.read('effect:a', (value) => value)).toBe('a');
+    });
+
     it('rejects a commit whose named fence writes no row instead of fencing it on another row', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });

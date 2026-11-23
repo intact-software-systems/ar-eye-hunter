@@ -1,8 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundRepairReadDto
+import type { ALOutboundPendingAckRef } from '../admission/al-outbound-admission-keys.ts';
+import {
+    toALOutboundMessageFence,
+    type ALOutboundCommitBundle,
+    type ALOutboundMessageVersion,
+    type ALOutboundRepairReadDto
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { toALOutboundEndedTimeoutEffectIds } from '../control/write-al-outbound-timeout-completions.ts';
@@ -17,6 +20,7 @@ export interface ALOutboundMessageEndInput {
      */
     readonly stored: ALStoredOutboundMessage | undefined;
     readonly expectedVersion: number | undefined;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     /** The open receipt whose timer the end completes; undefined when none is open. */
     readonly openReceipt: ALOutboundPendingAckSnapshot | undefined;
     readonly firstHopWait: ALOutboundFirstHopWaitSnapshot | undefined;
@@ -34,6 +38,11 @@ export function toALOutboundMessageEndBundle<TPrepared>(
     return {
         senderId: input.senderId,
         expectedVersion: input.expectedVersion,
+        message: toALOutboundMessageFence(
+            { originPeerId: input.senderId, msgId },
+            input.messageVersion,
+            stored?.reference.expiresAtMs
+        ),
         mutations: [
             { kind: 'delete-repair-attempt', msgId },
             ...(stored === undefined ? [] : [{ kind: 'end-sent-message', stored } as const]),
@@ -47,8 +56,19 @@ export function toALOutboundMessageEndBundle<TPrepared>(
 /** What a dispatch or repair read holds of the message its commit ends: both reads name these alike. */
 export type ALOutboundMessageEndRead = Pick<
     ALOutboundRepairReadDto<never>,
-    'storedMessage' | 'clientRecord' | 'pendingAck' | 'firstHopWait'
+    'storedMessage' | 'clientRecord' | 'messageVersion' | 'pendingAck' | 'firstHopWait'
 >;
+
+/** The two versions a commit of one message read fences on: its sender's and the message's own. */
+export function toALOutboundReadCommitFences(
+    message: ALOutboundPendingAckRef,
+    read: Pick<ALOutboundMessageEndRead, 'storedMessage' | 'clientRecord' | 'messageVersion'>
+): Pick<ALOutboundCommitBundle<never>, 'expectedVersion' | 'message'> {
+    return {
+        expectedVersion: read.clientRecord?.version,
+        message: toALOutboundMessageFence(message, read.messageVersion, read.storedMessage?.reference.expiresAtMs)
+    };
+}
 
 /** The end of `msg` as a read holds it, fenced on the sender version that read saw. */
 export function toALOutboundReadMessageEndBundle<TPrepared>(
@@ -60,6 +80,7 @@ export function toALOutboundReadMessageEndBundle<TPrepared>(
         msgId: msg.id.msgId,
         stored: read.storedMessage,
         expectedVersion: read.clientRecord?.version,
+        messageVersion: read.messageVersion,
         openReceipt: read.pendingAck,
         firstHopWait: read.firstHopWait
     });

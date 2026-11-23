@@ -31,11 +31,11 @@ export interface ALAdmissionWorkWriteContext extends ALAdmissionWriteContext, AL
     /** Records a computed entry against the exact slot already captured by readWork or readClaimedWork. */
     writeWork(entry: ResourceEntry): void;
     /**
-     * Sets the row that fences the whole commit, as `set` does. A backend that writes the commit's rows in one
-     * statement writes this one first and every other row only on it, so a fence that moved writes nothing. A
-     * commit names at most one fence, and every commit that writes a row another commit fences on names that row
-     * as its fence too, so each of them locks it first. A commit that names no fence is fenced on its first row in
-     * key order.
+     * Sets a row that fences the whole commit, as `set` does; naming a row again is the same fence. A backend that
+     * writes the commit's rows in one statement writes its fences first, one at a time in key order, and every other
+     * row only on the last of them, so a fence that moved writes nothing. Every commit that writes a row another
+     * commit fences on names that row as a fence too, so all of them lock their shared fences in one order before any
+     * other row. A commit that names no fence is fenced on its first row in key order.
      */
     setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void>;
 }
@@ -52,11 +52,4 @@ export interface ALAdmissionWorkBackend extends ALAdmissionBackend {
         operation: (context: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs?: number | null
     ): Promise<T>;
-}
-
-/** A commit names at most one fence; naming the same row again is the same fence. */
-export function assertALAdmissionFence(named: string | undefined, key: string): void {
-    if (named !== undefined && named !== key) {
-        throw new TypeError('An admission commit is fenced on one row');
-    }
 }

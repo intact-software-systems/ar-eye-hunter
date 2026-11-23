@@ -22,6 +22,7 @@ import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-out
 import {
     toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
+    toALOutboundMessageVersionKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
@@ -29,6 +30,7 @@ import {
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
 import type {
+    ALOutboundMessageFence,
     ALOutboundMessageReadDto,
     ALOutboundOrderingHead,
     ALOutboundSentPositions
@@ -330,6 +332,26 @@ export class ALOutboundAdmissionMutations {
                 await transaction.set(write.key, write.value, write.expireAtTimestamp);
             }
         }
+    }
+
+    /**
+     * Moves the message's version one past the version its commit's decision read, as a fence of that commit: a commit
+     * of another message of the sender never moves it, so a control of this message never conflicts with one.
+     */
+    async writeMessageVersion(
+        transaction: ALAdmissionWorkWriteContext,
+        fence: ALOutboundMessageFence,
+        nowMs: number
+    ): Promise<void> {
+        await transaction.setFence(
+            toALOutboundMessageVersionKey({
+                namespace: this.namespace,
+                originPeerId: fence.originPeerId,
+                msgId: fence.msgId
+            }),
+            { msgId: fence.msgId, version: (fence.expectedVersion ?? 0) + 1 },
+            this.computeMessageRowExpiryMs(fence.expiresAtMs, nowMs, this.retention.versionTtlMs)
+        );
     }
 
     private async readMessageIdentityIssue(

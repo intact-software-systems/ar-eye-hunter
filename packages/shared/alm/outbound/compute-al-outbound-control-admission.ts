@@ -17,9 +17,11 @@ import type {
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
-import type {
-    ALOutboundRepairHint,
-    ALOutboundVersionedClientRecord
+import {
+    toALOutboundMessageFence,
+    type ALOutboundMessageFence,
+    type ALOutboundMessageVersion,
+    type ALOutboundRepairHint
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
@@ -76,7 +78,8 @@ export interface ALControlAdmissionRead {
     readonly targetMsgId: string;
     readonly nowMs: number;
     readonly owner?: string;
-    readonly ownerVersion?: ALOutboundVersionedClientRecord;
+    /** The version of the message's rows, which every commit that writes one of them moves; read with its owner. */
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
     /**
@@ -128,8 +131,11 @@ export interface ALControlAdmissionCandidate {
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
-    readonly versionExpireAtTimestamp: number;
-    readonly nextVersion: ALOutboundVersionedClientRecord | undefined;
+    /**
+     * The control's commit is fenced on its message alone: a commit of another message of the owner never moves it.
+     * Undefined without an owner, whose control validation refuses.
+     */
+    readonly messageFence: ALOutboundMessageFence | undefined;
 }
 
 export function computeALOutboundControlAdmission(
@@ -161,8 +167,11 @@ export function computeALOutboundControlAdmission(
             ),
         repairEffect: toRepairHintEffect(read),
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
-        versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs),
-        nextVersion: read.owner ? { senderId: read.owner, version: (read.ownerVersion?.version ?? 0) + 1 } : undefined
+        messageFence: read.owner === undefined ? undefined : toALOutboundMessageFence(
+            { originPeerId: read.owner, msgId: read.targetMsgId },
+            read.messageVersion,
+            read.sent?.reference.expiresAtMs
+        )
     };
 }
 

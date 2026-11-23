@@ -140,6 +140,7 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
             bundle: {
                 senderId: MESSAGE.id.senderId,
                 expectedVersion: 1,
+                message: { originPeerId: MESSAGE.id.senderId, msgId: MSG_ID, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [
                     toCompletingSentMessage(),
                     {
@@ -167,6 +168,7 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
             bundle: {
                 senderId: MESSAGE.id.senderId,
                 expectedVersion: 1,
+                message: { originPeerId: MESSAGE.id.senderId, msgId: MSG_ID, expectedVersion: 1, expiresAtMs: undefined },
                 mutations: [{ kind: 'delete-repair-attempt', msgId: MSG_ID }],
                 durableEffects: [],
                 endedTimeoutEffectIds: []

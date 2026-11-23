@@ -131,6 +131,24 @@ export class PSqlRuntimeStateRepository
         return await writeRuntimeStateGuardedBatch(this.sql, computed);
     }
 
+    /**
+     * Locks every stored row of `keys` for the rest of the transaction, one after another in key order, so two
+     * transactions that lock rows they share always take them in one order. An absent key locks nothing.
+     */
+    async lockEntriesInKeyOrder(namespace: string, keys: readonly string[]): Promise<void> {
+        if (this.sqlState.kind !== 'transaction') {
+            throw new Error('Runtime state rows can be locked only inside a transaction.');
+        }
+        await this.sql`
+            select 1
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key = any(${[...new Set(keys)]}::text[])
+            order by store_key collate "C"
+            for update
+        `;
+    }
+
     async findEntry(
         namespace: string,
         key: string

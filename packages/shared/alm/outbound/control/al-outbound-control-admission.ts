@@ -199,8 +199,8 @@ export class ALOutboundControlAdmission<TPrepared> {
     ): Promise<boolean> {
         try {
             return await this.backend.write(async (tx) => {
-                if (!await this.hasCurrentControlFence(tx, computed.read)) {
-                    throw new ALAdmissionBackendConflictError('AL control ownership moved before its commit');
+                if (!await this.hasCurrentControlFence(tx, computed)) {
+                    throw new ALAdmissionBackendConflictError('AL control message moved before its commit');
                 }
                 if ((await this.effectStore.validateObservedWork(tx, effects)).length > 0) {
                     throw new ALAdmissionBackendConflictError('AL control work moved before its commit');
@@ -405,21 +405,18 @@ export class ALOutboundControlAdmission<TPrepared> {
         }
     }
 
+    /** The message's owner and version are still the ones its decision read: no commit wrote one of its rows since. */
     private async hasCurrentControlFence(
         tx: ALAdmissionWorkWriteContext,
-        read: ALControlAdmissionRead
+        computed: ALControlAdmissionCandidate
     ): Promise<boolean> {
-        const currentOwner = await tx.read(
-            toALOutboundMessageOwnerKey(this.namespace, read.targetMsgId),
-            decodeALAdmissionString
-        );
-        if (currentOwner !== read.owner) {
-            return false;
-        }
-        const currentVersion = currentOwner
-            ? await this.reads.readClientRecord(tx, currentOwner)
-            : undefined;
-        return currentVersion?.version === read.ownerVersion?.version;
+        const { read } = computed;
+        const fence = computed.messageFence!;
+        const [currentOwner, currentVersion] = await Promise.all([
+            tx.read(toALOutboundMessageOwnerKey(this.namespace, read.targetMsgId), decodeALAdmissionString),
+            this.reads.readMessageVersion(tx, fence)
+        ]);
+        return currentOwner === read.owner && currentVersion?.version === fence.expectedVersion;
     }
 
     private async applyControlAdmission(
@@ -445,11 +442,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.remove(toALOutboundFirstHopWaitKey(this.namespace, read.targetMsgId));
         }
         await writeALOutboundTimeoutCompletions(tx, this.namespace, candidate.endedTimeoutEffectIds);
-        await tx.setFence(
-            toALOutboundVersionKey(this.namespace, read.owner!),
-            candidate.nextVersion!,
-            candidate.versionExpireAtTimestamp
-        );
+        await this.mutations.writeMessageVersion(tx, candidate.messageFence!, read.nowMs);
     }
 
     private async writePendingAckChange(

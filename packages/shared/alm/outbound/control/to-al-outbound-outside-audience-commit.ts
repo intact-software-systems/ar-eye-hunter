@@ -1,8 +1,10 @@
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type { ALOutboundPendingAckRef } from '../admission/al-outbound-admission-keys.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundVersionedClientRecord
+import {
+    toALOutboundMessageFence,
+    type ALOutboundCommitBundle,
+    type ALOutboundMessageVersion,
+    type ALOutboundVersionedClientRecord
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { acceptALOutboundOutsideAudienceNack } from '../transition-al-outbound-pending-ack.ts';
@@ -10,6 +12,7 @@ import { acceptALOutboundOutsideAudienceNack } from '../transition-al-outbound-p
 /** What the server's own receipt holds, read in one session before it records recipients outside it. */
 export interface ALOutboundOutsideAudienceSurface {
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     readonly pending: ALOutboundPendingAckSnapshot | undefined;
     readonly stored: ALStoredOutboundMessage | undefined;
 }
@@ -46,6 +49,7 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
         bundle: {
             senderId: receipt.originPeerId,
             expectedVersion: input.clientRecord?.version,
+            message: toALOutboundMessageFence(receipt, input.messageVersion, stored.reference.expiresAtMs),
             mutations: [{
                 kind: 'set-pending-ack',
                 originPeerId: receipt.originPeerId,

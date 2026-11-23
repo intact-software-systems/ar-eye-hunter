@@ -13,6 +13,7 @@ import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
+import { toALOutboundReadCommitFences } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 
 import {
@@ -217,7 +218,7 @@ async function endMessage(fixture: ExhaustionFixture): Promise<void> {
     expect(
         await fixture.stores.admissionStore.commitBundle({
             senderId: fixture.message.id.senderId,
-            expectedVersion: read.clientRecord?.version,
+            ...toALOutboundReadCommitFences({ originPeerId: fixture.message.id.senderId, msgId: fixture.message.id.msgId }, read),
             mutations: [{ kind: 'end-sent-message', stored: read.storedMessage! }],
             durableEffects: [],
             endedTimeoutEffectIds: []

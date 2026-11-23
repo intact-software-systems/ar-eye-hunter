@@ -59,18 +59,25 @@ const FIRST_HOP_WAIT: ALOutboundFirstHopWaitSnapshot = {
 };
 
 describe('the bundle that ends a message', () => {
-    it('keeps the open receipt row, ends the repair count, the wait and both timers, and marks the row, under the given fence', () => {
+    it('keeps the open receipt row, ends the repair count, the wait and both timers, and marks the row, under the given fences', () => {
         const bundle = toALOutboundMessageEndBundle({
             senderId: 'sender',
             msgId: 'ending',
             stored: STORED,
             expectedVersion: 7,
+            messageVersion: { msgId: 'ending', version: 3 },
             openReceipt: OPEN_RECEIPT,
             firstHopWait: FIRST_HOP_WAIT
         });
 
         expect(bundle.senderId).toBe('sender');
         expect(bundle.expectedVersion).toBe(7);
+        expect(bundle.message).toEqual({
+            originPeerId: 'sender',
+            msgId: 'ending',
+            expectedVersion: 3,
+            expiresAtMs: STORED.reference.expiresAtMs
+        });
         expect(bundle.mutations).toEqual([
             { kind: 'delete-repair-attempt', msgId: 'ending' },
             { kind: 'end-sent-message', stored: STORED },
@@ -89,6 +96,7 @@ describe('the bundle that ends a message', () => {
             msgId: 'ending',
             stored: STORED,
             expectedVersion: undefined,
+            messageVersion: undefined,
             openReceipt: undefined,
             firstHopWait: undefined
         });
@@ -106,6 +114,7 @@ describe('the bundle that ends a message', () => {
             msgId: 'ending',
             stored: undefined,
             expectedVersion: 7,
+            messageVersion: { msgId: 'ending', version: 3 },
             openReceipt: OPEN_RECEIPT,
             firstHopWait: FIRST_HOP_WAIT
         });

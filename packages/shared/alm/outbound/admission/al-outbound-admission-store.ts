@@ -111,6 +111,28 @@ export interface ALOutboundVersionedClientRecord {
     readonly version: number;
 }
 
+/** The version of one message's rows: every commit that writes any of them moves it. */
+export interface ALOutboundMessageVersion {
+    readonly msgId: string;
+    readonly version: number;
+}
+
+/** What a commit of one message fences on: the version of it the commit's decision read. */
+export interface ALOutboundMessageFence extends ALOutboundPendingAckRef {
+    readonly expectedVersion: number | undefined;
+    /** The message deadline: a memory pair keeps the version row as long as the message's other rows, no longer. */
+    readonly expiresAtMs: number | undefined;
+}
+
+/** The fence a commit of one message names: the version of it the commit's decision read, and its deadline. */
+export function toALOutboundMessageFence(
+    message: ALOutboundPendingAckRef,
+    read: ALOutboundMessageVersion | undefined,
+    expiresAtMs: number | undefined
+): ALOutboundMessageFence {
+    return { originPeerId: message.originPeerId, msgId: message.msgId, expectedVersion: read?.version, expiresAtMs };
+}
+
 export type ALOutboundPreparedMessageDecoder<TPrepared> = (
     value: unknown,
     msg: ALMessage,
@@ -242,6 +264,7 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly msg: ALMessage;
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
     /** The head this read moves its owned track to: a minted sequence or a stated one above it; undefined for none. */
     readonly orderingHead: ALOutboundOrderingHead | undefined;
@@ -269,6 +292,7 @@ export interface ALOutboundRepairReadDto<TPrepared> {
     readonly msgId: string;
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     /** The fenced sent row; its reference carries the message deadline that bounds the receipt. */
     readonly storedMessage: ALStoredOutboundMessage | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
@@ -367,6 +391,8 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly claimedCanonical?: ResourceEntry;
     readonly senderId: string;
     readonly expectedVersion?: number;
+    /** The message whose rows the bundle writes, which a control of that message fences on too. */
+    readonly message: ALOutboundMessageFence;
     readonly canonicalEntry?: ResourceEntry;
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
@@ -772,11 +798,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         receipt: ALOutboundPendingAckRef,
         recipientPeerIds: readonly string[]
     ): Promise<'committed' | 'conflict' | 'absent'> {
-        const surface = await this.backend.readWithin(async (session) => ({
-            clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
-            pending: await this.reads.readPendingAck(session, receipt),
-            stored: await this.reads.readStoredMessage(session, receipt.msgId)
-        }));
+        const surface = await this.backend.readWithin(async (session) => {
+            const [clientRecord, messageVersion] = await Promise.all([
+                this.reads.readClientRecord(session, receipt.originPeerId),
+                this.reads.readMessageVersion(session, receipt)
+            ]);
+            return {
+                clientRecord,
+                messageVersion,
+                pending: await this.reads.readPendingAck(session, receipt),
+                stored: await this.reads.readStoredMessage(session, receipt.msgId)
+            };
+        });
         const commit = toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds });
         if (commit.status !== 'write') {
             return commit.status;
@@ -796,12 +829,17 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         receipt: ALOutboundReceiptAdmissionReadInput
     ): Promise<ALOutboundReceiptAdmissionSurface> {
         return await this.backend.readWithin(async (session) => {
+            const [clientRecord, messageVersion] = await Promise.all([
+                this.reads.readClientRecord(session, receipt.originPeerId),
+                this.reads.readMessageVersion(session, receipt)
+            ]);
             const stored = await this.reads.readStoredMessage(session, receipt.msgId);
             return {
                 stored,
                 pending: await this.reads.readReceiptState(session, receipt),
                 firstHopWait: await this.reads.readFirstHopWait(session, receipt.msgId),
-                clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
+                clientRecord,
+                messageVersion,
                 trackPositions: await this.reads.readReceiptTrackPositions(session, receipt, stored)
             };
         });
@@ -883,7 +921,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         if (hasSharedALOutboundGroupWrite(candidates)) {
             return 'conflict';
         }
-        return await this.writeCommit(candidates);
+        return await this.writeCommit(candidates, nowMs);
     }
 
     private computeCommitCandidate(
@@ -929,9 +967,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         });
     }
 
-    /** `candidates` is one non-empty group: every bundle shares the sender and the version it expects. */
+    /**
+     * `candidates` is one non-empty group: every bundle shares the sender and the version it expects. Its versions keep
+     * the expiry its rows were computed with at `nowMs`.
+     */
     private async writeCommit(
-        candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
+        candidates: readonly ALOutboundCommitCandidate<TPrepared>[],
+        nowMs: number
     ): Promise<'committed' | 'conflict' | 'expired'> {
         const { bundle, versionExpireAt } = candidates[0]!;
         const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
@@ -961,6 +1003,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 await this.mutations.writeStateWrites(tx, mutations);
                 await writeALOutboundTimeoutCompletions(tx, this.namespace, endedTimeoutEffectIds);
                 await tx.setFence(versionKey, version, versionExpireAt);
+                for (const candidate of candidates) {
+                    await this.mutations.writeMessageVersion(tx, candidate.bundle.message, nowMs);
+                }
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));
         }
@@ -1007,18 +1052,22 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
-    /** One bundle's pending-admission row, observed effect rows, guarded shared rows and message identity. */
+    /** One bundle's message version, pending-admission row, observed effect rows, guarded shared rows and message identity. */
     private async readBundleFenceError(
         tx: ALAdmissionWorkWriteContext,
         candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<Error | undefined> {
         const { bundle, effects, mutations } = candidate;
-        const [pending, issues, guardConflict, identityConflict] = await Promise.all([
+        const [messageVersion, pending, issues, guardConflict, identityConflict] = await Promise.all([
+            this.reads.readMessageVersion(tx, bundle.message),
             bundle.pendingAdmission ? tx.readWork(bundle.pendingAdmission.key) : undefined,
             this.effectStore.validateObservedWork(tx, effects),
             this.mutations.readGuardConflict(tx, mutations),
             this.mutations.readMessageIdentityConflict(tx, bundle.mutations)
         ]);
+        if (messageVersion?.version !== bundle.message.expectedVersion) {
+            return new ALAdmissionBackendConflictError('Outbound message version changed');
+        }
         if (bundle.pendingAdmission && (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission))) {
             return new ALAdmissionBackendConflictError('Outbound pending admission changed');
         }
@@ -1068,6 +1117,7 @@ function hasSharedALOutboundGroupWrite<TPrepared>(
     const written = new Set<string>();
     for (const candidate of candidates) {
         const keys = new Set([
+            `message:${JSON.stringify([candidate.bundle.message.originPeerId, candidate.bundle.message.msgId])}`,
             ...candidate.mutations.map((write) => write.key),
             ...candidate.effects.map((effect) => toKeyAsString(effect.entry.key)),
             ...candidate.canonicalWrites.map((write) => toKeyAsString(write.entry.key))

@@ -159,7 +159,7 @@ test('PGlite auth and AL production writers roll back sibling conditional mutati
         });
         await admission.set('sibling-a', { value: 'a' }, FUTURE_MS);
         await admission.set('sibling-b', { value: 'b' }, FUTURE_MS);
-        const computed = admission.computeStateWrite(undefined)!;
+        const computed = admission.computeStateWrite(new Set())!;
         await runtime.insertIfAbsent(
             { namespace: 'al-admission-rollback', key: 'sibling-b', value: JSON.stringify({ collision: true }), expireAtTimestamp: FUTURE_MS }
         );

@@ -11,6 +11,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { ALOutboundRepairRetransmission } from '@shared/alm/outbound/al-outbound-repair-retransmission.ts';
+import { toALOutboundReadCommitFences } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -180,7 +181,7 @@ function completeReceiptAfterNextRead(stores: OutboundTestStores, message: Retur
         const read = await readRepairMessage(msgId, planner);
         await stores.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            expectedVersion: read.clientRecord?.version,
+            ...toALOutboundReadCommitFences({ originPeerId: message.id.senderId, msgId }, read),
             mutations: [{ kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId }],
             durableEffects: [],
             endedTimeoutEffectIds: []

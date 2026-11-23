@@ -1027,6 +1027,7 @@ function endMessageAfterNextCommit(
                 msgId: 'message',
                 stored: read.storedMessage,
                 expectedVersion: read.clientRecord?.version,
+                messageVersion: read.messageVersion,
                 openReceipt: read.pendingAck,
                 firstHopWait: read.firstHopWait
             }))

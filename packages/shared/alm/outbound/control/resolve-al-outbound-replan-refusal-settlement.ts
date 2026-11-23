@@ -10,7 +10,7 @@ export interface ToALOutboundReplanRefusalComputedInput<TPrepared> {
     readonly computed: ALOutboundComputedDto<TPrepared>;
     readonly read: Pick<
         ALOutboundMessageReadDto<TPrepared>,
-        'msg' | 'clientRecord' | 'storedMessage' | 'pendingAck' | 'firstHopWait'
+        'msg' | 'clientRecord' | 'messageVersion' | 'storedMessage' | 'pendingAck' | 'firstHopWait'
     >;
     readonly intent: ALOutboundComputeIntent;
 }
@@ -42,7 +42,7 @@ export function resolveALOutboundReplanRefusalSettlement(
 }
 
 /**
- * The commit a dequeue or retransmit makes of a refusal its site settles: it ends the message under the sender version
+ * The commit a dequeue or retransmit makes of a refusal its site settles: it ends the message under the versions
  * its decision read, so a same-sender commit since conflicts and the retried work decides again, and its success states
  * the refusal. A first admission commits nothing: the dispatch refuses it at once. Any other drop keeps its verdict alone.
  */

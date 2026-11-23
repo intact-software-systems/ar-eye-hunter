@@ -45,6 +45,7 @@ describe('Postgres AL outbound effect claims', () => {
             const nowMs = Date.now();
             await first.admissionStore.commitBundle({
                 senderId: 'sender',
+                message: { originPeerId: 'sender', msgId: 'receipt-timeout', expectedVersion: undefined, expiresAtMs: undefined },
                 mutations: [],
                 durableEffects: [{
                     effectId: 'receipt-timeout',
