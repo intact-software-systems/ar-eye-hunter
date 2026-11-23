@@ -432,6 +432,7 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
         const timer = await readLastRenewalTimer(fixture);
         vi.setSystemTime(START_MS + 7_000);
         const commits: ALInboundCommitBundle[] = [];
+        const refused = new Set<ALMessage>();
         const admissionStore = fixture.stores.admissionStore;
         const { renewal, diagnostics } = createDirectRenewal(fixture, {
             commitBundle: async (bundle) => {
@@ -439,20 +440,59 @@ describe('a receiver holding a recorded track at its start (the bounded hold)', 
                 return await admissionStore.commitBundle(bundle);
             }
         }, {
-            verifyPublicationProof: async () => false,
-            planIncomingMessage: (msg, source, observations) => ({
-                ...planInboundTestMessage(msg, source, observations),
-                dropReason: 'unauthorized'
-            })
+            verifyPublicationProof: async (msg) => {
+                refused.add(msg);
+                return false;
+            },
+            // As the RTC carrier plans a signed copy: dropped exactly where its verification resolved false.
+            planIncomingMessage: (msg, source, observations) => {
+                const plan = planInboundTestMessage(msg, source, observations);
+                return refused.has(msg) ? { ...plan, dropReason: 'unauthorized' } : plan;
+            }
         });
 
         expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'completed' }, wroteWork: true });
 
+        expect(refused.size).toBe(1);
         expect(commits).toEqual([]);
         expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
         expect((await admissionStore.readOrderingSnapshot(timer.payload.trackKey, Date.now()))?.lastContiguousSeq).toBe(0);
         expect((await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId))
             .toEqual(expect.arrayContaining([expect.stringMatching(/^nack:.*:renewal:1:1:4/)]));
+    });
+
+    it('commits no end, states nothing and runs the timer again when the copy it would enter at may not be delivered yet', async () => {
+        const fixture = createRenewalFixture('memory');
+        for (const seq of [2, 3]) {
+            await fixture.runtime.admitIncomingMessage(recordedMessage(seq), INBOUND_TEST_SOURCE);
+        }
+        await advanceThrough(fixture, [1_000, 3_000]);
+        const timer = await readLastRenewalTimer(fixture);
+        vi.setSystemTime(START_MS + 7_000);
+        const commits: ALInboundCommitBundle[] = [];
+        const admissionStore = fixture.stores.admissionStore;
+        const { renewal, diagnostics } = createDirectRenewal(fixture, {
+            commitBundle: async (bundle) => {
+                commits.push(bundle);
+                return await admissionStore.commitBundle(bundle);
+            }
+        }, {
+            // The entry's plan, the one planned with an ordering observation, waits on its hop's sync.
+            planIncomingMessage: (msg, source, observations) => {
+                const plan = planInboundTestMessage(msg, source, observations);
+                return observations?.orderingObservation === undefined
+                    ? plan
+                    : { ...plan, dropReason: 'not yet in sync', dropReasonCode: 'not-yet-in-sync' };
+            }
+        });
+
+        expect(await renewal.renew(timer, timer.payload)).toEqual({ outcome: { status: 'retry' }, wroteWork: false });
+
+        expect(commits).toEqual([]);
+        expect(diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect((await admissionStore.readOrderingSnapshot(timer.payload.trackKey, Date.now()))?.lastContiguousSeq).toBe(0);
+        expect((await readInboundTestWorkRows(fixture.stores)).map((effect) => effect.effectId))
+            .not.toEqual(expect.arrayContaining([expect.stringMatching(/^nack:.*:renewal:1:1:4/)]));
     });
 
     it('commits the very copy it verified and planned, in the entered slot of its bundle', async () => {
