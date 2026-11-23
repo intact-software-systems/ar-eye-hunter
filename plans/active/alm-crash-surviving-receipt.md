@@ -129,7 +129,9 @@ The built record was measured again in the same sustained shape; see "Measured o
   instant, in expected order and naming each recipient once; from then on the head alone is the receipt.
 - **Confirmation**, one per answering recipient, key `<namespace>:receipt-ack:<JSON [origin, msgId]>:<recipient>`:
   whether the recipient confirmed or ended its hop outside the audience. An unfenced write; the first write
-  wins, and a second ACK of the same recipient is a typed no-op (`repeated`) that writes nothing. A row is
+  wins, and a second ACK of the same recipient is a typed no-op (`repeated`) that writes nothing, with one
+  exception (ruling R19): the owner's `not-sent` replaces a `confirmed` row of a recipient the head's opening
+  names never sent, a row only an ACK written ahead of the head can have stored. A row is
   read back only under its exact key; a row under another key fails closed as corruption.
 - **Deadline work**, one due row per receipted message in the backend's work queue, at the message
   deadline, written with the head.

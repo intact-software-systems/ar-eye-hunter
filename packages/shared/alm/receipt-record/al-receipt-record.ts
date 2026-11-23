@@ -230,10 +230,11 @@ export class ALReceiptRecord {
             if (head !== undefined && issues.length > 0) {
                 return { kind: 'invalid-confirmation', issues, head } as const;
             }
-            if (stored === undefined) {
+            const writes = stored === undefined || isReplacedByConfirmation(head, stored, confirmation);
+            if (writes) {
                 await transaction.set(key, row, computeConfirmationExpiryMs(head, nowMs));
             }
-            return { disposition: stored === undefined ? 'counted' : 'repeated', head } as const;
+            return { disposition: writes ? 'counted' : 'repeated', head } as const;
         });
         if (!('kind' in written) || written.kind !== 'conflict') {
             return written;
@@ -308,6 +309,19 @@ function computeHeadSchedule(head: ALReceiptRecordHead): HeadSchedule {
         dueAtMs: head.endedAtEpochMs,
         expireAtTimestamp: computeALReceiptRetentionExpiryMs(Math.max(deadlineAtMs, head.endedAtEpochMs))
     };
+}
+
+/**
+ * First write wins, with one exception (ruling R19): the owner's `not-sent` replaces a `confirmed` row of a recipient
+ * the head names never sent, which only an ACK written ahead of the head can have stored.
+ */
+function isReplacedByConfirmation(
+    head: ALReceiptRecordHead | undefined,
+    stored: ALReceiptRecordConfirmation,
+    confirmation: ALReceiptRecordConfirmationDto
+): boolean {
+    return stored.kind === 'confirmed' && confirmation.kind === 'not-sent' &&
+        head?.opening.neverSentRecipientPeerIds.includes(confirmation.recipientPeerId) === true;
 }
 
 /**

@@ -112,6 +112,12 @@ const refusals: readonly RefusalCase[] = [
         decode: decodeALReceiptRecordHead
     },
     {
+        name: 'a never-sent recipient that is not a string',
+        value: { ...openHead, opening: { ...opening, neverSentRecipientPeerIds: ['r2', 7] } },
+        key: headKey,
+        decode: decodeALReceiptRecordHead
+    },
+    {
         name: 'a negative deadline',
         value: { ...openHead, opening: { ...opening, deadlineAtMs: -1 } },
         key: headKey,

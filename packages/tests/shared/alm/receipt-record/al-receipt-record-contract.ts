@@ -681,5 +681,32 @@ export function describeALReceiptRecordContract(
             const stored = await readStoredConfirmations(f);
             expect(stored.map(({ value }) => value.recipientPeerId).sort()).toEqual(['r1', 'r2']);
         });
+
+        // Ruling R19: first write wins, so a forged ACK stored ahead would hold the never-sent recipient's row for good;
+        // the owner's `not-sent` would answer `repeated`, write nothing, and the receipt would time out on r1 alone.
+        // The owner's word replaces that row, and only that row: an ordinary recipient's ACK and an `outside` row stay.
+        it('the owner\'s word replaces an ACK that arrived ahead from a recipient it never sent', async () => {
+            const f = await fixture();
+            await f.a.record.countAhead(toConfirmation(f.ref, 'r2'));
+            await f.b.record.open({ ...f.opening, neverSentRecipientPeerIds: ['r2'] });
+            expect((await confirm(f, f.c, 'r1')).right?.view.tally.complete).toBe(false);
+
+            const notSent = await f.a.record.count(toConfirmation(f.ref, 'r2', 'not-sent'));
+            expect(notSent.right?.disposition).toBe('counted');
+            expect(notSent.right?.view.tally).toEqual({
+                confirmedRecipientPeerIds: ['r1'],
+                outsideAudienceRecipientPeerIds: ['r2'],
+                complete: true
+            });
+            const stored = await readStoredConfirmations(f);
+            expect(stored.find(({ value }) => value.recipientPeerId === 'r2')?.value.kind).toBe('outside');
+            expect((await f.b.record.count(toConfirmation(f.ref, 'r2', 'not-sent'))).right?.disposition)
+                .toBe('repeated');
+
+            const ordinary = await f.c.record.count(toConfirmation(f.ref, 'r1', 'not-sent'));
+            expect(ordinary.right?.disposition).toBe('repeated');
+            const afterOrdinary = await readStoredConfirmations(f);
+            expect(afterOrdinary.find(({ value }) => value.recipientPeerId === 'r1')?.value.kind).toBe('confirmed');
+        });
     });
 }
