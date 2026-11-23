@@ -3,7 +3,10 @@ import { toExponentialBackoffMs } from '../resilience/ComputeAsyncTask.ts';
 import { toError } from '../resilience/to-error.ts';
 import { applyRtcMediaPolicy } from './apply-rtc-media-policy.ts';
 import {
+    computeHeldRtcIceCandidates,
     flushRtcIceCandidateQueue,
+    resolveRtcHeldIceCandidateRelease,
+    resolveRtcIceCandidateAdmission,
     type FlushRtcIceCandidateQueueObservation
 } from './flush-rtc-ice-candidate-queue.ts';
 import { toQRtcSignalingAdmission, type QRtcSignalingAdmission } from './qrtc-signaling-admission.ts';
@@ -15,11 +18,6 @@ import {
     QRtcSignalingSender,
     QRtcSignalingType
 } from './qrtc-signaling-contracts.ts';
-import {
-    computeHeldRtcIceCandidates,
-    resolveRtcHeldIceCandidateRelease,
-    resolveRtcIceCandidateAdmission
-} from './rtc-held-ice-candidates.ts';
 import {
     attachRtcNativeListener,
     createRtcNativeBinding,
