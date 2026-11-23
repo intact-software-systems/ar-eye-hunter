@@ -1388,9 +1388,10 @@ describe('ALM ordered subscription reconnect conformance', () => {
 
                 expect(order.every((index) => index > -1), `${carrier} ${role}`).toBe(true);
                 expect(order, `${carrier} ${role}`).toEqual(order.toSorted((left, right) => left - right));
-                expect(leaving.kind === 'messages.send' ? leaving.payload : undefined, `${carrier} ${role}`).toEqual(
-                    cue.kind === 'wait' ? cue.match.equals : 'not a wait'
-                );
+                expect(leaving, `${carrier} ${role}`).toMatchObject({
+                    kind: 'messages.send',
+                    payload: cue.kind === 'wait' ? cue.match.equals : 'not a wait'
+                });
                 expect(cue).toMatchObject({ kind: 'wait', match: { kind: 'message', payloadPath: 'data.payload' } });
                 expect(cue).not.toHaveProperty('absent');
                 const children = gone.kind === 'loop' ? gone.commands : [];
