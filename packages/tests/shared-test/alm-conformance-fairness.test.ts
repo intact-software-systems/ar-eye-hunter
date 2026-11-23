@@ -235,12 +235,14 @@ describe('own-share-under-inbound', () => {
             expect(toCommandNames(scenario.sender)).toEqual([...SENDER_PROLOGUE, 'received-1', 'flood', 'stats']);
             // The ready send arrives only after the receiver's reconnect, so the wait owns one readiness budget.
             expect(findCommand(scenario.sender, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 57_000, timeoutMs: 58_000 });
-            // The flood asks for no receipt, so the sender's 20 sends are on the wire within seconds, not one ACK apart.
+            // The flood asks for no receipt, so its 20 sends are not one ACK apart. Its budget, 1,500 ms a send, is the
+            // 30 s an arrival counts: a flood slower than that could not hold the receiver's total at the bound.
             expect(findCommand(scenario.sender, 'flood')).toEqual({
                 kind: 'loop',
                 commandId: `${scenario.sender.recipeId}-flood`,
                 count: 20,
                 intervalMs: 75,
+                timeoutMs: 30_000,
                 commands: [expect.objectContaining({
                     kind: 'messages.send',
                     commandId: `${scenario.sender.recipeId}-flood-send`,
@@ -299,8 +301,9 @@ describe('buffered-track-drains', () => {
             expect(loop.commands.map((command) => command.commandId?.replace(prefix, '')))
                 .toEqual(bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]));
             // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives). Seq 2 is the
-            // earliest send still live at the drain, so every lifetime covers the sender's commands from seq 2's send to
-            // its cue, the loop by its budget, then the count's window, and stays within a volatile session's age bound.
+            // earliest send still live at the drain, so every lifetime covers the sender's commands from the held block
+            // that carries seq 2's send to its cue, the loop by its budget, then the count's window, and stays within a
+            // volatile session's age bound.
             const sends = [
                 findCommand(scenario.sender, 'send-1'),
                 findCommand(scenario.sender, 'send-2'),
@@ -312,7 +315,7 @@ describe('buffered-track-drains', () => {
             }
             const senderNames = toCommandNames(scenario.sender);
             const fromHeldSendMs = scenario.sender.commands
-                .slice(senderNames.indexOf('send-2'), senderNames.indexOf(`${toCues(carrier)}-sender-cue-released-2-sent`) + 1)
+                .slice(senderNames.indexOf(`hold-${carrier}`), senderNames.indexOf(`${toCues(carrier)}-sender-cue-released-2-sent`) + 1)
                 .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
             expect(sends).toHaveLength(66);
             const ttls = new Set(sends.map((send) => 'ttlMs' in send ? send.ttlMs : undefined));
@@ -351,9 +354,10 @@ describe('buffered-track-drains', () => {
             match: { kind: 'message', connection: 'receiver', payloadPath: 'data.payload', equals: cue }
         });
         expect(cueWait).toBeLessThan(receiverIds.indexOf(`${scenario.receiver.recipeId}-received-1`));
-        // The cue wait opens with the sender's body and covers every one of its commands before the cue, the loop
-        // by its budget; it is the cell's longest step, so each role's recipe runs that much past the ordinary budget.
-        const senderBodyMs = scenario.sender.commands.slice(SENDER_PROLOGUE.length, cueSend + 2)
+        // The cue wait opens with the sender's body and covers every one of its commands before the cue, its storage
+        // baseline first and the loop by its budget; it is the cell's longest step, so each role's recipe runs that
+        // much past the ordinary budget.
+        const senderBodyMs = scenario.sender.commands.slice(SENDER_PROLOGUE.indexOf('storage-counters-connected'), cueSend + 2)
             .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
         expect(scenario.receiver.commands[cueWait]?.timeoutMs).toBe(senderBodyMs);
         expect(senderBodyMs).toBeGreaterThan(computeSendLoopBudgetMs(64));
@@ -554,9 +558,10 @@ describe('churn-bounded-tracks', () => {
         const cueWait = scenario.receiver.commands.find((command) => command.commandId === `${CHURN_CUES}-receiver-cue-tracks-sent-received`);
 
         expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({ kind: 'loop', timeoutMs: loopBudgetMs });
-        // The cue wait opens with the sender's body: its reconnect (45 s and 30 s of readiness), the loop, the last
-        // track's observation (10 s), its assertion (2 s) and the cue's send and observation (5 s each).
-        expect(cueWait?.timeoutMs).toBe(45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
+        // The cue wait opens with the sender's body: its storage baseline (3 s), its reconnect (45 s and 30 s of
+        // readiness), the loop, the last track's observation (10 s), its assertion (2 s) and the cue's send and
+        // observation (5 s each).
+        expect(cueWait?.timeoutMs).toBe(3_000 + 45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
         for (const recipe of [scenario.sender, scenario.receiver]) {
             expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
                 .toBe(ORDINARY_RUN_MS + (cueWait?.timeoutMs ?? 0));

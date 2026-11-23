@@ -781,8 +781,9 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishOnceSteps(`${track}-p3`),
                 ...toPublishOnceSteps(`${track}-p4`),
                 'cue-resubscribed-applied-by-receiver-received',
-                // Over RTC the producer's own snapshot freezes p5's audience, so it applies the head carrying the re-grant.
-                ...(carrier === 'ws' ? [] : ['regrant-head-read', 'regrant-head-applied']),
+                // The producer applies the head carrying the re-grant before p5, as it applied the revoke's before p3.
+                'regrant-head-read',
+                'regrant-head-applied',
                 ...toPublishOnceSteps(`${track}-p5`),
                 'no-gap-nack',
                 'no-repair-control'
@@ -867,7 +868,7 @@ describe('ALM ordered subscription entry conformance', () => {
             .toEqual([false, false, false, false, false]);
     });
 
-    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+    it.each(ALM_CONFORMANCE_CARRIERS)(
         'each producer applies the head carrying the re-grant after the receiver\'s cue and before it publishes p5 over %s',
         (carrier) => {
             const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
@@ -980,8 +981,8 @@ describe('ALM ordered subscription entry conformance', () => {
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
                     const before = producerNames.indexOf((first.startsWith('probe') ? toPublishSteps(first) : toPublishOnceSteps(first))[0]!);
                     // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
-                    // Over RTC an omission producer applies the head that carries the re-grant before p5.
-                    const regranted = scenarioId === 'subscription-ordered-omission' && carrier !== 'ws'
+                    // An omission producer applies the head that carries the re-grant before p5.
+                    const regranted = scenarioId === 'subscription-ordered-omission'
                         ? ['regrant-head-read', 'regrant-head-applied']
                         : [];
                     const applied = reasserted

@@ -33,9 +33,9 @@ interface AlmFairnessSendLoopInput {
 }
 
 /**
- * `count` sends of one template, each awaited and then followed by a pause of `FAIRNESS_SEND_INTERVAL_MS`. A loop
- * substitutes `{loop.index}` (0-based) in every string of its template before the send runs, so each send names a
- * handle of its own, and a template may name its ordering key the same way.
+ * `count` sends of one template, each awaited and then followed by a pause of `FAIRNESS_SEND_INTERVAL_MS`, within the
+ * budget of `count` loop sends. A loop substitutes `{loop.index}` (0-based) in every string of its template before the
+ * send runs, so each send names a handle of its own, and a template may name its ordering key the same way.
  */
 export function toSendLoopCommand(
     { step, name, count, send }: AlmFairnessSendLoopInput
@@ -45,6 +45,7 @@ export function toSendLoopCommand(
         commandId: toCommandId(step, name),
         count,
         intervalMs: FAIRNESS_SEND_INTERVAL_MS,
+        timeoutMs: computeSendLoopBudgetMs(count),
         commands: [{ ...send, commandId: toCommandId(step, `${name}-send`), handleId: `${send.handleId}-{loop.index}` }]
     };
 }

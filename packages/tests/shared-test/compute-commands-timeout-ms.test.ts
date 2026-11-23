@@ -36,6 +36,6 @@ describe('computeCommandsTimeoutMs', () => {
         };
 
         expect(() => computeCommandsTimeoutMs([connect], 'the test\'s wait'))
-            .toThrow('connect names no timeout, so the test\'s wait cannot cover it.');
+            .toThrow('connect\'s readiness names no timeout, so the test\'s wait cannot cover it.');
     });
 });

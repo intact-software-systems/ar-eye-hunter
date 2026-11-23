@@ -28,7 +28,7 @@ import {
     toCuedArrivalsSenderCommands,
     type AlmCuedArrivals
 } from './alm-cued-arrivals.ts';
-import { computeSendLoopBudgetMs, toSendLoopCommand } from './to-send-loop-command.ts';
+import { toSendLoopCommand } from './to-send-loop-command.ts';
 
 /**
  * More tracks than a session store keeps ordering snapshots for (`AL_INBOUND_MAX_ORDERING_TRACKS`, D191), and a
@@ -83,15 +83,12 @@ export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
 function toChurnSends(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toBoundReconnectCommands(sender, 'raised', CHURN_SENDER_LIMITS),
-        {
-            ...toSendLoopCommand({
-                step: sender,
-                name: 'open-tracks',
-                count: CHURN_TRACK_COUNT,
-                send: toTrackSend(sender, '{loop.index}')
-            }),
-            timeoutMs: computeSendLoopBudgetMs(CHURN_TRACK_COUNT)
-        },
+        toSendLoopCommand({
+            step: sender,
+            name: 'open-tracks',
+            count: CHURN_TRACK_COUNT,
+            send: toTrackSend(sender, '{loop.index}')
+        }),
         {
             ...toObserveCommand({ ...sender, index: 0, state: 'transport-accepted' }),
             commandId: toCommandId(sender, 'observe-last-track'),

@@ -21,10 +21,21 @@ function computeReadinessTimeoutMs(command: RallarBlackBoxTestCommand, coveredBy
     if (command.kind !== 'rtc.connect' || command.readiness === undefined) {
         return 0;
     }
-    if (command.readiness.timeoutMs === undefined) {
-        throw new Error(`${command.commandId ?? command.kind} names no timeout, so ${coveredBy} cannot cover it.`);
+    const readinessTimeoutMs = command.readiness.timeoutMs;
+    assertReadinessTimeoutStated(command, readinessTimeoutMs, coveredBy);
+    return readinessTimeoutMs;
+}
+
+function assertReadinessTimeoutStated(
+    command: RallarBlackBoxTestCommand,
+    readinessTimeoutMs: number | undefined,
+    coveredBy: string
+): asserts readinessTimeoutMs is number {
+    if (readinessTimeoutMs === undefined) {
+        throw new Error(
+            `${command.commandId ?? command.kind}'s readiness names no timeout, so ${coveredBy} cannot cover it.`
+        );
     }
-    return command.readiness.timeoutMs;
 }
 
 function assertCommandTimeoutStated(

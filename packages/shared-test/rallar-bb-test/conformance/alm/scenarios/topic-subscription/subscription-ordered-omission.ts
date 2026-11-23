@@ -68,7 +68,7 @@ export const subscriptionOrderedOmission: AlmConformanceScenarioDefinition = {
  * Over RTC a copy freezes the live sessions whose principal holds `subscribe` in the producer's own snapshot, so each
  * producer applies the head that carries the revoke before `p3` and the head that carries the re-grant before `p5`;
  * the receiver's cue that it applied the sibling's new election follows the re-grant's commit. Over ws the server
- * decides the audience, so `p5` needs no head of the producer's.
+ * decides the audience; the producer applies both heads there too, so every carrier publishes from the same snapshot.
  */
 function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const subscribed = { step: producer, confirmations: 2, outsideAudience: computeUnelectedOutsideCount(producer, 1) };
@@ -87,7 +87,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         ...toElectionAppliedCueWaitCommands(producer, RESUBSCRIBED, 'held'),
-        ...(producer.input.carrier === 'ws' ? [] : toGrantAppliedHeadCommands(producer, 'regrant-head')),
+        ...toGrantAppliedHeadCommands(producer, 'regrant-head'),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
         ...toNoRepairRequestWaits(producer)
     ];

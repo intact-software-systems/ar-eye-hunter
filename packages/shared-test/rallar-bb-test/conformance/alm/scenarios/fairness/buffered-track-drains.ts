@@ -102,30 +102,21 @@ function toReleaseCommands(sender: AlmConformanceStepInput): readonly RallarBlac
 }
 
 /**
- * Every send's lifetime. Seq 2 is the earliest send still live at the drain: it must outlive its own send, the faults
- * that move its hold from the type to its message id, the buffered sends' loop, its release and admission, the cue, and
- * the receiver's count, which opens at the cue; the count's window is a verdict's.
+ * Every send's lifetime. Seq 2 is the earliest send still live at the drain: it must outlive the held block that
+ * carries its own send, with the faults that move its hold from the type to its message id, the buffered sends' loop,
+ * its release and admission, the cue, and the receiver's count, which opens at the cue; the count's window is a
+ * verdict's. The block's fault before seq 2's send adds its own budget, which only lengthens the lifetime.
  */
 function computeBufferedTrackTtlMs(sender: AlmConformanceStepInput): number {
-    const heldSend = toTrackSend(sender, HELD_SEQ);
-    const heldSendCommands = toHeldSendCommands({ ...sender, index: HELD_SEQ }, [heldSend]);
-    const heldSendIndex = heldSendCommands.indexOf(heldSend);
-    assertHeldSendCarried(heldSendIndex);
-    const fromHeldSendMs = computeCommandsTimeoutMs(heldSendCommands.slice(heldSendIndex), BUFFERED_TRACK_LIFETIME);
+    const heldBlockMs = computeCommandsTimeoutMs(
+        toHeldSendCommands({ ...sender, index: HELD_SEQ }, [toTrackSend(sender, HELD_SEQ)]),
+        BUFFERED_TRACK_LIFETIME
+    );
     const afterLoopMs = computeCommandsTimeoutMs([
         ...toReleaseCommands(sender),
         ...toCuedArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
     ], BUFFERED_TRACK_LIFETIME);
-    return fromHeldSendMs + BUFFERED_SENDS_BUDGET_MS + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
-}
-
-/** The lifetime counts from seq 2's own send, so a held block that no longer carries that send cannot size it. */
-function assertHeldSendCarried(heldSendIndex: number): void {
-    if (heldSendIndex < 0) {
-        throw new Error(
-            `The held block no longer carries seq ${HELD_SEQ}'s own send, so the track's lifetime cannot count from it.`
-        );
-    }
+    return heldBlockMs + BUFFERED_SENDS_BUDGET_MS + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
 }
 
 /** A track send without its lifetime: its command timeout reads none, so the lifetime can be sized from it. */
