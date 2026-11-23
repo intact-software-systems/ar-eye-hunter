@@ -46,7 +46,7 @@ export async function racePastHeldCommit<Held, Raced>(
 }
 
 /** Waits until `held` reaches `hold`; a held operation that fails or settles first fails the wait at once. */
-export async function awaitHoldArrival(hold: WorkerHold, held: Promise<unknown>): Promise<void> {
+export async function awaitHoldArrival<Held>(hold: WorkerHold, held: Promise<Held>): Promise<void> {
     await Promise.race([
         hold.arrived,
         held.then(() => Promise.reject(new Error('The held operation settled before it reached its hold')))

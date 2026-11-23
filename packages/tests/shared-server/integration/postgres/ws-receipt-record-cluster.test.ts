@@ -104,6 +104,9 @@ interface ReceiptInstance extends ClusterInstance {
     readonly recordClient: TerminablePostgresSql;
 }
 
+/** Starts one `acceptIncomingMessage` on an instance. */
+type StartAcceptance = () => ReturnType<ClusterInstance['service']['acceptIncomingMessage']>;
+
 type ReceiptTrio = Readonly<Record<'a' | 'b' | 'c', ReceiptInstance>>;
 
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL WS receipt record across instances', () => {
@@ -447,7 +450,7 @@ async function loseInstance(instance: ClusterInstance): Promise<void> {
  * once the admission's `open` is written and uncommitted, so PostgreSQL rolls the `open` back. The admission is never
  * awaited; the hold is released whatever happens, so no transaction stays held past the case.
  */
-async function loseInsideHeldOpen(instance: ReceiptInstance, hold: WorkerHold, admit: () => Promise<unknown>): Promise<void> {
+async function loseInsideHeldOpen(instance: ReceiptInstance, hold: WorkerHold, admit: StartAcceptance): Promise<void> {
     const admitting = admit();
     admitting.catch(() => undefined);
     try {
@@ -462,7 +465,7 @@ async function loseInsideHeldOpen(instance: ReceiptInstance, hold: WorkerHold, a
 
 interface HeldCount {
     readonly hold: WorkerHold;
-    readonly count: () => ReturnType<ClusterInstance['service']['acceptIncomingMessage']>;
+    readonly count: StartAcceptance;
 }
 
 /** Holds each count's confirmation uncommitted until every one is written, then lets them all commit at once. */
