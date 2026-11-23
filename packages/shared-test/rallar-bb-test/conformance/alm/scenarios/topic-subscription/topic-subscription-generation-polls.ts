@@ -49,7 +49,6 @@ export function toGenerationChangePollCommand(poll: GenerationPollInput): Rallar
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toTokenReadCommand(step, readName),
             toResultFact({
@@ -90,7 +89,6 @@ export function toRowsGenerationPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toSubscriptionRowsCommand(step, readName),
             toResultFact({
@@ -126,7 +124,6 @@ export function toPresenceGenerationPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toRoomSnapshotCommand(step, readName),
             toResultTextWait({

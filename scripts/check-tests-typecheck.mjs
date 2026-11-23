@@ -9,6 +9,8 @@ import {
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const projectPath = 'packages/tests/tsconfig.json';
 const debtPath = 'packages/tests/typecheck-debt.json';
@@ -36,7 +38,7 @@ function readCurrentErrorCounts() {
     const result = spawnSync(
         process.execPath,
         [compilerPath, '-p', projectPath, '--noEmit', '--pretty', 'false'],
-        { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+        { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: commandOutputMaxBuffer }
     );
     if (result.error !== undefined) {
         console.log(`FAIL: could not run tsc: ${result.error.message}`);

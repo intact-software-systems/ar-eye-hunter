@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
+    computeAlmRecipeRunTimeoutMs,
+    toAlmRecipeRunExtensionMetadata
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-recipe-run-extension.ts';
+import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { ALM_LANE_FAMILY_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/lane/alm-lane-family-timeout-ms.ts';
+import { computeSendLoopBudgetMs } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/to-send-loop-command.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -18,12 +24,15 @@ import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/c
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
     AL_VOLATILE_SESSION_MAX_BYTES
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
+/** Any ordinary run budget: a cell's extension adds to whichever one the lane passes. */
+const ORDINARY_RUN_MS = 5_000;
 const FAIRNESS_SCENARIO_IDS = ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'] as const;
 const SENDER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect', 'storage-counters-connected'] as const;
 const RECEIVER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
@@ -227,12 +236,14 @@ describe('own-share-under-inbound', () => {
             expect(toCommandNames(scenario.sender)).toEqual([...SENDER_PROLOGUE, 'received-1', 'flood', 'stats']);
             // The ready send arrives only after the receiver's reconnect, so the wait owns one readiness budget.
             expect(findCommand(scenario.sender, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 57_000, timeoutMs: 58_000 });
-            // The flood asks for no receipt, so the sender's 20 sends are on the wire within seconds, not one ACK apart.
+            // The flood asks for no receipt, so its 20 sends are not one ACK apart. Its budget, 1,500 ms a send, is the
+            // 30 s an arrival counts: a flood slower than that could not hold the receiver's total at the bound.
             expect(findCommand(scenario.sender, 'flood')).toEqual({
                 kind: 'loop',
                 commandId: `${scenario.sender.recipeId}-flood`,
                 count: 20,
                 intervalMs: 75,
+                timeoutMs: 30_000,
                 commands: [expect.objectContaining({
                     kind: 'messages.send',
                     commandId: `${scenario.sender.recipeId}-flood-send`,
@@ -248,6 +259,8 @@ describe('own-share-under-inbound', () => {
 });
 
 describe('buffered-track-drains', () => {
+    const toCues = (carrier: AlmConformanceCarrier): string => `alm-${carrier}-buffered-track-drains-cues`;
+
     it.each(FAIRNESS_CARRIERS['buffered-track-drains'])(
         'holds seq 2 at the %s transport while seq 3 to 66 leave bare and paced behind it, and the receiver delivers all 66',
         (carrier) => {
@@ -265,10 +278,12 @@ describe('buffered-track-drains', () => {
                 'send-2',
                 `hold-message-2-${carrier}`,
                 `release-${carrier}`,
-                ...bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]),
+                'buffered-sends',
                 `release-message-2-${carrier}`,
                 'observe-admitted-2',
                 'assert-admitted-2',
+                `${toCues(carrier)}-sender-cue-released-2`,
+                `${toCues(carrier)}-sender-cue-released-2-sent`,
                 'stats'
             ]);
             expect(findCommand(scenario.sender, `hold-message-2-${carrier}`)).toMatchObject({
@@ -277,28 +292,94 @@ describe('buffered-track-drains', () => {
                 remaining: 'until-cleared'
             });
             expect(findCommand(scenario.sender, `release-message-2-${carrier}`)).toMatchObject({ kind: 'fault.inject', remaining: 0 });
-            // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives), and the
-            // sends outlive the cell's own 90 s window; the 30 s lifetime is proven on the real runtime.
-            for (const seq of [1, 2, ...bufferedSeqs]) {
-                expect(findCommand(scenario.sender, `send-${seq}`)).toMatchObject({
+            // One iteration of the literal sends and their pauses, so the 64 share one budget.
+            const loop = findCommand(scenario.sender, 'buffered-sends');
+            if (loop.kind !== 'loop') {
+                throw new Error('buffered-sends is not a loop.');
+            }
+            expect(loop).toMatchObject({ count: 1, timeoutMs: computeSendLoopBudgetMs(64) });
+            const prefix = `${scenario.sender.recipeId}-`;
+            expect(loop.commands.map((command) => command.commandId?.replace(prefix, '')))
+                .toEqual(bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]));
+            // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives). Seq 2 is the
+            // earliest send still live at the drain, so every lifetime covers the sender's commands from the held block
+            // that carries seq 2's send to its cue, the loop by its budget, then the count's window, and stays within a
+            // volatile session's age bound.
+            const sends = [
+                findCommand(scenario.sender, 'send-1'),
+                findCommand(scenario.sender, 'send-2'),
+                ...loop.commands.filter((command) => command.kind === 'messages.send')
+            ];
+            const received = findCommand(scenario.receiver, 'received-1');
+            if (received.kind !== 'messages.received' || received.windowMs === undefined) {
+                throw new Error('received-1 is not a windowed count.');
+            }
+            const senderNames = toCommandNames(scenario.sender);
+            const fromHeldSendMs = scenario.sender.commands
+                .slice(senderNames.indexOf(`hold-${carrier}`), senderNames.indexOf(`${toCues(carrier)}-sender-cue-released-2-sent`) + 1)
+                .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
+            expect(sends).toHaveLength(66);
+            const ttls = new Set(sends.map((send) => 'ttlMs' in send ? send.ttlMs : undefined));
+            expect(ttls.size).toBe(1);
+            const [ttlMs] = [...ttls];
+            expect(ttlMs).toBe(fromHeldSendMs + received.windowMs);
+            expect(ttlMs).toBeLessThanOrEqual(AL_VOLATILE_SESSION_MAX_AGE_MS);
+            for (const [index, send] of sends.entries()) {
+                expect(send).toMatchObject({
                     reliability: 'at-least-once',
                     ack: 'none',
-                    ttlMs: 90_000,
                     orderingKey: `alm-${carrier}-buffered-track-drains`,
-                    seq
+                    seq: index + 1
                 });
             }
-            for (const seq of bufferedSeqs) {
-                expect(findCommand(scenario.sender, `pause-${seq}`)).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 75 });
+            for (const pause of loop.commands.filter((command) => command.kind === 'wait')) {
+                expect(pause).toMatchObject({ absent: true, timeoutMs: 75 });
             }
-            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 66, absent: false, windowMs: 89_000, timeoutMs: 90_000 });
+            // The count opens once the sender cued the release of seq 2, so it owns one send's budget past the cue.
+            expect(received).toMatchObject({ count: 66, absent: false, windowMs: 27_000, timeoutMs: 28_000 });
         }
     );
+
+    it.each(FAIRNESS_CARRIERS['buffered-track-drains'])('counts the %s arrivals only after the sender cued the release of seq 2', (carrier) => {
+        const scenario = findScenario(carrier, 'buffered-track-drains');
+        const cue = { marker: 'buffered-track-drains-cues', carrier, cue: 'released-2' };
+        const senderIds = scenario.sender.commands.map((command) => command.commandId);
+        const receiverIds = scenario.receiver.commands.map((command) => command.commandId);
+        const cueSend = senderIds.indexOf(`${toCues(carrier)}-sender-cue-released-2`);
+        const cueWait = receiverIds.indexOf(`${toCues(carrier)}-receiver-cue-released-2-received`);
+
+        expect(scenario.sender.commands[cueSend]).toMatchObject({ kind: 'messages.send', carrier: 'ws', payload: cue });
+        expect(cueSend).toBeGreaterThan(senderIds.indexOf(`${scenario.sender.recipeId}-release-message-2-${carrier}`));
+        expect(scenario.receiver.commands[cueWait]).toMatchObject({
+            kind: 'wait',
+            match: { kind: 'message', connection: 'receiver', payloadPath: 'data.payload', equals: cue }
+        });
+        expect(cueWait).toBeLessThan(receiverIds.indexOf(`${scenario.receiver.recipeId}-received-1`));
+        // The cue wait opens with the sender's body and covers every one of its commands before the cue, its storage
+        // baseline first and the loop by its budget; it is the cell's longest step, so each role's recipe runs that
+        // much past the ordinary budget.
+        const senderBodyMs = scenario.sender.commands.slice(SENDER_PROLOGUE.indexOf('storage-counters-connected'), cueSend + 2)
+            .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
+        expect(scenario.receiver.commands[cueWait]?.timeoutMs).toBe(senderBodyMs);
+        expect(senderBodyMs).toBeGreaterThan(computeSendLoopBudgetMs(64));
+        for (const recipe of [scenario.sender, scenario.receiver]) {
+            expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
+                .toBe(ORDINARY_RUN_MS + senderBodyMs);
+        }
+    });
 
     it('reads a promoted release on rtc, where the receiver is the hop that buffered the track', async () => {
         const scenario = findScenario('rtc', 'buffered-track-drains');
 
-        expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'promoted-release', 'stats']);
+        expect(toCommandNames(scenario.receiver)).toEqual([
+            ...RECEIVER_PROLOGUE,
+            `${toCues('rtc')}-receiver-cue-listen`,
+            `${toCues('rtc')}-receiver-cue-listen-sent`,
+            `${toCues('rtc')}-receiver-cue-released-2-received`,
+            'received-1',
+            'promoted-release',
+            'stats'
+        ]);
         const promotion = findCommand(scenario.receiver, 'promoted-release');
         expect(promotion).toMatchObject({ kind: 'loop', count: 9, until: 'first-success' });
         expect(await runAfterDrains(promotion, [0, 0, 12, 0])).toBe(true);
@@ -309,7 +390,76 @@ describe('buffered-track-drains', () => {
     it('reads only the arrivals on ws, where the server is the hop that buffered the track', () => {
         const scenario = findScenario('ws', 'buffered-track-drains');
 
-        expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
+        expect(toCommandNames(scenario.receiver)).toEqual([
+            ...RECEIVER_PROLOGUE,
+            `${toCues('ws')}-receiver-cue-listen`,
+            `${toCues('ws')}-receiver-cue-listen-sent`,
+            `${toCues('ws')}-receiver-cue-released-2-received`,
+            'received-1',
+            'stats'
+        ]);
+    });
+});
+
+const CHURN_CUES = 'alm-rtc-churn-bounded-tracks-cues';
+
+describe('computeSendLoopBudgetMs', () => {
+    it('gives each iteration of a send loop 1,500 ms', () => {
+        expect(computeSendLoopBudgetMs(280)).toBe(420_000);
+        expect(computeSendLoopBudgetMs(1)).toBe(1_500);
+    });
+});
+
+describe('computeAlmRecipeRunTimeoutMs', () => {
+    it('keeps the ordinary budget for a recipe whose metadata states no extension', () => {
+        const scenario = findScenario('rtc', 'own-share-under-inbound');
+
+        expect(computeAlmRecipeRunTimeoutMs(scenario.sender, ORDINARY_RUN_MS)).toBe(ORDINARY_RUN_MS);
+        expect(computeAlmRecipeRunTimeoutMs({ ...scenario.sender, metadata: undefined }, 5_000)).toBe(5_000);
+    });
+
+    it('adds the extension a recipe\'s metadata states to the ordinary budget', () => {
+        const recipe = findScenario('rtc', 'own-share-under-inbound').sender;
+
+        expect(computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: { ...recipe.metadata, ...toAlmRecipeRunExtensionMetadata(42_000) } }, 5_000))
+            .toBe(47_000);
+        expect(computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: toAlmRecipeRunExtensionMetadata(0) }, 5_000)).toBe(5_000);
+    });
+
+    it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '42000', null, {}])('refuses a stated extension of %s', (value) => {
+        const recipe = findScenario('rtc', 'own-share-under-inbound').sender;
+
+        expect(() => computeAlmRecipeRunTimeoutMs({ ...recipe, metadata: { almRecipeRunExtensionMs: value } }, 5_000))
+            .toThrow(/almRecipeRunExtensionMs/);
+    });
+});
+
+describe('ALM_LANE_FAMILY_TIMEOUT_MS', () => {
+    /**
+     * The lane's ordinary recipe budget and the grace it gives a recipe's own result are private to
+     * `tests/playwright/rallar-black-box/full-stack-helpers.ts`, which exports neither; their values are pinned through
+     * the lane's behaviour by `full-stack-helper-boundaries.test.ts` and `full-stack-reload-pair.test.ts`, and are
+     * restated here.
+     */
+    const LANE_RECIPE_RUN_MS = 180_000;
+    const LANE_RESULT_GRACE_MS = 30_000;
+
+    /** The longest the lane waits on a pair of the cell's recipes over rtc: the longer role's budget and the grace. */
+    function computeWorstCaseRecipeMs(scenarioId: FairnessScenarioId): number {
+        const scenario = findScenario('rtc', scenarioId);
+        const budgetsMs = [scenario.sender, scenario.receiver]
+            .map((recipe) => computeAlmRecipeRunTimeoutMs(recipe, LANE_RECIPE_RUN_MS));
+        return Math.max(...budgetsMs) + LANE_RESULT_GRACE_MS;
+    }
+
+    it('clears the rtc two-agent family\'s measured time with its two extended cells at their worst', () => {
+        // Run 45009025510 took 846 s for the family over rtc, of which an estimated 150 s was churn-bounded-tracks and
+        // 90 s buffered-track-drains.
+        const measuredBaseMs = 846_000 - 150_000 - 90_000;
+        const worstCaseMs = measuredBaseMs + computeWorstCaseRecipeMs('churn-bounded-tracks') +
+            computeWorstCaseRecipeMs('buffered-track-drains');
+
+        expect(worstCaseMs).toBeLessThan(ALM_LANE_FAMILY_TIMEOUT_MS);
     });
 });
 
@@ -339,6 +489,8 @@ describe('churn-bounded-tracks', () => {
             'open-tracks',
             'observe-last-track',
             'assert-last-track-sent',
+            `${CHURN_CUES}-sender-cue-tracks-sent`,
+            `${CHURN_CUES}-sender-cue-tracks-sent-sent`,
             'close-departs',
             'stats'
         ]);
@@ -374,6 +526,9 @@ describe('churn-bounded-tracks', () => {
 
         expect(toCommandNames(scenario.receiver)).toEqual([
             ...RECEIVER_PROLOGUE,
+            `${CHURN_CUES}-receiver-cue-listen`,
+            `${CHURN_CUES}-receiver-cue-listen-sent`,
+            `${CHURN_CUES}-receiver-cue-tracks-sent-received`,
             'received-1',
             'ordering-tracks-cap-stated',
             'stats-ordering-tracks',
@@ -381,7 +536,13 @@ describe('churn-bounded-tracks', () => {
             'assert-ordering-tracks-at-the-cap',
             'stats'
         ]);
-        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 280, absent: false, windowMs: 57_000 });
+        // The count opens once the sender cued that its last track is sent, so it owns one send's budget past the cue.
+        expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({
+            count: 280,
+            absent: false,
+            windowMs: 27_000,
+            timeoutMs: 28_000
+        });
         // The memory store states its count at the end of a newly opened track's eviction pass, not at its delivery.
         expect(findCommand(scenario.receiver, 'ordering-tracks-cap-stated')).toEqual({
             kind: 'wait',
@@ -402,5 +563,38 @@ describe('churn-bounded-tracks', () => {
             results.push(await readLedgerTail(scenario.receiver, 'stats-ordering-tracks', { ...atTheCap, orderingTracks }));
         }
         expect(results).toEqual([false, false, false]);
+    });
+    it('counts the 280 arrivals only after the sender cued that its last track is sent', () => {
+        const scenario = findScenario('rtc', 'churn-bounded-tracks');
+        const cue = { marker: 'churn-bounded-tracks-cues', carrier: 'rtc', cue: 'tracks-sent' };
+        const senderIds = scenario.sender.commands.map((command) => command.commandId);
+        const receiverIds = scenario.receiver.commands.map((command) => command.commandId);
+        const cueSend = senderIds.indexOf(`${CHURN_CUES}-sender-cue-tracks-sent`);
+        const cueWait = receiverIds.indexOf(`${CHURN_CUES}-receiver-cue-tracks-sent-received`);
+
+        expect(scenario.sender.commands[cueSend]).toMatchObject({ kind: 'messages.send', carrier: 'ws', payload: cue });
+        expect(cueSend).toBeGreaterThan(senderIds.indexOf(`${scenario.sender.recipeId}-assert-last-track-sent`));
+        expect(cueSend).toBeLessThan(senderIds.indexOf(`${scenario.sender.recipeId}-close-departs`));
+        expect(scenario.receiver.commands[cueWait]).toMatchObject({
+            kind: 'wait',
+            match: { kind: 'message', connection: 'receiver', payloadPath: 'data.payload', equals: cue }
+        });
+        expect(cueWait).toBeLessThan(receiverIds.indexOf(`${scenario.receiver.recipeId}-received-1`));
+    });
+
+    it('gives the loop the shared budget for 280 tracks, and no timeout that wraps the loop is shorter', () => {
+        const scenario = findScenario('rtc', 'churn-bounded-tracks');
+        const loopBudgetMs = computeSendLoopBudgetMs(280);
+        const cueWait = scenario.receiver.commands.find((command) => command.commandId === `${CHURN_CUES}-receiver-cue-tracks-sent-received`);
+
+        expect(findCommand(scenario.sender, 'open-tracks')).toMatchObject({ kind: 'loop', timeoutMs: loopBudgetMs });
+        // The cue wait opens with the sender's body: its storage baseline (3 s), its reconnect (45 s and 30 s of
+        // readiness), the loop, the last track's observation (10 s), its assertion (2 s) and the cue's send and
+        // observation (5 s each).
+        expect(cueWait?.timeoutMs).toBe(3_000 + 45_000 + 30_000 + loopBudgetMs + 10_000 + 2_000 + 10_000);
+        for (const recipe of [scenario.sender, scenario.receiver]) {
+            expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
+                .toBe(ORDINARY_RUN_MS + (cueWait?.timeoutMs ?? 0));
+        }
     });
 });

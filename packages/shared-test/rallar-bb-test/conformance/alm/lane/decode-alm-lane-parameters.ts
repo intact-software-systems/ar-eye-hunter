@@ -1,9 +1,14 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
+import {
+    ALM_CONFORMANCE_LANE_FAMILIES,
+    ALM_CONFORMANCE_TAGS,
+    type AlmConformanceLaneFamily,
+    type AlmConformanceTag
+} from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
-import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
+import { isAlmLaneCellSelected, isAlmLaneFamilySelected } from './is-alm-lane-cell-selected.ts';
 
 const ALM_LANE_ORDERS = ['declared', 'shuffled'] as const;
 
@@ -13,12 +18,11 @@ const ALM_LANE_ROOMS = ['family', 'cell'] as const;
 
 export type AlmLaneRooms = typeof ALM_LANE_ROOMS[number];
 
-const ALM_LANE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
-
 /** The lane's environment as read; an absent or empty value takes the parameter's default. */
 export interface AlmLaneParameterValues {
     readonly scope: string | undefined;
     readonly carriers: string | undefined;
+    readonly families: string | undefined;
     readonly order: string | undefined;
     readonly seed: string | undefined;
     readonly rooms: string | undefined;
@@ -30,6 +34,8 @@ export interface AlmLaneParameters {
     readonly scope: AlmConformanceTag;
     /** In catalog order. */
     readonly carriers: readonly AlmConformanceCarrier[];
+    /** The families whose tests run, in declared order; the plan file still names every family. */
+    readonly families: readonly AlmConformanceLaneFamily[];
     readonly order: AlmLaneOrder;
     /** Null when no seed was given: a shuffled family then mints its own. A declared order takes none. */
     readonly seed: number | null;
@@ -43,6 +49,7 @@ export interface AlmLaneParameters {
 /** One cell of the catalog on one carrier. */
 export interface AlmLaneCatalogCell extends Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags'> {
     readonly carrier: AlmConformanceCarrier;
+    readonly family: AlmConformanceLaneFamily;
 }
 
 export interface DecodeAlmLaneParametersInput {
@@ -51,18 +58,25 @@ export interface DecodeAlmLaneParametersInput {
     readonly catalog: readonly AlmLaneCatalogCell[];
 }
 
-type AlmLaneSelection = Pick<AlmLaneParameters, 'scope' | 'carriers'>;
+type AlmLaneSelection = Pick<AlmLaneParameters, 'scope' | 'carriers' | 'families'>;
 
-/** An unset scope runs smoke and unset carriers run every carrier; a disabled lane names its skipped tests by it. */
-export const ALM_LANE_DEFAULT_SELECTION: AlmLaneSelection = { scope: 'smoke', carriers: ALM_CONFORMANCE_CARRIERS };
+/**
+ * An unset scope runs smoke, and unset carriers and families run every carrier and family; a disabled lane names its
+ * skipped tests by it.
+ */
+export const ALM_LANE_DEFAULT_SELECTION: AlmLaneSelection = {
+    scope: 'smoke',
+    carriers: ALM_CONFORMANCE_CARRIERS,
+    families: ALM_CONFORMANCE_LANE_FAMILIES
+};
 
 const MAX_SEED = 0xFFFF_FFFF;
 
 /**
  * Every refused value is named with the values the lane accepts, so a run fails before any browser starts. The rules
  * compose in one way: `RALLAR_BLACK_BOX_ALM_SKIP` withholds a scenario id even when `_ONLY` names its key; `_ONLY`
- * keeps cells within `_SCOPE` and `_CARRIERS`, and a key it names must run in at least one of them or the run is
- * refused with the reason, judged only once `_SCOPE` and `_CARRIERS` are accepted; `_SEED` is accepted only with
+ * keeps cells within `_SCOPE`, `_CARRIERS` and `_FAMILIES`, and a key it names must run in at least one of them or the
+ * run is refused with the reason, judged only once those three are accepted; `_SEED` is accepted only with
  * `_ORDER=shuffled`.
  */
 export function decodeAlmLaneParameters(
@@ -98,13 +112,19 @@ function decodeSelection(values: AlmLaneParameterValues): Either<readonly string
     const scope = toPresent(values.scope) ?? ALM_LANE_DEFAULT_SELECTION.scope;
     const requested = toListEntries(values.carriers);
     const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
+    const requestedFamilies = toListEntries(values.families);
+    const unknownFamilies = requestedFamilies.filter((entry) => !isAlmConformanceLaneFamily(entry));
     const issues = [
         ...(isAlmLaneScope(scope) ? [] : [
-            `RALLAR_BLACK_BOX_ALM_SCOPE=${scope} is not accepted; accepted values: ${ALM_LANE_SCOPES.join(', ')}.`
+            `RALLAR_BLACK_BOX_ALM_SCOPE=${scope} is not accepted; accepted values: ${ALM_CONFORMANCE_TAGS.join(', ')}.`
         ]),
         ...(unsupported.length === 0 ? [] : [
             `RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}; accepted values: ` +
             `${ALM_CONFORMANCE_CARRIERS.join(', ')}.`
+        ]),
+        ...(unknownFamilies.length === 0 ? [] : [
+            `RALLAR_BLACK_BOX_ALM_FAMILIES names unknown families: ${unknownFamilies.join(', ')}; accepted values: ` +
+            `${ALM_CONFORMANCE_LANE_FAMILIES.join(', ')}.`
         ])
     ];
     if (issues.length > 0 || !isAlmLaneScope(scope)) {
@@ -113,7 +133,10 @@ function decodeSelection(values: AlmLaneParameterValues): Either<readonly string
     const carriers = requested.length === 0
         ? ALM_LANE_DEFAULT_SELECTION.carriers
         : ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
-    return Either.ofRight({ scope, carriers });
+    const families = requestedFamilies.length === 0
+        ? ALM_LANE_DEFAULT_SELECTION.families
+        : ALM_CONFORMANCE_LANE_FAMILIES.filter((family) => requestedFamilies.includes(family));
+    return Either.ofRight({ scope, carriers, families });
 }
 
 function validateSeed(seed: string | undefined, order: string): readonly string[] {
@@ -181,6 +204,10 @@ function resolveOnlyRefusal(key: string, input: AlmLaneOnlySelection): string | 
     if (inScope.length === 0) {
         return `it is not in the ${input.selection.scope} scope`;
     }
+    if (!inScope.some((cell) => isAlmLaneFamilySelected(input.selection.families, cell.family))) {
+        return `it runs in ${[...new Set(inScope.map((cell) => cell.family))].join(', ')}, which ` +
+            'RALLAR_BLACK_BOX_ALM_FAMILIES does not select';
+    }
     return 'RALLAR_BLACK_BOX_ALM_SKIP withholds it';
 }
 
@@ -203,11 +230,15 @@ function isSeed(value: string): boolean {
 }
 
 function isAlmLaneScope(value: string): value is AlmConformanceTag {
-    return ALM_LANE_SCOPES.some((scope) => scope === value);
+    return ALM_CONFORMANCE_TAGS.some((scope) => scope === value);
 }
 
 function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
     return ALM_CONFORMANCE_CARRIERS.some((carrier) => carrier === value);
+}
+
+function isAlmConformanceLaneFamily(value: string): value is AlmConformanceLaneFamily {
+    return ALM_CONFORMANCE_LANE_FAMILIES.some((family) => family === value);
 }
 
 function isAlmLaneOrder(value: string): value is AlmLaneOrder {

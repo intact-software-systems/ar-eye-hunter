@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+import { commandOutputMaxBuffer } from '../command-output-max-buffer.mjs';
 
 const observationRoot = 'performance-observations/';
 const archivePathPattern =

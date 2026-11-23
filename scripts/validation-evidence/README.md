@@ -41,8 +41,10 @@ produces one stable Branch Release Gate result for either successful route.
   [build-affecting-tree.mjs#computeBuildAffectingTreeDigest](./build-affecting-tree.mjs#computeBuildAffectingTreeDigest).
   Selection and creation call that fact contract directly; this capability has no second path
   classifier.
-- Trusted prior-run validation starts at
-  [github-validation-evidence.mjs#readGithubWorkflowRuns](./github-validation-evidence.mjs#readGithubWorkflowRuns),
+- Trusted prior-run validation starts at the shared GitHub reader
+  [read-github-workflow-runs.mjs#readGithubWorkflowRuns](../github-actions/read-github-workflow-runs.mjs#readGithubWorkflowRuns)
+  with the successful pull-request runs of the branch, and
+  [github-validation-evidence.mjs#readGithubValidationEvidenceArtifact](./github-validation-evidence.mjs#readGithubValidationEvidenceArtifact)
   downloads only the named v2 artifact. Then
   [validation-evidence-selection.mjs#selectReusableValidationEvidence](./validation-evidence-selection.mjs#selectReusableValidationEvidence)
   checks the exact pull request, base, source branch, repository, workflow run, lifetime, ancestry,

@@ -7,6 +7,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
+    computeUnelectedOutsideCount,
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -14,7 +15,6 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
-    computeUnelectedOutsideCount,
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
