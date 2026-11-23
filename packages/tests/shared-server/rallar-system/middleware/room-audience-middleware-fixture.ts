@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { expect, onTestFinished } from 'vitest';
 
+import { isInstanceLocalRtcSignal } from '@shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts';
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
 import type {
     CreateRallarMiddlewareOptions,
     RallarMiddlewareInfrastructure
 } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
-import type { RelayedAckNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
 import { isRoomScopedALMessage, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -37,14 +37,13 @@ const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 /** The wait the ALM scale recipe gives a shot's receipt read, given here to every receipt read across replicas. */
 export const RECIPE_RECEIPT_READ_WAIT_MS = 5_000;
 
-/** One API instance of a deployment: its WS service and the sockets of the sessions connected to it. */
-export interface RelayedAckMiddlewareInstance {
+/** One API instance of a deployment with other instances: its WS service and the sockets of the sessions on it. */
+export interface RoomAudienceMiddlewareInstance {
     readonly service: WsQueueBoxServerService;
     readonly sockets: Readonly<Record<string, TestWebSocket>>;
 }
 
-export interface RelayedAckMiddlewareInstanceInput {
-    readonly relayedAckNotices: RelayedAckNoticeChannel;
+export interface RoomAudienceMiddlewareInstanceInput {
     /** The inbound admission store every instance of one deployment shares. */
     readonly inboundStores: ALInboundRuntimeStores;
     readonly sessionIds: readonly string[];
@@ -54,7 +53,7 @@ export interface RelayedAckMiddlewareInstanceInput {
     readonly roomView: 'in-sync' | 'behind';
 }
 
-export interface RelayedAckRoomMessageInput {
+interface ReceiptedRoomMessageInput {
     readonly msgId: string;
     readonly senderId: string;
     readonly ack: ALAckMode;
@@ -63,9 +62,9 @@ export interface RelayedAckRoomMessageInput {
 
 export interface KeptSendReplayedElsewhereInput {
     /** Its room view is `behind`; it holds the sender's socket. */
-    readonly keeping: RelayedAckMiddlewareInstance;
+    readonly keeping: RoomAudienceMiddlewareInstance;
     /** Its room view is `in-sync`; it holds a socket of the sender and the recipient's. */
-    readonly replaying: RelayedAckMiddlewareInstance;
+    readonly replaying: RoomAudienceMiddlewareInstance;
     readonly msgId: string;
     readonly senderId: string;
     readonly recipientId: string;
@@ -79,9 +78,9 @@ export interface KeptSendReplayedElsewhere {
     readonly receiptsFromReplayingReplica: readonly ALReceiptPayload[];
 }
 
-export async function createRelayedAckMiddlewareInstance(
-    input: RelayedAckMiddlewareInstanceInput
-): Promise<RelayedAckMiddlewareInstance> {
+export async function createRoomAudienceMiddlewareInstance(
+    input: RoomAudienceMiddlewareInstanceInput
+): Promise<RoomAudienceMiddlewareInstance> {
     const socket = new JsonWebSocketServer();
     const sockets: Record<string, TestWebSocket> = {};
     for (const sessionId of input.sessionIds) {
@@ -107,7 +106,7 @@ export async function createRelayedAckMiddlewareInstance(
                     expiresAtEpochMs: Date.now() + 60_000
                 }
                 : undefined,
-        relayedAckNotices: input.relayedAckNotices
+        keepsVolatileMessageInMemory: isInstanceLocalRtcSignal
     }, engine);
     authorizeRoomAudience(runtime, input);
     onTestFinished(async () => {
@@ -122,7 +121,7 @@ export async function createRelayedAckMiddlewareInstance(
 }
 
 /** A WS-carried room broadcast asking for the receipt `ack` names. */
-export function toRelayedAckRoomMessage(input: RelayedAckRoomMessageInput): ALMessage {
+function toReceiptedRoomMessage(input: ReceiptedRoomMessageInput): ALMessage {
     return {
         id: { v: 4, msgId: input.msgId, ts: Date.now(), senderId: input.senderId, traceId: input.traceId },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
@@ -140,7 +139,7 @@ export function toRelayedAckRoomMessage(input: RelayedAckRoomMessageInput): ALMe
 export async function runKeptSendReplayedElsewhere(input: KeptSendReplayedElsewhereInput): Promise<KeptSendReplayedElsewhere> {
     const { msgId, senderId, traceId } = input;
     const kept = await input.keeping.service.acceptIncomingMessage(
-        toRelayedAckRoomMessage({ msgId, senderId, ack: 'receiver', traceId }),
+        toReceiptedRoomMessage({ msgId, senderId, ack: 'receiver', traceId }),
         senderId
     );
     const sender = input.replaying.sockets[senderId]!;
@@ -172,7 +171,7 @@ function readSentControls(socket: TestWebSocket, msgId: string): readonly string
         .map(({ control }) => control);
 }
 
-function authorizeRoomAudience(runtime: RallarMiddlewareInfrastructure, input: RelayedAckMiddlewareInstanceInput): void {
+function authorizeRoomAudience(runtime: RallarMiddlewareInfrastructure, input: RoomAudienceMiddlewareInstanceInput): void {
     runtime.wsQBoxServerService.authorizeInboundMessagesWith({
         sendNacks: true,
         authorize: async (message) => {

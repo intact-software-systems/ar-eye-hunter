@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { RelayedAckNotice } from '@shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts';
-
-import { runKeptSendReplayedElsewhere } from '../../rallar-system/middleware/relayed-ack-middleware-fixture.ts';
+import { runKeptSendReplayedElsewhere } from '../../rallar-system/middleware/room-audience-middleware-fixture.ts';
 import { createPostgresWsReplica, type PostgresWsReplicaInput } from './test-support/create-postgres-ws-replica.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -17,17 +15,14 @@ const TRACE_ID = 'trace-ws-kept-send-replayed-elsewhere';
 describe('Postgres WS kept send replayed by another replica', () => {
     postgresIt('starts the receipt of a send one replica kept on the replica whose replay admits it', async () => {
         const runId = crypto.randomUUID();
-        const relayedAcks: RelayedAckNotice[] = [];
-        const replica = (index: number, input: Pick<PostgresWsReplicaInput, 'sessionIds' | 'roomView'>) =>
+        const replica = (input: Pick<PostgresWsReplicaInput, 'sessionIds' | 'roomView'>) =>
             createPostgresWsReplica({
                 inboundNamespace: `ws-kept-send-replayed-elsewhere-${runId}`,
-                publisherId: `replica-${index}-${runId}`,
                 roomAudiencePeerIds: [SENDER, RECIPIENT],
-                relayedAcks,
                 ...input
             });
-        const keeping = await replica(1, { sessionIds: [SENDER], roomView: 'behind' });
-        const replaying = await replica(2, { sessionIds: [SENDER, RECIPIENT], roomView: 'in-sync' });
+        const keeping = await replica({ sessionIds: [SENDER], roomView: 'behind' });
+        const replaying = await replica({ sessionIds: [SENDER, RECIPIENT], roomView: 'in-sync' });
 
         const kept = await runKeptSendReplayedElsewhere({
             keeping,
@@ -45,6 +40,5 @@ describe('Postgres WS kept send replayed by another replica', () => {
             expectedRecipientPeerIds: [RECIPIENT],
             snapshotVersion: 1
         });
-        expect(relayedAcks).toEqual([]);
     });
 });

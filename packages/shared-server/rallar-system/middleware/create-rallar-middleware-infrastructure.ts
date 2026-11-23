@@ -17,7 +17,6 @@ import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-co
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
-import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber, sendReceivedLiveWsNotice } from '../queue-pubsub/live-ws-notice-subscriber.ts';
@@ -181,7 +180,7 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,
-        keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
+        keepsVolatileMessageInMemory: options.keepsVolatileMessageInMemory,
         outboundStores: options.outboundStores,
         receiptRecordStores: options.receiptRecordStores,
         dequeueResilience: options.resilience.outbox,

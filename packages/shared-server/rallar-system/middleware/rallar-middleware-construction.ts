@@ -1,3 +1,4 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundRuntimeStores,
@@ -36,7 +37,6 @@ import type { RallarTimingSink } from '../observability/timing.ts';
 import type { AppInboxCompletionNoticeChannel } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
-import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
 import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
@@ -158,10 +158,11 @@ export interface CreateRallarMiddlewareOptions {
         'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
     >;
     /**
-     * The notice channel of a deployment with other instances; absent on a single instance. Its presence keeps only
-     * instance-local RTC signals in the volatile inbound pair.
+     * Which volatile messages a WS server admits and delivers from its memory pair. Absent on a single instance: every
+     * volatile message. On a cluster only an instance-local one may, since another instance proves an ACK and reads an
+     * oversized live notice's message from the shared store.
      */
-    readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
     /**
      * The receipt record the WS server counts receipts in, which every instance of one deployment shares. Required, so
      * no composition that shares its other stores falls back to a record of its own.

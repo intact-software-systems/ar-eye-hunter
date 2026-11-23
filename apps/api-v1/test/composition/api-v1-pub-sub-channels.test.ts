@@ -9,7 +9,6 @@ import type { ApiV1DatabaseNotificationPort } from '../../src/db/api-v1-database
 import { API_V1_LIVE_WS_NOTICE_CHANNEL, createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
 import { API_V1_QUEUE_BOX_KEY_CHANNEL, createApiV1QueuePubSubBridge } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
 import { API_V1_APP_INBOX_COMPLETION_CHANNEL } from '../../src/db/create-postgres-app-inbox-completion-notice-transport.ts';
-import { API_V1_RELAYED_ACK_CHANNEL, createApiV1RelayedAckNotices } from '../../src/db/create-postgres-relayed-ack-notice-transport.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
 
 /** NOTIFY as PostgreSQL routes it: a payload reaches only the listeners of its own channel. */
@@ -27,20 +26,14 @@ function createChannelRoutingNotificationPort(): ApiV1DatabaseNotificationPort {
     };
 }
 
-test('each pub/sub notice kind has a channel of its own', () => {
+test('the queue, live notice and AppInbox completion channels are distinct, and the relayed-ACK channel is gone', () => {
     const channels = [
         API_V1_QUEUE_BOX_KEY_CHANNEL,
         API_V1_LIVE_WS_NOTICE_CHANNEL,
-        API_V1_RELAYED_ACK_CHANNEL,
         API_V1_APP_INBOX_COMPLETION_CHANNEL
     ];
     assert.equal(new Set(channels).size, channels.length);
-    const relayed = createApiV1RelayedAckNotices({
-        mode: 'postgres',
-        notification: createChannelRoutingNotificationPort(),
-        publisherId: 'server-a'
-    });
-    assert.equal(relayed?.channel, API_V1_RELAYED_ACK_CHANNEL);
+    assert.ok(!channels.includes('ws-relayed-ack'));
 });
 
 test('a live signalling notice reaches the live subscriber of another server and never the QueueBox key listener', async () => {

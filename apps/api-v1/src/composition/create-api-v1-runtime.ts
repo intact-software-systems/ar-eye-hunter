@@ -17,6 +17,7 @@ import {
     validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import { isInstanceLocalRtcSignal } from '@shared-server/rallar-system/communication/is-instance-local-rtc-signal.ts';
 import { GroupLobbyExpiry } from '@shared-server/rallar-system/group-state/lobby/group-lobby-expiry.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
@@ -85,7 +86,6 @@ import {
     createApiV1LiveWsNoticeTransport
 } from '../db/api-v1-live-ws-notice-transport.ts';
 import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
-import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -443,11 +443,6 @@ function createSharedMiddleware(
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
     const { inboundStores } = input;
-    const relayedAckNotices = createApiV1RelayedAckNotices({
-        mode: input.databasePubSubMode,
-        notification: input.databaseNotification,
-        publisherId: input.queuePubSubPublisherId
-    });
     const runtime = createRallarMiddleware({
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
@@ -458,6 +453,7 @@ function createSharedMiddleware(
         wsRuntimeName: input.wsRuntimeName,
         inboundStores,
         inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
+        keepsVolatileMessageInMemory: input.databasePubSubMode === 'postgres' ? isInstanceLocalRtcSignal : undefined,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         receiptRecordStores: createServerWsQBoxALReceiptRecordStores(
             input.wsRuntimeName,
@@ -485,7 +481,6 @@ function createSharedMiddleware(
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
-        relayedAckNotices,
         appInboxCompletionNotices: input.appInboxCompletionNotices,
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
