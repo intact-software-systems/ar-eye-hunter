@@ -42,6 +42,22 @@ function toRootResult(command: RecordedControlCommand, error: RallarBlackBoxTest
     };
 }
 
+/** A root an abort ended: its result is `cancelled`, and the abort's reason is the error it carries. */
+function toCancelledRootResult(command: RecordedControlCommand, reason: string): ControlResultEnvelope {
+    return {
+        ...toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: reason }),
+        result: {
+            commandId: command.commandId,
+            kind: 'recipe.run',
+            status: 'cancelled',
+            ok: false,
+            startedAtEpochMs: 1,
+            endedAtEpochMs: 1,
+            durationMs: 0
+        }
+    };
+}
+
 const reloadScenario = createAlmConformanceRecipes({
     group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
     carrier: 'ws',
@@ -160,7 +176,7 @@ describe('local paired reload enqueue', () => {
                 return toRunSnapshot(
                     posted
                         .filter(({ command, agentId }) => command.kind === 'recipe.run' && cancelled.has(agentId))
-                        .map((command) => toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'Paired reload stopped.' }))
+                        .map((command) => toCancelledRootResult(command, 'Paired reload stopped.'))
                 );
             }
         };
@@ -179,7 +195,7 @@ describe('local paired reload enqueue', () => {
                 { commandId: `cancel-${senderRunId}`, agentId: 'actual-sender', targetCommandId: undefined },
                 { commandId: `cancel-${receiverRunId}`, agentId: 'actual-receiver', targetCommandId: undefined }
             ]);
-            const summary = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: Paired reload stopped.';
+            const summary = 'cancelled';
             // Both roots pass their deadline together: the one cancelled first at its deadline, whichever it is, cancels
             // the other after its failure.
             expect([

@@ -33,11 +33,11 @@ const receiverConnectId = baseline.receiver.commands.find((command) => command.k
 const ROLE_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the role\'s wait failed' };
 /**
  * What an agent's control client reports for a recipe the lane cancelled: the recipe's result is `cancelled` and
- * carries no error, so the envelope's error is the client's default.
+ * carries no error, so the envelope's error is the client's default, which the lane does not report as the outcome.
  */
 const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' };
 const ROLE_FAILURE_SUMMARY = `${ROLE_FAILURE.code}: ${ROLE_FAILURE.message}`;
-const LANE_CANCELLED_SUMMARY = `${LANE_CANCELLED.code}: ${LANE_CANCELLED.message}`;
+const LANE_CANCELLED_SUMMARY = 'cancelled';
 
 /**
  * How a root started on the run ends: failing at once, passing at once, only once the lane cancels it, or with its own

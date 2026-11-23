@@ -762,8 +762,8 @@ function expectRecipeRunsPassed(scenario: AlmConformanceScenario, runs: readonly
         ...runs.filter(({ outcome }) => outcome.cancelledAfter !== undefined)
     ];
     for (const { label, outcome } of cancelledLast) {
-        const cancelled = outcome.cancelledAfter === undefined ? '' : `, cancelled after ${outcome.cancelledAfter}`;
-        expect.soft(outcome.ok, `${scenario.scenarioKey} ${label}: ${outcome.summary}${cancelled}`).toBe(true);
+        const cause = outcome.cancelledAfter === undefined ? '' : ` (after ${outcome.cancelledAfter} ended not ok)`;
+        expect.soft(outcome.ok, `${scenario.scenarioKey} ${label}: ${outcome.summary}${cause}`).toBe(true);
     }
 }
 

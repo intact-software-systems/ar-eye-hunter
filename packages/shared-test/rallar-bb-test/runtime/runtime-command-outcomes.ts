@@ -22,9 +22,6 @@ export function toInvalidRecipeOutcome(issues: readonly string[]): RallarBlackBo
     };
 }
 
-/** The error code of a command an abort ended. */
-export const RALLAR_BLACK_BOX_COMMAND_CANCELLED = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED';
-
 export function toTerminalCleanupReason(
     outcome: RallarBlackBoxTestCommandOutcome
 ): RallarBlackBoxTestCleanupInput['reason'] {
@@ -45,7 +42,7 @@ export function decodeThrownCommandOutcome(error: unknown): RallarBlackBoxTestCo
     return isAbortError(error)
         ? {
             status: 'cancelled',
-            error: decodeRuntimeTestError(error, RALLAR_BLACK_BOX_COMMAND_CANCELLED),
+            error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_COMMAND_CANCELLED'),
             nextStatus: 'cancelled'
         }
         : {

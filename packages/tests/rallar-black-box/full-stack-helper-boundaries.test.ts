@@ -459,6 +459,28 @@ describe('control poll timeouts', () => {
         };
     }
 
+    /** A recipe a cancel ended: its result is `cancelled` and carries no error, so the envelope's is the client's default. */
+    function toCancelledRootResult(): ControlResultEnvelope {
+        return {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'poll-timeout',
+            agentId: 'sender',
+            commandId: rootCommandId,
+            ok: false,
+            result: {
+                commandId: rootCommandId,
+                kind: 'recipe.run',
+                status: 'cancelled',
+                ok: false,
+                startedAtEpochMs: 1,
+                endedAtEpochMs: 1,
+                durationMs: 0
+            },
+            error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' }
+        };
+    }
+
     function toPostedKinds(control: RecordingControlRequest): readonly string[] {
         return control.posted.map(({ command }) => command.kind);
     }
@@ -511,7 +533,7 @@ describe('control poll timeouts', () => {
                 30_000,
                 () =>
                     control.posted.some(({ command }) => command.kind === 'recipe.cancel')
-                        ? [toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]
+                        ? [toCancelledRootResult()]
                         : []
             );
             const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
@@ -519,7 +541,7 @@ describe('control poll timeouts', () => {
             await expect(started.readOutcome()).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+                summary: 'cancelled'
             });
             expect(
                 control.posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ commandId, command }) => ({
@@ -652,12 +674,12 @@ describe('control poll timeouts', () => {
             ok: true,
             value: { cancelRequested: true, targetCommandId: rootCommandId, reason: 'late' }
         });
-        const read = await readOutcomeAfterCancelAnswered(accepted, [toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]);
+        const read = await readOutcomeAfterCancelAnswered(accepted, [toCancelledRootResult()]);
         try {
             await expect(read.outcome).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+                summary: 'cancelled'
             });
         }
         finally {
@@ -772,7 +794,7 @@ describe('control poll timeouts', () => {
                 30_000,
                 () =>
                     control.posted.some(({ command }) => command.kind === 'recipe.cancel')
-                        ? [refused, toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]
+                        ? [refused, toCancelledRootResult()]
                         : []
             );
             const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
@@ -780,7 +802,7 @@ describe('control poll timeouts', () => {
             await expect(started.readOutcome()).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+                summary: 'cancelled'
             });
         }
         finally {

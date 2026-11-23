@@ -23,7 +23,6 @@ import {
     isNonEmptyText
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
-import { RALLAR_BLACK_BOX_COMMAND_CANCELLED } from '@shared-test/rallar-bb-test/runtime/runtime-command-outcomes.ts';
 import { decodeControlRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -1261,9 +1260,9 @@ async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Prom
     return toRecipeRunOutcome(root.commandId, result, cancelled ? peer?.commandId : undefined);
 }
 
-/** A cancelled recipe's result says so; an abort thrown out of it carries the cancellation's error code instead. */
+/** A recipe a cancel ended says so in its result, whether it stopped between commands or an abort was thrown out of it. */
 function isCancelledResult(result: ControlResultEnvelope): boolean {
-    return result.result?.status === 'cancelled' || result.error?.code === RALLAR_BLACK_BOX_COMMAND_CANCELLED;
+    return result.result?.status === 'cancelled';
 }
 
 /** A recipe the lane held back because a root of its scenario ended not ok first: it never ran, so it never passed. */
@@ -1419,8 +1418,12 @@ async function enqueueRecipeRun(
     return commandId;
 }
 
+/** A cancelled result carries no error of its own, so the control client's default error would only hide that it was. */
 function toControlResultSummary(result: ControlResultEnvelope): string {
-    return result.ok === true ? 'ok' : toControlErrorSummary(result.error);
+    if (result.ok === true) {
+        return 'ok';
+    }
+    return isCancelledResult(result) ? 'cancelled' : toControlErrorSummary(result.error);
 }
 
 function toControlErrorSummary(error: RallarBlackBoxTestError | undefined): string {
