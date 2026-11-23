@@ -25,7 +25,7 @@ const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' 
 const SENDER_FAILURE: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'the sender\'s reconnect failed' };
 /**
  * What an agent's control client reports for a recipe the lane cancelled: the recipe's result is `cancelled` and
- * carries no error, so the envelope's error is the client's default.
+ * carries no error, so the envelope's error is the client's default, which the lane does not report as the outcome.
  */
 const LANE_CANCELLED: RallarBlackBoxTestError = { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' };
 
@@ -465,7 +465,7 @@ describe('ALM run on an agent per role', () => {
                 sibling: {
                     commandId: runIds.sibling,
                     ok: false,
-                    summary: `${LANE_CANCELLED.code}: ${LANE_CANCELLED.message}`,
+                    summary: 'cancelled',
                     cancelledAfter: runIds.sender
                 }
             });
