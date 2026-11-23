@@ -203,6 +203,7 @@
     "test:api-v1:black-box:postgres:view-push": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:view-push --",
     "test:api-v1:black-box:postgres:ordering": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:ordering --",
     "test:api-v1:black-box:postgres:room-deadlines": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:room-deadlines --",
+    "test:api-v1:black-box:postgres:seat-deadline": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:seat-deadline --",
     "test:api-v1:black-box:postgres:room-lobbies": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:room-lobbies --",
     "test:api-v1:black-box:postgres:group-delta": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:group-delta --",
     "test:api-v1:black-box:postgres:auth-logout": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:auth-logout --",

@@ -75,8 +75,8 @@ async function fixture(storage: ResourceInboxTestStorage): Promise<FriendsPresen
                 select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated' order by ri_resource_id`;
             return rows.map((row) => {
                 const notice = decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource)));
-                if (notice.principalId === null) {
-                    throw new Error('Private presence fixture received a public catalog notice');
+                if (notice.resource !== 'friends') {
+                    throw new Error('Friends presence fixture received an unrelated view notice');
                 }
                 return notice;
             });

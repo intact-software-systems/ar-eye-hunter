@@ -20,6 +20,16 @@ export namespace ViewInvalidation {
         readonly principalId: string;
         readonly changeId: string;
     }
+    export interface RoomProgram {
+        readonly version: 1;
+        readonly resource: 'room-program';
+        readonly scope: StateScope;
+        readonly principalId: string;
+        readonly groupId: string;
+        readonly reason: 'program-changed' | 'access-changed';
+        readonly changeId: string;
+    }
+
     export interface PublicCatalog {
         readonly version: 1;
         readonly resource: 'tournament-catalog';
@@ -37,6 +47,7 @@ export namespace ViewInvalidation {
 }
 
 export type ViewInvalidation =
+    | ViewInvalidation.RoomProgram
     | ViewInvalidation.ScopedAccount
     | ViewInvalidation.Account
     | ViewInvalidation.PublicCatalog;
@@ -44,7 +55,8 @@ export type ViewInvalidation =
 /** A hint to read authority again, never a replacement snapshot or permission to access a resource. */
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     const record = requireRecord(value, 'View invalidation');
-    requireExactKeys(record, ['version', 'resource', 'scope', 'principalId', 'changeId'], 'View invalidation');
+    const keys = ['version', 'resource', 'scope', 'principalId', 'changeId'];
+    requireExactKeys(record, record.resource === 'room-program' ? [...keys, 'groupId', 'reason'] : keys, 'View invalidation');
     if (record.version !== 1) {
         throw new TypeError('Unsupported view invalidation version');
     }
@@ -74,21 +86,24 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
             changeId: record.changeId
         };
     }
-    return {
-        version: 1,
-        resource: requireOneOf(record.resource, [
-            'party',
-            'matchmaking',
-            'room-lobby',
-            'friends',
-            'sessions',
-            'tournament-catalog',
-            'tournament',
-            'room-move'
-        ], 'View resource'),
+    const account = {
+        version: 1 as const,
         scope: decodeStateScope(record.scope),
         principalId: record.principalId,
         changeId: record.changeId
+    };
+    if (record.resource === 'room-program') {
+        requireString(record.groupId, 'Program room');
+        return {
+            ...account, resource: record.resource, groupId: record.groupId,
+            reason: requireOneOf(record.reason, ['program-changed', 'access-changed'], 'Program notice')
+        };
+    }
+    return {
+        ...account,
+        resource: requireOneOf(record.resource, [
+            'party', 'matchmaking', 'room-lobby', 'friends', 'sessions', 'tournament-catalog', 'tournament', 'room-move'
+        ], 'View resource')
     };
 }
 

@@ -304,7 +304,7 @@ export async function initialiseMiddleware(
     let transports: BrowserTransports | undefined;
     const serverClock = await startDefaultBrowserServerClockSession({
         baseUrl: apiBaseUrl,
-        serverPeerId: apiConfig.serverPeerId,
+        serverPeerId: apiConfig.clockPeerId ?? apiConfig.serverPeerId,
         readSocket: () => transports?.webSocketTransport.webSocketQueueBox.socket.ws,
         signal: options.signal
     });

@@ -19,7 +19,7 @@ async function signIn(page: Page, user: FullStackUser, scope: StateScope) {
         await rallar.connect();
         const lobby = new RallarRoomLobby(rallar, scope);
         await lobby.start();
-        return { lobby, rooms: rallar.rooms };
+        return { lobby, rooms: rallar.rooms, rallar };
     }, { username: user.username, password: user.password, apiBaseUrl: config.apiBaseUrl, scope, sdkUrl, observerUrl });
 }
 
@@ -96,6 +96,89 @@ test('a returning participant recovers a registration cutoff shifted with the ro
             return RallarRoomLobby.registration(snapshot.group.metadata, rallar);
         }, { room: court, sdkUrl, observerUrl });
         expect(registration).toMatchObject({ boundary: { program: 'match', phase: 'play' }, atEpochMs: shifted });
+    } finally {
+        await guestPage.close();
+    }
+});
+
+test('a member follows court A from B through pause, a missed resume and access loss', async ({ page, browser, baseURL }) => {
+    test.skip(!config.enabled, config.skipReason);
+    const scope = { applicationId: 'club', workspaceId: crypto.randomUUID() };
+    const court = { ...scope, groupId: 'court' };
+    const lounge = { ...scope, groupId: 'lounge' };
+    const guestPage = await browser.newPage({ baseURL });
+    const roomReads: string[] = [];
+    const roomPath = '/api/state/apps/club/workspaces/' + scope.workspaceId + '/groups/court';
+    guestPage.on('request', request => {
+        if (request.method() === 'GET' && new URL(request.url()).pathname === roomPath) roomReads.push(request.url());
+    });
+    let cutConnection: (() => Promise<void>) | undefined;
+    let disconnected = false;
+    await guestPage.routeWebSocket(url => url.host === new URL(config.apiBaseUrl).host, async socket => {
+        if (disconnected) {
+            await socket.close({ code: 1001 });
+            return;
+        }
+        const server = socket.connectToServer();
+        cutConnection = async () => {
+            await Promise.all([socket.close({ code: 1001 }), server.close({ code: 1001 })]);
+        };
+    });
+    try {
+        const host = await signIn(page, config.userA, scope);
+        const guest = await signIn(guestPage, config.userB, scope);
+        const control = await host.evaluate(async ({ rooms, rallar }, { court, lounge }) => {
+            await rooms.createAndSwitch({ ...court, displayName: 'Court', joinMode: 'open' });
+            await rooms.create({ ...lounge, displayName: 'Lounge', joinMode: 'open' });
+            const { appointment } = await rallar.director.appoint(court);
+            const control = { name: 'match', expectedDirectorEpoch: appointment!.epoch };
+            await rooms.publishSchedule(court, { ...control, expectedRevision: 0,
+                phases: [{ phase: 'warmup', startsAtEpochMs: 0 }, { phase: 'play', startsAtEpochMs: Date.now() + 120000 }]
+            }, crypto.randomUUID());
+            return control;
+        }, { court, lounge });
+        const observer = await guest.evaluateHandle(async ({ rooms, rallar }, { court, lounge }) => {
+            await rooms.enter(court);
+            await rooms.enter(lounge, { preserveCurrentMembership: true });
+            const history: import('@shared/api/group-deadlines/room-schedule.ts').RoomSchedule.Observation[] = [];
+            const stop = rooms.watchSchedule(court, 'match', value => history.push(value));
+            return { history, stop, principalId: rallar.session()!.clientId, room: () => rooms.current()?.group.groupId };
+        }, { court, lounge });
+        const latest = () => observer.evaluate(state => state.history.at(-1));
+        const selected = () => observer.evaluate(state => state.room());
+        await expect.poll(latest).toMatchObject({ status: 'current', schedule: { revision: 1 } });
+        expect(await selected()).toBe(lounge.groupId);
+        await host.evaluate(({ rooms }, { court, control }) =>
+            rooms.pauseProgram(court, { ...control, expectedRevision: 1 }, crypto.randomUUID()), { court, control });
+        await expect.poll(latest).toMatchObject({ status: 'current', schedule: { revision: 2, status: 'program-paused' } });
+        const beforeIdle = roomReads.length;
+        // Longer than the historical five-second polling interval. The observer stays mounted throughout.
+        await new Promise(resolve => setTimeout(resolve, 5500));
+        expect(roomReads.length).toBe(beforeIdle);
+        expect(await selected()).toBe(lounge.groupId);
+        expect(cutConnection).toBeDefined();
+        disconnected = true;
+        await guestPage.context().setOffline(true);
+        await cutConnection!();
+        await expect.poll(latest).toMatchObject({ status: 'stale' });
+        const resumed = await host.evaluate(({ rooms }, { court, control }) =>
+            rooms.resumeProgram(court, { ...control, expectedRevision: 2 }, crypto.randomUUID()), { court, control });
+        expect(await latest()).toMatchObject({ status: 'stale', schedule: { revision: 2 } });
+        disconnected = false;
+        await guestPage.context().setOffline(false);
+        await expect.poll(latest, { timeout: 20000 }).toEqual({ status: 'current', schedule: resumed });
+        expect(await selected()).toBe(lounge.groupId);
+        const principalId = await observer.evaluate(state => state.principalId);
+        const deniedRead = guestPage.waitForResponse(response =>
+            new URL(response.url()).pathname === roomPath && [403, 404].includes(response.status()));
+        await host.evaluate(({ rooms }, { court, principalId }) => rooms.banMember(court, principalId), { court, principalId });
+        await deniedRead;
+        await expect.poll(latest).toEqual({ status: 'stale', schedule: null });
+        await host.evaluate(({ rooms }, { court, control }) =>
+            rooms.pauseProgram(court, { ...control, expectedRevision: 3 }, crypto.randomUUID()), { court, control });
+        expect(await selected()).toBe(lounge.groupId);
+        expect(await latest()).toEqual({ status: 'stale', schedule: null });
+        await observer.evaluate(state => state.stop());
     } finally {
         await guestPage.close();
     }

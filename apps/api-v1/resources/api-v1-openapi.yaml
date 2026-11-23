@@ -7099,6 +7099,7 @@ components:
         serverPeerId:
           type: string
           minLength: 1
+          description: The configured clockPeerId or the WS serverPeerId when the node has no separate clock identity.
         serverNowEpochMs:
           type: integer
           minimum: 0
@@ -7125,6 +7126,10 @@ components:
             tracks the server as its one hop by it. Every server since S3c-i serves it; a browser refuses a body
             without it, as it refuses a body without `rtcReplacedLayoutOverlapMs`.
           example: default-qbox-server
+        clockPeerId:
+          type: string
+          minLength: 1
+          description: The node identity expected in HTTP and socket clock replies. When omitted, clock replies use serverPeerId.
         rtcReplacedLayoutOverlapMs:
           type: integer
           minimum: 0

@@ -7,7 +7,7 @@ export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<str
     if (!isRecord(value) || !isRecord(value.endpoints)) {
         return Either.ofLeft('The /api/config response is not an object with endpoints.');
     }
-    const { apiBaseUrl, wsBaseUrl, serverPeerId, rtcReplacedLayoutOverlapMs } = value;
+    const { apiBaseUrl, wsBaseUrl, serverPeerId, clockPeerId, rtcReplacedLayoutOverlapMs } = value;
     const createWs = value.endpoints.createWs;
     if (
         typeof apiBaseUrl !== 'string' || typeof wsBaseUrl !== 'string' ||
@@ -21,6 +21,9 @@ export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<str
         return Either.ofLeft(
             'The /api/config response names an empty or non-string WS server peer id.'
         );
+    }
+    if (clockPeerId !== undefined && (typeof clockPeerId !== 'string' || !clockPeerId || clockPeerId.trim() !== clockPeerId)) {
+        return Either.ofLeft('The /api/config response names an invalid clock peer id.');
     }
     if (!isRtcReplacedLayoutOverlapMs(rtcReplacedLayoutOverlapMs)) {
         return Either.ofLeft(
@@ -38,7 +41,10 @@ export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<str
     if (hostMismatch !== null) {
         return Either.ofLeft(hostMismatch);
     }
-    return Either.ofRight({ apiBaseUrl, wsBaseUrl, endpoints: { createWs }, serverPeerId, rtcReplacedLayoutOverlapMs });
+    return Either.ofRight({
+        apiBaseUrl, wsBaseUrl, endpoints: { createWs }, serverPeerId, rtcReplacedLayoutOverlapMs,
+        ...(clockPeerId === undefined ? {} : { clockPeerId })
+    });
 }
 
 function isRtcReplacedLayoutOverlapMs(value: unknown): value is number {

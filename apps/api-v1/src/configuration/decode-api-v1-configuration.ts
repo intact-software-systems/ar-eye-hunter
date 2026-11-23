@@ -161,6 +161,7 @@ function decodePublicApi(
     decoder: ApiV1ConfigurationValueDecoder
 ): ApiV1PublicApiConfiguration {
     return {
+        ...(decoder.hasValue('publicApi.clockPeerId') ? { clockPeerId: decoder.nonEmptyString('publicApi.clockPeerId') } : {}),
         apiBaseUrl: decodeApiV1ConfigurationUrl(decoder, 'publicApi.apiBaseUrl', [
             'http:',
             'https:'
