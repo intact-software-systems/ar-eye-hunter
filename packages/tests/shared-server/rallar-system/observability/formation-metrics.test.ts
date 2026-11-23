@@ -218,11 +218,9 @@ describe('group formation metrics recorder', () => {
             completedCount: 1,
             rescheduledCount: 1,
             rejectedCount: 1,
-            selectionDurationMs: 0,
             claimDurationMs: 1,
             runDurationMs: 2,
             releaseDurationMs: 1,
-            queueWaitMs: 0,
             startedAtMs: 1,
             claims: [{ payloadKind: 'send-prepared', durationMs: 2 }]
         });

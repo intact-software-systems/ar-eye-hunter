@@ -460,16 +460,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         completedCount: number;
         rescheduledCount: number;
         rejectedCount: number;
-        /** The selection's own read; zero, since the outbound owner reserves without reading a page first. */
-        selectionDurationMs: number;
         /** The port's reservation of the batch's rows. */
         claimDurationMs: number;
         /** Every claim's own work, summed. */
         runDurationMs: number;
         /** The one release flush that ended the batch. */
         releaseDurationMs: number;
-        /** How long the earliest claimed row had been due when the batch started. */
-        queueWaitMs: number;
         /** When the batch's run loop started, after its selection and reservation. */
         startedAtMs: number;
         /** Each claim whose work decoded, in the order it settled: a slow drain names the claim that made it slow. */

@@ -107,6 +107,12 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 }
 
+/**
+ * How many commits a control may lose in a row before it waits: a receipt's inline attempts, and the runs a batch
+ * gives a parked control it claims ahead of its next claim.
+ */
+export const AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS = 3;
+
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
 export class ALOutboundControlAdmission<TPrepared> {
     private readonly clock: ALOutboundMessageRuntime.Clock;

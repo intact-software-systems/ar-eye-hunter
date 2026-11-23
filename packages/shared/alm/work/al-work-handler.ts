@@ -187,6 +187,12 @@ interface ALWorkCounts {
     rejectedCount: number;
 }
 
+/** A row `expedite()` named, and how many runs the batch that claims it gives it. */
+interface ALWorkExpeditedRow {
+    readonly key: Key;
+    readonly maxRuns: number;
+}
+
 /** The selection a batch claimed from, and the instant its run loop started over those claims. */
 interface ALWorkClaimedRun {
     readonly selection: ALWorkReadySelection;
@@ -235,7 +241,9 @@ export class ALWorkHandler {
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
     /** Rows `expedite()` named while a batch runs, which that batch claims before its next claim. */
-    private readonly expedited: Key[] = [];
+    private readonly expedited: ALWorkExpeditedRow[] = [];
+    /** The running batch's expedited claims, by queue key: the runs each has left when it answers `retry`. */
+    private readonly expeditedRunsLeft = new Map<string, number>();
     private readonly shutdown = new AbortController();
     private readonly engine: ALWorkEngineMembership;
 
@@ -311,11 +319,13 @@ export class ALWorkHandler {
     /**
      * Called before `committed()` for rows of that commit that must not wait for the running batch's remaining claims:
      * the batch claims each one still pending before its next claim, so such a row waits for the claim in flight at
-     * most. With no batch running, the batch `committed()` starts claims them as it claims any due row.
+     * most, and runs it again at once while it answers `retry`, `maxRuns` runs in all; past them its retry waits for
+     * the batch's release as any claim's does. With no batch running, the batch `committed()` starts claims them as it
+     * claims any due row.
      */
-    expedite(keys: readonly Key[]): void {
+    expedite(keys: readonly Key[], maxRuns: number): void {
         if (this.batch !== undefined) {
-            this.expedited.push(...keys);
+            this.expedited.push(...keys.map((key) => ({ key, maxRuns })));
         }
     }
 
@@ -412,6 +422,7 @@ export class ALWorkHandler {
         this.batch = undefined;
         // A row named after the batch's last claim is claimed by the batch its commit owes.
         this.expedited.length = 0;
+        this.expeditedRunsLeft.clear();
         let following: Promise<void> | undefined;
         try {
             following = this.runPendingCommit();
@@ -544,7 +555,7 @@ export class ALWorkHandler {
                 continue;
             }
             const release = await this.runOne(claim, progress, { ...run, attempt });
-            if (release === undefined) {
+            if (release === undefined || this.rerunsExpedited(release, queued, progress)) {
                 continue;
             }
             releases.push(release);
@@ -566,6 +577,19 @@ export class ALWorkHandler {
         return queued.shift();
     }
 
+    /** An expedited claim that answered `retry` with runs left goes first again instead of to the release. */
+    private rerunsExpedited(release: ALWorkRelease, queued: ALWorkClaim[], progress: ALWorkBatchProgress): boolean {
+        const key = toKeyAsString(release.claim.entry.key);
+        const runsLeft = this.expeditedRunsLeft.get(key) ?? 0;
+        if (release.outcome.status !== 'retry' || runsLeft === 0 || this.shutdown.signal.aborted) {
+            return false;
+        }
+        this.expeditedRunsLeft.set(key, runsLeft - 1);
+        progress.rescheduledCount -= 1;
+        queued.unshift(release.claim);
+        return true;
+    }
+
     /**
      * Each expedited row still new or retrying as read. One that cannot be claimed is left to the batch its commit owes,
      * and the failure is stated as a batch failure is, as a successor's is.
@@ -575,11 +599,17 @@ export class ALWorkHandler {
             return [];
         }
         const { port } = this.dependencies;
-        const keys = this.expedited.splice(0);
+        const rows = this.expedited.splice(0);
         try {
-            const entries = await Promise.all(keys.map((key) => port.readEntry(key)));
+            const entries = await Promise.all(rows.map((row) => port.readEntry(row.key)));
             const observed = entries.filter((entry) => entry !== undefined);
-            return observed.length === 0 ? [] : await port.claimObserved(observed);
+            const claims = observed.length === 0 ? [] : await port.claimObserved(observed);
+            const maxRuns = new Map(rows.map((row) => [toKeyAsString(row.key), row.maxRuns]));
+            for (const claim of claims) {
+                const key = toKeyAsString(claim.entry.key);
+                this.expeditedRunsLeft.set(key, (maxRuns.get(key) ?? 1) - 1);
+            }
+            return claims;
         }
         catch (error) {
             this.reportBatchFailure(toError(error));

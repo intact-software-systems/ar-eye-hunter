@@ -359,5 +359,10 @@ it('states each claim of an outbound drain with the effect its row held and what
             ]
         }))
     );
+    // The outbound owner reads no page before it reserves, so it has no selection read and no due time to state.
+    for (const drain of diagnostics.filter((event) => event.kind === 'effect-drain')) {
+        expect(drain).not.toHaveProperty('selectionDurationMs');
+        expect(drain).not.toHaveProperty('queueWaitMs');
+    }
     await runtime.dispose();
 });

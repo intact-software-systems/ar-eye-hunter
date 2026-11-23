@@ -11,7 +11,11 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmission, ALOutboundPendingControl } from './al-outbound-control-admission.ts';
+import {
+    AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS,
+    type ALOutboundControlAdmission,
+    type ALOutboundPendingControl
+} from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
     isALOutboundTerminalReceipt,
@@ -46,7 +50,6 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
  * already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
-    private static readonly MAX_ATTEMPTS = 3;
     private readonly dependencies: ALOutboundReceiptAdmissionDependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundReceiptAdmissionDependencies<TPrepared>) {
@@ -72,7 +75,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         control: ALMessage,
         receipt: ALReceiptPayload
     ): Promise<ALOutboundControlAdmissionResult> {
-        for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
+        for (let attempt = 0; attempt < AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS; attempt += 1) {
             const result = await this.admitOnce(control, receipt, attempt + 1);
             if (result !== 'conflict') {
                 return result;

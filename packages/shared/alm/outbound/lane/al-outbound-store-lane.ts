@@ -59,7 +59,10 @@ import {
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
-import type { ALOutboundControlAdmission } from '../control/al-outbound-control-admission.ts';
+import {
+    AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS,
+    type ALOutboundControlAdmission
+} from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/read-al-outbound-recipient-proof.ts';
 import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
@@ -318,11 +321,15 @@ export class ALOutboundStoreLane<TPrepared> {
 
     /**
      * A control whose commit lost to this owner's own writes is replayed ahead of the running batch's remaining
-     * claims: those claims are the writes it lost to, and a page of them can outlast the deadline it answers.
+     * claims, and again while its replays keep losing, up to the attempts a receipt has: those claims are the
+     * writes it lost to, and a page of them can outlast the deadline it answers.
      */
     private expeditePendingControl(control: ALMessage): void {
         const { namespace } = this.input.stores.admissionStore;
-        this.work.expedite([toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))]);
+        this.work.expedite(
+            [toALOutboundWorkKey(namespace, toALOutboundPendingControlId(control))],
+            AL_OUTBOUND_CONTROL_COMMIT_ATTEMPTS
+        );
         this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
     }
 
@@ -670,11 +677,9 @@ export class ALOutboundStoreLane<TPrepared> {
             completedCount: event.completedCount,
             rescheduledCount: event.rescheduledCount,
             rejectedCount: event.rejectedCount,
-            selectionDurationMs: event.selectionDurationMs,
             claimDurationMs: event.claimDurationMs,
             runDurationMs: event.runDurationMs,
             releaseDurationMs: event.releaseDurationMs,
-            queueWaitMs: event.queueWaitMs,
             startedAtMs: event.startedAtMs,
             claims: this.claimRuns
         });

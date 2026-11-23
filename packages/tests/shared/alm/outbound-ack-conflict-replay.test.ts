@@ -185,88 +185,101 @@ it.each(
     }
 );
 
-it('commits a parked ACK before the claims still queued behind the in-flight one of its batch', async () => {
-    const nowMs = 10_000;
-    const clock = () => nowMs;
-    vi.spyOn(Date, 'now').mockImplementation(clock);
-    const workQueue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs));
-    const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(workQueue), clock);
-    const admissionStore = createALOutboundAdmissionStore({
-        backend,
-        nowMs: clock,
-        namespace: 'parked-ack-in-flight-batch',
-        canonicalScope: 'parked-ack-in-flight-batch',
-        decodePrepared: decodeOutboundTestPayload,
-        supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
-    });
-    const message = createTrackedMessage();
-    const held = { ...createTrackedMessage(), id: { ...message.id, msgId: 'held' } };
-    const registry = new BrowserRallarDeliveryRegistry({
-        nowMs: clock,
-        retainTerminalMs: 60_000,
-        maxEntries: 10,
-        cancel() {}
-    });
-    onTestFinished(() => registry.releaseAll());
-    const handle = registry.open({ message, carrier: 'rtc', readDeadlineEpochMs: clock });
-    // Each copy of the held message keeps its claim in flight until its gate opens: the batch's slowness.
-    const gates = new Map<string, () => void>();
-    const runtime = createOutboundTestRuntimeFor({
-        stores: { admissionStore, workQueue },
-        queueEngine: new InboxOutboxEngine(),
-        nowMs: clock,
-        carrier: 'rtc',
-        decodePreparedMessage: decodeOutboundTestPayload,
-        planOutgoingMessage: (msg) =>
-            msg.id.msgId === held.id.msgId
-                ? { ...planTrackedSend(msg), preparedMessages: [{ copy: 'first' }, { copy: 'second' }] }
-                : planTrackedSend(msg),
-        settlements: (settlement) => registry.record(settlement),
-        sendPreparedMessage: (prepared) =>
-            prepared.copy === undefined
-                ? Promise.resolve({ status: 'sent', submissionAttempted: true })
-                : new Promise<ALOutboundPreparedSendResult>((resolve) => {
-                    gates.set(prepared.copy!, () => resolve({ status: 'sent', submissionAttempted: true }));
-                })
-    });
-    onTestFinished(() => [...gates.values()].forEach((open) => open()));
-    const admitted = await runtime.enqueueIfAbsent(message);
-    registry.record({
-        kind: 'admission',
-        msgId: message.id.msgId,
-        carrier: 'rtc',
-        atMs: nowMs,
-        verdict: admitted.verdict,
-        trackedReceiptAlgo: admitted.trackedReceiptAlgo,
-        traceId: 'trace-outbound-ack-conflict-replay'
-    });
-    await runOutboundWorkTask(runtime);
-    expect(handle.lifecycle().state).toBe('transport-accepted');
+// One lost commit is the inline admission's; each further one is a replay's inside the batch.
+it.each([{ lostCommits: 1 }, { lostCommits: 3 }])(
+    'commits a parked ACK that lost $lostCommits commits before the claims queued behind the in-flight one of its batch',
+    async ({ lostCommits }) => {
+        const nowMs = 10_000;
+        const clock = () => nowMs;
+        vi.spyOn(Date, 'now').mockImplementation(clock);
+        const workQueue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs));
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(workQueue), clock);
+        const admissionStore = createALOutboundAdmissionStore({
+            backend,
+            nowMs: clock,
+            namespace: 'parked-ack-in-flight-batch',
+            canonicalScope: 'parked-ack-in-flight-batch',
+            decodePrepared: decodeOutboundTestPayload,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const message = createTrackedMessage();
+        const held = { ...createTrackedMessage(), id: { ...message.id, msgId: 'held' } };
+        const registry = new BrowserRallarDeliveryRegistry({
+            nowMs: clock,
+            retainTerminalMs: 60_000,
+            maxEntries: 10,
+            cancel() {}
+        });
+        onTestFinished(() => registry.releaseAll());
+        const handle = registry.open({ message, carrier: 'rtc', readDeadlineEpochMs: clock });
+        // Each copy of the held message keeps its claim in flight until its gate opens: the batch's slowness.
+        const gates = new Map<string, () => void>();
+        const runtime = createOutboundTestRuntimeFor({
+            stores: { admissionStore, workQueue },
+            queueEngine: new InboxOutboxEngine(),
+            nowMs: clock,
+            carrier: 'rtc',
+            decodePreparedMessage: decodeOutboundTestPayload,
+            planOutgoingMessage: (msg) =>
+                msg.id.msgId === held.id.msgId
+                    ? { ...planTrackedSend(msg), preparedMessages: [{ copy: 'first' }, { copy: 'second' }] }
+                    : planTrackedSend(msg),
+            settlements: (settlement) => registry.record(settlement),
+            sendPreparedMessage: (prepared) =>
+                prepared.copy === undefined
+                    ? Promise.resolve({ status: 'sent', submissionAttempted: true })
+                    : new Promise<ALOutboundPreparedSendResult>((resolve) => {
+                        gates.set(prepared.copy!, () => resolve({ status: 'sent', submissionAttempted: true }));
+                    })
+        });
+        onTestFinished(() => [...gates.values()].forEach((open) => open()));
+        const admitted = await runtime.enqueueIfAbsent(message);
+        registry.record({
+            kind: 'admission',
+            msgId: message.id.msgId,
+            carrier: 'rtc',
+            atMs: nowMs,
+            verdict: admitted.verdict,
+            trackedReceiptAlgo: admitted.trackedReceiptAlgo,
+            traceId: 'trace-outbound-ack-conflict-replay'
+        });
+        await runOutboundWorkTask(runtime);
+        expect(handle.lifecycle().state).toBe('transport-accepted');
 
-    await runtime.enqueueIfAbsent(held);
-    await waitUntil(() => gates.has('first'));
-    const repairBundle = await readRepairBundle(admissionStore, message, {
-        attemptIdentity: 'in-flight-conflict',
-        creationNow: Temporal.Now.instant
-    });
-    const write = backend.write.bind(backend);
-    vi.spyOn(backend, 'write').mockImplementationOnce(async (operation, deadline) => {
-        expect(await admissionStore.commitBundle(repairBundle)).toBe('committed');
-        return await write(operation, deadline);
-    });
-    expect(await runtime.acceptControlMessage(toDeliveredAck(message, nowMs), 'peer'))
-        .toEqual({ kind: 'pending-control' });
-    expect(handle.lifecycle().state).toBe('transport-accepted');
+        await runtime.enqueueIfAbsent(held);
+        await waitUntil(() => gates.has('first'));
+        // Each lost commit is a competing repair committed after the ACK's read and before its write.
+        const write = backend.write.bind(backend);
+        let competingRepairs = 0;
+        let competing = false;
+        vi.spyOn(backend, 'write').mockImplementation(async (operation, deadline) => {
+            if (!competing && competingRepairs < lostCommits) {
+                competing = true;
+                competingRepairs += 1;
+                const repairBundle = await readRepairBundle(admissionStore, message, {
+                    attemptIdentity: `in-flight-conflict-${competingRepairs}`,
+                    creationNow: Temporal.Now.instant
+                });
+                expect(await admissionStore.commitBundle(repairBundle)).toBe('committed');
+                competing = false;
+            }
+            return await write(operation, deadline);
+        });
+        expect(await runtime.acceptControlMessage(toDeliveredAck(message, nowMs), 'peer'))
+            .toEqual({ kind: 'pending-control' });
+        expect(handle.lifecycle().state).toBe('transport-accepted');
 
-    gates.get('first')!();
-    await waitUntil(() => gates.has('second'));
+        gates.get('first')!();
+        await waitUntil(() => gates.has('second'));
 
-    expect(handle.lifecycle()).toMatchObject({
-        state: 'acknowledged',
-        evidence: { confirmedRecipientPeerIds: ['receiver'] }
-    });
-});
+        expect(handle.lifecycle()).toMatchObject({
+            state: 'acknowledged',
+            evidence: { confirmedRecipientPeerIds: ['receiver'] }
+        });
+        expect(competingRepairs).toBe(lostCommits);
+    }
+);
 
 function toDeliveredAck(message: ALMessage, nowMs: number): ALMessage {
     return newALAckControlMessage(

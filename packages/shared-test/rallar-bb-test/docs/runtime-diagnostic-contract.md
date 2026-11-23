@@ -435,10 +435,11 @@ every session the page opens. The event's `data` is the event itself:
   `available` for the two `browser-lock-*` phases; `workerId`,
   `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
   for `effect-drain`
-- the outbound `effect-drain` also carries the batch's phases, as the inbound
-  one does below: `selectionDurationMs` (always near zero: the outbound owner
-  reserves straight from the queue and reads no page first), `claimDurationMs`,
-  `runDurationMs`, `releaseDurationMs`, `queueWaitMs` and `startedAtMs`. Then
+- the outbound `effect-drain` also carries three of the inbound one's phases
+  below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
+  `startedAtMs`. It has no `selectionDurationMs` or `queueWaitMs`: the outbound
+  owner reserves straight from the queue, so it reads no page and sees no row's
+  due time. Then
   `claims`, one `{ payloadKind, durationMs }` for each claim whose row's work
   decoded, in the order the claims settled: `payloadKind` is the effect the row
   held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
@@ -549,7 +550,8 @@ every session the page opens. The event's `data` is the event itself:
   present, and `targetMsgId` is the sent message it answers. `outcome` is
   `committed`, `pending-control` (a conflict retained as `admit-control` work,
   which the outbound drain replays: a batch running when it was retained claims
-  it before its next claim, so it waits behind the claim in flight and no more),
+  it before its next claim, so it waits behind the claim in flight and no more,
+  and runs it again at once while its replay conflicts, three runs in all),
   `rejected`, `duplicate` (every issue of
   the refusal is a repeat: `AL control was already admitted`,
   `AL acknowledgement confirms a peer the receipt already counted`), or
