@@ -46,8 +46,14 @@ interface RetransmissionServer extends ReceiptServerInstance {
     readonly store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
 }
 
+/** A case's own backend over the base one the server would use; the base is built over state the helper owns. */
+type BackendWrapper = (base: ALAdmissionWorkBackend) => ALAdmissionWorkBackend;
+
 interface RetransmissionServerOptions {
-    readonly outboundBackend: (base: ALAdmissionWorkBackend) => ALAdmissionWorkBackend | undefined;
+    /** Undefined: the outbound owner writes through the base backend. */
+    readonly outboundBackend: BackendWrapper | undefined;
+    /** Undefined: the receipt record writes through the base backend. */
+    readonly recordBackend: BackendWrapper | undefined;
     readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
 }
 
@@ -56,7 +62,11 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         // Pins F-c: the server's row learns only the terminal receipt, so a retry inside the window resent to every
         // expected recipient, the one that confirmed included.
         const clock = installClock();
-        const server = await createRetransmissionServer(clock, { outboundBackend: () => undefined, capturedRecipientEligibilityFilters: undefined });
+        const server = await createRetransmissionServer(clock, {
+            outboundBackend: undefined,
+            recordBackend: undefined,
+            capturedRecipientEligibilityFilters: undefined
+        });
         await admitRoomMessage(server, clock, { lifetimeMs: LIFETIME_MS, dequeueDelayMs: 0 });
         await server.service.acceptIncomingMessage(receiverAck({ msgId: MSG, originPeerId: ORIGIN, recipient: 'r1', nowMs: clock.nowMs }), 'r1');
 
@@ -65,6 +75,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
             await server.engine.executeOnce();
             return countCopies(server.sockets.r2, MSG);
         }).toBe(2);
+        await pollRetrySettled(server);
 
         expect([countCopies(server.sockets.r1, MSG), countCopies(server.sockets.r2, MSG)]).toEqual([1, 2]);
     });
@@ -75,7 +86,8 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         const left = new Set<string>();
         const keepAll = async ({ candidateSessionIds }: { readonly candidateSessionIds: readonly string[]; }) => candidateSessionIds;
         const server = await createRetransmissionServer(clock, {
-            outboundBackend: () => undefined,
+            outboundBackend: undefined,
+            recordBackend: undefined,
             capturedRecipientEligibilityFilters: {
                 durable: async ({ candidateSessionIds }) => candidateSessionIds.filter((sessionId) => !left.has(sessionId)),
                 local: keepAll,
@@ -89,7 +101,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         clock.nowMs += ACK_TIMEOUT_MS + 1;
         await expect.poll(async () => {
             await server.engine.executeOnce();
-            return readOriginTerminalReceipt([server.sockets[ORIGIN]!], MSG)?.phase;
+            return readOriginTerminalReceipt([server.sockets.o], MSG)?.phase;
         }).toBe('complete');
         await pollRetrySettled(server);
 
@@ -113,6 +125,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
                     write: (operation, executionExpiresAtMs) => (armed ? held : base).write(operation, executionExpiresAtMs)
                 });
             },
+            recordBackend: undefined,
             capturedRecipientEligibilityFilters: undefined
         });
         // A send that names no deadline opens its head at its ACK timeout; the row's first window opens later, at its
@@ -122,6 +135,7 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
         await server.service.acceptIncomingMessage(receiverAck({ msgId: MSG, originPeerId: ORIGIN, recipient: 'r1', nowMs: clock.nowMs }), 'r1');
         const copiesBeforeTheEnd = countCopies(server.sockets.r2, MSG);
         const attemptsBeforeTheTimer = (await server.store.readReceiptState(REF))?.attempts;
+        expect(attemptsBeforeTheTimer).toBeDefined();
 
         let arrived = false;
         void hold.arrived.then(() => {
@@ -140,14 +154,56 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
             await expect.poll(async () => {
                 await server.engine.executeOnce();
                 return (await server.store.readReceiptState(REF))?.attempts;
-            }).toBe((attemptsBeforeTheTimer ?? 0) + 1);
+            }).toBe(attemptsBeforeTheTimer! + 1);
             await pollRetrySettled(server);
-
             expect(countCopies(server.sockets.r2, MSG)).toBe(copiesBeforeTheEnd);
+
+            hold.release();
+            await pollRowEnded(server);
         }
         finally {
             hold.release();
         }
+    });
+
+    it('ends at the row\'s next window a receipt the record counted complete whose end was lost', async () => {
+        // Pins a head left open with a complete tally when its `end` failed after the last count committed: the
+        // retry narrowed to nobody and planned nothing, so nothing ended the receipt before the row's budget ran out.
+        const clock = installClock();
+        const failing = { armed: false, writes: 0 };
+        const server = await createRetransmissionServer(clock, {
+            outboundBackend: undefined,
+            // Once armed, the last ACK's count is the record's first write and its `end` the second.
+            recordBackend: (base) =>
+                createDelegatingALAdmissionWorkBackend(base, {
+                    write: async (operation, executionExpiresAtMs) => {
+                        if (failing.armed && ++failing.writes === 2) {
+                            throw new Error('Receipt record store unavailable');
+                        }
+                        return await base.write(operation, executionExpiresAtMs);
+                    }
+                }),
+            capturedRecipientEligibilityFilters: undefined
+        });
+        await admitRoomMessage(server, clock, { lifetimeMs: LIFETIME_MS, dequeueDelayMs: 0 });
+        await server.service.acceptIncomingMessage(receiverAck({ msgId: MSG, originPeerId: ORIGIN, recipient: 'r1', nowMs: clock.nowMs }), 'r1');
+        failing.armed = true;
+        await expect(
+            server.service.acceptIncomingMessage(receiverAck({ msgId: MSG, originPeerId: ORIGIN, recipient: 'r2', nowMs: clock.nowMs }), 'r2')
+        ).rejects.toThrow('Receipt record store unavailable');
+        expect(failing.writes).toBe(2);
+        expect((await server.record.read(REF)).right).toMatchObject({ head: { phase: 'open' }, tally: { complete: true } });
+
+        clock.nowMs += ACK_TIMEOUT_MS + 1;
+        await expect.poll(async () => {
+            await server.engine.executeOnce();
+            return (await server.record.read(REF)).right?.head.phase;
+        }).toBe('complete');
+        await pollRowEnded(server);
+        await pollRetrySettled(server);
+
+        expect((await server.record.read(REF)).right?.head).toMatchObject({ confirmedRecipientPeerIds: ['r1', 'r2'] });
+        expect([countCopies(server.sockets.r1, MSG), countCopies(server.sockets.r2, MSG)]).toEqual([1, 1]);
     });
 });
 
@@ -160,7 +216,11 @@ async function createRetransmissionServer(clock: ReceiptClock, options: Retransm
     const server = await createReceiptServer({
         ...stores,
         inboundVolatileStores: undefined,
-        outboundBackend: options.outboundBackend(new InMemoryAdmissionBackend(state, nowMs)),
+        receiptRecordStores: {
+            ...stores.receiptRecordStores,
+            backend: options.recordBackend?.(stores.receiptRecordStores.backend) ?? stores.receiptRecordStores.backend
+        },
+        outboundBackend: options.outboundBackend?.(new InMemoryAdmissionBackend(state, nowMs)),
         capturedRecipientEligibilityFilters: options.capturedRecipientEligibilityFilters,
         outbox,
         state,
@@ -204,8 +264,16 @@ async function admitRoomMessage(
     clock.nowMs += timing.dequeueDelayMs;
     await expect.poll(async () => {
         await server.engine.executeOnce();
-        return [countCopies(server.sockets.r1!, MSG), countCopies(server.sockets.r2!, MSG)];
+        return [countCopies(server.sockets.r1, MSG), countCopies(server.sockets.r2, MSG)];
     }).toEqual([1, 1]);
+}
+
+/** The server's row for the message is ended: the terminal receipt reached it. */
+async function pollRowEnded(server: RetransmissionServer): Promise<void> {
+    await expect.poll(async () => {
+        await server.engine.executeOnce();
+        return (await server.store.readStoredMessage(MSG))?.ended;
+    }).toBe(true);
 }
 
 /** Every repair hint the retry wrote has run, and every send a retransmission prepared has been made. */
@@ -213,11 +281,14 @@ async function pollRetrySettled(server: RetransmissionServer): Promise<void> {
     await expect.poll(async () => {
         await server.engine.executeOnce();
         const rows = await Promise.all((await server.outbox.getAllKeys()).map((key) => server.outbox.getItem(key)));
-        const work = rows.flatMap((row) =>
-            row !== undefined && (row.resource.includes('"kind":"repair-hint"') || row.resource.includes('"kind":"send-prepared"'))
-                ? [{ hint: row.resource.includes('"kind":"repair-hint"'), status: row.status }]
-                : []
+        const work = await Promise.all(
+            rows.flatMap((row) => row?.key.topicId === 'AL_OUTBOUND' ? [row] : []).map(async (row) => ({
+                kind: (await server.store.readWorkSnapshot(row, undefined)).payload.kind,
+                status: row.status
+            }))
         );
-        return work.some(({ hint }) => hint) && work.every(({ status }) => status === EntityStatus.COMPLETED);
+        const retryWork = work.filter(({ kind }) => kind === 'repair-hint' || kind === 'send-prepared');
+        return retryWork.some(({ kind }) => kind === 'repair-hint') &&
+            retryWork.every(({ status }) => status === EntityStatus.COMPLETED);
     }).toBe(true);
 }

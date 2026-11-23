@@ -53,6 +53,31 @@ describe('a retry narrowed to what the receipt record has not confirmed', () => 
         expect(toWsQueueBoxServerUnconfirmedRepairRequest(REQUEST, ended, NOW_MS)).toBeUndefined();
     });
 
+    it('asks for nothing once the head has ended complete', () => {
+        // Pins a retry resending a receipt every recipient confirmed because the row has not yet taken its end.
+        const ended: ALReceiptRecord.View = {
+            head: {
+                phase: 'complete',
+                opening: OPENING,
+                confirmedRecipientPeerIds: ['a', 'b', 'c'],
+                outsideAudienceRecipientPeerIds: [],
+                endedAtEpochMs: NOW_MS
+            },
+            tally: { confirmedRecipientPeerIds: ['a', 'b', 'c'], outsideAudienceRecipientPeerIds: [], complete: true }
+        };
+        expect(toWsQueueBoxServerUnconfirmedRepairRequest(REQUEST, ended, NOW_MS)).toBeUndefined();
+    });
+
+    it('asks for no recipient when the record answered every one the row still names, though it waits on another', () => {
+        // Pins the narrowing keeping its request when it empties: the row expects fewer than the record, which still
+        // waits on d, so the planner, not this function, finds nobody to resend to.
+        const view: ALReceiptRecord.View = {
+            head: { phase: 'open', opening: { ...OPENING, expectedRecipientPeerIds: ['a', 'b', 'c', 'd'] } },
+            tally: { confirmedRecipientPeerIds: ['a', 'b'], outsideAudienceRecipientPeerIds: ['c'], complete: false }
+        };
+        expect(toWsQueueBoxServerUnconfirmedRepairRequest(REQUEST, view, NOW_MS)).toEqual({ ...REQUEST, failedPeerIds: [] });
+    });
+
     it('asks for nothing once the head\'s deadline has passed', () => {
         // Pins a retry resending at the deadline instant, where the record already refuses every confirmation.
         expect(toWsQueueBoxServerUnconfirmedRepairRequest(REQUEST, openView(NOW_MS), NOW_MS)).toBeUndefined();

@@ -56,6 +56,7 @@ import {
     createInMemoryALReceiptRecordStores,
     type ALReceiptRecordStores
 } from '../../alm/receipt-record/al-receipt-record-stores.ts';
+import type { ALReceiptRecord } from '../../alm/receipt-record/al-receipt-record.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -479,12 +480,21 @@ export class WsQueueBoxServerService {
         });
     }
 
-    /** A receipt retry is narrowed by the record first, so a drop it records and the resend it plans skip the answered. */
+    /**
+     * A receipt retry is narrowed by the record first, so a drop it records and the resend it plans skip the answered.
+     * A head the record counted complete is ended instead: the count that completed it lost its `end`, and nothing
+     * else would end it before its deadline.
+     */
     private async planRepairMessage(
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): Promise<ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined> {
-        const narrowed = await this.readUnconfirmedRepairRequest(message, request);
+        const view = await this.readRepairView(message, request);
+        if (view?.head.phase === 'open' && view.tally.complete) {
+            await this.receipts.endReceipt(view.head.opening);
+            return undefined;
+        }
+        const narrowed = toWsQueueBoxServerUnconfirmedRepairRequest(request, view, this.clock.nowMs());
         if (narrowed === undefined) {
             return undefined;
         }
@@ -497,14 +507,14 @@ export class WsQueueBoxServerService {
         return this.outboundPlanning.planRepairMessage(message, { ...narrowed, admittedAudience: audience.eligible });
     }
 
-    private async readUnconfirmedRepairRequest(
+    /** The record's view of the receipt a receipt retry serves; undefined for any other repair. */
+    private async readRepairView(
         message: ALMessage,
         request: ALOutboundRepairRequest
-    ): Promise<ALOutboundRepairRequest | undefined> {
+    ): Promise<ALReceiptRecord.View | undefined> {
         const readsRecord = request.trigger === 'ack-timeout' &&
             isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo);
-        const view = readsRecord ? await this.receipts.readRepairView(message) : undefined;
-        return toWsQueueBoxServerUnconfirmedRepairRequest(request, view, this.clock.nowMs());
+        return readsRecord ? await this.receipts.readRepairView(message) : undefined;
     }
 
     /** The work runtime's authority becomes the WS planner's phase-specific request. */

@@ -310,6 +310,14 @@ export class WsQueueBoxServerReceiptAggregation {
         return (await this.#record.read({ originPeerId: message.id.senderId, msgId: message.id.msgId })).right;
     }
 
+    /** Only `end`'s result is authoritative; one that loses to another `end` leaves the winner's work to deliver. */
+    async endReceipt(ref: ALReceiptRecordRef): Promise<void> {
+        const ended = await this.#record.end(ref);
+        if (ended.right !== undefined) {
+            this.#worker.committed({ kind: 'ended', ref }, ended.right.endedAtEpochMs);
+        }
+    }
+
     private nowMs(): number {
         return this.#dependencies.clock.nowMs();
     }
@@ -390,14 +398,6 @@ export class WsQueueBoxServerReceiptAggregation {
         return toCountedAck(
             counted.left?.kind === 'head-absent' ? await this.#record.countAhead(confirmation) : counted
         );
-    }
-
-    /** Only `end`'s result is authoritative; one that loses to another `end` leaves the winner's work to deliver. */
-    private async endReceipt(ref: ALReceiptRecordRef): Promise<void> {
-        const ended = await this.#record.end(ref);
-        if (ended.right !== undefined) {
-            this.#worker.committed({ kind: 'ended', ref }, ended.right.endedAtEpochMs);
-        }
     }
 
     private recordCountObservation(input: WsQueueBoxServerCountObservationInput): void {
