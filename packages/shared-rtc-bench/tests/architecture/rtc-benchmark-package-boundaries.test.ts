@@ -14,6 +14,7 @@ const resultReleaseArtifactDecoderPath = path.join(repoRoot, 'packages/shared-te
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
 );
+const liveRtcMatrixTestTimeoutsPath = path.join(repoRoot, 'tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts');
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
@@ -69,7 +70,14 @@ function isApprovedImport(file: string, specifier: string): boolean {
     }
     if (
         specifier.startsWith('.') &&
-        [finiteIceFixturePolicyPath, browserRecordingContractPath, eventHistoryOwnerPath, resultReleaseArtifactDecoderPath, ...productionFixturePaths].includes(
+        [
+            finiteIceFixturePolicyPath,
+            browserRecordingContractPath,
+            eventHistoryOwnerPath,
+            resultReleaseArtifactDecoderPath,
+            liveRtcMatrixTestTimeoutsPath,
+            ...productionFixturePaths
+        ].includes(
             path.resolve(path.dirname(file), specifier)
         )
     ) {
@@ -173,6 +181,18 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
         expect(toImportSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
+    });
+
+    // The capture starts an attempt only while its job budget covers the attempt's test timeout, as the spec derives it.
+    it('admits only the Playwright-free matrix test timeout derivation, which reads its wait budgets and margin', () => {
+        const consumer = path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts');
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
+        expect(toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))).toEqual([
+            './browser-test-harness-margin.ts',
+            './live-rtc-wait-budgets.ts'
+        ]);
+        expect(isApprovedImport(consumer, '../../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts')).toBe(false);
+        expect(isApprovedImport(consumer, '../../../../tests/playwright/rallar-black-box/live-rtc-wait-budgets.ts')).toBe(false);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {

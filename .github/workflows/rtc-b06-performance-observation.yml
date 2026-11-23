@@ -113,6 +113,10 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
+    env:
+      # How long the capture may keep starting attempts: the job's 360 minutes less 10 for its setup and 10 for its
+      # upload and report (derived-test-timeout-job-limits.test.ts holds each part's evidence).
+      RTC_B06_CAPTURE_JOB_BUDGET_SECONDS: '20400'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -209,6 +213,7 @@ jobs:
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --job-budget-seconds="$RTC_B06_CAPTURE_JOB_BUDGET_SECONDS" \
             --output="$RTC_OBSERVATION_OUTPUT"
 
       - name: Capture RTC-B06 governed branch baseline
@@ -242,6 +247,7 @@ jobs:
             --github-run-id="$GITHUB_RUN_ID" \
             --github-run-attempt="$GITHUB_RUN_ATTEMPT" \
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --job-budget-seconds="$RTC_B06_CAPTURE_JOB_BUDGET_SECONDS" \
             --output="$RTC_OBSERVATION_OUTPUT" \
             2> "$RTC_OBSERVATION_OUTPUT/capture-stderr.log" | tee "$RTC_OBSERVATION_OUTPUT/capture.log"
 

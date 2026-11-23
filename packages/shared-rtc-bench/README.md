@@ -97,6 +97,17 @@ retains image/version/migration evidence and removes only its owned Compose
 instance after capture. E3 does not start a database. Each dispatch records its
 exact workflow run and attempt; capture adds no workflow reruns.
 
+Both live commands take an optional `--job-budget-seconds=<n>`: how long, from
+the capture's start, it may keep starting attempts. Before each attempt it checks
+that the time left covers the derived test timeout of the matrix test that
+attempt's case runs; when it does not, that attempt and every later one are
+recorded as not started for the job budget (not-run receipts with the
+`not-started-job-budget` issue, and a blocked cohort), finalization still
+accounts for every declared attempt, and the capture is `incomplete` with no
+accepted metrics unless an attempt it did run failed. The workflow passes the
+capture job's limit less its setup and its upload and report time; a local run
+without the option starts every attempt.
+
 Local E4 capture requires an already prepared, isolated database migrated with
 `npm run db:migrate`, a clean checkout, installed repository dependencies and
 supported Playwright Chromium, and free full-stack API/SPA/control ports. Set

@@ -13,7 +13,11 @@ import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 export type RtcPerformanceObservationParsedCommand =
     | ({ readonly kind: 'observe-browser'; } & RtcPerformanceObservationCommandInput)
     | (
-        & { readonly kind: 'observe-live-rtc'; readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode; }
+        & {
+            readonly kind: 'observe-live-rtc';
+            readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+            readonly jobBudgetSeconds?: number;
+        }
         & RtcPerformanceObservationCommandInput
     )
     | ({
@@ -21,6 +25,7 @@ export type RtcPerformanceObservationParsedCommand =
         readonly environmentId: 'E3-memory' | 'E4-pg';
         readonly sourceRef: string;
         readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+        readonly jobBudgetSeconds?: number;
     } & Omit<RtcPerformanceObservationCommandInput, 'sourceRef'>)
     | {
         readonly kind: 'verify-observation';
@@ -42,7 +47,8 @@ const allowed = {
         'github-run-attempt',
         'github-run-url',
         'output',
-        'rtc-capture-mode'
+        'rtc-capture-mode',
+        'job-budget-seconds'
     ],
     'capture-live-rtc': [
         'environment',
@@ -51,7 +57,8 @@ const allowed = {
         'github-run-attempt',
         'github-run-url',
         'output',
-        'rtc-capture-mode'
+        'rtc-capture-mode',
+        'job-budget-seconds'
     ],
     'verify-observation': ['archive', 'index-entry']
 } as const;
@@ -160,6 +167,7 @@ function parseObservationInputs(
     for (const captureIssue of capture.left ?? []) {
         issues.push(createRtcBaselineCliIssue('$.rtc-capture-mode', captureIssue.code, captureIssue.message));
     }
+    const jobBudgetSeconds = parseJobBudgetSeconds(options, issues);
     if (issues.length > 0 || !runId.ok || !runAttempt.ok) {
         return { ok: false, issues };
     }
@@ -170,7 +178,8 @@ function parseObservationInputs(
         outputDirectory: options.output!,
         ...(name !== 'observe-browser' && capture.right?.mode !== undefined
             ? { rtcCaptureMode: capture.right.mode }
-            : {})
+            : {}),
+        ...(jobBudgetSeconds === undefined ? {} : { jobBudgetSeconds })
     };
     return name === 'capture-live-rtc'
         ? {
@@ -206,6 +215,20 @@ function validateObservationOptions(
     if (options.output === '') {
         issues.push(createRtcBaselineCliIssue('$.output', 'empty-path', 'Output directory must be nonempty.'));
     }
+}
+
+/** Absent, the capture has no job deadline and runs every declared attempt. */
+function parseJobBudgetSeconds(options: RtcBaselineCliOptions, issues: RtcBaselineCliIssue[]): number | undefined {
+    const value = options['job-budget-seconds'];
+    if (value === undefined) {
+        return undefined;
+    }
+    const parsed = parsePositiveInteger(value, 'job-budget-seconds');
+    if (!parsed.ok) {
+        issues.push(...parsed.issues);
+        return undefined;
+    }
+    return parsed.value;
 }
 
 function parsePositiveInteger(value: string, name: string) {

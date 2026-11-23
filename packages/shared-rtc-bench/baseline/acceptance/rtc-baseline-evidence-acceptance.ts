@@ -10,6 +10,7 @@ import type {
     RtcBaselineOuterAttemptDto,
     RtcBaselineRecordAttemptInputDto,
     RtcBaselineRecordCohortInputDto,
+    RtcBaselineRecordNotStartedInputDto,
     RtcBaselineResolvedConfigurationValueDto,
     RtcBaselineResult,
     RtcBaselineSampleDto,
@@ -26,6 +27,7 @@ import {
     type RtcBaselineAcceptedArtifact,
     type RtcBaselineFailureOwner
 } from './rtc-baseline-failure-accounting.ts';
+import { buildRtcBaselineJobBudgetNotStartedSequence } from './rtc-baseline-job-budget-not-started.ts';
 import { validateRtcB06CaptureEvidence } from './validate-rtc-b06-capture-evidence.ts';
 
 interface RtcBaselineEvidenceAcceptanceDependencies {
@@ -66,6 +68,9 @@ export interface RtcBaselineEvidenceAcceptance {
     recordExternalCohortAssertion(
         input: RtcBaselineRecordCohortInputDto
     ): Promise<RtcBaselineResult<{ acceptedCohortCount: number; }>>;
+    recordExternalAttemptsNotStarted(
+        input: RtcBaselineRecordNotStartedInputDto
+    ): Promise<RtcBaselineResult<{ notStartedSampleCount: number; }>>;
 }
 
 function issue(path: string, code: string, message: string) {
@@ -91,6 +96,14 @@ function retainsStructuredProducerFailure(
     // that record makes a failed observation self-diagnosing; every other producer still fails on
     // process status alone because it has no equivalent failed-attempt publication contract.
     return 'locator' in input && input.locator.workloadId === 'RTC-B06';
+}
+
+function unknownExternalAttemptIssue() {
+    return issue(
+        '$.locator',
+        'unknown-external-attempt',
+        'External attempt locator is not predeclared by the initialized manifest.'
+    );
 }
 
 function entryOwnershipIssue(
@@ -156,6 +169,31 @@ class RtcBaselineEvidenceAcceptanceController implements RtcBaselineEvidenceAcce
 
     recordExternalAttempt(input: RtcBaselineRecordAttemptInputDto): AcceptedSamples {
         return this.prepareAttempt(input, 'external');
+    }
+
+    /** Nothing ran, so nothing is staged or reconciled; the receipts only account for what the budget left. */
+    async recordExternalAttemptsNotStarted(input: RtcBaselineRecordNotStartedInputDto) {
+        const manifest = await this.dependencies.readManifest(input.baselineId);
+        if (!manifest.ok) {
+            return manifest;
+        }
+        const ownershipIssue = entryOwnershipIssue('external', input.locator.workloadId);
+        if (ownershipIssue) {
+            return { ok: false as const, issues: [ownershipIssue] };
+        }
+        const owner = findRtcBaselineAttemptFailureOwner(manifest.value, input.locator);
+        if (!owner) {
+            return { ok: false as const, issues: [unknownExternalAttemptIssue()] };
+        }
+        const artifacts = buildRtcBaselineJobBudgetNotStartedSequence(manifest.value, owner);
+        for (const artifact of artifacts) {
+            const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, artifact);
+            if (!written.ok) {
+                return written;
+            }
+        }
+        const notStartedSampleCount = artifacts.filter((artifact) => artifact.artifactKind === 'not-run').length;
+        return { ok: true as const, value: { notStartedSampleCount } };
     }
 
     private async persistFailure(input: RtcBaselineEvidenceAcceptanceController.PersistFailureInput) {
@@ -390,16 +428,7 @@ class RtcBaselineEvidenceAcceptanceController implements RtcBaselineEvidenceAcce
         }
         const owner = findRtcBaselineAttemptFailureOwner(manifestResult.value, input.locator);
         if (!owner) {
-            return {
-                ok: false as const,
-                issues: [
-                    issue(
-                        '$.locator',
-                        'unknown-external-attempt',
-                        'External attempt locator is not predeclared by the initialized manifest.'
-                    )
-                ]
-            };
+            return { ok: false as const, issues: [unknownExternalAttemptIssue()] };
         }
         const reconciliation = await this.dependencies.reconcileAcceptedOperation(entry, input);
         if (reconciliation.length > 0) {

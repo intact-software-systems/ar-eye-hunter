@@ -5,11 +5,16 @@ import {
     vi
 } from 'vitest';
 
+import {
+    RTC_BASELINE_JOB_BUDGET_COHORT_ISSUE,
+    RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ISSUE
+} from '../../../baseline/acceptance/rtc-baseline-job-budget-not-started.ts';
 import { deriveRtcBaselineCaptureManifest, deriveRtcBaselineExternalAttempts } from '../../../baseline/catalog/rtc-baseline-workload-manifest.ts';
 import { decodeRtcBaselineCaptureRequest } from '../../../baseline/contracts/rtc-baseline-decoding.ts';
 import { createRtcB06ObservationRunner, type RtcB06ObservationRunnerDependencies } from '../../../baseline/observation/rtc-b06-observation-runner.ts';
 import type { RtcB06PerformanceObservation } from '../../../baseline/observation/rtc-b06-performance-observation.ts';
 import type { RtcPerformanceObservationArchiveWritten } from '../../../baseline/observation/rtc-performance-observation-archive.ts';
+import { toRtcB06AttemptTestTimeoutMs } from '../../../baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
 import { createRtcB06FinalizedArtifacts } from './rtc-performance-observation-fixture.ts';
 
 const artifactFixture = await createRtcB06FinalizedArtifacts('20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3');
@@ -160,6 +165,9 @@ function dependencies() {
         recordExternalCohortAssertion: vi.fn(async () => {
             return success({ acceptedCohortCount: 1 });
         }),
+        recordExternalAttemptsNotStarted: vi.fn(async () => {
+            return success({ notStartedSampleCount: 0 });
+        }),
         finalize: vi.fn(async () => {
             return success(finalizedSummary());
         }),
@@ -190,7 +198,8 @@ function dependencies() {
         }),
         nowUtc: vi.fn()
             .mockReturnValueOnce('2026-08-30T10:00:00.417Z')
-            .mockReturnValue('2026-08-30T10:30:00.417Z')
+            .mockReturnValue('2026-08-30T10:30:00.417Z'),
+        monotonicNowMs: vi.fn(() => 0)
     };
     return { configured };
 }
@@ -419,5 +428,125 @@ describe('RTC-B06 observation runner', () => {
                 }
             }
         });
+    });
+});
+
+describe('RTC-B06 job budget', () => {
+    /** Each produced attempt advances the fake monotonic clock by this much. */
+    const ATTEMPT_DURATION_MS = 100_000;
+
+    function budgetedDependencies() {
+        const { configured } = dependencies();
+        const produced: string[] = [];
+        let nowMs = 0;
+        let manifest: ReturnType<typeof deriveRtcBaselineCaptureManifest>;
+        configured.monotonicNowMs = () => nowMs;
+        configured.envelope.initializeBaseline = async (request) => {
+            const decoded = decodeRtcBaselineCaptureRequest(request);
+            if (!decoded.ok) {
+                throw new Error(JSON.stringify(decoded.issues));
+            }
+            manifest = deriveRtcBaselineCaptureManifest(decoded.value);
+            return success(undefined);
+        };
+        configured.envelope.readExternalAttempts = async () => success(deriveRtcBaselineExternalAttempts(manifest, 'RTC-B06'));
+        configured.runLiveRtcProducer = async ({ attempt }) => {
+            produced.push(`${attempt.caseId}/${attempt.intendedPhase}/${attempt.outerOrdinal}`);
+            nowMs += ATTEMPT_DURATION_MS;
+            return { exitStatus: 0 };
+        };
+        return { configured, produced };
+    }
+
+    it('starts every attempt whose derived test timeout the job budget still covers', async () => {
+        const { configured, produced } = budgetedDependencies();
+        const everyAttemptMs = 6 * toRtcB06AttemptTestTimeoutMs('default') +
+            4 * toRtcB06AttemptTestTimeoutMs('all-scenarios') + 4 * toRtcB06AttemptTestTimeoutMs('retention-100');
+
+        await createRtcB06ObservationRunner(configured).captureBaseline({
+            ...workflow,
+            environmentId: 'E3-memory',
+            sourceRef: 'codex/rtc-baseline-refresh',
+            jobBudgetSeconds: everyAttemptMs / 1_000
+        });
+
+        expect(produced).toHaveLength(14);
+        expect(configured.envelope.recordExternalAttemptsNotStarted).not.toHaveBeenCalled();
+    });
+
+    // Six default attempts take 600 s, leaving one second less than an every-scenario attempt's derived timeout.
+    it('records the first attempt the budget cannot cover as not started and starts no later attempt', async () => {
+        const { configured, produced } = budgetedDependencies();
+        const budgetMs = 6 * ATTEMPT_DURATION_MS + toRtcB06AttemptTestTimeoutMs('all-scenarios') - 1_000;
+
+        await createRtcB06ObservationRunner(configured).captureBaseline({
+            ...workflow,
+            environmentId: 'E3-memory',
+            sourceRef: 'codex/rtc-baseline-refresh',
+            jobBudgetSeconds: budgetMs / 1_000
+        });
+
+        expect(produced).toEqual([
+            'default/warmup/1',
+            'default/retained/1',
+            'default/retained/2',
+            'default/retained/3',
+            'default/retained/4',
+            'default/retained/5'
+        ]);
+        expect(configured.envelope.recordExternalAttemptsNotStarted).toHaveBeenCalledOnce();
+        expect(configured.envelope.recordExternalAttemptsNotStarted).toHaveBeenCalledWith({
+            baselineId: '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3',
+            locator: {
+                workloadId: 'RTC-B06',
+                caseId: 'all-scenarios',
+                inputKey: 'e3-memory-all-scenarios',
+                intendedPhase: 'warmup',
+                outerOrdinal: 1
+            }
+        });
+        expect(configured.envelope.recordExternalCohortAssertion).not.toHaveBeenCalled();
+        expect(configured.envelope.finalize).toHaveBeenCalledOnce();
+    });
+
+    function budgetSummary(passedOrFailed: 'passed' | 'failed') {
+        const summary = finalizedSummary(passedOrFailed);
+        return {
+            ...summary,
+            sampleOutcomes: [
+                ...summary.sampleOutcomes,
+                {
+                    identity: { ...sampleIdentity, sampleId: 'rtc-b06-default-e3-memory-default-retained-002-001', outerOrdinal: 2 },
+                    outcome: 'not-run' as const,
+                    issues: [RTC_BASELINE_JOB_BUDGET_NOT_STARTED_ISSUE]
+                }
+            ],
+            cohortOutcomes: [{ identity: cohortIdentity, outcome: 'failed' as const, issues: [RTC_BASELINE_JOB_BUDGET_COHORT_ISSUE] }]
+        };
+    }
+
+    // The observation schema and its publication carry `incomplete`; a pass would claim metrics no complete set backs.
+    it('classifies a capture whose only unfinished outcomes the job budget left as incomplete, without accepted metrics', async () => {
+        const { configured } = dependencies();
+        configured.envelope.finalize = async () => success(budgetSummary('passed'));
+
+        expect(await createRtcB06ObservationRunner(configured).run(workflow)).toMatchObject({
+            ok: true,
+            value: { observation: { primary: { outcome: 'incomplete', acceptedMetrics: false } } }
+        });
+        expect(configured.envelope.readBaselineValidation).not.toHaveBeenCalled();
+    });
+
+    it('keeps a capture failed when an attempt it ran failed before the budget ran out', async () => {
+        const { configured } = dependencies();
+        configured.envelope.finalize = async () => success(budgetSummary('failed'));
+
+        expect(
+            await createRtcB06ObservationRunner(configured).captureBaseline({
+                ...workflow,
+                environmentId: 'E3-memory',
+                sourceRef: 'codex/rtc-baseline-refresh'
+            })
+        ).toMatchObject({ ok: true, value: { primaryOutcome: 'failed', acceptedMetrics: false } });
     });
 });

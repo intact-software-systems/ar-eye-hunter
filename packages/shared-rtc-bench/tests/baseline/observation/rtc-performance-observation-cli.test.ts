@@ -142,6 +142,29 @@ describe('governed branch RTC capture CLI', () => {
     });
 });
 
+describe('RTC-B06 job budget option', () => {
+    it.each(['observe-live-rtc', 'capture-live-rtc'])('forwards the job budget %s is given', (command) => {
+        expect(parseRtcPerformanceObservationCommand([command, ...liveRtcObserveArguments.slice(1), '--job-budget-seconds=20400']))
+            .toMatchObject({ ok: true, value: { kind: command, jobBudgetSeconds: 20_400 } });
+    });
+
+    it('leaves a capture with no job budget free to run every attempt', () => {
+        const parsed = parseRtcPerformanceObservationCommand(liveRtcObserveArguments);
+
+        expect(parsed.ok && 'jobBudgetSeconds' in parsed.value).toBe(false);
+    });
+
+    it.each(['0', '-1', '1.5', 'soon'])('refuses the job budget %s', (value) => {
+        expect(parseRtcPerformanceObservationCommand([...liveRtcObserveArguments, `--job-budget-seconds=${value}`]))
+            .toMatchObject({ ok: false, issues: [expect.objectContaining({ path: '$.job-budget-seconds' })] });
+    });
+
+    it('keeps browser observation free of the live capture budget', () => {
+        expect(parseRtcPerformanceObservationCommand([...observeArguments, '--job-budget-seconds=20400']))
+            .toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'unsupported-option' })] });
+    });
+});
+
 describe('RTC performance observation CLI', () => {
     it('refuses selected invalid ambient capture at the actual Bun entry before live process effects', () => {
         const result = spawnSync('bun', [

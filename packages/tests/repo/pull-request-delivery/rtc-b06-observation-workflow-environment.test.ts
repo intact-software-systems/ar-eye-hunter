@@ -191,6 +191,7 @@ describe('RTC-B06 observation workflow environment', () => {
             encoding: 'utf8',
             env: {
                 ...process.env,
+                ...step.env,
                 PATH: fixtureRoot + '/bin:' + process.env.PATH,
                 RTC_B06_ENVIRONMENT_RECORD: fixtureRoot + '/environment.json',
                 RTC_B06_CAPTURE_RECORD: fixtureRoot + '/capture.jsonl',
@@ -658,22 +659,26 @@ describe('RTC-B06 observation workflow environment', () => {
     });
 });
 
+/** A step sees its job's environment beneath its own, as GitHub runs it. */
 function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
-    return decodeWorkflowStep(readWorkflowStepMapping(stepName));
+    const { job, step } = readWorkflowStepMapping(stepName);
+    const decoded = decodeWorkflowStep(step);
+    return { ...decoded, env: { ...decodeWorkflowStringMapping(Reflect.get(job, 'env') ?? {}), ...decoded.env } };
 }
 
-function readWorkflowStepMapping(stepName: string): object {
+function readWorkflowStepMapping(stepName: string): { readonly job: object; readonly step: object; } {
     const jobs = decodeWorkflowMapping(Reflect.get(readWorkflow(), 'jobs'));
-    const steps = Object.values(jobs).flatMap((job) => {
-        const steps = Reflect.get(decodeWorkflowMapping(job), 'steps');
+    const located = Object.values(jobs).flatMap((value) => {
+        const job = decodeWorkflowMapping(value);
+        const steps = Reflect.get(job, 'steps');
         if (!Array.isArray(steps)) {
             throw new Error('Workflow job steps must be an array.');
         }
-        return steps;
+        return steps.map((step) => ({ job, step }));
     });
-    const selectedStep = steps.find((step) => Reflect.get(decodeWorkflowMapping(step), 'name') === stepName);
-    expect(selectedStep, `RTC-B06 ${stepName} must provide an executable boundary`).toBeDefined();
-    return decodeWorkflowMapping(selectedStep);
+    const selected = located.find(({ step }) => Reflect.get(decodeWorkflowMapping(step), 'name') === stepName);
+    expect(selected, `RTC-B06 ${stepName} must provide an executable boundary`).toBeDefined();
+    return { job: selected!.job, step: decodeWorkflowMapping(selected!.step) };
 }
 
 function decodeWorkflowStep(value: unknown): RtcB06WorkflowStep {
@@ -851,7 +856,7 @@ function decodeCaptureRecord(value: unknown): RtcB06CaptureRecord {
 
 // The artifact action roots directory inputs at their least common ancestor.
 function writeWorkflowUploadFixture(fixture: WorkflowUploadFixture): void {
-    const step = readWorkflowStepMapping(fixture.stepName);
+    const { step } = readWorkflowStepMapping(fixture.stepName);
     const inputs = decodeWorkflowMapping(Reflect.get(step, 'with'));
     const uploadPath = Reflect.get(inputs, 'path');
     if (typeof uploadPath !== 'string') {

@@ -30,10 +30,20 @@ import {
     computeConsoleNativeTestTimeoutMs,
     CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/recipe-console-monitor-test-timeouts.ts';
+import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts';
+import { toRtcB06AttemptTestTimeoutMs } from '../../shared-rtc-bench/baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts';
+
+interface WorkflowJob {
+    readonly 'timeout-minutes'?: number;
+    readonly env?: Readonly<Record<string, string>>;
+    readonly steps?: readonly Readonly<{ name?: string; run?: string; }>[];
+}
 
 interface WorkflowDocument {
-    readonly jobs: Readonly<Record<string, Readonly<{ 'timeout-minutes'?: number; }>>>;
+    readonly jobs: Readonly<Record<string, WorkflowJob>>;
 }
+
+const B06_WORKFLOW_PATH = '.github/workflows/rtc-b06-performance-observation.yml';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 
@@ -75,6 +85,20 @@ const POSTGRES_INTEGRATION_JOB_SETUP_MS = 12 * 60_000;
  */
 const B06_DIAGNOSTIC_JOB_SETUP_MS = 10 * 60_000;
 
+/**
+ * The B06 capture job's work before its capture step: checkout, toolchain, `npm ci`, Chromium, the observation tooling
+ * check and, for E4, the isolated PostgreSQL. Runs 39110663949, 39105729932, 39070106121, 38693066869, 38148414112
+ * and 34573688470 reached the capture step after 86 s, 87 s, 70 s, 84 s, 67 s and 60 s.
+ */
+const B06_CAPTURE_JOB_SETUP_MS = 10 * 60_000;
+
+/**
+ * What the B06 capture job does once its deadline passes: the last attempt's build and web-server start, which its
+ * deadline check does not count, the orchestrator's finalization and archive, then the E4 cleanup and the uploads. The
+ * steps after the capture took 10 s, 5 s, 11 s, 7 s, 3 s and 3 s in the runs above, and each web server may take 60 s.
+ */
+const B06_CAPTURE_REPORT_RESERVE_MS = 10 * 60_000;
+
 /** The manifest the Console's Execute view builds for its default recipe, as the Native console test starts it. */
 function toConsoleNativeManifest(): RallarBlackBoxDistributedRunManifest {
     const selectedRecipe = projectDistributedRecipeCatalog({
@@ -98,9 +122,13 @@ function toConsoleNativeManifest(): RallarBlackBoxDistributedRunManifest {
     }, (draft) => draft.manifest);
 }
 
-function readJobTimeoutMs(workflowPath: string, job: string): number {
+function readJob(workflowPath: string, job: string): WorkflowJob {
     const workflow = load(readFileSync(path.join(repoRoot, workflowPath), 'utf8')) as WorkflowDocument;
-    return (workflow.jobs[job]?.['timeout-minutes'] ?? 0) * 60_000;
+    return workflow.jobs[job] ?? {};
+}
+
+function readJobTimeoutMs(workflowPath: string, job: string): number {
+    return (readJob(workflowPath, job)['timeout-minutes'] ?? 0) * 60_000;
 }
 
 describe('jobs that run tests whose timeouts are derived', () => {
@@ -143,5 +171,42 @@ describe('jobs that run tests whose timeouts are derived', () => {
 
         expect(readJobTimeoutMs('.github/workflows/release-gate.yml', 'postgres-integration'))
             .toBeGreaterThan(POSTGRES_INTEGRATION_JOB_SETUP_MS + testTimeoutMs);
+    });
+});
+
+describe('the B06 capture job deadline', () => {
+    const capture = readJob(B06_WORKFLOW_PATH, 'capture');
+
+    // A slow but passing capture ran past the 360-minute job limit before it could report.
+    it('gives the capture the job limit less its setup and its upload and report as its job budget', () => {
+        const budgetMs = Number(capture.env?.RTC_B06_CAPTURE_JOB_BUDGET_SECONDS) * 1_000;
+
+        expect(budgetMs).toBe(
+            readJobTimeoutMs(B06_WORKFLOW_PATH, 'capture') - B06_CAPTURE_JOB_SETUP_MS -
+                B06_CAPTURE_REPORT_RESERVE_MS
+        );
+    });
+
+    it('passes that budget to the publish and the baseline capture', () => {
+        const captureRuns = (capture.steps ?? []).filter((step) => step.run?.includes('perf:rtc-baseline'));
+
+        expect(captureRuns.map((step) => step.name)).toEqual([
+            'Capture RTC-B06 E3-memory observation',
+            'Capture RTC-B06 governed branch baseline'
+        ]);
+        for (const step of captureRuns) {
+            expect(step.run).toContain('--job-budget-seconds="$RTC_B06_CAPTURE_JOB_BUDGET_SECONDS"');
+        }
+    });
+
+    it('checks each declared B06 attempt against the derived timeout of the test its case runs', () => {
+        const caseIds = RTC_BASELINE_WORKLOAD_CATALOG.find((workload) => workload.workloadId === 'RTC-B06')!.cases
+            .map((entry) => entry.caseId);
+
+        expect(Object.fromEntries(caseIds.map((caseId) => [caseId, toRtcB06AttemptTestTimeoutMs(caseId)]))).toEqual({
+            default: LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+            'all-scenarios': LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+            'retention-100': LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
+        });
     });
 });
