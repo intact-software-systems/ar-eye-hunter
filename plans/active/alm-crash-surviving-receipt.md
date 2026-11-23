@@ -4,7 +4,7 @@ A sender's receipt on WebSocket stays exact when the server instance that admitt
 restarts. The count of who confirmed a receipted room send moves out of one instance's memory into a
 durable record every instance reads and writes.
 
-Status: design, awaiting the maintainer's approval. Nothing is built.
+Status: approved by the maintainer on 2026-11-22; slice 1 built.
 
 ## Why
 
@@ -66,6 +66,8 @@ in for hosted latency (one attributed hosted run recorded about 5 ms per stateme
 The fence was designed for one browser counting its own ACKs. On a server many recipients confirm at once
 from many sockets on many instances; a confirmation is idempotent and commutative, so it needs no fence.
 
+The built record was measured again in the same sustained shape; see "Measured on the built record".
+
 ## Goals
 
 - A receipted WS send's receipt is the same whether or not the instance that admitted it survives: any
@@ -108,40 +110,51 @@ from many sockets on many instances; a confirmation is idempotent and commutativ
 - Expected failure is a value (`Either`). A lost fence is a typed conflict, never a throw that escapes.
 - The files `packages/shared/alm/inbound/**` and `packages/shared/alm/outbound/control/**` are being
   rewritten by open pull requests #869 and #868. Slice 1 touches neither. Slice 2 changes one hook in
-  `alm/inbound` (section 3) and starts from `main` after #869 has merged.
+  `alm/inbound` (section 3) and is built on this branch without waiting for #869 to merge.
 - Decision rows D740 to D749 are reserved for this work.
 
 ## Design
 
 ### 1. The record
 
-Rows in a namespace of its own on the server's shared AL admission backend:
+`ALReceiptRecord` (`packages/shared/alm/receipt-record/`) keeps its rows in the namespace
+`<store namespace>:receipt:record` of the server's shared AL admission backend:
 
-- **Head**, one per receipted message, key `receipt:<origin>:<msgId>`: the frozen expected recipients,
-  the snapshot version, the trace, the message deadline and the phase. While the phase is `open` the
-  confirmation rows are the count. When it ends, the head takes the terminal phase (`complete` or
-  `timed-out`) together with the confirmed and outside sets as they were read at that instant; from then
-  on the head alone is the receipt.
-- **Confirmation**, one per answering recipient, key `receipt-ack:<origin>:<msgId>:<recipient>`: whether
-  the recipient confirmed or ended its hop outside the audience. An unfenced, idempotent write: a second
-  ACK of the same recipient writes the same row.
+- **Head**, one per receipted message, key `<namespace>:receipt:<JSON [origin, msgId]>`: the frozen
+  expected recipients, the snapshot version, the trace, the message deadline and the phase. While the
+  phase is `open` the confirmation rows are the count. When it ends, the head takes the terminal phase
+  (`complete` or `timed-out`) together with the confirmed and outside sets as they were read at that
+  instant, in expected order and naming each recipient once; from then on the head alone is the receipt.
+- **Confirmation**, one per answering recipient, key `<namespace>:receipt-ack:<JSON [origin, msgId]>:<recipient>`:
+  whether the recipient confirmed or ended its hop outside the audience. An unfenced write; the first write
+  wins, and a second ACK of the same recipient is a typed no-op (`repeated`) that writes nothing. A row is
+  read back only under its exact key; a row under another key fails closed as corruption.
 - **Deadline work**, one due row per receipted message in the backend's work queue, at the message
-  deadline.
-- **Receipt work**, one row per terminal receipt, written by the transaction that ends the head.
+  deadline, written with the head.
+- **Ended work**, one row per terminal receipt, due at the end, written by the transaction that ends the
+  head.
 
-The record's owner is one small class. Its operations, each returning a value:
+Its operations, each returning a value:
 
-| Operation | Does                                                                                       |
-| --------- | ------------------------------------------------------------------------------------------ |
-| `open`    | One transaction: the head, fenced on its absence, and its deadline work                    |
-| `count`   | Reads the head, writes the confirmation, reads the confirmations                           |
-| `end`     | One transaction: the head's terminal phase and sets, fenced on the open head, receipt work |
-| `read`    | The head, and the confirmations while it is open                                           |
+| Operation    | Does                                                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `open`       | One transaction: the head, fenced on its absence, and its deadline work                                                     |
+| `count`      | Reads the head and validates; writes the confirmation; reads the confirmations                                              |
+| `countAhead` | For an ACK that found no head: writes the confirmation, then reads the record and returns its view when a head has appeared |
+| `end`        | One transaction, fenced on the open head: the terminal phase and sets derived from what it reads, and the ended work        |
+| `read`       | The head, and the confirmations while it is open                                                                            |
 
 `count` reads the confirmations only after its own write has committed. Of the last two confirmations,
-whichever reads later sees both, so a completion cannot be missed. `end` is fenced on the head it read:
-of several instances that try to end one receipt, one commits and the others read a conflict. There is
-one terminal phase and one terminal receipt per message, whatever the clocks of the instances say.
+whichever reads later sees both, so a completion cannot be missed. `end` takes no phase: it ends
+`complete` when the set it reads is complete, `timed-out` once the deadline has passed, and is `not-due`
+otherwise, writing nothing. `end` is fenced on the head it read: of several instances that try to end one
+receipt, one commits and the others read a conflict. There is one terminal phase and one terminal receipt
+per message, whatever the clocks of the instances say. A `count` that read an open head can commit after
+another instance's `end`; its view may then say `open` for a receipt stored ended. Only `end`'s result is
+authoritative.
+
+The store bounds its own rows: `open` refuses a deadline beyond `now + window` and a receipt already past
+its grace; the caller clamps.
 
 ### 2. Admission opens the record
 
@@ -161,8 +174,7 @@ A recipient's ACK addressed to the origin is counted where it arrives:
    recipient is expected, the deadline has not passed. An ACK that fails is refused with the same typed
    rejection and writes nothing, so a session can write at most one row per message that expects it.
 3. `count` writes the confirmation and reads the confirmations.
-4. When every expected recipient is confirmed or outside and one confirmed, the instance calls `end` with
-   `complete`.
+4. When every expected recipient is confirmed or outside and one confirmed, the instance calls `end`.
 
 A confirmation written by an ACK that passed step 2 just before another instance ended the head is
 ignored: after the end, the head's own sets are the receipt.
@@ -170,8 +182,10 @@ ignored: after the end, the head's own sets are the receipt.
 An ACK that finds no head has either overtaken the admitting instance's `open` (D696's race) or names a
 message whose receipt has expired. It is checked against the inbound admission row, which every instance
 shares: the row must hold the message under the origin the ACK names with the ACK's sender in its frozen
-audience (`readIngressAudience`, unchanged). An ACK that passes writes its confirmation and stops; the
-`open` that follows counts it. One that fails is refused. An ACK never opens a head.
+audience (`readIngressAudience`, unchanged). An ACK that passes writes its confirmation and then reads the
+record (`countAhead`): when a head has appeared since its first read, it returns the view, so an `open`
+that committed between the two cannot leave a complete set unseen; otherwise the `open` that follows
+counts it. One that fails is refused. An ACK never opens a head.
 
 The refusal today is the synchronous hook `readRelayedAckRejection` in `alm/inbound`, read against the
 memory aggregate. With the record it must await a store read, so the hook becomes asynchronous. That is
@@ -183,10 +197,11 @@ confirmation on the instance that dropped the recipient. Nothing is handed to an
 ### 4. Ending a receipt
 
 `end` commits, in one transaction and guard first: the fence on the open head, the head's terminal phase
-and sets, and one receipt work row. The work row is claimed by any instance and does what
-`writeReceipt` does today: it enqueues the receipt control as a durable `WS_OUTBOX` row for the origin and
-settles the server's own pending row on an `outbox` topic (D38) with it. The control's id is derived from
-the origin and the message id, so a work row that is claimed twice enqueues one receipt.
+and sets, and one ended work row. The work row is claimed by any instance and does what `writeReceipt`
+does today: it enqueues the receipt control as a durable `WS_OUTBOX` row for the origin, under a control
+id derived from the origin and the message id, so a work row that is claimed twice enqueues one receipt;
+then `acceptServerReceipt` settles the server's own pending row on an `outbox` topic (D38) with it. The
+`admitted` receipt is enqueued at admission, as today.
 
 A crash after the last confirmation is written and before `end` commits leaves a complete set under an
 open head, and no further ACK will come. The deadline work ends it `complete`. The receipt is exact and
@@ -195,9 +210,9 @@ late, by at most the message's deadline. This is the one stated limit of the des
 ### 5. The deadline is durable work
 
 The per-instance deadline index and sweep go. `open` writes the deadline work with the head, in one
-transaction, so no head is without one. When it comes due, whichever instance claims it reads the record
-and calls `end`: `timed-out` naming the recipients confirmed so far, or `complete` when the set is
-complete (the crash case above). A head already ended reads a conflict and nothing is written.
+transaction, so no head is without one. When it comes due, whichever instance claims it calls `end`:
+`timed-out` naming the recipients confirmed so far, or `complete` when the set is complete (the crash case
+above). A head already ended reads a conflict and nothing is written.
 
 ### 6. A re-sent copy is answered from the record
 
@@ -220,7 +235,7 @@ fenced `receiver` pending row, every one a commit on the server's one version ro
 - A recipient the server sent nothing, on its own rows as on a client's, is one `outside` confirmation in
   the record. The fenced `commitOutsideAudience` on the pending row, with its three tries and its
   diagnostic, goes.
-- Ending writes the receipt work as for a client's send. The work has no origin to answer; it settles the
+- Ending writes the ended work as for a client's send. The work has no origin to answer; it settles the
   server's pending row with the terminal receipt and states the settlement the admin read shows.
 
 The pending row stays, on `outbox` topics for a client's send (D38) and for the server's own rows, as the
@@ -232,7 +247,7 @@ reaches the recipients that have not confirmed, as it does today.
 
 A recipient's ACK over WS writes the record directly, guard first and in one transaction. It does not pass
 through AppInbox. The record is one more AL runtime store (ruling 6), written at WS ingress as the AL
-runtime's inbound and outbound stores are; a decision row states it.
+runtime's inbound and outbound stores are; D740 states it.
 
 ### 9. What is deleted
 
@@ -269,9 +284,10 @@ runtime's inbound and outbound stores are; a decision row states it.
   admitting instance is disposed after `admitted` and the receipt still completes; the deadline work is
   claimed by a survivor and ends the receipt `timed-out`.
 - A statement pin of the ACK that finds its head and does not complete the set, as
-  `ws-outbound-dispatch-statements.test.ts` pins its path. Through the admission backend a write is a
-  transaction, so the built path is expected at 4 to 5 round trips, none of them serialized against another
-  ACK; the pin states the built figure.
+  `ws-outbound-dispatch-statements.test.ts` pins its path. The built figure is five round trips: one
+  autocommit read of the head and the confirmation key, the insert in one transaction (with BEGIN and
+  COMMIT), and one autocommit prefix read of the confirmations, none of them serialized against another
+  ACK.
 - The sustained measurement above is repeated on the built path at +0 and +5 ms and must show no backlog;
   it is quoted in the pull request.
 - The cluster recipe `api-v1-cluster-publisher-instance-loss` is restated: the publisher, reconnected to a
@@ -285,11 +301,13 @@ runtime's inbound and outbound stores are; a decision row states it.
 
 ## Slices
 
-1. The record on `ALAdmissionWorkBackend`, with its contract test on both backends. It touches no file an
-   open pull request changes.
+1. Built. The record on `ALAdmissionWorkBackend`, with its contract test on both backends, its statement
+   pin, its growth-proof classification and its sustained measurement. It touches no file an open pull
+   request changes.
 2. The WS server counts through the record: admission, ACK, the asynchronous refusal hook, terminal
-   receipts, deadline work, re-sent copies; the memory count, cap and deadline index deleted. From `main`
-   after #869.
+   receipts, deadline work, re-sent copies; the memory count, cap and deadline index deleted. Built on
+   this branch without waiting for #869 to merge; #869's rules for the aggregation and the service are
+   carried into the record-based code, so the later merge of `main` is textual.
 3. The ACK relay deleted, with its notice, transport, channel and observation kind.
 4. The server's own receipted publications count in the record; the repair plan reads the record's
    confirmations; `commitOutsideAudience` deleted.
@@ -300,8 +318,11 @@ runtime's inbound and outbound stores are; a decision row states it.
 
 - The record is its own feature folder under `packages/shared`, on the existing admission backend, in a
   namespace of its own that the growth proof classifies.
-- The head and the confirmations expire at the message deadline plus the receipt grace, as the origin's
-  receipt row does. A confirmation written for a message with no head expires after the receipt grace.
+- The open head and its confirmations expire at the message deadline plus the receipt grace, as the
+  origin's receipt row does; an ended head one grace after the later of the deadline and the end. A
+  confirmation written for a message with no head expires at `now + window + grace`: while the head is
+  open the rows are the count, and a shorter expiry would end a receipt `timed-out` naming a recipient
+  that confirmed.
 - Memory-mode servers use the same record on the memory backend; there is no separate memory count.
 - The crash window in section 4 is closed by the deadline work, not by a nearer check.
 - A terminal re-answer uses a fresh control id, as the `admitted` re-answer does; a client that already
@@ -310,28 +331,87 @@ runtime's inbound and outbound stores are; a decision row states it.
 
 ## Left to the builder
 
-- The record's class and operation names, within the repository's code standard.
-- Whether the head is cached per instance to save its read on later ACKs (`packages/shared/cache`).
-- Whether the admission backend gains a single-statement write for one unfenced row, to bring the ACK's
-  cost down to the measured 2 round trips.
-- The exact key encoding, within the store's key rules.
+- Whether the head is cached per instance to save its read on later ACKs (`packages/shared/cache`). Not
+  needed in slice 1: the uncached ACK is five round trips and keeps up at +5 ms.
+- Whether the admission backend gains a single-statement write for one unfenced row. Not needed in slice 1,
+  for the same reason.
 - Which existing tests are restated and which are deleted.
+
+## Measured on the built record
+
+`ALReceiptRecord` through `PSqlAdmissionWorkBackend` on real PostgreSQL: three instances on three clients
+with pools of 10, each client delaying every statement and the BEGIN and COMMIT of every transaction by the
+added latency. 40 messages opened at 2 a second, 14 recipients each, ACKs offered at 28 a second spread over
+100 ms after each `open`, each ACK on the next instance in turn. Each ACK runs `count` and, when its view is
+complete, `end`. Lag is from the moment a message's last ACK was offered to the moment its winning `end`
+returned `complete`, in milliseconds as p50 / p95 / max; over ten messages, p95 is the maximum. Load is the
+machine's 1-minute load average at the end of the run. Test-only code, not kept in the tree.
+
+| Added latency | Run | Confirmations of 560 | Heads complete of 40 | `end` winners per message | Losing `end`s | Lag, all 40        | Lag, first 10      | Lag, last 10       | Load |
+| ------------- | --- | -------------------- | -------------------- | ------------------------- | ------------- | ------------------ | ------------------ | ------------------ | ---- |
+| +0 ms         | 1   | 560                  | 40                   | 1                         | 0             | 9.0 / 21.6 / 38.1  | 11.4 / 38.1 / 38.1 | 6.2 / 8.4 / 8.4    | 14.7 |
+| +0 ms         | 2   | 560                  | 40                   | 1                         | 0             | 6.0 / 10.0 / 12.6  | 8.3 / 12.6 / 12.6  | 5.4 / 7.4 / 7.4    | 11.8 |
+| +0 ms         | 3   | 560                  | 40                   | 1                         | 0             | 5.6 / 8.5 / 18.2   | 5.7 / 18.2 / 18.2  | 5.6 / 6.1 / 6.1    | 9.3  |
+| +5 ms         | 1   | 560                  | 40                   | 1                         | 39            | 60.5 / 65.1 / 82.3 | 58.2 / 82.3 / 82.3 | 61.2 / 61.8 / 61.8 | 7.6  |
+| +5 ms         | 2   | 560                  | 40                   | 1                         | 34            | 62.8 / 72.0 / 80.3 | 64.0 / 72.3 / 72.3 | 59.9 / 71.6 / 71.6 | 6.3  |
+| +5 ms         | 3   | 560                  | 40                   | 1                         | 37            | 61.8 / 68.3 / 72.0 | 62.0 / 68.9 / 68.9 | 60.5 / 72.0 / 72.0 | 6.5  |
+
+- No backlog: at +5 ms the last ten messages complete as fast as the first ten, and no message completes
+  later than 83 ms after its last ACK. No ACK was refused and none conflicted.
+- At +5 ms the lag is the last ACK's `count` (five round trips) followed by its `end` (one transaction).
+- At +5 ms the last two ACKs of most messages overlap: both read a complete set and both call `end`; one
+  commits, and the other reads a conflict and writes nothing. At +0 ms they do not overlap.
+
+## Established in slice 1
+
+- **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
+  distinct keys of one namespace from three backends committed with no conflict, and a write committed
+  in 63 ms while another key's write was held uncommitted. No backend keeps a store-wide revision
+  (`al-admission-unfenced-row-writes.test.ts`).
+- **The cost of the record through the admission backend.** An ACK that finds its head and does not
+  complete the set is five round trips, pinned; fifty confirmations of one message from three backends
+  committed with no conflict, and of three instances ending it together one commit won
+  (`al-receipt-record.test.ts`).
+- **The record keeps up.** The sustained shape above shows no backlog at +0 and +5 ms ("Measured on the
+  built record").
+- **The namespace is bounded.** Growth surface 85, `ttl-within-run`, bound window plus two graces
+  (1 860 000 ms) (`growth-surfaces.ts`, `growth-surfaces.test.ts`).
+- **A terminal receipt reaches a reconnecting publisher.** The receipt row answers `not-ready` for a
+  target connected nowhere, spends no attempt, and republishes on a wait doubling from 1 s to 30 s with a
+  last publication 1 s before its expiry, so a publisher that reconnects within the deadline reads it
+  (`findings/terminal-receipt-to-reconnecting-publisher.md`).
+- **The receipt enqueue's cost.** It is 9 sequential round trips on the one version row
+  `default-qbox-server` that every instance and every receipt shares; `acceptServerReceipt` fences on the
+  origin's row, up to 13 round trips a try (`findings/server-receipt-enqueue-cost.md`).
+- **Where the repair plan takes its recipients.** A retry resends to the unconfirmed recipients of the
+  re-read pending row; the WS hook `planRepairMessage` can remove the record's confirmations from
+  `request.failedPeerIds` (`findings/repair-plan-unconfirmed-recipients.md`).
+- **The server's own receipted publications.** Three paths ask `receiver` (the group-state delta, Relic
+  game notifications, the RallarAI room result publisher); the dequeue hooks of `createOutboundRuntime`
+  are the one common place where the audience is known (`findings/server-receipted-publications.md`).
+- **The refusal hook.** `readRelayedAckRejection` is declared once and called once, inside an already
+  asynchronous read; its implementers are WS-server only (`findings/relayed-ack-rejection-hook.md`).
 
 ## Not established
 
-- Whether a terminal receipt reaches a publisher that was disconnected when the receipt row was first
-  dequeued and reconnects within its deadline. The receipt row has a republish delay
-  (`ws-queue-box-server-receipt-row.ts`); its behaviour for a target connected to no instance was not
-  read. The restated publisher recipe depends on it.
-- Whether the server's one outbound identity keeps up with the receipts themselves. Every `admitted` and
-  terminal receipt is a fenced enqueue on it today, two per message; with five publishers at 2 Hz that is
-  twenty fenced commits a second, and the measurement put a fence of 15 round trips at about 11 a second
-  at +5 ms. The receipt enqueue's own round trips were not counted. The sustained proof must run with
-  several publishers to show it.
-- The cost of the record through the admission backend, as opposed to the runtime-state repository it was
-  measured on.
 - The hosted statement latency itself: 5 ms is one attributed run.
-- Where the WS server's repair plan takes its unconfirmed recipients from today, and so how small the
-  change in section 7 is. The pending row's `ackedPeerIds` is the likely source; it was not read.
-- Whether every receipted publication of the server's own is enqueued through one path where the record
-  can be opened, or through several.
+- Whether the server's one outbound identity keeps up with the receipts themselves. Every `admitted` and
+  terminal receipt is a fenced enqueue on it, two per message. From the counted round trips the estimate
+  is about 110, 37 and 18 enqueues a second at +0, +2 and +5 ms; one publisher at 2 Hz offers 4 a second,
+  five offer 20. The sustained proof of slice 5 runs with several publishers to show it.
+- The record's cost and lag inside the WS server: the measurement above runs the record alone, with one
+  origin, on one machine with a delay standing in for the network. The ingress checks, the inbound
+  admission read of an ACK that finds no head, and the receipt enqueue are not in it.
+
+## Decision rows drafted
+
+Appended to `playground/alm/alm-improvement-plan.md` in slice 5.
+
+| #    | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D740 | **The receipt record is one more ALM runtime store (the maintainer's ruling 6 of 2026-11-22).** A receipted WS send's count lives in `ALReceiptRecord`, its own feature folder `packages/shared/alm/receipt-record/`, on the shared AL admission backend (`ALAdmissionWorkBackend`) in the namespace `<store namespace>:receipt:record` (`toALReceiptRecordNamespace`; on api-v1 `server-ws-qbox:default-qbox-server:receipt:record`). A recipient's ACK writes it directly at WS ingress, guard first and in one transaction, as the AL runtime's inbound and outbound stores are written; it does not pass through AppInbox. The deadline and the end are work rows on the backend's own work queue, which any instance claims. No new adapter: the memory and PostgreSQL backends already implement the port. One shared file is added beside it, `packages/shared/alm/work/compute-al-work-entry.ts`, the work-entry envelope; the outbound and inbound builders move onto it in slice 2. Cost if wrong: the record would move behind AppInbox, one mutation command per ACK.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| D741 | **Unfenced rows on the admission backend: their cost and isolation, and which backends keep a revision (probe of slice 1).** Through `PSqlAdmissionWorkBackend`, 30 concurrent unfenced writes to distinct keys of one namespace, from three backends on three clients, committed with 0 conflicts; a write to another key committed in 63 ms while a first write's transaction was held open (`committed`, not `blocked`). One unfenced write is `[null, 1]`: the key read in autocommit and the conditional insert in one transaction, 4 round trips with BEGIN and COMMIT. No backend keeps a store-wide revision: IndexedDB observes the written key's own row (`indexed-db-admission-backend.ts`), memory serializes every write of one state and conflicts only on an observed work batch (`al-admission-backend.ts`), PostgreSQL keeps a revision per row. Two comments still say IndexedDB keeps a store-wide revision (`ALAdmissionBackendConflictError.ts`, `al-outbound-admission-fences.test.ts`); they are corrected when slice 2 touches the area. Pinned in `al-admission-unfenced-row-writes.test.ts`. Cost if wrong: the record's count would need a fence per ACK.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D742 | **The receipt record's contract.** A head per receipted message at `<ns>:receipt:<JSON [origin, msgId]>` (`{ phase: 'open', opening }`, or `complete`/`timed-out` with `confirmedRecipientPeerIds` and `outsideAudienceRecipientPeerIds` in expected order, each recipient named once, and `endedAtEpochMs`), and a confirmation per answering recipient at `<ns>:receipt-ack:<JSON [origin, msgId]>:<recipient>` (`{ recipientPeerId, kind: 'confirmed' \| 'outside', countedAtEpochMs }`), read back only under its exact key; a row under another key fails closed as `ALAdmissionCorruptionError`. Expiry: the open head, its confirmations and the deadline work at `deadlineAtMs + 30 s`; the ended head and the ended work at `max(deadlineAtMs, endedAtEpochMs) + 30 s`; a confirmation written with no head at `now + 30 min + 30 s`. Work rows of type `AL_RECEIPT_RECORD:<fnv1a64(ns)>`, topics `AL_RECEIPT_DEADLINE` (due at the deadline, written with the head) and `AL_RECEIPT_ENDED` (due at the end, written with the terminal head). Results are values: `open` returns the view, `invalid-opening` or `conflict`; `count` returns `counted` or `repeated` with the view, `head-absent`, `invalid-confirmation` or `conflict`; `countAhead` as `count`, or `ahead` when no head is visible after its write; `end` the ended head, `head-absent`, `not-due` (nothing written) or `conflict`; `read` the view or `head-absent`. Only `ALAdmissionBackendConflictError` becomes `conflict`; every other backend error propagates. A `count` that read an open head can commit after another instance's `end`; its view may then say `open`, even `complete: true`, for a receipt stored `timed-out`. Only `end`'s result is authoritative, and slice 2's caller treats it so. A contract of 19 cases (`describeALReceiptRecordContract`) runs on memory and on PostgreSQL. Cost if wrong: a contract change restates the cases on both backends. |
+| D743 | **The receipt record's five decisions.** (1) A confirmation written with no head expires at `now + window + grace`, not after the 30 s grace the design first stated: while the head is open the rows are the count, so a shorter expiry would time out a receipt naming a recipient that confirmed (the controller's ruling R2, the maintainer told). (2) `countAhead` reads after its write: an `open` that commits between that ACK's head read and its write would otherwise leave a complete set unseen until the deadline. (3) A repeated confirmation is a typed no-op (`repeated`, first write wins), not a refusal: two instances can each validate before either writes, so a refusal could not be exact. (4) `end` takes no phase: it ends `complete` when the set it reads is complete, `timed-out` once the deadline has passed, and is `not-due` otherwise, so no caller can state a phase the record does not hold. (5) The store bounds its rows: `open` refuses a deadline beyond `now + window` (`deadline-beyond-window`) and a receipt already past its grace (`receipt-expired`); the caller clamps. Also: a terminal set names a recipient once; the open-head tally passes the expected recipients without repeats, first occurrence kept (ruling R7). Cost if wrong: (1) changes two contract cases and adds an adoption write; (4) a caller-stated phase.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| D744 | **The pinned cost of a non-completing ACK, and three backends without a conflict.** On PostgreSQL an ACK that finds its head open and does not complete the set is three statements and one transaction, `[null, 1, null]` with leading verbs `select`, `insert`, `select`: one autocommit read that batches the head and the confirmation key, the confirmation insert in transaction 1, one autocommit prefix read of the confirmations for the tally; five round trips with BEGIN and COMMIT. Fifty confirmations of one message from three backends with pools of 10 committed with no conflict, each `counted`; a second count committed while another instance's count was held uncommitted (`finished`, not `blocked`); of three backends ending the receipt together, one commit won with all 50 confirmed and the other two read `conflict`. No head cache and no single-statement unfenced write were needed. Sustained, 40 messages of 14 ACKs at 28 a second on three instances: no backlog at +0 or +5 ms; at +5 ms each message completed 58 to 83 ms after its last ACK, the last ten as fast as the first ten; 560 of 560 confirmations, 40 of 40 heads complete, one `end` winner per message, in three runs of each. Pinned in `al-receipt-record.test.ts`. Cost if wrong: the levers are a per-instance head cache and a single-statement unfenced write.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| D745 | **The receipt record's namespace in the growth proof.** The `runtime_state_store` namespace `<store>:receipt:record` (sampled as `server-ws-qbox:*:receipt:record`) is growth surface 85, class `ttl-within-run`, ttl `AL_RECEIPT_RECORD_WINDOW_MS + 2 × AL_RECEIPT_DEADLINE_GRACE_MS` = 1 860 000 ms, sweep 60 000 ms. The longest-lived row is an ended head: its deadline is at most one window after opening, its end at most one grace after the deadline, its expiry one grace after the end. Confirmations and open heads live at most window plus one grace. The record's work rows are expiring `resource_inbox` rows under surface 1. In `growth-surfaces.ts`, tied to `toALReceiptRecordNamespace` by `growth-surfaces.test.ts`. Cost if wrong: the growth gate reads a bound the rows can exceed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
