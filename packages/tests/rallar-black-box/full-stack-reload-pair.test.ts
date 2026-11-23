@@ -42,10 +42,13 @@ function toRootResult(command: RecordedControlCommand, error: RallarBlackBoxTest
     };
 }
 
-/** A root an abort ended: its result is `cancelled`, and the abort's reason is the error it carries. */
-function toCancelledRootResult(command: RecordedControlCommand, reason: string): ControlResultEnvelope {
+/**
+ * A root a cancel ended: its `recipe.run` result is `cancelled` and carries no error, so the envelope's error is the
+ * control client's default.
+ */
+function toCancelledRootResult(command: RecordedControlCommand): ControlResultEnvelope {
     return {
-        ...toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: reason }),
+        ...toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'Command failed.' }),
         result: {
             commandId: command.commandId,
             kind: 'recipe.run',
@@ -176,7 +179,7 @@ describe('local paired reload enqueue', () => {
                 return toRunSnapshot(
                     posted
                         .filter(({ command, agentId }) => command.kind === 'recipe.run' && cancelled.has(agentId))
-                        .map((command) => toCancelledRootResult(command, 'Paired reload stopped.'))
+                        .map((command) => toCancelledRootResult(command))
                 );
             }
         };
@@ -195,17 +198,17 @@ describe('local paired reload enqueue', () => {
                 { commandId: `cancel-${senderRunId}`, agentId: 'actual-sender', targetCommandId: undefined },
                 { commandId: `cancel-${receiverRunId}`, agentId: 'actual-receiver', targetCommandId: undefined }
             ]);
-            const summary = 'cancelled';
+            const atDeadline = 'cancelled at its deadline';
             // Both roots pass their deadline together: the one cancelled first at its deadline, whichever it is, cancels
             // the other after its failure.
             expect([
                 {
-                    sender: { commandId: senderRunId, ok: false, summary, cancelledAfter: undefined },
-                    receiver: { commandId: receiverRunId, ok: false, summary, cancelledAfter: senderRunId }
+                    sender: { commandId: senderRunId, ok: false, summary: atDeadline, cancelledAfter: undefined },
+                    receiver: { commandId: receiverRunId, ok: false, summary: 'cancelled', cancelledAfter: senderRunId }
                 },
                 {
-                    sender: { commandId: senderRunId, ok: false, summary, cancelledAfter: receiverRunId },
-                    receiver: { commandId: receiverRunId, ok: false, summary, cancelledAfter: undefined }
+                    sender: { commandId: senderRunId, ok: false, summary: 'cancelled', cancelledAfter: receiverRunId },
+                    receiver: { commandId: receiverRunId, ok: false, summary: atDeadline, cancelledAfter: undefined }
                 }
             ]).toContainEqual(outcome);
         }

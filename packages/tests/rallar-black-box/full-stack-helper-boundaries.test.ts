@@ -541,7 +541,7 @@ describe('control poll timeouts', () => {
             await expect(started.readOutcome()).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'cancelled'
+                summary: 'cancelled at its deadline'
             });
             expect(
                 control.posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ commandId, command }) => ({
@@ -679,7 +679,7 @@ describe('control poll timeouts', () => {
             await expect(read.outcome).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'cancelled'
+                summary: 'cancelled at its deadline'
             });
         }
         finally {
@@ -802,7 +802,7 @@ describe('control poll timeouts', () => {
             await expect(started.readOutcome()).resolves.toEqual({
                 commandId: rootCommandId,
                 ok: false,
-                summary: 'cancelled'
+                summary: 'cancelled at its deadline'
             });
         }
         finally {

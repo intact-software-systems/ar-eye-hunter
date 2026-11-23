@@ -1252,13 +1252,22 @@ async function readRecipeRunOutcome(run: RecipeRun, watch: RecipeRunWatch): Prom
     const { root } = watch;
     const ended = await readRecipeRunResult(run, watch);
     if (ended !== undefined) {
-        return toRecipeRunOutcome(root.commandId, ended, undefined);
+        return toRecipeRunOutcome(root.commandId, ended, {
+            summary: toControlResultSummary(ended),
+            cancelledAfter: undefined
+        });
     }
     const peer = watch.getPeerFailure();
     const cancellation = peer === undefined ? toDeadlineCancellation(root) : toPeerCancellation(root, peer);
     const { result, cancelAccepted } = await cancelRecipeRun(run, root, cancellation);
     const cancelled = result.ok !== true && (cancelAccepted || isCancelledResult(result));
-    return toRecipeRunOutcome(root.commandId, result, cancelled ? peer?.commandId : undefined);
+    const summary = peer === undefined && isCancelledResult(result)
+        ? 'cancelled at its deadline'
+        : toControlResultSummary(result);
+    return toRecipeRunOutcome(root.commandId, result, {
+        summary,
+        cancelledAfter: cancelled ? peer?.commandId : undefined
+    });
 }
 
 /** A recipe a cancel ended says so in its result, whether it stopped between commands or an abort was thrown out of it. */
@@ -1269,9 +1278,9 @@ function isCancelledResult(result: ControlResultEnvelope): boolean {
 function toRecipeRunOutcome(
     commandId: string,
     result: ControlResultEnvelope,
-    cancelledAfter: string | undefined
+    end: Pick<RecipeRunOutcome, 'summary' | 'cancelledAfter'>
 ): RecipeRunOutcome {
-    return { commandId, ok: result.ok === true, summary: toControlResultSummary(result), cancelledAfter };
+    return { commandId, ok: result.ok === true, ...end };
 }
 
 function toDeadlineCancellation(root: RecipeRunRoot): RecipeRunCancellation {
