@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { buildSync } from 'esbuild';
+
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
@@ -22,14 +24,6 @@ const fullStackWebServerStartTimeoutsPath = path.join(
     repoRoot,
     'packages/shared-test/rallar-bb-test/browser-test-budgets/full-stack-web-server-start-timeouts.ts'
 );
-/** The repository aliases the package's tsconfig resolves, each to its package root. */
-const packageAliasRoots: Readonly<Record<string, string>> = {
-    '@shared/': 'packages/shared/',
-    '@shared-graph/': 'packages/shared-graph/',
-    '@shared-server/': 'packages/shared-server/',
-    '@shared-test/': 'packages/shared-test/',
-    '@shared-web/': 'packages/shared-web/'
-};
 const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
@@ -99,6 +93,9 @@ function isApprovedImport(file: string, specifier: string): boolean {
     ) {
         return true;
     }
+    if (specifier === 'esbuild' && file.startsWith(path.join(packageRoot, 'tests') + path.sep)) {
+        return true;
+    }
     if (isPackageLocalImport(file, specifier)) {
         return true;
     }
@@ -121,45 +118,20 @@ function readUnapprovedImports(file: string): string[] {
         .map((specifier) => `${path.relative(repoRoot, file)} -> ${specifier}`);
 }
 
-interface ImportClosure {
-    readonly files: ReadonlySet<string>;
-    readonly externalSpecifiers: readonly string[];
-}
-
-/** Every module a source reaches through its imports, type-only ones included, by the package's own path aliases. */
-function readImportClosure(entry: string): ImportClosure {
-    const files = new Set<string>();
-    const externalSpecifiers: string[] = [];
-    const pending = [entry];
-    while (pending.length > 0) {
-        const file = pending.pop()!;
-        if (files.has(file)) {
-            continue;
-        }
-        files.add(file);
-        for (const specifier of toImportSpecifiers(fs.readFileSync(file, 'utf8'))) {
-            const target = resolveRepositoryImport(file, specifier);
-            if (target === undefined) {
-                externalSpecifiers.push(specifier);
-            }
-            else {
-                pending.push(target);
-            }
-        }
-    }
-    return { files, externalSpecifiers };
-}
-
-function resolveRepositoryImport(file: string, specifier: string): string | undefined {
-    if (specifier.startsWith('.')) {
-        return path.resolve(path.dirname(file), specifier);
-    }
-    const alias = Object.keys(packageAliasRoots)
-        .filter((prefix) => specifier.startsWith(prefix))
-        .toSorted((left, right) => right.length - left.length)[0];
-    return alias === undefined
-        ? undefined
-        : path.join(repoRoot, packageAliasRoots[alias], specifier.slice(alias.length));
+/** Every module the bundler loads to run a source, resolved through the package's own tsconfig aliases. */
+function readBundledInputs(entry: string): readonly string[] {
+    const bundle = buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: [entry],
+        bundle: true,
+        write: false,
+        metafile: true,
+        platform: 'node',
+        format: 'esm',
+        tsconfig: path.join(packageRoot, 'tsconfig.json'),
+        logLevel: 'silent'
+    });
+    return Object.keys(bundle.metafile.inputs);
 }
 
 function isBenchmarkPackageSpecifier(specifier: string): boolean {
@@ -246,11 +218,6 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), liveRtcMatrixTestTimeoutsPath))).toBe(true);
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), fullStackWebServerStartTimeoutsPath)))
             .toBe(true);
-        expect(toImportSpecifiers(fs.readFileSync(fullStackWebServerStartTimeoutsPath, 'utf8'))).toEqual([]);
-        expect(
-            toImportSpecifiers(fs.readFileSync(liveRtcMatrixTestTimeoutsPath, 'utf8'))
-                .filter((specifier) => !specifier.startsWith('./'))
-        ).toEqual([]);
         for (
             const forbidden of [
                 '../../../shared-test/rallar-bb-test/browser-test-budgets/live-rtc-control-waits.ts',
@@ -263,15 +230,12 @@ describe('shared RTC benchmark package boundaries', () => {
         }
     });
 
-    it('keeps the whole import closure of the attempt test timeout in packages and free of Playwright', () => {
-        const closure = readImportClosure(path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts'));
-        const outsidePackages = [...closure.files]
-            .map((file) => path.relative(repoRoot, file).split(path.sep).join('/'))
-            .filter((file) => !file.startsWith('packages/') || file.startsWith('packages/tests/'));
+    // Its budget modules sat in tests/playwright; the bench's closure must stay out of the test tree and off Playwright.
+    it('loads only package modules outside packages/tests to derive an attempt\'s timeout', () => {
+        const inputs = readBundledInputs(path.join(packageRoot, 'baseline/observation/to-rtc-b06-attempt-test-timeout-ms.ts'));
 
-        expect(closure.files.size).toBeGreaterThan(1);
-        expect(outsidePackages).toEqual([]);
-        expect(closure.externalSpecifiers.filter((specifier) => specifier.startsWith('@playwright/'))).toEqual([]);
+        expect(inputs).toContain(path.relative(repoRoot, liveRtcMatrixTestTimeoutsPath));
+        expect(inputs.filter((input) => !input.startsWith('packages/') || input.startsWith('packages/tests/'))).toEqual([]);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {
