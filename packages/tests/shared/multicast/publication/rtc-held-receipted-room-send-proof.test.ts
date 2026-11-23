@@ -89,6 +89,34 @@ describe('a receipted RTC room send held without its room snapshot (D585, D756)'
             .toBeUndefined();
     });
 
+    it('answers a replay that meets the freezing dequeue while it signs with the one stored row and its one proof', async () => {
+        const chain = await createRelayChain(['a', 'c'], {});
+        const counting = createCountingSubtleCrypto();
+        const origin = createHeldOrigin(chain.snapshot, toCounted(chain, counting));
+        const message = createHeldSend('held-replayed', 'receiver');
+        const held = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(200);
+        const releaseFreezingSign = counting.holdNextSign();
+        origin.groups.accept('room', chain.snapshot);
+        for (let step = 0; step < 20 && counting.counts.sign === 0; step++) {
+            await vi.advanceTimersByTimeAsync(100);
+            await drainUntil(() => counting.counts.sign > 0, 20);
+        }
+
+        const replaying = origin.manager.enqueueLegIfAbsent(message, 'hold');
+        releaseFreezingSign();
+        const replayed = await replaying;
+        await drainUntil(() => origin.channels.c!.sent.length > 0);
+        await vi.advanceTimersByTimeAsync(200);
+        const canonical = await readCanonical(origin, held);
+
+        // The replay waits behind the freezing dequeue in the sender's commit queue, so it signs nothing of its own.
+        expect(counting.counts.sign).toBe(1);
+        expect(replayed.verdict.kind).toBe('duplicate');
+        expect(replayed.message.proof).toEqual(canonical.proof);
+        expect(new Set(origin.channels.c!.sent.map((copy) => copy.proof?.signature))).toEqual(new Set([canonical.proof!.signature]));
+    });
+
     it('freezes a held send that asks no receipt at its dequeue and sends it unsigned, signing nothing', async () => {
         const chain = await createRelayChain(['a', 'c'], {});
         const counting = createCountingSubtleCrypto();

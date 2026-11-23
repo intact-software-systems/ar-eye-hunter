@@ -44,6 +44,8 @@ import {
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 
+import { drainUntil } from './rtc-relay-chain-test-support.ts';
+
 import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
 
 function createFixture(
@@ -489,8 +491,14 @@ describe('the RTC leg of a principal or listed room send', () => {
         const admitted = await enqueueLegAndDrain(fixture, createAudienceBroadcast('list', ORIGIN_ROOM, 'local-outbox'));
         const held = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
         fixture.groups.accept('room', createOriginPrincipalSnapshot());
-        await vi.advanceTimersByTimeAsync(200);
-        const canonical = await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+        // The freezing dequeue signs this receiver send with real WebCrypto (D756), which fake timers alone do not drain:
+        // wait until its commit replaced the held row before reading the canonical row.
+        const readCanonical = async () => await fixture.resources.workQueue.getItem(admitted.entries[0]!.key);
+        for (let step = 0; step < 20 && !isFrozenRow(await readCanonical()); step++) {
+            await vi.advanceTimersByTimeAsync(100);
+            await drainUntil(async () => isFrozenRow(await readCanonical()), 20);
+        }
+        const canonical = await readCanonical();
 
         const replayed = await enqueueLegAndDrain(fixture, JSON.parse(held!.resource));
 
@@ -709,4 +717,9 @@ function toMintingFrame(message: ALMessage): ALMessage {
 
 function toKeyedFrame(message: ALMessage): ALMessage {
     return { ...message, ordering: { orderingKey: 'chat', epoch: 1, seq: 1 } };
+}
+
+/** Whether an outbox row holds a frozen room multicast. */
+function isFrozenRow(entry: { readonly resource: string; } | null | undefined): boolean {
+    return entry !== undefined && entry !== null && (JSON.parse(entry.resource) as ALMessage).targets?.mode === 'multicast';
 }
