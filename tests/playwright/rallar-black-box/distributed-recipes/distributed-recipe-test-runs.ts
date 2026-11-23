@@ -5,7 +5,11 @@ import {
 import { type RallarBlackBoxTestRecipe } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { BROWSER_TEST_HARNESS_MARGIN_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/browser-test-harness-margin.ts';
-import { CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS } from './browser-agents.ts';
+import {
+    CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS,
+    DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS,
+    DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS
+} from './browser-agents.ts';
 import { AGENTS_IN_GROUP_POLL_TIMEOUT_MS, computeDistributedRunToPassedWaitMs } from './distributed-control.ts';
 import {
     compositeEvidenceRecipe,
@@ -28,8 +32,15 @@ export const SIMULATED_ACK_PANEL_TIMEOUT_MS = 15_000;
 /** The simulated failure test bounds each of its runs by an explicit state wait of its own. */
 export const SIMULATED_FAILURES_TEST_TIMEOUT_MS = 180_000;
 
-/** The test's agents: each is opened, then all are seen in the group. */
-const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
+/** The test's agents: each is opened, then each is configured for the group, then all are seen in the group. */
+const THREE_AGENTS_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS +
+    3 * DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS + AGENTS_IN_GROUP_POLL_TIMEOUT_MS;
+
+/** The owner creates the live test's group, then each of the three agents joins it, one request after another. */
+const LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS = 4 * DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS;
+
+/** How long the live test's cleanup waits for each agent's best-effort close; the closes run side by side. */
+export const LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS = 15_000;
 
 /** Three simulated agents, the run to passed, then the panel listing it. */
 export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistributedRunManifest): number {
@@ -39,16 +50,17 @@ export function computeSimulatedAckTestTimeoutMs(manifest: RallarBlackBoxDistrib
 }
 
 /**
- * Three browser agents, each run to passed in turn, the WS and RTC receivers' messages (each pair side by side), then
- * the realtime position payload and the two warning diagnostics side by side.
+ * Three browser agents and the group's membership, each run to passed in turn, the WS and RTC receivers' messages (each
+ * pair side by side), the realtime position payload and the two warning diagnostics side by side, then the cleanup.
  */
 export function computeLiveDistributedRecipesTestTimeoutMs(runs: LiveDistributedRecipeRuns): number {
     const toPassedMs = toLiveDistributedRecipeManifests(runs).reduce(
         (sum, manifest) => sum + computeDistributedRunToPassedWaitMs(manifest),
         0
     );
-    return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS + toPassedMs +
-        2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS + REALTIME_POSITION_POLL_TIMEOUT_MS + RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS;
+    return BROWSER_TEST_HARNESS_MARGIN_MS + THREE_AGENTS_BOUNDED_WAITS_MS + LIVE_GROUP_MEMBERSHIP_BOUNDED_WAITS_MS +
+        toPassedMs + 2 * BROWSER_MESSAGE_POLL_TIMEOUT_MS + REALTIME_POSITION_POLL_TIMEOUT_MS +
+        RUNTIME_DIAGNOSTIC_POLL_TIMEOUT_MS + LIVE_DISTRIBUTED_CLEANUP_CLOSE_TIMEOUT_MS;
 }
 
 interface DistributedRecipeTestRunInput {

@@ -82,8 +82,15 @@ describe('distributed recipe test timeouts', () => {
     });
     const manifests = toLiveDistributedRecipeManifests(runs);
     const margin = 60_000;
-    /** Each agent's 30 s Advanced tab and 30 s registration, then the 20 s poll for all of them in the group. */
-    const threeAgents = 3 * 2 * 30_000 + 20_000;
+    /**
+     * Each agent's 30 s Advanced tab and 30 s registration as it opens, then its configuration polled 20 s, then the 20 s
+     * poll for all of them in the group.
+     */
+    const threeAgents = 3 * (2 * 30_000 + 20_000) + 20_000;
+    /** The owner creates the group and each of the three agents joins it, each request under its own 15 s. */
+    const membership = 4 * 15_000;
+    /** The test's cleanup closes its agents side by side, each for up to 15 s. */
+    const cleanup = 15_000;
 
     it('waits for a run to become ready, then to pass', () => {
         const manifest = toManifest(healthRecipe('health'));
@@ -103,15 +110,15 @@ describe('distributed recipe test timeouts', () => {
         expect(manifests.map(computeDistributedRunPassedWaitMs)).toEqual([55_000, 100_000, 100_000, 220_000, 115_000, 256_000]);
     });
 
-    // The live test's 150 s besides its passed waits still held its six 45 s ready waits.
+    // The live test counted neither its agents' configuration polls, its membership requests nor its cleanup close.
     it('gives the live test its agents, six ready and passed waits, the message polls and the warning diagnostics', () => {
         const readyAndPassed = 6 * 45_000 + 55_000 + 100_000 + 100_000 + 220_000 + 115_000 + 256_000;
 
         expect(computeLiveDistributedRecipesTestTimeoutMs(runs))
-            .toBe(margin + threeAgents + readyAndPassed + 2 * 75_000 + 75_000 + 30_000);
+            .toBe(margin + threeAgents + membership + readyAndPassed + 2 * 75_000 + 75_000 + 30_000 + cleanup);
     });
 
-    // The simulated ACK test's 75 s besides its passed wait held its three agents' 180 s of registration waits.
+    // The simulated ACK test configures its three agents as the live test does.
     it('gives the simulated ACK test its agents, its run and the 15 s panel wait', () => {
         const manifest = createSimulatedAckManifest({ suffix: 'timeouts', controlRunId: 'passed-wait-run', group });
 

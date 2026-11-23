@@ -12,7 +12,9 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     CLUSTER_DIRECT_EXCHANGE_BOUNDED_WAITS_MS,
+    GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS,
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+    LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
     MATRIX_RUN_RESULTS_POLL_TIMEOUT_MS,
@@ -165,7 +167,7 @@ async function verifyGroupStateReadback(
             response: {
                 body: 'json'
             },
-            timeoutMs: 10_000
+            timeoutMs: GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS
         }
     });
     expect(input.control.resultValue(readResult).status).toBe(200);
@@ -187,7 +189,7 @@ async function verifyGroupStateReadback(
             response: {
                 body: 'json'
             },
-            timeoutMs: 10_000
+            timeoutMs: GROUP_STATE_READBACK_REQUEST_TIMEOUT_MS
         }
     });
     expect(input.control.resultValue(eventsResult).status).toBe(200);
@@ -297,7 +299,7 @@ async function closeLiveRtcAttemptResources(input: FinalizeLiveRtcAttemptInput):
                 agentId: agent.agentId,
                 commandId: `best-effort-close-${agent.prefix.toLowerCase()}-${input.suffix}`,
                 command: { kind: 'close' },
-                timeoutMs: 15_000
+                timeoutMs: LIVE_RTC_CLEANUP_CLOSE_TIMEOUT_MS
             });
             if (!result.ok) {
                 throw new Error(

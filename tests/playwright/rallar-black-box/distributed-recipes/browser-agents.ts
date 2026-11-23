@@ -18,6 +18,7 @@ import { createRallarBlackBoxEnsureGroupRequestId } from '../../../../packages/s
 import { decodeRecord } from '../../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { AuthSession } from '../../../../packages/shared/api/api-config.ts';
 
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     FULL_STACK_CONTROL_WS_URL,
     FULL_STACK_SPA_ORIGIN,
@@ -104,11 +105,17 @@ interface SetupGroupMembershipInput {
 
 export const config = readFullStackConfig();
 
-/** How long an opened control agent may take to select its Advanced tab, and then to register. */
-export const CONTROL_AGENT_REGISTRATION_TIMEOUT_MS = 30_000;
-
 /** Opening a control agent waits for its Advanced tab, then for its registration. */
-export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_REGISTRATION_TIMEOUT_MS;
+export const CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 2 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
+
+/** How long a control agent's configuration for the distributed group is polled for its result. */
+export const DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS = 20_000;
+
+/** Each group creation or membership request's own budget. */
+export const DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS = 15_000;
+
+/** How long a group creation or membership request is polled for its result. */
+const DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS = 45_000;
 
 const liveDistributedEnabled = booleanEnv('RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES') ||
     booleanEnv('RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES');
@@ -260,10 +267,10 @@ export async function openControlAgent(
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
             'aria-selected',
             'true',
-            { timeout: CONTROL_AGENT_REGISTRATION_TIMEOUT_MS }
+            { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS }
         );
         await expect(page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: CONTROL_AGENT_REGISTRATION_TIMEOUT_MS });
+            .toContainText('registered', { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
 
         return {
             context,
@@ -409,7 +416,7 @@ async function configureAgentForDistributedGroup(input: ConfigureAgentForDistrib
                 }
             }
         },
-        timeout: 20_000
+        timeout: DISTRIBUTED_AGENT_CONFIGURE_RESULT_WAIT_MS
     });
 }
 
@@ -450,9 +457,9 @@ export async function setupGroupMembership(
                 response: {
                     body: 'json'
                 },
-                timeoutMs: 15_000
+                timeoutMs: DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS
             },
-            timeout: 45_000
+            timeout: DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS
         });
         expect(Number(decodeRecord(joinResult.result?.value).status)).toBeLessThan(400);
     }
@@ -553,9 +560,9 @@ async function createDistributedGroup(
             response: {
                 body: 'json'
             },
-            timeoutMs: 15_000
+            timeoutMs: DISTRIBUTED_GROUP_REQUEST_TIMEOUT_MS
         },
-        timeout: 45_000
+        timeout: DISTRIBUTED_GROUP_REQUEST_RESULT_WAIT_MS
     });
     expect(Number(decodeRecord(createResult.result?.value).status)).toBe(201);
 }

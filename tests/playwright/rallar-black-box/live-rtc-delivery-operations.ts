@@ -14,6 +14,8 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
+    LIVE_RTC_CLOSE_RESULT_WAIT_MS,
+    LIVE_RTC_RESET_RESULT_WAIT_MS,
     MATRIX_INBOX_TIMEOUT_MS,
     MATRIX_SEND_TIMEOUT_MS,
     NACK_PROBE_SEND_TIMEOUT_MS,
@@ -675,7 +677,7 @@ async function expectClosedTransportFailure(
         agentId: input.agent.agentId,
         commandId: closeCommandId,
         command: { kind: 'close' },
-        timeoutMs: 45_000
+        timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
     });
 
     const staleSendCommandId = `stale-send-${input.agent.prefix.toLowerCase()}-${input.suffix}`;
@@ -723,14 +725,14 @@ async function closeAndResetAgents(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: 45_000
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
         });
         await input.control.executeResult({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: 30_000
+            timeoutMs: LIVE_RTC_RESET_RESULT_WAIT_MS
         });
     }
     return commandIds;
@@ -751,14 +753,14 @@ async function closeAndResetSettledAgentTrio(
             agentId: agent.agentId,
             commandId: closeCommandId,
             command: { kind: 'close' },
-            timeoutMs: 45_000
+            timeoutMs: LIVE_RTC_CLOSE_RESULT_WAIT_MS
         });
         await input.control.executeOk({
             runId: input.runId,
             agentId: agent.agentId,
             commandId: resetCommandId,
             command: { kind: 'reset' },
-            timeoutMs: 30_000
+            timeoutMs: LIVE_RTC_RESET_RESULT_WAIT_MS
         });
     };
 

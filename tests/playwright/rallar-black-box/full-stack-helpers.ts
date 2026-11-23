@@ -29,6 +29,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { readUntil, type ReadUntilOutcome } from '@shared/resilience/timing/read-until.ts';
 
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
@@ -380,11 +381,8 @@ export const LOGIN_RUN_HEADER_TIMEOUT_MS = 30_000;
 /** How long the control run is polled until an agent reports itself connected. */
 export const CONTROL_RUN_AGENT_POLL_TIMEOUT_MS = 30_000;
 
-/** How long an opened browser control agent may take to show its login gate or workbench, its tab, then registration. */
-export const BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS = 30_000;
-
 /** Opening a browser control agent waits for the login gate or workbench, the Advanced tab, then registration. */
-export const BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 3 * BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS;
+export const BROWSER_CONTROL_AGENT_OPEN_BOUNDED_WAITS_MS = 3 * CONTROL_AGENT_OPENING_TIMEOUT_MS;
 const CONTROL_POLL_TIMERS = createDefaultTimers();
 
 export function readFullStackConfig(): FullStackConfig {
@@ -673,10 +671,10 @@ export async function openBrowserControlAgentInContext(
         await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
         await signInIfLoginGateIsVisible(page);
         await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true', {
-            timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
         });
         await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered', {
-            timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS
+            timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS
         });
         return { context, page, session: await readBrowserAuthSession(page), diagnostics };
     }
@@ -1110,7 +1108,7 @@ function normalizeBaseUrl(value: string): string {
 async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
     const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
     const workbench = page.getByRole('tab', { name: 'Advanced' });
-    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: BROWSER_CONTROL_AGENT_SCREEN_TIMEOUT_MS });
+    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
     if (await loginGate.isVisible()) {
         await page.getByRole('button', { name: 'Sign in' }).click();
     }

@@ -44,6 +44,7 @@ import {
 
 import {
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS,
+    LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS,
     LIVE_RTC_MESSAGE_WAIT_TIMEOUT_MS,
     LIVE_RTC_PEER_ABSENCE_TIMEOUT_MS,
     LIVE_RTC_PEER_READINESS_TIMEOUT_MS
@@ -798,7 +799,7 @@ export class LiveRtcControlClient {
                     runId: input.runId,
                     agentId: agent.agentId,
                     commandId,
-                    timeoutMs: 30_000
+                    timeoutMs: LIVE_RTC_DIAGNOSTICS_READ_TIMEOUT_MS
                 })
             );
         }

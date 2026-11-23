@@ -28,8 +28,11 @@ import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baselin
 import { computeCommandResultWaitMs } from '@shared-test/rallar-bb-test/browser-test-budgets/compute-command-result-wait-ms.ts';
 import {
     FORMATION_CONNECT_TIMING,
+    FORMATION_GROUP_READ_TIMEOUT_MS,
     FORMATION_PLANNED_LAYOUT_POLL_TIMEOUT_MS,
     FORMATION_PRESENCE_POLL_TIMEOUT_MS,
+    FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS,
+    GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS,
     LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
 } from '@shared-test/rallar-bb-test/browser-test-budgets/live-rtc-wait-budgets.ts';
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
@@ -803,7 +806,7 @@ async function configureMeshTopology(
                 body: 'json',
                 acceptedStatusCodes: [200]
             },
-            timeoutMs: 10_000
+            timeoutMs: FORMATION_TOPOLOGY_CONFIG_TIMEOUT_MS
         }
     });
     return commandId;
@@ -819,7 +822,7 @@ async function enterGroupConnectionCycle(
         agentId: input.owner.agentId,
         commandId: readCommandId,
         command: groupReadCommand(config, input.groupId),
-        timeoutMs: 15_000
+        timeoutMs: FORMATION_GROUP_READ_TIMEOUT_MS
     });
     const lifecycleState = toFormationEntryLifecycleState(
         input.control.resultValue(current)
@@ -994,7 +997,7 @@ async function waitForActiveSessions(
                         agentId: input.owner.agentId,
                         commandId,
                         command: groupReadCommand(config, input.groupId),
-                        timeoutMs: 15_000
+                        timeoutMs: FORMATION_GROUP_READ_TIMEOUT_MS
                     })
                     .catch(() => undefined);
                 if (!result?.ok) {
@@ -1249,7 +1252,7 @@ async function setupGroupMembership(
                     body: 'json',
                     acceptedStatusCodes: [200]
                 },
-                timeoutMs: 10_000
+                timeoutMs: GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS
             }
         });
     }
@@ -1289,6 +1292,6 @@ function toGroupCreationCommand(
             body: 'json',
             acceptedStatusCodes: [201]
         },
-        timeoutMs: 10_000
+        timeoutMs: GROUP_MEMBERSHIP_REQUEST_TIMEOUT_MS
     };
 }

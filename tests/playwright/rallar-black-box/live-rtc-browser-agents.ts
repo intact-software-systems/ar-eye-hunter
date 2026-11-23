@@ -20,6 +20,7 @@ import {
     writeFullStackRtcBrowserEntries
 } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 
+import { CONTROL_AGENT_OPENING_TIMEOUT_MS } from '@shared-test/rallar-bb-test/browser-test-budgets/control-agent-opening-timeout-ms.ts';
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { installLiveRtcWireObservation } from './live-rtc-wire-observation.ts';
@@ -105,7 +106,7 @@ export async function openLiveRtcBrowserAgent(
 
         await openTab(page, 'local-workbench', 'black-box-runner');
         await expect(page.locator('#panel-local-workbench .control-panel'))
-            .toContainText('registered', { timeout: 30_000 });
+            .toContainText('registered', { timeout: CONTROL_AGENT_OPENING_TIMEOUT_MS });
 
         return {
             context,
