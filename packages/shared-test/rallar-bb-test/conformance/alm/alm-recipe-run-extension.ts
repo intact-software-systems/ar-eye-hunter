@@ -1,8 +1,4 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe,
-    RallarBlackBoxTestRecord
-} from '../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 /**
  * A lane runs each role's recipe within an ordinary budget of its own. A cell whose longest step outlasts that budget
@@ -27,33 +23,10 @@ export function computeAlmRecipeRunTimeoutMs(recipe: RallarBlackBoxTestRecipe, o
     return ordinaryMs + extensionMs;
 }
 
-/**
- * The longest `commands` may take one after another: each command's own timeout, and a connect's readiness wait after
- * it. A close names no timeout and adds none; any other command must name its own, or its time could not be counted.
- */
-export function computeCommandsTimeoutMs(commands: readonly RallarBlackBoxTestCommand[]): number {
-    return commands.reduce((sum, command) => {
-        if (command.kind === 'close') {
-            return sum;
-        }
-        assertCommandTimeoutStated(command);
-        const readinessMs = command.kind === 'rtc.connect' ? command.readiness?.timeoutMs ?? 0 : 0;
-        return sum + command.timeoutMs + readinessMs;
-    }, 0);
-}
-
 function assertAlmRecipeRunExtensionMs(recipeId: string, value: unknown): asserts value is number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new Error(
             `${recipeId} states ${ALM_RECIPE_RUN_EXTENSION_KEY} ${JSON.stringify(value)}, not a non-negative integer.`
         );
-    }
-}
-
-function assertCommandTimeoutStated(
-    command: RallarBlackBoxTestCommand
-): asserts command is RallarBlackBoxTestCommand & { readonly timeoutMs: number; } {
-    if (command.timeoutMs === undefined) {
-        throw new Error(`${command.commandId ?? command.kind} names no timeout, so its time cannot be counted.`);
     }
 }

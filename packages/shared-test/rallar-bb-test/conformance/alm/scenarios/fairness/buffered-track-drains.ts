@@ -14,7 +14,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import { computeCommandsTimeoutMs } from '../../alm-recipe-run-extension.ts';
+import { computeCommandsTimeoutMs } from '../../cell/compute-commands-timeout-ms.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import {
     computeCuedArrivalsWaitMs,
@@ -33,6 +33,7 @@ import { computeSendLoopBudgetMs, FAIRNESS_SEND_INTERVAL_MS } from './to-send-lo
  */
 const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 3);
 const BUFFERED_SENDS_BUDGET_MS = computeSendLoopBudgetMs(BUFFERED_SEQS.length);
+const BUFFERED_TRACK_LIFETIME = 'the buffered track\'s lifetime';
 const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /** The receiver counts the 66 once the sender cued that seq 2 is released and admitted. */
@@ -108,12 +109,23 @@ function toReleaseCommands(sender: AlmConformanceStepInput): readonly RallarBlac
 function computeBufferedTrackTtlMs(sender: AlmConformanceStepInput): number {
     const heldSend = toTrackSend(sender, HELD_SEQ);
     const heldSendCommands = toHeldSendCommands({ ...sender, index: HELD_SEQ }, [heldSend]);
-    const fromHeldSendMs = computeCommandsTimeoutMs(heldSendCommands.slice(heldSendCommands.indexOf(heldSend)));
+    const heldSendIndex = heldSendCommands.indexOf(heldSend);
+    assertHeldSendCarried(heldSendIndex);
+    const fromHeldSendMs = computeCommandsTimeoutMs(heldSendCommands.slice(heldSendIndex), BUFFERED_TRACK_LIFETIME);
     const afterLoopMs = computeCommandsTimeoutMs([
         ...toReleaseCommands(sender),
         ...toCuedArrivalsCueCommands(sender, BUFFERED_ARRIVALS)
-    ]);
+    ], BUFFERED_TRACK_LIFETIME);
     return fromHeldSendMs + BUFFERED_SENDS_BUDGET_MS + afterLoopMs + toVerdictTimeoutMs(sender.input.deadlineMs);
+}
+
+/** The lifetime counts from seq 2's own send, so a held block that no longer carries that send cannot size it. */
+function assertHeldSendCarried(heldSendIndex: number): void {
+    if (heldSendIndex < 0) {
+        throw new Error(
+            `The held block no longer carries seq ${HELD_SEQ}'s own send, so the track's lifetime cannot count from it.`
+        );
+    }
 }
 
 /** A track send without its lifetime: its command timeout reads none, so the lifetime can be sized from it. */

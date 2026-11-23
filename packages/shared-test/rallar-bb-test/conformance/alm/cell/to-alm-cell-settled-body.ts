@@ -4,6 +4,7 @@ import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../../../barrier/r
 import { requireAlmCellParts, type AlmCellPartsByRole } from '../alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import type { AlmCellBarrieredSettle } from '../alm-conformance-scenario-definition.ts';
+import { computeCommandsTimeoutMs } from './compute-commands-timeout-ms.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellSettleCommand } from './to-alm-cell-authored-commands.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';
@@ -96,16 +97,9 @@ function computeLongestOthersMs(
     settleRoles: readonly AlmConformanceRole[],
     toCommands: RoleCommandsSelector
 ): number {
-    const msByRole = settleRoles.map((role) => computeCommandsMs(role, toCommands(role)));
+    const msByRole = settleRoles.map((role) =>
+        computeCommandsTimeoutMs(toCommands(role), `the cell's barrier over the ${role}'s commands`)
+    );
     const totalMs = msByRole.reduce((sum, ms) => sum + ms, 0);
     return Math.max(...msByRole.map((ms) => totalMs - ms));
-}
-
-function computeCommandsMs(role: AlmConformanceRole, commands: readonly RallarBlackBoxTestCommand[]): number {
-    return commands.reduce((sum, command) => {
-        if (command.timeoutMs === undefined) {
-            throw new Error(`${command.commandId ?? role} names no timeout, so the cell's barrier cannot cover it.`);
-        }
-        return sum + command.timeoutMs;
-    }, 0);
 }

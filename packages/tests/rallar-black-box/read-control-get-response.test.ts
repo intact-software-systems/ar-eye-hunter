@@ -12,7 +12,7 @@ import {
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 import { readControlRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
-import { isControlTransportFailure } from '../../../tests/playwright/rallar-black-box/read-control-get-response.ts';
+import { readControlGetResponse } from '../../../tests/playwright/rallar-black-box/read-control-get-response.ts';
 
 const snapshot = {
     runId: 'run',
@@ -41,14 +41,30 @@ afterEach(async () => {
     }
 });
 
-describe('a control transport failure', () => {
+describe('a control GET', () => {
     it.each([
-        { failure: new Error('apiRequestContext.get: read ECONNRESET'), retryable: true },
-        { failure: new Error('apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5180'), retryable: true },
-        { failure: new Error('apiRequestContext.get: 503 Service Unavailable'), retryable: false },
-        { failure: new Error('Invalid control run snapshot: results'), retryable: false }
-    ])('is retryable only for a reset or refused connection: $failure', ({ failure, retryable }) => {
-        expect(isControlTransportFailure(failure)).toBe(retryable);
+        { case: 'a reset known by its code', failure: toCodedError('apiRequestContext.get: socket hang up', 'ECONNRESET'), reread: true },
+        { case: 'a refusal known by its code', failure: toCodedError('apiRequestContext.get: connect failed', 'ECONNREFUSED'), reread: true },
+        { case: 'a reset known only by its message', failure: new Error('apiRequestContext.get: read ECONNRESET'), reread: true },
+        { case: 'a timeout', failure: new Error('apiRequestContext.get: Timeout 30000ms exceeded.'), reread: false },
+        { case: 'another system error', failure: toCodedError('apiRequestContext.get: getaddrinfo ENOTFOUND control', 'ENOTFOUND'), reread: false }
+    ])('re-reads after $case only when the request produced no answer because the connection failed', async ({ failure, reread }) => {
+        const server = await openAnsweringControlServer(200);
+        const request = await openRequest();
+        const get = request.get.bind(request);
+        vi.spyOn(request, 'get')
+            .mockRejectedValueOnce(failure)
+            .mockImplementation(async () => await get(server.url));
+
+        const read = readControlGetResponse(async () => await request.get(server.url));
+
+        if (reread) {
+            await expect(read.then((response) => response.status())).resolves.toBe(200);
+        }
+        else {
+            await expect(read).rejects.toBe(failure);
+        }
+        expect(server.answered()).toBe(reread ? 1 : 0);
     });
 });
 
@@ -113,4 +129,9 @@ async function openAnsweringControlServer(status: number): Promise<AnsweringCont
         await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     });
     return { url: `http://127.0.0.1:${address.port}/runs/run`, answered: () => answered };
+}
+
+/** A rejection as Playwright's request context gives it, with the system error code the server side reported. */
+function toCodedError(message: string, code: string): Error {
+    return Object.assign(new Error(message), { code });
 }

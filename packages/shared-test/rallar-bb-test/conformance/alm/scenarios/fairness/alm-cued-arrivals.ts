@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
-import { computeCommandsTimeoutMs } from '../../alm-recipe-run-extension.ts';
+import { computeCommandsTimeoutMs } from '../../cell/compute-commands-timeout-ms.ts';
 import { toCueStep } from '../receipted-audience.ts';
 import {
     toCueListenCommands,
@@ -58,5 +58,8 @@ export function toCuedArrivalsReceiverCommands(
  * cell's longest step: each role's recipe runs that much longer than an ordinary one.
  */
 export function computeCuedArrivalsWaitMs(step: AlmConformanceStepInput, arrivals: AlmCuedArrivals): number {
-    return computeCommandsTimeoutMs(toCuedArrivalsSenderCommands({ ...step, role: 'sender' }, arrivals));
+    return computeCommandsTimeoutMs(
+        toCuedArrivalsSenderCommands({ ...step, role: 'sender' }, arrivals),
+        `the receiver's wait for the ${arrivals.cue} cue`
+    );
 }

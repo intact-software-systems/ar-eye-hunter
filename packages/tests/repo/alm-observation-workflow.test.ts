@@ -260,7 +260,7 @@ describe('ALM conformance lane action', () => {
         expect(3_300_000).toBeLessThan((fullLimit ?? 0) * 60_000);
     });
 
-    it('ends a hung family test by its own time limit before the full scope\'s global timeout ends the run', () => {
+    it('keeps a family test\'s own time limit below the full scope\'s global timeout', () => {
         const full = laneSteps.find((step) => step.if === '${{ inputs.scope == \'full\' }}');
         const fullGlobalTimeoutMs = Number(/--global-timeout=(\d+)/u.exec(full?.run ?? '')?.[1]);
 

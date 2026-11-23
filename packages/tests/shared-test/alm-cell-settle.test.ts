@@ -122,11 +122,12 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('a connected barrier\'s timeout covers the other roles\' prologues', () => {
+    it('a connected barrier\'s timeout covers the other roles\' prologues, a connect\'s readiness wait included', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
                 const settleRoles = scenario.roles.filter((role) => role !== 'successor');
-                const prologueMs = (role: AlmConformanceRole) => scenario.partsByRole[role]!.prologue.reduce((sum, command) => sum + command.timeoutMs!, 0);
+                const prologueMs = (role: AlmConformanceRole) =>
+                    scenario.partsByRole[role]!.prologue.reduce((sum, command) => sum + command.timeoutMs! + toReadinessMs(command), 0);
                 const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + prologueMs(other), 0));
                 const timeouts = settleRoles.map((role) => toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[0]!.timeoutMs);
 
@@ -134,8 +135,9 @@ describe('alm-conformance cell parts', () => {
                 expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs) + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS]));
             }
         }
-        // Each settle prologue is 5 000 + 5 000 + 45 000 ms; the first arrival waits through every other one, then the
-        // 10 000 ms a barrier verdict and the pages' skew may take.
+        // Each settle prologue over rtc is 5 000 + 5 000 + 45 000 ms, and 30 000 ms more where its connect waits for
+        // ready peers, a wait that runs after the connect's own timeout ends; the first arrival waits through every other
+        // one, then the 10 000 ms a barrier verdict and the pages' skew may take.
         const timeoutOf = (scenarioKey: string, role: AlmConformanceRole) =>
             toBarrierCommands(
                 toAlmConformanceRoleRecipe(
@@ -143,9 +145,9 @@ describe('alm-conformance cell parts', () => {
                     role
                 )!
             )[0]?.timeoutMs;
-        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(65_000);
-        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(120_000);
-        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(175_000);
+        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(95_000);
+        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(150_000);
+        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(265_000);
     });
 
     it('a role recipe is its prologue then its body', () => {
@@ -690,6 +692,11 @@ function isDeclaredStartCommand(command: RallarBlackBoxTestCommand): boolean {
 /** A role recipe's settle commands, in recipe order. */
 function toSettleCommands(recipe: RallarBlackBoxTestRecipe, rolePrefix: string): readonly RallarBlackBoxTestCommand[] {
     return recipe.commands.filter((command) => isSettleCommand(command, rolePrefix));
+}
+
+/** A connect waits for its peers' readiness after its own timeout, so that wait adds to the time it may take. */
+function toReadinessMs(command: RallarBlackBoxTestCommand): number {
+    return command.kind === 'rtc.connect' ? command.readiness?.timeoutMs ?? 0 : 0;
 }
 
 function toCommandsMs(commands: readonly RallarBlackBoxTestCommand[]): number {
