@@ -3,6 +3,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
+import { NON_EXPIRING_TTL_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
@@ -54,6 +55,13 @@ interface AlmConformanceGapRequestAdmissionWaitInput {
     readonly logicalRecipientPeerId: string;
 }
 
+/**
+ * The longest an origin holds its second send before the request that releases it must have committed: half the
+ * send's lifetime, the browser default it states none of its own against. The hold starts with the second send, and the
+ * other half is left for the release, the repair it lets out and, for a receipted send, that repair's receipt.
+ */
+const HELD_SEND_BUDGET_MS = NON_EXPIRING_TTL_MS / 2;
+
 /** The pages that originate a track; recipient-b only receives. */
 const ORIGINS: readonly AlmConformanceRole[] = ['sender', 'receiver'];
 const SEQS = [1, 2, 3] as const;
@@ -65,11 +73,14 @@ const SEQS = [1, 2, 3] as const;
  * through the middle, which forwards that receiver's gap NACKs. Each origin holds its own second send at its RTC
  * transport by message id, once both receivers entered its track at the first: the hold drops the original, every
  * gap repair and every receipt retry of it alike, so the gap stays open while each receiver renews its request. Each
- * origin releases the hold only once it admitted the gap request numbered 3 from each receiver. Request 3 is the proof:
+ * origin releases the hold only once it admitted the gap request numbered 3 from each receiver, within half the held
+ * send's lifetime so its repair has time to land. Request 3 is the proof:
  * it lands after the origin's 2 s receipt retry of the third send, the message that revealed the gap, so the relay
  * must still forward a renewal once that retry passed it. After the run the identity assessment fails the cell unless
  * at least one origin admitted a request 3 that a relay sent for its receiver; the cell asserts neither which page
- * relays nor whose track. Over `rtc` alone: a WS fallback would carry the held message or the renewal around the
+ * relays nor whose track. No step reads which page is the middle, so the server's RTT replan may move the middle once
+ * the path is 15 s old without breaking a step: any path of three keeps one, and each admitted request names the peer
+ * that sent it, which the assessment compares with the receiver it speaks for. Over `rtc` alone: a WS fallback would carry the held message or the renewal around the
  * relay. Every receiver hears each origin's three sends in order: it enters the track at the first, releases the third
  * from its buffer once the second arrives, and omits nothing. The tracks run on one type, so each origin's track has
  * its own ordering key and a receiver tells them apart by the key and the sender's peer id, which each page states on
@@ -104,7 +115,7 @@ export const relayedUnreceiptedGapRenewal: AlmConformanceScenarioDefinition = to
 function toGapRequestAdmissionWait(
     { step, name, requestNumber, logicalRecipientPeerId }: AlmConformanceGapRequestAdmissionWaitInput
 ): RallarBlackBoxTestWaitCommand {
-    return toDiagnosticWait({
+    const wait = toDiagnosticWait({
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
@@ -112,6 +123,7 @@ function toGapRequestAdmissionWait(
         contains: `"nackGapRequestNumber":${requestNumber},"nackLogicalRecipientPeerId":"${logicalRecipientPeerId}"`,
         payloadFields: { 'data.kind': 'control-admission', 'data.outcome': 'committed', 'data.nackReason': 'gap' }
     });
+    return { ...wait, timeoutMs: toBudgetMs(HELD_SEND_BUDGET_MS, wait.timeoutMs) };
 }
 
 /** The name of an origin's wait for the gap request numbered `requestNumber` that speaks for `recipient`. */

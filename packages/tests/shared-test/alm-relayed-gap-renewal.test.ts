@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
+import { NON_EXPIRING_TTL_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { createAlmConformanceRecipes, type AlmConformanceScenario } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -165,6 +166,20 @@ describe.each(CELLS)('the $key cell', ({ key, requestNumber, ack, handleState })
             expect(ids.indexOf(`${page}-hold-message-2-rtc`)).toBeLessThan(ids.indexOf(`${page}-send-3`));
             expect(waits.every((index) => index > ids.indexOf(`${page}-send-3`)), role).toBe(true);
             expect(releases, role).toEqual([Math.max(...waits) + 1]);
+        }
+    });
+
+    it('ends each origin\'s hold within half its second send\'s lifetime, leaving the other half for the release and the repair', () => {
+        const scenario = toScenario(key);
+        for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
+            const page = `${prefix}-${role}`;
+            const send = recipe.commands.find((command) => command.commandId === `${page}-send-2`);
+            const waits = ROLES.filter((recipient) => recipient !== role)
+                .map((recipient) => toCommand(recipe, `${page}-gap-request-${requestNumber}-for-${recipient}`));
+
+            // The send states no lifetime of its own, so it lives the browser's default.
+            expect(send && 'ttlMs' in send ? send.ttlMs : undefined, role).toBeUndefined();
+            expect(waits.map((wait) => wait?.timeoutMs), role).toEqual(waits.map(() => NON_EXPIRING_TTL_MS / 2));
         }
     });
 
