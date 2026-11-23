@@ -45,8 +45,9 @@ export interface ALReceiptRecordContractScope {
         ALReceiptRecordContractInstance
     ];
     /**
-     * The clock on which a fenced write takes an expired row that no sweep has deleted as gone. Reads expire rows on
-     * the instance clock; PostgreSQL's conditional inserts compare with the database clock, which no case can move.
+     * The clock on which the deadline work row's conditional insert takes an expired work row that no sweep has
+     * deleted as gone. Heads and confirmations are read and replaced by revision on the instance clock on every
+     * backend; PostgreSQL's work-row insert compares `expire_ts` with the database clock, which no case can move.
      */
     readonly fencedWriteClock: 'instance' | 'database';
 }
@@ -504,8 +505,11 @@ export function describeALReceiptRecordContract(
                 .toEqual({ confirmed: ['r1', 'r2'], outside: [], complete: true });
         });
 
-        // A deadline pass one grace late reads the head and then the confirmations: were they to expire with the
-        // head, it could read a live head and no confirmation, and end a complete receipt 'timed-out' naming nobody.
+        // A characterization of a deadline pass one grace late: it ends on the confirmations it reads, 'complete'. The
+        // rule that keeps those confirmations alive while the head is (they outlive it by one grace) is pinned by the
+        // case 'expires a receipt with the receipt grace'. Here the ending instance's clock does not move within `end`,
+        // so its head read and its confirmation list see one instant, and this case would pass were they to expire
+        // with the head.
         it('ends on the confirmations it read when the deadline pass runs late', async () => {
             const f = await fixture();
             await openWith(f, ['r1', 'r2']);
@@ -516,7 +520,8 @@ export function describeALReceiptRecordContract(
             expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1', 'r2']);
         });
 
-        // The sibling: a late pass over a partial set must name the recipient that did confirm.
+        // The sibling characterization: a late pass over a partial set names the recipient that did confirm. Its
+        // expiry rule is likewise pinned by 'expires a receipt with the receipt grace', not here.
         it('times out naming the confirmations it read when the deadline pass runs late', async () => {
             const f = await fixture();
             await openWith(f, ['r1']);
@@ -542,9 +547,11 @@ export function describeALReceiptRecordContract(
         });
 
         // A characterization the next slice must guard against, not a promise: once the head has expired, the same
-        // ref opens a second life under a later deadline, with a fresh tally and one deadline work row due then. Where
-        // fenced writes read the database clock, the first life's unswept rows still hold the slot for the instance
-        // clocks moved here, so the reopen conflicts; with real clocks it opens once the database clock passes them.
+        // ref opens a second life under a later deadline, with a fresh tally and one deadline work row due then. The
+        // expired head is replaced by revision on the instance clock; but where the deadline work row's conditional
+        // insert compares its expiry with the database clock, the first life's unswept deadline work row still holds
+        // its slot for the instance clocks moved here, so the reopen conflicts. With real clocks it opens once the
+        // database clock passes that work row's expiry.
         it('opens a second life only under a later deadline', async () => {
             const f = await fixture();
             expect((await f.a.record.open(f.opening)).right).toBeDefined();

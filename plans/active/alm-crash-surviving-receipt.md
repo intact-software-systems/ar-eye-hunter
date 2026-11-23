@@ -152,9 +152,10 @@ whichever reads later sees both, so a completion cannot be missed. `end` takes n
 otherwise, writing nothing. `end` is fenced on the head it read: of several instances that try to end one
 receipt, one commits and the others read a conflict. Within one head's life there is one terminal phase and
 one terminal receipt per message, whatever the clocks of the instances say. Heads and confirmations expire on
-the clock of the instance that reads them. On PostgreSQL, work rows come due and are swept on the database
-clock, and a fenced write takes an expired row that no sweep has deleted as gone only once the database clock
-has passed its expiry. A `count` that read an open head can commit after
+the clock of the instance that reads them, and a write replaces such a row by its revision on that clock too.
+On PostgreSQL, work rows come due and are swept on the database clock, and only a work row is taken as gone on
+it: the deadline work row's conditional insert replaces an expired row that no sweep has deleted only once the
+database clock (`now()`) has passed its `expire_ts`. A `count` that read an open head can commit after
 another instance's `end`; its view may then say `open` for a receipt stored ended. Only `end`'s result is
 authoritative.
 
