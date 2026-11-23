@@ -3,11 +3,38 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type {
+    RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRunManifest
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { createExecuteManifestDraft } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
+import { DEFAULT_EXECUTE_RECIPE_ID } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
+import {
+    computeLiveRtcLifecycleScenarioTimeoutMs,
+    REOPENING_SCENARIO_PRESENCE_CONNECTS
+} from '../../../tests/playwright/rallar-black-box/compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
+import { computeViewPushTestDeadlines } from '../../../tests/playwright/rallar-black-box/compute-view-push-test-deadlines.ts';
+import { computeDistributedRunsTestTimeoutMs } from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-control.ts';
+import {
+    createLiveDistributedRecipeRuns,
+    createSimulatedAckManifest,
+    LIVE_RECIPES_STEPS_TIMEOUT_MS,
+    SIMULATED_ACK_STEPS_TIMEOUT_MS,
+    SIMULATED_FAILURES_TEST_TIMEOUT_MS,
+    toLiveDistributedRecipeManifests
+} from '../../../tests/playwright/rallar-black-box/distributed-recipes/distributed-recipe-test-runs.ts';
 import {
     LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
     LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
     LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS
 } from '../../../tests/playwright/rallar-black-box/live-rtc-matrix-test-timeouts.ts';
+import {
+    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
+    CONSOLE_NATIVE_STEPS_TIMEOUT_MS
+} from '../../../tests/playwright/rallar-black-box/recipe-console-monitor-test-timeouts.ts';
 
 interface WorkflowDocument {
     readonly jobs: Readonly<Record<string, Readonly<{ 'timeout-minutes'?: number; }>>>;
@@ -15,12 +42,72 @@ interface WorkflowDocument {
 
 const repoRoot = path.resolve(__dirname, '../../..');
 
+const group: RallarBlackBoxDistributedGroupRef = {
+    applicationId: 'rallar-server',
+    workspaceId: 'default',
+    groupId: 'job-limit-room'
+};
+
+/**
+ * The app browser job's work before its lifecycle test: the lane setup, the app browser tests and the in-memory
+ * full-stack tests, whose limits are not derived, then Playwright starting the lifecycle test's web servers. Release
+ * Gate runs 45224498021 and 45207491208 reached the lifecycle step after 10 min 23 s and 10 min 26 s, and the step's
+ * servers and test took 42 s and 85 s.
+ */
+const E2E_APP_JOB_SETUP_MS = 15 * 60_000;
+
+/**
+ * The live recipes job's work besides its tests: containers, checkout, the lane setup, migrations and listing the
+ * cases, then Playwright starting the API, SPA and control web servers. Release Gate runs 45224498021 and
+ * 45207491208 spent 65 s and 59 s before the execute step, and the whole step, every case included, took under 2 min.
+ */
+const E2E_LIVE_RECIPES_JOB_SETUP_MS = 5 * 60_000;
+
+/**
+ * The Postgres integration job's work besides the view push test: every other step of the lane, none of them a
+ * derived test. Release Gate runs 45224498021 and 45207491208 took 9 min 2 s and 9 min 41 s in all, the view push step
+ * 13 s of it.
+ */
+const POSTGRES_INTEGRATION_JOB_SETUP_MS = 12 * 60_000;
+
 /**
  * The B06 diagnostic job's work besides its three Playwright invocations' tests: checkout, toolchain, `npm ci`,
  * Chromium and the observation tooling check, then each invocation starting its API, SPA and control web servers. The
  * B06 capture job, which shares that setup, spent 60 s on it in run 34573688470 and 86 s in run 39110663949.
  */
 const B06_DIAGNOSTIC_JOB_SETUP_MS = 10 * 60_000;
+
+function readManifest(manifestPath: string): RallarBlackBoxDistributedRunManifest {
+    return decodeDistributedRunManifest(JSON.parse(readFileSync(path.join(repoRoot, manifestPath), 'utf8'))).fold(
+        () => {
+            throw new Error(`${manifestPath} could not be decoded.`);
+        },
+        (manifest) => manifest
+    );
+}
+
+/** The manifest the Console's Execute view builds for its default recipe, as the Native console test starts it. */
+function toConsoleNativeManifest(): RallarBlackBoxDistributedRunManifest {
+    const selectedRecipe = projectDistributedRecipeCatalog({
+        configuration: {
+            group,
+            apiBaseUrl: 'http://localhost:8080',
+            rtcRealtimeDurationSeconds: RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS
+        }
+    }).entries.find((entry) => entry.item.recipe.recipeId === DEFAULT_EXECUTE_RECIPE_ID);
+    if (!selectedRecipe) {
+        throw new Error(`The Console catalog has no ${DEFAULT_EXECUTE_RECIPE_ID} recipe.`);
+    }
+    return createExecuteManifestDraft({
+        distributedRunId: 'dist-console-native',
+        controlRunId: 'console-native-run',
+        group,
+        selectedRecipe,
+        selectedAgentIds: ['console-native-agent-1', 'console-native-agent-2']
+    }).fold((issue) => {
+        throw new Error(issue);
+    }, (draft) => draft.manifest);
+}
 
 function readJobTimeoutMs(workflowPath: string, job: string): number {
     const workflow = load(readFileSync(path.join(repoRoot, workflowPath), 'utf8')) as WorkflowDocument;
@@ -36,5 +123,39 @@ describe('jobs that run tests whose timeouts are derived', () => {
 
         expect(readJobTimeoutMs('.github/workflows/rtc-b06-performance-observation.yml', 'diagnostic'))
             .toBeGreaterThan(B06_DIAGNOSTIC_JOB_SETUP_MS + casesMs);
+    });
+
+    // The lifecycle test runs after the app browser and in-memory full-stack tests in a 20-minute job, which a hung
+    // lifecycle test outlasted.
+    it('gives the app browser job room for its setup and the reopening lifecycle scenario', () => {
+        const testsMs = computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS);
+
+        expect(readJobTimeoutMs('.github/workflows/release-gate.yml', 'e2e-app'))
+            .toBeGreaterThan(E2E_APP_JOB_SETUP_MS + testsMs);
+    });
+
+    // The live distributed recipes and the Console monitor specs run one test after another in one job.
+    it('gives the live recipes job room for its setup and every distributed and Console test', () => {
+        const runInput = { suffix: 'job-limit', controlRunId: 'job-limit-run', group };
+        const live = createLiveDistributedRecipeRuns({ ...runInput, agentIds: ['agent-a', 'agent-b', 'agent-c'] });
+        const testsMs = computeDistributedRunsTestTimeoutMs(SIMULATED_ACK_STEPS_TIMEOUT_MS, [
+            createSimulatedAckManifest(runInput)
+        ]) +
+            SIMULATED_FAILURES_TEST_TIMEOUT_MS +
+            computeDistributedRunsTestTimeoutMs(LIVE_RECIPES_STEPS_TIMEOUT_MS, toLiveDistributedRecipeManifests(live)) +
+            CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS +
+            computeDistributedRunsTestTimeoutMs(CONSOLE_NATIVE_STEPS_TIMEOUT_MS, [toConsoleNativeManifest()]);
+
+        expect(readJobTimeoutMs('.github/workflows/release-gate.yml', 'e2e-live-recipes'))
+            .toBeGreaterThan(E2E_LIVE_RECIPES_JOB_SETUP_MS + testsMs);
+    });
+
+    it('gives the Postgres integration job room for its other steps and the view push test', () => {
+        const { testTimeoutMs } = computeViewPushTestDeadlines(
+            readManifest('apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json')
+        );
+
+        expect(readJobTimeoutMs('.github/workflows/release-gate.yml', 'postgres-integration'))
+            .toBeGreaterThan(POSTGRES_INTEGRATION_JOB_SETUP_MS + testTimeoutMs);
     });
 });
