@@ -267,21 +267,31 @@ export type ALInboundRuntimeDiagnosticsEvent =
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
         lane: ALStoreDurability;
         workerId: string;
-        /** Empty rounds this one event stands for; the cadence is `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS`. */
-        emptyRoundCount: number;
-        /** The wall time those rounds spanned, so a slowed rotation reads as a long gap, not an absence. */
+        /**
+         * Rotations that walked back to the head of NEW in this window. One event per
+         * `INBOX_OUTBOX_ENGINE_MAX_IDLE_MS` window at most: the first rotation that completes that long
+         * after the window opened states it and opens the next.
+         */
+        rotationCount: number;
+        /** The window's wall time, so a slowed rotation reads as a long gap, not an absence. */
         durationMs: number;
-        /** The slowest single round of them, so one crawling scan is not averaged away by the rest. */
-        longestRoundMs: number;
-        /** How many of those rounds saw a due row they did not run. */
-        deferredRoundCount: number;
-        /** The due rows the latest such round did not run, oldest first. */
+        /** The slowest single rotation, from its first page read to its wrap, so one crawling scan is not averaged away. */
+        longestRotationMs: number;
+        /** How many of those rotations held back at least one due row. */
+        deferredRotationCount: number;
+        /** The due rows the latest such rotation held back, oldest first, at most one page of them. */
         latestDeferred: readonly ALInboundDeferredEffect[];
     }>;
 
 export interface ALInboundDeferredEffect {
     readonly effectId: string;
     readonly dueAtMs: number;
+}
+
+export function toOldestFirstALInboundDeferredEffects(
+    deferred: readonly ALInboundDeferredEffect[]
+): readonly ALInboundDeferredEffect[] {
+    return [...deferred].sort((left, right) => left.dueAtMs - right.dueAtMs);
 }
 
 export interface ALInboundRuntimeDiagnosticsSink {

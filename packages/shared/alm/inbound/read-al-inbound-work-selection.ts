@@ -59,12 +59,14 @@ interface ALInboundWorkSelection {
     /** The decoded envelope of every claimable `send-control` row, by queue slot. */
     readonly controlSends: ReadonlyMap<ResourceEntryKeyString, ALInboundClaimedControlSend>;
     readonly scan: ALInboundWorkScan;
-    /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
+    /** The clock reading this page's due checks used. */
+    readonly readAtMs: number;
+    /** The page holds work a batch can claim: the only page a probe answers "ready now" for. */
     readonly readyNow: boolean;
     /**
-     * What a batch that read this page advertises: `nowMs` only when the page held work it could
-     * claim. An unfinished rotation is a scan, so it advertises the earliest scanned readiness and
-     * lets the engine's own pass rate carry it to the next status.
+     * What a batch that read this page advertises: `nowMs` when the page held work it could claim,
+     * otherwise the earliest readiness the rotation has scanned so far. The probe walks the rest of
+     * the rotation itself, so no page advertises the next status as due.
      */
     readonly nextReadyAtMs: number | undefined;
 }
@@ -123,12 +125,15 @@ interface ALInboundWorkSelectorDependencies {
     readonly nowMs: () => number;
     /** The durability of the store pair the selector reads: it decides where control sends run in a batch. */
     readonly lane: ALStoreDurability;
+    /** Called once for each rotation that walked back to the head of NEW, by a probe or a batch. */
+    readonly onRotationCompleted: (rotation: ALInboundRotationPage.CompletedRotation) => void;
 }
 
 export interface ALInboundWorkSelector {
     /**
      * The readiness probe the handler asks for. The port reports every retained row as due; inbound
-     * eligibility defers rows whose predecessor or consumer is missing, so the rotation answers instead.
+     * eligibility defers rows whose predecessor or consumer is missing, so the rotation answers instead:
+     * it reads pages until one holds work it can claim, or until the rotation is back at the head of NEW.
      */
     readNextReadyAtMs(port: ALWorkQueuePort, nowMs: number): Promise<number | undefined>;
     selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
@@ -190,12 +195,13 @@ async function readALInboundWorkSelection(
         claimableEffects: eligibility.claimableEffects,
         effectKinds: eligibility.effectKinds,
         controlSends: eligibility.controlSends,
-        readyNow: claimableNow || continueScan,
+        readyNow: claimableNow,
         scan: {
             cursor: page.nextCursor,
             statusIndex,
             nextReadyAtMs: continueScan ? scannedReadyAtMs : undefined
         },
+        readAtMs: input.nowMs,
         nextReadyAtMs: claimableNow ? input.nowMs : scannedReadyAtMs
     };
 }
@@ -302,11 +308,12 @@ function resolveALInboundScannedReadyAtMs(
 }
 
 /**
- * Rotates one bounded page across NEW, RETRY and RESERVED. The readiness probe and the batch that
- * follows it share one page read, so advertised work is the work the batch claims. An unfinished
- * rotation is due to the probe alone: the batch that reads a page with nothing claimable advertises
- * the next real ready time, so the engine's own pass rate carries the scan to the next status. A
- * commit asks for one read from the head of NEW, which leaves the rotation's position where it stood.
+ * Rotates one bounded page across NEW, RETRY and RESERVED. The readiness probe walks the rotation
+ * page by page and stops at the first page it can claim from, which it holds for the batch that
+ * follows, so advertised work is the work the batch claims; the next probe continues from the page
+ * after it, so one status never hides work on the next. A probe that finds nothing claimable walks
+ * on to the head of NEW and answers the earliest readiness it scanned. A commit asks for one read
+ * from the head of NEW, which leaves the rotation's position where it stood.
  */
 export function createALInboundWorkSelector(
     dependencies: ALInboundWorkSelectorDependencies
@@ -319,7 +326,10 @@ export function createALInboundWorkSelector(
                 namespace: dependencies.namespace,
                 pageSize,
                 nowMs: dependencies.nowMs()
-            }, dependencies.delivery)
+            }, dependencies.delivery),
+        nowMs: dependencies.nowMs,
+        deferredLimit: AL_INBOUND_WORK_PAGE_SIZE,
+        onRotationCompleted: dependencies.onRotationCompleted
     });
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
     let unreservedDue: readonly ALInboundDeferredEffect[] = [];
@@ -365,29 +375,38 @@ export function createALInboundWorkSelector(
 }
 
 /**
- * The probe's own answer. A rotation that still owes a page is due to the probe, never to the batch
- * that follows, so only an exhausted one reports a real time -- and that one must observe a fresh
- * page next.
+ * The probe's own answer: `nowMs` for a page it can claim from, held for the batch that follows, and
+ * otherwise the earliest readiness the rotation scanned once it is back at the head of NEW. A page a
+ * commit or a batch took from the probe mid-read ends the walk as due: that commit owes a head read,
+ * and the batch it starts runs it. Every other read either moves the stored position on or is the one
+ * head read allowed between two of those, so the walk ends within one rotation of the page it started at.
  */
 async function readALInboundNextReadyAtMs(
     page: ALInboundRotationPage<ALInboundWorkSelection>,
     port: ALWorkQueuePort,
     nowMs: number
 ): Promise<number | undefined> {
-    const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
-    let selection: ALInboundWorkSelection;
-    try {
-        selection = await pending;
+    for (;;) {
+        const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
+        let selection: ALInboundWorkSelection;
+        try {
+            selection = await pending;
+        }
+        catch (error) {
+            page.dropSelection(pending);
+            throw error;
+        }
+        if (selection.readyNow) {
+            return nowMs;
+        }
+        const pass = page.passSelection(pending, selection);
+        if (pass === 'dropped') {
+            return nowMs;
+        }
+        if (pass === 'wrapped') {
+            return selection.nextReadyAtMs;
+        }
     }
-    catch (error) {
-        page.dropSelection(pending);
-        throw error;
-    }
-    if (selection.readyNow) {
-        return nowMs;
-    }
-    page.passSelection(pending, selection);
-    return selection.nextReadyAtMs;
 }
 
 /**

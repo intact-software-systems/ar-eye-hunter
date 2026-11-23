@@ -64,8 +64,8 @@ export interface ALWorkHandlerDependencies {
     readonly readNextReadyAtMs: (port: ALWorkQueuePort, nowMs: number) => Promise<number | undefined>;
     /**
      * How long one probe's answer stands before storage is read again. An owner whose probe is a pure
-     * readiness read passes `AL_WORK_READINESS_MEMORY_MS`; an owner whose probe carries scan state of
-     * its own passes `AL_WORK_PROBE_EVERY_ROUND`.
+     * readiness read passes `AL_WORK_READINESS_MEMORY_MS`; an owner whose answer rests on eligibility
+     * that changes without a commit passes `AL_WORK_PROBE_EVERY_ROUND`.
      */
     readonly readinessMemoryMs: number;
     /** Reads eligible work; the port owns reservation. */
@@ -174,9 +174,10 @@ export interface ALWorkReadinessProbeDiagnostics {
 export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
 
 /**
- * The bound an owner passes when every engine round must reach its probe. An owner whose probe
- * carries scan state of its own -- the inbound rotation, where "nothing here" means nothing at this
- * scan position -- has no answer that can stand for any length of time.
+ * The bound an owner passes when every engine round must reach its probe. An owner whose answer
+ * rests on eligibility that changes without a commit of its own -- the inbound rotation, whose held
+ * rows turn eligible when a consumer registers or a snapshot refreshes -- has no answer that can
+ * stand for any length of time.
  */
 export const AL_WORK_PROBE_EVERY_ROUND = 0;
 

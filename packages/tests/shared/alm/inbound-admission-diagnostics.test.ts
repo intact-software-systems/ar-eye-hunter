@@ -4,9 +4,9 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS } from '@shared/alm/inbound/lane/al-inbound-store-lane.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createInboundTestMessage,
@@ -17,6 +17,7 @@ import {
     type InboundTestRuntime,
     type InboundTestStorage
 } from './inbound-runtime-test-fixture.ts';
+import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
 import '../../setup-browser-indexeddb.ts';
 
@@ -26,8 +27,10 @@ type RotationAliveEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'rot
 type ClaimSettledEvent = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'claim-settled'; }>;
 type ReadInboundPendingAuthority = NonNullable<ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority']>;
 
-/** Engine rounds one poll attempt drives, so the rotation reaches its liveness cadence in a few. */
-const ROTATION_ROUNDS_PER_ATTEMPT = 16;
+/** The clock step between two engine passes here: four passes, and four rotations, per liveness window. */
+const ROTATION_PASS_STEP_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS / 4;
+/** Passes enough for two liveness windows, so a missing event fails instead of polling on. */
+const ROTATION_PASS_LIMIT = 8;
 const DIAGNOSTICS_NAMESPACE = 'inbound-admission-diagnostics';
 const DIAGNOSTICS_WORKER_ID = 'inbound-diagnostics-worker';
 
@@ -37,6 +40,8 @@ interface InboundDiagnosticsFixtureInput {
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
     readonly dispatchOutcome?: 'completed' | 'retry';
     readonly readPendingAdmissionAuthority?: ReadInboundPendingAuthority;
+    /** Absent leaves the batches unobserved; present, a stepped pass can wait for the batches it started. */
+    readonly batches?: ALWorkBatchTestObserver;
 }
 
 afterEach(() => {
@@ -56,7 +61,10 @@ function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntim
         canDispatchMessage: input.canDispatchMessage,
         plan: input.plan,
         dispatchOutcome: input.dispatchOutcome,
-        readPendingAdmissionAuthority: input.readPendingAdmissionAuthority
+        readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
+        acknowledgementCapture: input.batches === undefined
+            ? undefined
+            : { evidence: ALInboundAcknowledgementEvidence, batchObservations: input.batches.batchObservations }
     });
 }
 
@@ -78,16 +86,30 @@ function claimsOf(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]): rea
     return diagnostics.filter((event): event is ClaimSettledEvent => event.kind === 'claim-settled');
 }
 
-/** Runs bounded engine rounds until the rotation reports itself alive, so an absence can be read. */
+/** Installs a clock only the test moves, so a liveness window is crossed by stepping it. */
+function useSteppedClock(): void {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+}
+
+/**
+ * One engine pass `ROTATION_PASS_STEP_MS` after the last, once every batch started before it settled:
+ * a pass that lands while a batch runs probes nothing, so each of these walks the rotation once.
+ */
+async function runSteppedPass(queueEngine: InboxOutboxEngine, batches: ALWorkBatchTestObserver): Promise<void> {
+    await batches.waitForPublishedBatches();
+    vi.setSystemTime(Date.now() + ROTATION_PASS_STEP_MS);
+    await queueEngine.executeOnce();
+    await batches.waitForPublishedBatches();
+}
+
+/** Runs bounded stepped passes until the rotation reports itself alive, so an absence can be read. */
 async function runRotationUntilAlive(
-    queueEngine: InboxOutboxEngine,
-    diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
+    fixture: Pick<InboundTestRuntime, 'queueEngine' | 'diagnostics'>,
+    batches: ALWorkBatchTestObserver
 ): Promise<void> {
-    const roundLimit = AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS * 8;
-    for (let round = 0; round < roundLimit && rotationsOf(diagnostics).length === 0; round += 1) {
-        await queueEngine.executeOnce();
-        // A round the owner spends inside a batch it started itself reports no work: let it settle.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let pass = 0; pass < ROTATION_PASS_LIMIT && rotationsOf(fixture.diagnostics).length === 0; pass += 1) {
+        await runSteppedPass(fixture.queueEngine, batches);
     }
 }
 
@@ -405,22 +427,25 @@ it.each(['memory', 'indexeddb'] as const)(
 it.each(['memory', 'indexeddb'] as const)(
     'separates a committed admission no consumer claims from one that was never admitted over %s',
     async (kind) => {
+        useSteppedClock();
+        const batches = new ALWorkBatchTestObserver();
         const { runtime, diagnostics, delivered, queueEngine } = createRuntime({
             kind,
-            canDispatchMessage: () => false
+            canDispatchMessage: () => false,
+            batches
         });
         const message = createInboundTestMessage({ msgId: 'no-inbox-consumer' });
 
         await runtime.ready();
         const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
-        await runRotationUntilAlive(queueEngine, diagnostics);
+        await runRotationUntilAlive({ queueEngine, diagnostics }, batches);
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(admissionOutcomesOf(diagnostics).map((event) => event.outcome)).toEqual(['committed']);
 
-        // The rotation ran over the committed row often enough to report itself alive, so this is the
-        // absence of a claim rather than the absence of a rotation: no drain ever selects the row
-        // while the consumer is missing, and a batch that touched nothing reports nothing.
+        // The rotation walked over the committed row for a whole liveness window, so this is the absence
+        // of a claim rather than the absence of a rotation: no drain ever selects the row while the
+        // consumer is missing, and a batch that touched nothing reports nothing.
         expect(rotationsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         expect(delivered).toEqual([]);
         expect(drainsOf(diagnostics)).toEqual([]);
@@ -455,17 +480,19 @@ it('names a cleared row the port left unreserved in the drain that ran without i
 });
 
 it.each(['memory', 'indexeddb'] as const)(
-    'names the due row its rounds held back on the liveness event rather than one of its own over %s',
+    'names the due row its rotations held back on the liveness event rather than one of its own over %s',
     async (kind) => {
-        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
+        useSteppedClock();
+        const batches = new ALWorkBatchTestObserver();
+        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false, batches });
         const message = createInboundTestMessage({ msgId: 'deferred-witness' });
 
         await runtime.ready();
         await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
-        await runRotationUntilAlive(queueEngine, diagnostics);
+        await runRotationUntilAlive({ queueEngine, diagnostics }, batches);
 
         const rotation = rotationsOf(diagnostics)[0]!;
-        expect(rotation.deferredRoundCount).toBeGreaterThan(0);
+        expect(rotation.deferredRotationCount).toBeGreaterThan(0);
         expect(rotation.latestDeferred.map((deferred) => deferred.effectId)).toContain(
             `dispatch:${INBOUND_TEST_SENDER_PEER_ID}:${message.id.msgId}`
         );
@@ -475,33 +502,36 @@ it.each(['memory', 'indexeddb'] as const)(
 );
 
 it.each(['memory', 'indexeddb'] as const)(
-    'reports the rotation still running while it claims nothing over %s',
+    'reports the rotation still running while it claims nothing, once per liveness window, over %s',
     async (kind) => {
-        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
+        useSteppedClock();
+        const batches = new ALWorkBatchTestObserver();
+        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false, batches });
 
         await runtime.ready();
         await runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'rotation-liveness' }),
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
-        await expect.poll(async () => {
-            for (let round = 0; round < ROTATION_ROUNDS_PER_ATTEMPT; round += 1) {
-                await queueEngine.executeOnce();
-            }
-            return rotationsOf(diagnostics).length;
-        }, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+        for (let pass = 0; pass < 3 * INBOX_OUTBOX_ENGINE_MAX_IDLE_MS / ROTATION_PASS_STEP_MS; pass += 1) {
+            await runSteppedPass(queueEngine, batches);
+        }
 
         // The witness that separates "no consumer is registered for this typeId" from "the rotation
-        // stopped": the row is still there, still scanned, and still claimed by nobody.
-        expect(rotationsOf(diagnostics)[0]).toMatchObject({
-            kind: 'rotation-alive',
-            workerId: DIAGNOSTICS_WORKER_ID,
-            emptyRoundCount: AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS
-        });
-        // The slowest single round of them: a rotation that crawls says so without stopping.
-        const rotation = rotationsOf(diagnostics)[0]!;
-        expect(rotation.durationMs).toBeGreaterThanOrEqual(0);
-        expect(rotation.longestRoundMs).toBeLessThanOrEqual(rotation.durationMs);
+        // stopped": the row is still there, still scanned, and still claimed by nobody. One event per
+        // window, and every pass of a window walked one rotation; each rotation after the first read
+        // the held row, while the first began at the bootstrap read before the row was admitted.
+        expect(rotationsOf(diagnostics).map((rotation) => [rotation.rotationCount, rotation.durationMs])).toEqual([
+            [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS],
+            [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS],
+            [4, INBOX_OUTBOX_ENGINE_MAX_IDLE_MS]
+        ]);
+        expect(rotationsOf(diagnostics).map((rotation) => rotation.deferredRotationCount)).toEqual([3, 4, 4]);
+        expect(rotationsOf(diagnostics)[0]).toMatchObject({ kind: 'rotation-alive', workerId: DIAGNOSTICS_WORKER_ID });
+        // The slowest single rotation of each window: a rotation that crawls says so without stopping.
+        for (const rotation of rotationsOf(diagnostics)) {
+            expect(rotation.longestRotationMs).toBeLessThanOrEqual(rotation.durationMs);
+        }
         expect(drainsOf(diagnostics)).toEqual([]);
     },
     30_000
