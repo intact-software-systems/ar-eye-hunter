@@ -17,6 +17,17 @@ describe('claim receipt evidence on the claim server clock', () => {
     });
 });
 
+it.each([
+    ['http://claim.example', 'https://expiry.example'],
+    ['https://claim.example', 'http://127.expiry.example']
+])('requires HTTPS for either remote direct origin (%s, %s)', async (claim, expiry) => {
+    await expect(promisify(execFile)('bun', ['run',
+        'packages/shared-test/black-box-runner/cluster-proofs/api-v1-seat-deadline-proof.mts',
+        '--direct', claim, 'claim-clock', expiry, 'expiry-clock', '25'
+    ], { env: { ...process.env, SEAT_PROOF_WORKER_CONTROL: '' } }))
+        .rejects.toMatchObject({ stderr: expect.stringContaining('Remote seat qualification requires HTTPS') });
+});
+
 it('refuses a misrouted direct clock before sending account credentials or controlling the worker', async () => {
     const requests: string[] = [];
     const nodes = ['claim-clock', 'unexpected-clock'].map(peerId => createServer((request, response) => {

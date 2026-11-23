@@ -300,7 +300,8 @@ traffic must be measured on the actual browser connection.
 Use the [seat deadline proof](../../packages/shared-test/black-box-runner/cluster-proofs/api-v1-seat-deadline-proof.mts)
 on a disposable installation before making a cross-host fairness claim. The two
 API processes share a migrated PostgreSQL database and use different
-`RALLAR_SERVER_CLOCK_PEER_ID` values. Route directly to each process. Disable
+`RALLAR_SERVER_CLOCK_PEER_ID` values. Use direct HTTPS origins for remote APIs.
+Loopback HTTP is supported for disposable local runs. Disable
 `RALLAR_API_QUEUE_WORKERS` on the claim node and every other replica except the
 expiry node. Enable the workers on that expiry node. Enable PostgreSQL pub/sub
 for account-view invalidations. Record each node's VM or machine identity,
@@ -339,7 +340,15 @@ conditions with the deployment's traffic before drawing conclusions.
 The first two cases aim 750 ms before and 100 ms after the five-second offer
 deadline. A claim-node time reading before dispatch and another after the
 response bound the real presence mutation. Both nodes must return the same
-private seats for both players after expiry. The restart case takes the
+private seats for both players after expiry. A third case holds the exact
+offer's PostgreSQL deadline row across the cutoff. Supply
+`SEAT_PROOF_DATABASE_URL` through the operator environment for a trusted
+connection to the same disposable database with row-lock privileges on
+`resource_inbox`. The claim API captures ingress and returns the AppInbox
+result. The enabled worker executes the command while the independent expiry
+wake is held. The proof checks the original stored offer and waiting successor
+immediately before the late claim, then verifies refusal and releases the
+row. A separate restart case takes the
 worker down across the deadline, verifies that the original offer is still
 committed, and observes promotion after restart before sending the late
 claim. The observer reads on startup and on scoped account invalidations.
@@ -348,7 +357,7 @@ The qualification does not change the application's network cadence.
 Each `offset` row records a point measurement with its interval and budget.
 A straddling interval is inconclusive. Missing observations and intervals
 outside budget also leave the clock unqualified. An interval is evidence
-only for its sampled instant. The `claim`, `worker-recovery` and
+only for its sampled instant. The `claim`, `overdue-offer-refused`, `worker-recovery` and
 `allocation` rows give the independent seat outcomes. A completed allocation
 proof with an unqualified clock prints both results and exits nonzero.
 An unexpected allocation, unusable identity or claim that missed its

@@ -5,6 +5,7 @@ import { hasViewInvalidatedTopic, decodeViewInvalidationMessage } from '@shared/
 import { ViewPushProofSocket } from './view-push/view-push-proof-socket.mts';
 import { waitForProofCondition } from './cluster-proof-socket.mts';
 import assert from 'node:assert/strict';
+import postgres from 'postgres';
 import { setTimeout as delay } from 'node:timers/promises';
 import { checkNodeClockOffset, sampleNode, sampleNodeClockPair, type ClockProbeNode } from './check-node-clock-offset.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
@@ -16,6 +17,7 @@ export interface SeatDeadlineQualification {
     readonly claim: ClockProbeNode;
     readonly expiry: ClockProbeNode;
     readonly budgetMs: number;
+    readonly databaseUrl: string;
     readonly owner: ProofSession;
     readonly player: ProofSession;
     readonly next: ProofSession;
@@ -42,7 +44,7 @@ export function classifyClaimReceipt(input: { before: number; after: number; dea
     return 'overlaps';
 }
 
-type TrialTiming = 'before' | 'after' | 'restart';
+type TrialTiming = 'before' | 'after' | 'held-wake' | 'restart';
 
 class SeatDeadlineTrial {
     private readonly workspaceId = crypto.randomUUID();
@@ -77,11 +79,18 @@ class SeatDeadlineTrial {
         try {
             await Promise.all(ready.map(lane => lane.promise));
             const opening = await this.measureOffset('offer');
-            if (this.timing === 'restart') await this.recoverOverdueOffer(deadline, offer, observer);
-            else await this.waitForClaimTime(deadline + (this.timing === 'before' ? -750 : 100));
-            const after = await this.claimSeat(deadline);
-            await delay(Math.max(0, deadline + 100 - after));
-            if (this.timing === 'after') await this.waitForPromotion(observer);
+            if (this.timing === 'held-wake') {
+                await this.claimWithExpiryWakeHeld(deadline, offer);
+                await this.waitForPromotion(observer);
+            } else if (this.timing === 'restart') {
+                await this.recoverOverdueOffer(deadline, offer, observer);
+                await this.claimSeat(deadline);
+            } else {
+                await this.waitForClaimTime(deadline + (this.timing === 'before' ? -750 : 100));
+                const after = await this.claimSeat(deadline);
+                await delay(Math.max(0, deadline + 100 - after));
+                if (this.timing === 'after') await this.waitForPromotion(observer);
+            }
             const allocation = await this.readFinalAllocation(claim.origin);
             assert.deepEqual(await this.readFinalAllocation(expiry.origin), allocation);
             console.log(JSON.stringify({ kind: 'allocation', timing: this.timing, workspaceId: this.workspaceId,
@@ -171,11 +180,42 @@ class SeatDeadlineTrial {
         await delay(Math.max(0, target - await this.claimTime()));
     }
 
-    private async recoverOverdueOffer(deadline: number, offer: RoomLobbyAccountView['seat'], observer: ViewPushProofSocket) {
+    private async claimWithExpiryWakeHeld(deadline: number, offer: NonNullable<RoomLobbyAccountView['seat']>) {
+        // Hold only this immutable offer's wake. The AppInbox workers must remain live to return the real claim disposition.
+        const database = postgres(this.input.databaseUrl, { max: 1, connect_timeout: 5 });
+        const { claim, player, next } = this.input;
+        try {
+            await database.begin(async transaction => {
+                const wakes = await transaction`
+                    select ri_resource_id from resource_inbox
+                    where ri_topic_id = 'room-lobby.deadline'
+                      and (ri_resource::jsonb->'payload'->>'resource')::jsonb->>'kind' = 'seat'
+                      and (ri_resource::jsonb->'payload'->>'resource')::jsonb->'roomRef' =
+                          ${transaction.json({ ...offer.roomRef })}
+                      and (ri_resource::jsonb->'payload'->>'resource')::jsonb->>'dueAtEpochMs' = ${String(deadline)}
+                    for update nowait
+                `;
+                assert.equal(wakes.length, 1, 'Hold exactly the durable wake for the original offer');
+                assert.ok(await this.claimTime() < deadline, 'Acquire the offer wake before its deadline');
+                await this.waitForClaimTime(deadline + 100);
+                assert.ok(await this.claimTime() >= deadline);
+                assert.deepEqual(await this.readSeat(claim.origin, player), offer);
+                const successor = await this.readSeat(claim.origin, next);
+                assert.equal(successor?.status, 'waiting');
+                await this.claimSeat(deadline);
+                console.log(JSON.stringify({ kind: 'overdue-offer-refused', workspaceId: this.workspaceId, deadline,
+                    claimPeer: claim.peerId, expiryPeer: this.input.expiry.peerId, priorOffer: offer, priorSuccessor: successor }));
+            });
+        } finally {
+            await database.end();
+        }
+    }
+
+    private async recoverOverdueOffer(deadline: number, offer: NonNullable<RoomLobbyAccountView['seat']>, observer: ViewPushProofSocket) {
         const { expiry, claim, player } = this.input;
         await withExpiryWorkerStopped(this.input, async () => {
-            // A malformed time response or a different process cannot stand in for a stopped API.
-            await assert.rejects(fetch(expiry.origin + '/api/time', { redirect: 'error', signal: AbortSignal.timeout(2_000) }));
+            await assert.rejects(fetch(expiry.origin + '/api/time', { redirect: 'error', signal: AbortSignal.timeout(2_000) }),
+                'The expiry worker must stop across the cutoff');
             await this.waitForClaimTime(deadline + 100);
             assert.ok(await this.claimTime() >= deadline);
             assert.deepEqual(await this.readSeat(claim.origin, player), offer);
@@ -190,7 +230,7 @@ class SeatDeadlineTrial {
         const { claim, player } = this.input;
         const path = toApiMutationRequestPath(this.room + '/sessions/' + encodeURIComponent(player.sessionId), crypto.randomUUID());
         const state = await requestJson(claim.origin, '/api/state' + this.scope + '/clients/' + encodeURIComponent(player.clientId),
-            { method: 'GET', session: player });
+            { method: 'GET', session: player, signal: AbortSignal.timeout(5_000) });
         const snapshot = parseAuthoritativeClientSnapshot(JSON.stringify(state), { applicationId: 'seat-qualification', workspaceId: this.workspaceId });
         const connected = snapshot.activeSessions.find(session => session.sessionId === player.sessionId);
         assert.ok(connected, 'The claimant must use its live connection generation');
@@ -251,7 +291,7 @@ export async function qualifySeatDeadline(input: SeatDeadlineQualification) {
     assert.ok(Number.isSafeInteger(budgetMs) && budgetMs >= 0);
     await sampleNodeClockPair(claim, expiry);
     let withinBudget = true;
-    for (const timing of ['before', 'after', 'restart'] as const) {
+    for (const timing of ['before', 'after', 'held-wake', 'restart'] as const) {
         const within = await new SeatDeadlineTrial(input, timing).run();
         withinBudget = withinBudget && within;
     }
