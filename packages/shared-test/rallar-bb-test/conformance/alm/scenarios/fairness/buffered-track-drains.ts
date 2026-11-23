@@ -23,16 +23,24 @@ import {
     toCuedArrivalsSenderCommands,
     type AlmCuedArrivals
 } from './alm-cued-arrivals.ts';
-import { computeSendLoopBudgetMs, FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
+import { FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
 
 /**
  * Sequences 3 to 66, which arrive ahead of seq 2, so seq 2's arrival releases 64 buffered messages at once. A loop
  * cannot name them: its index counts from 0 with no offset, a sequence is a number a loop does not substitute, and an
  * outer loop fixes an inner loop's index before it runs. So each is a literal send with a pause after it, and one
- * iteration of a loop holds them all, so they share the budget of 64 loop sends.
+ * iteration of a loop holds them all, so they share one budget.
  */
 const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 3);
-const BUFFERED_SENDS_BUDGET_MS = computeSendLoopBudgetMs(BUFFERED_SEQS.length);
+/**
+ * The most one buffered send and its pause may take. Unlike a progress-bounded loop, the buffered sends need a fixed
+ * budget: every one of them must outlive the loop and the drain (`computeBufferedTrackTtlMs`), within a volatile
+ * session's 5-minute age bound. A send awaits its admission commit, so its pace is the runner's storage latency:
+ * `churn-bounded-tracks`'s sends averaged 328 to 648 ms an iteration on GitHub runners (runs 45009025510 to
+ * 45068154152) and 1,326 ms on run 45258793437, whose runner read storage at 4 ms an operation.
+ */
+const BUFFERED_SEND_ITERATION_CEILING_MS = 2_000;
+const BUFFERED_SENDS_BUDGET_MS = BUFFERED_SEQS.length * BUFFERED_SEND_ITERATION_CEILING_MS;
 const BUFFERED_TRACK_LIFETIME = 'the buffered track\'s lifetime';
 const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;

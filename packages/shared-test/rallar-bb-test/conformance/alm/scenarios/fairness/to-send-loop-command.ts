@@ -12,22 +12,6 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
  */
 export const FAIRNESS_SEND_INTERVAL_MS = 75;
 
-/**
- * The most one loop iteration, a send and its pause, may take. A send awaits its admission commit, so an iteration
- * runs far slower than the pause alone: on GitHub runners (runs 45009025510 to 45068154152) the 280-send loop of
- * `churn-bounded-tracks` averaged 328 to 648 ms an iteration, and while the receiver waited a send took a median of
- * up to 1,491 ms.
- */
-const SEND_LOOP_ITERATION_CEILING_MS = 1_500;
-
-/**
- * The time a loop of `count` sends may take, for a cell whose lifetimes must cover the loop; the loop ends as soon as
- * its sends are done.
- */
-export function computeSendLoopBudgetMs(count: number): number {
-    return count * SEND_LOOP_ITERATION_CEILING_MS;
-}
-
 interface AlmFairnessSendLoopInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;

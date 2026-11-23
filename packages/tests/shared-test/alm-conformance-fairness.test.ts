@@ -10,7 +10,6 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { ALM_LANE_FAMILY_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/lane/alm-lane-family-timeout-ms.ts';
-import { computeSendLoopBudgetMs } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/fairness/to-send-loop-command.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -236,8 +235,8 @@ describe('own-share-under-inbound', () => {
             expect(toCommandNames(scenario.sender)).toEqual([...SENDER_PROLOGUE, 'received-1', 'flood', 'stats']);
             // The ready send arrives only after the receiver's reconnect, so the wait owns one readiness budget.
             expect(findCommand(scenario.sender, 'received-1')).toMatchObject({ count: 1, absent: false, windowMs: 57_000, timeoutMs: 58_000 });
-            // The flood asks for no receipt, so its 20 sends are not one ACK apart. Its budget, 1,500 ms a send, is the
-            // 30 s an arrival counts: a flood slower than that could not hold the receiver's total at the bound.
+            // The flood asks for no receipt, so its 20 sends are not one ACK apart. Its budget is the 30 s an arrival
+            // counts: a flood slower than that could not hold the receiver's total at the bound.
             expect(findCommand(scenario.sender, 'flood')).toEqual({
                 kind: 'loop',
                 commandId: `${scenario.sender.recipeId}-flood`,
@@ -292,12 +291,13 @@ describe('buffered-track-drains', () => {
                 remaining: 'until-cleared'
             });
             expect(findCommand(scenario.sender, `release-message-2-${carrier}`)).toMatchObject({ kind: 'fault.inject', remaining: 0 });
-            // One iteration of the literal sends and their pauses, so the 64 share one budget.
+            // One iteration of the literal sends and their pauses, so the 64 share one budget of 2,000 ms a send: run
+            // 45258793437 took 1,326 ms an iteration at 4 ms a storage read.
             const loop = findCommand(scenario.sender, 'buffered-sends');
             if (loop.kind !== 'loop') {
                 throw new Error('buffered-sends is not a loop.');
             }
-            expect(loop).toMatchObject({ count: 1, timeoutMs: computeSendLoopBudgetMs(64) });
+            expect(loop).toMatchObject({ count: 1, timeoutMs: 128_000 });
             const prefix = `${scenario.sender.recipeId}-`;
             expect(loop.commands.map((command) => command.commandId?.replace(prefix, '')))
                 .toEqual(bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]));
@@ -361,7 +361,7 @@ describe('buffered-track-drains', () => {
         const senderBodyMs = scenario.sender.commands.slice(SENDER_PROLOGUE.indexOf('storage-counters-connected'), cueSend + 2)
             .reduce((sum, command) => sum + (command.timeoutMs ?? 0), 0);
         expect(scenario.receiver.commands[cueWait]?.timeoutMs).toBe(senderBodyMs);
-        expect(senderBodyMs).toBeGreaterThan(computeSendLoopBudgetMs(64));
+        expect(senderBodyMs).toBeGreaterThan(128_000);
         for (const recipe of [scenario.sender, scenario.receiver]) {
             expect(computeAlmRecipeRunTimeoutMs(recipe, ORDINARY_RUN_MS), recipe.recipeId)
                 .toBe(ORDINARY_RUN_MS + senderBodyMs);
@@ -398,13 +398,6 @@ describe('buffered-track-drains', () => {
             'received-1',
             'stats'
         ]);
-    });
-});
-
-describe('computeSendLoopBudgetMs', () => {
-    it('gives each iteration of a send loop 1,500 ms', () => {
-        expect(computeSendLoopBudgetMs(280)).toBe(420_000);
-        expect(computeSendLoopBudgetMs(1)).toBe(1_500);
     });
 });
 

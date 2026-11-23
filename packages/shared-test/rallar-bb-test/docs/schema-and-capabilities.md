@@ -975,7 +975,7 @@ sender's 30 s connect readiness and its 10 s send), since a message that arrives
 subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can finish first); the repeats and its
 own send stay under the share. The sender then sends 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs`
 in a `loop` with `intervalMs: 75` (at most about 13 a second, under the RTC lane's 20 a second limiter, which the
-receiver's own ACKs share) whose budget is that of 20 loop sends (1,500 ms each), each naming its own handle by
+receiver's own ACKs share) whose budget is the 30 s an arrival counts, each naming its own handle by
 `{loop.index}`; they ask for no receipt, so all 20 arrive within the arrivals' own 30 s counted lifetime instead of each
 waiting out an ACK. The budget is that lifetime: a flood that outlasts it could not hold all 20 counted at once.
 Arrivals alone then hold the receiver's total at the bound, so its own room send, which asks for a receiver receipt, is
@@ -985,7 +985,7 @@ arrivals, reads `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admiss
 1 on one ordering key and observes it `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the
 message id its send returned (the type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare
 send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as
-the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (1,500 ms each), and releases seq 2,
+the pause, all in one iteration of a `loop` whose budget is that of 64 loop sends (2,000 ms each), and releases seq 2,
 which alone is observed admitted; it then cues `released-2`. The sends leave in sequence order, since a stated sequence
 at or below the track's head is refused `unsupported`; the hold reorders their arrival. Seq 1 goes first so the
 receiver opens the track with no gap and the cell exercises the buffered drain alone: holding seq 1 instead would make
