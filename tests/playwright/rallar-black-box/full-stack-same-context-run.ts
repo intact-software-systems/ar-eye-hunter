@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 
+import { toError } from '@shared/resilience/to-error.ts';
+
 import type { AlmConformanceOwnerEnd } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createScenarioRoots, type ScenarioRoots } from './create-scenario-roots.ts';
@@ -118,20 +120,30 @@ export async function runRecipeTrioOnSameContext(
     const scenario = createScenarioRoots();
     const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const receiver = scenario.readOutcome(receiverRun);
-    const input = { pages, recipes, scenario };
-    const pageRuns = (pages.successorGate === undefined
-        ? runOwnerThenSuccessor(run, input)
-        : runSuccessorBesideOwner(run, { ...input, pages: { ...pages, successorGate: pages.successorGate } }))
-        .catch((error: unknown) => {
-            receiverRun.cancelAfter(toPageStepsFailure(recipes.sender, error));
-            throw error;
-        });
+    const pageRuns = runPagesCancellingReceiver(run, { pages, recipes, scenario, receiverRun });
     const [pageOutcomes, receiverOutcome] = await Promise.allSettled([pageRuns, receiver]);
     const { sender, successor } = requireOutcome(pageOutcomes);
     if (pages.successorGate !== undefined) {
         await endOwnerPage(pages.owner.page, pages.ownerEnd);
     }
     return { sender, receiver: requireOutcome(receiverOutcome), successor };
+}
+
+/** The pages' own steps; their failure cancels the receiver before it is thrown, so its read ends too. */
+async function runPagesCancellingReceiver(
+    run: RecipePairRun,
+    input: SameContextPageRunInput<SameContextPages> & Readonly<{ receiverRun: StartedRecipeRun; }>
+): Promise<SameContextPageOutcomes> {
+    const { pages, receiverRun, ...rest } = input;
+    try {
+        return pages.successorGate === undefined
+            ? await runOwnerThenSuccessor(run, { ...rest, pages })
+            : await runSuccessorBesideOwner(run, { ...rest, pages: { ...pages, successorGate: pages.successorGate } });
+    }
+    catch (error) {
+        receiverRun.cancelAfter(toPageStepsFailure(input.recipes.sender, toError(error)));
+        throw error;
+    }
 }
 
 interface SameContextPageOutcomes {
@@ -189,7 +201,7 @@ async function readGatedSuccessorOutcome(
         });
     }
     catch (error) {
-        input.ownerRun.cancelAfter(toPageStepsFailure(input.recipes.sender, error));
+        input.ownerRun.cancelAfter(toPageStepsFailure(input.recipes.sender, toError(error)));
         throw error;
     }
     return await readSuccessorOutcome(run, input);
@@ -207,13 +219,8 @@ async function readSuccessorOutcome(
 }
 
 /** What a root cancelled after the pages' own steps failed is cancelled after: the owner's recipe, whose steps they are. */
-function toPageStepsFailure(owner: RallarBlackBoxTestRecipe, error: unknown): RecipeRunOutcome {
-    return {
-        commandId: owner.recipeId,
-        ok: false,
-        summary: error instanceof Error ? error.message : String(error),
-        cancelledAfter: undefined
-    };
+function toPageStepsFailure(owner: RallarBlackBoxTestRecipe, error: Error): RecipeRunOutcome {
+    return { commandId: owner.recipeId, ok: false, summary: error.message, cancelledAfter: undefined };
 }
 
 function requireOutcome<T>(outcome: PromiseSettledResult<T>): T {
