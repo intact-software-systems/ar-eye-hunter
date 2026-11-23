@@ -12,6 +12,7 @@ import {
 } from '@shared/alm/receipt-record/al-receipt-record-work-entry.ts';
 import {
     AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS,
+    AL_RECEIPT_RECORD_WORK_LEASE_MS,
     ALReceiptRecordWorker
 } from '@shared/alm/receipt-record/al-receipt-record-worker.ts';
 import { ALReceiptRecord } from '@shared/alm/receipt-record/al-receipt-record.ts';
@@ -53,6 +54,39 @@ interface WorkerFixtureInput {
     readonly writeEndedReceipt: (ended: ALReceiptRecordEndedHead) => Promise<void>;
 }
 
+interface WorkerInstance {
+    readonly worker: ALReceiptRecordWorker;
+    readonly engine: InboxOutboxEngine;
+}
+
+interface WorkerInstanceInput {
+    readonly record: ALReceiptRecord;
+    readonly stores: ALReceiptRecordStores;
+    readonly workerClock: MutableClock;
+    readonly writeEndedReceipt: (ended: ALReceiptRecordEndedHead) => Promise<void>;
+}
+
+/** One server instance's worker, on an engine of its own, over the shared stores. */
+function createWorkerInstance(input: WorkerInstanceInput, workerId: string): WorkerInstance {
+    const { workerClock } = input;
+    const engine = new InboxOutboxEngine({
+        nowEpochMs: () => workerClock.nowMs,
+        random: () => 0,
+        reportTaskFailure: () => undefined
+    });
+    const worker = new ALReceiptRecordWorker({
+        record: input.record,
+        stores: input.stores,
+        workerId,
+        queueEngine: engine,
+        clock: { nowMs: () => workerClock.nowMs },
+        random: () => 0,
+        writeEndedReceipt: input.writeEndedReceipt
+    });
+    onTestFinished(() => worker.dispose());
+    return { worker, engine };
+}
+
 function createWorkerFixture(input: WorkerFixtureInput): WorkerFixture {
     const queueClock = { nowMs: T };
     const recordClock = { nowMs: T - input.recordBehindQueueMs };
@@ -62,25 +96,16 @@ function createWorkerFixture(input: WorkerFixtureInput): WorkerFixture {
         namespace: stores.namespace,
         nowMs: () => recordClock.nowMs
     });
-    const engine = new InboxOutboxEngine({
-        nowEpochMs: () => recordClock.nowMs,
-        random: () => 0,
-        reportTaskFailure: () => undefined
-    });
     const delivered: ALReceiptRecordEndedHead[] = [];
-    const worker = new ALReceiptRecordWorker({
+    const { worker, engine } = createWorkerInstance({
         record,
         stores,
-        workerId: 'receipt-record-worker-test',
-        queueEngine: engine,
-        clock: { nowMs: () => recordClock.nowMs },
-        random: () => 0,
+        workerClock: recordClock,
         writeEndedReceipt: async (ended) => {
             await input.writeEndedReceipt(ended);
             delivered.push(ended);
         }
-    });
-    onTestFinished(() => worker.dispose());
+    }, 'receipt-record-worker-test');
     return { queueClock, recordClock, stores, record, worker, engine, delivered };
 }
 
@@ -98,7 +123,7 @@ function setNowMs(fixture: WorkerFixture, nowMs: number): void {
  * Two engine rounds, each followed by a macrotask: the memory stores settle on microtasks, so a batch a round (or a
  * `committed()`) started has released its claims before the next round asks for work.
  */
-async function runRounds(fixture: WorkerFixture): Promise<void> {
+async function runRounds(fixture: Pick<WorkerFixture, 'engine'>): Promise<void> {
     for (let round = 0; round < 2; round += 1) {
         await fixture.engine.executeOnce();
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -113,6 +138,10 @@ async function readDeadlineRow(stores: ALReceiptRecordStores): Promise<ResourceE
     return await stores.backend.workQueue.getItem(toALReceiptRecordWorkKey(stores.namespace, 'deadline', ref));
 }
 
+async function readEndedRow(stores: ALReceiptRecordStores): Promise<ResourceEntry | undefined> {
+    return await stores.backend.workQueue.getItem(toALReceiptRecordWorkKey(stores.namespace, 'ended', ref));
+}
+
 async function openCommitted(fixture: WorkerFixture): Promise<void> {
     expect((await fixture.record.open(opening)).right?.head.phase).toBe('open');
     fixture.worker.committed(deadlineWork, DEADLINE_AT_MS);
@@ -124,6 +153,8 @@ async function confirm(record: ALReceiptRecord, recipientPeerId: string): Promis
 }
 
 describe('ALReceiptRecordWorker', () => {
+    // A record whose namespace were the owner's store namespace itself would write its heads, confirmations and work
+    // among the owner's own rows, where a key or a work type of the one could collide with the other's.
     it('keeps the record under its own namespace', () => {
         const stores = createInMemoryALReceiptRecordStores('server-ws-qbox:test', () => T);
 
@@ -250,14 +281,60 @@ describe('ALReceiptRecordWorker', () => {
         setNowMs(fixture, DEADLINE_AT_MS);
         await runRounds(fixture);
         expect(fixture.delivered).toEqual([]);
+        const failed = await readEndedRow(fixture.stores);
+        expect(failed?.status).toBe(EntityStatus.RETRY);
+        expect(failed?.dequeueAudit.attempts).toBe(1);
 
         setNowMs(fixture, DEADLINE_AT_MS + 1_000);
         await runRounds(fixture);
         expect(fixture.delivered).toEqual([(await fixture.record.read(ref)).right?.head]);
-        const endedRow = await fixture.stores.backend.workQueue.getItem(
-            toALReceiptRecordWorkKey(fixture.stores.namespace, 'ended', ref)
-        );
-        expect(endedRow?.status).toBe(EntityStatus.COMPLETED);
+        expect((await readEndedRow(fixture.stores))?.status).toBe(EntityStatus.COMPLETED);
+    });
+
+    // A delivery whose lease ran out (a slow callback, or a crash between the delivery and the release) is claimed
+    // again by another instance through the queue's lease sweep. Ended work is at-least-once: a worker that skipped
+    // the second delivery, or marked the row done on the first claim alone, would hide that from the owner.
+    it('delivers an ended receipt again when its row is claimed again', async () => {
+        let releaseFirstDelivery = (): void => {};
+        const firstDelivery = new Promise<void>((resolve) => {
+            releaseFirstDelivery = resolve;
+        });
+        let deliveries = 0;
+        const fixture = createWorkerFixture({
+            recordBehindQueueMs: 0,
+            writeEndedReceipt: async () => {
+                deliveries += 1;
+                if (deliveries === 1) {
+                    await firstDelivery;
+                }
+            }
+        });
+        await openCommitted(fixture);
+        await confirm(fixture.record, 'r1');
+        await confirm(fixture.record, 'r2');
+        const ended = await fixture.record.end(ref);
+        expect(ended.right?.phase).toBe('complete');
+        fixture.worker.committed({ kind: 'ended', ref }, fixture.recordClock.nowMs);
+        await runRounds(fixture);
+        expect((await readEndedRow(fixture.stores))?.status).toBe(EntityStatus.RESERVED);
+
+        setNowMs(fixture, T + AL_RECEIPT_RECORD_WORK_LEASE_MS + 1);
+        const survivor = createWorkerInstance({
+            record: fixture.record,
+            stores: fixture.stores,
+            workerClock: fixture.recordClock,
+            writeEndedReceipt: async (head) => {
+                fixture.delivered.push(head);
+            }
+        }, 'receipt-record-worker-survivor');
+        await runRounds(survivor);
+        expect(fixture.delivered).toEqual([ended.right]);
+        expect((await readEndedRow(fixture.stores))?.status).toBe(EntityStatus.COMPLETED);
+
+        releaseFirstDelivery();
+        await runRounds(fixture);
+        expect(fixture.delivered).toEqual([ended.right, ended.right]);
+        expect((await readEndedRow(fixture.stores))?.status).toBe(EntityStatus.COMPLETED);
     });
 
     // The deadline work of a receipt already ended must neither end it again nor deliver its receipt twice.
@@ -267,7 +344,8 @@ describe('ALReceiptRecordWorker', () => {
         await confirm(fixture.record, 'r1');
         await confirm(fixture.record, 'r2');
         const ended = await fixture.record.end(ref);
-        fixture.worker.committed({ kind: 'ended', ref }, ended.right?.endedAtEpochMs ?? T);
+        expect(ended.right?.phase).toBe('complete');
+        fixture.worker.committed({ kind: 'ended', ref }, fixture.recordClock.nowMs);
 
         setNowMs(fixture, DEADLINE_AT_MS);
         await runRounds(fixture);

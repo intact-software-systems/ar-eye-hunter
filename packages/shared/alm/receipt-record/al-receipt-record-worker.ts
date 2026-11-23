@@ -46,7 +46,12 @@ export namespace ALReceiptRecordWorker {
 
 const COMPLETED: ALWorkOutcome = { status: 'completed' };
 
-/** Claims the record's deadline and ended work on whichever instance runs it; a row claimed twice acts once. */
+/**
+ * Claims the record's deadline and ended work on whichever instance runs it. Deadline work acts once: a second `end`
+ * answers `conflict` or `head-absent`. Ended work delivers at least once: a row claimed again (its lease ran out
+ * during a slow delivery, or a crash fell between the delivery and the release) delivers again, so the owner's
+ * `writeEndedReceipt` must be safe to repeat.
+ */
 export class ALReceiptRecordWorker {
     private readonly dependencies: ALReceiptRecordWorker.Dependencies;
     private readonly work: ALWorkHandler;
@@ -107,22 +112,32 @@ export class ALReceiptRecordWorker {
         return work.kind === 'deadline' ? await this.endAtDeadline(work.ref) : await this.writeEnded(work.ref);
     }
 
+    private async endAtDeadline(ref: ALReceiptRecordRef): Promise<ALWorkOutcome> {
+        this.work.claimCommitted();
+        const ended = await this.dependencies.record.end(ref);
+        return ended.fold((refusal) => this.toDeadlineRefusalOutcome(refusal), () => COMPLETED);
+    }
+
     /**
      * Another instance's `end`, or an end already written, answers a conflict or no head: both leave nothing to do.
      * `not-due` means the queue's clock ran ahead of the record's, so the row waits what the record still lacks.
      */
-    private async endAtDeadline(ref: ALReceiptRecordRef): Promise<ALWorkOutcome> {
-        this.work.claimCommitted();
-        const ended = await this.dependencies.record.end(ref);
-        if (ended.left?.kind !== 'not-due') {
-            return COMPLETED;
+    private toDeadlineRefusalOutcome(
+        refusal: ALReceiptRecord.HeadAbsent | ALReceiptRecord.NotDue | ALReceiptRecord.Conflict
+    ): ALWorkOutcome {
+        switch (refusal.kind) {
+            case 'conflict':
+            case 'head-absent':
+                return COMPLETED;
+            case 'not-due': {
+                const nowMs = this.dependencies.clock.nowMs();
+                const { deadlineAtMs } = refusal.view.head.opening;
+                return {
+                    status: 'not-ready',
+                    readyAtMs: nowMs + Math.max(deadlineAtMs - nowMs, AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS)
+                };
+            }
         }
-        const nowMs = this.dependencies.clock.nowMs();
-        const { deadlineAtMs } = ended.left.view.head.opening;
-        return {
-            status: 'not-ready',
-            readyAtMs: nowMs + Math.max(deadlineAtMs - nowMs, AL_RECEIPT_RECORD_NOT_DUE_WAIT_MS)
-        };
     }
 
     private async writeEnded(ref: ALReceiptRecordRef): Promise<ALWorkOutcome> {
