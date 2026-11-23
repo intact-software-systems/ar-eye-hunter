@@ -36,8 +36,8 @@
   },
   {
     "key": "rtc/two-agent/churn-bounded-tracks",
-    "cause": "The receiver had to count its arrivals inside a fixed window that opened before the sender's send loop, and the loop, which awaits each send and then pauses, ran several times slower on a GitHub runner than the window assumed; no message was lost. The receiver now counts after the sender's cue and the loop's budget is derived from its send count.",
-    "fixedByPullRequest": 882
+    "cause": "Two causes. Fixed in pull request 882: the receiver had to count its arrivals inside a fixed window that opened before the sender's send loop, and the loop, which awaits each send and then pauses, ran several times slower on a GitHub runner than the window assumed; the receiver now counts after the sender's cue and the loop's budget is derived from its send count. Open: in run 45111742994 the sender's reconnect never reached RTC readiness. The receiver saw the sender return before it had accepted the layout that recorded her departure, dialled on the stale layout and replaced its connection twice, and the sender answered a retired connection's offer last, so the pair never established. That is an RTC runtime defect, not the scenario's.",
+    "fixedByPullRequest": null
   },
   {
     "key": "ws/four-role/subscription-ordered-entry",
