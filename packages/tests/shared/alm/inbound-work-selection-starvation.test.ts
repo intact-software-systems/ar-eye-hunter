@@ -1,7 +1,7 @@
 import '../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
@@ -10,6 +10,7 @@ import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
+import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus, toKeyAsString, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -63,7 +64,7 @@ describe.each(['memory', 'indexeddb'] as const)('inbound work behind rows in ret
     it.each([
         ['a whole page', AL_INBOUND_WORK_PAGE_SIZE],
         ['more than a page', AL_INBOUND_WORK_PAGE_SIZE + 4]
-    ])('claims the row that is due now behind %s of RETRY rows due later, advertising it as due on every round', async (
+    ])('claims the row that is due now behind %s of RETRY rows due later, from the one probe that walks to it', async (
         _label,
         waiting
     ) => {
@@ -77,7 +78,8 @@ describe.each(['memory', 'indexeddb'] as const)('inbound work behind rows in ret
             delivery: createInboundTestDispatch(stores, Date.now).delivery,
             namespace: NAMESPACE,
             nowMs: Date.now,
-            lane: 'durable'
+            lane: 'durable',
+            onRotationCompleted: () => {}
         });
         const { rows, due } = toRowsWithLastKeyDue(waiting, Date.now());
         for (const row of rows) {
@@ -90,23 +92,29 @@ describe.each(['memory', 'indexeddb'] as const)('inbound work behind rows in ret
         });
         expect(firstKeyPage.entries.map((entry) => entry.key), 'the due row is behind the first page').not
             .toContainEqual(due.key);
+        const scanned = recordScannedStatuses(port);
 
-        // The rotation reads NEW (empty), then the RETRY pages in key order: the due row is on the last of them.
-        const rotationRounds = 1 + Math.ceil(rows.length / AL_INBOUND_WORK_PAGE_SIZE);
-        const claimedAtRound: number[] = [];
-        for (let round = 1; round <= rotationRounds; round += 1) {
-            const nowMs = Date.now();
-            expect(await selector.readNextReadyAtMs(port, nowMs), `round ${round} advertises due work`)
-                .toBeLessThanOrEqual(nowMs);
-            const selection = await selector.selectReady(port, AL_INBOUND_WORK_PAGE_SIZE);
-            const claimedKeys = selection.claims.map((claim) => toKeyAsString(claim.entry.key));
-            if (claimedKeys.includes(toKeyAsString(due.key))) {
-                claimedAtRound.push(round);
-            }
-            expect(claimedKeys.filter((key) => key !== toKeyAsString(due.key)), `round ${round} claims no row but the due one`)
-                .toEqual([]);
-        }
+        // The probe reads NEW (empty), then the RETRY pages in key order, and stops at the last of them,
+        // which holds the due row: the backlog in front of it is read past, never answered for.
+        const nowMs = Date.now();
+        expect(await selector.readNextReadyAtMs(port, nowMs), 'the probe advertises the due row').toBe(nowMs);
+        const selection = await selector.selectReady(port, AL_INBOUND_WORK_PAGE_SIZE);
 
-        expect(claimedAtRound).toEqual([rotationRounds]);
+        expect(selection.claims.map((claim) => toKeyAsString(claim.entry.key))).toEqual([toKeyAsString(due.key)]);
+        expect(scanned, 'the batch claims from the page the probe held').toEqual([
+            EntityStatus.NEW,
+            ...Array<EntityStatus>(Math.ceil(rows.length / AL_INBOUND_WORK_PAGE_SIZE)).fill(EntityStatus.RETRY)
+        ]);
     });
 });
+
+/** Every status the port pages through from here on, in read order. */
+function recordScannedStatuses(port: ALWorkQueuePort): EntityStatus[] {
+    const scanned: EntityStatus[] = [];
+    const readPage = port.readPage.bind(port);
+    vi.spyOn(port, 'readPage').mockImplementation(async (input) => {
+        scanned.push(input.status);
+        return await readPage(input);
+    });
+    return scanned;
+}

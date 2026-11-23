@@ -72,7 +72,7 @@ describe('browser IndexedDB terminal ownership', () => {
             endpoints: { createWs: '/ws' },
             rtcReplacedLayoutOverlapMs: 15_000
         });
-        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 60_000 });
+        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 60_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
         vi.spyOn(stateSnapshots, 'refreshStateSnapshots').mockResolvedValue({ clients: [], groups: [] });
         vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue({ sessionId: session.sessionId, generationId: 'heartbeat', stop: () => {} });

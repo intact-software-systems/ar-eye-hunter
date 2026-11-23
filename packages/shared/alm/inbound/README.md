@@ -142,7 +142,8 @@ pins the cost: one message admitted and delivered over a durable pair spends 8
 admission operations, as before S3a, and so does a `local-inbox` message beside a
 volatile pair; a volatile message beside a durable pair spends 0 admission and 0
 non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
-rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
+rotation over an empty queue spends only page reads (`work-page`): no batch runs, so no
+`work-probe` or other work operation reaches storage (R-S3a-11).
 
 An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile message
 ([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
@@ -695,7 +696,7 @@ Web and API deploy together.
 
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves that round unannounced — the rotation reads a page every engine round either way.                                                                                                        |
+| Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves that round unannounced — every engine pass walks the rotation either way.                                                                                                                |
 | Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline, whether its plan admitted or dropped it: a bundle that writes nothing never meets the fence, so the rolled-back one carried rows or effects (a drop's NACK among them) that the replay plans afresh against the winner. Retention checks exact content and identity on reuse.                                      | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. Pending storage earns no ACK and, on the WS server, no receipt: the replay that admits the message starts it.                                    |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
@@ -965,7 +966,7 @@ runs. Both land one batch later when a head batch ran since the last rotation re
 head read runs between two rotation reads: a commit that lands during a head batch, or after one
 before the next rotation read, waits for the read after that rotation read, and the lane announces it again at that
 rotation read, so the handler's own follow-up batch runs it. The rotation therefore advances at
-least every other batch while commits keep arriving, and later NEW pages, RETRY rows and expired
+least every other page read while commits keep arriving, and later NEW pages, RETRY rows and expired
 reservations keep their turn. A retained
 conflict announces for the same reason, and only when retention left a claimable row: a message
 already past its deadline is rejected before the write or as a row written already expired, and a
@@ -1171,16 +1172,30 @@ completes whether or not one does. Without a cluster publisher the control is dr
 warning. A throw in the WS server's round sends the messages before it a second time, which
 receivers drop by message id.
 
-The rotation reads a page on every engine round, and that read is what advances its
-scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather
-than the remembered readiness the outbound owners use: a remembered answer would skip
-the read and leave the scan where it stood. A head read is the one page
-read that leaves the scan position where it stood. Measured over a hundred engine passes of an
-idle owner — `al-indexeddb-operation-counts.test.ts`, both an empty queue and one holding
-a row no consumer claims — the probe reaches storage on more than half of them (97 of
-100 as measured, the rest being rounds spent inside the batch the round before started),
-against the 4 of 100 the outbound owner spends answering from memory. The measurement
-agrees with the construction, so the rotation keeps the per-round probe.
+The probe walks the rotation. It reads pages back to back until one holds work it can claim, and
+then answers due now and holds that page for the batch that follows; or until a rotation it read
+from the head of NEW wraps, and then answers the earliest readiness it scanned, its head reads'
+included, or no work. A walk that starts mid-rotation finishes that rotation and reads one more
+whole, so it never answers without having read every status. The next probe continues after the
+claimed page, so one status never hides work on the next. A head read stores no position, a
+rotation read stores its position only from the position it was read at, and a read a commit or a
+batch took from the probe mid-read ends the walk as due — that commit owes a head read, and the
+batch it starts runs it — so a walk reads at most about two rotations. A batch therefore
+runs only for a page it can claim from, or for a commit, and the engine's own idle backoff, 100 ms
+doubling to the 3 s idle ceiling, paces an idle lane
+([`al-inbound-idle-engine-pass-rate.test.ts`](../../../tests/shared/alm/inbound/al-inbound-idle-engine-pass-rate.test.ts)).
+
+A held row — one eligibility defers, for a missing predecessor or consumer, a group snapshot not
+yet in sync, or a congestion defer — adds no readiness and no timer of its own. The worker is
+constructed with `AL_WORK_PROBE_EVERY_ROUND` rather than the remembered readiness the outbound
+owners use, so every engine pass walks the rotation again and re-reads it: at once after any wake
+(a commit, a batch's progress, a consumer registration through `onInboxMessageDo`, a group snapshot
+refresh), and otherwise on the engine's idle backoff, within the idle ceiling plus its jitter.
+Measured over a hundred engine passes of an idle owner — `al-indexeddb-operation-counts.test.ts`,
+both an empty queue and one holding a row no consumer claims — each pass walks NEW, RETRY and
+RESERVED once, 302 page reads in all (the first pass also finishes, at RETRY and RESERVED, the
+rotation the bootstrap batch began), and no batch runs. Over a held backlog an idle pass reads one
+rotation's pages and makes one eligibility read per held row.
 
 The runtime relays no `readiness-probe` for it. One event per engine round is cheap in
 storage and expensive in the conformance lane, where every relayed diagnostic is a round
@@ -1198,8 +1213,12 @@ claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ra
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
 decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
 Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
-`rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
-`longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
+`rotation-alive` from completed rotations, at most once per `AL_INBOUND_ROTATION_WINDOW_MS` window,
+the idle ceiling less its 20 % jitter (2.4 s): the first rotation that completes at least that long
+after the window opened states it (`rotationCount`, and the window's `durationMs`) and opens the
+next, so every idle pass, 2.4 to 3.6 s apart, states one. `longestRotationReadMs`, the slowest
+rotation's own page reads summed, each from before its read to its settlement, keeps one crawling
+scan from being averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
 acts on) and the three instants a delivery's wait splits at — `dueAtMs`, when its row became
 due; `batchStartedAtMs`, when its batch's run loop started, after that batch's selection and
@@ -1208,10 +1227,13 @@ reservation; and `startedAtMs`, when the claim itself started — so the reserva
 serialization behind earlier claims of the run loop alone) are each named rather than left for
 a reader to subtract. `effect-drain` carries the matching `startedAtMs`, names the effects it
 ran in run order (`claimedEffectIds`, recorded by this owner as it runs them) and counts the
-releases it ran by promotion (`promoted`, D190). The due rows a round
+releases it ran by promotion (`promoted`, D190). The due rows a page
 saw and did not run ride on the events that already exist, never on one of their own: a
-round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them
-into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
+batch that ran claims lists them in its `effect-drain.deferred`, and every completed rotation
+folds the rows it held back into its window's `rotation-alive` (`deferredRotationCount`, and
+`latestDeferred`: the latest such rotation's rows, oldest first, at most one page of them). A
+batch that claimed nothing — a commit's page with nothing claimable, or a port that reserved
+nothing the page cleared — relays nothing and counts toward nothing. No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
 

@@ -246,7 +246,8 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         return this.createMiddleware(session, {
             ...options,
             signal: lifetime.signal,
-            readIceCandidates: (signal) => this.readConnectionIceCandidates(connection, signal),
+            readIceCandidates: (signal, serverNowEpochMs) =>
+                this.readConnectionIceCandidates(connection, serverNowEpochMs, signal),
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
@@ -360,12 +361,22 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         });
     }
 
-    private readConnectionIceCandidates(
+    /** A browser clock ahead of or behind the server must neither reject current ICE nor reuse expired ICE. */
+    private async readConnectionIceCandidates(
         acquisition: BrowserTransportRuntime.IceAcquisition,
+        serverNowEpochMs: () => number,
         signal?: AbortSignal
     ): Promise<IceConfig> {
         const cache = this.readIceCache(acquisition, signal);
-        return this.readCachedIceCandidates(acquisition, cache, signal);
+        const cached = cache.peek();
+        if (cached !== undefined && cached.expiresAtEpochMs <= serverNowEpochMs()) {
+            cache.clear();
+        }
+        const iceCandidates = await this.readCachedIceCandidates(acquisition, cache, signal);
+        if (iceCandidates.expiresAtEpochMs <= serverNowEpochMs()) {
+            throw new Error('ICE configuration has already expired at server time.');
+        }
+        return iceCandidates;
     }
 
     private readIceCache(
@@ -415,9 +426,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 
     private createIceCandidates(apiBaseUrl: string): LoanedValue<IceConfig> {
-        return new LoanedValue(() => readIceCandidates(undefined, apiBaseUrl), {
-            isValid: (value, nowEpochMs) => value.expiresAtEpochMs > nowEpochMs
-        });
+        return new LoanedValue(() => readIceCandidates(undefined, apiBaseUrl));
     }
 
     private async readFreshIceCandidates(
