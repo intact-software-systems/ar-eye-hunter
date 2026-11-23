@@ -19185,7 +19185,6 @@
     "diagnostic": false,
     "expectedFailure": false,
     "family": "alm-conformance",
-    "recommendedTerminalTimeoutSeconds": 1800,
     "carriers": [
       "ws",
       "rtc",
@@ -19217,7 +19216,8 @@
       "unicast-fallback",
       "capacity",
       "paced-capacity"
-    ]
+    ],
+    "recommendedTerminalTimeoutSeconds": 1845
   },
   "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no fallback after the deadline, and the addressed sends: a command to the receiver, its unicast fallback, a command to the server, and the volatile session bound, and storage unavailable: a durable send refused typed and one downgraded to volatile) across ws, rtc, and rtc-with-ws-fallback carriers."
 }

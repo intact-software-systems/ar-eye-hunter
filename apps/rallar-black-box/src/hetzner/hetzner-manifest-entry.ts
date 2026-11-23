@@ -1,6 +1,7 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
+import { computeRootBoundTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupRef,
@@ -154,6 +155,27 @@ export function createBudgetedManifestEntry(input: ManifestCatalogInput): Hetzne
             ...input.metadata,
             recommendedTerminalTimeoutSeconds: computeDistributedRunTerminalTimeoutSeconds({
                 recipes: input.recipes,
+                ackTimeoutMs: ACK_TIMEOUT_MS,
+                barrier: toBarrierPolicy(input.barrier)
+            })
+        }
+    });
+}
+
+/**
+ * An entry whose roots the control server binds to its terminal timeout (the paired reload roots): its terminal timeout
+ * is their execution budget after its ack and its barrier, so the roots end before the control's terminal wait does.
+ */
+export function createRootBoundManifestEntry(
+    input: ManifestCatalogInput,
+    rootBudgetMs: number
+): HetznerDistributedManifestEntry {
+    return createManifestEntry({
+        ...input,
+        metadata: {
+            ...input.metadata,
+            recommendedTerminalTimeoutSeconds: computeRootBoundTerminalTimeoutSeconds({
+                rootBudgetMs,
                 ackTimeoutMs: ACK_TIMEOUT_MS,
                 barrier: toBarrierPolicy(input.barrier)
             })

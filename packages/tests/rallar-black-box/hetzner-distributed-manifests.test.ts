@@ -8,6 +8,11 @@ import {
 
 import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
+import {
+    computeDistributedRunRootBudgetMs,
+    computeRootBoundTerminalTimeoutSeconds,
+    isRootBoundDistributedRecipe
+} from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-run-root-budget.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
@@ -50,20 +55,36 @@ const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
 // manifest recommends none.
 const HOSTED_DEFAULT_TERMINAL_TIMEOUT_SECONDS = 300;
 
-// The ALM conformance entries keep their recorded terminal timeouts, which sit far below their worst-case sums
-// (15,615 s and 2,247 s): manifest 18's 1,800 s is also each combined root's execution budget, pinned by the hosted
-// reload tests, and both stay as recorded until the maintainer rules on them. Nothing else may be short.
-const RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS: readonly string[] = [
-    'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
-    'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
-];
+function toRecipes(manifest: RallarBlackBoxDistributedRunManifest) {
+    return manifest.recipes.flatMap((selection) => selection.recipe === undefined ? [] : [selection.recipe]);
+}
 
 function toWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
     return computeDistributedRunTerminalTimeoutSeconds({
-        recipes: manifest.recipes.flatMap((selection) => selection.recipe === undefined ? [] : [selection.recipe]),
+        recipes: toRecipes(manifest),
         ackTimeoutMs: manifest.ackTimeoutMs,
         barrier: manifest.barrier
     });
+}
+
+/**
+ * A run whose roots the control server binds to its own terminal timeout (the paired reload roots) ends by its ack,
+ * its barrier and that root budget at the latest, whatever its commands' budgets add up to.
+ */
+function toBoundedWorstCaseTerminalSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
+    const worstCaseSeconds = toWorstCaseTerminalSeconds(manifest);
+    if (!toRecipes(manifest).some(isRootBoundDistributedRecipe)) {
+        return worstCaseSeconds;
+    }
+    const rootBudgetMs = computeDistributedRunRootBudgetMs({
+        terminalTimeoutSeconds: toHostedTerminalTimeoutSeconds(manifest),
+        ackTimeoutMs: manifest.ackTimeoutMs,
+        barrier: manifest.barrier
+    });
+    return Math.min(
+        worstCaseSeconds,
+        computeRootBoundTerminalTimeoutSeconds({ rootBudgetMs, ackTimeoutMs: manifest.ackTimeoutMs, barrier: manifest.barrier })
+    );
 }
 
 function toHostedTerminalTimeoutSeconds(manifest: RallarBlackBoxDistributedRunManifest): number {
@@ -72,24 +93,38 @@ function toHostedTerminalTimeoutSeconds(manifest: RallarBlackBoxDistributedRunMa
 }
 
 describe('hosted distributed manifest terminal timeouts', () => {
-    // Manifest 17's worst case rose to 392 s against the 300 s default; 05b-05e sat 4 to 5 s under it.
+    // Manifest 17's worst case rose to 392 s against the 300 s default; 05b-05e sat 4 to 5 s under it; manifest 22
+    // recommended 300 s against its 2,247 s.
     it('covers every hosted manifest\'s worst-case sum by its recommendation or the default', () => {
         const short = [...createHetznerDistributedManifestCatalog(), ...createWorldFleetDistributedManifestCatalog()]
-            .filter((entry) => toHostedTerminalTimeoutSeconds(entry.manifest) < toWorstCaseTerminalSeconds(entry.manifest))
+            .filter((entry) => toHostedTerminalTimeoutSeconds(entry.manifest) < toBoundedWorstCaseTerminalSeconds(entry.manifest))
             .map((entry) => entry.filePath);
 
-        expect(short).toEqual(RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS);
+        expect(short).toEqual([]);
     });
 
     // Every entry carries its derived recommendation, so no manifest relies on a default that may be short.
-    it('recommends every other Hetzner entry exactly the terminal timeout its budgets add up to', () => {
+    it('recommends every Hetzner entry exactly the terminal timeout its budgets add up to', () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
-            if (RECORDED_SHORT_TERMINAL_TIMEOUT_PATHS.includes(entry.filePath)) {
-                continue;
-            }
             expect(entry.manifest.metadata.recommendedTerminalTimeoutSeconds, entry.filePath)
-                .toBe(toWorstCaseTerminalSeconds(entry.manifest));
+                .toBe(toBoundedWorstCaseTerminalSeconds(entry.manifest));
         }
+    });
+
+    // Manifest 18's reload roots ran under its whole 1,800 s terminal timeout, so the run could outlast it by its ack
+    // and barrier; its roots now keep 1,800 s and the terminal timeout adds the 30 s ack and the 15 s barrier.
+    it('gives manifest 18 its root budget, its ack and its barrier as its terminal timeout', () => {
+        const manifest = createHetznerDistributedManifestCatalog()
+            .find((entry) => entry.filePath.endsWith('/18-alm-conformance-2-agent.json'))!.manifest;
+
+        expect(toRecipes(manifest).every(isRootBoundDistributedRecipe)).toBe(true);
+        expect(manifest.metadata.recommendedTerminalTimeoutSeconds).toBe(1_800 + 30 + 15);
+        expect(computeDistributedRunRootBudgetMs({
+            terminalTimeoutSeconds: 1_845,
+            ackTimeoutMs: manifest.ackTimeoutMs,
+            barrier: manifest.barrier
+        })).toBe(1_800_000);
+        expect(toWorstCaseTerminalSeconds(manifest)).toBeGreaterThan(1_845);
     });
 
     it('recommends the rising RTC and group-assertion entries their derived values', () => {
@@ -105,6 +140,7 @@ describe('hosted distributed manifest terminal timeouts', () => {
             '05b-rtc-realtime-stability-2-agent-30s': 295,
             '05d-rtc-realtime-stability-2-agent-30s-15hz': 296,
             '17-group-assertions-2-agent': 392,
+            '22-alm-conformance-3-agent': 2_247,
             '24-view-push-2-agent': 175
         });
     });
