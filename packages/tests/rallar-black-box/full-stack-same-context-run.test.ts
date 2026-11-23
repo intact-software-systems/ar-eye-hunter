@@ -9,6 +9,7 @@ import {
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import type { RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
@@ -308,8 +309,8 @@ it('cancels the running owner after the page steps when the gated successor\'s e
     const control = await openRecordingControlRequest('same-context-successor-enqueue');
     const record = vi.mocked(control.request.post).getMockImplementation()!;
     vi.mocked(control.request.post).mockImplementation(async (url, options) => {
-        const data: unknown = options?.data;
-        if (typeof data === 'object' && data !== null && Reflect.get(data, 'commandId') === `${successor.recipeId}-run`) {
+        const data = options?.data;
+        if (isJsonRecordValue(data) && data.commandId === `${successor.recipeId}-run`) {
             throw failure;
         }
         return await record(url, options);
