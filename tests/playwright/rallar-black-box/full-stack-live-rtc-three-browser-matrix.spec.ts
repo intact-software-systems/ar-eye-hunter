@@ -10,11 +10,7 @@ import type {
 } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import {
-    FORMATION_CONNECT_RESULT_WAIT_MS,
-    FORMATION_RUN_CONNECT_RESULT_WAIT_MS,
-    LiveRtcFormationFailure
-} from './create-group-formation-lifecycle-driver.ts';
+import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
     agentAuth,
@@ -46,6 +42,12 @@ import {
 } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import {
+    LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS,
+    LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS,
+    LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS,
+    RETENTION_RECONNECT_CYCLES
+} from './live-rtc-matrix-test-timeouts.ts';
+import {
     captureLiveRtcPostGcHeap,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
@@ -72,18 +74,6 @@ const liveAllScenariosEnabled = booleanEnv(
 const liveRetentionSoakEnabled = booleanEnv(
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK'
 );
-/** The proof matrix's steps besides its formation connects. */
-const MATRIX_STEPS_TIMEOUT_MS = 360_000;
-
-/** Every sender and receiver scenario's steps besides its formation connects and the reconnect. */
-const ALL_SCENARIOS_STEPS_TIMEOUT_MS = 720_000;
-
-/** The retention soak's steps besides its formation connects and the reconnects. */
-const RETENTION_STEPS_TIMEOUT_MS = 1_800_000;
-
-/** Peer C closes and reconnects once in every retention cycle. */
-const RETENTION_RECONNECT_CYCLES = 100;
-
 const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     apiBaseUrl,
     applicationId,
@@ -406,8 +396,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         browser,
         request
     }, testInfo) => {
-        // A delivery matrix per transport, each forming the room by connecting the trio.
-        test.setTimeout(MATRIX_STEPS_TIMEOUT_MS + 2 * FORMATION_RUN_CONNECT_RESULT_WAIT_MS);
+        test.setTimeout(LIVE_RTC_MATRIX_PROOF_TEST_TIMEOUT_MS);
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -701,10 +690,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             !liveAllScenariosEnabled,
             'Set RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 to run the exhaustive three-browser live matrix.'
         );
-        // A permutation run per transport, each forming the room, and agent C's reconnect.
-        test.setTimeout(
-            ALL_SCENARIOS_STEPS_TIMEOUT_MS + 2 * FORMATION_RUN_CONNECT_RESULT_WAIT_MS + FORMATION_CONNECT_RESULT_WAIT_MS
-        );
+        test.setTimeout(LIVE_RTC_ALL_SCENARIOS_TEST_TIMEOUT_MS);
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),
@@ -1063,11 +1049,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             !liveRetentionSoakEnabled,
             'Set RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 and RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 to run retention evidence.'
         );
-        // One formation, then a reconnect in every cycle.
-        test.setTimeout(
-            RETENTION_STEPS_TIMEOUT_MS + FORMATION_RUN_CONNECT_RESULT_WAIT_MS +
-                RETENTION_RECONNECT_CYCLES * FORMATION_CONNECT_RESULT_WAIT_MS
-        );
+        test.setTimeout(LIVE_RTC_RETENTION_SOAK_TEST_TIMEOUT_MS);
 
         const evidenceContext = await loadLiveRtcPerformanceAttempt({
             repoRoot: process.cwd(),

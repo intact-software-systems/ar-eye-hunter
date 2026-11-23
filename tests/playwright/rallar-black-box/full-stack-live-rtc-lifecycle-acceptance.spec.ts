@@ -6,14 +6,16 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import {
-    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import type { RallarBlackBoxTestRtcConnectCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { computeCommandResultWaitMs } from './compute-command-result-wait-ms.ts';
+import {
+    computeLiveRtcLifecycleScenarioTimeoutMs,
+    PRESENCE_CONNECT_RESULT_WAIT_MS,
+    PRESENCE_CONNECT_TIMING,
+    REOPENING_SCENARIO_PRESENCE_CONNECTS,
+    TRIO_PRESENCE_CONNECTS
+} from './compute-live-rtc-lifecycle-scenario-timeout-ms.ts';
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
     almDiagnostics,
@@ -29,7 +31,7 @@ import {
     type LiveRtcAgentTrio
 } from './live-rtc-agent-environment.ts';
 import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
-import { LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS, LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations } from './live-rtc-delivery-operations.ts';
 import { jsonRecord } from './live-rtc-evidence-json.ts';
 import {
@@ -51,28 +53,6 @@ const HOLD_MS = 5_000;
 const STAGE_WAIT_MS = 45_000;
 const PRESENCE_SETTLE_MS = 5_000;
 
-/** A presence connect joins the room under the establishment SDK timeout and waits for no readiness. */
-const PRESENCE_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
-    kind: 'rtc.connect',
-    timeoutMs: RALLAR_BLACK_BOX_RTC_ROOM_CONNECT_TIMEOUT_MS
-};
-
-const PRESENCE_CONNECT_RESULT_WAIT_MS = computeCommandResultWaitMs(
-    PRESENCE_CONNECT_TIMING,
-    LIVE_RTC_CONTROL_RESULT_POLL_TIMEOUT_MS
-);
-
-/** A scenario's steps besides its presence connects. */
-const SCENARIO_STEPS_TIMEOUT_MS = 300_000;
-
-/** Every agent of the trio connects its presence, one after another. */
-const TRIO_PRESENCE_CONNECTS = 3;
-
-/** A scenario's presence connects run one after another, so each adds its whole wait to the scenario's steps. */
-function toScenarioTimeoutMs(presenceConnects: number): number {
-    return SCENARIO_STEPS_TIMEOUT_MS + presenceConnects * PRESENCE_CONNECT_RESULT_WAIT_MS;
-}
-
 const formationOperations = createLiveRtcFormationOperations();
 const deliveryOperations = createLiveRtcDeliveryOperations({
     apiBaseUrl,
@@ -88,7 +68,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     test.skip(!hasThreeAgentConfig, LIVE_RTC_SKIP_MESSAGE);
 
     test('holds every dial while a managed lobby discovers itself, then dials on connect', async ({ browser, request }) => {
-        test.setTimeout(toScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
         const scenario = await openScenario(browser, request, 'discovery');
         try {
             const { agents } = scenario;
@@ -124,7 +104,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }, testInfo) => {
-        test.setTimeout(toScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS + 1));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
         const scenario = await openScenario(browser, request, 'progress');
         try {
             await activateGroup(scenario);
@@ -175,7 +155,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
-        test.setTimeout(toScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS + 1));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
         const scenario = await openScenario(browser, request, 'barrier');
         try {
             await activateGroup(scenario);
@@ -219,7 +199,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('drops every lane on reset and dials again on the next series', async ({ browser, request }) => {
-        test.setTimeout(toScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS));
         const scenario = await openScenario(browser, request, 'reset');
         try {
             await activateGroup(scenario);
@@ -297,7 +277,7 @@ test.describe('live RTC lifecycle acceptance', () => {
     });
 
     test('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
-        test.setTimeout(toScenarioTimeoutMs(TRIO_PRESENCE_CONNECTS + 1));
+        test.setTimeout(computeLiveRtcLifecycleScenarioTimeoutMs(REOPENING_SCENARIO_PRESENCE_CONNECTS));
         const scenario = await openScenario(browser, request, 'hydration');
         try {
             await activateGroup(scenario);

@@ -49,7 +49,10 @@ import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
-import { computeDistributedRunPassedWaitMs } from './distributed-recipes/distributed-control.ts';
+import {
+    computeDistributedRunPassedWaitMs,
+    computeDistributedRunsTestTimeoutMs
+} from './distributed-recipes/distributed-control.ts';
 import {
     cleanupRallarPage,
     decodeFullStackAuthSession,
@@ -63,6 +66,10 @@ import {
     waitForControlRunAgent
 } from './full-stack-helpers.ts';
 import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
+import {
+    CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS,
+    CONSOLE_NATIVE_STEPS_TIMEOUT_MS
+} from './recipe-console-monitor-test-timeouts.ts';
 
 interface OperatorUrlInput {
     readonly actor: string;
@@ -105,9 +112,6 @@ interface ConsoleNativeAttachment {
 /** The composite recipe's commands read local state and name no budget; its run passes well inside this wait. */
 const COMPOSITE_PASSED_WAIT_MS = 90_000;
 
-/** The Native console test's steps besides the started run, whose passed wait its visible manifest gives. */
-const CONSOLE_NATIVE_STEPS_TIMEOUT_MS = 240_000;
-
 const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
     recipeId: 'composite-evidence-recipe',
     providerMode: 'simulated',
@@ -140,7 +144,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
         (await configuredPostgresStackAvailability(request)) === 'unavailable',
         CONFIGURED_LIVE_SKIP_REASON
     );
-    test.setTimeout(240_000);
+    test.setTimeout(CONSOLE_LIFECYCLE_TEST_TIMEOUT_MS);
     await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
 
     const groupId = uniqueGroupId(testInfo);
@@ -305,7 +309,7 @@ test('applies Console Full native run intent through real browser agents', async
         // The started run joins the room under the stability recipe's connect, then streams; it may take its whole
         // terminal budget on top of the test's other steps.
         const passedWaitMs = computeDistributedRunPassedWaitMs(original);
-        test.setTimeout(CONSOLE_NATIVE_STEPS_TIMEOUT_MS + passedWaitMs);
+        test.setTimeout(computeDistributedRunsTestTimeoutMs(CONSOLE_NATIVE_STEPS_TIMEOUT_MS, [original]));
         await writeFile(
             testInfo.outputPath('console-native-original-manifest.json'),
             JSON.stringify(original, null, 2)

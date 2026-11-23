@@ -13,10 +13,10 @@ const transports: readonly SmokeTransport[] = ['realtime', 'messages.rtc'];
 const CONNECT_STAGE_WAIT_MS = computeTwoAgentConnectResultWaitMs(peerReadiness);
 
 /** Opening, joining, two deliveries and finalizing both agents. */
-const DELIVERY_STEPS_TIMEOUT_MS = 120_000;
+const DELIVERY_STEPS_TIMEOUT_MS = 75_000;
 
 /** Opening, joining, four deliveries, six health reads, a reload and finalizing both agents. */
-const RELOAD_STEPS_TIMEOUT_MS = 180_000;
+const RELOAD_STEPS_TIMEOUT_MS = 90_000;
 
 for (const transport of transports) {
     test(

@@ -113,7 +113,7 @@ const DIRECTOR_CONNECT_TIMING: RallarBlackBoxTestRtcConnectCommand = {
 };
 
 /** Opening three agents, membership, readiness, the director's relays, snapshots and the stale marking. */
-const DIRECTOR_STEPS_TIMEOUT_MS = 300_000;
+const DIRECTOR_STEPS_TIMEOUT_MS = 240_000;
 const hasDirectorConfig = config.enabled && directorEnabled;
 
 test.describe('full-stack SPA-appointed director orchestration', () => {

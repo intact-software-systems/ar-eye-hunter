@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, type APIRequestContext } from '@playwright/test';
 
 import { type ControlResultEnvelope } from '../../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
@@ -164,15 +164,21 @@ export function computeDistributedRunPassedWaitMs(manifest: RallarBlackBoxDistri
 }
 
 /**
- * Runs the manifest to passed. Its passed wait comes on top of the test's own timeout, which covers the test's other
- * steps, so a test running several manifests is covered for every run it starts.
+ * A test that starts these runs one after another may take its other steps and then every run's passed wait; the
+ * caller sets it as its timeout before it starts the first run.
  */
+export function computeDistributedRunsTestTimeoutMs(
+    stepsTimeoutMs: number,
+    manifests: readonly RallarBlackBoxDistributedRunManifest[]
+): number {
+    return manifests.reduce((sum, manifest) => sum + computeDistributedRunPassedWaitMs(manifest), stepsTimeoutMs);
+}
+
+/** Runs the manifest to passed, waiting for passed as long as the run may take. */
 export async function runToPassed(
     request: APIRequestContext,
     manifest: RallarBlackBoxDistributedRunManifest
 ): Promise<ControlDistributedRunSnapshot> {
-    const passedWaitMs = computeDistributedRunPassedWaitMs(manifest);
-    test.setTimeout(test.info().timeout + passedWaitMs);
     await createDistributedRun(request, manifest);
     await mutateDistributedRun(request, manifest.distributedRunId, 'stage');
     await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'ready' });
@@ -181,6 +187,6 @@ export async function runToPassed(
         request,
         distributedRunId: manifest.distributedRunId,
         state: 'passed',
-        timeout: passedWaitMs
+        timeout: computeDistributedRunPassedWaitMs(manifest)
     });
 }

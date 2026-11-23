@@ -19,6 +19,7 @@ import {
     type AgentHandle
 } from './distributed-recipes/browser-agents.ts';
 import {
+    computeDistributedRunsTestTimeoutMs,
     executeOk,
     readDistributedArtifact,
     runToPassed,
@@ -26,14 +27,14 @@ import {
     waitForDistributedState
 } from './distributed-recipes/distributed-control.ts';
 import {
-    compositeEvidenceRecipe,
-    createDistributedManifest,
-    createPreprovisionedRealtimeRecipe,
-    healthRecipe,
-    rtcConnectRecipe,
-    rtcSendRecipe,
-    wsSendRecipe
-} from './distributed-recipes/recipe-manifests.ts';
+    createLiveDistributedRecipeRuns,
+    createSimulatedAckManifest,
+    LIVE_RECIPES_STEPS_TIMEOUT_MS,
+    SIMULATED_ACK_STEPS_TIMEOUT_MS,
+    SIMULATED_FAILURES_TEST_TIMEOUT_MS,
+    toLiveDistributedRecipeManifests
+} from './distributed-recipes/distributed-recipe-test-runs.ts';
+import { createDistributedManifest, healthRecipe } from './distributed-recipes/recipe-manifests.ts';
 import {
     attachConsoleArtifacts,
     attachDistributedRunSummary,
@@ -62,7 +63,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
         browser,
         request
     }, testInfo) => {
-        test.setTimeout(120_000);
         const suffix = uniqueSuffix();
         const runId = `dist-sim-ack-${suffix}`;
         const group: RallarBlackBoxDistributedGroupRef = {
@@ -70,6 +70,8 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             workspaceId: config.workspaceId,
             groupId: `dist-sim-group-${suffix}`
         };
+        const manifest = createSimulatedAckManifest({ suffix, controlRunId: runId, group });
+        test.setTimeout(computeDistributedRunsTestTimeoutMs(SIMULATED_ACK_STEPS_TIMEOUT_MS, [manifest]));
         const handles: AgentHandle[] = [];
 
         try {
@@ -89,24 +91,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             await configureAgentsForDistributedGroup({ request, runId, handles, provider: 'simulated', group, suffix });
             await waitForAgentsInGroup({ request, runId, agentIds: handles.map((handle) => handle.agentId), group });
 
-            const recipe = compositeEvidenceRecipe(`composite-ack-all-${suffix}`);
-            const manifest = createDistributedManifest({
-                distributedRunId: `dist-ack-${suffix}`,
-                controlRunId: runId,
-                group,
-                recipes: [{
-                    recipeId: recipe.recipeId,
-                    recipe,
-                    profile: 'full-stack',
-                    variables: {}
-                }],
-                targetPolicy: {
-                    mode: 'all-online-group-members',
-                    expectedParticipantCount: 3
-                },
-                displayName: 'All-agent ACK smoke'
-            });
-
             const passed = await runToPassed(request, manifest);
             expect([...passed.targetAgentIds].sort()).toEqual(handles.map((handle) => handle.agentId).sort());
             expect(passed.rollup.summary.passedParticipants).toBe(3);
@@ -115,7 +99,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
 
             const artifact = await readDistributedArtifact(request, manifest.distributedRunId);
             expect(artifact.files?.['distributed-run.json']).toContain(manifest.distributedRunId);
-            expect(artifact.files?.['manifest.json']).toContain(recipe.recipeId);
+            expect(artifact.files?.['manifest.json']).toContain(manifest.recipes[0]?.recipeId);
             expect(artifact.files?.['control-run.json']).toContain(runId);
 
             const panel = handles[0].page.locator('#panel-distributed-recipes');
@@ -134,7 +118,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
     });
 
     test('covers missing target, schema failure, ACK timeout, disconnect, and failure rollup', async ({ browser, request }) => {
-        test.setTimeout(180_000);
+        test.setTimeout(SIMULATED_FAILURES_TEST_TIMEOUT_MS);
         const suffix = uniqueSuffix();
         const runId = `dist-sim-negative-${suffix}`;
         const group: RallarBlackBoxDistributedGroupRef = {
@@ -373,7 +357,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
         browser,
         request
     }, testInfo) => {
-        test.setTimeout(420_000);
         const suffix = `dist-live-${uniqueSuffix()}`;
         const runId = `distributed-live-${suffix}`;
         const group: RallarBlackBoxDistributedGroupRef = {
@@ -381,16 +364,27 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             workspaceId: config.workspaceId,
             groupId: `${config.roomId}-${suffix}`
         };
+        const prefixes = ['A', 'B', 'C'] as const;
+        const toAgentId = (prefix: typeof prefixes[number]) => `dist-live-${prefix.toLowerCase()}-${suffix}`;
+        const runs = createLiveDistributedRecipeRuns({
+            suffix,
+            controlRunId: runId,
+            group,
+            agentIds: prefixes.map(toAgentId)
+        });
+        test.setTimeout(
+            computeDistributedRunsTestTimeoutMs(LIVE_RECIPES_STEPS_TIMEOUT_MS, toLiveDistributedRecipeManifests(runs))
+        );
         const handles: AgentHandle[] = [];
         const consoleArtifacts = new DistributedRecipeConsoleRecorder(Date.now);
 
         try {
-            for (const prefix of ['A', 'B', 'C'] as const) {
+            for (const prefix of prefixes) {
                 const handle = await openControlAgent(browser, {
                     provider: 'browser-rallar',
                     prefix,
                     runId,
-                    agentId: `dist-live-${prefix.toLowerCase()}-${suffix}`,
+                    agentId: toAgentId(prefix),
                     actor: `dist-live-${prefix.toLowerCase()}-${suffix}`,
                     connection: `dist-live-${prefix.toLowerCase()}-${suffix}`,
                     group,
@@ -415,87 +409,14 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 suffix
             });
 
-            const ackRecipe = healthRecipe(`live-ack-${suffix}`);
-            const ack = await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: `dist-live-ack-${suffix}`,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: ackRecipe.recipeId,
-                        recipe: ackRecipe,
-                        profile: 'live',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'all-online-group-members',
-                        expectedParticipantCount: 3
-                    }
-                })
-            );
+            const ack = await runToPassed(request, runs.ack);
             expect(ack.targetAgentIds).toHaveLength(3);
 
-            const wsTypeId = `room.rallar-black-box.distributed.ws.${suffix}`;
-            const wsTopicId = wsTypeId;
-            const wsPrimerId = `ws-primer-${suffix}`;
-            const wsPrimerRecipe = wsSendRecipe(`live-ws-primer-${suffix}`, group, {
-                typeId: wsTypeId,
-                topicId: wsTopicId,
-                messageId: wsPrimerId,
-                role: 'primer'
-            });
-            await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: `dist-live-ws-primer-${suffix}`,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: wsPrimerRecipe.recipeId,
-                        recipe: wsPrimerRecipe,
-                        profile: 'live-ws',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'selected-agents',
-                        agentIds: handles.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3
-                    }
-                })
-            );
+            await runToPassed(request, runs.wsPrimer);
 
-            const wsMessageId = `ws-sender-receiver-${suffix}`;
-            const wsDistributedRunId = `dist-live-ws-send-${suffix}`;
-            const wsSenderRecipe = wsSendRecipe(`live-ws-sender-${suffix}`, group, {
-                typeId: wsTypeId,
-                topicId: wsTopicId,
-                messageId: wsMessageId,
-                role: 'sender',
-                distributedRunId: wsDistributedRunId
-            });
-            const wsPassed = await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: wsDistributedRunId,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: wsSenderRecipe.recipeId,
-                        role: 'sender',
-                        recipe: wsSenderRecipe,
-                        profile: 'live-ws',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'role-map',
-                        roles: {
-                            sender: [handles[0].agentId]
-                        },
-                        expectedParticipantCount: 1
-                    }
-                })
-            );
+            const { wsMessageId, rtcMessageId, realtimeRecipe, realtimeConnection } = runs;
+            const wsDistributedRunId = runs.wsSend.distributedRunId;
+            const wsPassed = await runToPassed(request, runs.wsSend);
             await Promise.all([
                 waitForBrowserMessage(request, runId, {
                     agentId: handles[1].agentId,
@@ -525,57 +446,10 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             );
             expect(wsWarningReport.ok, wsWarningReport.failures.join('\n')).toBe(true);
 
-            const rtcConnect = rtcConnectRecipe(`live-rtc-connect-${suffix}`, group);
-            await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: `dist-live-rtc-connect-${suffix}`,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: rtcConnect.recipeId,
-                        recipe: rtcConnect,
-                        profile: 'live-rtc',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'selected-agents',
-                        agentIds: handles.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3
-                    }
-                })
-            );
+            await runToPassed(request, runs.rtcConnect);
 
-            const rtcMessageId = `rtc-broadcast-${suffix}`;
-            const rtcDistributedRunId = `dist-live-rtc-send-${suffix}`;
-            const rtcSender = rtcSendRecipe({
-                recipeId: `live-rtc-send-${suffix}`,
-                group,
-                messageId: rtcMessageId,
-                distributedRunId: rtcDistributedRunId
-            });
-            const rtcPassed = await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: rtcDistributedRunId,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: rtcSender.recipeId,
-                        role: 'sender',
-                        recipe: rtcSender,
-                        profile: 'live-rtc',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'role-map',
-                        roles: {
-                            sender: [handles[0].agentId]
-                        },
-                        expectedParticipantCount: 1
-                    }
-                })
-            );
+            const rtcDistributedRunId = runs.rtcSend.distributedRunId;
+            const rtcPassed = await runToPassed(request, runs.rtcSend);
             await Promise.all([
                 waitForBrowserMessage(request, runId, {
                     agentId: handles[1].agentId,
@@ -607,34 +481,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             );
             expect(rtcWarningReport.ok, rtcWarningReport.failures.join('\n')).toBe(true);
 
-            const realtimeDistributedRunId = `dist-live-rtc-realtime-${suffix}`;
-            const realtimeConnection = `realtime-${realtimeDistributedRunId}`;
-            const realtimeRecipe = createPreprovisionedRealtimeRecipe({
-                recipeId: `live-rtc-realtime-${suffix}`,
-                group,
-                distributedRunId: realtimeDistributedRunId,
-                connection: realtimeConnection
-            });
+            const realtimeDistributedRunId = runs.realtime.distributedRunId;
             expect(realtimeRecipe.commands.map((command) => command.kind)).toEqual(['rtc.connect', 'loop', 'stats']);
-            const realtimePassed = await runToPassed(
-                request,
-                createDistributedManifest({
-                    distributedRunId: realtimeDistributedRunId,
-                    controlRunId: runId,
-                    group,
-                    recipes: [{
-                        recipeId: realtimeRecipe.recipeId,
-                        recipe: realtimeRecipe,
-                        profile: 'live-rtc-realtime',
-                        variables: {}
-                    }],
-                    targetPolicy: {
-                        mode: 'selected-agents',
-                        agentIds: handles.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3
-                    }
-                })
-            );
+            const realtimePassed = await runToPassed(request, runs.realtime);
             await waitForRealtimePositionPayload(request, runId, realtimeDistributedRunId);
             const warningsLoggedFromEpochMs = Date.now();
             await emitKnownLiveWarningDiagnostics(handles, {
