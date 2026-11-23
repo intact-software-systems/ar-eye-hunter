@@ -142,5 +142,3 @@ async function createDeltaServer(
     });
     return { ...server, record: new ALReceiptRecord({ ...stores.receiptRecordStores, nowMs }) };
 }
-
-/** The browser addresses its ACK to the delta's sender and stamps it with the delta's trace. */

@@ -326,10 +326,12 @@ test('a server-producer outbox row skips a subscriber revoked before its retry, 
         assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
         // A head that timed out also settles the row: only its phase shows bob's ACK completed the receipt.
         const head = (await harness.record.read(receipt)).right?.head;
-        assert.deepEqual(
-            head?.phase === 'open' ? head.phase : [head?.phase, head?.confirmedRecipientPeerIds, head?.outsideAudienceRecipientPeerIds],
-            ['complete', ['bob'], ['carol']]
-        );
+        assert.equal(head?.phase, 'complete');
+        if (head?.phase !== 'complete') {
+            throw new Error('the receipt head is not complete');
+        }
+        assert.deepEqual(head.confirmedRecipientPeerIds, ['bob']);
+        assert.deepEqual(head.outsideAudienceRecipientPeerIds, ['carol']);
     });
 });
 

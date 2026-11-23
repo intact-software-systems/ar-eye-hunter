@@ -12,17 +12,12 @@ export function isWsQueueBoxServerOwnOutsideAudienceNack(nack: ALNackPayload, se
 
 /** The record's `outside` confirmation of the recipient an outside-audience NACK names. */
 export function toWsQueueBoxServerOutsideAudienceConfirmation(nack: ALNackPayload): ALReceiptRecordConfirmationDto {
-    return {
-        originPeerId: nack.originPeerId,
-        msgId: nack.msgId,
-        recipientPeerId: nack.logicalRecipientPeerId,
-        kind: 'outside'
-    };
+    return toOutside(nack.originPeerId, nack.msgId, nack.logicalRecipientPeerId);
 }
 
 /**
  * The `outside` confirmations a server publication's pending row proves and its open head has not counted: each
- * expected recipient the row places outside, by an outside-audience NACK it admitted, that the tally does not name.
+ * expected recipient the row places outside that the tally does not name.
  */
 export function toWsQueueBoxServerUnrecordedOutsideConfirmations(
     view: ALReceiptRecord.View,
@@ -33,10 +28,9 @@ export function toWsQueueBoxServerUnrecordedOutsideConfirmations(
     const counted = new Set([...confirmedRecipientPeerIds, ...outsideAudienceRecipientPeerIds]);
     return (pending?.outsideAudiencePeerIds ?? [])
         .filter((peerId) => opening.expectedRecipientPeerIds.includes(peerId) && !counted.has(peerId))
-        .map((recipientPeerId) => ({
-            originPeerId: opening.originPeerId,
-            msgId: opening.msgId,
-            recipientPeerId,
-            kind: 'outside'
-        }));
+        .map((recipientPeerId) => toOutside(opening.originPeerId, opening.msgId, recipientPeerId));
+}
+
+function toOutside(originPeerId: string, msgId: string, recipientPeerId: string): ALReceiptRecordConfirmationDto {
+    return { originPeerId, msgId, recipientPeerId, kind: 'outside' };
 }
