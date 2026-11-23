@@ -451,7 +451,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     ): Promise<ALOutboundDispatchAttempt<TPrepared>> {
         const { decision, observation } = await this.readObservedDispatchDecision(dispatch, phases);
         if (decision.kind === 'settled') {
-            return decision;
+            return { kind: 'settled', result: await this.toStoredDuplicateResult(decision.result) };
         }
 
         const { input, computed, bundle } = decision;
@@ -486,6 +486,24 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return this.toCommitResult('conflict', { computed, msg: input.read.msg, intent: dispatch.intent });
     }
 
+    /**
+     * A duplicate answers with its canonical row as stored now, never with the message its read planned and signed.
+     * Nothing orders a replay behind another commit of its sender (ruling 22): it may have read the row before a
+     * freezing dequeue stored the row's proof, and its own sign then lost to that one.
+     */
+    private async toStoredDuplicateResult(
+        result: ALOutboundDispatchAdmission.Result<TPrepared>
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
+        const [entry] = result.computed.entries;
+        if (result.computed.verdict.kind !== 'duplicate' || entry === undefined) {
+            return result;
+        }
+        const stored = await this.admissionStore.readWork(entry.key);
+        return stored === undefined
+            ? result
+            : { ...result, computed: { ...result.computed, msg: decodePersistedALMessageRow(stored) } };
+    }
+
     /** A single send decides inside its decision read, so that read also holds what its commit fences. */
     private async readObservedDispatchDecision(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
@@ -515,7 +533,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
      * Every dispatch that plans to send asks the carrier's signer, which decides alone and returns a frame that needs
      * no new proof as it is: a first admission signs its frame after the read stamped it, and a held row is signed at
      * the dispatch that first freezes its audience, so the canonical row every later stage resends already carries the
-     * proof (D519, D756). A dropping plan signs nothing. A signer's refusal is the plan's `unsupported` drop of the
+     * proof (D519, D756). A dropping plan, and a read whose row already carries its stored proof, sign nothing. A signer's refusal is the plan's `unsupported` drop of the
      * request: the sequence and record this read added belong to positions it never committed, so a carrier that takes
      * the refusal over gets the request alone, and a held row's dequeue ends it as any `unsupported` plan there does.
      */
@@ -523,7 +541,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const sign = this.dependencies.signAdmittedMessage;
-        if (sign === undefined || read.plan.dropReasonCode !== undefined) {
+        if (sign === undefined || read.plan.dropReasonCode !== undefined || read.msg.proof !== undefined) {
             return read;
         }
         return (await sign(read.msg)).fold(
