@@ -63,10 +63,13 @@ namespace `browser:<name>:volatile`) and hands to both carriers beside it. So a
 volatile duplicate over the other carrier still meets its first admission. A WS
 server carries both lanes too, with an unbudgeted memory pair beside its shared
 PostgreSQL store, so a best-effort message such as an RTC signal is admitted and
-delivered in memory. A server relaying acknowledgements to other instances keeps only
-what `keepsVolatileMessageInMemory` accepts in its memory pair: a relay-only RTC signal
+delivered in memory. A WS server beside other instances keeps only what
+`keepsVolatileMessageInMemory` accepts in its memory pair: an instance-local RTC signal
 (best-effort, unacknowledged, small enough for an inline live notice). Every other
-message takes the shared store, since those instances read its admission there.
+message takes the shared store, since another instance proves an acknowledgement's sender
+against its admission there, and reads an oversized live notice's message there. No server
+relays an acknowledgement to another instance: each counts the ones it receives in the
+receipt record they share.
 [`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
 [`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
 its own pair on the shared engine. The IndexedDB pair is one store shared by both carriers'
@@ -283,7 +286,7 @@ like any unknown control id. The same file defines `al.control.receipt.v1`, the
 WS server's word to an origin, addressed and routed to `originPeerId`.
 
 On the WS server the same inbound admission runs for every client message,
-with two receipt rules. A `receiver` or `leader` room message the server aggregates
+with two receipt rules. A `receiver` or `leader` room message the server answers a receipt for
 withholds the server's own ACK
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would forward the
@@ -292,16 +295,21 @@ recipient is the server keeps its ACK. The server receives an authorized room un
 session itself (D71), so its router delivers it; a unicast to a session outside the room's admitted audience is
 refused before admission. A receiver's ACK for a room message
 is addressed to the origin, not to the server; the server admits it as the
-aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
-lives, the ACK speaks for its own sender, and it confirms an uncounted
-member of the frozen audience. Every other such ACK is refused at ingress as
-a typed value, except on an instance that holds no aggregate for it: with a
-cluster relay channel, an ACK that speaks for its own sender, is addressed
-to the origin it names and names a message the shared inbound store froze to
-that sender is handed to the instance that holds the aggregate instead, at most 8 relays per session per
-admitted message per 60 s; a session whose ACKs fail that proof 60 times in 60 s has its unowned ACKs refused
-unread. A notice that cannot be published is admitted where it arrived, where it counts nothing; the origin's
-ACK-timeout retry recovers it (D106; outbound README, "Server receipts on WS").
+hop that relayed the message, on whichever instance it arrives, and counts it in the
+[receipt record](../receipt-record/README.md) every instance shares. At ingress the
+server checks only what needs no store: the ACK speaks for its own sender, and the
+receipt hook (`readRelayedAckRejection`, asynchronous) checks that it is addressed to
+the origin it names. In the
+inbound runtime the hook reads the record once: an ACK the record's validator refuses
+(an ended receipt, a sender outside the frozen audience, a passed deadline, a recipient
+the server never sent the message) is refused as a typed value and writes nothing. An ACK
+that finds no record must be proven by the inbound admission row every instance shares:
+the row holds the message under the origin the ACK names, with the ACK's sender in the
+audience admission ran under (the volatile store's answer first, then the durable one's).
+A proven one is counted ahead of the record; an unproven one is refused. A repeated ACK
+is counted as a no-op, not refused (outbound README, "Server receipts on WS"). The
+inbound authority does not keep a control message for admission while its room view
+is behind; the production authorizer authorizes every control.
 
 Every control carries its subject's trace. The commit bundle stamps the ACK, NACK and repair controls
 it writes with the admitted message's `id.traceId`. The WS server's inbound-authority NACK takes the

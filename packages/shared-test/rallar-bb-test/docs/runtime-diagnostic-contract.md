@@ -1249,8 +1249,28 @@ are the sync points of a paired `agent.reload`.
 The gated API timing stream carries `wsReceipt` separately from browser diagnostics.
 The [WS server owner map](../../../shared/services/ws-queue-box-server/README.md#private-receipt-evidence)
 names the producers and the [safe capture projection](../../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts)
-owns the retained closed fields. Existing socket-decision, ack-count, ack-relay and
-receipt-outbox records remain intact. Three additional variants join a generated
+owns the retained closed fields. Every instance counts the ACKs it receives in the
+receipt record the instances share, so no record names a relay of an ACK to another
+instance: the projection refuses a record of the deleted relay's kind or refusal
+owner. The ACK records are these:
+
+- `socket-decision`: the socket's admission decision for the ACK control.
+- `ack-rejection`: an ACK refused by its owner, `inbound-authority` (currentness) or
+  `receipt-aggregation` (the receipt hook's guards: `aggregate-absent`,
+  `origin-addressee-mismatch`, `sender-recipient-mismatch`, `outside-frozen-audience`,
+  `deadline-expired`, `never-sent`); a refusal that read no head states no deadline.
+- `ack-count`: what one count read. `outcome` is `rejected`, `conflict` (the record
+  refused the write, and the origin's retry recovers it), `partial` or `complete`
+  (an open view whose tally is complete); `after` is the view a counted ACK returned,
+  absent for a refused or conflicting count and for one counted ahead of its record.
+  It states no `before` and no `source`. A repeated ACK writes nothing and is
+  observed with its view's outcome, not refused.
+- `receipt-outbox`: the enqueue of an issued receipt. A server publication's terminal
+  receipt is enqueued nowhere and records none.
+
+An admission whose largest terminal receipt no receipt control could carry opens no
+receipt and records nothing here: it writes one `receipt-not-encodable` warning.
+Three additional variants join a generated
 receipt's control id, subject/origin, phase and exact audience snapshot:
 
 - `receipt-work`: worker id, compact effect/work locators, actual effect kind,
@@ -1276,13 +1296,12 @@ trace is refused whole:
   subject's
 - `business-socket-decision` carries the subject message's own trace
   (`WsQueueBoxServerReceiptBusinessFacts.traceId`)
-- `socket-decision`, `ack-relay` and `ack-rejection` carry the ACK control's
+- `socket-decision` and `ack-rejection` carry the ACK control's
   own trace (`WsQueueBoxServerReceiptAckFacts.traceId`), which equals its
   subject's in production because the ACK is built with it; a refusal without
   a decoded control identity records nothing
-- `ack-count` carries the live aggregate's trace, else the counted control's;
-  its `source` is `local` or `relayed`, since the test-only `direct` count is
-  gone
+- `ack-count` carries the trace of the receipt its view read, else the counted
+  control's
 
 Facts are frozen before mutable consumers and sink calls wait for the real work
 batch's mandatory release/end logic. Callback evidence never asserts release

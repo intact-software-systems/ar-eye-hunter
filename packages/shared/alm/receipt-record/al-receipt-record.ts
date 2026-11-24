@@ -315,7 +315,8 @@ function computeHeadSchedule(head: ALReceiptRecordHead): HeadSchedule {
 
 /**
  * First write wins, with one exception: the owner's `not-sent` replaces a `confirmed` row of a recipient
- * the head names never sent, which only an ACK written ahead of the head can have stored.
+ * the head names never sent, which only an ACK written ahead of the head can have stored. It relies on the
+ * confirmation validator, which runs first, for the head being open and its deadline being ahead.
  */
 function isReplacedByConfirmation(
     head: ALReceiptRecordHead | undefined,

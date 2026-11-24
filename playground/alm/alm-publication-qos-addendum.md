@@ -1578,9 +1578,8 @@ is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
 over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
-not recovered, renewal held on direct links and not through an `rtc` relay
-until the relay statement rules (D725 to D730), and a send can end `failed` although delivered when the server no longer holds
-its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
+not recovered, and renewal holds on direct links and not through an `rtc` relay
+(D680, D683, D693 and the backlog); and the lost stream
 start over `rtc` is its own slice (D669). The held-send path is built (D696 to
 D700): a send the server keeps starts its receipt when the server admits it, at
 ingress or at its replay, so a send kept behind its room view and then admitted
@@ -1589,10 +1588,16 @@ later refuses is answered with the refusal's NACK (D698); and a `timed-out`
 receipt always ends its receipt at the WS client (D699). Its stated limits: a
 kept send that expires is not reported, since the handle's own deadline says so
 (the maintainer's ruling); a kept send that names no deadline keeps the kept
-row's; without a relay publisher an ACK on another instance than the one that
-admitted the send is lost; a send the server loses in a restart reads `expired`
-at its deadline (D694); and a receipt does not survive its server's crash, which
-`api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
+row's; and a send the server retains and then loses in a restart, before it
+admits it, reads `expired` at its deadline (D694). The receipt itself is counted
+in a durable receipt record every server instance shares
+(`packages/shared/alm/receipt-record/README.md`): an ACK counts on whichever
+instance it reaches, a duplicate is answered from the record on any instance, its
+terminal receipt included once the receipt has ended, so a delivered send does
+not end `failed` because the instance it reached holds no receipt (D678), and the
+receipt survives the crash of the server that admitted the send:
+`api-v1-cluster-publisher-instance-loss` kills that server's process, and the
+publisher, reconnected to a survivor, reads `complete`. A send kept after a lost
 commit race whose recipients all left by its replay expects the recipients
 captured at ingress, so its handle reads `expired` at its deadline (D701). The
 local baseline's alternating runs are pull request 851 (D672). The relay

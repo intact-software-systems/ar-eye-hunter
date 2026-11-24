@@ -728,7 +728,7 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `recipientPeerIds` to the listed sessions, and for a `group-leader` send to the director session the room
   authorizer resolves from the snapshot it reads, the leader alone in the narrowed `sessions`; that narrowed set
   is the room audience its receipt
-  aggregate expects and its repair serves, and the send is fenced on the room's roster as any room
+  expects and its repair serves, and the send is fenced on the room's roster as any room
   send (D143, D159). A multicast an RTC origin froze that falls back to WS keeps its frozen set
   narrowed to the sessions the server authorizes: a frozen audience narrows what the admitting
   authority allows and never widens it, and an empty intersection means nobody, never "no filter".
@@ -749,24 +749,25 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
 
 A `receiver` or `leader` room send over WS expects nobody when it is admitted
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)):
-the WS server freezes the audience and answers for it. A `leader` send is the same aggregate with
+the WS server freezes the audience and answers for it. A `leader` send is the same receipt with
 one expected recipient, the director session, so the `admitted` receipt names the director and the
 director's ACK completes it. Each recipient's ACK stays addressed to the origin (`toPeerId` is the
-message's `senderId`); the server admits it at ingress as the aggregating relay hop and counts it in
+message's `senderId`); the server admits it at ingress as the hop that relayed the message and counts it, through
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-held in memory on the instance that admitted the message: the one whose socket admitted it, or, for a send the
-server kept, the one whose replay, or a copy's own admission, admitted it, which can be another instance than the
-origin's. It is a
-`LatestRepository` of at most
-`WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES` (4 096) aggregates (D191). Its TTL is the 30 min receipt window plus
-the receipt deadline grace, strictly above every aggregate's deadline, so the deadline sweep is the one path that ends
-an aggregate by time and the repository never drops one before its `timed-out` receipt is written. An admission that
-finds the cap reached ends the oldest admitted aggregate as its deadline would, with a `timed-out` receipt naming the
-recipients confirmed so far, so sessions that leave and rejoin cannot grow the set within the window. The server answers the origin
+in the [receipt record](../receipt-record/README.md) every instance of the server shares: any instance counts any
+ACK, ends the receipt and answers a re-sent copy, so the receipt is the same whether or not the instance that
+admitted the send survives. The admission that opens the record is the one whose socket admitted the message, or,
+for a send the server kept, its replay or a copy's own admission. The record expects the frozen audience, keeps one
+confirmation row per answering recipient, and holds the deadline as durable work any instance claims: the message's
+own deadline, else its ACK timeout, never beyond the record's 30 min window. A send to more than 256 recipients is
+admitted and gets no receipt, and one whose largest terminal receipt no receipt control could carry opens none
+(`receipt-not-encodable`, one warning). The server answers the origin
 with `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the
 origin's socket on this instance or, through the cluster publisher, on another: `admitted` at once
 with the frozen audience, then `complete` when every expected recipient has acknowledged, or
-`timed-out` at the message deadline naming whom it counted. Every receipt row expires at the message
+`timed-out` at the message deadline naming whom it counted. The terminal receipt is enqueued by the record's ended
+work, on whichever instance claims it, under one control id derived from the origin and the message id
+(`toWsQueueBoxServerEndedReceiptControlId`), so a work row claimed twice enqueues one receipt. Every receipt row expires at the message
 deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row
 whose origin has no session on the instance that dequeues it is not settled by its first cluster
 publication: its send
@@ -800,23 +801,27 @@ commits, each fenced on the sender version: a crash between them, or a resend wh
 attempt that wrote no frame, and an `admitted` receipt that lands between them still lets that one frame out. A send
 with retry `none` waits for the server alone.
 
-**A duplicate is answered `admitted` again.** The server admits a message once by its id: a re-sent copy is accepted
-`duplicate` or `pending-admission` and never delivered twice. A retained send has no aggregate until it is admitted,
-by its replay or by a copy's own admission, whichever comes first, and the server starts one aggregate and its
-`admitted` follows; a copy that is itself retained behind the room view is answered that view's NACK again and nothing
+**A duplicate is answered from the record.** The server admits a message once by its id: a re-sent copy is accepted
+`duplicate` or `pending-admission` and never delivered twice. A retained send opens no record until it is admitted,
+by its replay or by a copy's own admission, whichever comes first, and its `admitted` follows; a copy that is itself retained behind the room view is answered that view's NACK again and nothing
 else. A send kept after a lost commit race whose other recipients have all left the room by its replay still expects
 the recipients it captured at ingress: its `admitted` names them, none of them is sent the message, so the server
 refuses an ACK from any of them as one from a recipient it never sent the message (guard `never-sent`), and its
 `timed-out` at the deadline names them unconfirmed, so the handle reads `expired` at its deadline
 (`ws-kept-send-receipt.test.ts`).
 A send kept behind the room view captured no audience, so it expects the current one and, with nobody left, is
-admitted to nobody and reads `acknowledged`. While the aggregate keyed by that
-sender and message id is live, the server answers the copy with the `admitted` receipt again, to that sender alone
-([`writeAdmittedReceipt`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)); a copy
-accepted `not-admitted`, `resync-required` or `disposed` is answered nothing. The sender admits an identical second
-`admitted` without a write, and one with a newer confirmed set as progress. Where no live aggregate holds the receipt
-(another instance, a restart, an aggregate already completed) nothing is answered, so a send whose `admitted` was lost
-there can end `failed` although it was delivered.
+admitted to nobody and reads `acknowledged`. The server answers the copy from the record, on any instance, to that
+sender alone and under a fresh control id
+([`writeAdmittedReceipt`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)): `admitted`
+with the confirmations so far while the receipt is open, and the terminal receipt, from the record's own sets, once
+it has ended. A copy that finds no record opens it from the inbound admission row's audience, frozen as a first
+admission freezes it, and is answered `admitted`; that covers an admitting instance lost between its admission's
+commit and its record. Such a copy opens nothing when it has no admission row, when the message names no deadline or
+one beyond the record's window, when the message is as old as the window by its own stamp, or when the row freezes to
+nobody. A copy accepted `not-admitted`, `resync-required` or `disposed` is answered nothing. The sender admits an
+identical second `admitted` without a write, and one with a newer confirmed set as progress; a sender that already
+holds the terminal receipt refuses the second as it refuses any receipt for an ended message. A memory-only server
+keeps no record across a restart.
 
 The server's other controls (its ACKs, NACKs and repair requests) come from its inbound work, which any
 instance may claim. The claiming instance sends one to a socket it holds; when it holds none for the
@@ -834,7 +839,7 @@ cluster notice
 that every other instance hands to its own sockets without running a handler. The notice is best effort and one
 attempt: an instance whose listener is down misses it. A live-only publication whose notice would reach the
 NOTIFY limit and that has no canonical inbound row to point at is refused `failed`, never moved to the outbox.
-Either way the receipt is the aggregate above, so a recipient the one send did not reach, or that never
+Either way the receipt is the record above, so a recipient the one send did not reach, or that never
 acknowledged, reads unconfirmed and the receipt ends `timed-out` naming it. A `none` topic runs its handlers only.
 
 The server's own state-sync rows never pass the router: they are `WS_OUTBOX` rows with a frozen audience. The
@@ -845,31 +850,27 @@ described below and the admin read shows who confirmed it under the request's tr
 snapshot page keep `ack: 'none'`: a principal audience names no room to confirm against, and a snapshot page is
 superseded by the next one.
 
-A recipient's ACK reaches the server through the recipient's own socket, which may be on another instance than
-the aggregate (D106). An instance that holds no aggregate for the ACK checks what needs none (the sender is the
-authenticated session, the ACK speaks for itself and is addressed to the origin it names) and relays it once as a
-`relayed-ack` notice on the cluster notice channel
-([`WsQueueBoxServerAckRelay`](../../services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts),
-[`relayed-ack-notice.ts`](../../../shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts)); its ingress
-answers an unhandled `control` instead of a refusal. The instance that holds the aggregate counts it with the same
-checks as a local ACK; any other instance drops it, and nothing relays it again. The notice is best effort and one
-attempt: a lost one leaves the recipient unconfirmed until the origin's retry, and the receipt ends `timed-out` naming it
-when none confirms it. The relay runs
-only with Postgres pub/sub; a single instance still refuses an ACK it holds no aggregate for. An ACK addressed to
-the server is never relayed: the server's own pending row lives in the shared outbound admission store. The relay is
-bounded twice before it publishes, each refusal a typed value at ingress. First the inbound admission store, which every
-instance shares, must hold the message the ACK names, sent by the origin it names, with the ACK's sender in the audience
-frozen at ingress (`readIngressAudience`); a forged ACK (unknown message, sender outside the audience, another origin) is
-refused after one store read and costs no notice. The outbound admission store cannot answer this, because it records an
-admitted audience only for a message the router enqueued on an `outbox` topic. Then each session may hand over 8 ACKs per
-admitted message per minute, its ACK of every copy a retrying origin sends, so a genuine ACK stream is bounded as well; a
-session whose ACKs fail the store proof 60 times per minute has its unowned ACKs refused before that read. A notice that
-cannot be published is admitted where it arrived, where it counts nothing, and the origin's ACK-timeout retry recovers it.
+A recipient's ACK reaches the server through the recipient's own socket, which may be on another instance than the
+one that admitted the message; the instance it reaches counts it, and nothing is handed to another instance. At
+ingress the server checks what needs no store: the sender is the authenticated session, the ACK speaks for itself and
+is addressed to the origin it names. The inbound runtime then reads the record once, in the refusal hook
+`readRelayedAckRejection` (named for the server's relay of the origin's message to its recipients). With a record, it
+refuses, as a typed value, what the record's own validator refuses: an ended receipt, a sender outside the frozen
+audience, a passed deadline, a recipient the server never sent the message. With none, it proves the ACK against the
+inbound admission store, which every instance shares: the store must hold the message the ACK names, sent by the
+origin it names, with the ACK's sender in the audience admission ran under (`readIngressAudience`, the volatile store
+first, then the durable one). A forged ACK (unknown message, sender outside the audience, another origin) is refused
+after those reads and writes nothing. A proven ACK that finds no record has overtaken the record's `open` and is
+counted ahead; the `open` that follows counts it, or the ACK's own read after its write finds the record and ends it
+when complete. The outbound admission store cannot prove such an ACK, because it records an admitted audience only for
+a message the router enqueued on an `outbox` topic. A repeated ACK writes nothing and is not refused. An ACK addressed
+to the server is counted in the record when it acknowledges the server's own receipted publication (below); any other
+goes to the server's outbound owner.
 
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
 A unicast addressed to the server, and every `hop` or `subtree` send, expects the server's own ACK: the server is the
-one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`targets.groupRef`) is aggregated like a
+one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`targets.groupRef`) is counted like a
 room send over one member: the router delivers it to its addressee
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
 `admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
@@ -913,7 +914,7 @@ answers the NACK, starts no receipt, and the handle reads `rejected`. Like `held
 NACK refuses the whole send whatever the receipt and ends it: a held dispatch already has its `admitted` receipt when
 `route` re-reads the grant.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
-aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
+receipt record (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is counted over that
 audience verbatim, so a session that left since reads unconfirmed (D73), and a recipient whose ACK confirms nobody
 (`subtree-complete-not-subscribed`) is recorded in the receipt's `outsideAudienceRecipientPeerIds`, never confirmed.
 
@@ -958,9 +959,13 @@ stays for the server's own principal rows. One predicate,
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
-(D38): the durable receipt. The aggregator is its one settlement authority. The server admits each
-terminal receipt it writes through the same receipt admission as the origin, so a `complete` receipt
-leaves that row complete and its `ack-timeout` stops retransmitting, on whichever instance claims it.
+(D38): the record of what is still to be retransmitted. The receipt record is its one settlement authority, and
+the row learns of no confirmation before the receipt ends: the record's ended work admits the terminal receipt
+through the same receipt admission as the origin, so a `complete` receipt leaves that row complete and its
+`ack-timeout` stops retransmitting, on whichever instance claims it. Until then a retry asks only for the recipients
+the record has not confirmed or placed outside, and one whose receipt has ended or whose deadline has passed asks for
+nothing
+([`toWsQueueBoxServerUnconfirmedRepairRequest`](../../services/ws-queue-box-server/receipt/to-ws-queue-box-server-unconfirmed-repair-request.ts)).
 That row is not the origin's kept final snapshot: once complete, the next `ack-timeout` deletes it,
 and nothing reads it after that. The router hands the audience it admitted to the outbox beside the
 message, never on the wire, where a room larger than the collection limit would not fit: the plan
@@ -977,14 +982,21 @@ names its room (D104). The router freezes any publish that carries a `groupRef`,
 any fanout but `none` and from any sender, to the room's live sessions at publish
 ([`readRallarServerWsPublicationAudience`](../../../shared-server/rallar-system/websocket/router/rallar-server-ws-publication-audience.ts));
 a proxy publish takes the audience the room authorizer grants, and an admitted client message keeps the audience it
-was admitted to. The server's pending row expects those sessions. The publishing instance's dequeued send checks the
+was admitted to. The server's pending row expects those sessions. A logically receipted one is counted in the
+receipt record too, opened at its dequeue from that pending row, so its ACKs take no fenced commit on the server's
+version row; only a publication whose opening the record or the codec refuses (more than 256 sessions, a receipt the
+control cannot carry) is still counted per ACK in the row ([receipt record README](../receipt-record/README.md)). The
+publishing instance's dequeued send checks the
 policy its own commit wrote and reads nothing back. Every other instance's receive, and the receipt or prepared-message
 publication, read the row's captured policy once from the shared admission store (`readCapturedPolicy`). Every send
 fails closed on a row that differs from its admission, and narrows to the audience it holds. Every settlement of the
 server's outbound owner feeds one bounded in-memory recorder per process
 ([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
-sessions, the last settlement kind and whether the receipt ran out (D61, D73).
+sessions, the last settlement kind and whether the receipt ran out (D61, D73). For a publication the record counts,
+it learns of the receipt when the receipt ends, not after each ACK: one everybody confirms reads `acknowledgement`
+within milliseconds of its last ACK, and one somebody never confirms reads it at its deadline, ended `timed-out`
+rather than `receipt-exhausted`, with the unconfirmed sessions named.
 
 **Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
 an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
@@ -1088,11 +1100,13 @@ sessions and keeps a co-member's, and a row naming neither a room nor a principa
 addendum's Slice 7 limits). A receipt retry records outside only the drops it still waits on. At send each instance
 re-checks against its own open sockets (`local`), and the cluster bridge reports the captured sessions that re-check
 dropped beside the recipients it skipped below their position, judged only when the session's socket here is open; a
-session live nowhere is left to the retry's durable re-check. On the server's own rows (its publications and every
-producer row it sends under its peer id) a recipient the WS server skipped below its position, or a session a re-check
-dropped, is recorded in `outsideAudiencePeerIds` of the server's own pending receipt through one fenced commit
-(`ALOutboundAdmissionStore.commitOutsideAudience`), tried three times on a lost fence and then reported as one
-`outside-audience-commit` outbound diagnostic; on a relayed row the origin hears it as an outside-audience ACK. The
+session live nowhere is left to the retry's durable re-check. On a relayed row and on the server's own rows (its
+publications and every producer row it sends under its peer id) alike, a recipient the WS server skipped below its
+position, or a session a re-check dropped, is one `outside` confirmation in the receipt record: the server's
+outside-audience ACK, counted on the instance that dropped it as any ACK is
+([`writeOutsideAudience`](../../services/ws-queue-box-server/ws-queue-box-server-track-order.ts)), which the origin
+reads in the receipt's `outsideAudienceRecipientPeerIds`. A server publication's drop at its dequeue precedes its
+record and is counted ahead; the record, which expects only the judged audience, never tallies it. The
 read records
 whenever the stored row holds no positions yet, and stamps nothing on the stored canonical: the full priors live on
 the sent row (`ALStoredOutboundMessage.sentPositions`, `null` when nothing was recorded, which a row written before
@@ -1114,7 +1128,7 @@ Known limitations:
 - Nothing tells the publishing instance that another one delivered a receipt, so a receipt whose origin
   is connected elsewhere, or whose row another instance claimed first (the WS namespace is shared across
   the cluster), is published until its row expires: 8 publications for a 30 s message, 27 for a 10 min
-  one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
+  one, about 67 at the 30 min receipt window, each one an idempotent no-write refusal at the origin.
 - On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
   non-retryable, so a receipt row it claims stops being published.
 - A multicast or a room broadcast that carries a `groupRef` is authorized in the room it names, but its
@@ -1173,7 +1187,7 @@ peer send is frozen in the granted leg as a multicast of one and relayed, receip
 `rtc-with-ws-fallback` the same envelope is re-admitted on WS when the RTC leg states a retryable outcome inside the
 deadline (D63): the addressee is not in the ready set (`no-route`); the addressee is connected but is not the
 origin's overlay next hop, is missing from the room's active sessions, or the room is in a carrier gap (three
-`not-ready` attempts); or the receipt ran out. On WS the room's router delivers it and the server aggregates the
+`not-ready` attempts); or the receipt ran out. On WS the room's router delivers it and the server counts the
 one-member receipt (D71). A peer send to the server id is refused `unsupported` on an
 RTC strategy: the server is addressed over WS (D76). A peer send whose `contextId` names another room than its own is
 refused at the sender.

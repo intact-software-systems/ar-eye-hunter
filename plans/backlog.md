@@ -746,32 +746,27 @@ and it has no status list.
   is no receipt and no later frame to reveal the gap (a stated limit of the
   design, pinned by `lost-repair-frame-stream.test.ts`). Open decision: whether
   an `ack: 'none'` stream states its end, so a receiver can see a lost tail.
-- A WS send can end `failed` although delivered when the server that admitted
-  it no longer holds its receipt: another cluster instance, a restart, an
-  aggregate that completed and whose `complete` was also lost, or a runtime
-  being disposed (D678). The server's repeated `admitted` answers only from a
-  live aggregate. Open decision: a stored or cluster-wide receipt lookup on a
-  duplicate. A send the server retains behind its room view no longer ends so:
+- A retained WS send the server loses in a restart, before it admits it, is
+  not recovered by the client, and its handle reads `expired` at its deadline:
   the server's `not-yet-in-sync` ends the first-hop wait (D694), and the send
-  reads its receipt once the server admits it (D697). What remains of that
-  case: a retained send the server then loses (a restart) is not recovered by
-  the client, and its handle reads `expired` at its deadline. No step ruled;
-  for the maintainer.
+  reads its receipt only once the server admits it (D697). No step ruled; for
+  the maintainer. (A duplicate of an admitted send is answered from the receipt
+  record on any instance, its terminal receipt included, so the rest of D678's
+  case is closed.)
 - The WS server does not report to its sender a retained send that reaches its
   deadline still kept: the handle reads `expired` at the deadline. It stays so
   by the maintainer's ruling of 2026-11-20 ("No, the handle's own deadline",
   D696); a retained send its room refuses is answered with the refusal's NACK
   when the refusal sends one (D698).
-- In a cluster a kept send's receipt lives on the instance whose replay admits
-  it (D696). Without a relay publisher an ACK that lands on another instance
-  is lost and its recipient stays unconfirmed.
 - A kept send that names no deadline keeps the kept row's deadline as its
   receipt deadline (D696). The WS client stamps one (`ts + 30 000`), so only a
   frame that reaches the server without a TTL, a runner's, would read its
   `timed-out` later than a fresh one would. That such a raw frame keeps the
   kept row's deadline at the server is read from
   `al-inbound-message-admission.ts:233-234` and
-  `ws-queue-box-server-receipt-aggregation.ts:466-469`, not run.
+  `toWsQueueBoxServerReceiptOpening`
+  (`ws-queue-box-server/receipt/to-ws-queue-box-server-receipt-opening.ts`),
+  not run.
 - Built by the maintainer's ruling of 2026-11-21 ("Expect the captured
   audience", D701): a send kept after a lost commit race whose recipients have
   all left the room by its replay expects the recipients captured at ingress;
@@ -779,13 +774,6 @@ and it has no status list.
   them unconfirmed, and the handle reads `expired` at its deadline
   (`ws-kept-send-receipt.test.ts`, "a send kept after a lost race whose
   captured audience has left by its replay expects that audience").
-- A cap-evicted `timed-out` that confirmed nobody ends the server's own row of
-  an outbox-fanned room message before its deadline, and the server sends its
-  recipients nothing more (a characterization in
-  `ws-queue-box-server-receipt-aggregation.test.ts`). The same run with the
-  `timed-out` condition of `compute-al-outbound-receipt-admission.ts` put back
-  as it was before the held-send slice shows the same, so the slice did not
-  change it. Ruled 2026-11-21: leave it recorded.
 - Every lost-race admission of a receipted room send awaits one outbox write
   inside the inbound worker, whose concurrency is one; no figure exists.
 - The publisher recipe adds a fixed 41 s wait to the cluster profile. Ruled
@@ -796,6 +784,12 @@ and it has no status list.
 - A kept row polls the room authorizer every 50 ms while the room view is
   behind, and its replay does not read the sender's connection again (the
   held-send design's non-goals, D696).
+- A room member that never received a message can send an ACK the server
+  counts before the message was delivered. It belongs with the relay statement
+  rules (part C). In a send kept after a lost race whose captured audience has
+  left, the receipt records that audience never sent, so an ACK from such a
+  recipient is refused (`never-sent`) and the handle reads `expired`
+  (`ws-kept-send-receipt.test.ts`, D701, D708).
 - A replay hand-over (`onReplayAdmitted`) that rejects skips
   `recordReplayedAdmission` and `commitWork`: the message's diagnostic records
   the retry's `duplicate`, never `admitted`, and the delivery it wrote waits
@@ -1047,19 +1041,45 @@ and it has no status list.
   defaults is not stamped into its `qos` (#868, D712: explicit plans never
   stamp), so a fresh WS client of such a track can ask for a sequence superseded
   before it was sent and wait for the bounded hold.
-- After the instance that admitted a publication crashes, the publisher,
-  reconnected to a survivor, reads neither `complete` nor `timed-out` for it
-  (`api-v1-cluster-publisher-instance-loss`, D700); a receipt that survives a
-  server crash is its own slice. In one of three runs a survivor delivered the
-  crashed server's `admitted` for that publication to the reconnected publisher
-  three times, asserted neither way; the recipe's `timed-out` absence was
-  never shown firing.
+- The receipt row's republication delivers one receipt more than once under
+  one control id until its origin acknowledges it: in one of three runs of
+  `api-v1-cluster-publisher-instance-loss` a survivor delivered the crashed
+  server's `admitted` to the reconnected publisher three times. The publisher
+  admits an identical repeat without a write; no recipe asserts the count.
 - A session whose server crashed stays in the room's presence: the receipt of
   a later broadcast still expects it and ends `timed-out` (D669,
   `api-v1-cluster-subscriber-instance-loss`). What ends such a presence, and
   when, is not read by any recipe.
-- Unread: in an exploratory run of that recipe a second `admitted` receipt for
-  one broadcast reached the publisher after the first was consumed.
+- Unread: in an exploratory run of the publisher recipe a second `admitted`
+  receipt for one broadcast reached the publisher after the first was consumed.
+  It is either the receipt row's republication (one control id, above) or the
+  answer to a re-sent copy (a fresh control id); the run did not read which.
+- A WS server's receipts backlog under five publishers at +5 ms per round
+  trip: with five publishers at 2 Hz the receipts backlog after their
+  enqueue, on the server's one outbound identity. About 75 % of receipt
+  enqueues conflict on its version fence, and unconflicted ones also wait 5 to
+  8 s in its drain, while the enqueue attempts stay flat (about 205 ms); the
+  last ten messages read `complete` 4 to 6 times later than the first ten (p50
+  7 to 11 s). Every receipt stays exact and arrives before its 30 s deadline,
+  the count stays at about 71 ms from the last ACK, and one publisher keeps up.
+  The room messages' own fan-out is strained too (p95 about 6 s in one run).
+  The lever: take receipts off the server's one outbound identity, for example
+  delivering them from the receipt record's own work rows; the cause between
+  the fence, the drain's throughput and the pool is measured first. For the
+  maintainer.
+- A stall longer than half an ACK window on a server publication's receipt
+  (D778): when the receipt record's end and its ended work together take
+  longer (a stalled instance; a survivor that learns of the row only at its
+  next readiness read, up to 3 s), the row's retransmission budget ends first
+  and the admin read says `receipt-exhausted` naming nobody confirmed, while
+  the record's head stays exact. Derived from the code; no test holds the
+  stall. Two levers, both in `alm/outbound`: state the record's settlement
+  when the row refuses the terminal receipt, which duplicates the runtime's
+  settlement stamping, or a pending row that says its receipt is counted
+  elsewhere.
+- A survivor taking over a receipt record work row whose lease a killed process
+  held is not shown: the PostgreSQL cluster cases lose an instance by disposing
+  it, and only the black-box cluster recipe kills a process.
 - The database-session recipe (D666) proves delivery to the cut process's
   socket resumes; it does not say by which path. The secondary's log shows one
   `listener-subscribe`, at start, and no error after the cut, so whether the
