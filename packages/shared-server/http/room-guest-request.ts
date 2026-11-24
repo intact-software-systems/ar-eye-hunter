@@ -1,7 +1,7 @@
 import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-session-types.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { readRoomGuestCredential, ROOM_GUEST_TOKEN_PREFIX } from '../rallar-system/auth/credentials/room-guest-credential.ts';
 import { authenticationRequired, authorizationDenied } from './request-auth-service.ts';
 

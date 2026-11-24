@@ -1,4 +1,4 @@
-import { isGuestInvitationVerifier, isRoomGuestDisplayName } from '@shared/api/room-guest-invitation.ts';
+import { isGuestInvitationVerifier, isRoomGuestDisplayName } from '@shared/api/room-guests/invitation.ts';
 import { isBase64UrlOfByteLength } from '@shared/encoding/base64url.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';

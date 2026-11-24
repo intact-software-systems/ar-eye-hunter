@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation, isRoomGuestLease } from './room-guest-invitation.ts';
+import { isRoomGuestInvitation, isRoomGuestLease } from './room-guests/invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';

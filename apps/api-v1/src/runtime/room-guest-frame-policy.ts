@@ -4,7 +4,7 @@ import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 import { decodeRtcSignalingEnvelope } from '@shared/webrtc/decode-rtc-signaling-message.ts';
 import { allowsGuestStateSync } from './room-guest-state-sync.ts';

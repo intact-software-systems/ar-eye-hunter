@@ -1,6 +1,6 @@
-import type { RoomClockMutation } from './group-deadlines/room-clock.ts';
-import type { Group, GroupMember } from './group-types.ts';
-import { readRoomTimeline } from './group-deadlines/room-timeline.ts';
+import type { RoomClockMutation } from '../group-deadlines/room-clock.ts';
+import type { Group, GroupMember } from '../group-types.ts';
+import { readRoomTimeline } from '../group-deadlines/room-timeline.ts';
 
 export const GUEST_PLAY_TIMELINE = 'guest-play';
 

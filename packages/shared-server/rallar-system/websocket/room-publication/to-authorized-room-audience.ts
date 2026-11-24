@@ -4,7 +4,7 @@ import {
     toALLeaderNarrowing
 } from '@shared/al-contracts/al-audience-narrowing.ts';
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

@@ -1,5 +1,5 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { resolveGroupPublicationPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupTopicSubscription } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';

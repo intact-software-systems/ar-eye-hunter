@@ -32,7 +32,7 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../group-state-validation-primitives.ts';
-import { isRoomGuestInvitation, isRoomGuestLease } from '@shared/api/room-guest-invitation.ts';
+import { isRoomGuestInvitation, isRoomGuestLease } from '@shared/api/room-guests/invitation.ts';
 import { requireUnitRate } from '../require-unit-rate.ts';
 import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 

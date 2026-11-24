@@ -2,7 +2,7 @@ import { requireEpoch, requireExactKeys, requirePositiveInteger, requireRecord, 
 import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
 import { assertValidRallarGroupRef } from '@shared/api/rallar-validation.ts';
-import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guest-access.ts';
+import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guests/access.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';

@@ -1,8 +1,8 @@
 import type { Hono } from 'hono';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
-import { hashRoomInvitationSecret, isGuestInvitationVerifier, isRoomGuestDisplayName, type RoomGuestRedemption } from '@shared/api/room-guest-invitation.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
+import { hashRoomInvitationSecret, isGuestInvitationVerifier, isRoomGuestDisplayName, type RoomGuestRedemption } from '@shared/api/room-guests/invitation.ts';
 import { ApiMutationRouteFailure, createApiMutationFailure, toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';

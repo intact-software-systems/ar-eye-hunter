@@ -1,5 +1,5 @@
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
-import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guest-invitation.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
+import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
 import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { AuditStamp, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 

@@ -1,4 +1,4 @@
-import { isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
+import { isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
 import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,

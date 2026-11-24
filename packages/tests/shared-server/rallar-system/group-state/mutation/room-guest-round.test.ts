@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { createGroupSnapshotFixture } from '../../../../shared-web/authoritative-group-fixtures.ts';
 import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-update.ts';
-import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 
 it('pins an admitted participant to the deadline in effect at lease expiry, across extensions and host takeover', () => {
     const snapshot = createGroupSnapshotFixture({ applicationId: 'app', workspaceId: 'ws', groupId: 'town', sessionIds: ['bob-session'] });
@@ -45,7 +45,7 @@ it('restores a paused occurrence after restart without giving it a later cutoff 
 });
 
 it('a finishing guest director may only close the guest occurrence with an empty successor roster', async () => {
-    const { closesGuestPlayOccurrence } = await import('@shared/api/room-guest-access.ts');
+    const { closesGuestPlayOccurrence } = await import('@shared/api/room-guests/access.ts');
     const end = { operation: 'advance-phase', phase: 'results', name: 'guest-play', expectedRevision: 4,
         expectedDirectorEpoch: 2, durationMs: 1 } as const;
     expect(closesGuestPlayOccurrence(end)).toBe(true);

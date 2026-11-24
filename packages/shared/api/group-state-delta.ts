@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation, isRoomGuestLease } from './room-guest-invitation.ts';
+import { isRoomGuestInvitation, isRoomGuestLease } from './room-guests/invitation.ts';
 import {
     validateAuthoritativeActiveGroupSession,
     validateAuthoritativeGroupEvent,

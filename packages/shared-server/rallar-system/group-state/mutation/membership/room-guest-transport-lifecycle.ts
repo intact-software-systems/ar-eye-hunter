@@ -1,7 +1,7 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
-import { GUEST_PLAY_TIMELINE, roomGuestCredentialExpiresAt } from '@shared/api/room-guest-access.ts';
-import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guest-invitation.ts';
+import { GUEST_PLAY_TIMELINE, roomGuestCredentialExpiresAt } from '@shared/api/room-guests/access.ts';
+import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guests/invitation.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { encodeRuntimeStateJsonValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { roomGuestTransportSessionId } from '../../../auth/credentials/room-guest-credential.ts';

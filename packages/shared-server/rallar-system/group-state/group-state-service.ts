@@ -1,5 +1,5 @@
 import { readRoomGuestTransportRows } from './mutation/membership/room-guest-transport-lifecycle.ts';
-import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';

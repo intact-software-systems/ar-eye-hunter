@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { redeemRoomGuestInvitation } from '@shared-web/browser/rooms/room-guest-access.ts';
+import { redeemRoomGuestInvitation } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
 
 const room = { applicationId: 'app', workspaceId: 'ws', groupId: 'town' };
 const options = { requestId: 'a-stable-request-id-12345' };

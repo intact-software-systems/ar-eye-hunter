@@ -1,5 +1,5 @@
 import { readRoomTimeRecords, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
-import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guest-access.ts';
+import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guests/access.ts';
 import type { Group, GroupMember } from '@shared/api/group-types.ts';
 import { computeGroupClockChange, withGroupTimeRecord, type ClockRefusal } from './compute-group-clock-change.ts';
 
