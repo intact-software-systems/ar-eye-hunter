@@ -49,4 +49,3 @@ function isLiveRoomPeer(snapshot: GroupSnapshot, sessionId: string, now: number)
     const member = peer && snapshot.members.find(row => row.principalId === peer.principalId);
     return member?.status === 'active' && (!member.guestLease || roomGuestAccessMode(snapshot.group, member, now) !== 'expired');
 }
-
