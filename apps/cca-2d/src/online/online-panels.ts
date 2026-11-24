@@ -1,48 +1,8 @@
-import { renderGuestSharing } from './render-guest-sharing.ts';
-
 import type { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import type { FriendPerson } from '@shared/api/friends/friends-view.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 
 import type { OnlineSession } from './online-session.ts';
-
-export function renderRoom(root: HTMLElement, state: OnlineSession.State): void {
-    const room = state.rooms.currentRoomRef;
-    if (!room) {
-        if (root.dataset.room !== '') {
-            root.dataset.room = '';
-            root.innerHTML =
-                `<h2>Bring your friends</h2><p>Create a town and share its code, or join someone already here.</p><button data-action="create" class="primary">Create town</button><form id="join-town"><label>Town code<input name="room" required></label><button>Join town</button></form>`;
-        }
-        return;
-    }
-    if (root.dataset.room !== room.groupId) {
-        root.dataset.room = room.groupId;
-        root.innerHTML =
-            `<h2>Your town lobby</h2><label>Room code<input id="room-code" readonly></label><div id="guest-sharing"></div><ul id="roster"></ul><div id="match-controls"></div><button data-action="leave">Leave town</button>`;
-        const input = root.querySelector<HTMLInputElement>('#room-code');
-        if (input) {
-            input.value = room.groupId;
-        }
-    }
-    const sharing = root.querySelector<HTMLElement>('#guest-sharing');
-    if (sharing) {
-        renderGuestSharing(sharing, state);
-    }
-    const roster = root.querySelector('#roster');
-    if (roster) {
-        roster.innerHTML = state.rooms.members.filter(member => member.status === 'active').map(member => {
-            const guest = state.rooms.currentRoom?.members.find(row => row.principalId === member.principalId)?.guestLease;
-            const displayName = guest?.displayName ??
-                (state.friends.view?.contacts.find(person => person.principalId === member.principalId)?.displayName ||
-                    member.displayName || member.username);
-            const remove = state.ownsTown && guest
-                ? `<button data-action="remove-guest" data-principal="${toLobbyHtml(member.principalId)}">Remove guest</button>`
-                : '';
-            return `<li>${toLobbyHtml(displayName)} · ${member.isOnline ? 'here' : 'away'}${member.isOwner ? ' · room owner' : ''}${remove}</li>`;
-        }).join('');
-    }
-}
 
 export function renderMatchmaking(root: HTMLElement, resource: AuthenticatedResource.State<MatchmakingSnapshot>): void {
     const state = resource.view?.state;

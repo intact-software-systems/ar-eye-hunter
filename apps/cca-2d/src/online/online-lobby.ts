@@ -4,7 +4,8 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 
 import { requirePracticeElement } from '../practice-controls.ts';
 import { OnlineMatch } from './online-match.ts';
-import { renderFriends, renderMatchmaking, renderRoom } from './online-panels.ts';
+import { renderFriends, renderMatchmaking } from './online-panels.ts';
+import { renderRoom } from './render-room.ts';
 import { OnlineSession } from './online-session.ts';
 import { townApiBaseUrl } from './town-server.ts';
 
