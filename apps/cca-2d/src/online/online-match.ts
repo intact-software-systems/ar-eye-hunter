@@ -3,6 +3,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { TownMatchGame } from '../match/presentation/town-match-game.ts';
+import type { TownMatchState } from '../match/town-match.ts';
 import { TownMatchSession } from '../match/town-match-session.ts';
 
 /** Owns the current room's match lifetime independently of social-panel rerenders. */
@@ -22,6 +23,11 @@ export namespace OnlineMatch {
 
 export class OnlineMatch {
     private renderKey = '';
+    private completedRound: Pick<TownMatchState, 'matchId' | 'results'> | undefined;
+
+    get lastConfirmedResults(): TownMatchState['results'] | undefined {
+        return this.completedRound?.results;
+    }
     private session: TownMatchSession | undefined;
     private unsubscribe: (() => void) | undefined;
     private game: TownMatchGame | undefined;
@@ -80,6 +86,12 @@ export class OnlineMatch {
         }
         const view = session.getView();
         const match = view.match;
+        if (match?.phase === 'finished') {
+            this.completedRound = { matchId: match.matchId, results: match.results };
+        }
+        else if (match && this.completedRound?.matchId !== match.matchId) {
+            this.completedRound = undefined;
+        }
         this.renderGame(view);
         const key = JSON.stringify([
             this.game?.isReady(),

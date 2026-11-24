@@ -6,7 +6,7 @@ import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from '../t
 
 export const TOWN_MATCH_MARKUP = `<main class="practice" aria-label="Online Grumpy Town">
           <canvas aria-label="Shared town playfield"></canvas>
-          <header class="hud"><div class="brand"><span>CCA / PLAYING WITH FRIENDS</span><h1>GRUMPY TOWN</h1></div><button id="extend-round" hidden>Extend by 1 minute</button><button id="leave-round">Leave town</button></header>
+          <header class="hud"><div class="brand"><span>CCA / PLAYING WITH FRIENDS</span><h1>GRUMPY TOWN</h1></div><button id="ready-next" hidden>Ready for next round</button><button id="extend-round" hidden>Extend by 1 minute</button><button id="leave-round">Leave town</button></header>
           <div class="scoreboard"><span id="round-clock"></span><span id="round-score"></span></div>
           <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
           <div class="play-hint"><span class="you">YOU</span><p id="round-status" role="status"></p></div>
@@ -85,6 +85,10 @@ export function renderTownMatchResults(root: HTMLElement, view: TownMatchSession
     const match = view.match;
     const interrupted = Boolean(view.interruption) || match?.phase === 'interrupted';
     const finished = match?.phase === 'finished' || interrupted;
+    const nextReady = requirePracticeElement<HTMLButtonElement>(root, '#ready-next');
+    nextReady.hidden = !match || match.phase === 'lobby' || match.participants.some(player => player.id === view.localId);
+    nextReady.disabled = !view.available || view.recovering || Boolean(match?.members.find(member => member.id === view.localId)?.ready);
+    nextReady.textContent = nextReady.disabled && view.available && !view.recovering ? 'Ready for next round ✓' : 'Ready for next round';
     const extend = requirePracticeElement<HTMLButtonElement>(root, '#extend-round');
     extend.hidden = !view.isDirector || match?.phase !== 'playing';
     extend.disabled = !view.available || view.recovering || !match ||

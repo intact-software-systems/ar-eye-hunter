@@ -70,6 +70,9 @@ export class TownMatchGame {
         }, options);
         requirePracticeElement(root, '#leave-results').addEventListener('click', onLeave, options);
         requirePracticeElement(root, '#solo-results').addEventListener('click', onSolo, options);
+        requirePracticeElement(root, '#ready-next').addEventListener('click', () => {
+            void session.act({ kind: 'ready', ready: true });
+        }, options);
         requirePracticeElement(root, '#extend-round').addEventListener('click', () => {
             const match = session.getView().match;
             if (match) {

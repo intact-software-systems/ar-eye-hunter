@@ -97,7 +97,7 @@ export function createTownMatch(
 
 export function computeTownMatchReady(state: TownMatchState, ready: TownMatchReady): TownMatchState {
     if (
-        state.phase !== 'lobby' || !ready.displayName.trim() || ready.displayName.length > 128 ||
+        (state.phase !== 'lobby' && state.participants.some(player => player.id === ready.id)) || !ready.displayName.trim() || ready.displayName.length > 128 ||
         !state.members.some((member) => member.id === ready.id && member.sessionId === ready.sessionId)
     ) {
         return state;
@@ -129,7 +129,14 @@ export function computeTownMatchRematch(
     if ((state.phase !== 'finished' && state.phase !== 'interrupted') || matchId === state.matchId) {
         return Either.ofLeft(['A rematch needs a finished or interrupted round and a new match identity.']);
     }
-    return createTownMatch(matchId, state.members);
+    return createTownMatch(matchId, state.members).mapRight(next => ({
+        ...next,
+        members: next.members.map(member => ({
+            ...member,
+            ready: !state.participants.some(player => player.id === member.id) &&
+                state.members.some(waiting => waiting.id === member.id && waiting.ready)
+        }))
+    }));
 }
 
 export function computeTownMatchTick(input: TownMatchTick): TownMatchState {

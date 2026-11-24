@@ -71,14 +71,13 @@ test('appointed director starts a shared round with two independently controlled
         await registerPlayer(charlie, `cca-late-${Date.now()}`);
         await charlie.getByLabel('Town code').fill(roomCode);
         await charlie.getByRole('button', { name: 'Join town', exact: true }).click();
-        await expect(charlie.locator('#round-winners')).toContainText('roster changed');
-        await charlie.getByRole('button', { name: 'Leave match', exact: true }).click();
+        await expect(charlie.locator('#online-game')).toHaveAttribute('data-seat', 'observer', { timeout: 15000 });
+        await charlie.getByRole('button', { name: 'Ready for next round', exact: true }).click();
+        await expect(charlie.getByRole('button', { name: 'Ready for next round ✓' })).toBeDisabled();
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-phase', 'playing');
+        await charlie.getByRole('button', { name: 'Leave town', exact: true }).last().click();
         await expect(charlie.getByRole('button', { name: 'Create town', exact: true })).toBeVisible();
-        await bob.getByRole('button', { name: 'Leave match', exact: true }).click();
-        await expect(bob.getByRole('button', { name: 'Create town', exact: true })).toBeVisible();
-        await expect(alice.locator('#round-winners')).toContainText('roster changed');
-        await alice.getByRole('button', { name: 'New round', exact: true }).click();
-        await expect(alice.getByRole('button', { name: 'Ready', exact: true })).toBeVisible();
+        await expect(bob.locator('#online-game')).toHaveAttribute('data-phase', 'playing');
     }
     finally {
         await Promise.allSettled([first.close(), second.close(), third.close()]);
@@ -892,15 +891,9 @@ test('a missed commit settles when a newcomer arrives before the next checkpoint
         dropCommit = false;
         await alice.evaluate(() => window.dispatchEvent(new Event('cca-release-digest')));
         for (const page of [alice, bob, charlie]) {
-            await expect(page.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-                timeout: 5000
-            });
-            await expect(page.locator('#round-winners')).toContainText('roster changed');
+            await expect(page.locator('#online-game')).toHaveAttribute('data-phase', 'playing');
         }
-        await alice.getByRole('button', { name: 'New round', exact: true }).click();
-        for (const page of [alice, bob, charlie]) {
-            await expect(page.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled();
-        }
+        await expect(charlie.getByRole('button', { name: 'Ready for next round', exact: true })).toBeEnabled();
     }
     finally {
         await writeMatchTraffic(traffic);

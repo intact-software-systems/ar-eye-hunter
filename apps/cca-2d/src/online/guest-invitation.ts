@@ -2,7 +2,7 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { createRoomGuestSecret, redeemRoomGuestInvitation } from '@shared-web/browser/rooms/room-guest-access.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-import { isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
+import { hashRoomInvitationSecret, isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
 
 import { readGuestVisit, saveGuestVisit, type GuestVisit } from './guest-visit.ts';
 import { CCA_SCOPE, townApiBaseUrl } from './town-server.ts';
@@ -54,6 +54,7 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         index = Math.floor(Math.random() * nicknames.length);
     }
     output.value = nicknames[index];
+    shuffle.disabled = Boolean(visit && 'guestSecret' in visit);
     shuffle.addEventListener('click', () => {
         const offset = 1 + Math.floor(Math.random() * (nicknames.length - 1));
         index = (index + offset) % nicknames.length;
@@ -77,13 +78,16 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         message.textContent = '';
         try {
             if ((!visit || !('access' in visit)) && room && invitationSecret && valid) {
-                const pending = visit && 'guestSecret' in visit
-                    ? { ...visit, nickname: output.value }
-                    : { room, nickname: output.value, requestId: crypto.randomUUID(), guestSecret: createRoomGuestSecret() };
+                const invitationVerifier = await hashRoomInvitationSecret(invitationSecret);
+                const previous = visit && 'guestSecret' in visit ? visit : undefined;
+                const pending = previous?.invitationVerifier === invitationVerifier ? previous : {
+                    room, invitationVerifier, nickname: output.value,
+                    requestId: crypto.randomUUID(), guestSecret: previous?.guestSecret ?? createRoomGuestSecret()
+                };
                 saveGuestVisit(pending);
                 visit = pending;
                 const access = await redeemRoomGuestInvitation({ ...CCA_SCOPE, groupId: room }, {
-                    invitationSecret, guestSecret: pending.guestSecret
+                    invitationSecret, guestSecret: pending.guestSecret, displayName: pending.nickname
                 }, { requestId: pending.requestId, signal });
                 if (signal.aborted) {
                     return;
@@ -101,10 +105,10 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
                 return;
             }
             history.replaceState(history.state, '', location.pathname);
-            root.innerHTML = `<main class="loading"><h1>Your town lobby</h1><p></p><output aria-label="Your nickname"></output><p><a>Play solo</a></p></main>`;
-            root.querySelector('p')!.textContent = `${snapshot.group.displayName} · ${snapshot.members.filter(member => member.status === 'active').length} players`;
-            root.querySelector('output')!.value = visit.nickname;
-            root.querySelector('a')!.href = import.meta.env.BASE_URL;
+            const { openGuestMatch } = await import('./guest-match.ts');
+            if (!signal.aborted) {
+                openGuestMatch(root, visit, snapshot, signal);
+            }
         }
         catch (error) {
             if (signal.aborted) {
@@ -130,7 +134,7 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         }
         finally {
             join.disabled = false;
-            shuffle.disabled = false;
+            shuffle.disabled = Boolean(visit && 'guestSecret' in visit);
         }
     }
 }

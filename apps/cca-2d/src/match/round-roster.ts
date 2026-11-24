@@ -52,10 +52,11 @@ export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<re
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
-    if (members.some((member) => !state.participants.some((player) => player.id === member.id))) {
+    const participating = members.filter(member => state.participants.some(player => player.id === member.id));
+    if (participating.length < 2 && members.length > participating.length) {
         return computeTownMatchRoster(state, members);
     }
-    if (members.length < 2) {
+    if (participating.length < 2) {
         return Either.ofLeft(['Recovery requires at least two original round participants.']);
     }
     const seats = computeTownMatchSeats({
@@ -81,7 +82,8 @@ export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<re
             ...member,
             displayName: state.participants.find((participant) => participant.id === member.id)?.displayName ??
                 member.displayName,
-            ready: true
+            ready: state.participants.some(player => player.id === member.id) ||
+                state.members.some(previous => previous.id === member.id && previous.ready)
         })),
         players: state.players.map((player) => ({
             ...player,

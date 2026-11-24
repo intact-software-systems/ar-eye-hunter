@@ -70,7 +70,7 @@ describe('Grumpy Town match rules', () => {
         ).toBe('observer');
     });
 
-    it('interrupts from the selected recovery checkpoint when a genuine newcomer arrives', () => {
+    it('keeps the round and scores when a newcomer reserves and readies for the rematch', () => {
         const lobby = createTownMatch('newcomer-recovery', members).right!;
         const selected: TownMatchState = {
             ...lobby,
@@ -86,11 +86,17 @@ describe('Grumpy Town match rules', () => {
             clock: seatDeadlineClock(2000)
         });
         expect(recovered.left).toBeUndefined();
-        expect(recovered.right?.phase).toBe('interrupted');
+        expect(recovered.right?.phase).toBe('playing');
         expect(recovered.right?.tick).toBe(42);
         expect(recovered.right?.town).toBe(selected.town);
         expect(recovered.right?.players).toEqual(selected.players);
-        expect(recovered.right?.interruption).toContain('roster changed');
+        const newcomer = recovered.right!.members.find(member => member.id === 'newcomer')!;
+        expect(newcomer.ready).toBe(false);
+        const waiting = computeTownMatchReady(recovered.right!, { ...newcomer, ready: true });
+        expect(waiting.participants).toEqual(selected.participants);
+        const next = computeTownMatchRematch({ ...waiting, phase: 'finished' }, 'next').right!;
+        expect(next.members.find(member => member.id === 'newcomer')?.ready).toBe(true);
+        expect(next.members.find(member => member.id === 'alice')?.ready).toBe(false);
     });
 
     it('resumes a seat only within grace, excludes expired players from play and restores them on rematch', () => {

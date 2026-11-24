@@ -1,5 +1,9 @@
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarGroupDirectorAppointmentEligibility } from '@shared/api/group-director.ts';
+import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
+import { writeGuestRoundClock } from './guest-round-clock.ts';
+import { computeTownMatchExtension } from './match-extension.ts';
+import { computeTownMatchStart, TOWN_MATCH_RATE } from './town-match.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
@@ -29,6 +33,7 @@ export namespace TownMatchSession {
             | 'deadlineAfter'
             | 'director'
             | 'messages'
+            | 'rtc'
             | 'realtime'
             | 'rooms'
             | 'session'
@@ -71,6 +76,7 @@ export class TownMatchSession {
     private readonly connection: TownMatchConnection;
     private readonly frames: TownMatchFrames;
     private readonly exchange: TownMatchExchange;
+    private clockWrite: Promise<void> | undefined;
     private lastInput = 0;
     private lastExchange = 0;
     private readonly dependencies: TownMatchSession.Dependencies;
@@ -140,8 +146,23 @@ export class TownMatchSession {
         return this.connection.appoint();
     }
 
-    act(action: TownMatchSession.Intent): Promise<void> {
-        return this.exchange.act(action);
+    async act(action: TownMatchSession.Intent): Promise<void> {
+        if (action.kind === 'start' || action.kind === 'extend') {
+            if (this.clockWrite) return;
+            const update = this.publishRoundClock(action);
+            this.clockWrite = update;
+            try {
+                await update;
+            }
+            catch (error) {
+                this.connection.report(error instanceof Error ? error.message : 'The room clock could not be updated.');
+                return;
+            }
+            finally {
+                this.clockWrite = undefined;
+            }
+        }
+        await this.exchange.act(action);
     }
 
     setControls(controls: PracticeInput): void {
@@ -159,6 +180,29 @@ export class TownMatchSession {
         this.transport.stop();
         this.round.livePoses.clear();
         this.round.simulation?.stop();
+    }
+
+    private async publishRoundClock(action: Extract<TownMatchSession.Intent, { kind: 'start' | 'extend' }> | { kind: 'finish' }): Promise<void> {
+        const { browser } = this.dependencies;
+        const match = this.connection.getView().match;
+        const snapshot = browser.rooms.current();
+        const director = browser.director.status(this.roomRef);
+        if (!match || !director.isDirector || !director.isFresh || !director.appointment || !snapshot) return;
+        const timeline = readRoomTimeline(snapshot.group.metadata, 'guest-play');
+        const base = { room: this.roomRef, matchId: match.matchId, directorEpoch: director.appointment.epoch, timeline };
+        if (action.kind === 'start') {
+            if (computeTownMatchStart(match) === match ||
+                !snapshot.members.some(member => member.guestLease && match.participants.some(player => player.id === member.principalId))) return;
+            await writeGuestRoundClock(browser.rooms, { ...base, action: { kind: 'start', players: match.participants.map(p => p.id),
+                durationMs: 3000 + 1000 * match.remainingTicks / TOWN_MATCH_RATE } });
+        }
+        else if (action.kind === 'extend' && computeTownMatchExtension(match, action.expectedDurationTicks) !== match) {
+            await writeGuestRoundClock(browser.rooms, { ...base, action: { kind: 'extend', durationMs: 60000,
+                totalDurationMs: 3000 + 60000 + 1000 * action.expectedDurationTicks / TOWN_MATCH_RATE } });
+        }
+        else if (action.kind === 'finish' && timeline?.phase === match.matchId) {
+            await writeGuestRoundClock(browser.rooms, { ...base, action });
+        }
     }
 
     private async advance(): Promise<void> {
@@ -196,6 +240,12 @@ export class TownMatchSession {
                 }
             }
             const checkpoint = this.round.checkpoints.getState();
+            if (!this.clockWrite && view.isDirector && (match?.phase === 'finished' || match?.phase === 'interrupted') &&
+                readRoomTimeline(this.dependencies.browser.rooms.current()?.group.metadata ?? {}, 'guest-play')?.phase === match.matchId) {
+                this.clockWrite = this.publishRoundClock({ kind: 'finish' });
+                try { await this.clockWrite; }
+                finally { this.clockWrite = undefined; }
+            }
             const settledLobby = match?.phase === 'lobby' && !checkpoint.pending && !checkpoint.recoveryRequired &&
                 !this.round.intent && (!view.isDirector || this.round.simulation?.getState() === match);
             // A quiet lobby still retransmits for a peer that missed commitment.

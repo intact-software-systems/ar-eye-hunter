@@ -23,8 +23,7 @@ export function validateTownSnapshotRelations(state: TownMatchState): readonly s
         issues.push('Snapshot players must have distinct identities.');
     }
     if (
-        state.phase !== 'interrupted' && state.phase !== 'finished' &&
-        ((state.phase === 'lobby' && state.members.length !== playerIds.length) ||
+        state.phase === 'lobby' && (state.members.length !== playerIds.length ||
             state.members.some((member) => !playerIds.includes(member.id)))
     ) {
         issues.push('Snapshot players do not match the round roster.');

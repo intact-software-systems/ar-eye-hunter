@@ -2,7 +2,7 @@ import { isGuestInvitationVerifier, isRoomGuestAccess, type RoomGuestAccess } fr
 
 export type GuestVisit =
     | { room: string; nickname: string; access: RoomGuestAccess }
-    | { room: string; nickname: string; guestSecret: string; requestId: string };
+    | { room: string; nickname: string; invitationVerifier: string; guestSecret: string; requestId: string };
 
 const storageKey = 'cca.guest-visit';
 
@@ -26,9 +26,10 @@ export function readGuestVisit(): GuestVisit | undefined {
     if ('access' in value && isRoomGuestAccess(value.access)) {
         return { room, nickname, access: value.access };
     }
-    if ('guestSecret' in value && isGuestInvitationVerifier(value.guestSecret) &&
+    if ('invitationVerifier' in value && isGuestInvitationVerifier(value.invitationVerifier) &&
+        'guestSecret' in value && isGuestInvitationVerifier(value.guestSecret) &&
         'requestId' in value && typeof value.requestId === 'string') {
-        return { room, nickname, guestSecret: value.guestSecret, requestId: value.requestId };
+        return { room, nickname, invitationVerifier: value.invitationVerifier, guestSecret: value.guestSecret, requestId: value.requestId };
     }
 }
 

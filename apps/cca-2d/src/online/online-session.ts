@@ -12,7 +12,7 @@ import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-sn
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
-import { CCA_SCOPE } from './town-server.ts';
+import { CCA_SCOPE, townGroupPresence } from './town-server.ts';
 
 const START_OPTIONS = { connect: true, refreshRooms: true, refreshPeople: true } as const;
 
@@ -96,7 +96,7 @@ export class OnlineSession {
             const started = await this.browser.setup({
                 apiBaseUrl: this.apiBaseUrl,
                 ...CCA_SCOPE,
-                groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 },
+                groupPresence: townGroupPresence,
                 start: { ...START_OPTIONS, signal: this.lifetime.signal }
             });
             if (this.lifetime.signal.aborted) {
@@ -174,6 +174,20 @@ export class OnlineSession {
                 this.invitation = undefined;
                 this.publish();
             }, Math.max(0, 15 * 60_000 - (performance.now() - issuedAt)));
+        });
+    }
+
+    async removeGuest(principalId: string): Promise<void> {
+        await this.run(async () => {
+            const { rooms, ownsTown } = this.getState();
+            const room = rooms.currentRoomRef;
+            const guest = rooms.currentRoom?.members.find(member => member.principalId === principalId);
+            if (!ownsTown || !room || guest?.status !== 'active' || !guest.guestLease) {
+                return;
+            }
+            await this.browser.rooms.removeMember(room, principalId, { signal: this.lifetime.signal });
+            clearTimeout(this.invitationTimeout);
+            this.invitation = undefined;
         });
     }
 
@@ -343,7 +357,7 @@ export class OnlineSession {
         const roomRef = { ...CCA_SCOPE, groupId: current.groupId };
         if (snapshot.group.ownerPrincipalId === principalId) {
             const successor = snapshot.members.filter((member) =>
-                member.status === 'active' && member.principalId !== principalId
+                member.status === 'active' && !member.guestLease && member.principalId !== principalId
             ).sort((left, right) => left.principalId.localeCompare(right.principalId))[0];
             if (!successor) {
                 await this.browser.rooms.archive(roomRef, options);

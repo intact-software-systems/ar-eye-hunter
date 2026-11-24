@@ -31,14 +31,16 @@ export function renderRoom(root: HTMLElement, state: OnlineSession.State): void 
     }
     const roster = root.querySelector('#roster');
     if (roster) {
-        roster.innerHTML = state.rooms.members.filter((member) => member.status === 'active').map((member) =>
-            `<li>${
-                toLobbyHtml(
-                    state.friends.view?.contacts.find((person) => person.principalId === member.principalId)
-                        ?.displayName || member.displayName || member.username
-                )
-            } · ${member.isOnline ? 'here' : 'away'}${member.isOwner ? ' · room owner' : ''}</li>`
-        ).join('');
+        roster.innerHTML = state.rooms.members.filter(member => member.status === 'active').map(member => {
+            const guest = state.rooms.currentRoom?.members.find(row => row.principalId === member.principalId)?.guestLease;
+            const displayName = guest?.displayName ??
+                (state.friends.view?.contacts.find(person => person.principalId === member.principalId)?.displayName ||
+                    member.displayName || member.username);
+            const remove = state.ownsTown && guest
+                ? `<button data-action="remove-guest" data-principal="${toLobbyHtml(member.principalId)}">Remove guest</button>`
+                : '';
+            return `<li>${toLobbyHtml(displayName)} · ${member.isOnline ? 'here' : 'away'}${member.isOwner ? ' · room owner' : ''}${remove}</li>`;
+        }).join('');
     }
 }
 

@@ -91,7 +91,7 @@ export class TownMatchFrames {
 
     private validateReception(frame: TownMatchFrame, senderId: string, targetRoomRef: GroupRef | undefined): boolean {
         const checkpointState = this.round.checkpoints?.getState();
-        return !this.signal.aborted && validateTownMatchFrame(frame, {
+        return !this.signal.aborted && this.connection.permitsMatchFrame(senderId, frame) && validateTownMatchFrame(frame, {
                     roomRef: this.roomRef,
                     targetRoomRef,
                     director: this.dependencies.browser.director.status(this.roomRef),
