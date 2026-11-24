@@ -42,7 +42,7 @@ import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
-import { observeFinishingGuest } from './room-guest-auth-expiry.ts';
+import { observeFinishingGuest } from './observe-finishing-guest.ts';
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
 
@@ -356,9 +356,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (currentSession?.guestRoom && serverNowEpochMs !== undefined) {
             const connection = this.input.transportRuntime.readConnection();
             if (!connection) return;
-            const grant = this.guestExpiry ??= observeFinishingGuest(currentSession, currentSession.guestRoom,
-                serverNowEpochMs, connection,
-                () => this.scheduleAuthExpiry(readSession()));
+            const grant = this.guestExpiry ??= observeFinishingGuest({
+                session: currentSession, room: currentSession.guestRoom, now: serverNowEpochMs, connection,
+                changed: () => this.scheduleAuthExpiry(readSession())
+            });
             try {
                 await grant.verified;
             }

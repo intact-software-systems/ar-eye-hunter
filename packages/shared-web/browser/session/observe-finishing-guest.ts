@@ -9,10 +9,16 @@ import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { browserStateCacheLifecycle } from '../state-cache/browser-state-cache-lifecycle.ts';
 import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 
+interface ObserveFinishingGuestInput {
+    readonly session: AuthSession;
+    readonly room: GroupRef;
+    readonly now: number;
+    readonly connection: BrowserTransportRuntime.Connection;
+    readonly changed: () => void;
+}
+
 /** The durable read may grant a finishing window. Later room observations can only shorten it. */
-export function observeFinishingGuest(
-    session: AuthSession, room: GroupRef, now: number, connection: BrowserTransportRuntime.Connection, changed: () => void
-) {
+export function observeFinishingGuest({ session, room, now, connection, changed }: ObserveFinishingGuestInput) {
     const abort = new AbortController();
     const signal = AbortSignal.any([abort.signal, connection.serverClock.signal]);
     const socket = connection.middleware.middleware.webSocketQueueBox.socket;
