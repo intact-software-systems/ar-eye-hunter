@@ -1,5 +1,5 @@
 import { readRoomTimeRecords, type RoomClockMutation } from '@shared/api/group-deadlines/room-clock.ts';
-import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guests/access.ts';
+import { GUEST_PLAY_TIMELINE, roomGuestRoundCutoff } from '@shared/api/room-guests/access.ts';
 import type { Group, GroupMember } from '@shared/api/group-types.ts';
 import { computeGroupClockChange, withGroupTimeRecord, type ClockRefusal } from './compute-group-clock-change.ts';
 
@@ -31,7 +31,7 @@ export function computeGroupClockUpdate({ group, command, now, members = [] }: G
         }
         if (clock.status !== 'running') throw new Error('A newly started phase must be running.');
         const guestParticipants = participants.flatMap(member => member.guestLease ? [{
-            principalId: member.principalId, leaseExpiresAtEpochMs: member.guestLease.expiresAtEpochMs, endsAtEpochMs: clock.endsAtEpochMs
+            principalId: member.principalId, leaseExpiresAtEpochMs: member.guestLease.expiresAtEpochMs, endsAtEpochMs: roomGuestRoundCutoff(member.guestLease.expiresAtEpochMs, clock.endsAtEpochMs)
         }] : []);
         return withGroupTimeRecord(group, { ...clock, guestParticipants }, clocks);
     }
@@ -40,7 +40,7 @@ export function computeGroupClockUpdate({ group, command, now, members = [] }: G
         const guestParticipants = previous.guestParticipants.map(entry => {
             // Edits before expiry can revise the schedule. A pause retains the last scheduled boundary.
             if (now >= entry.leaseExpiresAtEpochMs || clock.status === 'paused') return entry;
-            return { ...entry, endsAtEpochMs: clock.endsAtEpochMs };
+            return { ...entry, endsAtEpochMs: roomGuestRoundCutoff(entry.leaseExpiresAtEpochMs, clock.endsAtEpochMs) };
         });
         return withGroupTimeRecord(group, { ...clock, guestParticipants }, clocks);
     }

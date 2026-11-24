@@ -13,14 +13,14 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
     try {
         await seedRetentionRoom(fixture, RETENTION_REF, { claimWindowMs: 60_000, returnWindowMs: 120_000 });
         const verifier = 'a'.repeat(64);
-        const ownerUpdate = async (requestId: string, changes: { maxMembers?: number; guestInvitationVerifier?: string; }) => {
+        const ownerUpdate = async (requestId: string, changes: { maxMembers?: number; maxSpectators?: number; guestInvitationVerifier?: string; }) => {
             const { computed } = await prepareMutation(fixture, mutationDescriptor({
                 operation: 'updateGroup', scope: RETENTION_REF, groupId: RETENTION_REF.groupId,
                 request: { actorPrincipalId: 'owner', requestId, ...changes }
             }));
             await commitMutation(fixture, requireMutationWrite(computed));
         };
-        await ownerUpdate('bound', { maxMembers: 2 });
+        await ownerUpdate('bound', { maxMembers: 2, maxSpectators: 1 });
         await ownerUpdate('invite', { guestInvitationVerifier: verifier });
         const principals = ['b', 'c'].map(character => 'guest-' + character.repeat(64));
         const admissions = await Promise.all(principals.map(async principalId => fixture.mutations.captureGuestMembershipMutationIngress(
@@ -59,6 +59,16 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
             operation: 'setGroupMemberRole', scope: RETENTION_REF, groupId: RETENTION_REF.groupId, targetPrincipalId: principals[0],
             request: { actorPrincipalId: 'owner', requestId: 'promote', role: 'admin' }
         }))).rejects.toThrow(/guest/i);
+        const demotion = await prepareMutation(fixture, mutationDescriptor({
+            operation: 'setGroupMemberRole', scope: RETENTION_REF, groupId: RETENTION_REF.groupId, targetPrincipalId: principals[0],
+            request: { actorPrincipalId: 'owner', requestId: 'watch', role: 'spectator' }
+        }));
+        await commitMutation(fixture, requireMutationWrite(demotion.computed));
+        const returning = await fixture.mutations.captureGuestMembershipMutationIngress(toGroupGuestAdmissionCommand({
+            roomRef: RETENTION_REF, principalId: principals[0], invitationVerifier: verifier, requestId: 'return',
+            guestTransport: { sessionId: await roomGuestTransportSessionId(principals[0]), accessTokenDigest: 'A'.repeat(43) }
+        }), fixture.nowEpochMs);
+        expect((await retryMutation(fixture, returning)).outcome).toBe('no-op');
         const removal = await prepareMutation(fixture, mutationDescriptor({
             operation: 'removeGroupMember', scope: RETENTION_REF, groupId: RETENTION_REF.groupId, targetPrincipalId: principals[0],
             request: { actorPrincipalId: 'owner', requestId: 'remove' }
@@ -113,16 +123,18 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
             await commitMutation(fixture, requireMutationWrite(host.computed));
             const round = await prepareMutation(fixture, mutationDescriptor({ ...scope, operation: 'updateGroup',
                 request: { ...actor, requestId: 'round', roomClock: {
-                    operation: 'advance-phase', name: 'guest-play', phase: 'playing', durationMs: 2000,
+                    operation: 'advance-phase', name: 'guest-play', phase: 'playing', durationMs: 86_400_000,
                     expectedRevision: 0, expectedDirectorEpoch: 1, participantPrincipalIds: [principalId]
                 } } }));
-            await commitMutation(fixture, requireMutationWrite(round.computed));
+            const write = requireMutationWrite(round.computed);
+            expect(write.outboxWrites.some(signal => Number(signal.entry.dequeueAudit.nextTs?.epochMilliseconds) === expiresAtEpochMs + 3_603_000)).toBe(true);
+            await commitMutation(fixture, write);
             const row = await new AuthSessionPersistence(fixture.runtime).findSessionBySessionIdEntry(await roomGuestTransportSessionId(principalId));
-            expect(row?.entry.expireAtTimestamp).toBe(expiresAtEpochMs + 1000);
-            expect(row?.value.expiresAtEpochMs).toBe(expiresAtEpochMs + 1000);
+            expect(row?.entry.expireAtTimestamp).toBe(expiresAtEpochMs + 3_603_000);
+            expect(row?.value.expiresAtEpochMs).toBe(expiresAtEpochMs + 3_603_000);
             fixture.nowEpochMs = expiresAtEpochMs;
             expect((await retryMutation(fixture, expire)).outcome).toBe('no-op');
-            fixture.nowEpochMs = expiresAtEpochMs + 1000;
+            fixture.nowEpochMs = expiresAtEpochMs + 3_603_000;
             const finish = { ...deadline, groupRevision: 4, dueAtEpochMs: fixture.nowEpochMs };
             cleanup = await fixture.mutations.captureGuestMembershipMutationIngress(toGroupGuestSeatExpiryCommand(finish), fixture.nowEpochMs);
         }

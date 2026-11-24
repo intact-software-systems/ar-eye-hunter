@@ -1245,7 +1245,12 @@ paths:
     post:
       tags: [Group State]
       summary: Redeem a room invitation for a temporary guest seat
-      description: Supply independent random 32-byte secrets encoded in lowercase hex. Retain the guest secret and request ID when retrying a lost response.
+      description: >-
+        Supply independent random 32-byte secrets encoded in lowercase hex. Retain the guest secret and request ID
+        when retrying a lost response. Redeeming an active guest identity again with a valid invitation preserves
+        its current role and seat. Access lasts four hours from admission. Players already in a round at expiry
+        may finish that occurrence until its frozen deadline, for at most one additional hour and three seconds.
+        Closing the occurrence or room earlier ends that access.
       security: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'

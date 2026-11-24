@@ -4,6 +4,11 @@ import { readRoomTimeline } from '../group-deadlines/room-timeline.ts';
 
 export const GUEST_PLAY_TIMELINE = 'guest-play';
 
+/** A director may schedule a longer round, but each guest has its own absolute finishing cutoff. */
+export function roomGuestRoundCutoff(leaseExpiresAtEpochMs: number, roundEndsAtEpochMs: number): number {
+    return Math.min(roundEndsAtEpochMs, leaseExpiresAtEpochMs + 3_603_000);
+}
+
 /** Room access after the initial lease is limited to the occurrence that was active at expiry. */
 export function roomGuestAccessMode(group: Group, member: GroupMember, nowEpochMs: number): 'room' | 'finish-round' | 'expired' {
     const lease = member.guestLease;
@@ -25,7 +30,7 @@ export function roomGuestCredentialExpiresAt(group: Group, member: Pick<GroupMem
     const round = readRoomTimeline(group.metadata, GUEST_PLAY_TIMELINE);
     const participation = round?.guestParticipants?.find(entry => entry.principalId === member.principalId &&
         entry.leaseExpiresAtEpochMs === lease.expiresAtEpochMs);
-    return Math.max(lease.expiresAtEpochMs, participation?.endsAtEpochMs ?? 0);
+    return Math.max(lease.expiresAtEpochMs, roomGuestRoundCutoff(lease.expiresAtEpochMs, participation?.endsAtEpochMs ?? 0));
 }
 
 /** The director fence still verifies the occurrence revision and current writer. */

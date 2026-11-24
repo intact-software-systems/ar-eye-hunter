@@ -14,7 +14,7 @@ export async function proveRoomGuestRedemption({ owner, moderator, secondOrigin 
     const group = collection + '/market';
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(collection, crypto.randomUUID()), {
         method: 'POST', session: owner, expectedStatus: 201,
-        body: { groupId: 'market', displayName: 'Market', kind: 'room', joinMode: 'invite-only', maxMembers: 3, roomLobby: { claimWindowMs: 60_000, returnWindowMs: 120_000 }, createdByPrincipalId: owner.clientId }
+        body: { groupId: 'market', displayName: 'Market', kind: 'room', joinMode: 'invite-only', maxMembers: 3, maxSpectators: 1, roomLobby: { claimWindowMs: 60_000, returnWindowMs: 120_000 }, createdByPrincipalId: owner.clientId }
     });
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/invites/' + moderator.clientId, crypto.randomUUID()), {
         method: 'POST', session: owner, body: {}
@@ -47,7 +47,7 @@ export async function proveRoomGuestRedemption({ owner, moderator, secondOrigin 
             guestHeaders.set('authorization', 'Bearer ' + payload.accessToken);
             guestHeaders.set('x-client-id', payload.clientId);
         }
-        return { status: response.status, clientId: payload.clientId, code: payload.code, issued: payload.issuedAtEpochMs, expires: payload.expiresAtEpochMs };
+        return { status: response.status, clientId: payload.clientId, sessionId: payload.sessionId, code: payload.code, issued: payload.issuedAtEpochMs, expires: payload.expiresAtEpochMs };
     };
     const outcomes = await Promise.all(arrivals.map(redeem));
     assert.deepEqual(outcomes.map(outcome => outcome.status).sort(), [200, 403]);
@@ -83,6 +83,16 @@ export async function proveRoomGuestRedemption({ owner, moderator, secondOrigin 
     assert.ok(Array.isArray(snapshot.members));
     const members = snapshot.members.map(value => requireRecord(value, 'Stored member'));
     assert.equal(members.find(member => member.principalId === guest.clientId)?.role, 'member');
+    const setRole = (role: 'member' | 'spectator') => requestJson(owner.apiBaseUrl,
+        toApiMutationRequestPath(group + '/members/' + guest.clientId + '/role', crypto.randomUUID()), {
+            method: 'PUT', session: owner, body: { role }
+        });
+    await setRole('spectator');
+    assert.deepEqual(await redeem({ ...arrivals[index], requestId: crypto.randomUUID() }), guest);
+    const afterReturn = await requestJson(secondOrigin, group, { method: 'GET', session: owner });
+    assert.ok(Array.isArray(afterReturn.members));
+    assert.equal(afterReturn.members.map(value => requireRecord(value, 'Stored member')).find(row => row.principalId === guest.clientId)?.role, 'spectator');
+    await setRole('member');
     const remove = () => requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/members/' + guest.clientId + '/remove', crypto.randomUUID()), {
         method: 'POST', session: owner, body: {}
     });

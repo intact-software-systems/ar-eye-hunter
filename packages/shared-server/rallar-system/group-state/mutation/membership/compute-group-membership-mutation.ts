@@ -54,6 +54,7 @@ export function computeJoin(
     }
     const stored = requireGroup(read, command.aggregateRef);
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs);
+    const existing = read.targetMember ?? undefined;
     const joinCodeMetadata = readJoinCode(stored.value.metadata);
     assertAllowed(
         canJoinGroup({
@@ -66,17 +67,18 @@ export function computeJoin(
             nowEpochMs: facts.attemptAtEpochMs,
             capacity: facts.capacity,
             sessionReservations: read.sessionReservations?.value,
-            participation: command.input.participation ?? undefined,
+            participation: guestAdmission && existing ? undefined : command.input.participation ?? undefined,
             joinCode: command.input.joinCode ?? undefined,
             joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
             expectedJoinCodeVerifier: stored.value.joinMode === 'code' ? (joinCodeMetadata?.verifier ?? '') : undefined,
             joinCodeExpiresAtEpochMs: joinCodeMetadata?.expiresAtEpochMs
         })
     );
-    const existing = read.targetMember ?? undefined;
-    if (guestAdmission && existing && (!existing.guestLease || existing.status !== 'active' ||
-        existing.guestLease.expiresAtEpochMs <= facts.attemptAtEpochMs)) {
-        throw new GroupMutationRejectedError('This guest identity is unavailable. Use a fresh invitation and guest identity.');
+    if (guestAdmission && existing) {
+        if (!existing.guestLease || existing.status !== 'active' || existing.guestLease.expiresAtEpochMs <= facts.attemptAtEpochMs) {
+            throw new GroupMutationRejectedError('This guest identity is unavailable. Use a fresh invitation and guest identity.');
+        }
+        return noOp(command, read, facts);
     }
     const role = command.input.participation === 'spectator'
         ? 'spectator'
@@ -103,7 +105,7 @@ export function computeJoin(
     const joined = createJoinedGroupMember({ command, existing, role, status, audit });
     const member = guestAdmission ? {
         ...joined,
-        guestLease: existing?.guestLease ?? {
+        guestLease: {
             ...(command.input.guestDisplayName && { displayName: command.input.guestDisplayName }),
             admittedAtEpochMs: facts.attemptAtEpochMs,
             expiresAtEpochMs: facts.attemptAtEpochMs + ROOM_GUEST_LIFETIME_MS
