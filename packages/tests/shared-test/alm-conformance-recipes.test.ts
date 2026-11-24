@@ -1711,14 +1711,14 @@ describe('alm-conformance recipe family', () => {
 
     // S3a (D54): the replay reads the first send's envelope back from IndexedDB, which a volatile send
     // never reaches -- its admission lands in the carrier's memory pair.
-    it('opts the first send of each cross-carrier duplicate into local-outbox, so its replay finds the envelope', () => {
+    it('addresses and retains the same receiver for a signed cross-carrier replay in either direction', () => {
         const duplicates = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
             .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
 
         expect(duplicates).toHaveLength(2);
         for (const scenario of duplicates) {
             const [first] = scenario.sender.commands.filter((command) => command.kind === 'messages.send');
-            expect(first, scenario.scenarioKey).toMatchObject({ durability: 'local-outbox' });
+            expect(first, scenario.scenarioKey).toMatchObject({ ack: 'receiver', durability: 'local-outbox', recipientPeers: ['receiver'] });
         }
     });
 
