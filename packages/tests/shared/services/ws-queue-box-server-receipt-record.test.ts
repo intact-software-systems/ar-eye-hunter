@@ -164,7 +164,7 @@ describe('the WS server counts a receipt through the record every instance share
         cluster.clock.nowMs += 1;
         await c.service.acceptIncomingMessage(message(cluster), ORIGIN);
 
-        // Ruling 5: an ended head answers a copy with its terminal phase, from the head's own sets.
+        // A re-sent copy after the end is answered with the terminal receipt again, from the head's own sets.
         await expect.poll(() => tickPhases(cluster)).toEqual(['admitted', 'admitted', 'complete', 'complete']);
         const [ended, again] = readOriginReceipts(cluster.originSockets, MSG_ID).filter(({ receipt }) => receipt.phase === 'complete');
         expect(again!.controlId).not.toBe(ended!.controlId);

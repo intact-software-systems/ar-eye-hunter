@@ -453,7 +453,8 @@ export function describeALReceiptRecordContract(
             expect(ended.right?.outsideAudienceRecipientPeerIds).toEqual(['r1', 'r2']);
         });
 
-        // Ruling 5: a re-sent copy is answered after the end too, from the head alone, on any instance.
+        // A re-sent copy after the end is answered with the terminal receipt again, from the head alone, on any
+        // instance.
         it('answers an ended receipt from the head alone', async () => {
             const f = await fixture();
             await openWith(f, ['r1', 'r2']);

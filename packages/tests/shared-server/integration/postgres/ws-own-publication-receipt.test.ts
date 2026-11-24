@@ -103,9 +103,9 @@ describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('PostgreSQL rec
 
     // Pins what one ACK of a server publication costs when its head is open and it does not complete the set: the
     // record's count alone (the head and the confirmation key in one read, the insert in one transaction, the prefix
-    // read for the tally), five round trips with BEGIN and COMMIT. A client ACK's pin also holds the relayed-ACK hook's
+    // read for the tally), five round trips with BEGIN and COMMIT. A client ACK's pin also holds the refusal hook's
     // reads and the inbound control-owner read; this ACK has neither, since it is addressed to the server itself
-    // (no relay hook) and names the server as its origin (the inbound runtime's origin bypass). A change that adds a
+    // (no refusal hook) and names the server as its origin (the inbound runtime's origin bypass). A change that adds a
     // statement or a transaction to every such ACK shows here.
     it('counts an ACK that finds its head and does not complete the set in a pinned number of statements', async () => {
         const cluster = await createReceiptCluster();

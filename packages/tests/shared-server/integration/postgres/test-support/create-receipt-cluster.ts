@@ -232,6 +232,7 @@ export async function readHeadCount(cluster: ReceiptCluster, msgId: string): Pro
     const anyOrigin = { originPeerId: '', msgId };
     const token = toALReceiptRecordRefToken(anyOrigin);
     const headPrefix = toALReceiptRecordHeadKey(cluster.recordNamespace, anyOrigin).slice(0, -token.length);
+    // `["","<msgId>"]` less `[""` is `,"<msgId>"]`.
     const messageSuffix = token.slice(JSON.stringify(['']).length - 1);
     const rows = await cluster.readerClient<Array<{ readonly count: number; }>>`
         select count(*)::int as count from runtime_state_store

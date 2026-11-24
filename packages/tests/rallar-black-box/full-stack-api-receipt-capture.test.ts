@@ -957,7 +957,7 @@ describe('full-stack private upstream receipt capture', () => {
         }
     });
 
-    // It spawns eight `node --import tsx` processes, so it takes their own 15 s spawn limit, not vitest's 5 s default.
+    // It spawns eight `node --import tsx` processes, so it takes each child's 15 s spawn limit, not vitest's 5 s default.
     it('preserves actual effects, work release and owned clock reads with absent, mutating or throwing sinks', async () => {
         const baseline = await capturePendingReceipt({ scenario: 'native-return', sink: 'collecting', appInboxPhaseTiming: true });
         for (const sink of ['disabled', 'mutating', 'throwing'] as const) {

@@ -233,7 +233,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
 
-    it('answers a duplicate once its receipt has ended with its terminal phase, from the record (ruling 5)', async () => {
+    it('answers a duplicate once its receipt has ended with its terminal phase, from the record', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local', authorizedPeerIds: ['a', 'b'] });
         await admitRoomMessage(fixture);
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
@@ -689,7 +689,8 @@ describe('WS server receipt aggregation over the receipt record', () => {
         expect((await fixture.record.read(RECORD_REF)).right).toEqual(opened);
     });
 
-    // Ruling 5: every instance reads the record, so the one a copy reaches answers it, and opens nothing more.
+    // A re-sent copy is answered with its receipt again on whichever instance it reaches: every instance reads the
+    // record, so the one a copy reaches answers it, and opens nothing more.
     it('answers a duplicate on another instance from the record they share, and opens nothing more', async () => {
         const admitting = createAggregation();
         const other = createAggregation({ ingressAudience: undefined, recordStores: admitting.recordStores });
