@@ -263,3 +263,37 @@ test('a phone guest reloads into the same playing round and moves again', async 
         await desktop?.close();
     }
 });
+
+test('a visiting guest reconnects its existing room after browser clock suspension', async ({ page, browser }) => {
+    test.setTimeout(60000);
+    await createTown(page);
+    await page.getByRole('button', { name: 'Host match' }).click();
+    await page.getByRole('button', { name: 'Invite guests' }).click();
+    const guest = await browser.newContext();
+    try {
+        const phone = await guest.newPage();
+        await phone.goto(await page.getByLabel('Guest invitation link').inputValue());
+        const nickname = await phone.getByRole('status', { name: 'Your nickname' }).innerText();
+        await phone.getByRole('button', { name: 'Join this town' }).click();
+        await expect(phone.locator('#guest-connection')).toBeEmpty();
+        await phone.getByRole('button', { name: 'Ready', exact: true }).click();
+        await page.getByRole('button', { name: 'Ready', exact: true }).click();
+        await page.getByRole('button', { name: 'Start round' }).click();
+        const game = phone.locator('#online-game');
+        await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 20000 });
+        const matchId = await game.getAttribute('data-match-id');
+        const previousTick = Number(await game.getAttribute('data-tick'));
+        const resumed = phone.waitForEvent('websocket', { timeout: 12000 });
+        await phone.evaluate(() => document.dispatchEvent(new Event('freeze')));
+        await resumed;
+        await expect(phone.getByLabel('Your nickname')).toHaveText(nickname);
+        await expect(page.locator('#roster li')).toHaveCount(2);
+        await expect(game).toHaveAttribute('data-match-id', matchId!);
+        await expect.poll(async () => Number(await game.getAttribute('data-tick')), { timeout: 15000 })
+            .toBeGreaterThan(previousTick + 35);
+        await expect(phone.getByRole('button', { name: 'Dash and drop' })).toBeEnabled();
+    }
+    finally {
+        await guest.close();
+    }
+});

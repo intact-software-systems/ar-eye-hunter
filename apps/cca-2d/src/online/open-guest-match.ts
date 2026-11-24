@@ -8,6 +8,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { GuestConnectionDiagnostics } from './guest-connection-diagnostics.ts';
 import { OnlineMatch } from './online-match.ts';
 import { saveGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
+import { watchTownClockLoss } from './town-clock-recovery.ts';
 import { CCA_SCOPE, townApiBaseUrl, townGroupPresence } from './town-server.ts';
 import './online.css';
 
@@ -28,6 +29,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
         <button type="button" hidden>Reconnect to match</button></main>`;
     const status = root.querySelector<HTMLElement>('#guest-connection')!;
     const retry = root.querySelector('button')!;
+    let stopRoomAccess: (() => void) | undefined;
     root.querySelector('a')!.href = import.meta.env.BASE_URL;
     root.querySelector('output')!.value = visit.nickname;
     const occupants = root.querySelector<HTMLElement>('#town-name')!;
@@ -67,6 +69,18 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
             void recheckAccess();
         }
     }, { emitCurrent: false });
+    const cancelRecovery = watchTownClockLoss(rallar, signal, async attempt => {
+        const current = await findStateGroup(visit.room, CCA_SCOPE, {
+            signal: attempt, authSession: { ...visit.access, username: visit.nickname }
+        });
+        attempt.throwIfAborted();
+        syncTransportDeadline(current);
+        await rallar.connect({ signal: attempt });
+        await enterVerifiedRoom(attempt);
+    }, error => {
+        if (error instanceof ApiHttpError && [401, 403, 404].includes(error.status)) endAccess();
+        else showRetry();
+    });
     const stopAuth = rallar.auth.onChange(state => {
         if (!state.authenticated && (state.reason === 'expired' || state.reason === 'unauthorized')) {
             void recheckAccess();
@@ -75,6 +89,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     signal.addEventListener('abort', () => {
         unsubscribe();
         stopSocket();
+        stopRoomAccess?.();
         stopAuth();
         match.stop();
         void rallar.disconnect().finally(() => {
@@ -82,7 +97,10 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
             resetAuthSessionStorage();
         });
     }, { once: true });
-    retry.addEventListener('click', () => void connect(), { signal });
+    retry.addEventListener('click', () => {
+        cancelRecovery();
+        void connect();
+    }, { signal });
     void connect();
 
     async function recheckAccess(): Promise<void> {
@@ -127,22 +145,28 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
                 groupPresence: townGroupPresence,
                 start: { connect: true, refreshRooms: false, refreshPeople: false, signal }
             });
-            await rallar.rooms.join(roomRef, { presenceOnly: true, signal });
-            if (!signal.aborted) {
-                status.textContent = '';
-                match.reconcile();
-                rallar.rooms.watchAccess(roomRef, access => {
-                    if (access.status === 'denied') {
-                        endAccess();
-                    }
-                }, { signal });
-            }
+            await enterVerifiedRoom(signal);
         }
         catch {
-            if (!signal.aborted) {
-                status.textContent = 'Your seat is saved. Reconnect to play.';
-                retry.hidden = false;
-            }
+            showRetry();
+        }
+    }
+
+    async function enterVerifiedRoom(attempt: AbortSignal): Promise<void> {
+        await rallar.rooms.join(roomRef, { presenceOnly: true, signal: attempt });
+        attempt.throwIfAborted();
+        status.textContent = '';
+        retry.hidden = true;
+        match.reconcile();
+        stopRoomAccess ??= rallar.rooms.watchAccess(roomRef, access => {
+            if (access.status === 'denied') endAccess();
+        }, { signal });
+    }
+
+    function showRetry(): void {
+        if (!signal.aborted) {
+            status.textContent = 'Your seat is saved. Reconnect to play.';
+            retry.hidden = false;
         }
     }
 }
