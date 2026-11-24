@@ -128,7 +128,7 @@ export type GroupMutationCommand =
             operation: 'updateGroup';
             input:
                 & NullableActorInput
-                & Pick<UpdateGroupRequest, 'roomDeadline' | 'roomClock' | 'roomLobby'>
+                & Pick<UpdateGroupRequest, 'roomDeadline' | 'roomClock' | 'roomLobby' | 'guestInvitationVerifier'>
                 & Readonly<{
                     slug: string | null;
                     displayName: string | null;

@@ -7904,6 +7904,17 @@ components:
             deleted:
               $ref: '#/components/schemas/AuditStamp'
       properties:
+        guestInvitation:
+          description: Current owner-issued guest invitation. Present after first issuance.
+          type: object
+          required: [verifier, expiresAtEpochMs]
+          additionalProperties: false
+          properties:
+            verifier:
+              $ref: '#/components/schemas/GuestInvitationVerifier'
+            expiresAtEpochMs:
+              type: integer
+              minimum: 1
         applicationId:
           type: string
         workspaceId:
@@ -9229,9 +9240,18 @@ components:
           description: "The creator's own initial publication grant, written with the group. Absent: the creator holds no grant."
         reason:
           type: string
+    GuestInvitationVerifier:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      description: Lowercase hexadecimal SHA-256 digest of a random invitation secret.
     UpdateGroupRequest:
       type: object
       properties:
+        guestInvitationVerifier:
+          description: Owner-only operation that issues or replaces a room invitation for 15 minutes.
+          $ref: '#/components/schemas/GuestInvitationVerifier'
         roomLobby:
           oneOf:
             - type: object

@@ -1,3 +1,4 @@
+import { isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
 import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
@@ -119,6 +120,9 @@ const INPUT_FIELDS: Partial<Record<GroupMutationCommand['operation'], readonly G
 export function validateGroupMutationOperationInput(
     { operation, input }: GroupMutationOperationInput
 ): readonly TypeError[] {
+    if (operation === 'updateGroup' && input.guestInvitationVerifier !== undefined && !isGuestInvitationVerifier(input.guestInvitationVerifier)) {
+        return [new TypeError('Guest invitation verifier must be a SHA-256 digest in lowercase hexadecimal.')];
+    }
     const writesGroup = operation === 'createGroup' || operation === 'updateGroup';
     const issues = [
         ...validateGroupInputFields(input, INPUT_FIELDS[operation] ?? [], `Group ${operation}`),

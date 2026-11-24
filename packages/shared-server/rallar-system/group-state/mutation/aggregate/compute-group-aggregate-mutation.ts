@@ -66,6 +66,9 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
+    if (command.input.guestInvitationVerifier !== undefined) {
+        return rotateGuestInvitation(command, read, facts, stored.value, command.input.guestInvitationVerifier);
+    }
     const lobbyChange = command.input.roomLobby;
     const privateParticipation = lobbyChange?.operation === 'release' || lobbyChange?.operation === 'wait';
     if (
@@ -152,6 +155,10 @@ export function computeUpdate(
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
     let next = computeUpdatedGroup(command, current, audit);
+    if (next.guestInvitation && (next.kind !== 'room' || next.status !== 'active')) {
+        const { guestInvitation: _closedInvitation, ...closedRoom } = next;
+        next = closedRoom;
+    }
     if (lobbyChange?.operation === 'configure') {
         const metadata = { ...next.metadata };
         if (lobbyChange.policy) {
@@ -215,6 +222,47 @@ export function computeUpdate(
             ? 'group-deleted'
             : 'group-updated'
     });
+}
+
+function rotateGuestInvitation(
+    command: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    current: Group,
+    verifier: string
+): GroupMutationComputed {
+    const active = canMutateActiveGroup({ group: current, nowEpochMs: facts.attemptAtEpochMs });
+    if (!active.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: active });
+    }
+    const actor = read.actorMember;
+    if (actor?.principalId !== current.ownerPrincipalId || actor.principalId !== command.input.actorPrincipalId ||
+        actor.status !== 'active' || actor.role !== 'owner') {
+        return rejectedByGroupPolicy({
+            command, read, facts,
+            denial: { allowed: false, code: 'forbidden-role', message: 'Only the active room owner may issue a guest invitation.' }
+        });
+    }
+    const hasOtherEdits = Object.entries(command.input).some(([key, value]) =>
+        value != null && !['actorPrincipalId', 'actorSessionId', 'reason', 'guestInvitationVerifier'].includes(key)
+    );
+    if (current.kind !== 'room' || hasOtherEdits) {
+        return rejected({
+            command, read, facts, rejectionCode: 'group-mutation-rejected',
+            message: 'A guest invitation must be issued as a separate room update.'
+        });
+    }
+    if (current.guestInvitation?.verifier === verifier) {
+        return noOp(command, read, facts);
+    }
+    const group: Group = {
+        ...current,
+        guestInvitation: { verifier, expiresAtEpochMs: facts.attemptAtEpochMs + 15 * 60_000 },
+        snapshotVersion: current.snapshotVersion + 1,
+        metadataVersion: current.metadataVersion + 1,
+        updated: auditStamp(command, facts, actor.principalId)
+    };
+    return groupWrite({ command, read, facts, group, eventType: 'group-updated' });
 }
 
 interface PrivateLobbyUpdate extends Pick<GroupWriteInput, 'read' | 'facts' | 'group'> {

@@ -1,5 +1,5 @@
 {
-  "description": "Group governance authority over the wire (coverage plan slice 1): ban, unban, remove and role promotion had owner-happy-path coverage only, so every denial they raise was unobserved. A plain member is denied forbidden-role on all three governing routes; an admin may govern a regular member but not the owner, which is the distinction the role tier actually draws; and a removed member is denied by member-removed rather than the member-banned the ban recipe already pins.",
+  "description": "Group governance authority over the wire (coverage plan slice 1): ban, unban, remove and role promotion had owner-happy-path coverage only, so every denial they raise was unobserved. A plain member is denied forbidden-role on all three governing routes; an admin may govern a regular member but not the owner, which is the distinction the role tier actually draws; and a removed member is denied by member-removed rather than the member-banned the ban recipe already pins. Guest invitation issuance and rotation are reserved for the owner.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -231,6 +231,33 @@
       }
     },
     {
+      "name": "createCannotPreseedGuestAdmission",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govauth-create-group-preseed-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Governance authority group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}",
+          "guestInvitation": {
+            "verifier": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "expiresAtEpochMs": 9999999999999
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
       "name": "createGroup",
       "type": "http",
       "connection": "api",
@@ -419,6 +446,103 @@
               "status": "active"
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "updateCannotChooseInvitationExpiry",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/govauth-issue-guest-preseed-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "guestInvitation": {
+            "verifier": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "expiresAtEpochMs": 9999999999999
+          }
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "ownerIssuesAnInvitedGuestLink",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/govauth-issue-guest-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "guestInvitationVerifier": "4e1edf064f82c30abb5bba36bc1759c625c7b818796361705d109bdaa8a6ff4e"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "guestInvitation": {
+              "verifier": "4e1edf064f82c30abb5bba36bc1759c625c7b818796361705d109bdaa8a6ff4e",
+              "expiresAtEpochMs": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "anAdminCannotReplaceTheOwnersGuestInvitation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/govauth-admin-issue-guest-{runId}",
+        "headers": {
+          "Authorization": "{deputyAuthHeader}",
+          "x-client-id": "{deputyClientId}"
+        },
+        "body": {
+          "guestInvitationVerifier": "ff32b2eb58bc32c90e4391dbbdc7b9099b86d6fbab912d2d2c43a016c86ea674"
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "ownerRotatesTheGuestInvitation",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/govauth-rotate-guest-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "guestInvitationVerifier": "ff32b2eb58bc32c90e4391dbbdc7b9099b86d6fbab912d2d2c43a016c86ea674"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "guestInvitation": {
+              "verifier": "ff32b2eb58bc32c90e4391dbbdc7b9099b86d6fbab912d2d2c43a016c86ea674",
+              "expiresAtEpochMs": "integer"
+            }
+          }
         }
       }
     },

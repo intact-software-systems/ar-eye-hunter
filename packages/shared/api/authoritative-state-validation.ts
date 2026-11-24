@@ -1,3 +1,4 @@
+import { isRoomGuestInvitation } from './room-guest-invitation.ts';
 import { decodeRoomLobbyPolicy, ROOM_LOBBY_METADATA_KEY } from './room-lobbies/room-lobby-policy.ts';
 import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
@@ -415,7 +416,11 @@ export function validateAuthoritativeGroupSnapshot(
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
     const group = decodeRecord(snapshot.group, 'GroupSnapshot.group');
-    exact(group, GROUP_KEYS, 'GroupSnapshot.group');
+    const hasGuestInvitation = Object.hasOwn(group, 'guestInvitation');
+    exact(group, hasGuestInvitation ? [...GROUP_KEYS, 'guestInvitation'] : GROUP_KEYS, 'GroupSnapshot.group');
+    if (hasGuestInvitation && !isRoomGuestInvitation(group.guestInvitation)) {
+        fail('Room guest invitation is invalid.');
+    }
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
     enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
     enumValue(group.kind, ['party', 'room', 'team', 'custom'], 'GroupSnapshot.group.kind');
