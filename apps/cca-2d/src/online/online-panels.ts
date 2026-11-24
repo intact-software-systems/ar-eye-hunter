@@ -31,7 +31,7 @@ export function renderRoom(root: HTMLElement, state: OnlineSession.State): void 
                     state.friends.view?.contacts.find((person) => person.principalId === member.principalId)
                         ?.displayName || member.displayName || member.username
                 )
-            } · ${member.isOnline ? 'here' : 'away'}${member.isOwner ? ' · host' : ''}</li>`
+            } · ${member.isOnline ? 'here' : 'away'}${member.isOwner ? ' · room owner' : ''}</li>`
         ).join('');
     }
 }
