@@ -42,8 +42,10 @@ The standard server has passed a three-process PostgreSQL race for the final sea
 
 The iPhone guest reached gameplay on the second trial. Its WebSocket closed during the round and the match stopped at tick 673. The [phone trial notes](babylon-local-trial.md) distinguish this from the earlier countdown failure.
 
-1. Verify a midround reload in a phone-sized WebKit browser. Check that the guest resumes the same seat and round. Capture the browser's close code and visibility state on interruption.
-2. Repeat the physical iPhone round with a desktop host. Compare final scores, reload and rematch, then exercise host handoff and WebSocket fallback on the device.
+A Chromium host and mobile WebKit guest subsequently completed the three-minute round. The guest reloaded at tick 910, resumed the same match and dashed. Both screens reached tick 5400 with scores of 10 and 0. This pair used WebSocket fallback. A separate Chromium trial exercised RTC and then forced WebSocket fallback.
+
+1. Complete the physical iPhone round with a desktop host. Compare final scores and verify that the guest can reload and rematch.
+2. Exercise host handoff and WebSocket fallback on the device. If it stops, record the last confirmed tick, WebSocket close code and visibility state shown by the local diagnostics.
 
 The account-registration prototype would leave a regular account behind.
 The chosen design calls for a genuinely expiring identity in Rallar.
