@@ -72,6 +72,30 @@ Retain visibility, presence freshness and checkpoint progress if either recurs. 
 clock qualification remains in [#836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
 Measurements and reproduction steps are in [the trial report](babylon-local-trial.md).
 
+## Guest play proposal for discussion
+
+A child opens a town invitation, picks a cutout nickname and taps **Join as a guest**.
+The room creator can show a QR code on their phone. A guest can ready up, dash,
+rescue friends and see the same results as a signed-in player. Joining a room
+does not by itself add anyone to a permanent friends list.
+
+- **Prototype with today's API.** Generate unique credentials, register and sign
+  in through Rallar, then enter the existing town by its ID. This removes typing.
+  The server still owns a regular account after the browser drops its session.
+- **Ship an expiring guest identity.** The standard Rallar Server would issue an
+  authenticated guest principal with an expiry and a scope that permits joining
+  the invited room. Reloading the same browser should recover the same seat
+  during the session. The server would enforce expiry and define cleanup of
+  guest records. A QR or link to the current unlisted open room is shareable;
+  a private invitation would also need scoped admission enforced by Rallar.
+- **Keep a friend for later.** Offer account creation after the round to players
+  who want to reconnect another day. Retaining a guest identity and its contacts
+  would require an explicit upgrade flow and both players' social consent.
+
+Recommended first product slice: a signed-in host and room-code guests, with
+reloading tested on a physical phone. Guest hosting, public matchmaking and
+account upgrades are separate decisions. This proposal adds no runtime behavior.
+
 ## Global constraints
 
 - Solo opens without authentication or a server dependency; online code loads on demand.
