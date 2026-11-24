@@ -12,16 +12,16 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import type { GroupMutationCommand, GroupMutationFacts } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface RoomGuestSeatDeadline {
+export interface GroupGuestSeatDeadline {
     readonly roomRef: GroupRef;
     readonly principalId: string;
     readonly dueAtEpochMs: number;
     readonly groupRevision: number;
 }
 
-export const ROOM_GUEST_SEAT_DEADLINE_TOPIC = 'room-guest.seat-deadline';
+export const GROUP_GUEST_SEAT_DEADLINE_TOPIC = 'room-guest.seat-deadline';
 
-export function decodeRoomGuestSeatDeadline(value: unknown): RoomGuestSeatDeadline {
+export function decodeGroupGuestSeatDeadline(value: unknown): GroupGuestSeatDeadline {
     const deadline = requireRecord(value, 'Guest seat deadline');
     requireExactKeys(deadline, ['roomRef', 'principalId', 'dueAtEpochMs', 'groupRevision'], 'Guest seat deadline');
     const ref = requireRecord(deadline.roomRef, 'Guest seat room');
@@ -36,22 +36,22 @@ export function decodeRoomGuestSeatDeadline(value: unknown): RoomGuestSeatDeadli
     };
 }
 
-export function roomGuestSeatDeadlineRoute(deadline: RoomGuestSeatDeadline) {
+export function groupGuestSeatDeadlineRoute(deadline: GroupGuestSeatDeadline) {
     return toAppQueueKey({
-        topicId: ROOM_GUEST_SEAT_DEADLINE_TOPIC, contextId: groupStateGroupStorageKey(deadline.roomRef),
+        topicId: GROUP_GUEST_SEAT_DEADLINE_TOPIC, contextId: groupStateGroupStorageKey(deadline.roomRef),
         resourceId: computeSha256CanonicalJson(deadline)
     });
 }
 
-export function toRoomGuestSeatExpiryCommand(deadline: RoomGuestSeatDeadline): GroupMutationCommand {
-    const commandId = 'guest-expiry:' + roomGuestSeatDeadlineRoute(deadline).resourceId;
+export function toGroupGuestSeatExpiryCommand(deadline: GroupGuestSeatDeadline): GroupMutationCommand {
+    const commandId = 'guest-expiry:' + groupGuestSeatDeadlineRoute(deadline).resourceId;
     return {
         operation: 'removeGroupMember', aggregateRef: deadline.roomRef, commandId, requestId: commandId,
         targetPrincipalId: deadline.principalId, input: { actorPrincipalId: null, actorSessionId: null, reason: null }
     };
 }
 
-interface RoomGuestDeadlineChanges {
+interface GroupGuestDeadlineChanges {
     readonly group: Group;
     readonly previous: Group | null;
     readonly newlyAdmitted: readonly GroupMember[];
@@ -59,7 +59,7 @@ interface RoomGuestDeadlineChanges {
     readonly facts: GroupMutationFacts;
 }
 
-export function computeRoomGuestSeatDeadlines({ group, previous, newlyAdmitted, timelineChanged, facts }: RoomGuestDeadlineChanges): readonly AppOutboxInsert[] {
+export function computeGroupGuestSeatDeadlines({ group, previous, newlyAdmitted, timelineChanged, facts }: GroupGuestDeadlineChanges): readonly AppOutboxInsert[] {
     const dueByPrincipal = new Map<string, number>();
     for (const member of newlyAdmitted) {
         if (member.guestLease && member.status === 'active') {
@@ -85,7 +85,7 @@ export function computeRoomGuestSeatDeadlines({ group, previous, newlyAdmitted, 
     return Array.from(dueByPrincipal, ([principalId, dueAtEpochMs]) => {
         const deadline = { roomRef: { applicationId, workspaceId, groupId }, principalId, dueAtEpochMs, groupRevision: group.snapshotVersion };
         return computeAppOutboxSignal({
-            ...roomGuestSeatDeadlineRoute(deadline), typeId: AppOutboxType.ROOM_GUEST_SEAT_DEADLINE,
+            ...groupGuestSeatDeadlineRoute(deadline), typeId: AppOutboxType.ROOM_GUEST_SEAT_DEADLINE,
             resource: JSON.stringify(deadline), dueAtEpochMs, createdAtEpochMs: facts.nowEpochMs,
             expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP, serviceId: facts.serviceId, traceId: facts.traceId
         });

@@ -1,5 +1,5 @@
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
-import type { RoomGuestAdmission } from './membership/room-guest-admission.ts';
+import type { GroupGuestAdmission } from './membership/group-guest-admission.ts';
 import type { RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupLobbyRead } from '../lobby/group-lobby-storage.ts';
@@ -312,7 +312,7 @@ export type GroupMutationCommand =
                 & NullableActorInput
                 & Readonly<{
                     participation: 'player' | 'spectator' | null;
-                    guestTransport?: RoomGuestAdmission.Transport;
+                    guestTransport?: GroupGuestAdmission.Transport;
                     guestDisplayName?: string;
                     inviteToken: string | null;
                     joinCode: string | null;

@@ -341,7 +341,7 @@ async function readGroupMutationAttempt(
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
     }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession, read);
+    await verifyGroupMutationAttemptSession({ owners, ingress, authSession, read });
     return await readGroupMutationFences(owners, ingress, read);
 }
 
@@ -357,7 +357,7 @@ async function readGroupMutationAttemptWithSnapshot(
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
     }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession, read);
+    await verifyGroupMutationAttemptSession({ owners, ingress, authSession, read });
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };
 }
 
@@ -378,13 +378,22 @@ function resolveGroupMutationAuthSessionId(ingress: GroupStateMutationCommand): 
     return null;
 }
 
+interface GroupMutationAttemptSession {
+    readonly owners: GroupStateRuntimeOwners;
+    readonly ingress: GroupStateMutationCommand;
+    readonly authSession: GroupStateMutationExactAuthSession;
+    readonly read: GroupMutationRead;
+}
+
+interface VerifyGroupMutationAttemptSessionInput {
+    readonly owners: GroupStateRuntimeOwners;
+    readonly ingress: GroupStateMutationCommand;
+    readonly authSession: GroupStateMutationExactAuthSession;
+    readonly read: GroupMutationRead;
+}
+
 /** An exact read carried the session row; a sequential read re-checks it with its own read. */
-async function verifyGroupMutationAttemptSession(
-    owners: GroupStateRuntimeOwners,
-    ingress: GroupStateMutationCommand,
-    authSession: GroupStateMutationExactAuthSession,
-    read: GroupMutationRead
-): Promise<void> {
+async function verifyGroupMutationAttemptSession({ owners, ingress, authSession, read }: VerifyGroupMutationAttemptSessionInput): Promise<void> {
     if (ingress.facts.internalAuthority !== 'none') return;
     const proof = requireGroupMutationAuthorityProof(ingress);
     const session = authSession.status === 'unread'

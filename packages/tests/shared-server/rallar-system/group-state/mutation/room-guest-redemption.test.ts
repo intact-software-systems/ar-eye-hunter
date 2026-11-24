@@ -1,9 +1,9 @@
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { roomGuestTransportSessionId } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
-import { toRoomGuestSeatExpiryCommand } from '@shared-server/rallar-system/group-state/schedule/room-guest-seat-deadline.ts';
+import { toGroupGuestSeatExpiryCommand } from '@shared-server/rallar-system/group-state/schedule/group-guest-seat-deadline.ts';
 import { expect, it } from 'vitest';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import { toRoomGuestAdmissionCommand } from '@shared-server/rallar-system/group-state/mutation/membership/room-guest-admission.ts';
+import { toGroupGuestAdmissionCommand } from '@shared-server/rallar-system/group-state/mutation/membership/group-guest-admission.ts';
 import { commitMutation, createRetentionDatabaseFixture, prepareMutation, requireMutationWrite, RETENTION_REF, retryMutation, seedRetentionRoom } from '../retention/group-retention-database-fixture.ts';
 
 it('commits one four-hour guest lease in the final seat and retires the link atomically on removal', async () => {
@@ -22,7 +22,7 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
         await ownerUpdate('invite', { guestInvitationVerifier: verifier });
         const principals = ['b', 'c'].map(character => 'guest-' + character.repeat(64));
         const admissions = await Promise.all(principals.map(async principalId => fixture.mutations.captureGuestMembershipMutationIngress(
-            toRoomGuestAdmissionCommand({ roomRef: RETENTION_REF, principalId, invitationVerifier: verifier, requestId: 'join', displayName: 'Grumpy Gull',
+            toGroupGuestAdmissionCommand({ roomRef: RETENTION_REF, principalId, invitationVerifier: verifier, requestId: 'join', displayName: 'Grumpy Gull',
                 guestTransport: { sessionId: await roomGuestTransportSessionId(principalId), accessTokenDigest: 'A'.repeat(43) } }), fixture.nowEpochMs
         )));
         const admissionTime = fixture.nowEpochMs;
@@ -75,7 +75,7 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
             request: { actorPrincipalId: 'owner', requestId: 'invite', guestInvitationVerifier: invitationVerifier }
         }));
         await commitMutation(fixture, requireMutationWrite(update.computed));
-        const join = await fixture.mutations.captureGuestMembershipMutationIngress(toRoomGuestAdmissionCommand({
+        const join = await fixture.mutations.captureGuestMembershipMutationIngress(toGroupGuestAdmissionCommand({
             roomRef: RETENTION_REF, principalId, invitationVerifier, requestId: 'join',
             guestTransport: { sessionId: await roomGuestTransportSessionId(principalId), accessTokenDigest: 'A'.repeat(43) }
         }), fixture.nowEpochMs);
@@ -85,7 +85,7 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
         await commitMutation(fixture, admission);
         fixture.nowEpochMs = expiresAtEpochMs;
         const deadline = { roomRef: RETENTION_REF, principalId, dueAtEpochMs: expiresAtEpochMs, groupRevision: 3 };
-        const expire = await fixture.mutations.captureGuestMembershipMutationIngress(toRoomGuestSeatExpiryCommand(deadline), fixture.nowEpochMs);
+        const expire = await fixture.mutations.captureGuestMembershipMutationIngress(toGroupGuestSeatExpiryCommand(deadline), fixture.nowEpochMs);
         let cleanup = expire;
         if (inRound) {
             fixture.nowEpochMs = expiresAtEpochMs - 1000;
@@ -113,7 +113,7 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
             expect((await retryMutation(fixture, expire)).outcome).toBe('no-op');
             fixture.nowEpochMs = expiresAtEpochMs + 1000;
             const finish = { ...deadline, groupRevision: 4, dueAtEpochMs: fixture.nowEpochMs };
-            cleanup = await fixture.mutations.captureGuestMembershipMutationIngress(toRoomGuestSeatExpiryCommand(finish), fixture.nowEpochMs);
+            cleanup = await fixture.mutations.captureGuestMembershipMutationIngress(toGroupGuestSeatExpiryCommand(finish), fixture.nowEpochMs);
         }
         const released = requireMutationWrite(await retryMutation(fixture, cleanup));
         await commitMutation(fixture, released);

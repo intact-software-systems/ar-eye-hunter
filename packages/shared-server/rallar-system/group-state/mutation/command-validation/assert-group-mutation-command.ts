@@ -1,4 +1,4 @@
-import { isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
+import { assertGuestInvitationVerifier } from '../membership/group-guest-admission.ts';
 import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import { decodeRoomDirectorSuccessionCommand } from '@shared/api/room-directors/room-director-succession-record.ts';
 import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
@@ -132,9 +132,6 @@ function assertAggregateOperationInput(
             assertCreateGroupInput(input);
             return;
         case 'updateGroup':
-            if (input.guestInvitationVerifier !== undefined && !isGuestInvitationVerifier(input.guestInvitationVerifier)) {
-                throw new TypeError('Guest invitation verifier must be a SHA-256 digest in lowercase hexadecimal.');
-            }
             assertUpdateGroupInput(input);
             return;
         case 'settleTimeline':
@@ -181,6 +178,7 @@ function assertCreateGroupInput(input: JsonWireObject): void {
 }
 
 function assertUpdateGroupInput(input: JsonWireObject): void {
+    assertGuestInvitationVerifier(input.guestInvitationVerifier);
     assertNullableString(input, 'slug');
     assertNullableString(input, 'displayName');
     assertNullableString(input, 'description');

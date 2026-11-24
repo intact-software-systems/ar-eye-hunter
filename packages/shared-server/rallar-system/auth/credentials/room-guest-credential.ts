@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
 import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
@@ -8,6 +9,10 @@ const GUEST_SECRET = /^[0-9a-f]{64}$/u;
 interface RoomGuestIdentity {
     readonly clientId: string;
     readonly sessionId: string;
+}
+
+interface ScopedRoomGuestIdentity extends RoomGuestIdentity {
+    readonly roomRef: GroupRef;
 }
 
 interface RoomGuestCredential extends RoomGuestIdentity {
@@ -28,7 +33,7 @@ export async function toRoomGuestCredential(ref: GroupRef, guestSecret: string):
 }
 
 /** Identifies a candidate guest. Authorization still requires a current matching seat in the scoped room. */
-export async function readRoomGuestCredential(token: string): Promise<(RoomGuestIdentity & { readonly roomRef: GroupRef; }) | undefined> {
+export async function readRoomGuestCredential(token: string): Promise<ScopedRoomGuestIdentity | undefined> {
     if (!token.startsWith(ROOM_GUEST_TOKEN_PREFIX)) {
         return undefined;
     }
@@ -37,7 +42,7 @@ export async function readRoomGuestCredential(token: string): Promise<(RoomGuest
         return undefined;
     }
     try {
-        const fields: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        const fields: ApiJsonValue = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
         if (!Array.isArray(fields) || fields.length !== 2 || typeof fields[1] !== 'string' || fields[1].length !== 64 || !GUEST_SECRET.test(fields[1])) {
             return undefined;
         }

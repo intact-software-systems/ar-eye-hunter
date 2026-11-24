@@ -17,9 +17,9 @@ export interface JsonWebSocketConnectionIdentity {
 export function createJsonWebSocketEvents(
     socketServer: JsonWebSocketServer,
     identity: JsonWebSocketConnectionIdentity,
-    clock: { readonly serverPeerId: string; readonly nowEpochMs: () => number; },
-    guest?: RoomGuestSocket
+    clock: { readonly serverPeerId: string; readonly nowEpochMs: () => number; readonly guestSocket?: RoomGuestSocket; }
 ): WSEvents<ConnectionContext.Socket> {
+    const guest = clock.guestSocket;
     let connection: ConnectionContext | undefined;
     const toConnection = (ws: WSContext<ConnectionContext.Socket>): ConnectionContext =>
         new ConnectionContext({ ...identity, socket: guest?.wrap(toServerSocket(ws)) ?? toServerSocket(ws) });
@@ -41,7 +41,7 @@ export function createJsonWebSocketEvents(
                 toServerSocket(ws).send(reply);
                 return;
             }
-            if (guest && !await guest.allowsInbound(event.data)) return;
+            if (guest && (typeof event.data !== 'string' || !await guest.allowsInbound(event.data))) return;
             if (socketServer.connections.get(connection.id) === connection) {
                 await socketServer.dispatchConnectionMessage(connection, event.data);
             }

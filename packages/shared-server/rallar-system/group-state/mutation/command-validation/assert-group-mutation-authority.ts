@@ -1,5 +1,4 @@
-import { isRoomGuestDisplayName } from '@shared/api/room-guest-invitation.ts';
-import { isBase64UrlOfByteLength } from '@shared/encoding/base64url.ts';
+import { assertGuestAdmissionCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
@@ -54,20 +53,7 @@ function assertInternalMutationAuthority(
             }
             return;
         case 'guest-redemption':
-            if (command.operation !== 'joinGroup' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId) ||
-                command.input.participation !== 'player' || command.input.joinCode !== null ||
-                typeof command.input.inviteToken !== 'string' || !/^[0-9a-f]{64}$/.test(command.input.inviteToken)) {
-                throw new TypeError('Room guest redemption requires a scoped guest principal and invitation verifier.');
-            }
-            if (command.input.guestDisplayName !== undefined && !isRoomGuestDisplayName(command.input.guestDisplayName)) {
-                throw new TypeError('Invalid room guest display name.');
-            }
-            const binding = command.input.guestTransport;
-            if (!binding || Object.keys(binding).length !== 2 || typeof binding.sessionId !== 'string' ||
-                !/^guest-session-[0-9a-f]{64}$/u.test(binding.sessionId) || typeof binding.accessTokenDigest !== 'string' ||
-                !isBase64UrlOfByteLength(binding.accessTokenDigest, 32)) {
-                throw new TypeError('Guest admission requires a scoped transport binding.');
-            }
+            assertGuestAdmissionCommand(command);
             return;
         case 'formation-criterion':
             return assertFormationCriterionAuthority(command);

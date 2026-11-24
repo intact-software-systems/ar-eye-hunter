@@ -3,7 +3,7 @@ import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/ha
 import { toRoomGuestCredential } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import { toRoomGuestAdmissionCommand } from '@shared-server/rallar-system/group-state/mutation/membership/room-guest-admission.ts';
+import { toGroupGuestAdmissionCommand } from '@shared-server/rallar-system/group-state/mutation/membership/group-guest-admission.ts';
 import { commitMutation, createRetentionDatabaseFixture, prepareMutation, requireMutationWrite, RETENTION_REF, retryMutation, seedRetentionRoom } from '../group-state/retention/group-retention-database-fixture.ts';
 
 it('admission creates a room-bound transport session that cannot authenticate as a registered user', async () => {
@@ -17,7 +17,7 @@ it('admission creates a room-bound transport session that cannot authenticate as
         }));
         await commitMutation(fixture, requireMutationWrite(ownerUpdate.computed));
         const guest = await toRoomGuestCredential(RETENTION_REF, 'af'.repeat(32));
-        const command = toRoomGuestAdmissionCommand({
+        const command = toGroupGuestAdmissionCommand({
             roomRef: RETENTION_REF, principalId: guest.clientId, requestId: 'enter',
             invitationVerifier: verifier,
             guestTransport: { sessionId: guest.sessionId, accessTokenDigest: await hashAuthSecret(guest.accessToken) }

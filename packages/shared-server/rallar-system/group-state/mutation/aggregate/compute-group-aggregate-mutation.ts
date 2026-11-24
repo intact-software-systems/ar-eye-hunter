@@ -45,7 +45,7 @@ import {
     rejectedByGroupPolicy,
     requireGroup
 } from '../group-mutation-result.ts';
-import { computeGroupClockUpdate } from './compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from './compute-group-clock-update.ts';
 import { computeGroupDeadlineChange, refuseDirectorTimeChange } from './compute-group-deadline-change.ts';
 import { toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
@@ -67,7 +67,7 @@ export function computeUpdate(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     if (command.input.guestInvitationVerifier !== undefined) {
-        return rotateGuestInvitation(command, read, facts, stored.value, command.input.guestInvitationVerifier);
+        return rotateGuestInvitation({ command, read, facts, current: stored.value, verifier: command.input.guestInvitationVerifier });
     }
     const lobbyChange = command.input.roomLobby;
     const privateParticipation = lobbyChange?.operation === 'release' || lobbyChange?.operation === 'wait';
@@ -156,8 +156,8 @@ export function computeUpdate(
     const current = stored.value;
     let next = computeUpdatedGroup(command, current, audit);
     if (next.guestInvitation && (next.kind !== 'room' || next.status !== 'active')) {
-        const { guestInvitation: _closedInvitation, ...closedRoom } = next;
-        next = closedRoom;
+        const { guestInvitation: _closedInvitation, ...closedGroup } = next;
+        next = closedGroup;
     }
     if (lobbyChange?.operation === 'configure') {
         const metadata = { ...next.metadata };
@@ -184,7 +184,7 @@ export function computeUpdate(
     }
     const clockCommand = command.input.roomClock;
     if (clockCommand) {
-        const updated = computeGroupClockUpdate(next, clockCommand, facts.attemptAtEpochMs, read.activeMembers ?? []);
+        const updated = computeGroupClockUpdate({ group: next, command: clockCommand, now: facts.attemptAtEpochMs, members: read.activeMembers ?? [] });
         if ('rejectionCode' in updated) {
             return rejected({ command, read, facts, ...updated });
         }
@@ -224,13 +224,15 @@ export function computeUpdate(
     });
 }
 
-function rotateGuestInvitation(
-    command: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>,
-    read: GroupMutationRead,
-    facts: GroupMutationFacts,
-    current: Group,
-    verifier: string
-): GroupMutationComputed {
+interface RotateGuestInvitationInput {
+    readonly command: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly current: Group;
+    readonly verifier: string;
+}
+
+function rotateGuestInvitation({ command, read, facts, current, verifier }: RotateGuestInvitationInput): GroupMutationComputed {
     const active = canMutateActiveGroup({ group: current, nowEpochMs: facts.attemptAtEpochMs });
     if (!active.allowed) {
         return rejectedByGroupPolicy({ command, read, facts, denial: active });

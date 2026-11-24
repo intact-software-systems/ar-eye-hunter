@@ -86,7 +86,8 @@ async function upgradeAuthorisedWebSocket(
             requestUrl.searchParams.get('workspaceId') !== room.workspaceId) {
             return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
         }
-        guestSocket = new RoomGuestSocket({ roomRef: room, clientId: session.clientId, sessionId }, input.readGuestRoom, input.nowEpochMs, input.serverPeerId);
+        guestSocket = new RoomGuestSocket({ guest: { roomRef: room, clientId: session.clientId, sessionId },
+            readSnapshot: input.readGuestRoom, now: input.nowEpochMs, serverPeerId: input.serverPeerId });
         if (!await guestSocket.authorizeUpgrade()) return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
     const connect = createAuthorisedWsConnect(input, {
@@ -99,7 +100,7 @@ async function upgradeAuthorisedWebSocket(
     input.socketServer.expectedConnections.expect(connect.expected);
     const written = await writeAuthorisedWsConnect(input, connect);
     if (written?.right?.status === 'ok') {
-        return await registerAuthorisedWebSocket(context, input, connect, guestSocket);
+        return await registerAuthorisedWebSocket(context, input, { connect, guestSocket });
     }
     input.socketServer.expectedConnections.release(connect.expected);
     return await writeUnwrittenConnectResponse(context, input, { connect, written });
@@ -176,11 +177,15 @@ async function writeAuthorisedWsConnect(
     }
 }
 
+interface RegisterSocketConnection {
+    readonly connect: AuthorisedWsConnect;
+    readonly guestSocket?: RoomGuestSocket;
+}
+
 async function registerAuthorisedWebSocket(
     context: Context,
     input: RegisterWsRoutesInput,
-    connect: AuthorisedWsConnect,
-    guestSocket?: RoomGuestSocket
+    { connect, guestSocket }: RegisterSocketConnection
 ): Promise<Response> {
     if (context.req.raw.signal.aborted) {
         return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
@@ -191,7 +196,7 @@ async function registerAuthorisedWebSocket(
     try {
         await input.upgradeWebSocket(
             context,
-            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation }, input, guestSocket)
+            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation }, { serverPeerId: input.serverPeerId, nowEpochMs: input.nowEpochMs, guestSocket })
         );
         rememberAuthorisedWsConnection(
             connect.expected.id,

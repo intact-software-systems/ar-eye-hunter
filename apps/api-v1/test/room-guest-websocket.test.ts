@@ -1,7 +1,7 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import { allowsGuestRoomFrame } from '../src/runtime/room-guest-websocket.ts';
+import { allowsGuestRoomFrame } from '../src/runtime/room-guest-frame-policy.ts';
 import { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } from './group-state/group-state-route-test-runtime.ts';
 
 test('a guest socket confines send and receive to the admitted room and rejects sender substitution', () => {
@@ -11,11 +11,11 @@ test('a guest socket confines send and receive to the admitted room and rejects 
         createdAtEpochMs: 100, senderId: guest.sessionId, groupRef: guest.roomRef,
         route: { topicId: 'events', resourceId: 'input', contextId: 'market' }, typeId: 'input', resource: {}
     });
-    assert.equal(allowsGuestRoomFrame(frame, 'inbound', guest, snapshot, 100), true);
-    assert.equal(allowsGuestRoomFrame({ ...frame, id: { ...frame.id, senderId: 'other' } }, 'inbound', guest, snapshot, 100), false);
+    assert.equal(allowsGuestRoomFrame(frame, { direction: 'inbound', guest, snapshot, now: 100 }), true);
+    assert.equal(allowsGuestRoomFrame({ ...frame, id: { ...frame.id, senderId: 'other' } }, { direction: 'inbound', guest, snapshot, now: 100 }), false);
     for (const direction of ['inbound', 'outbound'] as const) {
-        assert.equal(allowsGuestRoomFrame({ ...frame, targets: { mode: 'broadcast', scope: 'world' } }, direction, guest, snapshot, 100), false);
-        assert.equal(allowsGuestRoomFrame({ ...frame, targets: { mode: 'multicast', groupRef: { ...guest.roomRef, workspaceId: 'other' } } }, direction, guest, snapshot, 100), false);
+        assert.equal(allowsGuestRoomFrame({ ...frame, targets: { mode: 'broadcast', scope: 'world' } }, { direction, guest, snapshot, now: 100 }), false);
+        assert.equal(allowsGuestRoomFrame({ ...frame, targets: { mode: 'multicast', groupRef: { ...guest.roomRef, workspaceId: 'other' } } }, { direction, guest, snapshot, now: 100 }), false);
     }
 });
 
@@ -26,7 +26,7 @@ test('movement bursts use the live room authorization and refresh once it ages o
     const snapshot = { ...room, members: room.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 10000 } })) };
     let reads = 0;
     let now = 100;
-    const socket = new RoomGuestSocket(guest, async () => { reads++; return snapshot; }, () => now, 'server');
+    const socket = new RoomGuestSocket({ guest, readSnapshot: async () => { reads++; return snapshot; }, now: () => now, serverPeerId: 'server' });
     const frame = JSON.stringify(newALMulticastMessage({
         createdAtEpochMs: 100, senderId: guest.sessionId, groupRef: guest.roomRef,
         route: { topicId: 'events', resourceId: 'input', contextId: 'market' }, typeId: 'input', resource: {}
@@ -48,7 +48,7 @@ test('guest reliability controls can acknowledge only messages delivered on this
     const guest = { roomRef: { ...TEST_GROUP_SCOPE, groupId: 'market' }, clientId: 'guest', sessionId: 'guest-session' };
     const room = createGroupStateRouteSnapshotWithMember('market', 'guest', 'active');
     const snapshot = { ...room, members: room.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 10000 } })) };
-    const socket = new RoomGuestSocket(guest, async () => snapshot, () => 100, 'server');
+    const socket = new RoomGuestSocket({ guest, readSnapshot: async () => snapshot, now: () => 100, serverPeerId: 'server' });
     const source = newALMulticastMessage({ createdAtEpochMs: 100, senderId: 'sender', groupRef: guest.roomRef,
         route: { topicId: 'events', resourceId: 'action', contextId: 'market' }, typeId: 'action', resource: {},
         options: { reliability: 'at-least-once', ack: 'receiver' } });
@@ -77,8 +77,8 @@ test('room labels alone do not authorize a withdrawn unicast recipient or a prin
     const frame = newALMulticastMessage({ createdAtEpochMs: 3, senderId: guest.sessionId, groupRef: guest.roomRef,
         route: { topicId: 'game', resourceId: 'input', contextId: 'market' }, typeId: 'move', resource: {} });
     const unicast = { ...frame, targets: { mode: 'unicast', toPeerId: 'bob', groupRef: guest.roomRef } } as const;
-    assert.equal(allowsGuestRoomFrame(unicast, 'inbound', guest, leaving, 3), false);
+    assert.equal(allowsGuestRoomFrame(unicast, { direction: 'inbound', guest, snapshot: leaving, now: 3 }), false);
     const principal = { ...frame, targets: { mode: 'broadcast', scope: 'principal', groupRef: guest.roomRef,
         principalRef: { ...TEST_GROUP_SCOPE, principalId: 'stranger' } } } as const;
-    assert.equal(allowsGuestRoomFrame(principal, 'inbound', guest, snapshot, 3), false);
+    assert.equal(allowsGuestRoomFrame(principal, { direction: 'inbound', guest, snapshot, now: 3 }), false);
 });

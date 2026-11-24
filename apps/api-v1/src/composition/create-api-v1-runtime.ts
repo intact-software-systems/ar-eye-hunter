@@ -1,4 +1,4 @@
-import { decodeRoomGuestSeatDeadline, ROOM_GUEST_SEAT_DEADLINE_TOPIC, roomGuestSeatDeadlineRoute } from '@shared-server/rallar-system/group-state/schedule/room-guest-seat-deadline.ts';
+import { decodeGroupGuestSeatDeadline, GROUP_GUEST_SEAT_DEADLINE_TOPIC, groupGuestSeatDeadlineRoute } from '@shared-server/rallar-system/group-state/schedule/group-guest-seat-deadline.ts';
 import { installDurableDeadline } from '@shared-server/rallar-system/app-outbox/install-durable-deadline.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { decodeGroupTimelineDeadline, GROUP_TIMELINE_DEADLINE_TOPIC, groupTimelineDeadlineRoute, toTimelineSettlementCommand } from '@shared-server/rallar-system/group-state/schedule/group-timeline-deadline.ts';
@@ -259,9 +259,9 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
         })
     });
     installDurableDeadline({
-        typeId: AppOutboxType.ROOM_GUEST_SEAT_DEADLINE, topicId: ROOM_GUEST_SEAT_DEADLINE_TOPIC,
+        typeId: AppOutboxType.ROOM_GUEST_SEAT_DEADLINE, topicId: GROUP_GUEST_SEAT_DEADLINE_TOPIC,
         outboxQueueReader: runtime.outboxQueueReader, database: input.database, retentionMs: input.appInboxFinishedRetentionMs,
-        nowEpochMs: input.nowEpochMs, route: roomGuestSeatDeadlineRoute, decode: decodeRoomGuestSeatDeadline,
+        nowEpochMs: input.nowEpochMs, route: groupGuestSeatDeadlineRoute, decode: decodeGroupGuestSeatDeadline,
         enqueue: (deadline, traceId) => runtime.groupStateInboxService.enqueueGuestSeatExpiry(deadline, traceId)
     });
     const viewWatches = createViewWatchService(appInbox, mutation, input.nowEpochMs);

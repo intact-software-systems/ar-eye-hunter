@@ -1,4 +1,4 @@
-import { toRoomGuestSeatExpiryCommand, type RoomGuestSeatDeadline } from '../schedule/room-guest-seat-deadline.ts';
+import { toGroupGuestSeatExpiryCommand, type GroupGuestSeatDeadline } from '../schedule/group-guest-seat-deadline.ts';
 import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -37,7 +37,7 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService, GroupStateWritten } from '../group-state-service-contracts.ts';
-import { toRoomGuestAdmissionCommand, type RoomGuestAdmission } from '../mutation/membership/room-guest-admission.ts';
+import { toGroupGuestAdmissionCommand, type GroupGuestAdmission } from '../mutation/membership/group-guest-admission.ts';
 import type { GroupMoveDeadline } from '../move/group-move-deadline.ts';
 import {
     registerGroupMoveInbox,
@@ -280,9 +280,9 @@ export class GroupStateInboxService {
     }
 
     async processGuestAdmissionUntilCompletion(
-        input: RoomGuestAdmission & Readonly<{ traceId: string; }>
+        input: GroupGuestAdmission & Readonly<{ traceId: string; }>
     ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
-        const command = toRoomGuestAdmissionCommand(input);
+        const command = toGroupGuestAdmissionCommand(input);
         const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(command, this.nowEpochMs());
         const received = {
             ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_GUEST_ADMIT, ingress),
@@ -296,8 +296,8 @@ export class GroupStateInboxService {
         }, decodeGroupStateWritten);
     }
 
-    async enqueueGuestSeatExpiry(deadline: RoomGuestSeatDeadline, traceId: string): Promise<void> {
-        const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(toRoomGuestSeatExpiryCommand(deadline), this.nowEpochMs());
+    async enqueueGuestSeatExpiry(deadline: GroupGuestSeatDeadline, traceId: string): Promise<void> {
+        const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(toGroupGuestSeatExpiryCommand(deadline), this.nowEpochMs());
         await this.queueEntryWriter.enqueue({ ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_GUEST_EXPIRE, ingress), traceId });
     }
 

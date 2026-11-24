@@ -1,4 +1,4 @@
-import { computeRoomGuestSeatDeadlines } from '../schedule/room-guest-seat-deadline.ts';
+import { computeGroupGuestSeatDeadlines } from '../schedule/group-guest-seat-deadline.ts';
 import { computeGroupTimelineDeadlines } from '../schedule/group-timeline-deadline.ts';
 import { directorAuthorityFences } from './orchestration/director-authority-fences.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
@@ -451,7 +451,7 @@ function computeScheduledMutationWrites(
         ? computeGroupTimelineDeadlines({ before: read.group?.value ?? null, after: group, createdAtEpochMs: facts.nowEpochMs,
             serviceId: facts.serviceId, traceId: facts.traceId })
         : [];
-    const guestDeadlines = computeRoomGuestSeatDeadlines({
+    const guestDeadlines = computeGroupGuestSeatDeadlines({
         group, previous: read.group?.value ?? null, facts,
         newlyAdmitted: facts.internalAuthority === 'guest-redemption' ? members : [],
         timelineChanged: command.operation === 'settleTimeline' || (command.operation === 'updateGroup' && command.input.roomClock !== undefined)

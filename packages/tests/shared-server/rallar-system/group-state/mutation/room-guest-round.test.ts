@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { createGroupSnapshotFixture } from '../../../../shared-web/authoritative-group-fixtures.ts';
-import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
+import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-update.ts';
 import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
 
 it('pins an admitted participant to the deadline in effect at lease expiry, across extensions and host takeover', () => {
@@ -8,19 +8,19 @@ it('pins an admitted participant to the deadline in effect at lease expiry, acro
     const member = { ...snapshot.members[0], guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 1000 } };
     const start = { operation: 'advance-phase', phase: 'playing', name: 'guest-play', expectedRevision: 0, expectedDirectorEpoch: 1,
         durationMs: 800, participantPrincipalIds: [member.principalId] } as const;
-    const initial = computeGroupClockUpdate(snapshot.group, start, 500, [member]);
+    const initial = computeGroupClockUpdate({ group: snapshot.group, command: start, now: 500, members: [member] });
     if ('rejectionCode' in initial) throw new Error(initial.message);
     const extend = { operation: 'extend-phase', name: 'guest-play', expectedRevision: 1, expectedDirectorEpoch: 1, durationMs: 200 } as const;
-    const beforeExpiry = computeGroupClockUpdate(initial, extend, 900, [member]);
+    const beforeExpiry = computeGroupClockUpdate({ group: initial, command: extend, now: 900, members: [member] });
     if ('rejectionCode' in beforeExpiry) throw new Error(beforeExpiry.message);
-    const afterExpiry = computeGroupClockUpdate(beforeExpiry, { ...extend, expectedRevision: 2, expectedDirectorEpoch: 2 }, 1000, [member]);
+    const afterExpiry = computeGroupClockUpdate({ group: beforeExpiry, command: { ...extend, expectedRevision: 2, expectedDirectorEpoch: 2 }, now: 1000, members: [member] });
     if ('rejectionCode' in afterExpiry) throw new Error(afterExpiry.message);
     expect(roomGuestCredentialExpiresAt(afterExpiry, member)).toBe(1500);
     expect(roomGuestAccessMode(afterExpiry, member, 999)).toBe('room');
     expect(roomGuestAccessMode(afterExpiry, member, 1499)).toBe('finish-round');
     expect(roomGuestAccessMode(afterExpiry, member, 1500)).toBe('expired');
     expect(roomGuestAccessMode(afterExpiry, { ...member, principalId: 'observer' }, 1000)).toBe('expired');
-    const finished = computeGroupClockUpdate(afterExpiry, { ...start, phase: 'results', participantPrincipalIds: [], expectedRevision: 3 }, 1100, [member]);
+    const finished = computeGroupClockUpdate({ group: afterExpiry, command: { ...start, phase: 'results', participantPrincipalIds: [], expectedRevision: 3 }, now: 1100, members: [member] });
     if ('rejectionCode' in finished) throw new Error(finished.message);
     expect(roomGuestCredentialExpiresAt(finished, member)).toBe(1000);
     expect(roomGuestAccessMode(finished, member, 1100)).toBe('expired');
@@ -31,17 +31,17 @@ it('restores a paused occurrence after restart without giving it a later cutoff 
     const member = { ...snapshot.members[0], guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 1000 } };
     const start = { name: 'guest-play', operation: 'advance-phase', phase: 'round-one', expectedRevision: 0,
         expectedDirectorEpoch: 1, durationMs: 800, participantPrincipalIds: [member.principalId] } as const;
-    const initial = computeGroupClockUpdate(snapshot.group, start, 500, [member]);
+    const initial = computeGroupClockUpdate({ group: snapshot.group, command: start, now: 500, members: [member] });
     if ('rejectionCode' in initial) throw new Error(initial.message);
-    const paused = computeGroupClockUpdate(initial, { name: 'guest-play', operation: 'pause', expectedRevision: 1, expectedDirectorEpoch: 1 }, 800);
+    const paused = computeGroupClockUpdate({ group: initial, command: { name: 'guest-play', operation: 'pause', expectedRevision: 1, expectedDirectorEpoch: 1 }, now: 800 });
     if ('rejectionCode' in paused) throw new Error(paused.message);
-    const resumed = computeGroupClockUpdate(structuredClone(paused), {
+    const resumed = computeGroupClockUpdate({ group: structuredClone(paused), command: {
         name: 'guest-play', operation: 'resume', expectedRevision: 2, expectedDirectorEpoch: 2
-    }, 1100);
+    }, now: 1100 });
     if ('rejectionCode' in resumed) throw new Error(resumed.message);
     expect(roomGuestAccessMode(resumed, member, 1299)).toBe('finish-round');
     expect(roomGuestAccessMode(resumed, member, 1300)).toBe('expired');
-    expect(computeGroupClockUpdate(resumed, { ...start, phase: 'second', expectedRevision: 3 }, 1100, [member])).toHaveProperty('rejectionCode');
+    expect(computeGroupClockUpdate({ group: resumed, command: { ...start, phase: 'second', expectedRevision: 3 }, now: 1100, members: [member] })).toHaveProperty('rejectionCode');
 });
 
 it('a finishing guest director may only close the guest occurrence with an empty successor roster', async () => {
