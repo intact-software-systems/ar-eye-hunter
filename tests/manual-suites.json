@@ -30,5 +30,13 @@
     "owner": "Knut-Helge Vik",
     "command": "npx playwright test --config apps/ar-eye-hunter-v1/playwright.deployed.config.ts",
     "reason": "Verifies the externally deployed SPA and its configured API through visible sign-in and Quick Join. Requires an explicit HTTPS deployment URL and provisioned test-account credentials; local CI runs the separate two-browser full-stack journey."
+  },
+  {
+    "paths": [
+      "tests/playwright/cca-2d"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npx playwright test --config apps/cca-2d/playwright.config.ts",
+    "reason": "Local Babylon gameplay, Rallar social entry, shared rounds and recovery trials. Run these visible-control journeys against the isolated local Rallar server while the game is under evaluation; the current CI game lanes do not select CCA."
   }
 ]

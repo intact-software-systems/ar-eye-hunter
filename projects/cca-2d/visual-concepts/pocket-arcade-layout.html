@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CCA 2D — Pocket Arcade Market layout reference</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #101d32;
+        color: #fff3d7;
+        font-family: ui-monospace, monospace;
+      }
+      .phone {
+        position: relative;
+        width: 390px;
+        height: 844px;
+        margin: auto;
+        background: #182c46;
+        overflow: hidden;
+      }
+      .hud {
+        position: absolute;
+        top: 16px;
+        left: 15px;
+        right: 15px;
+        display: grid;
+        grid-template-columns: 76px 1fr 1fr;
+        gap: 8px;
+      }
+      .stat {
+        padding: 8px;
+        background: #223c59;
+        border-bottom: 3px solid #0c192d;
+      }
+      .stat small {
+        display: block;
+        font: 11px/16px system-ui, sans-serif;
+        letter-spacing: 1px;
+        color: #bfcede;
+      }
+      .stat strong {
+        display: block;
+        font-size: 23px;
+        line-height: 27px;
+      }
+      .banked {
+        color: #ffd567;
+      }
+      .arena {
+        position: absolute;
+        left: 15px;
+        top: 96px;
+        width: 360px;
+        height: 360px;
+        outline: 3px solid #658d9c;
+      }
+      .arena img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .event {
+        position: absolute;
+        top: 472px;
+        left: 15px;
+        width: 360px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 14px;
+        color: #ffdc85;
+      }
+      .event b {
+        font-size: 20px;
+      }
+      .heat {
+        position: absolute;
+        top: 521px;
+        left: 24px;
+        color: #ffbb80;
+        font-size: 13px;
+      }
+      .joystick {
+        position: absolute;
+        left: 32px;
+        top: 594px;
+        width: 112px;
+        height: 112px;
+        border: 3px solid #7398ad;
+        border-radius: 50%;
+        background: #233f5d;
+        box-shadow: 0 5px 0 #0b1c32;
+      }
+      .puck {
+        position: absolute;
+        left: 47px;
+        top: 15px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #c5e3dd;
+        border: 3px solid #7ca6af;
+      }
+      .move-label {
+        position: absolute;
+        left: 32px;
+        top: 722px;
+        width: 112px;
+        text-align: center;
+        font-size: 13px;
+        color: #a6bdd0;
+        letter-spacing: 1px;
+      }
+      .action {
+        position: absolute;
+        left: 266px;
+        width: 72px;
+        height: 72px;
+        border: 3px solid #ffe5a6;
+        border-radius: 18px;
+        font: bold 15px ui-monospace, monospace;
+        color: #182c46;
+        box-shadow: 0 5px 0 #0b1c32;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dash {
+        top: 574px;
+        background: #ffd16c;
+      }
+      .bank {
+        top: 670px;
+        background: #a7d8c8;
+        border-color: #d1ece0;
+        color: #304e5b;
+      }
+      .bank-hint {
+        position: absolute;
+        left: 228px;
+        top: 754px;
+        width: 148px;
+        text-align: center;
+        color: #a6bdd0;
+        font: 12px system-ui, sans-serif;
+      }
+      .caption {
+        position: absolute;
+        bottom: 17px;
+        width: 100%;
+        text-align: center;
+        font: 11px system-ui, sans-serif;
+        color: #a6bdd0;
+        letter-spacing: 1px;
+      }
+      .note {
+        max-width: 390px;
+        margin: 20px auto;
+        padding: 0 15px;
+        font: 14px/1.6 system-ui, sans-serif;
+        color: #bfcede;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="phone" aria-label="Static 390 by 844 phone composition, not a playable game">
+      <header class="hud">
+        <div class="stat"><small>TIME</small><strong>1:42</strong></div>
+        <div class="stat"><small>BANKED</small><strong class="banked">120</strong></div>
+        <div class="stat"><small>BAG</small><strong>16/30</strong></div>
+      </header>
+      <div class="arena"><img src="pocket-arcade-arena-reference.png" alt="Square pixel-art market with animal thieves, guards, coin trails, a closed jackpot and a bank"></div>
+      <div class="event">JACKPOT OPENS IN <b>3s</b></div>
+      <div class="heat">HEAT 2/3 · BONUS +20%</div>
+      <div class="joystick" role="img" aria-label="112 pixel movement pad with 44 pixel thumb puck"><div class="puck"></div></div>
+      <div class="move-label">MOVE</div>
+      <div class="action dash" role="img" aria-label="72 pixel Dash control reference">DASH</div>
+      <div class="action bank" role="img" aria-label="72 pixel Bank control reference">BANK</div>
+      <div class="bank-hint">Hold inside bank zone</div>
+      <div class="caption">POCKET ARCADE MARKET · LAYOUT STUDY</div>
+    </main>
+    <p class="note">Static design reference at 390 × 844 CSS pixels. Arena: 360 × 360. Movement pad: 112. Actions: 72 × 72, with a 24px gap. Artwork is illustrative; movement, controls and multiplayer are not implemented.</p>
+  </body>
+</html>
