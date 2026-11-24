@@ -338,7 +338,8 @@ describe('the RTC leg of a group-leader room send', () => {
             .mockReturnValue({ status: 'sent', bufferedAmount: 0 });
 
         const admitted = await bySession.get('origin')!.multicast.enqueueIfAbsent(message);
-        await vi.advanceTimersByTimeAsync(LEADER_ACK_TIMEOUT_MS - 1);
+        // The RTC hops sign and verify asynchronously. Drive them to the receipt before the first retry.
+        await advanceUntil(() => receipts.some(receipt => receipt.complete), 50, (LEADER_ACK_TIMEOUT_MS / 50) - 1);
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(receipts.filter((receipt) => receipt.kind === 'acknowledgement' && receipt.complete)).toEqual([
