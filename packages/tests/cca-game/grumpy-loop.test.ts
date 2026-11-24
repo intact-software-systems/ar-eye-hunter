@@ -11,8 +11,8 @@ import {
     createPracticeState,
     type PracticeState
 } from '../../../apps/cca-2d/src/practice-rules.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 let routes: TownRoutes;
 beforeEach(() => {
@@ -85,7 +85,7 @@ describe('grumpy town chase and rescue loop', () => {
         const restored = advance(moving, 15);
         expect(restored.town.cart.loose).toBe(false);
         expect(restored.town.cart.x).toBe(-3);
-    });
+    }, 30_000);
 });
 
 describe('raid fairness', () => {

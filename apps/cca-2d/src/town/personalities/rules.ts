@@ -1,3 +1,4 @@
+import type { TownCreature } from '../creatures/rules.ts';
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
 import type {
@@ -18,6 +19,12 @@ interface ResidentResult {
     readonly town: TownState;
     readonly resident: TownPersonality;
 }
+
+const rivalCreatures = new Map<TownPersonality['kind'], TownCreature['kind']>([
+    ['watcher', 'bird'],
+    ['washer', 'dog'],
+    ['silence', 'cat']
+]);
 
 export function triggerTownPersonalities(input: TownTickInput): TownState {
     const { player, now } = input;
@@ -64,45 +71,56 @@ function computeResident(input: ResidentTick): ResidentResult {
         return advanceReaction(input);
     }
     if (resident.phase === 'chasing') {
-        const player = input.players.find((actor) => actor.id === resident.targetId);
-        const target = player && hasTownSight(input.town, resident, player)
-            ? { x: player.x, z: player.z }
-            : resident.target;
-        const position = input.routes.travel({
-            town: input.town,
-            from: resident,
-            target,
-            speed: 2.5,
-            step: input.step
-        });
-        return {
-            town: input.town,
-            resident: {
-                ...resident,
-                ...position,
-                target,
-                phase: !player || now >= resident.until ? 'returning' : 'chasing'
-            }
-        };
+        return advanceChase(input);
     }
     if (resident.phase === 'returning') {
-        const position = input.routes.travel({
-            town: input.town,
-            from: resident,
-            target: resident.home,
-            speed: 2.4,
-            step: input.step
-        });
-        const home = Math.hypot(position.x - resident.home.x, position.z - resident.home.z) < 0.45;
-        return { town: input.town, resident: { ...resident, ...position, phase: home ? 'idle' : 'returning' } };
+        return returnHome(input);
     }
     if (resident.kind === 'cleaner') {
         return cleanSquare(input);
     }
-    if (resident.rivalAt <= now && ['watcher', 'washer', 'silence'].includes(resident.kind)) {
-        return startRivalry(input);
+    const rivalKind = rivalCreatures.get(resident.kind);
+    if (resident.rivalAt <= now && rivalKind) {
+        return startRivalry(input, rivalKind);
     }
     return { town: input.town, resident };
+}
+
+function advanceChase(input: ResidentTick): ResidentResult {
+    const { resident, now } = input;
+    const player = input.players.find((actor) => actor.id === resident.targetId);
+    const target = player && hasTownSight(input.town, resident, player)
+        ? { x: player.x, z: player.z }
+        : resident.target;
+    const position = input.routes.travel({
+        town: input.town,
+        from: resident,
+        target,
+        speed: 2.5,
+        step: input.step
+    });
+    return {
+        town: input.town,
+        resident: {
+            ...resident,
+            ...position,
+            target,
+            phase: !player || now >= resident.until ? 'returning' : 'chasing'
+        }
+    };
+}
+
+function returnHome(input: ResidentTick): ResidentResult {
+    const { resident } = input;
+    const position = input.routes.travel({
+        town: input.town,
+        from: resident,
+        target: resident.home,
+        speed: 2.4,
+        step: input.step
+    });
+    const home = Math.hypot(position.x - resident.home.x, position.z - resident.home.z) < 0.45;
+    return { town: input.town, resident: { ...resident, ...position, phase: home ? 'idle' : 'returning' } };
 }
 
 function startReaction(input: ResidentTick): ResidentResult {
@@ -187,9 +205,8 @@ function cleanSquare(input: ResidentTick): ResidentResult {
         : { town: cleaned, resident: next };
 }
 
-function startRivalry(input: ResidentTick): ResidentResult {
+function startRivalry(input: ResidentTick, kind: TownCreature['kind']): ResidentResult {
     const { resident, town, now } = input;
-    const kind = resident.kind === 'watcher' ? 'bird' : resident.kind === 'washer' ? 'dog' : 'cat';
     const creature = town.creatures.find((creature) =>
         creature.kind === kind &&
         Math.hypot(creature.x - resident.x, creature.z - resident.z) < 6 &&

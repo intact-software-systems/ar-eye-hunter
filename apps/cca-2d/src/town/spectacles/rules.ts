@@ -7,7 +7,7 @@ import type {
     TownStepInput,
     TownTickInput
 } from '../state.ts';
-import { advanceTownFire } from './fire.ts';
+import { advanceTownFire } from './advance-town-fire.ts';
 import {
     TOWN_BARBECUE,
     TOWN_UMBRELLA,

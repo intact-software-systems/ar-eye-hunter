@@ -5,9 +5,9 @@ import { computeTownGuard } from '../../../apps/cca-2d/src/town/authorities.ts';
 import { computeTownRescues, type TownRescueActor } from '../../../apps/cca-2d/src/town/companion.ts';
 import { computeTownCreaturesForPlayers } from '../../../apps/cca-2d/src/town/creatures/rules.ts';
 import { computeTownOwnersForPlayers, witnessTownPlayer } from '../../../apps/cca-2d/src/town/owners.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
 import { createTownState, type TownGuard } from '../../../apps/cca-2d/src/town/state.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 describe('police targeting a human roster', () => {
     it('locks a warning to the nearest available identity and cannot hit another player after roster reorder', () => {

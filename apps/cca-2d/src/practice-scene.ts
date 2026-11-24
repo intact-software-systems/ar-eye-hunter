@@ -12,13 +12,13 @@ import { createMarketEnvironment } from './create-market-environment.ts';
 import { CutoutActor } from './cutout-actor.ts';
 import { CutoutArt } from './cutout-art.ts';
 import type { PracticeState } from './practice-rules.ts';
-import { TownCreaturePresentation } from './town/creatures/presentation.ts';
-import { TownObjectPresentation } from './town/object-presentation.ts';
-import { TownPersonalityPresentation } from './town/personalities/presentation.ts';
-import { TownPresentation } from './town/presentation.ts';
+import { TownCreaturePresentation } from './town/creatures/town-creature-presentation.ts';
+import { TownPersonalityPresentation } from './town/personalities/town-personality-presentation.ts';
 import { TownRaidPresentation } from './town/raid-presentation.ts';
-import { TownSpectaclePresentation } from './town/spectacles/presentation.ts';
-import { TownStreetPresentation } from './town/street-presentation.ts';
+import { TownSpectaclePresentation } from './town/spectacles/town-spectacle-presentation.ts';
+import { TownObjectPresentation } from './town/town-object-presentation.ts';
+import { TownPresentation } from './town/town-presentation.ts';
+import { TownStreetPresentation } from './town/town-street-presentation.ts';
 
 export namespace PracticeScene {
     export interface Frame {

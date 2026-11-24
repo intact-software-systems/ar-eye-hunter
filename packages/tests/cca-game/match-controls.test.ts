@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TownMatchControls } from '../../../apps/cca-2d/src/match/match-controls.ts';
+import { TownMatchControls } from '../../../apps/cca-2d/src/match/presentation/town-match-controls.ts';
 
 describe('match input across a confirmation pause', () => {
     it('drops unconfirmed actions when a successor restores an older committed input position', () => {

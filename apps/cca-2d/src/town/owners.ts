@@ -6,12 +6,12 @@ import {
     isTownSprayed,
     repairTownProp
 } from './props.ts';
-import type { TownRoutes } from './routes.ts';
 import type {
     TownNpc,
     TownPlayer,
     TownState
 } from './state.ts';
+import type { TownRoutes } from './town-routes.ts';
 
 export interface TownOwnerPlayer extends TownPlayer {
     readonly id: string;

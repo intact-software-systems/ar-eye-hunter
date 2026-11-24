@@ -8,7 +8,7 @@ import type { MarketShopVisual } from '../create-market-environment.ts';
 import { CutoutActor } from '../cutout-actor.ts';
 import { CutoutArt } from '../cutout-art.ts';
 import { TOWN_SHOPS } from './map.ts';
-import { MESS_DRAWINGS } from './mess-art.ts';
+import { MESS_DRAWINGS } from './mess-drawings.ts';
 import type {
     TownNpc,
     TownPatch,

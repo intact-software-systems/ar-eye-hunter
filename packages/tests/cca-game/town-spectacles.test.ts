@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
 import { collectTownPickup, releaseTownPrank } from '../../../apps/cca-2d/src/town/pranks.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { advanceTownSpectacles, requestTownSpectacle, triggerTownSpectacles } from '../../../apps/cca-2d/src/town/spectacles/rules.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 import type { TownPlayer, TownState, TownTickInput } from '../../../apps/cca-2d/src/town/state.ts';
 

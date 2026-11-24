@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { createPracticePlayer } from '../../../apps/cca-2d/src/practice-rules.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { computeTownWorld } from '../../../apps/cca-2d/src/town/rules.ts';
 import { createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
 import { createTownState, type TownWorldPlayer } from '../../../apps/cca-2d/src/town/state.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 function player(id: string): TownWorldPlayer {
     return {

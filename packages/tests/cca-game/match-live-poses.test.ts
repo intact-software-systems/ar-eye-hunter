@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { TownMatchLivePoses } from '../../../apps/cca-2d/src/match/match-live-poses.ts';
 import { TOWN_MATCH_BUILD, TOWN_MATCH_PROTOCOL, type TownMatchFrame } from '../../../apps/cca-2d/src/match/match-protocol.ts';
+import { TownMatchLivePoses } from '../../../apps/cca-2d/src/match/realtime/town-match-live-poses.ts';
 import { createTownMatch } from '../../../apps/cca-2d/src/match/town-match.ts';
 
 const initial = createTownMatch('round', [

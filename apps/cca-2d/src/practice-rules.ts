@@ -4,10 +4,10 @@ import {
 } from './town/map.ts';
 import { computeTownPosition } from './town/navigation.ts';
 import { computeTownWaterPush, isTownSprayed } from './town/props.ts';
-import type { TownRoutes } from './town/routes.ts';
 import { computeTownTick } from './town/rules.ts';
 import { createCleanCoat } from './town/soiling.ts';
 import { createTownState, type TownPlayer, type TownState } from './town/state.ts';
+import type { TownRoutes } from './town/town-routes.ts';
 
 export interface PracticeInput {
     readonly x: number;

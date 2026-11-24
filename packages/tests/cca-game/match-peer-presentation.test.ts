@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TownMatchPeerPresentation } from '../../../apps/cca-2d/src/match/match-peer-presentation.ts';
+import { TownMatchPeerPresentation } from '../../../apps/cca-2d/src/match/presentation/town-match-peer-presentation.ts';
 import { createTownMatch } from '../../../apps/cca-2d/src/match/town-match.ts';
 
 describe('remote player presentation', () => {

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
-import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/agreement/match-snapshot.ts';
 import { decodeMatchWire, startTownMatch } from './match-browser.ts';
 
 test('two survivors replace a silently unreachable host and fence its return', async ({ browser }) => {
@@ -54,7 +54,7 @@ test('two survivors replace a silently unreachable host and fence its return', a
                 }
                 if (offline && frame.epoch > hostEpoch) {
                     const match = decodeTownMatchSnapshot(frame.action.snapshot).right;
-                    const away = match?.seats.find(seat => seat.status === 'away');
+                    const away = match?.seats.find((seat) => seat.status === 'away');
                     if (away) {
                         graceByProposal.set(frame.action.digest, away.expiresAtEpochMs);
                     }
@@ -66,7 +66,9 @@ test('two survivors replace a silently unreachable host and fence its return', a
         await expect(bob.getByRole('button', { name: 'Extend by 1 minute' })).toBeHidden();
         await alice.getByRole('button', { name: 'Extend by 1 minute' }).click();
         for (const page of pages) {
-            await expect.poll(async () => parseInt(await page.locator('#round-clock').innerText())).toBeGreaterThan(220);
+            await expect.poll(async () => parseInt(await page.locator('#round-clock').innerText())).toBeGreaterThan(
+                220
+            );
         }
         const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
         const score = await bob.locator('#round-score').textContent();
@@ -94,7 +96,9 @@ test('two survivors replace a silently unreachable host and fence its return', a
         }
         await director.getByRole('button', { name: 'Extend by 1 minute' }).click();
         for (const survivor of [bob, carol]) {
-            await expect.poll(async () => parseInt(await survivor.locator('#round-clock').innerText())).toBeGreaterThan(270);
+            await expect.poll(async () => parseInt(await survivor.locator('#round-clock').innerText())).toBeGreaterThan(
+                270
+            );
         }
         expect(recoveryElapsedMs).toBeLessThan(11500);
         expect(closes).toBe(0);

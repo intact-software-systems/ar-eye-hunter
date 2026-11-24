@@ -1,13 +1,13 @@
 import type { TownPoint } from '../map.ts';
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
-import type { TownRoutes } from '../routes.ts';
 import { splashTownActors } from '../soiling.ts';
 import type {
     TownPatch,
     TownPlayer,
     TownState
 } from '../state.ts';
+import type { TownRoutes } from '../town-routes.ts';
 
 export interface TownCreature extends TownPoint {
     readonly id: number;

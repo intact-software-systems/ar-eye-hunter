@@ -5,7 +5,7 @@ import {
 } from '@playwright/test';
 import { appendFile, writeFile } from 'node:fs/promises';
 
-import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/agreement/match-snapshot.ts';
 import type { TownMatchState } from '../../../apps/cca-2d/src/match/town-match.ts';
 
 import { decodeMatchWire, startTownMatch } from './match-browser.ts';

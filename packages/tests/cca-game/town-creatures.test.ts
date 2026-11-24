@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 import { computePracticeTick, createPracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
 import { computeTownCreaturesForPlayers } from '../../../apps/cca-2d/src/town/creatures/rules.ts';

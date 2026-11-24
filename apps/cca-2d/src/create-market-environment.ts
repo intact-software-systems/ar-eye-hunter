@@ -8,7 +8,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from './cutout-art.ts';
-import { createTownLayout } from './town/layout/presentation.ts';
+import { createTownLayout } from './town/layout/create-town-layout.ts';
 import {
     TOWN_GOVERNMENT,
     TOWN_ICE,

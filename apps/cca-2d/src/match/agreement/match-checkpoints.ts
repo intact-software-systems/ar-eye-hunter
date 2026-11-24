@@ -1,6 +1,12 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { TownMatchIdentity, TownMatchState } from './town-match.ts';
+import type { TownMatchIdentity, TownMatchState } from '../town-match.ts';
+import {
+    sameCheckpoint,
+    sameRoster,
+    validateCheckpointProposal,
+    validateCheckpointTransition
+} from './checkpoint-policy.ts';
 
 export interface TownMatchAuthority {
     readonly epoch: number;
@@ -86,36 +92,9 @@ export class TownMatchCheckpoints {
 
     propose(checkpoint: TownCheckpoint, senderId: string): Either<string, boolean> {
         const catchingUp = this.resynchronizing && this.localSessionId !== this.authority.sessionId;
-        if (senderId !== this.authority.sessionId || checkpoint.epoch !== this.authority.epoch) {
-            return Either.ofLeft('Only the current appointed director may propose a checkpoint.');
-        }
-        if (
-            this.recoveryRequired && !this.getState().recovered && !catchingUp &&
-            checkpoint.state.phase !== 'lobby' && checkpoint.state.phase !== 'interrupted'
-        ) {
-            return Either.ofLeft('Current players must agree on committed recovery state before gameplay resumes.');
-        }
-        if (!sameRoster(checkpoint.state.members, this.authority.members)) {
-            return Either.ofLeft('The checkpoint does not contain the current player sessions.');
-        }
-        if (sameCheckpoint(this.committed, checkpoint) || sameCheckpoint(this.pending?.checkpoint, checkpoint)) {
-            return Either.ofRight(false);
-        }
-        if (this.pending && (!catchingUp || checkpoint.sequence <= this.pending.checkpoint.sequence)) {
-            return Either.ofLeft('The outstanding checkpoint must settle before it can be replaced.');
-        }
-        if (
-            checkpoint.sequence <= 0 || !Number.isSafeInteger(checkpoint.sequence) ||
-            (this.committed?.epoch === checkpoint.epoch && checkpoint.sequence <= this.committed.sequence)
-        ) {
-            return Either.ofLeft('Checkpoint sequence must advance within the appointment.');
-        }
-        const transition = validateCheckpointTransition(
-            (this.recoveryCheckpoint ?? this.committed)?.state,
-            checkpoint.state
-        );
-        if (transition.length > 0) {
-            return Either.ofLeft(transition.join(' '));
+        const decision = validateCheckpointProposal({ checkpoint, senderId, state: this.getState(), catchingUp });
+        if (!decision.right) {
+            return decision;
         }
         this.retainPendingProposal();
         this.pending = { checkpoint, acknowledgements: [], commitReceived: false };
@@ -243,39 +222,4 @@ export class TownMatchCheckpoints {
         this.pending = undefined;
         return true;
     }
-}
-
-function sameCheckpoint(left: TownCheckpointIdentity | undefined, right: TownCheckpointIdentity): boolean {
-    return left !== undefined && left.epoch === right.epoch && left.sequence === right.sequence &&
-        left.digest === right.digest;
-}
-
-function sameRoster(left: readonly TownMatchIdentity[], right: readonly TownMatchIdentity[]): boolean {
-    return left.length === right.length &&
-        left.every((member) => right.some((other) => other.id === member.id && other.sessionId === member.sessionId));
-}
-
-function validateCheckpointTransition(previous: TownMatchState | undefined, next: TownMatchState): readonly string[] {
-    if (!previous) {
-        return [];
-    }
-    if (previous.matchId !== next.matchId) {
-        return (previous.phase === 'finished' || previous.phase === 'interrupted') && next.phase === 'lobby'
-            ? []
-            : ['Only a terminal round may be replaced by a fresh lobby.'];
-    }
-    if (
-        next.tick < previous.tick ||
-        (previous.phase === 'countdown' && next.phase === 'countdown' && next.countdownTicks > previous.countdownTicks)
-    ) {
-        return ['A checkpoint cannot rewind confirmed simulation time.'];
-    }
-    if (
-        (previous.phase !== 'lobby' && next.phase === 'lobby') ||
-        (previous.phase === 'playing' && next.phase === 'countdown') ||
-        ((previous.phase === 'finished' || previous.phase === 'interrupted') && next.phase !== previous.phase)
-    ) {
-        return ['A checkpoint cannot restart a completed match phase.'];
-    }
-    return [];
 }

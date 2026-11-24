@@ -1,6 +1,7 @@
 import Ajv from 'ajv';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { validateJsonMessageSize } from '@shared/api/json-message-validation.ts';
@@ -170,7 +171,10 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
                     type: 'object',
                     additionalProperties: false,
                     required: ['kind', 'expectedDurationTicks'],
-                    properties: { kind: { const: 'extend' }, expectedDurationTicks: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } }
+                    properties: {
+                        kind: { const: 'extend' },
+                        expectedDurationTicks: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER }
+                    }
                 },
                 {
                     type: 'object',
@@ -215,7 +219,7 @@ export function decodeTownMatchFrame(serialized: unknown): Either<readonly strin
     if (typeof serialized !== 'string' || validateJsonMessageSize(serialized, 262_144).left) {
         return Either.ofLeft(['The match message is not bounded wire text.']);
     }
-    let value: unknown;
+    let value: ApiJsonValue;
     try {
         value = JSON.parse(serialized);
     }

@@ -6,8 +6,8 @@ import {
 } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/agreement/match-snapshot.ts';
 import type { TownMatchFrame } from '../../../apps/cca-2d/src/match/match-protocol.ts';
-import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
 import {
     decodeMatchWire,
     registerPlayer,
@@ -650,11 +650,8 @@ test('two surviving players continue the same round after the appointed host clo
                 highestProposalSequence = Math.max(highestProposalSequence, frame.sequence);
             }
             if (armed && fresh && frame?.action.kind === 'proposal') {
-                const snapshot: unknown = JSON.parse(frame.action.snapshot);
-                if (
-                    snapshot && typeof snapshot === 'object' && 'tick' in snapshot &&
-                    typeof snapshot.tick === 'number' && snapshot.tick > minimumTick
-                ) {
+                const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                if (snapshot && snapshot.tick > minimumTick) {
                     armed = false;
                     heldTick = snapshot.tick;
                     heldSequence = frame.sequence;

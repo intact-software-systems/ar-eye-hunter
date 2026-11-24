@@ -6,7 +6,7 @@ import {
     createPracticePlayer,
     createPracticeState
 } from '../../../apps/cca-2d/src/practice-rules.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 let routes: TownRoutes;
 beforeEach(() => {

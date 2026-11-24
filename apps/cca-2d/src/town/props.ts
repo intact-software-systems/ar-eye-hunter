@@ -2,13 +2,13 @@ import { TOWN_FOUNTAIN, type TownPoint } from './map.ts';
 import { rewardTownMischief } from './mischief.ts';
 import { hasTownSight } from './navigation.ts';
 import { repairTownObject } from './objects.ts';
-import { computeWasherJet } from './personalities/water.ts';
-import type { TownRoutes } from './routes.ts';
+import { computeWasherJet } from './personalities/compute-washer-jet.ts';
 import type {
     TownNpc,
     TownState,
     TownTickInput
 } from './state.ts';
+import type { TownRoutes } from './town-routes.ts';
 
 export interface TownRepair {
     readonly routes: TownRoutes;

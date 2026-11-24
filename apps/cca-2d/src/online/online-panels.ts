@@ -112,13 +112,20 @@ export function renderFriends(root: HTMLElement, state: OnlineSession.State): vo
 
 function toFriendHtml(person: FriendPerson, hasRoom: boolean): string {
     const principal = toLobbyHtml(person.principalId);
-    const actions = person.status === 'incoming'
-        ? [['accept', 'Accept'], ['decline', 'Decline']]
-        : person.status === 'outgoing'
-        ? [['cancel-friend', 'Cancel request']]
-        : person.status === 'blocked'
-        ? [['unblock', 'Unblock']]
-        : [...(hasRoom ? [['invite', 'Invite to town']] : []), ['remove', 'Remove']];
+    let actions: [action: string, label: string][];
+    switch (person.status) {
+        case 'incoming':
+            actions = [['accept', 'Accept'], ['decline', 'Decline']];
+            break;
+        case 'outgoing':
+            actions = [['cancel-friend', 'Cancel request']];
+            break;
+        case 'blocked':
+            actions = [['unblock', 'Unblock']];
+            break;
+        case 'friend':
+            actions = hasRoom ? [['invite', 'Invite to town'], ['remove', 'Remove']] : [['remove', 'Remove']];
+    }
     if (person.status !== 'blocked') {
         actions.push(['block', 'Block']);
     }

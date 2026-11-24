@@ -6,8 +6,8 @@ import {
 } from './practice-rules.ts';
 import { PracticeScene } from './practice-scene.ts';
 import { TOWN_TROUBLE_TARGET } from './town/mischief.ts';
-import { TownRoutes } from './town/routes.ts';
-import { describeTownSpectacle } from './town/spectacles/status.ts';
+import { describeTownSpectacle } from './town/spectacles/describe-town-spectacle.ts';
+import { TownRoutes } from './town/town-routes.ts';
 
 export class PracticeApp {
     private readonly routes = new TownRoutes();

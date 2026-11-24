@@ -5,7 +5,7 @@ import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
-import { decodeTownMatchFrame, type TownMatchFrame } from './match-protocol.ts';
+import { decodeTownMatchFrame, type TownMatchFrame } from '../match-protocol.ts';
 
 export namespace TownMatchTransport {
     export interface Dependencies {

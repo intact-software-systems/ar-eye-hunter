@@ -5,7 +5,7 @@ import type { Scene } from '@babylonjs/core/scene';
 
 import { CutoutArt } from '../cutout-art.ts';
 import { TOWN_OBJECTS, type TownObjectDefinition } from './map.ts';
-import type { TownPresentation } from './presentation.ts';
+import type { TownPresentation } from './town-presentation.ts';
 
 interface StreetObjectVisual {
     readonly body: Mesh;

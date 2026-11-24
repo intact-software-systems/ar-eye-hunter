@@ -2,8 +2,8 @@ import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
-import { TownMatchGame } from '../match/match-game.ts';
-import { TownMatchSession } from '../match/match-session.ts';
+import { TownMatchGame } from '../match/presentation/town-match-game.ts';
+import { TownMatchSession } from '../match/town-match-session.ts';
 
 /** Owns the current room's match lifetime independently of social-panel rerenders. */
 export namespace OnlineMatch {
@@ -110,8 +110,10 @@ export class OnlineMatch {
                 ? `${match.members.filter((member) => member.ready).length}/${match.members.length} ready · ${
                     view.isDirector ? 'You direct this match' : 'Player-hosted match'
                 }`
-                : view.appointing ? 'Appointing your browser as host…'
-                : view.appointmentEligibility.allowed ? 'Appoint a player to direct this match.'
+                : view.appointing
+                ? 'Appointing your browser as host…'
+                : view.appointmentEligibility.allowed
+                ? 'Appoint a player to direct this match.'
                 : view.appointmentEligibility.reason ?? 'Waiting for an eligible host.');
         controls.append(status);
         if (!match || !view.available) {

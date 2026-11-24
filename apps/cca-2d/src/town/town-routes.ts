@@ -113,12 +113,12 @@ export class TownRoutes {
         const costs = graph.points.map((point) =>
             clearRoute(graph.obstacles, point, target) ? distanceBetween(point, target) : Infinity
         );
-        const visited = new Set<number>();
-        while (visited.size < graph.points.length) {
+        const unvisited = new Set(costs.keys());
+        while (unvisited.size > 0) {
             let current = -1;
             let best = Infinity;
-            for (let index = 0; index < costs.length; index++) {
-                if (!visited.has(index) && costs[index] < best) {
+            for (const index of unvisited) {
+                if (costs[index] < best) {
                     current = index;
                     best = costs[index];
                 }
@@ -126,11 +126,9 @@ export class TownRoutes {
             if (current < 0) {
                 break;
             }
-            visited.add(current);
-            for (let next = 0; next < costs.length; next++) {
-                if (!visited.has(next)) {
-                    costs[next] = Math.min(costs[next], best + graph.links[current][next]);
-                }
+            unvisited.delete(current);
+            for (const next of unvisited) {
+                costs[next] = Math.min(costs[next], best + graph.links[current][next]);
             }
         }
         if (graph.distances.size >= 128) {

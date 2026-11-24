@@ -1,7 +1,7 @@
-import { computePracticePlayerTick, type PracticeInput, type PracticePlayer } from '../practice-rules.ts';
-import { computeTownPosition } from '../town/navigation.ts';
-import type { TownState } from '../town/state.ts';
-import type { TownMatchPose } from './match-protocol.ts';
+import { computePracticePlayerTick, type PracticeInput, type PracticePlayer } from '../../practice-rules.ts';
+import { computeTownPosition } from '../../town/navigation.ts';
+import type { TownState } from '../../town/state.ts';
+import type { TownMatchPose } from '../match-protocol.ts';
 
 export namespace TownMatchPresentation {
     export interface Frame {

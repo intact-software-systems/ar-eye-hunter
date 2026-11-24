@@ -5,9 +5,9 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import type { Scene } from '@babylonjs/core/scene';
 
 import { CutoutArt } from '../../cutout-art.ts';
-import { MESS_DRAWINGS } from '../mess-art.ts';
-import type { TownPresentation } from '../presentation.ts';
-import { CREATURE_DRAWINGS } from './art.ts';
+import { MESS_DRAWINGS } from '../mess-drawings.ts';
+import type { TownPresentation } from '../town-presentation.ts';
+import { CREATURE_DRAWINGS } from './creature-drawings.ts';
 import { createTownCreatures, type TownCreature } from './rules.ts';
 
 interface CreatureVisual {

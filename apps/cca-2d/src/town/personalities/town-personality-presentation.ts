@@ -5,7 +5,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutActor } from '../../cutout-actor.ts';
 import { CutoutArt } from '../../cutout-art.ts';
-import type { TownPresentation } from '../presentation.ts';
+import type { TownPresentation } from '../town-presentation.ts';
 import {
     PERSONALITY_ITEMS,
     PERSONALITY_LABELS,
@@ -13,12 +13,12 @@ import {
     PERSONALITY_REACTION_ITEMS,
     PERSONALITY_REMARKS
 } from './art.ts';
+import { computeWasherJet } from './compute-washer-jet.ts';
 import {
     TOWN_PERSONALITIES,
     type TownPersonality,
     type TownPersonalityDefinition
 } from './state.ts';
-import { computeWasherJet } from './water.ts';
 
 interface ResidentVisual {
     readonly actor: CutoutActor;

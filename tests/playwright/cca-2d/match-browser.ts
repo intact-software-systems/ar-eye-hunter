@@ -45,6 +45,5 @@ export function decodeMatchWire(message: string | Buffer): TownMatchFrame | unde
     if (!envelope || envelope.payload.typeId !== 'cca.match.frame') {
         return undefined;
     }
-    const payload: unknown = JSON.parse(envelope.payload.resource);
-    return decodeTownMatchFrame(payload).right;
+    return decodeTownMatchFrame(JSON.parse(envelope.payload.resource)).right;
 }

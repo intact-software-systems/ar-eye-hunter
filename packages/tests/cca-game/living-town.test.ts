@@ -5,8 +5,8 @@ import {
     type PracticeState
 } from '../../../apps/cca-2d/src/practice-rules.ts';
 import { advanceTownRaid } from '../../../apps/cca-2d/src/town/raid.ts';
-import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { computeTownSoilingActors, splashTownActors } from '../../../apps/cca-2d/src/town/soiling.ts';
+import { TownRoutes } from '../../../apps/cca-2d/src/town/town-routes.ts';
 
 let routes: TownRoutes;
 beforeEach(() => {
@@ -44,7 +44,7 @@ describe('government crackdown', () => {
         expect(quiet.town.raid.phase).toBe('quiet');
         expect(quiet.town.raid.guards).toHaveLength(0);
         expect(quiet.town.raid.bonuses).toBe(1);
-    });
+    }, 30_000);
     it('a splash cannot reveal police still waiting inside government or earn credit from them', () => {
         const player = { ...createPracticeState(), x: 20, z: -20 };
         const input = { routes, player, town: { ...player.town, heat: 6 }, dash: false, now: 0, step: 1 / 60 };

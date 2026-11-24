@@ -10,7 +10,7 @@ import {
     type TownMatchAction,
     type TownMatchFrame
 } from '../../../apps/cca-2d/src/match/match-protocol.ts';
-import { TownMatchSimulation } from '../../../apps/cca-2d/src/match/match-simulation.ts';
+import { TownMatchSimulation } from '../../../apps/cca-2d/src/match/town-match-simulation.ts';
 import {
     computeTownMatchReady,
     computeTownMatchStart,

@@ -1,4 +1,4 @@
-import type { PracticeInput } from '../practice-rules.ts';
+import type { PracticeInput } from '../../practice-rules.ts';
 
 /** Maps device input to one match's action identities across confirmation pauses. */
 export class TownMatchControls {

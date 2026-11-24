@@ -6,8 +6,8 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from '../cutout-art.ts';
 import { TOWN_FOUNTAIN } from './map.ts';
-import type { TownPresentation } from './presentation.ts';
 import { computeTownJet } from './props.ts';
+import type { TownPresentation } from './town-presentation.ts';
 
 export class TownStreetPresentation {
     private readonly cart: TransformNode;

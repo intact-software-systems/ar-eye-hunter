@@ -1,9 +1,9 @@
 import { createRallarMotionBuffer } from '@shared/rallar-motion/buffer.ts';
 
-import type { TownPoint } from '../town/map.ts';
-import { computeTownPosition } from '../town/navigation.ts';
-import type { TownState } from '../town/state.ts';
-import type { TownMatchPlayer } from './town-match.ts';
+import type { TownPoint } from '../../town/map.ts';
+import { computeTownPosition } from '../../town/navigation.ts';
+import type { TownState } from '../../town/state.ts';
+import type { TownMatchPlayer } from '../town-match.ts';
 
 export namespace TownMatchPeerPresentation {
     export interface Frame {

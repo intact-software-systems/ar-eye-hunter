@@ -4,7 +4,6 @@ import { TOWN_CRACKDOWN_BONUS } from './mischief.ts';
 import { hasTownSight } from './navigation.ts';
 import { isTownSprayed } from './props.ts';
 import { advanceTownRaid } from './raid.ts';
-import type { TownRoutes } from './routes.ts';
 import type {
     TownCompanion,
     TownGuard,
@@ -12,6 +11,7 @@ import type {
     TownWorldComputed,
     TownWorldInput
 } from './state.ts';
+import type { TownRoutes } from './town-routes.ts';
 
 export interface TownGuardTarget extends TownCompanion {
     readonly id: string;

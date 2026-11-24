@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TOWN_MATCH_BUILD, TOWN_MATCH_PROTOCOL, type TownMatchFrame } from '../../../apps/cca-2d/src/match/match-protocol.ts';
-import { TownMatchTransport } from '../../../apps/cca-2d/src/match/match-transport.ts';
+import { TownMatchTransport } from '../../../apps/cca-2d/src/match/realtime/town-match-transport.ts';
 import type { RallarTypedWsSendOptions } from '../../shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRoomRealtimeSendResult } from '../../shared-web/browser/rallar-realtime-facade.ts';
 

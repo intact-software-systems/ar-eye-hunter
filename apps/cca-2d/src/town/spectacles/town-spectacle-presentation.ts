@@ -8,7 +8,7 @@ import { CutoutArt } from '../../cutout-art.ts';
 import { TOWN_FIRE_BAY, TOWN_FIRE_DOOR } from '../layout/map.ts';
 import { hasTownSight } from '../navigation.ts';
 import { PERSONALITY_ITEMS } from '../personalities/art.ts';
-import type { TownPresentation } from '../presentation.ts';
+import type { TownPresentation } from '../town-presentation.ts';
 import {
     BARBECUE_DRAWING,
     BOMB_DRAWING,

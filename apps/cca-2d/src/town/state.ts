@@ -6,9 +6,9 @@ import {
 } from './map.ts';
 import { createTownObjects, type TownObject } from './objects.ts';
 import { createTownPersonalities, type TownPersonality } from './personalities/state.ts';
-import type { TownRoutes } from './routes.ts';
 import { createCleanCoat, type TownCoat } from './soiling.ts';
 import { createTownSpectacles, type TownSpectacles } from './spectacles/state.ts';
+import type { TownRoutes } from './town-routes.ts';
 
 export interface TownFruit extends TownPoint {
     readonly id: number;

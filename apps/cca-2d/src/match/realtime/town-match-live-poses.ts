@@ -1,5 +1,5 @@
-import type { TownMatchFrame, TownMatchPose } from './match-protocol.ts';
-import { TOWN_MATCH_RATE, type TownMatchState } from './town-match.ts';
+import type { TownMatchFrame, TownMatchPose } from '../match-protocol.ts';
+import { TOWN_MATCH_RATE, type TownMatchState } from '../town-match.ts';
 
 export namespace TownMatchLivePoses {
     export interface Sample {

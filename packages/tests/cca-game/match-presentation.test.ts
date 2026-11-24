@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TownMatchPresentation } from '../../../apps/cca-2d/src/match/match-presentation.ts';
+import { TownMatchPresentation } from '../../../apps/cca-2d/src/match/presentation/town-match-presentation.ts';
 import { createPracticePlayer } from '../../../apps/cca-2d/src/practice-rules.ts';
 import { createTownState } from '../../../apps/cca-2d/src/town/state.ts';
 
