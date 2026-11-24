@@ -166,7 +166,7 @@ Current measured sizes and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 1536.4 KiB | 408.1 KiB | 329.5 KiB | < 330.0 KiB |
+| `browser/rallar.ts`             | 1536.6 KiB | 408.1 KiB | 329.5 KiB | < 330.0 KiB |
 | `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-data.ts`        |  30.1 KiB |   7.1 KiB |   6.4 KiB |  < 20.0 KiB |

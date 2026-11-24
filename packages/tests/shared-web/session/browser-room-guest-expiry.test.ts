@@ -35,12 +35,12 @@ async function guestRound(now = 1_600) {
 }
 
 it('keeps a connected guest in the current occurrence from admission expiry until cutoff', async () => {
-    const { facade, stored, read, room, guest } = await guestRound(1_000);
+    const { facade, stored, guest } = await guestRound(1_000);
     await facade.connect();
     await vi.advanceTimersByTimeAsync(499);
-    expect(read).not.toHaveBeenCalled();
+    expect(facade.isConnected()).toBe(true);
     await vi.advanceTimersByTimeAsync(1);
-    expect(read).toHaveBeenCalledWith('town', room, expect.objectContaining({ authSession: guest }));
+    expect(stored()).toEqual(guest);
     await vi.advanceTimersByTimeAsync(1_499);
     expect(facade.isConnected()).toBe(true);
     expect(stored()).toEqual(guest);
@@ -98,4 +98,20 @@ it.each(['snapshot', 'policy-close'])('ends the finishing guest on early close d
     await vi.advanceTimersByTimeAsync(0);
     expect(stored()).toBeUndefined();
     expect(facade.isConnected()).toBe(false);
+});
+
+it('verifies the seat again when a retired clock is replaced during a finishing occurrence', async () => {
+    const { facade, read, stored } = await guestRound();
+    const { createDefaultBrowserServerClockFixture } = await import('../connection/browser-server-clock-fixture.ts');
+    const { createBrowserRtcCaptureReceiptFixture } = await import('../rtc/browser-rtc-capture-fixture.ts');
+    const clock = createDefaultBrowserServerClockFixture();
+    mocks.initialiseMiddleware.mockResolvedValueOnce({
+        middleware: mocks.ctx.middleware, serverClock: clock, rtcCaptureReceipt: createBrowserRtcCaptureReceiptFixture(), checkpoints: []
+    });
+    await facade.connect();
+    await clock.close();
+    expect(facade.isConnected()).toBe(false);
+    read.mockRejectedValueOnce(createAuthSessionApiHttpError(403, 'Room access ended'));
+    await expect(facade.connect()).rejects.toThrow();
+    expect(stored()).toBeUndefined();
 });

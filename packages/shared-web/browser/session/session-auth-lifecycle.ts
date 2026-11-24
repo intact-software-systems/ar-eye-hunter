@@ -321,7 +321,8 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     /** Without a calibrated connection clock the server judges the session on its next request. */
     private scheduleAuthExpiry(session: AuthSession | undefined): void {
         this.input.authRuntime.clearAuthExpiryTimer();
-        if (this.guestExpiry && (!session || this.guestExpiry.sessionKey !== toAuthSessionKey(session))) {
+        if (this.guestExpiry && (!session || this.guestExpiry.sessionKey !== toAuthSessionKey(session) ||
+            this.guestExpiry.connection !== this.input.transportRuntime.readConnection())) {
             this.guestExpiry.stop();
             this.guestExpiry = undefined;
         }
@@ -353,8 +354,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             return;
         }
         if (currentSession?.guestRoom && serverNowEpochMs !== undefined) {
+            const connection = this.input.transportRuntime.readConnection();
+            if (!connection) return;
             const grant = this.guestExpiry ??= observeFinishingGuest(currentSession, currentSession.guestRoom,
-                serverNowEpochMs, this.input.connectionRuntime.requireMiddleware().middleware.webSocketQueueBox.socket,
+                serverNowEpochMs, connection,
                 () => this.scheduleAuthExpiry(readSession()));
             try {
                 await grant.verified;
@@ -362,13 +365,13 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             catch (error) {
                 // A transport failure cannot revoke the credential. Reconnect must verify again.
                 const stored = readSession();
-                if (this.guestExpiry === grant && stored && toAuthSessionKey(stored) === grant.sessionKey) {
+                if (this.guestExpiry === grant && !connection.serverClock.signal.aborted && stored && toAuthSessionKey(stored) === grant.sessionKey) {
                     await this.disconnect();
                 }
                 throw error;
             }
             const stored = readSession();
-            if (this.guestExpiry !== grant || !stored || toAuthSessionKey(stored) !== grant.sessionKey) return;
+            if (this.guestExpiry !== grant || connection.serverClock.signal.aborted || !stored || toAuthSessionKey(stored) !== grant.sessionKey) return;
             const now = this.readServerExpiryEpochMs();
             if (now === undefined || grant.deadline > now) {
                 this.scheduleAuthExpiry(currentSession);

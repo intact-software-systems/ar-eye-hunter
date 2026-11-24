@@ -1,4 +1,4 @@
-import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
+import type { BrowserTransportRuntime } from '../connection/browser-transport-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -11,9 +11,11 @@ import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 
 /** The durable read may grant a finishing window. Later room observations can only shorten it. */
 export function observeFinishingGuest(
-    session: AuthSession, room: GroupRef, now: number, socket: JsonWebSocketClient, changed: () => void
+    session: AuthSession, room: GroupRef, now: number, connection: BrowserTransportRuntime.Connection, changed: () => void
 ) {
     const abort = new AbortController();
+    const signal = AbortSignal.any([abort.signal, connection.serverClock.signal]);
+    const socket = connection.middleware.middleware.webSocketQueueBox.socket;
     let latest: GroupSnapshot | undefined;
     let revision = -1;
     let cutoff: number | undefined;
@@ -38,7 +40,7 @@ export function observeFinishingGuest(
             for (;;) {
                 const floor = latest?.causalRevision;
                 const read = await readStateGroupSnapshot(room.groupId, room, {
-                    authSession: session, signal: abort.signal, minCausalRevision: floor
+                    authSession: session, signal, minCausalRevision: floor
                 });
                 if (read.source !== 'durable' || read.groupRevision < (floor?.groupRevision ?? 0)) {
                     throw new Error('Guest access requires a current durable room.');
@@ -72,19 +74,19 @@ export function observeFinishingGuest(
         // A policy close sometimes arrives before the room can publish its last snapshot.
         void verified.then(() => {
             checkingClose = false;
-            if (!abort.signal.aborted) changed();
+            if (!signal.aborted) changed();
         }, () => {
-            if (!abort.signal.aborted) changed();
+            if (!signal.aborted) changed();
         });
     } });
+    signal.addEventListener('abort', () => {
+        unsubscribe();
+        socket.removeWebsocketCallbackById(callbackId);
+    }, { once: true });
     return {
-        sessionKey: toAuthSessionKey(session),
+        connection, sessionKey: toAuthSessionKey(session),
         get verified() { return verified; },
         get deadline() { return (!checkingClose && cutoff !== undefined) ? cutoff : session.expiresAtEpochMs; },
-        stop() {
-            abort.abort();
-            unsubscribe();
-            socket.removeWebsocketCallbackById(callbackId);
-        }
+        stop() { abort.abort(); }
     };
 }
