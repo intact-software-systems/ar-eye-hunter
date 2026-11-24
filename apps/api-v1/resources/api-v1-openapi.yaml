@@ -8321,6 +8321,11 @@ components:
         - banned
         - invitedByPrincipalId
         - invitationExpiresAtEpochMs
+      allOf:
+        - if: { required: [guestLease] }
+          then:
+            properties:
+              role: { type: string, enum: [member, spectator] }
       discriminator:
         propertyName: status
       oneOf:
