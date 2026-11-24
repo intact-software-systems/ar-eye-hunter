@@ -3,7 +3,7 @@ import { isBase64UrlOfByteLength } from '@shared/encoding/base64url.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import { computeSha256CanonicalJson } from '../../../protocol/compute-sha256-canonical-json.ts';
-import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 
 export interface GroupGuestAdmission {
     readonly roomRef: GroupRef;
@@ -56,5 +56,17 @@ export function assertGuestAdmissionCommand(command: GroupMutationCommand): void
 export function assertGuestInvitationVerifier(verifier: JsonWireObject[string] | undefined): void {
     if (verifier !== undefined && !isGuestInvitationVerifier(verifier)) {
         throw new TypeError('Guest invitation verifier must be a SHA-256 digest in lowercase hexadecimal.');
+    }
+}
+
+export function assertGuestAdmissionAuthority(command: GroupMutationCommand, facts: GroupMutationIngressFacts): void {
+    if (command.operation === 'joinGroup' && (command.input.guestTransport || command.input.guestDisplayName !== undefined) && facts.internalAuthority !== 'guest-redemption') {
+        throw new TypeError('A guest transport binding requires verified invitation redemption.');
+    }
+}
+
+export function assertGuestExpiryCommand(command: GroupMutationCommand): void {
+    if (command.operation !== 'removeGroupMember' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId)) {
+        throw new TypeError('Guest expiry requires a guest membership removal.');
     }
 }

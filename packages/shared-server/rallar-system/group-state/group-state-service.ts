@@ -1,4 +1,4 @@
-import { readRoomGuestTransportRows } from './mutation/membership/room-guest-transport-lifecycle.ts';
+import { readGroupGuestTransportRows } from './mutation/membership/group-guest-transport-lifecycle.ts';
 import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
@@ -455,7 +455,7 @@ async function readGroupMutationFences(
             isGroupSessionViewAudienceCommand(command)
         ? await readGroupSessionViewAudience(runtime, command.aggregateRef, ingress.facts.attemptAtEpochMs)
         : null;
-    const guestTransportRows = await readRoomGuestTransportRows(owners.authSessions, command, initialRead);
+    const guestTransportRows = await readGroupGuestTransportRows(owners.authSessions, command, initialRead);
     const read = { ...initialRead, connectTriggerLatch, sessionViewAudience, guestTransportRows };
     if (!readsGroupLayoutRows(ingress.command)) {
         return read;

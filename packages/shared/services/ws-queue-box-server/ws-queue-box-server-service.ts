@@ -192,6 +192,7 @@ export namespace WsQueueBoxServerService {
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts: WsQueueBoxServerReceiptSocketFacts | undefined;
         readonly currentnessRejection?: WsQueueBoxServerInboundAuthority.CurrentnessRejection;
+        readonly roomNackReason?: WsQueueBoxServerInboundAuthority.FinishedDecision['roomNackReason'];
     }
 
     export interface HeldRowSend {
@@ -711,7 +712,8 @@ export class WsQueueBoxServerService {
                 ...subject,
                 result: decision.result,
                 socketFacts: decision.socketFacts,
-                currentnessRejection: decision.currentnessRejection
+                currentnessRejection: decision.currentnessRejection,
+                roomNackReason: decision.roomNackReason
             });
         }
         if (decision.kind === 'retain') {
@@ -767,6 +769,8 @@ export class WsQueueBoxServerService {
             recordWsQueueBoxServerReceiptObservation(this.receiptObserver, {
                 ...observation.businessFacts,
                 kind: 'business-socket-decision',
+                ...(observation.roomNackReason && { roomNackReason: observation.roomNackReason }),
+                ...(observation.currentnessRejection && { currentnessRejection: observation.currentnessRejection }),
                 serverPeerId: this.name,
                 connectionId: observation.connectionId,
                 fromPeerId: observation.socketFacts?.fromPeerId,

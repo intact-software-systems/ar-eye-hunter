@@ -1,4 +1,4 @@
-import { assertGuestAdmissionCommand } from '../membership/group-guest-admission.ts';
+import { assertGuestAdmissionAuthority, assertGuestAdmissionCommand, assertGuestExpiryCommand } from '../membership/group-guest-admission.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
@@ -7,9 +7,7 @@ export function assertGroupMutationAuthority(
     facts: GroupMutationIngressFacts
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
-    if (command.operation === 'joinGroup' && (command.input.guestTransport || command.input.guestDisplayName !== undefined) && facts.internalAuthority !== 'guest-redemption') {
-        throw new TypeError('A guest transport binding requires verified invitation redemption.');
-    }
+    assertGuestAdmissionAuthority(command, facts);
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
@@ -48,9 +46,7 @@ function assertInternalMutationAuthority(
     }
     switch (facts.internalAuthority) {
         case 'guest-expiry':
-            if (command.operation !== 'removeGroupMember' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId)) {
-                throw new TypeError('Guest expiry requires a guest membership removal.');
-            }
+            assertGuestExpiryCommand(command);
             return;
         case 'guest-redemption':
             assertGuestAdmissionCommand(command);

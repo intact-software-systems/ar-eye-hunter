@@ -86,6 +86,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         readonly socketFacts?: WsQueueBoxServerReceiptSocketFacts;
         readonly currentnessRejection?: CurrentnessRejection;
+        readonly roomNackReason?: ALNackPayload['reason'];
     }
 
     export type SocketOriginDecision = { readonly kind: 'origin'; readonly value: SocketOrigin; } | FinishedDecision;
@@ -202,6 +203,7 @@ export class WsQueueBoxServerInboundAuthority {
                 : {
                     kind: 'finished',
                     result: await this.rejectIncomingMessage(message, authorization),
+                    roomNackReason: authorization.reason,
                     socketFacts: origin.value.socketFacts
                 };
         }

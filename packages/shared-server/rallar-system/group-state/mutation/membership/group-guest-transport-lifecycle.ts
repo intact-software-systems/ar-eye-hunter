@@ -9,7 +9,7 @@ import type { AuthSessionPersistence } from '../../../auth/persistence/auth-sess
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../../../auth/persistence/auth-storage-keys.ts';
 import type { GroupMutationCommand, GroupMutationDomainWrite, GroupMutationRead } from '../group-mutation-contracts.ts';
 
-export async function readRoomGuestTransportRows(repository: AuthSessionPersistence, command: GroupMutationCommand, read: GroupMutationRead) {
+export async function readGroupGuestTransportRows(repository: AuthSessionPersistence, command: GroupMutationCommand, read: GroupMutationRead) {
     if (!read.group || read.idempotency) return [];
     const ids = new Set<string>();
     if (command.operation === 'updateGroup' && command.input.roomClock?.name === GUEST_PLAY_TIMELINE) {
@@ -28,7 +28,7 @@ export async function readRoomGuestTransportRows(repository: AuthSessionPersiste
 }
 
 /** The clock and its WS/reconnect lifetime commit under the same group revision. */
-export function roomGuestTransportEffects(computed: GroupMutationDomainWrite, read: GroupMutationRead): RuntimeStateGuardedBatchEffect[] {
+export function groupGuestTransportEffects(computed: GroupMutationDomainWrite, read: GroupMutationRead): RuntimeStateGuardedBatchEffect[] {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     if (!read.guestTransportRows?.length || computed.guard.kind !== 'group') return effects;
     for (const { entry, value } of read.guestTransportRows) {
