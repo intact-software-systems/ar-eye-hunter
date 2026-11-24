@@ -6,10 +6,6 @@ test.use({ isMobile: true, hasTouch: true });
 test.skip(({ browserName }) => browserName !== 'chromium', 'Native multitouch injection uses Chromium DevTools.');
 
 async function checkArenaPinch(page: Page, state: string): Promise<void> {
-    const score = await page.locator('.scoreboard span').first().boundingBox();
-    if (!score) throw new Error('Missing scoreboard');
-    const x = Math.round(score.x + score.width / 2);
-    const y = Math.round(score.y + score.height / 2);
     const controls = async () => ({
         stick: await page.locator('#joystick').boundingBox(),
         dash: await page.locator('#dash').boundingBox(),
@@ -20,21 +16,29 @@ async function checkArenaPinch(page: Page, state: string): Promise<void> {
     const before = await controls();
     expect(before.viewport).toEqual({ scale: 1, x: 0, y: 0 });
     const touch = await page.context().newCDPSession(page);
-    const points = (span: number) => [{ id: 1, x, y }, { id: 2, x, y: y + span }];
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(120) });
-    for (const span of [140, 160, 180, 200]) {
-        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(span) });
-    }
     const camera = () => page.locator(state).getAttribute('data-zoom').then(Number);
-    await expect.poll(camera).toBeGreaterThan(0);
-    await expect.poll(camera).toBeLessThan(10);
-    expect(await controls()).toEqual(before);
-    for (const span of [170, 140, 110, 80]) {
-        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(span) });
+    for (const selector of ['.scoreboard span', '#zoom-out', '#zoom-in']) {
+        const anchor = await page.locator(selector).first().boundingBox();
+        if (!anchor) throw new Error(`Missing pinch target ${selector}`);
+        const x = Math.round(anchor.x + anchor.width / 2);
+        const y = Math.round(anchor.y + anchor.height / 2);
+        const points = (span: number) => [{ id: 1, x, y }, { id: 2, x: x - 10, y: y + span }];
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(120) });
+        for (const span of [140, 160, 180, 200]) {
+            await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(span) });
+        }
+        await expect.poll(camera).toBeGreaterThan(0);
+        await expect.poll(camera).toBeLessThan(10);
+        expect(await controls()).toEqual(before);
+        for (const span of [170, 140, 110, 80]) {
+            await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(span) });
+        }
+        await expect.poll(camera).toBeGreaterThan(16);
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(120) });
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect.poll(camera).toBeCloseTo(13, 1);
+        expect(await controls()).toEqual(before);
     }
-    await expect.poll(camera).toBeGreaterThan(16);
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    expect(await controls()).toEqual(before);
     await page.screenshot({ path: test.info().outputPath('arena-after-pinch.png') });
 }
 

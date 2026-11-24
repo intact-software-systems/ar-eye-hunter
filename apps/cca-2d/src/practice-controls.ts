@@ -5,7 +5,6 @@ export class PracticeControls {
     private readonly keys = new Set<string>();
     private readonly pad: HTMLElement;
     private readonly puck: HTMLElement;
-    private readonly contacts = new Map<number, { x: number; y: number; }>();
     private pointer: number | undefined;
     private movement = { x: 0, z: 0 };
     private dash = 0;
@@ -39,7 +38,7 @@ export class PracticeControls {
         window.addEventListener('resize', () => this.clear(), options);
         document.addEventListener('visibilitychange', () => this.clear(), options);
         window.addEventListener('pointercancel', () => this.clear(), options);
-        this.bindZoom(canvas);
+        this.bindZoom(requirePracticeElement(root, '.practice'), canvas);
     }
 
     getInput(): PracticeInput {
@@ -61,7 +60,6 @@ export class PracticeControls {
             this.pad.releasePointerCapture(this.pointer);
         }
         this.pointer = undefined;
-        this.contacts.clear();
         this.pinchDistance = 0;
         this.puck.style.transform = '';
     }
@@ -132,35 +130,41 @@ export class PracticeControls {
         this.puck.style.transform = '';
     }
 
-    private bindZoom(canvas: HTMLCanvasElement): void {
+    private bindZoom(arena: HTMLElement, canvas: HTMLCanvasElement): void {
         const options = { signal: this.lifetime.signal };
         canvas.addEventListener('wheel', (event) => {
             event.preventDefault();
             this.changeZoom(Math.sign(event.deltaY));
         }, { ...options, passive: false });
-        canvas.addEventListener('pointerdown', (event) => {
-            this.contacts.set(event.pointerId, { x: event.clientX, y: event.clientY });
-            canvas.setPointerCapture(event.pointerId);
-            this.pinchDistance = this.computePinchDistance();
-            this.pinchZoom = this.zoom;
-        }, options);
-        canvas.addEventListener('pointermove', (event) => {
-            if (!this.contacts.has(event.pointerId)) {
+        const gestures = { ...options, capture: true, passive: false };
+        // Safari can offer native magnification even with touch-action on the canvas.
+        for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+            window.addEventListener(type, (event) => {
+                if (event.target === window || event.target === document ||
+                    (event.target instanceof Node && arena.contains(event.target))) event.preventDefault();
+            }, gestures);
+        }
+
+        const updatePinch = (event: TouchEvent) => {
+            const [first, second] = Array.from(event.touches);
+            if (second) event.preventDefault();
+            // A joystick and Dash chord belongs to the controls. A pinch may straddle the HUD.
+            if (event.touches.length !== 2 || (first.target !== canvas && second.target !== canvas)) {
+                this.pinchDistance = 0;
                 return;
             }
-            this.contacts.set(event.pointerId, { x: event.clientX, y: event.clientY });
-            const distance = this.computePinchDistance();
-            if (distance > 20 && this.pinchDistance > 20) {
+            const distance = Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+            if (event.type !== 'touchmove' || this.pinchDistance === 0) {
+                this.pinchDistance = Math.max(1, distance);
+                this.pinchZoom = this.zoom;
+            }
+            else if (distance > 0) {
                 this.zoom = Math.max(8, Math.min(24, this.pinchZoom * this.pinchDistance / distance));
             }
-        }, options);
-        canvas.addEventListener('pointerup', (event) => this.contacts.delete(event.pointerId), options);
-        canvas.addEventListener('lostpointercapture', (event) => this.contacts.delete(event.pointerId), options);
-    }
-
-    private computePinchDistance(): number {
-        const [first, second] = [...this.contacts.values()];
-        return first && second ? Math.hypot(first.x - second.x, first.y - second.y) : 0;
+        };
+        for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const) {
+            arena.addEventListener(type, updatePinch, gestures);
+        }
     }
 }
 
