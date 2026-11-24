@@ -6,6 +6,7 @@ import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistenc
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { validateJsonMessageSize } from '@shared/api/json-message-validation.ts';
 import { decodeStateSnapshotPage, isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
@@ -28,16 +29,7 @@ export function allowsGuestRoomFrame(
         const signal = decodeRtcSignalingEnvelope(message).right;
         if (!signal || (inbound ? signal.fromId : signal.toId) !== guest.sessionId) return false;
         const peerId = inbound ? signal.toId : signal.fromId;
-        const peer = snapshot.activeSessions.find(row => row.sessionId === peerId && row.disconnectedAtEpochMs === null &&
-            row.expiresAtEpochMs > now);
-        if (!peer) return false;
-        const member = snapshot.members.find(row => row.principalId === peer.principalId);
-        if (!member || member.status !== 'active') return false;
-        if (member.guestLease) {
-            try { assertRoomGuestSeat({ roomRef: guest.roomRef, sessionId: peerId, clientId: member.principalId }, snapshot, now); }
-            catch { return false; }
-        }
-        return true;
+        return isLiveRoomPeer(snapshot, peerId, now);
     }
     if (topic === RALLAR_CRDT_APP_TOPIC_ID || topic === RALLAR_CRDT_ROOM_TOPIC_ID ||
         message.payload.typeId === RALLAR_CRDT_APP_TOPIC_ID || message.payload.typeId === RALLAR_CRDT_ROOM_TOPIC_ID) return false;
@@ -58,11 +50,18 @@ export function allowsGuestRoomFrame(
         }
         if (topic !== AppTopics.groupStateEvent) return false;
     }
+    if (message.targets?.mode === 'broadcast' && message.targets.scope === 'principal') return false;
     const peerId = message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined;
     const target = readALTargetGroupRef(message);
     return target !== undefined && isSameGroupRef(target, guest.roomRef) &&
-        (peerId === undefined || (inbound ? snapshot.activeSessions.some(row => row.sessionId === peerId &&
-                row.disconnectedAtEpochMs === null && row.expiresAtEpochMs > now) : peerId === guest.sessionId));
+        (peerId === undefined || (inbound ? isLiveRoomPeer(snapshot, peerId, now) : peerId === guest.sessionId));
+}
+
+function isLiveRoomPeer(snapshot: GroupSnapshot, sessionId: string, now: number): boolean {
+    const peer = snapshot.activeSessions.find(row => row.sessionId === sessionId &&
+        row.disconnectedAtEpochMs === null && row.expiresAtEpochMs > now);
+    const member = peer && snapshot.members.find(row => row.principalId === peer.principalId);
+    return member?.status === 'active' && (!member.guestLease || roomGuestAccessMode(snapshot.group, member, now) !== 'expired');
 }
 
 function readFrame(value: unknown): ALMessage | undefined {

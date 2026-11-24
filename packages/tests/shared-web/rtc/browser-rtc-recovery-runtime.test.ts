@@ -308,7 +308,7 @@ describe('Rallar RTC recovery', () => {
         await facade.connect();
         const connected = new Set(['friend-session', 'guest-session']);
         mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => [...connected]);
-        mocks.webRtcConnectionService.disconnectPeer.mockImplementation(peerId => { connected.delete(peerId); });
+        mocks.webRtcConnectionService.disconnectPeer.mockImplementation(peerId => connected.delete(peerId));
         facade.rtc.disconnectPeer('guest-session');
         expect(facade.rtc.knownPeerIds()).toEqual(['friend-session']);
     });

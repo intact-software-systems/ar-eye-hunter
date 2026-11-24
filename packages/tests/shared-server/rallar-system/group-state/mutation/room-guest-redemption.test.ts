@@ -1,6 +1,5 @@
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { roomGuestTransportSessionId } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
-import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
 import { toRoomGuestSeatExpiryCommand } from '@shared-server/rallar-system/group-state/schedule/room-guest-seat-deadline.ts';
 import { expect, it } from 'vitest';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
@@ -68,7 +67,7 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
 it.each([false, true])('releases the seat at its fixed cutoff without a connected session (finishing a round: %s)', async (inRound) => {
     const fixture = await createRetentionDatabaseFixture();
     try {
-        await seedRetentionRoom(fixture, RETENTION_REF, { claimWindowMs: 60_000, returnWindowMs: 120_000 });
+        await seedRetentionRoom(fixture, RETENTION_REF, { claimWindowMs: 14_460_000, returnWindowMs: 120_000 });
         const invitationVerifier = 'd'.repeat(64);
         const principalId = 'guest-' + 'e'.repeat(64);
         const update = await prepareMutation(fixture, mutationDescriptor({
@@ -89,14 +88,28 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
         const expire = await fixture.mutations.captureGuestMembershipMutationIngress(toRoomGuestSeatExpiryCommand(deadline), fixture.nowEpochMs);
         let cleanup = expire;
         if (inRound) {
-            const snapshot = await fixture.repository.readSnapshot(RETENTION_REF);
-            if (!snapshot) throw new Error('Expected admitted room');
-            const round = computeGroupClockUpdate(snapshot.group, {
-                operation: 'advance-phase', name: 'guest-play', phase: 'playing', durationMs: 2000,
-                expectedRevision: 0, expectedDirectorEpoch: 1, participantPrincipalIds: [principalId]
-            }, expiresAtEpochMs - 1000, snapshot.members);
-            if ('rejectionCode' in round) throw new Error(round.message);
-            await fixture.repository.putGroup(round);
+            fixture.nowEpochMs = expiresAtEpochMs - 1000;
+            const scope = { scope: RETENTION_REF, groupId: RETENTION_REF.groupId };
+            const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
+            const presence = await prepareMutation(fixture, mutationDescriptor({ ...scope, operation: 'connectPresence', sessionId: 'owner-session',
+                request: { ...actor, principalId: 'owner', requestId: 'connect', generationId: 'gen', publicationKey: null,
+                    connectionGenerationId: 'socket', connectedAtEpochMs: fixture.nowEpochMs, lastHeartbeatAtEpochMs: fixture.nowEpochMs,
+                    expiresAtEpochMs: fixture.nowEpochMs + 30_000 } }));
+            await commitMutation(fixture, requireMutationWrite(presence.computed));
+            const host = await prepareMutation(fixture, mutationDescriptor({ ...scope, operation: 'appointDirector',
+                request: { ...actor, requestId: 'appoint', succession: { operation: 'appoint', expectedDirectorEpoch: 0,
+                    targetPrincipalId: 'owner', targetSessionId: 'owner-session' } } }));
+            await commitMutation(fixture, requireMutationWrite(host.computed));
+            const round = await prepareMutation(fixture, mutationDescriptor({ ...scope, operation: 'updateGroup',
+                request: { ...actor, requestId: 'round', roomClock: {
+                    operation: 'advance-phase', name: 'guest-play', phase: 'playing', durationMs: 2000,
+                    expectedRevision: 0, expectedDirectorEpoch: 1, participantPrincipalIds: [principalId]
+                } } }));
+            await commitMutation(fixture, requireMutationWrite(round.computed));
+            const row = await new AuthSessionPersistence(fixture.runtime).findSessionBySessionIdEntry(await roomGuestTransportSessionId(principalId));
+            expect(row?.entry.expireAtTimestamp).toBe(expiresAtEpochMs + 1000);
+            expect(row?.value.expiresAtEpochMs).toBe(expiresAtEpochMs + 1000);
+            fixture.nowEpochMs = expiresAtEpochMs;
             expect((await retryMutation(fixture, expire)).outcome).toBe('no-op');
             fixture.nowEpochMs = expiresAtEpochMs + 1000;
             const finish = { ...deadline, groupRevision: 4, dueAtEpochMs: fixture.nowEpochMs };

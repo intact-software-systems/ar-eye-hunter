@@ -68,3 +68,17 @@ test('guest reliability controls can acknowledge only messages delivered on this
         assert.equal(await socket.allowsInbound(ack(source.id.msgId, 'other-room')), false);
     } finally { socket.close(); }
 });
+
+test('room labels alone do not authorize a withdrawn unicast recipient or a principal broadcast', async () => {
+    const { createGroupSnapshotFixture } = await import('../../../packages/tests/shared-web/authoritative-group-fixtures.ts');
+    const guest = { roomRef: { ...TEST_GROUP_SCOPE, groupId: 'market' }, clientId: 'guest', sessionId: 'guest-session' };
+    const snapshot = createGroupSnapshotFixture({ ...guest.roomRef, sessionIds: ['bob'] });
+    const leaving = { ...snapshot, members: [] };
+    const frame = newALMulticastMessage({ createdAtEpochMs: 3, senderId: guest.sessionId, groupRef: guest.roomRef,
+        route: { topicId: 'game', resourceId: 'input', contextId: 'market' }, typeId: 'move', resource: {} });
+    const unicast = { ...frame, targets: { mode: 'unicast', toPeerId: 'bob', groupRef: guest.roomRef } } as const;
+    assert.equal(allowsGuestRoomFrame(unicast, 'inbound', guest, leaving, 3), false);
+    const principal = { ...frame, targets: { mode: 'broadcast', scope: 'principal', groupRef: guest.roomRef,
+        principalRef: { ...TEST_GROUP_SCOPE, principalId: 'stranger' } } } as const;
+    assert.equal(allowsGuestRoomFrame(principal, 'inbound', guest, snapshot, 3), false);
+});

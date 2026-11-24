@@ -1,6 +1,6 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
-import { GUEST_PLAY_TIMELINE } from '@shared/api/room-guest-access.ts';
+import { GUEST_PLAY_TIMELINE, roomGuestCredentialExpiresAt } from '@shared/api/room-guest-access.ts';
 import { ROOM_GUEST_LIFETIME_MS } from '@shared/api/room-guest-invitation.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { encodeRuntimeStateJsonValue } from '../../../../runtime-state/runtime-state-json-store.ts';
@@ -31,7 +31,6 @@ export async function readRoomGuestTransportRows(repository: AuthSessionPersiste
 export function roomGuestTransportEffects(computed: GroupMutationDomainWrite, read: GroupMutationRead): RuntimeStateGuardedBatchEffect[] {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     if (!read.guestTransportRows?.length || computed.guard.kind !== 'group') return effects;
-    const participants = readRoomTimeline(computed.guard.value.metadata, GUEST_PLAY_TIMELINE)?.guestParticipants;
     for (const { entry, value } of read.guestTransportRows) {
         const identity = { effectId: 'guest-transport:' + value.clientId, namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             key: entry.key, expectedRevision: entry.revision };
@@ -39,8 +38,8 @@ export function roomGuestTransportEffects(computed: GroupMutationDomainWrite, re
             effects.push({ ...identity, operation: 'delete' });
             continue;
         }
-        const held = participants?.find(member => member.principalId === value.clientId);
-        const expiresAtEpochMs = Math.max(value.issuedAtEpochMs + ROOM_GUEST_LIFETIME_MS, held?.endsAtEpochMs ?? 0);
+        const expiresAtEpochMs = roomGuestCredentialExpiresAt(computed.guard.value, { principalId: value.clientId,
+            guestLease: { admittedAtEpochMs: value.issuedAtEpochMs, expiresAtEpochMs: value.issuedAtEpochMs + ROOM_GUEST_LIFETIME_MS } });
         if (expiresAtEpochMs !== value.expiresAtEpochMs) {
             effects.push({ ...identity, operation: 'update-exact', expectedValue: entry.value,
                 expireAtTimestamp: expiresAtEpochMs, value: encodeRuntimeStateJsonValue({ ...value, expiresAtEpochMs }) });

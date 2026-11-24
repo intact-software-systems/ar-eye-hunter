@@ -19,7 +19,7 @@ export function roomGuestAccessMode(group: Group, member: GroupMember, nowEpochM
 }
 
 /** Both the transport row and the signed request proof use the same occurrence-bound deadline. */
-export function roomGuestCredentialExpiresAt(group: Group, member: GroupMember): number {
+export function roomGuestCredentialExpiresAt(group: Group, member: Pick<GroupMember, 'principalId' | 'guestLease'>): number {
     const lease = member.guestLease;
     if (!lease) throw new TypeError('Missing guest lease.');
     const round = readRoomTimeline(group.metadata, GUEST_PLAY_TIMELINE);

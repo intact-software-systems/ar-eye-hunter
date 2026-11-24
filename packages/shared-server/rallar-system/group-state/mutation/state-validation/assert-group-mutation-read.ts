@@ -1,3 +1,5 @@
+import { authSessionKey } from '../../../auth/persistence/auth-storage-keys.ts';
+import { decodePersistedAuthSession } from '../../../auth/persistence/persisted-auth-session.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { canonicalStoredGroupSessionIntent } from '../../schedule/group-session-intent-storage.ts';
@@ -76,6 +78,14 @@ export function assertGroupMutationRead(
     const ref = command.aggregateRef;
     assertReadShape(read);
     assertStoredGroupRead(read, ref);
+    for (const row of read.guestTransportRows ?? []) {
+        const session = decodePersistedAuthSession(row.value);
+        if (!session.guestRoom || session.expiresAtEpochMs !== row.entry.expireAtTimestamp) {
+            throw new TypeError('Invalid guest transport lifetime.');
+        }
+        assertGroupRefIdentity(session.guestRoom, ref, 'Guest transport');
+        validateGroupStateRuntimeEntry(row, 'Guest transport', authSessionKey(session.sessionId));
+    }
     if (read.sessionViewAudience !== null) {
         assertGroupRefIdentity(read.sessionViewAudience.ref, ref, 'Session view audience');
         if (
@@ -122,7 +132,7 @@ export function assertGroupMutationRead(
 
 function assertReadShape(read: GroupMutationRead): void {
     requireJsonSafe(read, 'Group mutation read');
-    assertExactKeys(read, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
+    assertExactKeys(read, [...GROUP_MUTATION_READ_KEYS, 'guestTransportRows'], 'Group mutation read');
     assertRequiredKeys(read, GROUP_MUTATION_READ_KEYS, 'Group mutation read');
 }
 
