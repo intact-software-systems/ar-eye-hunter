@@ -121,6 +121,7 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             current,
             topicId: this.topicId,
             typeId: this.heartbeatTypeId,
+            bestEffortFirst: 'ws',
             payload: {
                 sessionId: current.appointment?.sessionId,
                 epoch: current.appointment?.epoch

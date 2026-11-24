@@ -700,6 +700,23 @@ describe('Rallar director relay', () => {
         expect(enqueuedWsTypeIds).toContain('game.snapshot');
     });
 
+    it('publishes host liveness through the room WebSocket without a second RTC heartbeat', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1', principalId: 'principal-1', epoch: 3,
+            appointedAtEpochMs: Date.now(), heartbeatTtlMs: 60_000
+        }));
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1', topicId: 'app.game.director', intentTypeId: 'game.intent',
+            outputTypeId: 'game.output', heartbeatIntervalMs: 60_000
+        });
+        const result = await relay.sendHeartbeat();
+        expect(result.status).toBe('sent');
+        expect(result.ws?.lifecycle().state).toBe('queued');
+        expect(result.rtc).toBeUndefined();
+        relay.stop();
+    });
+
     it('falls back to WS when director room RTC output has no remote route', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

@@ -76,6 +76,29 @@ describe('director delivery admission', () => {
         expect(ws).not.toHaveBeenCalled();
     });
 
+    it('admits a director heartbeat once on the room WebSocket even when local RTC accepts sends', async () => {
+        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const ws = createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const rtcSend = vi.fn(async () => rtc.handle);
+        const wsSend = vi.fn(async () => ws.handle);
+        const transport = createTransport(rtc, wsSend, { rtcSend });
+        const result = await transport.sendRoomEnvelope({ ...envelopeInput, bestEffortFirst: 'ws' });
+        expect(result).toEqual({ status: 'sent', ws: ws.handle });
+        expect(wsSend).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ roomRef: current.roomRef }));
+        expect(rtcSend).not.toHaveBeenCalled();
+    });
+
+    it('lets a director heartbeat use RTC if the WS carrier failed, and honors a WS refusal', async () => {
+        const rtc = createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 });
+        const ws = createMessageDelivery('ws', { kind: 'failed', detail: 'WS disconnected' });
+        const options = { ...envelopeInput, bestEffortFirst: 'ws' as const };
+        expect(await createTransport(rtc, async () => ws.handle).sendRoomEnvelope(options))
+            .toEqual({ status: 'sent', ws: ws.handle, rtc: rtc.handle });
+        const denied = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
+        expect(await createTransport(rtc, async () => denied.handle).sendRoomEnvelope(options))
+            .toEqual({ status: 'failed', ws: denied.handle, reason: 'Room denied' });
+    });
+
     it('falls back after failed RTC and reports WS refusal reason', async () => {
         const rtc = createMessageDelivery('rtc', { kind: 'failed', detail: 'RTC failed' });
         const ws = createMessageDelivery('ws', { kind: 'refused', reason: 'unauthorized', detail: 'Room denied' });
@@ -552,7 +575,7 @@ function toRoomOperation(room: RoomChannelDouble): RallarMessagesOperations['roo
 }
 
 interface TransportChannels {
-    readonly room: RallarMessagesOperations['room'];
+    readonly room?: RallarMessagesOperations['room'];
     readonly rtcSend: RallarMessagesOperations['rtc']['send'];
 }
 

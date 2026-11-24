@@ -44,6 +44,7 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+        readonly bestEffortFirst?: 'ws' | 'rtc';
         /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
         readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
@@ -122,21 +123,24 @@ export class BrowserDirectorRelayTransport {
             ack: 'none' as const,
             ttlMs: 5_000
         };
-        const rtc = await this.input.messages.rtc.send(message);
-        const rtcOutcome = await rtc.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
-        if (isSuccessfulDirectorDelivery(rtcOutcome.lifecycle)) {
-            return { status: 'sent', rtc };
+        const first = input.bestEffortFirst ?? 'rtc';
+        const firstSend = await this.input.messages[first].send(message);
+        const wait = { until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs };
+        const firstOutcome = (await firstSend.wait(wait)).lifecycle;
+        if (isSuccessfulDirectorDelivery(firstOutcome)) {
+            return { status: 'sent', [first]: firstSend };
         }
-        const ws = await this.input.messages.ws.send(message);
-        const wsOutcome = await ws.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
-        return isSuccessfulDirectorDelivery(wsOutcome.lifecycle)
-            ? { status: 'sent', rtc, ws }
-            : {
-                status: 'failed',
-                rtc,
-                ws,
-                reason: wsOutcome.lifecycle.evidence.reason ?? rtcOutcome.lifecycle.evidence.reason
-            };
+        // An explicit room refusal cannot be bypassed on the peer connection.
+        if (first === 'ws' && (firstOutcome.evidence.failure?.kind === 'refused' || firstOutcome.evidence.failure?.kind === 'relay-rejected')) {
+            return { status: 'failed', ws: firstSend, reason: firstOutcome.evidence.reason };
+        }
+        const fallback = first === 'rtc' ? 'ws' : 'rtc';
+        const secondSend = await this.input.messages[fallback].send(message);
+        const secondOutcome = (await secondSend.wait(wait)).lifecycle;
+        const sends = { [first]: firstSend, [fallback]: secondSend };
+        return isSuccessfulDirectorDelivery(secondOutcome)
+            ? { status: 'sent', ...sends }
+            : { status: 'failed', ...sends, reason: secondOutcome.evidence.reason ?? firstOutcome.evidence.reason };
     }
 
     private async sendReceiptRoomEnvelope<T>(
