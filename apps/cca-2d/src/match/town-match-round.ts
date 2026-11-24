@@ -184,23 +184,23 @@ export class TownMatchRound {
     }
 
     confirmReplayedFrames(committed: TownCheckpoint | undefined, localId: string | undefined): void {
-        if (committed && this.lastProposal?.sequence === committed.sequence) {
+        if (!committed) return;
+        if (this.lastProposal?.sequence === committed.sequence) {
             this.committedProposal = this.lastProposal;
             this.lastProposal = undefined;
         }
         const action = this.intent?.frame.action;
-        if (committed && action) {
-            const state = committed.state;
-            const local = state.members.find((member) => member.id === localId);
-            if (
-                (action.kind === 'ready' && local?.ready === action.ready) ||
-                (action.kind === 'start' && state.phase !== 'lobby') ||
-                (action.kind === 'extend' && (state.phase !== 'playing' ||
-                    state.tick + state.remainingTicks > action.expectedDurationTicks)) ||
-                (action.kind === 'rematch' && state.matchId === action.nextMatchId)
-            ) {
-                this.intent = undefined;
-            }
+        if (!action) return;
+        const state = committed.state;
+        const local = state.members.find((member) => member.id === localId);
+        if (
+            (action.kind === 'ready' && local?.ready === action.ready) ||
+            (action.kind === 'start' && state.phase !== 'lobby') ||
+            (action.kind === 'extend' && (state.phase !== 'playing' ||
+                state.tick + state.remainingTicks > action.expectedDurationTicks)) ||
+            (action.kind === 'rematch' && state.matchId === action.nextMatchId)
+        ) {
+            this.intent = undefined;
         }
     }
 }

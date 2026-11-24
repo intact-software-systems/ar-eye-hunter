@@ -8,7 +8,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { GuestConnectionDiagnostics } from './guest-connection-diagnostics.ts';
 import { OnlineMatch } from './online-match.ts';
 import { saveGuestVisit, type AdmittedGuestVisit } from './guest-visit.ts';
-import { watchTownClockLoss } from './town-clock-recovery.ts';
+import { watchTownClockLoss } from './watch-town-clock-loss.ts';
 import { CCA_SCOPE, townApiBaseUrl, townGroupPresence } from './town-server.ts';
 import './online.css';
 

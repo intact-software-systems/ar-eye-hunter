@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
 import type { RallarWsLifecycleListener } from '@shared-web/browser/rallar.ts';
-import { watchTownClockLoss } from '../../../apps/cca-2d/src/online/town-clock-recovery.ts';
+import { watchTownClockLoss } from '../../../apps/cca-2d/src/online/watch-town-clock-loss.ts';
 
 afterEach(() => vi.restoreAllMocks());
 

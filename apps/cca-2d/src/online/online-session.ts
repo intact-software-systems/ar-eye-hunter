@@ -1,4 +1,4 @@
-import { trackAccountTownRecovery } from './account-town-recovery.ts';
+import { trackAccountTownRecovery } from './track-account-town-recovery.ts';
 import { leaveCurrentTown } from './leave-current-town.ts';
 import type { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';

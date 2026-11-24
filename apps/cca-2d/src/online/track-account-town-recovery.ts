@@ -1,7 +1,7 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
-import { watchTownClockLoss } from './town-clock-recovery.ts';
+import { watchTownClockLoss } from './watch-town-clock-loss.ts';
 
 /** Keep the account’s explicit room choice across SDK retirement; presence-only reentry still requires its server seat. */
 export function trackAccountTownRecovery(
