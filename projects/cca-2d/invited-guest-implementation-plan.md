@@ -1,0 +1,28 @@
+# Invited guest implementation plan
+
+A signed-in owner should be able to show a QR code and have a friend join Grumpy Town on a phone. The standard Rallar Server controls admission. A player's browser runs the match. The [approved guest-play design](invited-guest-play.md) defines the player-facing rules.
+
+## Implementation instructions for both PRs
+
+- Follow AGENTS.md and complete the applicable skill preflight before implementation. Use test-driven development. For each behavior, reproduce the missing behavior with a failing test, implement it, then refactor with the test green.
+- Use sub-agent-driven development. Give each implementation agent a bounded task with named file ownership and acceptance tests. Review the result against the design and repository standards before building dependent work on it.
+- Prefer WebSocket events over HTTP polling. Fetch room state on entry and after reconnect when needed, then subscribe to changes. Keep RTC first for live gameplay and use the room WebSocket fallback when RTC is unavailable.
+- Delete unused code in the affected paths. Remove superseded implementations and duplicate logic. Build the guest flow directly, with no legacy guest path, compatibility shim or migration code. Preserve independently used registered-player behavior.
+- Prefer existing shared libraries when they fit. Put reusable identity, admission and room authorization in Rallar. Keep nickname generation, QR presentation, scoring and simulation in CCA.
+
+## 1. Base PR — invited guests in standard Rallar
+
+1. Start at `apps/api-v1/src/group-state/register-group-admission-routes.ts` and the membership mutations in `packages/shared-server/rallar-system/group-state`. Write a failing admission test with two simultaneous claims for the final seat. Implement a scoped, expiring guest identity and atomic admission using the existing mutation and transaction conventions. Count the owner and reserved seats. Retry after a lost response must recover the same admission without consuming a second seat.
+2. Test owner-only creation, rotation, removal and close. Bind admission to the application, workspace and room. Store a verifier for the invitation secret, keep it out of logs, and apply existing admission rate limits. Test the 15-minute boundary and a redemption racing removal. Revocation and link invalidation must commit together. Rotation preserves admitted guests. Owner disconnect preserves the town. Guest credentials grant only the room operations needed to participate and, when appointed, host gameplay.
+3. Drive expiry tests with a controlled server clock. Start the four hours at first admission. For a current participant, use server-verifiable round membership and the scheduled end in force at expiry. Verify that the room timeline in `packages/shared/api/group-deadlines/room-timeline.ts` can supply these facts. If it lacks one, add the minimum reusable room fact before allowing the extension. Bind the extension to that round and cut it off at completion or the frozen deadline, whichever comes first. Test pause, added time, host loss, server restart and an attempt to start another round.
+4. Exercise revocation across REST, WebSocket subscriptions and live RTC peers. The server can revoke server access directly. Connected game clients must also discard revoked peers' input and close their existing channels. On reconnect require current authorization before accepting traffic. Cover expiry of the appointed host and handoff to an eligible participant.
+5. Extend the admission recipes under `packages/shared-test/black-box-runner/tests/api-v1`. Prove last-seat contention against the standard server, removal with rotation, cross-room denial and fixed expiry. Verify existing signed-in admission and the public SDK surface before stacking the app work.
+
+## 2. Stacked PR — Grumpy Town invitation flow
+
+1. In `apps/cca-2d/src/online/online-session.ts` and `online-lobby.ts`, start with a browser test for owner sharing and guest entry. A QR and its copyable link open the same town. The guest shuffles a generated nickname and joins without signup or typing. Reload restores the guest and nickname. Show actionable outcomes for a full town, an invalid invitation and expired access.
+2. Test the round boundary in `apps/cca-2d/src/match/round-roster.ts` and `town-match-session.ts`. A newcomer may reserve a vacant seat and ready for the next round. A returning participant may recover their existing seat under the game's recovery rules. Neither operation may alter the current round's scores. Connect the game's round start, scheduled end and completion to the room facts used in the base PR.
+3. Test owner disconnect during play, guest promotion and a rematch. Only the signed-in owner sees and can exercise invitation and removal controls. Verify the same lobby state after a missed event and reconnect, and verify that a removed guest's already-open tab can no longer influence play.
+4. Play one round with the owner on a desktop and a guest on an iPhone. Scan, join, ready, dash, reload, finish and rematch. Repeat host handoff and force the WebSocket gameplay fallback once. Check matching rosters and scores on both screens. Record which cases were automated and which were observed on devices.
+
+Land the reusable Rallar PR first. Keep the CCA integration stacked until the base lands, then validate against main. If phone testing exposes an app issue, the signed-in friends flow remains available while the guest entry UI is revised.
