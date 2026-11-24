@@ -161,6 +161,8 @@ export interface RallarRoomTopicMember {
 }
 
 export interface RallarJoinRoomOptions extends RallarScopedOperationOptions {
+    /** Connect this session to an existing seat without sending a membership admission request. */
+    readonly presenceOnly?: boolean;
     /** Omit to recover existing membership without changing participation. */
     readonly participation?: 'player' | 'spectator';
     readonly roomRef?: GroupRef;

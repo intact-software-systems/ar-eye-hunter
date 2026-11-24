@@ -1,3 +1,4 @@
+import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import { registerRoomLobbyReadRoute } from '../room-lobbies/register-room-lobby-read-route.ts';
 import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
@@ -247,6 +248,7 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             serverPeerId: input.publicConfiguration.clockPeerId ?? input.publicConfiguration.serverPeerId,
             socketServer: input.runtime.wsQBoxServerService.socket,
+            readGuestRoom: ref => input.runtime.groupsRepository.readSnapshot(ref),
             appClientInboxService: input.runtime.appClientInboxService,
             readWsConnectTicket: (ticketDigest) =>
                 operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
@@ -262,7 +264,11 @@ function registerApiV1StateRoutes<
     Topology extends ApiV1RouteInstallerTopology,
 >(app: Hono, construction: ApiV1RouteConstruction<Runtime, Topology>): void {
     const { input, requireSession, snapshots } = construction;
+    const requireTransportSession = async (request: ApiV1RouteAuthRequest) =>
+        await readRoomGuestSession(request, ref => input.runtime.groupsRepository.readSnapshot(ref), input.nowEpochMs) ??
+            await requireSession(request);
     configRoutes.registerConfigRoutes(app, {
+        requireTransportSession,
         requireApiAuthSession: requireSession,
         now: input.nowEpochMs,
         createTokenId: input.createTokenId,
@@ -274,7 +280,7 @@ function registerApiV1StateRoutes<
         publicConfiguration: input.publicConfiguration
     });
     iceRoutes.registerIceRoutes(app, {
-        requireApiAuthSession: requireSession,
+        requireApiAuthSession: requireTransportSession,
         configuration: input.ice,
         nowEpochMs: input.nowEpochMs
     });

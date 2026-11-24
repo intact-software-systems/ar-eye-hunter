@@ -56,6 +56,7 @@ export interface ConnectStateGroupPresenceInput {
 }
 
 export interface JoinStateGroupInput extends ConnectStateGroupPresenceInput {
+    readonly presenceOnly?: boolean;
     readonly intent?: RoomJoinGroupStateFields;
 }
 
@@ -104,6 +105,15 @@ export async function createAndJoinStateGroup(
 }
 
 export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupSnapshot> {
+    if (input.presenceOnly) {
+        if (input.intent?.participation || input.intent?.inviteToken || input.intent?.joinCode) {
+            throw new TypeError('Resuming room presence requires an existing seat and cannot change its admission.');
+        }
+        input.assertCurrent?.();
+        const result = requireConnectedPresence(await createStateGroupPresenceCommand(input).run());
+        input.assertCurrent?.();
+        return result;
+    }
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
     const request = toJoinGroupStateRequest({

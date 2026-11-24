@@ -1,6 +1,6 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
-import { isRoomGuestAccess, type RoomGuestAccess } from '@shared/api/room-guest-invitation.ts';
+import { isRoomGuestAccess, type RoomGuestAccess, type RoomGuestRedemption } from '@shared/api/room-guest-invitation.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../api/send-api-http-request.ts';
@@ -12,7 +12,7 @@ export function createRoomGuestSecret(): string {
 
 export async function redeemRoomGuestInvitation(
     room: GroupRef,
-    proof: { readonly invitationSecret: string; readonly guestSecret: string },
+    proof: RoomGuestRedemption,
     options: Pick<ApiMutationRequestOptions, 'requestId' | 'signal'>
 ): Promise<RoomGuestAccess> {
     const response: unknown = await sendApiHttpRequest({

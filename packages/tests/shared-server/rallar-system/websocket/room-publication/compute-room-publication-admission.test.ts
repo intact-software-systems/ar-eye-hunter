@@ -23,6 +23,27 @@ const MEMBERS: RoomPublicationAdmission.Input['topic'] = { topicId: TOPIC_ID, pa
 const NOW = 100;
 
 describe('computeRoomPublicationAdmission', () => {
+    it('a guest whose lease ends cannot publish or receive room traffic through lingering presence', () => {
+        const active = createGrantedSnapshot();
+        const guest = session(active, 'pub-1');
+        const snapshot = {
+            ...active,
+            members: active.members.map(member => member.principalId === guest.principalId
+                ? { ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: NOW } } : member)
+        };
+        const input = {
+            ...subscribedAuthority(snapshot),
+            topic: MEMBERS,
+            publisher: guest,
+            message: { targets: roomBroadcast(snapshot) },
+            nowEpochMs: NOW
+        };
+        expect(computeRoomPublicationAdmission(input).left?.code).toBe('topic-not-granted');
+        const audience = computeRoomPublicationAudience(input).sessions;
+        expect(audience.some(candidate => candidate.principalId === guest.principalId)).toBe(false);
+        expect(audience.length).toBeGreaterThan(0);
+    });
+
     it('a members topic ignores subscriptions and returns exactly toAuthorizedRoomAudience\'s audience', () => {
         const snapshot = createGrantedSnapshot();
         const message = { targets: roomBroadcast(snapshot) };
@@ -429,7 +450,7 @@ function createGrantedSnapshot(): GroupSnapshot {
     };
 }
 
-function session(snapshot: GroupSnapshot, sessionId: string): RoomPublicationAdmission.Publisher {
+function session(snapshot: GroupSnapshot, sessionId: string): Extract<RoomPublicationAdmission.Publisher, { kind: 'session'; }> {
     const found = snapshot.activeSessions.find((candidate) => candidate.sessionId === sessionId)!;
     return { kind: 'session', sessionId, principalId: found.principalId };
 }

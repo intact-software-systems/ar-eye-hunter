@@ -1,3 +1,4 @@
+import { toRoomGuestSeatExpiryCommand, type RoomGuestSeatDeadline } from '../schedule/room-guest-seat-deadline.ts';
 import { newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -35,7 +36,8 @@ import type { RallarTimingSink } from '../../observability/timing.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
-import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
+import type { AuthorizedGroupMutation, GroupStateService, GroupStateWritten } from '../group-state-service-contracts.ts';
+import { toRoomGuestAdmissionCommand, type RoomGuestAdmission } from '../mutation/membership/room-guest-admission.ts';
 import type { GroupMoveDeadline } from '../move/group-move-deadline.ts';
 import {
     registerGroupMoveInbox,
@@ -67,7 +69,7 @@ import {
     GroupStateInboxHandler,
     type GroupStateInboxResultReader
 } from './group-state-inbox-handler.ts';
-import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
+import { decodeGroupStateInboxDurableResult, decodeGroupStateWritten } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 import type { GroupSystemCommandSubmission } from './group-system-command-submission.ts';
 import { timeGroupStatePhase, type GroupStatePhaseTiming } from './time-group-state-phase.ts';
@@ -275,6 +277,28 @@ export class GroupStateInboxService {
             { received, placeholder, materialize: async () => materialized },
             (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
         );
+    }
+
+    async processGuestAdmissionUntilCompletion(
+        input: RoomGuestAdmission & Readonly<{ traceId: string; }>
+    ): Promise<Either<AppInboxFailure, GroupStateWritten>> {
+        const command = toRoomGuestAdmissionCommand(input);
+        const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(command, this.nowEpochMs());
+        const received = {
+            ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_GUEST_ADMIT, ingress),
+            topicId: GROUP_STATE_APP_INBOX_TOPIC,
+            resourceId: command.commandId
+        };
+        return await this.commandClient.reserveMaterializedAndWaitForResult({
+            received,
+            placeholder: { ...received, data: null, authority: null, traceId: input.traceId },
+            materialize: async () => received
+        }, decodeGroupStateWritten);
+    }
+
+    async enqueueGuestSeatExpiry(deadline: RoomGuestSeatDeadline, traceId: string): Promise<void> {
+        const ingress = await this.groupStateService.captureGuestMembershipMutationIngress(toRoomGuestSeatExpiryCommand(deadline), this.nowEpochMs());
+        await this.queueEntryWriter.enqueue({ ...toGroupSystemCommandEnqueue(AppInboxType.GROUP_GUEST_EXPIRE, ingress), traceId });
     }
 
     async enqueueGroupMoveExpiry(command: GroupMoveDeadline, traceId: string): Promise<ResourceEntry> {

@@ -9,6 +9,7 @@ import type {
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest
 } from '@shared/api/state-types.ts';
+import { registerRoomGuestRedemptionRoute } from './register-room-guest-redemption-route.ts';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -24,6 +25,7 @@ export function registerGroupAdmissionRoutes(
     app: Hono,
     dependencies: GroupStateRouteDependencies
 ): void {
+    registerRoomGuestRedemptionRoute(app, dependencies);
     registerJoinGroupRoute(app, dependencies);
     registerAcceptGroupInviteRoute(app, dependencies);
     registerRotateGroupJoinCodeRoute(app, dependencies);

@@ -302,6 +302,15 @@ describe('Rallar RTC recovery', () => {
         });
     });
 
+    it('closes an unauthorized peer without starting another channel', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        await facade.connect();
+        facade.rtc.disconnectPeer('guest-session');
+        expect(mocks.webRtcConnectionService.disconnectPeer).toHaveBeenCalledWith('guest-session');
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+    });
+
     it('reconnects an RTC peer and waits for the requested lane', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

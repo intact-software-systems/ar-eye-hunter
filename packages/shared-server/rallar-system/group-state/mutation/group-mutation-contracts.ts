@@ -1,3 +1,5 @@
+import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
+import type { RoomGuestAdmission } from './membership/room-guest-admission.ts';
 import type { RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import type { RoomLobby } from '@shared/api/room-lobbies/room-lobby.ts';
 import type { GroupLobbyRead } from '../lobby/group-lobby-storage.ts';
@@ -310,6 +312,8 @@ export type GroupMutationCommand =
                 & NullableActorInput
                 & Readonly<{
                     participation: 'player' | 'spectator' | null;
+                    guestTransport?: RoomGuestAdmission.Transport;
+                    guestDisplayName?: string;
                     inviteToken: string | null;
                     joinCode: string | null;
                 }>;
@@ -571,6 +575,8 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'expiry',
     'session-cleanup',
     'formation-criterion',
+    'guest-redemption',
+    'guest-expiry',
     'formation-automation',
     'topology-publication',
     'timeline-deadline',
@@ -689,6 +695,7 @@ export type GroupTopicSubscriptionDeleteEffect = Readonly<{
 }>;
 
 export interface GroupMutationDomainWrite {
+    readonly guestTransportSession?: PersistedAuthSession;
     readonly viewProvenance: readonly RuntimeStateGuardedBatchEffect[];
     readonly directorPresenceGroup?: Group;
     readonly directorAuthorityFences?: readonly RuntimeStateGuardedBatchEffect[];

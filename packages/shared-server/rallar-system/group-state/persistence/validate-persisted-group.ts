@@ -32,7 +32,7 @@ import {
     requirePositiveSafeInteger,
     requireRecord
 } from '../group-state-validation-primitives.ts';
-import { isRoomGuestInvitation } from '@shared/api/room-guest-invitation.ts';
+import { isRoomGuestInvitation, isRoomGuestLease } from '@shared/api/room-guest-invitation.ts';
 import { requireUnitRate } from '../require-unit-rate.ts';
 import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 
@@ -253,7 +253,10 @@ export function validateStoredMember(
     label: string
 ): asserts member is GroupMember {
     const value = requireRecord(member, `${label} value`);
-    assertExactKeys(value, STORED_MEMBER_KEYS, `${label} value`);
+    assertExactKeys(value, [...STORED_MEMBER_KEYS, 'guestLease'], `${label} value`);
+    if (value.guestLease !== undefined && !isRoomGuestLease(value.guestLease)) {
+        throw new TypeError('Stored room guest lease is invalid.');
+    }
     assertRequiredKeys(value, STORED_MEMBER_KEYS, `${label} value`);
     validateScopedRecord(value, ref, label);
     requireNonEmptyString(value.principalId, `${label} principalId`);

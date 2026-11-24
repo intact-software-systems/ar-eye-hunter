@@ -1,4 +1,4 @@
-import { isRoomGuestInvitation } from './room-guest-invitation.ts';
+import { isRoomGuestInvitation, isRoomGuestLease } from './room-guest-invitation.ts';
 import {
     validateAuthoritativeActiveGroupSession,
     validateAuthoritativeGroupEvent,
@@ -360,7 +360,11 @@ function validateDeltaMember(
 ): string {
     const label = 'GroupStateDeltaEnvelope.member';
     const member = decodeRecord(value, label);
-    exact(member, GROUP_MEMBER_KEYS, label);
+    const hasGuestLease = Object.hasOwn(member, 'guestLease');
+    exact(member, hasGuestLease ? [...GROUP_MEMBER_KEYS, 'guestLease'] : GROUP_MEMBER_KEYS, label);
+    if (hasGuestLease && !isRoomGuestLease(member.guestLease)) {
+        fail('Room guest lease is invalid.');
+    }
     sameGroupRef(member, ref, label);
     nonEmptyString(member.principalId, `${label}.principalId`);
     enumValue(member.role, ['owner', 'admin', 'member', 'spectator'], `${label}.role`);

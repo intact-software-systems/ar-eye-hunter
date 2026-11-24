@@ -39,7 +39,7 @@ export function computeGroupMembershipWrite({
     assertOwnerTransition(members, ownerPrincipalId);
     const metadata = members.reduce((current, member) =>
         observeRoomDirectorMembership(current, member, facts.attemptAtEpochMs), stored.value.metadata);
-    const group: Group = {
+    let group: Group = {
         ...stored.value,
         metadata,
         metadataVersion: stored.value.metadataVersion + Number(metadata !== stored.value.metadata),
@@ -49,6 +49,23 @@ export function computeGroupMembershipWrite({
         rosterVersion: stored.value.rosterVersion + 1,
         updated: audit
     };
+    for (const member of members) {
+        const previous = findKnownMember(read, member.principalId);
+        if (!previous?.guestLease) continue;
+        if (member.role === 'admin' || member.role === 'owner') {
+            throw new GroupMutationRejectedError('Guest members cannot govern the room.');
+        }
+        if ((member.status === 'active' && previous.status !== 'active') || !member.guestLease) {
+            throw new GroupMutationRejectedError('A guest identity may be admitted only by redeeming an invitation.');
+        }
+        if (previous.status !== member.status && (member.status === 'removed' || member.status === 'banned')) {
+            if (command.input.actorPrincipalId !== stored.value.ownerPrincipalId) {
+                throw new GroupMutationRejectedError('Only the room owner may remove a guest.');
+            }
+            const { guestInvitation: _invalidInvitation, ...revoked } = group;
+            group = revoked;
+        }
+    }
     return computeGroupMutationWriteResult({
         command,
         read,

@@ -398,6 +398,17 @@ describe('room group-state HTTP workflows', () => {
         expect(fetchCalls.every((call) => !hasRequestId(call.body))).toBe(true);
     });
 
+    it('resumes an admitted membership by connecting presence without requesting admission again', async () => {
+        stubFetch(({ url, method }) => method === 'PUT' && url.endsWith('/groups/group-1/sessions/session-1')
+            ? jsonResponse(groupSnapshot('group-1'))
+            : notFoundResponse());
+        await expect(joinStateGroup({
+            presenceOnly: true,
+            nowMs: Date.now, publicationKey: null, groupId: 'group-1', principalId: 'principal-1',
+            sessionId: 'session-1', generationId: 'generation-1', connectionGenerationId: 'ws-generation-1'
+        })).resolves.toMatchObject({ group: { groupId: 'group-1' } });
+    });
+
     it('joins a state group with explicit join intent before connecting presence', async () => {
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/groups/group-1/join')) {

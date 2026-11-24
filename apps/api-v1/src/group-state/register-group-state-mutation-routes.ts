@@ -1,3 +1,4 @@
+import { requireRoomParticipantSession } from './group-state-route-authorization.ts';
 import type { Hono } from 'hono';
 
 import type { AppointGroupDirectorRequest, CreateGroupRequest, UpdateGroupRequest } from '@shared/api/state-types.ts';
@@ -63,7 +64,7 @@ function registerUpdateGroupRoute(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/requests/:requestId',
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
+                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
                 const request = await readGroupStateRouteRequest<UpdateGroupRequest>(context);
@@ -102,7 +103,7 @@ function registerAppointGroupDirectorRoute(
         `${GROUP_PATH}/director/appoint/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
+                const authSession = await requireRoomParticipantSession(context.req, { ...toGroupStateRouteScope(context), groupId: context.req.param('groupId') }, dependencies);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
                 const written = toGroupStateResponse({

@@ -4,7 +4,7 @@ import { redeemRoomGuestInvitation } from '@shared-web/browser/rooms/room-guest-
 
 const room = { applicationId: 'app', workspaceId: 'ws', groupId: 'town' };
 const options = { requestId: 'a-stable-request-id-12345' };
-const proof = { invitationSecret: 'ca'.repeat(32), guestSecret: 'be'.repeat(32) };
+const proof = { invitationSecret: 'ca'.repeat(32), guestSecret: 'be'.repeat(32), displayName: 'Pickle Boots' };
 const admission = {
     clientId: 'guest-principal', sessionId: 'guest-session', accessToken: 'guest-bearer',
     issuedAtEpochMs: 1_000, expiresAtEpochMs: 14_401_000

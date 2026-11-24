@@ -40,6 +40,7 @@ export function createUpsertGroupMember({
         {
             ...command.aggregateRef,
             principalId: command.targetPrincipalId,
+            ...(existing?.guestLease && { guestLease: existing.guestLease }),
             role,
             joined: existing?.joined ?? audit,
             updated: audit,

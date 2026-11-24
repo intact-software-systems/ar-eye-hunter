@@ -1,3 +1,5 @@
+import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
@@ -10,7 +12,6 @@ import {
     captureAppInboxGroupMutationIngress,
     captureGroupMutationIngress,
     GroupMutationAuthorizationError,
-    readAndVerifyLiveGroupMutationSession,
     requireGroupMutationAuthorityProof,
     toGroupMutationEventId,
     verifyLiveGroupMutationSession,
@@ -216,6 +217,7 @@ function createIngressCaptureOperations(
     | 'captureFormationAutomationMutationIngress'
     | 'captureTopologyPublicationMutationIngress'
     | 'captureTimelineDeadlineMutationIngress'
+    | 'captureGuestMembershipMutationIngress'
     | 'captureActivationStatusMutationIngress'
 > {
     const { repository, authorityDependencies, captureInternalMutationIngress } = owners;
@@ -240,6 +242,8 @@ function createIngressCaptureOperations(
             captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
         captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
+        captureGuestMembershipMutationIngress: async (command, atEpochMs) =>
+            captureInternalMutationIngress(command, command.operation === 'removeGroupMember' ? 'guest-expiry' : 'guest-redemption', atEpochMs),
         captureTimelineDeadlineMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'timeline-deadline', atEpochMs),
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
@@ -336,7 +340,7 @@ async function readGroupMutationAttempt(
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
     }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
+    await verifyGroupMutationAttemptSession(owners, ingress, authSession, read);
     return await readGroupMutationFences(owners, ingress, read);
 }
 
@@ -352,7 +356,7 @@ async function readGroupMutationAttemptWithSnapshot(
         lobbyDefault: ingress.facts.lobbyDefault !== undefined
     }
     );
-    await verifyGroupMutationAttemptSession(owners, ingress, authSession);
+    await verifyGroupMutationAttemptSession(owners, ingress, authSession, read);
     return { read: await readGroupMutationFences(owners, ingress, read), currentSnapshot };
 }
 
@@ -377,20 +381,45 @@ function resolveGroupMutationAuthSessionId(ingress: GroupStateMutationCommand): 
 async function verifyGroupMutationAttemptSession(
     owners: GroupStateRuntimeOwners,
     ingress: GroupStateMutationCommand,
-    authSession: GroupStateMutationExactAuthSession
+    authSession: GroupStateMutationExactAuthSession,
+    read: GroupMutationRead
 ): Promise<void> {
-    if (ingress.facts.internalAuthority !== 'none') {
-        return;
+    if (ingress.facts.internalAuthority !== 'none') return;
+    const proof = requireGroupMutationAuthorityProof(ingress);
+    const session = authSession.status === 'unread'
+        ? await owners.authorityDependencies.authSessions.findBySessionId(proof.sessionId)
+        : authSession.session;
+    const now = ingress.facts.attemptAtEpochMs;
+    verifyLiveGroupMutationSession(proof, session, now);
+    if (!session?.guestRoom) return;
+    const command = ingress.command;
+    if (!isSameGroupRef(command.aggregateRef, session.guestRoom)) {
+        throw new GroupMutationAuthorizationError('Guest credentials are limited to the admitted room.');
     }
-    if (authSession.status === 'unread') {
-        await readAndVerifyLiveGroupMutationSession(owners.authorityDependencies, ingress);
-        return;
+    const member = read.actorMember?.principalId === session.clientId ? read.actorMember : read.targetMember;
+    const mode = member?.principalId === session.clientId && read.group
+        ? roomGuestAccessMode(read.group.value, member, now) : 'expired';
+    if (mode === 'expired') throw new GroupMutationAuthorizationError('Guest room admission ended.');
+    switch (command.operation) {
+        case 'connectPresence':
+        case 'heartbeatPresence':
+        case 'disconnectPresence':
+        case 'subscribeGroupTopic':
+        case 'unsubscribeGroupTopic':
+            if (command.sessionId === session.sessionId) return;
+            break;
+        case 'appointDirector':
+            if (mode === 'room' && (command.input.succession?.operation === 'claim-player' ||
+                command.input.succession?.operation === 'claim-deputy')) return;
+            break;
+        case 'updateGroup':
+            // The director fence independently checks the current appointment, epoch and absence of unrelated edits.
+            if (mode === 'room' &&
+                (command.input.roomClock?.expectedDirectorEpoch !== undefined ||
+                    command.input.roomDeadline?.expectedDirectorEpoch !== undefined)) return;
+            break;
     }
-    verifyLiveGroupMutationSession(
-        requireGroupMutationAuthorityProof(ingress),
-        authSession.session,
-        ingress.facts.attemptAtEpochMs
-    );
+    throw new GroupMutationAuthorizationError('Guest room operation is unavailable.');
 }
 
 async function readGroupMutationFences(

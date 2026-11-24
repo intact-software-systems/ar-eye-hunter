@@ -4,6 +4,7 @@ import {
     toALLeaderNarrowing
 } from '@shared/al-contracts/al-audience-narrowing.ts';
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -26,7 +27,9 @@ export function toAuthorizedRoomAudience(
     const narrowing = toALAudienceNarrowing(targets);
     const leader = toALLeaderNarrowing(message, resolveRallarGroupLeaderSessionId(snapshot));
     const activePrincipals = new Set(
-        snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
+        snapshot.members.filter(member => member.status === 'active' &&
+            (!member.guestLease || roomGuestAccessMode(snapshot.group, member, nowEpochMs) !== 'expired'))
+            .map(member => member.principalId)
     );
     return {
         targets,

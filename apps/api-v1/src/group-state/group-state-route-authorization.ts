@@ -1,3 +1,4 @@
+import { readRoomGuestSession } from '@shared-server/http/room-guest-request.ts';
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
 import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
@@ -14,6 +15,16 @@ import type {
     GroupStateRouteRequest,
     GroupStateRouteService
 } from './group-state-route-contracts.ts';
+
+export async function requireRoomParticipantSession(
+    request: GroupStateRouteRequest, ref: GroupRef, dependencies: GroupStateRouteDependencies
+): Promise<GroupStateRouteAuthSession> {
+    const guest = await readRoomGuestSession(request, async room => {
+        const result = await dependencies.readGroupSnapshot(room, { strictMode: true });
+        return result.status === 'found' ? result.snapshot : undefined;
+    }, dependencies.nowEpochMs, ref);
+    return guest ?? await dependencies.requireApiAuthSession(request);
+}
 
 export interface GroupStateRouteAuthorization {
     readStrictAuthSession(

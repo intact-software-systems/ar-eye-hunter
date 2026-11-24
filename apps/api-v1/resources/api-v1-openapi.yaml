@@ -1241,6 +1241,47 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/guests/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Redeem a room invitation for a temporary guest seat
+      description: Supply independent random 32-byte secrets encoded in lowercase hex. Retain the guest secret and request ID when retrying a lost response.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [invitationSecret, guestSecret]
+              properties:
+                invitationSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                guestSecret: { type: string, pattern: '^[0-9a-f]{64}$', writeOnly: true }
+                displayName: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        '200':
+          description: Room-scoped guest session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clientId, sessionId, accessToken, issuedAtEpochMs, expiresAtEpochMs]
+                properties:
+                  clientId: { type: string }
+                  sessionId: { type: string }
+                  accessToken: { type: string }
+                  issuedAtEpochMs: { type: integer }
+                  expiresAtEpochMs: { type: integer }
+        '400': { description: Invalid request }
+        '403': { description: Invitation or guest access denied }
+        '409': { description: Admission conflict }
+        '429': { description: Admission rate limit reached }
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/requests/{requestId}:
     put:
       tags: [Group State]
@@ -8333,6 +8374,15 @@ components:
             banned:
               $ref: '#/components/schemas/AuditStamp'
       properties:
+        guestLease:
+          type: object
+          description: Fixed lease of an invited guest, established on first admission.
+          required: [admittedAtEpochMs, expiresAtEpochMs]
+          additionalProperties: false
+          properties:
+            displayName: { type: string, minLength: 1, maxLength: 64 }
+            admittedAtEpochMs: { type: integer, minimum: 0 }
+            expiresAtEpochMs: { type: integer, minimum: 1 }
         applicationId:
           type: string
         workspaceId:
@@ -9305,6 +9355,11 @@ components:
               pattern: '^[A-Za-z0-9._-]{1,64}$'
             operation:
               enum: [start, pause, resume, advance-phase, extend-phase, set-successor, publish-schedule, pause-program, resume-program]
+            participantPrincipalIds:
+              type: array
+              uniqueItems: true
+              items: { type: string, minLength: 1 }
+              description: Active players at the beginning of a guest-play timeline occurrence.
             successor:
               type: [object, 'null']
               additionalProperties: false
@@ -9345,6 +9400,11 @@ components:
               minimum: 1
               maximum: 9007199254740991
           allOf:
+            - if: { required: [participantPrincipalIds] }
+              then:
+                properties:
+                  name: { const: guest-play }
+                  operation: { const: advance-phase }
             - if:
                 properties:
                   operation:

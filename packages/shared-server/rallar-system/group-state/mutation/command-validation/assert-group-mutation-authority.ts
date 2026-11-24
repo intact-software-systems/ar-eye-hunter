@@ -1,3 +1,5 @@
+import { isRoomGuestDisplayName } from '@shared/api/room-guest-invitation.ts';
+import { isBase64UrlOfByteLength } from '@shared/encoding/base64url.ts';
 import type { GroupMutationCommand, GroupMutationIngressFacts } from '../group-mutation-contracts.ts';
 import { assertGroupMutationJoinCodeFacts } from './assert-group-mutation-join-code-facts.ts';
 
@@ -6,6 +8,9 @@ export function assertGroupMutationAuthority(
     facts: GroupMutationIngressFacts
 ): void {
     assertGroupMutationJoinCodeFacts(command, facts);
+    if (command.operation === 'joinGroup' && (command.input.guestTransport || command.input.guestDisplayName !== undefined) && facts.internalAuthority !== 'guest-redemption') {
+        throw new TypeError('A guest transport binding requires verified invitation redemption.');
+    }
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError('User group mutation requires authenticated authority facts');
@@ -43,6 +48,27 @@ function assertInternalMutationAuthority(
         throw new TypeError('Internal group maintenance cannot claim semantic actor authority');
     }
     switch (facts.internalAuthority) {
+        case 'guest-expiry':
+            if (command.operation !== 'removeGroupMember' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId)) {
+                throw new TypeError('Guest expiry requires a guest membership removal.');
+            }
+            return;
+        case 'guest-redemption':
+            if (command.operation !== 'joinGroup' || !/^guest-[0-9a-f]{64}$/.test(command.targetPrincipalId) ||
+                command.input.participation !== 'player' || command.input.joinCode !== null ||
+                typeof command.input.inviteToken !== 'string' || !/^[0-9a-f]{64}$/.test(command.input.inviteToken)) {
+                throw new TypeError('Room guest redemption requires a scoped guest principal and invitation verifier.');
+            }
+            if (command.input.guestDisplayName !== undefined && !isRoomGuestDisplayName(command.input.guestDisplayName)) {
+                throw new TypeError('Invalid room guest display name.');
+            }
+            const binding = command.input.guestTransport;
+            if (!binding || Object.keys(binding).length !== 2 || typeof binding.sessionId !== 'string' ||
+                !/^guest-session-[0-9a-f]{64}$/u.test(binding.sessionId) || typeof binding.accessTokenDigest !== 'string' ||
+                !isBase64UrlOfByteLength(binding.accessTokenDigest, 32)) {
+                throw new TypeError('Guest admission requires a scoped transport binding.');
+            }
+            return;
         case 'formation-criterion':
             return assertFormationCriterionAuthority(command);
         case 'expiry':

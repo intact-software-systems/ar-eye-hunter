@@ -21,7 +21,13 @@ export async function hashRoomInvitationSecret(secret: string): Promise<string> 
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export function isRoomGuestDisplayName(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= 128 &&
+        value.trim() === value && Array.from(value).length <= 64 && !/[\p{Cc}\p{Cs}]/u.test(value);
+}
+
 export interface RoomGuestLease {
+    readonly displayName?: string;
     readonly admittedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
 }
@@ -34,7 +40,7 @@ export function isRoomGuestLease(value: unknown): value is RoomGuestLease {
         Number.isSafeInteger(value.admittedAtEpochMs) && value.admittedAtEpochMs >= 0 &&
         'expiresAtEpochMs' in value && Number.isSafeInteger(value.expiresAtEpochMs) &&
         value.expiresAtEpochMs === value.admittedAtEpochMs + ROOM_GUEST_LIFETIME_MS &&
-        Object.keys(value).length === 2;
+        ('displayName' in value ? isRoomGuestDisplayName(value.displayName) && Object.keys(value).length === 3 : Object.keys(value).length === 2);
 }
 
 /** Admission to one room, redeemable without issuing a registered-account session. */
@@ -55,4 +61,10 @@ export function isRoomGuestAccess(value: unknown): value is RoomGuestAccess {
         Number.isSafeInteger(value.issuedAtEpochMs) && value.issuedAtEpochMs >= 0 &&
         'expiresAtEpochMs' in value && Number.isSafeInteger(value.expiresAtEpochMs) &&
         value.expiresAtEpochMs === value.issuedAtEpochMs + ROOM_GUEST_LIFETIME_MS;
+}
+
+export interface RoomGuestRedemption {
+    readonly invitationSecret: string;
+    readonly guestSecret: string;
+    readonly displayName?: string;
 }

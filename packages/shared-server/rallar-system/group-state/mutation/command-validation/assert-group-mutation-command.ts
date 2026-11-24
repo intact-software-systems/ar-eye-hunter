@@ -445,7 +445,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     ],
     pauseGroupTransport: ACTOR_INPUT_KEYS,
     resumeGroupTransport: ACTOR_INPUT_KEYS,
-    joinGroup: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
+    joinGroup: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode', 'guestTransport', 'guestDisplayName'],
     acceptGroupInvite: [...ACTOR_INPUT_KEYS, 'participation', 'inviteToken', 'joinCode'],
     createGroupInvite: [...ACTOR_INPUT_KEYS, 'invitationExpiresAtEpochMs'],
     revokeGroupInvite: ACTOR_INPUT_KEYS,

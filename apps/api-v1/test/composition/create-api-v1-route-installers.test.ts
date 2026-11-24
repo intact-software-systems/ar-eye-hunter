@@ -172,6 +172,7 @@ function createRuntime(): ApiV1RouteInstallerRuntime {
         },
         groupStateInboxService: {
             processAuthenticatedGroupEntryUntilCompletion: rejectUnusedOperation,
+            processGuestAdmissionUntilCompletion: rejectUnusedOperation,
             processQuickJoinUntilCompletion: rejectUnusedOperation,
             processGroupMoveUntilCompletion: rejectUnusedOperation
         },

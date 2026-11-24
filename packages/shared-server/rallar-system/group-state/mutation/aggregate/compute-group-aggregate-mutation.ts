@@ -184,7 +184,7 @@ export function computeUpdate(
     }
     const clockCommand = command.input.roomClock;
     if (clockCommand) {
-        const updated = computeGroupClockUpdate(next, clockCommand, facts.attemptAtEpochMs);
+        const updated = computeGroupClockUpdate(next, clockCommand, facts.attemptAtEpochMs, read.activeMembers ?? []);
         if ('rejectionCode' in updated) {
             return rejected({ command, read, facts, ...updated });
         }
