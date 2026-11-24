@@ -79,10 +79,9 @@ interface FenceFixture {
     readonly store: ALOutboundAdmissionStore<OutboundTestPayload>;
     readonly backend: ALAdmissionWorkBackend;
     /**
-     * Everything a conflicting commit must leave untouched: every admission metadata row, plus the
-     * optimistic revision the IndexedDB backend keeps as one of those rows and bumps on any commit
-     * that read metadata. The in-memory backend has no revision counter, so its whole map is the
-     * same witness.
+     * Everything a conflicting commit must leave untouched: every admission row of the store. No
+     * backend keeps a store-wide revision; an IndexedDB or PostgreSQL row carries its own, so the
+     * whole store's rows are the wrote-nothing witness on every backend.
      */
     readonly readAdmissionState: () => Promise<string>;
 }
