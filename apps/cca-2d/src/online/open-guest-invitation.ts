@@ -46,15 +46,13 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
         message.textContent = 'Allow tab storage and reopen the invitation to keep your guest seat.';
         return;
     }
-    if (room !== null && visit?.room !== room) {
-        visit = undefined;
-    }
+    if (room !== null && room !== visit?.room) visit = undefined;
     let index = visit ? nicknames.indexOf(visit.nickname) : -1;
     if (index < 0) {
         index = Math.floor(Math.random() * nicknames.length);
     }
     output.value = nicknames[index];
-    shuffle.disabled = Boolean(visit && 'guestSecret' in visit);
+    shuffle.disabled = hasPendingGuestVisit(visit);
     shuffle.addEventListener('click', () => {
         const offset = 1 + Math.floor(Math.random() * (nicknames.length - 1));
         index = (index + offset) % nicknames.length;
@@ -115,27 +113,32 @@ export function openGuestInvitation(root: HTMLElement, signal: AbortSignal): voi
             if (signal.aborted) {
                 return;
             }
-            const code = error instanceof ApiHttpError ? error.mutationFailure?.code : undefined;
-            if (code === 'group-full') {
+            const failure = describeGuestEntryFailure(error instanceof ApiHttpError ? error : undefined, valid);
+            if (failure.clearVisit) {
                 visit = undefined;
                 saveGuestVisit(undefined);
-                message.textContent = 'Town is full. Try again when a seat opens.';
-                join.hidden = false;
             }
-            else if (error instanceof ApiHttpError && [400, 401, 403, 404].includes(error.status)) {
-                visit = undefined;
-                saveGuestVisit(undefined);
-                message.textContent = 'Guest access has ended. Ask the owner for a fresh invitation.';
-                join.hidden = !valid;
-            }
-            else {
-                message.textContent = 'Could not reach your town. Try again.';
-                join.hidden = false;
-            }
+            message.textContent = failure.message;
+            join.hidden = !failure.retry;
         }
         finally {
             join.disabled = false;
-            shuffle.disabled = Boolean(visit && 'guestSecret' in visit);
+            shuffle.disabled = hasPendingGuestVisit(visit);
         }
     }
+}
+
+/** A rejection ends the saved visit; a lost reply retries the same private seat. */
+function describeGuestEntryFailure(error: ApiHttpError | undefined, validInvitation: boolean) {
+    if (error?.mutationFailure?.code === 'group-full') {
+        return { clearVisit: true, retry: true, message: 'Town is full. Try again when a seat opens.' };
+    }
+    if (error && [400, 401, 403, 404].includes(error.status)) {
+        return { clearVisit: true, retry: validInvitation, message: 'Guest access has ended. Ask the owner for a fresh invitation.' };
+    }
+    return { clearVisit: false, retry: true, message: 'Could not reach your town. Try again.' };
+}
+
+function hasPendingGuestVisit(visit: GuestVisit | undefined): boolean {
+    return visit !== undefined && 'guestSecret' in visit;
 }
