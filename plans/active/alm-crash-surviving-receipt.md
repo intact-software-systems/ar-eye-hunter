@@ -438,27 +438,39 @@ runtime's inbound and outbound stores are; D740 states it.
 - A contract test of the record on the memory backend and on PostgreSQL: concurrent confirmations; several
   instances ending one receipt, one commit; a deadline pass racing the last confirmation, one terminal
   phase; a repeated confirmation; an ACK before the head, counted by the `open` that follows; an ACK after
-  the end, ignored; an ACK from outside the expected set, nothing written; expiry.
+  the end, ignored; an ACK from outside the expected set, nothing written; expiry. Carried by
+  `packages/tests/shared/alm/receipt-record/al-receipt-record-contract.ts`, run on memory by
+  `packages/tests/shared/alm/receipt-record/al-receipt-record.test.ts` and on PostgreSQL by
+  `packages/tests/shared-server/integration/postgres/al-receipt-record.test.ts`.
 - PostgreSQL integration: a send admitted on one instance and confirmed on two others completes; the
   admitting instance is disposed after `admitted` and the receipt still completes; the deadline work is
   claimed by a survivor and ends the receipt `timed-out`; a send whose admitting instance is lost between its
   admission's commit and its `open` is opened from a re-sent copy on a survivor, from the admission row's
-  audience.
+  audience. Carried by `packages/tests/shared-server/integration/postgres/ws-receipt-record-cluster.test.ts`.
 - A statement pin of the ACK that finds its head and does not complete the set, as
   `ws-outbound-dispatch-statements.test.ts` pins its path. The built figure is five round trips: one
   autocommit read of the head and the confirmation key, the insert in one transaction (with BEGIN and
   COMMIT), and one autocommit prefix read of the confirmations, none of them serialized against another
-  ACK.
+  ACK. Carried by the record's own pin in the PostgreSQL `al-receipt-record.test.ts` (five round trips),
+  `ws-receipt-record-cluster.test.ts` (eight, for a client's send through the WS server) and
+  `ws-own-publication-receipt.test.ts` (five, for a server publication), all under
+  `packages/tests/shared-server/integration/postgres/`.
 - The sustained measurement above is repeated on the built path at +0 and +5 ms and must show no backlog;
-  it is quoted in the pull request.
+  it is quoted in the pull request. Not yet carried: slice 5 measures the built path; "Measured on the built
+  record" is the record alone.
 - The cluster recipe `api-v1-cluster-publisher-instance-loss` is restated in slice 2: the publisher,
   reconnected to a survivor, reads `complete` for the broadcast its lost server admitted.
   `api-v1-cluster-subscriber-instance-loss` keeps its `timed-out`, since the lost subscriber cannot
-  confirm.
+  confirm. Carried by both recipes under `packages/shared-test/black-box-runner/tests/api-v1/`, run in the
+  cluster profile of `npm run test:api-v1:black-box:postgres`.
 - The group-state delta's receipt: fifty sessions confirming at once complete it with no fenced commit per
-  ACK, and a retransmission inside the window reaches only the sessions that have not confirmed.
-- The ALM growth proof classifies the record's namespace; `test:api-v1:black-box:postgres:medium-scale`
-  and the four ALM lane families over `ws` are green.
+  ACK, and a retransmission inside the window reaches only the sessions that have not confirmed. Carried by
+  `packages/tests/shared-server/integration/postgres/ws-own-publication-receipt.test.ts`.
+- The ALM growth proof classifies the record's namespace, carried by
+  `packages/tests/shared-test/alm-growth-proof/growth-surfaces.test.ts`;
+  `test:api-v1:black-box:postgres:medium-scale` and the ALM lane families over `ws` are green, carried by
+  that command and by `RALLAR_BLACK_BOX_ALM_SCOPE=full RALLAR_BLACK_BOX_ALM_CARRIERS=ws npm run
+  test:rallar:full-stack:memory:alm`.
 
 ## Slices
 
