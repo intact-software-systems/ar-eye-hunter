@@ -60,7 +60,7 @@ class MatchBrowser {
             const key = destination.axis === 'x' ? positive ? 'KeyD' : 'KeyA' : positive ? 'KeyW' : 'KeyS';
             const tick = (await this.readDisplayedState())!.tick;
             await this.page.keyboard.press(key, {
-                delay: Math.min(700, Math.max(150, (Math.abs(distance) - 0.2) / 3.6 * 1000))
+                delay: Math.min(700, Math.max(80, (Math.abs(distance) - 0.2) / 3.6 * 1000))
             });
             await expect.poll(async () => (await this.readDisplayedState())?.tick, { intervals: [50] })
                 .toBeGreaterThan(tick + 9);
@@ -239,14 +239,16 @@ test('a friend rescues a frozen player and both qualify in the same timed round'
         ]);
         await bob.walk({ axis: 'x', value: 2.5 });
         await bob.walk({ axis: 'z', value: 10.8 });
-        await alice.walk({
-            axis: 'x',
-            value: Number(await bob.page.locator('#online-game').getAttribute('data-x')) - 0.7
-        });
+        const rendezvous = await bob.readDisplayedState();
+        const bobId = rendezvous?.participants.find((player) => player.displayName === names[1])?.id;
+        const bobPosition = rendezvous?.players.find((player) => player.id === bobId);
+        expect(bobPosition).toBeDefined();
+        await alice.walk({ axis: 'x', value: bobPosition!.x });
+        await alice.walk({ axis: 'z', value: bobPosition!.z });
         await expect.poll(async () => {
             const players = (await alice.readDisplayedState())?.players;
             return players ? Math.hypot(players[0].x - players[1].x, players[0].z - players[1].z) : Infinity;
-        }).toBeLessThan(1.6);
+        }).toBeLessThan(1);
         let frozen: TownMatchState | undefined;
         await expect.poll(
             async () => {
