@@ -1,3 +1,4 @@
+import { proveGuestCutoffRestart } from './prove-guest-cutoff-restart.mts';
 import { proveRoomGuestRedemption } from './prove-room-guest-redemption.mts';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
@@ -160,6 +161,8 @@ async function proveLobbyCommitments({ plans, controls, databaseUrl }: ManagedCl
         else console.log('Passed:', cases[index]);
     }
     if (failures.length) throw new AggregateError(failures, 'Lobby regression scenarios failed');
+    await proveGuestCutoffRestart({ plans, controls, users });
+    console.log('Passed: restarted worker recovered and released a guest at the frozen cutoff');
 }
 
 /** Account commitments are scoped by workspace so each scenario can start with an empty roster. */
