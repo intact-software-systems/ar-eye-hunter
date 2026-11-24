@@ -16,7 +16,7 @@ import {
 import { Either } from '@shared/resilience/Either.ts';
 
 import type {
-    RallarBlackBoxTestMessagesSendCarrier,
+    RallarBlackBoxTestMessagesCarrier,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
@@ -41,10 +41,9 @@ import type {
 /** The error name a page-runtime result that fails these decoders carries. */
 export const ALM_INVALID_RUNTIME_RESULT_CODE = 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT';
 
-const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesSendCarrier[] = [
+const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'ws',
     'rtc',
-    'ws-then-rtc',
     'rtc-with-ws-fallback'
 ];
 
@@ -337,7 +336,7 @@ function requireAlmCountsByKind(
 function requireAlmCarrierField(
     record: RallarBlackBoxTestRecord,
     path: string
-): RallarBlackBoxTestMessagesSendCarrier {
+): RallarBlackBoxTestMessagesCarrier {
     const carrier = ALM_MESSAGES_CARRIERS.find((candidate) => candidate === record.carrier);
     if (carrier === undefined) {
         throw toAlmInvalidRuntimeResultError(`${path}.carrier`);

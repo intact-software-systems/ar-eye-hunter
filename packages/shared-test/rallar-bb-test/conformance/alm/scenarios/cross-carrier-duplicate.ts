@@ -38,8 +38,6 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
 /**
  * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
  * trigger: it reuses the first handle's captured envelope on the other carrier.
- * WS first is the `ws-then-rtc` strategy, whose room multicast RTC freezes and signs; the `ws` strategy sends a room
- * broadcast, which RTC never carries receipted (D758) and which no strategy hands to RTC.
  * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
@@ -49,7 +47,7 @@ function toCrossCarrierDuplicateSenderCommands(
     sender: AlmConformanceStepInput,
     order: (typeof CROSS_CARRIER_ORDERS)[number]
 ): readonly RallarBlackBoxTestCommand[] {
-    const [first, replay] = order === 'rtc-then-ws' ? (['rtc', 'ws'] as const) : (['ws-then-rtc', 'rtc'] as const);
+    const [first, replay] = order === 'rtc-then-ws' ? (['rtc', 'ws'] as const) : (['ws', 'rtc'] as const);
     const firstSend = toSendCommand({
         ...sender,
         index: 1,

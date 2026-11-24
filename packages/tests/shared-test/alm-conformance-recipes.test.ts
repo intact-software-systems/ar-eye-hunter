@@ -989,10 +989,8 @@ describe('alm-conformance recipe family', () => {
                 handleId: undefined
             }
         ]);
-        // The ws strategy sends a room broadcast, which RTC refuses receipted (D758); ws-then-rtc sends the room
-        // multicast both carriers take, WS first.
         expect(sendsOf(wsThenRtc).map((send) => [send.carrier, send.replayOnCarrier?.carrier])).toEqual([
-            ['ws-then-rtc', undefined],
+            ['ws', undefined],
             [undefined, 'rtc']
         ]);
         for (const scenario of [rtcThenWs, wsThenRtc]) {

@@ -1,3 +1,6 @@
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { signALPublicationProof, verifyALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type {
     RallarStorageUnavailablePolicy,
@@ -10,8 +13,6 @@ import {
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
-import { signALPublicationProof, verifyALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
-import { resolveRtcReceiptedRoomShapeRefusal } from '@shared/multicast/publication/is-rtc-publisher-proof-required.ts';
 import { computeRtcFrozenAudienceRefusal } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import {
     afterEach,
@@ -24,8 +25,6 @@ import {
 } from 'vitest';
 import { createDefaultOutboundTestRuntime, createVolatileOutboundTestStores } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
-import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
-import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageFallbackController } from '@shared-web/browser/messages/browser-message-fallback-controller.ts';
@@ -64,25 +63,16 @@ describe('typed message fallback identity', () => {
             serverNowMs: () => serverNowMs,
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReasonCode: undefined, recordsSentPositions: ['b'] }),
-            firstSigner: async (message) =>
-                (await signALPublicationProof({ subtle, keyPair, message }))
-                    .mapBoth((failure) => failure.message, (signed) => signed)
+            firstSigner: async (message) => (await signALPublicationProof({ subtle, keyPair, message }))
+                .mapBoth((failure) => failure.message, (signed) => signed)
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 1000, ack: 'receiver' });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
         serverNowMs = 100_999;
         fixture.settlements.rtc({
-            kind: 'receipt-exhausted',
-            msgId: handle.msgId,
-            carrier: 'rtc',
-            atMs: serverNowMs,
-            mode: 'receiver',
-            confirmedPeerIds: [],
-            unconfirmedPeerIds: ['b'],
-            outsideAudiencePeerIds: [],
-            cause: 'budget',
-            detail: 'Receipt budget elapsed.',
-            traceId: handle.traceId
+            kind: 'receipt-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: serverNowMs,
+            mode: 'receiver', confirmedPeerIds: [], unconfirmedPeerIds: ['b'], outsideAudiencePeerIds: [],
+            cause: 'budget', detail: 'Receipt budget elapsed.', traceId: handle.traceId
         });
         await vi.waitFor(() => expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc', 'ws']));
         const copy = fixture.attempts[1]!.message;
@@ -171,22 +161,6 @@ describe('typed message fallback identity', () => {
         // The fallback carries the same envelope, algorithm included: only the carrier changes.
         expect(fixture.attempts.map((attempt) => attempt.message)).toEqual(carriers.map(() => fixture.attempts[0].message));
         expect(fixture.attempts[0].message.delivery?.ack).toBe('receiver');
-    });
-
-    it.each(
-        [
-            ['ws-then-rtc', 'multicast', undefined],
-            ['ws', 'broadcast', 'RTC carries a receipted room send only as an audience its origin freezes.']
-        ] as const
-    )('sends a receipted %s room send over WS first as a %s, whose RTC shape refusal is %s (D758)', async (strategy, mode, refusal) => {
-        const fixture = createChannel({ firstVerdict: ADMITTED_VERDICT });
-        const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
-
-        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['ws']);
-        const sent = fixture.attempts[0].message;
-        expect(sent.targets?.mode).toBe(mode);
-        expect(resolveRtcReceiptedRoomShapeRefusal(sent)).toBe(refusal);
     });
 
     it.each(

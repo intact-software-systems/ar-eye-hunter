@@ -371,14 +371,11 @@ export type RallarBlackBoxTestRtcSendCommand =
 
 export type RallarBlackBoxTestMessagesCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
 
-/** A send also takes `ws-then-rtc`, the product's WS-first strategy, which no lane runs as its carrier. */
-export type RallarBlackBoxTestMessagesSendCarrier = RallarBlackBoxTestMessagesCarrier | 'ws-then-rtc';
-
 export type RallarBlackBoxTestMessagesSendCommand =
     & RallarBlackBoxTestCommandBase<'messages.send'>
     & Readonly<{
         connection?: string;
-        carrier: RallarBlackBoxTestMessagesSendCarrier;
+        carrier: RallarBlackBoxTestMessagesCarrier;
         typeId: string;
         topicId?: string;
         payload: RallarBlackBoxTestJsonValue;

@@ -2,8 +2,7 @@ import type { AlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/decode-alm
 import type {
     RallarMessagePayload,
     RallarMessageReplyOutcome,
-    RallarStorageUnavailablePolicy,
-    RallarTypedMessageSendStrategy
+    RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
@@ -332,7 +331,7 @@ export type BlackBoxRallarRecipientPeer = 'receiver' | 'recipient-b';
 export interface BlackBoxRallarMessageSendInput {
     readonly timeoutMs: number;
     readonly connection: string;
-    readonly carrier: RallarTypedMessageSendStrategy;
+    readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly payload: RallarMessagePayload;

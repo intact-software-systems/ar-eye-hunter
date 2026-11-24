@@ -201,7 +201,7 @@ browser-only: the in-process runner adapter refuses them with the
 `browser-only-command` code rather than translating one into an `rtc.send`, and
 that refusal fails the step.
 
-`messages.send` takes `carrier` (`ws`, `rtc`, `ws-then-rtc`, `rtc-with-ws-fallback`: the product's send strategy), `typeId`
+`messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
 `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
 `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos`, `maxRepairs` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
