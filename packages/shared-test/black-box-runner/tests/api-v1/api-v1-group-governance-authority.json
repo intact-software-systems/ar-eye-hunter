@@ -254,7 +254,14 @@
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400,
+          "message": "Group createGroup request has unexpected key: guestInvitation"
+        }
       }
     },
     {
@@ -468,7 +475,14 @@
         }
       },
       "expect": {
-        "status": 400
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
+          "status": 400,
+          "message": "Group updateGroup request has unexpected key: guestInvitation"
+        }
       }
     },
     {
@@ -515,7 +529,14 @@
         }
       },
       "expect": {
-        "status": 403
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "message": "Only the active room owner may issue a guest invitation."
+        }
       }
     },
     {
