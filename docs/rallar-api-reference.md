@@ -716,9 +716,10 @@ director's local action is refused by the director's rules, never
 Rallar Game's `match.sendIntent(intent, { resourceId, ttlMs })` passes the claim to
 the relay and returns the same `held-by-other` status; when the local session
 is the director, the match routes the intent locally and it claims nothing.
-A director heartbeat uses the room WebSocket so each connected member can
-observe the same appointment. If that carrier is unavailable it can use RTC.
-A server refusal ends the send. Outputs, heartbeats, snapshots and sync requests
+A director heartbeat uses the room WebSocket to reach connected members.
+If that carrier fails before local admission, the sender can try RTC. A server
+refusal ends the send. A queued receipt confirms local admission only. Each
+recipient still checks the appointment and heartbeat freshness. Outputs, heartbeats, snapshots and sync requests
 claim nothing. The director's
 own outputs go to the whole room: with
 `ack: 'all-logical-recipients'` when the output states it, best effort
