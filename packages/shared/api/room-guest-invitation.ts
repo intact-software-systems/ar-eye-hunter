@@ -14,3 +14,9 @@ export function isRoomGuestInvitation(value: unknown): value is RoomGuestInvitat
         Number.isSafeInteger(value.expiresAtEpochMs) && value.expiresAtEpochMs > 0 &&
         Object.keys(value).length === 2;
 }
+
+/** The invitation link carries the random secret. Only its verifier enters durable room state. */
+export async function hashRoomInvitationSecret(secret: string): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}

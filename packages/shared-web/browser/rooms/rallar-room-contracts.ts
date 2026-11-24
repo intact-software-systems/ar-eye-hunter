@@ -122,6 +122,7 @@ export interface RallarUpdateRoomInput extends
         | 'kind'
         | 'joinMode'
         | 'directoryListing'
+        | 'guestInvitationVerifier'
         | 'maxMembers'
         | 'maxSpectators'
         | 'maxSessionsPerMember'
