@@ -188,8 +188,10 @@ Follow these production paths directly when reviewing a change:
    `readHeadAbsentAck` reads the pending row (`readOwnPendingReceipt`) and
    `resolveWsQueueBoxServerHeadAbsentAck` routes it: `countAhead` when the row's
    opening would open and expects the sender, refused when it expects another,
-   the outbound owner's per-ACK count when it would not open or no logical row
-   exists. The server's own `not-sent` is counted ahead unproven. A complete view →
+   and otherwise to the outbound owner: when the opening would not open, the owner
+   counts it in the row per ACK, fenced; with no logical row, a `hop` row counts
+   it; with no row at all the owner refuses it and writes nothing, as before. The
+   server's own `not-sent` is counted ahead unproven. A complete view →
    `endReceipt` → `end` → worker `committed` → ended work → `writeEndedReceipt` →
    `admitServerReceipt` → `acceptServerReceipt`, which settles the pending row.
    An outside-audience NACK reaches the outbound owner first; `writeOutsideAudienceNack`
