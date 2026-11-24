@@ -24,7 +24,9 @@ Guests may start rounds for four hours from admission. If that deadline falls
 during a round the guest is already playing, they can finish it and see the
 results. Their remaining access is limited to that round and ends when it
 finishes or reaches the scheduled end in force at expiry, whichever comes
-first. Pauses, host changes and later time extensions cannot move that cutoff.
+first. Rallar limits this continuation to one hour and three seconds beyond the
+original lease. That covers a three-second countdown and the longest Grumpy Town
+round. Pauses, host changes and later time extensions cannot move that cutoff.
 A guest in the lobby at expiry, or one who wants to play another round after
 expiry, needs a fresh invitation. Reloading and replacing the invitation
 preserve the original deadline. Closing the town
