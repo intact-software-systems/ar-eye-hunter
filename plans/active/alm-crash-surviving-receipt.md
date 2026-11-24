@@ -69,7 +69,9 @@ in for hosted latency (one attributed hosted run recorded about 5 ms per stateme
 The fence was designed for one browser counting its own ACKs. On a server many recipients confirm at once
 from many sockets on many instances; a confirmation is idempotent and commutative, so it needs no fence.
 
-The built record was measured again in the same sustained shape; see "Measured on the built record".
+The built record was measured again in the same sustained shape; see "Measured on the built record". The
+built path was measured through the WS server with one and five publishers; see "Measured through the WS
+server".
 
 ## Goals
 
@@ -457,8 +459,9 @@ runtime's inbound and outbound stores are; D740 states it.
   `ws-own-publication-receipt.test.ts` (five, for a server publication), all under
   `packages/tests/shared-server/integration/postgres/`.
 - The sustained measurement above is repeated on the built path at +0 and +5 ms and must show no backlog;
-  it is quoted in the pull request. Not yet carried: slice 5 measures the built path; "Measured on the built
-  record" is the record alone.
+  it is quoted in the pull request. Carried by test-only code, not kept in the tree: "Measured on the built
+  record" runs the record alone, and "Measured through the WS server" the built path, where five publishers
+  at +5 ms backlog.
 - The cluster recipe `api-v1-cluster-publisher-instance-loss` is restated in slice 2: the publisher,
   reconnected to a survivor, reads `complete` for the broadcast its lost server admitted.
   `api-v1-cluster-subscriber-instance-loss` keeps its `timed-out`, since the lost subscriber cannot
@@ -557,6 +560,88 @@ machine's 1-minute load average at the end of the run. Test-only code, not kept 
 - At +5 ms the last two ACKs of most messages overlap: both read a complete set and both call `end`; one
   commits, and the other reads a conflict and writes nothing. At +0 ms they do not overlap.
 
+## Measured through the WS server
+
+Three WS server instances over one PostgreSQL database, built as `ws-receipt-record-cluster.test.ts`
+builds them, each on its own client of pool 10 whose every statement, BEGIN and COMMIT is delayed by the
+added latency. Fifteen sessions in one room, five on each instance; each publisher is one of them, a client
+session. One publisher sends at 2 Hz for 20 s (40 messages, 14 ACKs each: 28 ACKs and 4 receipt enqueues a
+second); five publishers, on instances a, b, c, a and b, send at 2 Hz each (200 messages: 140 ACKs and 20
+receipt enqueues a second). A message lives 30 s. Each recipient offers its ACK on its own instance, spread
+over 100 ms after its session reads the message. Lags are in milliseconds as p50 / p95 / max: from a
+publisher's send to its `admitted` read, and from a message's last ACK offered to its `complete` read on the
+publisher's socket; over ten messages, p95 is the maximum. The ratio is the last ten messages' `complete`
+p50 over the first ten's. Load is the machine's 1-minute load average at the start and end of the run.
+Test-only code, not kept in the tree.
+
+| Cell            | Added latency | Run | Complete / timed-out / unanswered | Send to `admitted`, all  | first 10              | last 10                  | Last ACK to `complete`, all | first 10              | last 10                  | Ratio | Load      |
+| --------------- | ------------- | --- | --------------------------------- | ------------------------ | --------------------- | ------------------------ | --------------------------- | --------------------- | ------------------------ | ----- | --------- |
+| One publisher   | +0 ms         | 1   | 40 / 0 / 0                        | 54.5 / 67.5 / 96.1       | 58.2 / 96.1 / 96.1    | 51.5 / 58.5 / 58.5       | 31.6 / 41.0 / 44.0          | 34.5 / 44.0 / 44.0    | 27.1 / 35.3 / 35.3       | 0.79  | 1.8 / 1.6 |
+| One publisher   | +0 ms         | 2   | 40 / 0 / 0                        | 53.5 / 62.4 / 69.0       | 53.9 / 69.0 / 69.0    | 48.6 / 62.4 / 62.4       | 31.1 / 39.7 / 49.6          | 31.5 / 36.2 / 36.2    | 30.8 / 39.7 / 39.7       | 0.98  | 1.6 / 1.6 |
+| One publisher   | +0 ms         | 3   | 40 / 0 / 0                        | 51.3 / 57.9 / 58.6       | 51.3 / 57.1 / 57.1    | 50.5 / 58.6 / 58.6       | 31.8 / 38.4 / 38.8          | 31.8 / 38.7 / 38.7    | 30.9 / 38.4 / 38.4       | 0.97  | 1.6 / 2.1 |
+| One publisher   | +5 ms         | 1   | 40 / 0 / 0                        | 458.8 / 613.0 / 739.8    | 465.8 / 613.0 / 613.0 | 420.0 / 597.0 / 597.0    | 449.7 / 625.1 / 676.7       | 347.0 / 625.1 / 625.1 | 524.6 / 676.7 / 676.7    | 1.51  | 2.1 / 1.9 |
+| One publisher   | +5 ms         | 2   | 40 / 0 / 0                        | 444.7 / 637.0 / 743.5    | 444.7 / 722.7 / 722.7 | 372.0 / 497.9 / 497.9    | 469.2 / 699.4 / 991.8       | 460.3 / 789.6 / 789.6 | 397.4 / 642.5 / 642.5    | 0.86  | 1.9 / 1.6 |
+| One publisher   | +5 ms         | 3   | 40 / 0 / 0                        | 430.4 / 590.3 / 708.1    | 448.1 / 590.3 / 590.3 | 370.0 / 503.8 / 503.8    | 424.8 / 629.1 / 745.5       | 453.1 / 745.5 / 745.5 | 424.8 / 579.5 / 579.5    | 0.94  | 1.6 / 1.9 |
+| Five publishers | +0 ms         | 1   | 200 / 0 / 0                       | 31.7 / 40.8 / 58.9       | 35.4 / 58.9 / 58.9    | 29.6 / 41.4 / 41.4       | 23.0 / 30.2 / 37.3          | 22.6 / 34.9 / 34.9    | 22.1 / 29.3 / 29.3       | 0.98  | 1.9 / 2.5 |
+| Five publishers | +0 ms         | 2   | 200 / 0 / 0                       | 29.8 / 37.6 / 52.9       | 34.3 / 52.9 / 52.9    | 29.4 / 31.1 / 31.1       | 22.5 / 30.2 / 45.6          | 21.6 / 30.1 / 30.1    | 22.7 / 30.2 / 30.2       | 1.05  | 2.5 / 1.8 |
+| Five publishers | +0 ms         | 3   | 200 / 0 / 0                       | 30.0 / 39.3 / 55.9       | 34.1 / 55.9 / 55.9    | 29.6 / 40.2 / 40.2       | 22.9 / 30.5 / 41.3          | 21.5 / 33.0 / 33.0    | 22.6 / 24.3 / 24.3       | 1.05  | 1.8 / 1.6 |
+| Five publishers | +5 ms         | 1   | 200 / 0 / 0                       | 7 892 / 15 572 / 18 271  | 999.3 / 2 242 / 2 242 | 10 884 / 11 341 / 11 341 | 9 236 / 17 337 / 22 871     | 1 699 / 7 225 / 7 225 | 10 650 / 11 518 / 11 518 | 6.27  | 1.6 / 1.7 |
+| Five publishers | +5 ms         | 2   | 200 / 0 / 0                       | 10 520 / 17 439 / 24 052 | 682.9 / 1 916 / 1 916 | 11 211 / 11 720 / 11 720 | 10 208 / 17 196 / 23 765    | 1 795 / 5 588 / 5 588 | 10 442 / 11 241 / 11 241 | 5.82  | 1.7 / 1.9 |
+| Five publishers | +5 ms         | 3   | 200 / 0 / 0                       | 7 989 / 16 258 / 19 977  | 1 028 / 2 360 / 2 360 | 10 884 / 11 306 / 11 306 | 8 807 / 16 660 / 20 695     | 1 785 / 3 448 / 3 448 | 7 168 / 10 756 / 10 756  | 4.02  | 1.9 / 3.9 |
+
+Receipt enqueues a second are the receipt outbox admissions attempted while the sends ran, and over the
+whole run to the last attempt. `pending` is an enqueue that conflicted on the fence of the server's outbound
+version row and was retained for its owner to replay. Undelivered is the number of messages whose terminal
+receipt the publisher had not read when the sends stopped.
+
+| Cell            | Added latency | Run | Receipt enqueues/s, sends / run | Enqueues `pending` | Undelivered at stop | Losing `end`s | Refusals | Load      |
+| --------------- | ------------- | --- | ------------------------------- | ------------------ | ------------------- | ------------- | -------- | --------- |
+| One publisher   | +0 ms         | 1   | 4.0 / 4.1                       | 0 of 80            | 1                   | 0             | 0        | 1.8 / 1.6 |
+| One publisher   | +0 ms         | 2   | 4.0 / 4.1                       | 0 of 80            | 1                   | 0             | 0        | 1.6 / 1.6 |
+| One publisher   | +0 ms         | 3   | 4.0 / 4.1                       | 0 of 80            | 1                   | 0             | 0        | 1.6 / 2.1 |
+| One publisher   | +5 ms         | 1   | 3.9 / 3.9                       | 23 of 80           | 3                   | 37            | 0        | 2.1 / 1.9 |
+| One publisher   | +5 ms         | 2   | 3.9 / 4.0                       | 27 of 80           | 3                   | 44            | 0        | 1.9 / 1.6 |
+| One publisher   | +5 ms         | 3   | 3.9 / 3.9                       | 24 of 80           | 3                   | 34            | 0        | 1.6 / 1.9 |
+| Five publishers | +0 ms         | 1   | 19.9 / 20.0                     | 0 of 400           | 2                   | 0             | 0        | 1.9 / 2.5 |
+| Five publishers | +0 ms         | 2   | 19.9 / 20.0                     | 1 of 400           | 2                   | 0             | 0        | 2.5 / 1.8 |
+| Five publishers | +0 ms         | 3   | 19.9 / 20.0                     | 0 of 400           | 2                   | 0             | 0        | 1.8 / 1.6 |
+| Five publishers | +5 ms         | 1   | 18.4 / 14.1                     | 306 of 400         | 116                 | 191           | 0        | 1.6 / 1.7 |
+| Five publishers | +5 ms         | 2   | 19.0 / 14.2                     | 298 of 400         | 117                 | 192           | 0        | 1.7 / 1.9 |
+| Five publishers | +5 ms         | 3   | 18.5 / 14.2                     | 316 of 400         | 118                 | 183           | 0        | 1.9 / 3.9 |
+
+- **Five publishers at +5 ms do not keep up.** The last ten messages read `complete` 4.0 to 6.3 times later
+  than the first ten (p50 7 168 to 10 650 ms against 1 699 to 1 795 ms), their `admitted` 10.6 to 16.4
+  times later, and 116 to 118 of 200 terminal receipts were still unread when the sends stopped. Every
+  message still read `complete` before its deadline, the slowest 23 765 ms after its last ACK against a
+  30 s lifetime; derived, not run: sends kept up for longer would end messages `timed-out`. No ACK was
+  refused: each run counted all 2 800 ACKs offered, and each message reached its publisher as one terminal
+  receipt.
+- **One publisher at +5 ms keeps up in two runs of three.** Runs 2 and 3 meet the rule (0.86 and 0.94);
+  run 1 misses it by 0.01 (1.51: last ten 524.6 against first ten 347.0). Its messages show no trend: each
+  message's lag lies between 310 and 677 ms across the run, its first ten are the fastest ten of the cell's
+  six (347.0 against 397.4 to 524.6), the receipts kept pace (3.9 enqueues a second of 4.1 offered) and 3
+  terminal receipts were unread at the stop. The lag is about 450 ms where the record alone took 60 ms
+  ("Measured on the built record"): 23 to 27 of 80 enqueues conflicted on the fence and waited for their
+  replay.
+- **At +0 ms both cells keep up**, ratios 0.79 to 1.05, every message `complete` within 50 ms of its last
+  ACK, one enqueue in all retained `pending`.
+- **Where the lag is.** Three further runs at the same shape timed each stage (one of each cell at +0 and
+  one publisher at +5 ms; five publishers at +5 ms twice). At five publishers and +5 ms a message's last ACK
+  reached a complete count in 71 ms, first ten and last ten alike, and the `end` and its ended work reached
+  the receipt enqueue 220 to 350 ms later. From that enqueue to the publisher's read took 1.2 to 2.5 s over
+  the first ten and 9.1 to 11.3 s over the last ten; the `admitted` receipt, which no ACK precedes, grew the
+  same way (0.4 to 0.6 s, then 9.6 to 12.0 s). Publishers read 8.6 to 9.8 receipts a second while the sends
+  ran, against 20 offered. The room messages' own delivery did not grow from the first ten to the last (send
+  to last ACK offered, p50 0.5 s and 0.7 s), though some messages in the middle of the run reached their
+  last recipient up to 15 s late.
+- **The lever the numbers point at is the receipts' delivery, not the count:** the receipts delivered from
+  the record's own work rows, so that a receipt no longer passes the fenced enqueue on the server's outbound
+  version row that 74 to 79 % of them conflicted on. The count keeps up, so counting at
+  `admitAuthorizedMessage`, a per-instance head cache or a single-statement unfenced write would shorten a
+  lag that does not grow.
+- At +5 ms the last ACKs of almost every message overlap: 183 to 192 losing `end`s for 200 messages at five
+  publishers, 34 to 44 for 40 at one. No losing `end` delivered a second terminal receipt.
+
 ## Established in slice 1
 
 - **Unfenced rows neither conflict nor wait.** Through `PSqlAdmissionWorkBackend`, 30 concurrent writes to
@@ -648,16 +733,13 @@ machine's 1-minute load average at the end of the run. Test-only code, not kept 
 
 ## Not established
 
-- The hosted statement latency itself: 5 ms is one attributed run.
-- Whether the server's one outbound identity keeps up with the receipts themselves. Every `admitted` and
-  terminal receipt is a fenced enqueue on it, two per message. From the counted round trips the estimate
-  is about 110, 37 and 18 enqueues a second at +0, +2 and +5 ms; one publisher at 2 Hz offers 4 a second,
-  five offer 20. The sustained proof of slice 5 runs with several publishers to show it. Slice 2 leaves the
-  receipts' own enqueue fenced on the server's outbound version row.
-- The record's cost and lag inside the WS server: the measurement above runs the record alone, with one
-  origin, on one machine with a delay standing in for the network. The ingress checks, the inbound
-  admission read of an ACK that finds no head, and the receipt enqueue are not in it. Slice 2 pins one ACK
-  through the server (8 round trips) but does not repeat the sustained measurement through it.
+- The hosted statement latency itself: 5 ms is one attributed run, and five publishers keep up at +0 ms and
+  not at +5 ms ("Measured through the WS server"), so where between the two the hosted latency lies is not
+  shown.
+- More than five publishers in a room: not run, so whether the receipts keep up with ten publishers even at
+  +0 ms is not shown.
+- The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
+  after its recipient reads the message, and does not count how many found no head.
 - Leader resolution in a cluster: the group-leader case pins the cross-instance count, not how the leader is
   resolved.
 - A survivor taking over a work row whose lease a lost instance held: "lost" in the PostgreSQL cluster cases is a
