@@ -858,7 +858,7 @@ interface ViewGate {
 
 /**
  * Two instances' counts both commit before either reads its view, so both read a complete set and both call `end`,
- * as the last two ACKs of a message did for most messages of slice 1's measurement.
+ * as the last two ACKs of most messages do at +5 ms per round trip.
  */
 function createViewGate(released: Promise<void>): ViewGate {
     const written = { b: Promise.withResolvers<void>(), c: Promise.withResolvers<void>() };

@@ -51,7 +51,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
                 'packages/shared-test/rallar-bb-test/schema.ts',
                 'packages/shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts',
                 'packages/shared-test/rallar-bb-test/alm/rallar-black-box-alm-command-capabilities.ts',
-                // The receipt record is server state (decision 17).
+                // The receipt record is server state.
                 'packages/shared/alm/receipt-record/'
             ]
         ) {

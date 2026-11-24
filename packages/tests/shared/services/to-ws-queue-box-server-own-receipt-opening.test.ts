@@ -43,7 +43,7 @@ function input(overrides: Partial<WsQueueBoxServerOwnReceiptOpeningInput> = {}):
 
 describe('the head of a server publication', () => {
     it('expects the pending row\'s recipients and ends half a window before the row\'s budget', () => {
-        // Pins decision 2: a head that ended with the row's budget left the row's own exhaustion to decide the receipt.
+        // Half a window early: a head that ended with the row's budget left the row's own exhaustion to decide it.
         expect(toWsQueueBoxServerOwnReceiptOpening(input())).toEqual({
             originPeerId: SERVER,
             msgId: MSG,

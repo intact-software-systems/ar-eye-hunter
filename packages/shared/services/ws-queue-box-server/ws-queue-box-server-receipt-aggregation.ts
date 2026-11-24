@@ -632,7 +632,7 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    /** Decision 9 for the server's own rule: a receipt no control could carry is never opened, with one warning. */
+    /** A receipt no control could carry is never opened, a server publication's as a client's, with one warning. */
     private isEncodable(opening: ALReceiptRecordOpening): boolean {
         if (isWsQueueBoxServerReceiptEncodable(opening, this.#dependencies.serverPeerId)) {
             return true;

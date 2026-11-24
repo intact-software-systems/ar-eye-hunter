@@ -266,7 +266,7 @@ export function describeALReceiptRecordContract(
 
         // D696's race: the ACK overtakes the admitting instance's open. `count` refuses to write without a head,
         // `countAhead` writes, and the open that follows counts it. The row must outlive the 30 s grace, because
-        // while the head is open the rows are the count (decision 1).
+        // while the head is open the rows are the count.
         it('counts an ACK that arrived before its head', async () => {
             const f = await fixture();
 
@@ -534,8 +534,8 @@ export function describeALReceiptRecordContract(
             expect(ended.right?.confirmedRecipientPeerIds).toEqual(['r1']);
         });
 
-        // Decision 5: a receipt past its grace is gone. Opening it again would write a head no row bounds and a
-        // deadline that has already passed, so the same opening is refused whole and writes nothing.
+        // A receipt past its grace is gone. Opening it again would write a head no row bounds and a deadline that
+        // has already passed, so the same opening is refused whole and writes nothing.
         it('refuses to open again a receipt whose deadline has passed its grace', async () => {
             const f = await fixture();
             expect((await f.a.record.open(f.opening)).right).toBeDefined();
@@ -548,12 +548,12 @@ export function describeALReceiptRecordContract(
             expect(await readWork(f, 'deadline')).toBeUndefined();
         });
 
-        // A characterization the next slice must guard against, not a promise: once the head has expired, the same
-        // ref opens a second life under a later deadline, with a fresh tally and one deadline work row due then. The
-        // expired head is replaced by revision on the instance clock; but where the deadline work row's conditional
-        // insert compares its expiry with the database clock, the first life's unswept deadline work row still holds
-        // its slot for the instance clocks moved here, so the reopen conflicts. With real clocks it opens once the
-        // database clock passes that work row's expiry.
+        // A characterization, not a promise: once the head has expired, the same ref opens a second life under a
+        // later deadline, with a fresh tally and one deadline work row due then. The expired head is replaced by
+        // revision on the instance clock; but where the deadline work row's conditional insert compares its expiry
+        // with the database clock, the first life's unswept deadline work row still holds its slot for the instance
+        // clocks moved here, so the reopen conflicts. With real clocks it opens once the database clock passes that
+        // work row's expiry.
         it('opens a second life only under a later deadline', async () => {
             const f = await fixture();
             expect((await f.a.record.open(f.opening)).right).toBeDefined();

@@ -49,10 +49,10 @@ export function toWsQueueBoxServerReceiptOpening(
 }
 
 /**
- * The head a re-sent copy opens for an admission that committed and never opened one (decision 14): the audience its
- * admission row holds, and the message's own deadline. A message that names no deadline, names one beyond the window,
- * or is as old as the window by its own stamp opens nothing, since its first head may have ended and expired; so does
- * a row that freezes to nobody.
+ * The head a re-sent copy opens for an admission that committed and never opened one: the audience its admission row
+ * holds, and the message's own deadline. A message that names no deadline, names one beyond the window, or is as old
+ * as the window by its own stamp opens nothing, since its first head may have ended and expired; so does a row that
+ * freezes to nobody.
  */
 export function toWsQueueBoxServerCopyReceiptOpening(
     input: WsQueueBoxServerCopyReceiptOpeningInput

@@ -59,8 +59,8 @@ interface RetransmissionServerOptions {
 
 describe('a receipt retry of a client\'s outbox-fanned send', () => {
     it('resends a client\'s outbox-fanned send only to the recipient that has not confirmed', async () => {
-        // Pins F-c: the server's row learns only the terminal receipt, so a retry inside the window resent to every
-        // expected recipient, the one that confirmed included.
+        // The server's row learns only the terminal receipt, so until the retry read the record a retry inside the
+        // window resent to every expected recipient, the one that confirmed included.
         const clock = installClock();
         const server = await createRetransmissionServer(clock, {
             outboundBackend: undefined,
@@ -81,7 +81,8 @@ describe('a receipt retry of a client\'s outbox-fanned send', () => {
     });
 
     it('records a recipient the retry drops outside, and resends to nobody that confirmed', async () => {
-        // Pins F-c with a drop: the retry recorded r2 outside and still resent to r1, which had confirmed.
+        // The same with a drop: until the retry read the record it recorded r2 outside and still resent to r1, which
+        // had confirmed.
         const clock = installClock();
         const left = new Set<string>();
         const keepAll = async ({ candidateSessionIds }: { readonly candidateSessionIds: readonly string[]; }) => candidateSessionIds;
