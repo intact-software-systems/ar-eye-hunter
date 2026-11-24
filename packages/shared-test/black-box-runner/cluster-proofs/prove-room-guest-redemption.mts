@@ -5,15 +5,25 @@ import { requestJson, requireRecord, type ProofSession } from '../topology-repla
 
 interface GuestRedemptionProof {
     readonly owner: ProofSession;
+    readonly moderator: ProofSession;
     readonly secondOrigin: string;
 }
 
-export async function proveRoomGuestRedemption({ owner, secondOrigin }: GuestRedemptionProof): Promise<void> {
+export async function proveRoomGuestRedemption({ owner, moderator, secondOrigin }: GuestRedemptionProof): Promise<void> {
     const collection = '/api/state/apps/room-guest-proof/workspaces/' + crypto.randomUUID() + '/groups';
     const group = collection + '/market';
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(collection, crypto.randomUUID()), {
         method: 'POST', session: owner, expectedStatus: 201,
-        body: { groupId: 'market', displayName: 'Market', kind: 'room', joinMode: 'invite-only', maxMembers: 2, roomLobby: { claimWindowMs: 60_000, returnWindowMs: 120_000 }, createdByPrincipalId: owner.clientId }
+        body: { groupId: 'market', displayName: 'Market', kind: 'room', joinMode: 'invite-only', maxMembers: 3, roomLobby: { claimWindowMs: 60_000, returnWindowMs: 120_000 }, createdByPrincipalId: owner.clientId }
+    });
+    await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/invites/' + moderator.clientId, crypto.randomUUID()), {
+        method: 'POST', session: owner, body: {}
+    });
+    await requestJson(secondOrigin, toApiMutationRequestPath(group + '/invites/accept', crypto.randomUUID()), {
+        method: 'POST', session: moderator, body: {}
+    });
+    await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group + '/members/' + moderator.clientId + '/role', crypto.randomUUID()), {
+        method: 'PUT', session: owner, body: { role: 'admin' }
     });
     const invitationSecret = randomBytes(32).toString('hex');
     await requestJson(owner.apiBaseUrl, toApiMutationRequestPath(group, crypto.randomUUID()), {
@@ -59,6 +69,15 @@ export async function proveRoomGuestRedemption({ owner, secondOrigin }: GuestRed
             assert.equal(result.code, 'group-mutation-rejected');
         }
     }
+    for (const action of ['remove', 'ban']) {
+        await requestJson(secondOrigin, toApiMutationRequestPath(group + '/members/' + guest.clientId + '/' + action, crypto.randomUUID()), {
+            method: 'POST', session: moderator, body: {}, expectedStatus: 400
+        });
+    }
+    await requestJson(secondOrigin, toApiMutationRequestPath(group + '/members/' + guest.clientId, crypto.randomUUID()), {
+        method: 'PUT', session: moderator, body: { status: 'left' }, expectedStatus: 403
+    });
+    assert.equal(await readAsGuest(group), 200);
     const snapshot = await requestJson(secondOrigin, group, { method: 'GET', session: owner });
     assert.equal(requireRecord(snapshot.group, 'Stored room').ownerPrincipalId, owner.clientId);
     assert.ok(Array.isArray(snapshot.members));

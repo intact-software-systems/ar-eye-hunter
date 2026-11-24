@@ -58,10 +58,11 @@ export function computeGroupMembershipWrite({
         if ((member.status === 'active' && previous.status !== 'active') || !member.guestLease) {
             throw new GroupMutationRejectedError('A guest identity may be admitted only by redeeming an invitation.');
         }
-        if (previous.status !== member.status && (member.status === 'removed' || member.status === 'banned')) {
-            if (command.input.actorPrincipalId !== stored.value.ownerPrincipalId) {
-                throw new GroupMutationRejectedError('Only the room owner may remove a guest.');
-            }
+        if (previous.status === member.status || facts.internalAuthority === 'guest-expiry') continue;
+        if (command.input.actorPrincipalId !== stored.value.ownerPrincipalId) {
+            throw new GroupMutationRejectedError('Only the room owner may change a guest membership.');
+        }
+        if (previous.status === 'active' || member.status === 'removed' || member.status === 'banned') {
             const { guestInvitation: _invalidInvitation, ...revoked } = group;
             group = revoked;
         }
