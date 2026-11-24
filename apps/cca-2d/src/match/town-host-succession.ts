@@ -5,6 +5,12 @@ import { observeRoomDirectorLoss } from '@shared/api/room-directors/room-directo
 import { readRoomDirectorSuccession, type RoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 
+// Keep two seconds of the silent host-loss budget for observing the appointment and resuming play.
+export const initialTownHostPolicy = {
+    operation: 'configure', expectedDirectorEpoch: 0, expectedRevision: 0,
+    reconnectWindowMs: 500, deputyPrincipalId: null
+} as const satisfies RoomDirectorSuccession.Command;
+
 /** The server rechecks the epoch, active session, reconnect window and deputy reservation at commit. */
 export function townHostCommand(
     metadata: ApiJsonObject, player: { readonly principalId: string; readonly sessionId: string; readonly role: GroupRole },

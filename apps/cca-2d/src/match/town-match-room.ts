@@ -9,7 +9,8 @@ import type { RallarGroupDirectorAppointmentEligibility } from '@shared/api/grou
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
-import { townHostCommand } from './town-host-succession.ts';
+import { readRoomDirectorSuccession } from '@shared/api/room-directors/room-director-succession-record.ts';
+import { initialTownHostPolicy, townHostCommand } from './town-host-succession.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export namespace TownMatchRoom {
@@ -98,7 +99,12 @@ export class TownMatchRoom {
         const session = browser.session();
         const command = session && this.hostCommand(session.clientId, session.sessionId, this.getView().members);
         if (!command) throw new Error('The town is waiting for an eligible host.');
-        await browser.rooms.changeDirector(this.roomRef, command, crypto.randomUUID(), { signal: this.lifetime.signal });
+        const options = { signal: this.lifetime.signal };
+        const room = browser.rooms.current();
+        if (command.operation === 'appoint' && room && !readRoomDirectorSuccession(room.group.metadata)) {
+            await browser.rooms.changeDirector(this.roomRef, initialTownHostPolicy, crypto.randomUUID(), options);
+        }
+        await browser.rooms.changeDirector(this.roomRef, command, crypto.randomUUID(), options);
         await browser.rooms.session(this.roomRef).refresh({ signal: this.lifetime.signal });
     }
 

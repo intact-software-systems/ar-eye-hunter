@@ -643,8 +643,18 @@ return test does not establish that transition; retain it in reliability qualifi
 
 ### Silent host loss and opt-in room presence
 
-CCA now selects a browser group-presence policy with an eight-second lease,
-one-second renewal interval, two-second whole-attempt deadline and 500 ms retry delay.
+CCA grants room presence for nine seconds. Browsers renew every second, allow
+1.25 seconds for the whole attempt and retry after 250 ms. Under Rallar’s
+safe-renewal check this allows a server-clock uncertainty window under four
+seconds. In the iPhone guest trial, the short-lease configuration allowed only
+500 ms and the server recorded an event-loop stall of 3.2 seconds. The first
+ordinary host message refusal followed its last room heartbeat request by about
+eight seconds.
+
+The organizer configures a 500 ms host reconnect reservation before its first
+appointment. A silent loss leaves room for a surviving player to claim at 9.5
+seconds after the last lease began. The game’s existing three-browser trial
+allows 11.5 seconds for takeover and resumed play.
 Nested requests inherit the attempt cancellation; they do not each receive an
 additional time budget.
 The policy is captured at connection setup and shared by create/join, quick join,
@@ -747,7 +757,7 @@ stale presence PUT. Admission/renewal timestamps and generated group IDs now com
 from explicit composed dependencies. Admission captures its lease after the
 membership response, while retries preserve their original identity and payload.
 
-The two-second renewal deadline covers sequential client repair/renewal followed
+The whole-attempt renewal deadline covers sequential client repair/renewal followed
 by group renewal. Successful receipt therefore requires the entire path to fit
 inside that deadline; two individually shorter requests may collectively exceed
 it. The policy budget allows bounded retries, not arbitrary network latency.
@@ -757,7 +767,7 @@ pretend the local presence is current.
 ### Clock-skew acceptance remains open
 
 The new real-server browser cases set one clock two seconds behind and another
-two seconds ahead. They require healthy shared play beyond the eight-second
+two seconds ahead. They require healthy shared play beyond the room
 presence lease, propagated controls, bounded interruption after losing the only
 partner, and a three-player host handover with one surviving director. All three
 failed before Ready appeared at their last run. The maintainer has deferred this

@@ -1,3 +1,4 @@
+import { renderTownMatchResults } from './render-town-match-results.ts';
 import { PracticeControls, requirePracticeElement } from '../../practice-controls.ts';
 import type { PracticeInput } from '../../practice-rules.ts';
 import { PracticeScene } from '../../practice-scene.ts';
@@ -6,7 +7,6 @@ import type { TownMatchPlayer, TownMatchState } from '../town-match.ts';
 import { TownMatchControls } from './town-match-controls.ts';
 import {
     renderTownMatchHud,
-    renderTownMatchResults,
     resolveTownMatchAppearance,
     TOWN_MATCH_MARKUP
 } from './town-match-hud.ts';

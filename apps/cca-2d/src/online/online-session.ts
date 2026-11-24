@@ -1,3 +1,4 @@
+import { leaveCurrentTown } from './leave-current-town.ts';
 import type { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
@@ -135,7 +136,7 @@ export class OnlineSession {
     async createTown(): Promise<void> {
         await this.run(async () => {
             this.entry.cancel();
-            await this.leaveCurrentTown();
+            await leaveCurrentTown(this.browser, this.lifetime.signal);
             await this.browser.rooms.createAndSwitch({
                 ...CCA_SCOPE,
                 displayName: 'Grumpy Town',
@@ -244,7 +245,7 @@ export class OnlineSession {
     async leaveTown(): Promise<void> {
         await this.run(async () => {
             this.entry.cancel();
-            await this.leaveCurrentTown();
+            await leaveCurrentTown(this.browser, this.lifetime.signal);
         });
     }
 
@@ -253,7 +254,7 @@ export class OnlineSession {
             this.entry.cancel();
             try {
                 await this.finishSearch();
-                await this.leaveCurrentTown();
+                await leaveCurrentTown(this.browser, this.lifetime.signal);
             }
             finally {
                 await this.browser.auth.logout({ signal: this.lifetime.signal });
@@ -316,7 +317,7 @@ export class OnlineSession {
         const destination = this.entry.getState().destination;
         const current = this.browser.rooms.state().currentRoomRef;
         if (destination && current && !isSameGroupRef(destination.roomRef, current)) {
-            await this.leaveCurrentTown();
+            await leaveCurrentTown(this.browser, this.lifetime.signal);
             this.entry.enter(destination);
         }
         await this.entry.resume();
@@ -340,32 +341,6 @@ export class OnlineSession {
         ) {
             throw new Error('Search cancellation could not be confirmed. Reopen online play to retry.');
         }
-    }
-
-    private async leaveCurrentTown(): Promise<void> {
-        const current = this.browser.rooms.selected() ?? this.browser.rooms.state().currentRoomRef;
-        if (!current) {
-            return;
-        }
-        const options = { signal: this.lifetime.signal };
-        await this.browser.rooms.session(current).refresh(options);
-        const snapshot = this.browser.rooms.session(current).snapshot();
-        const principalId = this.browser.session()?.clientId;
-        if (!snapshot || !isSameGroupRef(snapshot.group, current)) {
-            return;
-        }
-        const roomRef = { ...CCA_SCOPE, groupId: current.groupId };
-        if (snapshot.group.ownerPrincipalId === principalId) {
-            const successor = snapshot.members.filter((member) =>
-                member.status === 'active' && !member.guestLease && member.principalId !== principalId
-            ).sort((left, right) => left.principalId.localeCompare(right.principalId))[0];
-            if (!successor) {
-                await this.browser.rooms.archive(roomRef, options);
-                return;
-            }
-            await this.browser.rooms.transferOwnership(roomRef, successor.principalId, options);
-        }
-        await this.browser.rooms.leave({ roomRef, ...options });
     }
 
     private publish(): void {
