@@ -11,6 +11,7 @@ export class TownMatchExchange {
     private readonly round: TownMatchRound;
     private readonly connection: TownMatchConnection;
     private readonly frames: TownMatchFrames;
+    private nextConfirmedReplayAt = 0;
 
     constructor(
         dependencies: TownMatchSession.Dependencies,
@@ -69,11 +70,16 @@ export class TownMatchExchange {
         if (this.round.intent && this.round.intent.sessionId === this.dependencies.browser.session()?.sessionId) {
             await this.frames.write(this.round.intent.frame);
         }
+        // A missed committed snapshot can be repaired before the 1.5s stall threshold.
+        // Pending decisions still retry on every exchange and require every player's acknowledgement.
+        const now = this.dependencies.timers.nowMs();
+        const replayConfirmed = now >= this.nextConfirmedReplayAt;
+        if (replayConfirmed) this.nextConfirmedReplayAt = now + 500;
         if (this.connection.getView().isDirector) {
-            await this.exchangeDirectorProposals(this.round.checkpoints, state);
+            await this.exchangeDirectorProposals(this.round.checkpoints, state, replayConfirmed);
         }
         const current = this.round.checkpoints.getState();
-        for (const checkpoint of [current.committed, current.pending?.checkpoint]) {
+        for (const checkpoint of [replayConfirmed ? current.committed : undefined, current.pending?.checkpoint]) {
             if (checkpoint) {
                 await this.frames.write(this.frames.createFrame(checkpoint.state.matchId, {
                     kind: 'ack',
@@ -86,9 +92,13 @@ export class TownMatchExchange {
 
     private async exchangeDirectorProposals(
         checkpoints: TownMatchCheckpoints,
-        state: TownMatchCheckpoints.State
+        state: TownMatchCheckpoints.State,
+        replayConfirmed: boolean
     ): Promise<void> {
-        if (state.committed?.epoch === state.authority.epoch) {
+        if (replayConfirmed && state.committed?.epoch === state.authority.epoch) {
+            if (this.round.committedProposal?.sequence === state.committed.sequence) {
+                await this.frames.write(this.round.committedProposal);
+            }
             await this.frames.write(this.frames.createFrame(state.committed.state.matchId, {
                 kind: 'commit',
                 digest: state.committed.digest,
@@ -103,11 +113,6 @@ export class TownMatchExchange {
             this.round.restoreRecovery(recovery, this.connection.getView())
         ) {
             await this.propose();
-        }
-        const committedProposal = this.round.committedProposal;
-        if (committedProposal) {
-            await this.frames.write(committedProposal);
-            await this.writeCheckpointAction('commit', committedProposal);
         }
         const lastProposal = this.round.lastProposal;
         if (lastProposal) {

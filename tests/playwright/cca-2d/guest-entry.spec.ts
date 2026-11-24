@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { decodeMatchWire } from './match-browser.ts';
 import { installCcaRtcTrial } from './match-rtc-browser.ts';
 
 test('a friend can shuffle a town nickname and enter practice from an invitation', async ({ page }) => {
@@ -99,6 +100,13 @@ async function createTown(page: Page): Promise<void> {
 
 test('an invited guest can ready and dash in a match hosted by the owner', async ({ page, browser }) => {
     test.setTimeout(60000);
+    let proposals = 0;
+    let commits = 0;
+    page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+        const action = decodeMatchWire(payload)?.action.kind;
+        if (action === 'proposal') proposals++;
+        if (action === 'commit') commits++;
+    }));
     await page.addInitScript(installCcaRtcTrial);
     await createTown(page);
     await page.getByRole('button', { name: 'Host match' }).click();
@@ -113,7 +121,11 @@ test('an invited guest can ready and dash in a match hosted by the owner', async
         await expect(phone.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled({ timeout: 12000 });
         await page.getByRole('button', { name: 'Ready', exact: true }).click();
         await phone.getByRole('button', { name: 'Ready', exact: true }).click();
-        await page.getByRole('button', { name: 'Start round' }).click();
+        const start = page.getByRole('button', { name: 'Start round' });
+        await expect(start).toBeEnabled();
+        // Players may talk in a ready lobby longer than the active round's recovery deadline.
+        await page.waitForTimeout(13000);
+        await start.click();
         await expect(phone.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 15000 });
         const guestGame = phone.locator('#online-game');
         const hostGame = page.locator('#online-game');
@@ -128,6 +140,8 @@ test('an invited guest can ready and dash in a match hosted by the owner', async
             await expect.poll(async () => Number(await hostGame.getAttribute('data-peer-x'))).toBeGreaterThan(initialX + 0.2);
             await phone.keyboard.up('KeyD');
         }
+        await expect.poll(() => proposals).toBeGreaterThan(10);
+        expect(commits, 'Redundant commit broadcasts overload the checkpoint channel.').toBeLessThanOrEqual(proposals + 2);
         await phone.getByRole('button', { name: 'Dash and drop' }).click();
         await expect.poll(async () => Number(await phone.locator('#online-game').getAttribute('data-dashes'))).toBeGreaterThan(0);
     }
@@ -179,6 +193,33 @@ test('losing the admission response lets the guest retry the same seat and nickn
         await expect(phone.getByRole('heading', { name: 'Your town lobby' })).toBeVisible();
         await expect(phone.getByText(nickname, { exact: true })).toBeVisible();
         await expect(page.locator('#roster li')).toHaveCount(2);
+    }
+    finally {
+        await guest.close();
+    }
+});
+
+test('the guest keeps the confirmed score when the owner closes the finished town', async ({ page, browser }) => {
+    test.setTimeout(260000);
+    await createTown(page);
+    await page.getByRole('button', { name: 'Host match' }).click();
+    await page.getByRole('button', { name: 'Invite guests' }).click();
+    const guest = await browser.newContext();
+    try {
+        const phone = await guest.newPage();
+        await phone.goto(await page.getByLabel('Guest invitation link').inputValue());
+        await phone.getByRole('button', { name: 'Join this town' }).click();
+        await phone.getByRole('button', { name: 'Ready', exact: true }).click();
+        await page.getByRole('button', { name: 'Ready', exact: true }).click();
+        await page.getByRole('button', { name: 'Start round' }).click();
+        await expect(phone.locator('#round-results')).toBeVisible({ timeout: 225000 });
+        await expect(phone.locator('#round-result-title')).toHaveText('Round complete');
+        const scores = (await phone.locator('#round-winners').innerText()).split(' · ');
+        expect(scores).toHaveLength(2);
+        await page.locator('#leave-results').click();
+        await expect(phone.getByRole('alert')).toContainText('fresh invitation', { timeout: 10000 });
+        await expect(phone.getByRole('heading', { name: 'Round complete' })).toBeVisible();
+        await expect(phone.getByRole('listitem')).toHaveText(scores);
     }
     finally {
         await guest.close();

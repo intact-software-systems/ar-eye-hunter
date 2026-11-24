@@ -16,7 +16,7 @@ export namespace TownMatchRecoveryWindow {
 
 /** Tracks the interval since agreement stalled and the epoch in which an active round timed out. */
 export class TownMatchRecoveryWindow {
-    private lastCommit: { readonly at: number; readonly epoch: number; } | undefined;
+    private lastActiveCommit: { readonly at: number; readonly epoch: number; readonly matchId: string; } | undefined;
     private recoveryStartedAt: number | undefined;
     private interruptedMatch: { readonly matchId: string; readonly epoch: number; } | undefined;
 
@@ -25,7 +25,8 @@ export class TownMatchRecoveryWindow {
         const interruption = match && this.interruptedMatch?.matchId === match.matchId
             ? 'Round interrupted: recovery could not be confirmed. Your last confirmed points are preserved.'
             : undefined;
-        const stalled = this.lastCommit !== undefined && now - this.lastCommit.at >= STALLED_COMMIT_MS;
+        const stalled = this.lastActiveCommit !== undefined && this.lastActiveCommit.matchId === match?.matchId &&
+            now - this.lastActiveCommit.at >= STALLED_COMMIT_MS;
         const active = match?.phase === 'playing' || match?.phase === 'countdown';
         return {
             interruption,
@@ -38,17 +39,20 @@ export class TownMatchRecoveryWindow {
     }
 
     expire(matchId: string | undefined, now: number): void {
-        if (!matchId || this.lastCommit === undefined) {
+        if (!this.lastActiveCommit || this.lastActiveCommit.matchId !== matchId) {
             return;
         }
-        this.recoveryStartedAt ??= Math.min(now, this.lastCommit.at + STALLED_COMMIT_MS);
+        this.recoveryStartedAt ??= Math.min(now, this.lastActiveCommit.at + STALLED_COMMIT_MS);
         if (now - this.recoveryStartedAt >= INTERRUPT_AFTER_MS && this.interruptedMatch?.matchId !== matchId) {
-            this.interruptedMatch = { matchId: matchId, epoch: this.lastCommit.epoch };
+            this.interruptedMatch = { matchId: matchId, epoch: this.lastActiveCommit.epoch };
         }
     }
 
     confirm(checkpoint: TownCheckpoint, now: number, localId: string | undefined, isDirector: boolean): void {
-        this.lastCommit = { at: now, epoch: checkpoint.epoch };
+        const { state } = checkpoint;
+        this.lastActiveCommit = state.phase === 'playing' || state.phase === 'countdown'
+            ? { at: now, epoch: checkpoint.epoch, matchId: state.matchId }
+            : undefined;
         const observing = checkpoint.state.seats.some((seat) => seat.id === localId && seat.status === 'observer');
         if (observing || (this.interruptedMatch && checkpoint.epoch > this.interruptedMatch.epoch && !isDirector)) {
             this.interruptedMatch = undefined;
