@@ -39,6 +39,7 @@ import { createScriptedTransportFaultPort } from '@shared/transport-faults/trans
 
 import { readInboundTestAcknowledgements } from '../read-inbound-test-acknowledgements.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -104,6 +105,10 @@ class AcknowledgementFixture {
     constructor(input: AcknowledgementFixture.Input = {}) {
         this.nowMs = input.nowMs ?? Date.now;
         this.runtime = new ALInboundMessageRuntime({
+            readUpstreamPeerId: () => undefined,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+            isRoutedPeerReady: () => false,
+            isLayoutChildPeer: () => false,
             receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({

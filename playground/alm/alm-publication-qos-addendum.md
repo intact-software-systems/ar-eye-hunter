@@ -1171,8 +1171,8 @@ relays: no peer can confirm, exclude or end a receipt for another recipient,
 since a relay forwards every distinct statement a child makes about a recipient
 and the origin judges each (S8-ii); a child that floods its relay with distinct
 forged statements, and the two of its effects that need no flood, remain the
-limits there (below), and under `hop` and
-`subtree` a hop can still exclude another hop (a limit below). The premise is
+limits there (below); under `hop` and `subtree` a hop speaks only for itself,
+so no hop excludes another (D706). The premise is
 corrected (S8-C0b): the candidates survey said the slice replaces the trust in
 an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
 client-only, and the code corrects all three. No game-lane room relays: below 5
@@ -1301,8 +1301,9 @@ bytes, so a peer adjacent to a recipient can deliver other content under the
 origin's id first: the recipient signs a true `delivered` and the origin reads
 `acknowledged` (a granted publication is not affected, since its recipient
 verifies the publisher); `hop` and `subtree` receipts rest on channel trust,
-which is what they count, and a hop can still exclude another hop with an
-unsigned outside-audience NACK, as before the slice; a signed terminal NACK from
+which is what they count, and a hop could still exclude another hop with an
+unsigned outside-audience NACK, as before the slice (closed since by D706, under
+which a hop speaks only for itself); a signed terminal NACK from
 one counted recipient still ends everyone's receipt, now under its own
 signature; a page without SubtleCrypto (an insecure origin) cannot be a counted
 recipient or the origin of receipted RTC, and the fallback takes such a leg; a
@@ -1330,7 +1331,8 @@ As applied (S8-ii): a relay keys every receipt fact by statement. Two child
 controls are one statement when they name the same recipient and either are
 one proof over one signed content (both ACKs or both NACKs, one proof identity
 `keyId|signature`, and every field the proof signs equal, compared as its
-signing input, `isALSameReceiptProofContent`; D606), or both carry `proof:
+signing input, which each control's prepared subject,
+`toALReceiptStatementSubject`, encodes at most once; D606), or both carry `proof:
 null`, whatever their content, or are both that recipient's own word on its
 own channel (`fromPeerId === logicalRecipientPeerId`); relays still verify
 nothing, and the origin judges each statement as S8-i built it. So a peer that
@@ -1345,7 +1347,8 @@ outside list gains a recipient only when it is absent; the ACK admission refuses
 a duplicate or an outside recipient, and the NACK admission its two refusals,
 only against the same statement; and a retried copy re-forwards the first of
 each distinct stored statement. When the history no longer holds any control
-that recorded a recipient outside, the recipient alone decides, as before. Since
+that recorded a recipient outside, no recorder is left: since part C the relay
+forwards the control and the origin judges it. Since
 `null` is one identity, honest `ws`, `hop` and `subtree` flows key as before
 (under `hop` and `subtree` on `rtc` a child that attaches distinct non-null
 proofs makes distinct statements, no new class, since the upward audience is
@@ -1394,7 +1397,8 @@ the sender's last read of it. The 6f count on the real fixtures: a direct
 counted relay the relay signs 2 and verifies none, the leaf signs 1 and the
 origin verifies 3; a `leader` send to a leaf director signs 1 and verifies 1.
 The Limit 2 sibling (an unsigned `not-subscribed` NACK under `hop` that names
-another next hop) is pinned by a `Limit:` test. The full-scope RTC lane, local
+another next hop) was pinned by a `Limit:` test; the relay statement rules made
+it the refusal (D706). The full-scope RTC lane, local
 and in-memory, ran the three cells green at `e4d5f3058` (the two cells red
 there, `repair-exhausted` and `granted-rtc-ordered-relay`, are red on `main`
 too), and `unsigned-ack-refused` green over `rtc-with-ws-fallback` at
@@ -1415,19 +1419,22 @@ copy's re-forward is cut to its commit cap with own words first, so at a relay
 above the first one, where every statement is a forwarded word, the cut is
 arbitrary among them. And a history flood can evict the control that recorded a
 recipient outside (a forged hop-end records it from the ACK history, where any
-256 later child ACKs, honest ones included, evict it), after which the
-recipient alone decides, so its
-later true control is refused at that relay at first arrival. Two of these need
+256 later child ACKs, honest ones included, evict it), after which that relay
+refused the recipient's later true control at first arrival; since part C, with
+no recorder left, the relay forwards the control and the origin judges it. Two of these need
 no flood: one forged hop-end and 256 later child ACKs, honest ones included,
 evict the recording control, and in a room at the RTC room limit the cut falls
 anyway, so a few early forged statements can take the place of true forwarded
 words in a re-forward. A child that reuses one well-formed proof over up to 256
-altered contents makes a relay encode the signed content pairwise: about 90 ms
+altered contents made a relay encode the signed content pairwise: about 90 ms
 per retried copy's grouping against about 1.2 ms before, up to about 180 ms
 with the NACK history flooded the same way and about 3 ms per admission on a
-full history, bounded by the histories, paced by the origin's retries and not
-fixed here (D606). In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
-still moves another next hop outside (pinned); a forger that is the recipient's
+full history, bounded by the histories and paced by the origin's retries
+(D606); part C encodes each control once per scan, and a retried copy's
+grouping, `toFirstOfEachALReceiptStatement`, compares only within one
+recipient. In every case the origin counts only what verifies. Under `hop` and `subtree` only a hop's own word
+speaks for it: a next hop's hop-end that names another recipient moves nobody outside, and its `not-subscribed` or
+gap NACK that names another recipient is refused, so relayed gap recovery there stays closed (D582, D706); a forger that is the recipient's
 own parent is on its path and can still withhold the copy or its control, which
 the origin's timeout, retry and fallback cover; and a recipient's redundant own
 NACK after its own hop-end is refused at a relay as the same statement, as
@@ -1571,8 +1578,8 @@ is green in three of three; in both all twenty arrive in order and none twice.
 In the first nine runs a lost repair frame was renewed end to end in two, both
 over `ws`, and the first-hop resend is proven by unit tests alone (D683). The
 recovery has stated limits: a lost only or last frame under `ack: 'none'` is
-not recovered, renewal holds on direct links and not through an `rtc` relay,
-and a send can end `failed` although delivered when the server no longer holds
+not recovered, renewal held on direct links and not through an `rtc` relay
+until the relay statement rules (D725 to D730), and a send can end `failed` although delivered when the server no longer holds
 its receipt (D678, D680, D683, D693 and the backlog); and the lost stream
 start over `rtc` is its own slice (D669). The held-send path is built (D696 to
 D700): a send the server keeps starts its receipt when the server admits it, at
@@ -1588,8 +1595,22 @@ at its deadline (D694); and a receipt does not survive its server's crash, which
 `api-v1-cluster-publisher-instance-loss` pins (D700). A send kept after a lost
 commit race whose recipients all left by its replay expects the recipients
 captured at ingress, so its handle reads `expired` at its deadline (D701). The
-local baseline's alternating runs are pull request 851 (D672), which lands
-before the relay statement rules; they are the next outcome.
+local baseline's alternating runs are pull request 851 (D672). The relay
+statement rules are built (D703 to D709, D725 to D734): with no recorder left a
+relay forwards a control and the origin judges it; each control's signed content
+is encoded once per scan; under `hop` and `subtree` only a hop's own word speaks
+for it; the origin reads an honest repeat `duplicate`; the WS server refuses an
+ACK from a captured recipient it never sent the message; a recipient answers a
+copy it holds buffered behind a gap on no carrier until its release, which
+answers every carrier that brought one; a terminal end keeps the receipt row as
+its final snapshot; an `ack: 'none'` track over `rtc` is repaired, directly and
+through a relay; a renewal asks its current upstream peer once the peer it first
+asked no longer forwards to it; and a gap NACK carries a relay hop count
+(`al.control.nack.v5`), so every relay passes it upward to its current upstream
+peer and a cycle ends. The cells `relayed-gap-renewal` and
+`relayed-unreceipted-gap-renewal` state a renewal through a relay over `rtc`,
+three of three each. A member that ACKs before it delivers speaks only for
+itself, which the rules close as inherent (D709).
 With the figures in place, recovery proven and the contracts adopted,
 the addendum is complete for its advertised modes. The later outcomes below that no
 application needs yet move to the backlog, and the work continues as real-world

@@ -1,8 +1,10 @@
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type { ALOutboundPendingAckRef } from '../admission/al-outbound-admission-keys.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundVersionedClientRecord
+import {
+    toALOutboundMessageFence,
+    type ALOutboundCommitBundle,
+    type ALOutboundMessageVersion,
+    type ALOutboundVersionedClientRecord
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { acceptALOutboundOutsideAudienceNack } from '../transition-al-outbound-pending-ack.ts';
@@ -10,6 +12,7 @@ import { acceptALOutboundOutsideAudienceNack } from '../transition-al-outbound-p
 /** What the server's own receipt holds, read in one session before it records recipients outside it. */
 export interface ALOutboundOutsideAudienceSurface {
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     readonly pending: ALOutboundPendingAckSnapshot | undefined;
     readonly stored: ALStoredOutboundMessage | undefined;
 }
@@ -19,7 +22,10 @@ export interface ALOutboundOutsideAudienceCommitInput extends ALOutboundOutsideA
     readonly recipientPeerIds: readonly string[];
 }
 
-/** No receipt to record in, every recipient already outside, or the receipt row to write under the origin's fence. */
+/**
+ * No receipt to record in (none, or an ended message's kept final snapshot), every recipient already outside, or the
+ * receipt row to write under the origin's fence.
+ */
 export type ALOutboundOutsideAudienceCommit<TPrepared> =
     | Readonly<{ status: 'absent' | 'committed'; }>
     | Readonly<{ status: 'write'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
@@ -29,7 +35,7 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
     input: ALOutboundOutsideAudienceCommitInput
 ): ALOutboundOutsideAudienceCommit<TPrepared> {
     const { pending, stored, receipt } = input;
-    if (pending === undefined || stored === undefined) {
+    if (pending === undefined || stored === undefined || stored.ended) {
         return { status: 'absent' };
     }
     const snapshot = input.recipientPeerIds
@@ -43,6 +49,9 @@ export function toALOutboundOutsideAudienceCommit<TPrepared>(
         bundle: {
             senderId: receipt.originPeerId,
             expectedVersion: input.clientRecord?.version,
+            // It reads and writes only rows of its message; it keeps the sender fence, which ruling 26 did not narrow.
+            fencesSender: true,
+            message: toALOutboundMessageFence(receipt, input.messageVersion, stored.reference.expiresAtMs),
             mutations: [{
                 kind: 'set-pending-ack',
                 originPeerId: receipt.originPeerId,

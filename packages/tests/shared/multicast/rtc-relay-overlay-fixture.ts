@@ -112,6 +112,8 @@ export interface RtcRelayOverlayFixtureInput {
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
 export interface RtcRelayOverlayFixture {
     receive(message: ALMessage, fromPeerId: string): Promise<void>;
+    /** Receives each of `messages` from `fromPeerId` in order, then waits once for the work they queued. */
+    receiveEach(messages: readonly ALMessage[], fromPeerId: string): Promise<void>;
     readSent(peerId: string): Promise<readonly ALMessage[]>;
     /** The ACKs and NACKs this session sent `peerId`, in send order. */
     readSentControls(peerId: string): Promise<readonly ALPeerControlMessage[]>;
@@ -121,6 +123,8 @@ export interface RtcRelayOverlayFixture {
     enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult>;
     /** Replaces the room this relay sees, as a membership change reaches it. */
     acceptSnapshot(snapshot: GroupSnapshot): void;
+    /** Closes this session's channel to `peerId`, as a neighbour that left or restarted does. */
+    closeEdge(peerId: string): Promise<void>;
     /** Replaces the layout this relay holds accepted, as the server's promotion of a new layout reaches it. */
     acceptOverlay(overlay: OverlayInfo): void;
     /** Replaces the layout this relay holds planned (the server's published plan), and records no transition. */
@@ -214,9 +218,15 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     }
 
     async receive(message: ALMessage, fromPeerId: string): Promise<void> {
+        await this.receiveEach([message], fromPeerId);
+    }
+
+    async receiveEach(messages: readonly ALMessage[], fromPeerId: string): Promise<void> {
         await this.ready;
         const { connection, inboundStores, outboundResources } = this.dependencies;
-        await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
+        for (const message of messages) {
+            await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
+        }
         await waitForOwnedQueueWork(inboundStores.workQueue);
         await waitForOwnedQueueWork(outboundResources.workQueue);
     }
@@ -241,6 +251,11 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
 
     acceptSnapshot(snapshot: GroupSnapshot): void {
         this.dependencies.groups.accept('room', snapshot);
+    }
+
+    async closeEdge(peerId: string): Promise<void> {
+        await this.ready;
+        await this.dependencies.connection.nativePeer(peerId).channels[0].close();
     }
 
     acceptOverlay(overlay: OverlayInfo): void {

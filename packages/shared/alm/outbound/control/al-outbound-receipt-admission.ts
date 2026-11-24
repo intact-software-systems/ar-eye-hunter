@@ -1,9 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
-import type {
-    ALOutboundAdmissionStore,
-    ALOutboundCommitBundle
+import {
+    toALOutboundMessageFence,
+    type ALOutboundAdmissionStore,
+    type ALOutboundCommitBundle
 } from '../admission/al-outbound-admission-store.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
@@ -11,10 +12,10 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
-import type {
-    ALOutboundControlAdmission,
-    ALOutboundControlAdmissionResult,
-    ALOutboundPendingControl
+import {
+    AL_OUTBOUND_COMMIT_ATTEMPTS,
+    type ALOutboundControlAdmission,
+    type ALOutboundPendingControl
 } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
@@ -26,6 +27,7 @@ import {
     type ALOutboundReceiptAdmissionRead,
     type ALOutboundReceiptWrite
 } from './compute-al-outbound-receipt-admission.ts';
+import type { ALOutboundControlAdmissionResult } from './read-al-outbound-recipient-proof.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
 import { toALOutboundEndedTimeoutEffectIds } from './write-al-outbound-timeout-completions.ts';
@@ -43,13 +45,13 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
  * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
  * an outbox-fanned message. At a browser origin whose carriers share their heads, an `admitted` receipt
  * also moves the recipients it names on the shared head and resolves the room floor (S4ii-R7). One
- * conditional commit fenced on the origin's version; a conflict starts a fresh read, and the few attempts
+ * conditional commit fenced on the message's version, and on the origin's version only when it reads those shared-head
+ * rows (ruling 26); a conflict starts a fresh read, and the few attempts
  * bound a receipt racing the origin's own writes. A receipt that runs out of them is retained as work and
  * replayed until its deadline, since the row would otherwise keep waiting on acknowledgements the receipt
  * already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
-    private static readonly MAX_ATTEMPTS = 3;
     private readonly dependencies: ALOutboundReceiptAdmissionDependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundReceiptAdmissionDependencies<TPrepared>) {
@@ -75,7 +77,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         control: ALMessage,
         receipt: ALReceiptPayload
     ): Promise<ALOutboundControlAdmissionResult> {
-        for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
+        for (let attempt = 0; attempt < AL_OUTBOUND_COMMIT_ATTEMPTS; attempt += 1) {
             const result = await this.admitOnce(control, receipt, attempt + 1);
             if (result !== 'conflict') {
                 return result;
@@ -177,6 +179,9 @@ function toReceiptCommitBundle<TPrepared>(
     return {
         senderId: receipt.originPeerId,
         expectedVersion: read.clientRecord?.version,
+        // Only the shared-head positions an admitted receipt answers are rows the sender's other messages share.
+        fencesSender: read.trackPositions !== undefined,
+        message: toALOutboundMessageFence(receipt, read.messageVersion, stored?.reference.expiresAtMs),
         mutations: [
             toALOutboundReceiptMutation(write, receipt),
             ...toALOutboundReceiptTrackMutations(read.trackPositions, write),

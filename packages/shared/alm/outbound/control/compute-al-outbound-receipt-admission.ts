@@ -8,6 +8,7 @@ import {
     type ALOutboundAdmissionMutation
 } from '../admission/al-outbound-admission-mutations.ts';
 import type {
+    ALOutboundMessageVersion,
     ALOutboundReceiptTrackPositions,
     ALOutboundVersionedClientRecord
 } from '../admission/al-outbound-admission-store.ts';
@@ -27,6 +28,7 @@ export interface ALOutboundReceiptAdmissionSurface {
     /** The sender's wait for the server to first answer for the message, which any receipt of it ends. */
     readonly firstHopWait: ALOutboundFirstHopWaitSnapshot | undefined;
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
+    readonly messageVersion: ALOutboundMessageVersion | undefined;
     /**
      * Read only for an `admitted` receipt, the one phase carrying the audience the server routed, of a sequenced
      * message at a pair whose session's pairs share its heads; undefined otherwise.

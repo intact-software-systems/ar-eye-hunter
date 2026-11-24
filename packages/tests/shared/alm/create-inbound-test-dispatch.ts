@@ -2,6 +2,7 @@ import { onTestFinished } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -40,7 +41,8 @@ export function createInboundTestDispatch(
         },
         clock: { nowMs },
         workClock: { nowMs },
-        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION
+        effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT
     });
     onTestFinished(() => delivery.dispose());
     return { delivery, dispatched };

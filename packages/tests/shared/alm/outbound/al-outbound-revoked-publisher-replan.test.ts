@@ -11,6 +11,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
 import { ALOutboundRepairRetransmission } from '@shared/alm/outbound/al-outbound-repair-retransmission.ts';
+import { toALOutboundReadCommitFences } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -53,7 +54,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
     });
 
     it.each(REFUSAL_CASES)(
-        'a retransmit refused %s ends the receipt and states that refusal once, so its ack-timeout restates nothing: %s',
+        'a retransmit refused %s ends the message and states that refusal once, so its ack-timeout restates nothing: %s',
         async (code, stated) => {
             vi.useFakeTimers({ toFake: ['Date'] });
             vi.setSystemTime(1_000);
@@ -66,10 +67,12 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
                 attemptIdentity: `nack-retry-${code}`
             });
             const receiptAfterRetransmit = await readReceipt(stores, message);
+            const endedAfterRetransmit = (await stores.admissionStore.readStoredMessage(message.id.msgId))?.ended;
             await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
 
             expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
-            expect(receiptAfterRetransmit === undefined).toBe(stated);
+            expect(endedAfterRetransmit).toBe(stated);
+            expect(receiptAfterRetransmit).toBeDefined();
         }
     );
 
@@ -91,7 +94,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         expect(warnings).toEqual(['Skipping outbound repair of a refused re-plan: Refused no-publish-grant on re-plan']);
     });
 
-    it.each(REFUSAL_CASES)('an ack-timeout retry refused %s ends the receipt and states that refusal: %s', async (code, stated) => {
+    it.each(REFUSAL_CASES)('an ack-timeout retry refused %s ends the message and states that refusal: %s', async (code, stated) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const stores = createDefaultOutboundTestStores();
@@ -102,7 +105,8 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
 
         expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
-        expect(await readReceipt(stores, message) === undefined).toBe(stated);
+        expect((await stores.admissionStore.readStoredMessage(message.id.msgId))?.ended).toBe(stated);
+        expect(await readReceipt(stores, message)).toBeDefined();
     });
 
     it('states no refusal over a receipt a same-sender commit completed after the retry read it: the conflict retries afresh', async () => {
@@ -177,7 +181,7 @@ function completeReceiptAfterNextRead(stores: OutboundTestStores, message: Retur
         const read = await readRepairMessage(msgId, planner);
         await stores.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            expectedVersion: read.clientRecord?.version,
+            ...toALOutboundReadCommitFences({ originPeerId: message.id.senderId, msgId }, read),
             mutations: [{ kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId }],
             durableEffects: [],
             endedTimeoutEffectIds: []
@@ -266,7 +270,6 @@ function createRetransmission(
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
-            browserLocks: undefined,
             signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: record

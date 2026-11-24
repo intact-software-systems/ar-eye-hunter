@@ -74,15 +74,16 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         expect(
             total.requests,
             'every get, getAll and put those 8 transactions issue; the guard read issues its 2 gets ' +
-                'in one session' + table
-        ).toBe(37);
+                'in one session; the decision read, the fence snapshot and the commit each read the message ' +
+                'version, and the commit writes it' + table
+        ).toBe(41);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
             total.byOwner['al-admission'],
-            '7 decision reads, the supersedence and receipt reads (one session, one op per key) and the ' +
+            '8 decision reads, the supersedence and receipt reads (one session, one op per key) and the ' +
                 'commit' + table
-        ).toBe(10);
+        ).toBe(11);
         expect(
             total.byOwner['al-work'],
             '3 decision work reads, the reservation and the release; ' + LANE_CLOCK_REASON + '; ' +

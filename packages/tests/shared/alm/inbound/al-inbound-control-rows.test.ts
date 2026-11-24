@@ -26,6 +26,7 @@ import {
 } from '../inbound-runtime-test-fixture.ts';
 import { readInboundTestAcknowledgements } from '../read-inbound-test-acknowledgements.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const ORIGINAL_SENDER_ID = 's1';
@@ -73,9 +74,10 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
         readmission: false,
         read,
         plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read, false)),
-        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
+        facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION, () => AL_GAP_NACK_RELAY_HOP_LIMIT),
         canForward: true,
-        recordedParentPresent: true
+        recordedParentPresent: true,
+        retriedCopyNextHopPeerIds: []
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
 }

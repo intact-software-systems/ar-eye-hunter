@@ -149,7 +149,9 @@ describe('the RTC leg of a group-leader room send', () => {
             .toEqual(messages.map((message) => message.id.msgId).toSorted());
         expect(endpoints.filter((endpoint) => endpoint.sessionId !== 'director').flatMap((endpoint) => endpoint.delivered)).toEqual([]);
         const completeReceipts = receipts.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete);
-        expect(completeReceipts).toHaveLength(12);
+        // A complete receipt is stated again when its hop view moves after it (a relay's hop-end arriving after the
+        // leader's ACK), so each send completes at least once rather than exactly once.
+        expect(new Set(completeReceipts.map((receipt) => receipt.msgId)).size).toBe(12);
         for (const receipt of completeReceipts) {
             expect(receipt).toMatchObject({
                 mode: 'leader',

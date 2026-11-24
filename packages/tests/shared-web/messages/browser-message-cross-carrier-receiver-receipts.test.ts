@@ -55,6 +55,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { advanceUntil } from '../../shared/advance-until.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
@@ -91,6 +92,8 @@ interface ReceiptLoopExpectation {
     readonly expectedRecipientPeerIds: readonly ('b' | 'c')[];
     readonly initialConfirmedPeerIds: readonly ('b' | 'c')[];
     readonly delivered: Readonly<Record<'b' | 'c', readonly string[]>>;
+    /** The sequence the message takes on the origin's ordered track; absent, the message is unordered. */
+    readonly orderedSeq?: number;
 }
 
 const RECEIVER_EXPECTATION: ReceiptLoopExpectation = {
@@ -105,6 +108,15 @@ const LEADER_EXPECTATION: ReceiptLoopExpectation = {
     expectedRecipientPeerIds: ['c'],
     initialConfirmedPeerIds: [],
     delivered: { b: [], c: ['{"start":true}'] }
+};
+
+const ORDERED_TRACK_KEY = 'director-track';
+
+/** The leader receipt of a message at seq 3 on the origin's ordered track, whose seq 2 the receiver has not seen. */
+const LEADER_BUFFERED_EXPECTATION: ReceiptLoopExpectation = {
+    ...LEADER_EXPECTATION,
+    delivered: { b: [], c: ['{"beforeStart":1}'] },
+    orderedSeq: 3
 };
 
 interface ReceiptLoopServer {
@@ -298,6 +310,49 @@ describe('cross-carrier receipts', () => {
             );
         }
     );
+
+    // A copy of a message the receiver holds buffered draws no answer on any carrier; its release answers every carrier
+    // that brought a copy, so the WS receipt the hand-over left live is confirmed once the message is delivered.
+    it('completes the WS receipt of a handed-over message the receiver held buffered, with its release (leader)', async () => {
+        const loop = await createReceiptLoop(LEADER_BUFFERED_EXPECTATION);
+        const c = loop.receivers.c;
+        const completed = loop.origin.handle.wait({ until: ['acknowledged'] });
+        const entry = await sendOrderedPredecessorToC(loop, 1);
+        expect((await c.rtc.admitIncomingMessage(entry, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        await loop.clock.advanceBy(100);
+        const missing = await sendOrderedPredecessorToC(loop, 2);
+        loop.origin.dispatch.send(loop.origin.delivery);
+        // The origin signs this receipted send with real WebCrypto (D758), which fake time alone does not wait for.
+        const isBufferedCopy = (frame: ALMessage) => frame.id.msgId === loop.origin.handle.msgId;
+        await loop.clock.advanceUntil(() => loop.origin.rtc.channels.c!.sent.some(isBufferedCopy));
+        const bufferedCopy = loop.origin.rtc.channels.c!.sent.find(isBufferedCopy)!;
+        expect((await c.rtc.admitIncomingMessage(bufferedCopy, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        await loop.clock.advanceBy(100);
+        expect(c.delivered).toEqual(LEADER_BUFFERED_EXPECTATION.delivered.c);
+
+        await exhaustRtcAndAdmitWsFallback(loop);
+        await deliverWsDuplicates(loop);
+        expect(readSubmittedAcks(c)).toEqual([]);
+
+        expect((await c.rtc.admitIncomingMessage(missing, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
+        // The release's ACK is signed with real WebCrypto after the delivery.
+        await loop.clock.advanceUntil(() => c.delivered.length === 3 && readSubmittedAcks(c).length > 0);
+        expect(c.delivered).toEqual(['{"beforeStart":1}', '{"beforeStart":2}', '{"start":true}']);
+        const releaseAck = readSubmittedAck(c, 'c');
+        expect(readSubmittedAcks(c)).toHaveLength(1);
+        await returnAckToServer(loop, 'c', releaseAck);
+        await loop.clock.advanceBy(100);
+
+        expect(readServerReceipts(loop.server)).toEqual([
+            expect.objectContaining({ phase: 'admitted', confirmedRecipientPeerIds: [] }),
+            expect.objectContaining({ phase: 'complete', expectedRecipientPeerIds: ['c'], confirmedRecipientPeerIds: ['c'] })
+        ]);
+        await returnReceiptToOrigin(loop, 'complete');
+        expect(await completed).toMatchObject({
+            status: 'settled',
+            lifecycle: { state: 'acknowledged', evidence: { confirmedRecipientPeerIds: ['c'], unconfirmedRecipientPeerIds: [] } }
+        });
+    });
 
     it('times out naming c when both ACKs are submitted but only b reaches server ingress', async () => {
         const loop = await createReceiptLoop(RECEIVER_EXPECTATION);
@@ -515,6 +570,10 @@ async function createReceiptLoopReceiver(
         findGroupSnapshot: () => snapshot
     });
     const rtc = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         // The room key every fixture session registers, so the origin verifies what this recipient signs.
         receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: ROOM_PUBLICATION_CRYPTO }) },
         orderingObserver: 'addressed',
@@ -628,7 +687,8 @@ function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessag
                 ack: expectation.mode === 'leader' ? 'group-leader' : 'all-logical-recipients',
                 reliability: 'at-least-once',
                 ttlMs: 30_000,
-                qos: { durability: { algo: 'volatile' } }
+                qos: { durability: { algo: 'volatile' } },
+                ...(expectation.orderedSeq === undefined ? {} : { orderingKey: ORDERED_TRACK_KEY, seq: expectation.orderedSeq })
             }
         }
     );
@@ -674,7 +734,9 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
         });
         expect((await loop.receivers[peerId].rtc.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
     }
-    await loop.clock.advanceBy(100);
+    await loop.clock.advanceUntil(() =>
+        (['b', 'c'] as const).every((peerId) => loop.receivers[peerId].delivered.length >= loop.expectation.delivered[peerId].length)
+    );
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
     if (loop.expectation.mode === 'receiver') {
@@ -692,12 +754,35 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
     });
 }
 
+/** The origin's seq on the ordered track, sent before the receipt loop's message and lost on the way to c. */
+async function sendOrderedPredecessorToC(loop: ReceiptLoop, seq: number): Promise<ALMessage> {
+    const sentBefore = loop.origin.rtc.channels.c!.sent.length;
+    await loop.origin.rtc.manager.enqueueLegIfAbsent(
+        newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.ar-eye-hunter.director', resourceId: `before-start-${seq}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: { beforeStart: seq },
+            options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, orderingKey: ORDERED_TRACK_KEY, seq }
+        }),
+        'hold'
+    );
+    await loop.clock.advanceBy(100);
+    const predecessor = loop.origin.rtc.channels.c!.sent[sentBefore];
+    expect(predecessor?.ordering?.seq).toBe(seq);
+    return predecessor!;
+}
+
 async function exhaustRtcReceipt(loop: ReceiptLoop): Promise<void> {
     const { admissionStore, queueEngine } = loop.origin.rtc.resources;
     const receiptRef = { originPeerId: 'a', msgId: loop.origin.handle.msgId };
     await queueEngine.stop();
+    // The exhaustion keeps the receipt row as its final snapshot: the stored message's marker says it ended.
+    const isEnded = async () => (await admissionStore.readStoredMessage(receiptRef.msgId))?.ended === true;
     let pending = await admissionStore.readPendingAck(receiptRef);
-    while (pending !== undefined) {
+    while (pending !== undefined && !(await isEnded())) {
         expect(pending.deadlineAtMs).toBeGreaterThan(Date.now());
         await loop.clock.advanceBy(pending.deadlineAtMs - Date.now());
         let created: boolean;
@@ -732,7 +817,10 @@ async function exhaustRtcAndAdmitWsFallback(loop: ReceiptLoop): Promise<void> {
     expect(submitted.constraints?.expiresAtMs).toBe(loop.origin.delivery.message.constraints?.expiresAtMs);
     expect(await loop.origin.rtc.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: submitted.id.msgId })).toBeUndefined();
     await loop.server.sockets.a.receive(submittedFrame);
-    await loop.clock.advanceBy(100);
+    const forwardedTo = (peerId: 'b' | 'c') =>
+        loop.server.sockets[peerId].sent.some((frame) => decodePersistedALMessage(frame).id.msgId === submitted.id.msgId);
+    // The server admits the signed WS copy after a real WebCrypto verify, which fake time alone does not wait for.
+    await loop.clock.advanceUntil(() => loop.expectation.expectedRecipientPeerIds.every(forwardedTo));
     expect(
         loop.server.sockets.a.sent.map(decodePersistedALMessage)
             .filter((message) => message.id.msgId === submitted.id.msgId)
@@ -766,6 +854,11 @@ async function deliverWsDuplicates(loop: ReceiptLoop): Promise<void> {
     await loop.clock.advanceBy(100);
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
+}
+
+/** Every ACK the receiver submitted to the server. */
+function readSubmittedAcks(receiver: ReceiptLoopReceiver): readonly ALMessage[] {
+    return receiver.socket.sent.map(decodePersistedALMessage).filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
 }
 
 function readSubmittedAck(receiver: ReceiptLoopReceiver, peerId: 'b' | 'c'): ALMessage {

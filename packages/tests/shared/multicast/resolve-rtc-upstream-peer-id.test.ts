@@ -1,0 +1,273 @@
+import { describe, expect, it, onTestFinished } from 'vitest';
+
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { toALOverlayAdjacency } from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { RtcOutboundObservation } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import {
+    createRtcInboundRoutes,
+    isRtcLayoutChildPeer,
+    isRtcRoutedPeerReady,
+    resolveRtcRelayParent
+} from '@shared/multicast/resolve-rtc-upstream-peer-id.ts';
+
+import { toAcceptedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
+import { createOriginOverlay, createOriginSnapshot, ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
+
+const SESSION_IDS = ['a', 'r', 'b', 'c', 'd', 'x'];
+
+/** The layout a reshape replaced: the leaf `c` below the relay `r`. */
+const BELOW_R: SessionNextHops = { a: ['r', 'b'], r: ['a', 'c'], b: ['a'], c: ['r'] };
+
+/** The accepted layout: `c` below `b`, with a child `d` of its own. */
+const BELOW_B: SessionNextHops = { a: ['r', 'b'], r: ['a'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
+
+/** Another room's accepted layout, in which `b` hangs below `x`. */
+const BELOW_X: SessionNextHops = { a: ['x'], x: ['a', 'b'], b: ['x', 'c'], c: ['b'] };
+
+const REPLACED_AT_MS = 1_000_000;
+/** The leaf forwards over its replaced layout for the first half: 2 s. */
+const OVERLAP_MS = 4_000;
+
+describe('whether the peer a gap was first reported to is still routed over', () => {
+    it.each([
+        { name: 'the replaced layout\'s neighbour inside the forwarding half', peerId: 'r', connected: ['r', 'b'], elapsedMs: 1_999, routed: true },
+        { name: 'the replaced layout\'s neighbour once the forwarding half has ended', peerId: 'r', connected: ['r', 'b'], elapsedMs: 2_000, routed: false },
+        { name: 'the replaced layout\'s neighbour that is no longer connected', peerId: 'r', connected: ['b'], elapsedMs: 1_000, routed: false },
+        { name: 'an accepted neighbour that is not upstream', peerId: 'd', connected: ['b', 'd'], elapsedMs: 1_000, routed: false }
+    ])('$name: $routed', ({ peerId, connected, elapsedMs, routed }) => {
+        expect(isRtcRoutedPeerReady(toLeafObservation(connected, elapsedMs), peerId)).toBe(routed);
+    });
+
+    it('no peer, without an accepted layout', () => {
+        expect(isRtcRoutedPeerReady({ ...toLeafObservation(['r'], 1_000), overlay: undefined }, 'r')).toBe(false);
+    });
+});
+
+describe('the parent a relay forwards a child\'s gap NACK to when it holds nothing of the message', () => {
+    it.each([
+        { name: 'the upstream peer toward the origin, for its child', origin: 'a', child: 'c', parent: 'a' },
+        { name: 'none for a peer that is not its neighbour', origin: 'a', child: 'r', parent: undefined },
+        { name: 'none for its own parent', origin: 'a', child: 'a', parent: undefined },
+        { name: 'none for an origin the layout does not place', origin: 'g', child: 'c', parent: undefined }
+    ])('$name', ({ origin, child, parent }) => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), origin, child)?.peerId).toBe(parent);
+    });
+
+    it('one parent for one layout held under two keys', () => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B], ['scoped-room', BELOW_B]], ['a', 'c']), 'a', 'c')?.peerId)
+            .toBe('a');
+    });
+
+    it('none when two rooms\' layouts name different parents', () => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c')?.peerId).toBe('x');
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B], ['room-2', BELOW_X]], ['a', 'c', 'x']), 'a', 'c'))
+            .toBeUndefined();
+    });
+
+    it('none when the parent is not connected', () => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['c']), 'a', 'c')).toBeUndefined();
+    });
+
+    it('grants the NACK one relay fewer than the live sessions of the room whose layout names its sender: 5 in a room of 6', () => {
+        expect(resolveRtcRelayParent(toRelayRoutes([['room', BELOW_B]], ['a', 'c']), 'a', 'c')).toEqual({ peerId: 'a', relayHops: 5 });
+    });
+
+    it.each([
+        ['its child', 'c'],
+        ['the parent it forwards to', 'x']
+    ])('grants the wire limit when that room\'s presence lags behind %s, so its size bounds nothing', (_name, laggingPeerId) => {
+        const sessionIds = SESSION_IDS.filter((peerId) => peerId !== laggingPeerId);
+
+        expect(resolveRtcRelayParent(toRelayRoutes([['room-2', BELOW_X]], ['a', 'c', 'x'], sessionIds), 'a', 'c'))
+            .toEqual({ peerId: 'x', relayHops: AL_GAP_NACK_RELAY_HOP_LIMIT });
+    });
+});
+
+describe('whether a peer is this relay\'s child in the accepted layout of the message\'s room', () => {
+    it.each([
+        { name: 'its neighbour away from the origin', origin: 'a', peerId: 'c', child: true },
+        { name: 'not its neighbour toward the origin', origin: 'a', peerId: 'a', child: false },
+        { name: 'not a peer that is no neighbour', origin: 'a', peerId: 'r', child: false },
+        { name: 'not under an origin the layout does not place', origin: 'g', peerId: 'c', child: false }
+    ])('$name', ({ origin, peerId, child }) => {
+        expect(isRtcLayoutChildPeer(toALOverlayAdjacency('b', BELOW_B), origin, peerId)).toBe(child);
+    });
+
+    it('not without a layout', () => {
+        expect(isRtcLayoutChildPeer(undefined, 'a', 'c')).toBe(false);
+    });
+
+    it('reads only the message\'s room: a child in another room\'s layout is none here', () => {
+        const relayRoutes = toRelayRoutes([['room', BELOW_R], ['room-2', BELOW_X]], ['a', 'c', 'x']);
+        const routes = createRtcInboundRoutes(
+            {
+                groupCache: relayRoutes.rooms,
+                overlayCache: relayRoutes.acceptedOverlays,
+                connectionService: { input: { sessionId: 'b' }, readyPeerIdsForLane: () => relayRoutes.connectedPeerIds }
+            },
+            () => toRelayObservation(BELOW_R, relayRoutes.connectedPeerIds)
+        );
+        const nack = { originPeerId: 'a', fromPeerId: 'c' } as const;
+
+        expect(routes.readGapNackParent?.({ ...toTestNack(), ...nack })).toEqual({ source: { kind: 'rtc-peer', peerId: 'x' }, relayHops: 5 });
+        expect(routes.isLayoutChildPeer?.(toRoomMessage(), 'c')).toBe(false);
+    });
+});
+
+describe('the relay hops a leaf grants its gap NACK about a message', () => {
+    it('one fewer than the live sessions of the message\'s room: 7 in a room of 8', () => {
+        const room = createOriginSnapshot(['a', 'r', 'b', 'c', 'd', 'x', 'y', 'z'], 3);
+
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage(), [])).toBe(7);
+    });
+
+    it('the wire limit when the lane reads no room for the message', () => {
+        expect(createLeafRoutes(undefined).readGapNackRelayHops(toRoomMessage(), [])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
+
+    it.each(
+        [
+            ['empty', []],
+            ['lagging behind the leaf', ['a', 'r', 'b']],
+            ['lagging behind the origin', ['r', 'b', 'c']]
+        ] as const
+    )('the wire limit when the room\'s presence is %s, so its size bounds nothing', (_name, sessionIds) => {
+        const room = createOriginSnapshot(sessionIds, 3);
+
+        expect(createLeafRoutes(room).readGapNackRelayHops(toRoomMessage(), [])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
+});
+
+describe('the relay hops a relay grants a child\'s gap NACK it forwards about a message', () => {
+    const ROOM_OF_EIGHT = ['a', 'r', 'b', 'c', 'd', 'x', 'y', 'z'];
+
+    it('one fewer than the live sessions once presence names its child and the peer it forwards to: 7 in a room of 8', () => {
+        const room = createOriginSnapshot(ROOM_OF_EIGHT, 3);
+
+        expect(createRoomRoutes(room, 'b').readGapNackRelayHops(toRoomMessage(), ['c', 'r'])).toBe(7);
+    });
+
+    it.each([
+        ['its child', ROOM_OF_EIGHT.filter((peerId) => peerId !== 'c')],
+        ['the peer it forwards to', ROOM_OF_EIGHT.filter((peerId) => peerId !== 'r')]
+    ])('the wire limit when the room\'s presence lags behind %s, though it names the relay and the origin', (_name, sessionIds) => {
+        const room = createOriginSnapshot(sessionIds, 3);
+
+        expect(createRoomRoutes(room, 'b').readGapNackRelayHops(toRoomMessage(), ['c', 'r'])).toBe(AL_GAP_NACK_RELAY_HOP_LIMIT);
+    });
+});
+
+/** The leaf `c`'s route capabilities, over a lane that reads `room` for every message. */
+function createLeafRoutes(room: GroupSnapshot | undefined) {
+    return createRoomRoutes(room, 'c');
+}
+
+/** The route capabilities of the session `selfPeerId`, over a lane that reads `room` for every message. */
+function createRoomRoutes(room: GroupSnapshot | undefined, selfPeerId: string) {
+    const relayRoutes = toRelayRoutes([], []);
+    return createRtcInboundRoutes(
+        {
+            groupCache: relayRoutes.rooms,
+            overlayCache: relayRoutes.acceptedOverlays,
+            connectionService: { input: { sessionId: selfPeerId }, readyPeerIdsForLane: () => [] }
+        },
+        () => ({
+            overlayId: 'room',
+            room,
+            overlay: undefined,
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: OVERLAP_MS, planned: null },
+            connectedPeerIds: [],
+            nowMs: REPLACED_AT_MS
+        })
+    );
+}
+
+/** A message `a` sent in the room `room`. */
+function toRoomMessage() {
+    return newALMulticastMessage({
+        createdAtEpochMs: REPLACED_AT_MS,
+        senderId: 'a',
+        route: { topicId: 'room.feed', resourceId: 'subject', contextId: ORIGIN_ROOM.groupId },
+        groupRef: ORIGIN_ROOM,
+        typeId: 'room.feed.v1',
+        resource: {},
+        options: { ttlMs: 60_000 }
+    });
+}
+
+function toTestNack() {
+    return {
+        msgId: 'subject',
+        fromPeerId: 'c',
+        toPeerId: 'b',
+        logicalRecipientPeerId: 'c',
+        originPeerId: 'a',
+        reason: 'gap',
+        observedAtEpochMs: REPLACED_AT_MS,
+        proof: null
+    } as const;
+}
+
+/** The relay `b` holding `tree` accepted in the room `room`. */
+function toRelayObservation(tree: SessionNextHops, connectedPeerIds: readonly string[]): RtcOutboundObservation {
+    const accepted = toAcceptedLayout(createOriginSnapshot(SESSION_IDS, 3), { tree, version: 2 }, 'b');
+    return {
+        overlayId: 'room',
+        room: accepted.snapshot,
+        overlay: accepted.overlay,
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: OVERLAP_MS, planned: null },
+        connectedPeerIds,
+        nowMs: REPLACED_AT_MS
+    };
+}
+
+/** The leaf `c`, `elapsedMs` after it promoted `BELOW_B` over `BELOW_R`. */
+function toLeafObservation(connectedPeerIds: readonly string[], elapsedMs: number): RtcOutboundObservation {
+    const accepted = toAcceptedLayout(createOriginSnapshot(SESSION_IDS, 3), { tree: BELOW_B, version: 2 }, 'c');
+    return {
+        overlayId: 'room',
+        room: accepted.snapshot,
+        overlay: accepted.overlay,
+        layoutChanges: {
+            transitions: [{
+                replaced: createOriginOverlay(BELOW_R.c!, BELOW_R),
+                replacedBy: accepted.snapshot.group.acceptedLayoutIdentity!,
+                replacedAtEpochMs: REPLACED_AT_MS
+            }],
+            replacedLayoutOverlapMs: OVERLAP_MS,
+            planned: null
+        },
+        connectedPeerIds,
+        nowMs: REPLACED_AT_MS + elapsedMs
+    };
+}
+
+/** The relay `b` holding each `[key, layout]` accepted, each layout in its own room named after its key, whose presence is `sessionIds`. */
+function toRelayRoutes(
+    layouts: readonly (readonly [string, SessionNextHops])[],
+    connectedPeerIds: readonly string[],
+    sessionIds: readonly string[] = SESSION_IDS
+) {
+    const rooms = new LatestRepository<string, GroupSnapshot>();
+    const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
+    onTestFinished(() => {
+        rooms.dispose();
+        acceptedOverlays.dispose();
+    });
+    for (const [key, tree] of layouts) {
+        const groupId = key === 'scoped-room' ? 'room' : key;
+        const snapshot = createOriginSnapshot(sessionIds, 3);
+        const accepted = toAcceptedLayout(
+            { ...snapshot, group: { ...snapshot.group, groupId } },
+            { tree, version: 2 },
+            'b'
+        );
+        rooms.accept(groupId, accepted.snapshot);
+        acceptedOverlays.accept(key, { ...accepted.overlay, overlayId: groupId, groupRef: { ...ORIGIN_ROOM, groupId } });
+    }
+    return { rooms, acceptedOverlays, selfPeerId: 'b', connectedPeerIds };
+}

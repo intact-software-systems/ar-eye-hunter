@@ -96,6 +96,14 @@ normalized `message` of a bridged diagnostic is its topic. This bridge is
 intentionally scoped to known WS/RTC warning patterns so the runtime does not
 turn arbitrary console output into test evidence.
 
+## WS Lifecycle Diagnostics
+
+`rallar.browser.ws.lifecycle` carries one public WS lifecycle event per emission. A `disconnected` event's `reason`
+says why the connection ended: `rallar-disconnect` for the session's own disconnect, and
+`server-clock-ended: <cause>` when the connection's server clock ended it outside any command, with the clock's own
+reason (`Browser page suspension invalidated its server clock.`, `Remote clock observation has expired.` and the
+like). A page that leaves its room with no command and no auth end therefore names the clock as the cause.
+
 ## RTC Lifecycle Diagnostics
 
 `rallar.browser.rtc.lifecycle` carries one RTC lifecycle event per emission. Its
@@ -374,8 +382,7 @@ diagnostics event per emission, recorded the moment the outbound runtime calls
 the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
-- `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
+- `kind`: `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
   `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
   `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `track-index-end`,
   `publication-staging` or `publication-opportunity` (the last two are described under
@@ -392,11 +399,12 @@ every session the page opens. The event's `data` is the event itself:
   storage read cost
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
-  dequeue commits, `repair` for retransmission. It is on all four
-  commit-scoped kinds, so a hold is charged to the work behind it rather than
-  guessed at from a duration
+  dequeue commits, `repair` for retransmission. It is on `commit-phases`, so a
+  slow commit is charged to the work behind it rather than guessed at from a
+  duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
-  `control-admission` (after a receipt's `phase` or a NACK's two fields), `relay-forward-not-enqueued`,
+  `control-admission` (after a receipt's `phase`, or a NACK's fields and any proof refusal),
+  `relay-forward-not-enqueued`,
   `receipt-confirmation`,
   `congestion`, `rtc-ack-submission` and `track-index-end`. `publication-staging` is the one
   message-scoped kind without the pair: it carries the value's `traceId` before
@@ -407,8 +415,7 @@ every session the page opens. The event's `data` is the event itself:
   the browser's send handle name. On `control-admission`,
   `receipt-confirmation` and `rtc-ack-submission` the pair is the control's
   own, and a control travels under the trace of the message it answers. The
-  sender- and batch-scoped kinds (`sender-queue-wait`, the two
-  `browser-lock-*` phases, `effect-drain`, `readiness-probe`,
+  batch-scoped kinds (`effect-drain`, `readiness-probe`,
   `rtc-handoff-refusal` and `rtc-queued-bytes-high-water`) carry neither.
   Because the pair is appended after every other field, a wait that matches
   earlier fields in their emitted order still matches; match the trace itself
@@ -426,24 +433,40 @@ every session the page opens. The event's `data` is the event itself:
     "readOperationCount": 9,
     "commitDurationMs": 2,
     "commitOutcome": "committed",
+    "commitAttemptCount": 1,
     "traceId": "trace-1",
     "corrId": "msg-1"
   }
   ```
-- the phase's own identity fields: `senderId`, `queued` and
-  `queuedBehindOrigin` for `sender-queue-wait`; `senderId`, `lockName` and
-  `available` for the two `browser-lock-*` phases; `workerId`,
-  `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
+- the phase's own identity fields: `workerId`, `claimedCount`, `completedCount`, `rescheduledCount` and `rejectedCount`
   for `effect-drain`
-- `queuedBehindOrigin` is the origin of the commit already at the end of that
-  sender's queue, or `none` when the queue was empty. A drain's own commits
-  re-enter the same per-sender queue, so this says when a send's wait is the
-  batch it caused rather than another send
+- the outbound `effect-drain` also carries three of the inbound one's phases
+  below, `claimDurationMs`, `runDurationMs` and `releaseDurationMs`, and its
+  `startedAtMs`. It has no `selectionDurationMs` or `queueWaitMs`: the outbound
+  owner reserves straight from the queue, so it reads no page and sees no row's
+  due time. Then `claims`, one `{ payloadKind, effectId, expedited, run,
+  durationMs }` for each run of a claim whose row's work decoded, in the order
+  the runs settled. `effectId` is the claimed row's effect. `expedited` is true
+  for a row `expedite()` claimed ahead of the batch's remaining claims (a parked
+  control's replay), and `run` counts that claim's runs in the batch from 1: a
+  replay the batch runs again appears once per run, up to three times, with
+  `run` 2 and 3 for its re-runs, so `claims` can be longer than `claimedCount`
+  by exactly the entries whose `run` exceeds 1. A claim the batch took from its
+  page states `expedited: false` and `run: 1`. `payloadKind` is the
+  effect the row held (`admit-message`, `dequeue-message`, `admit-control`, `send-prepared`,
+  `ack-timeout`, `first-hop-timeout`, `repair-hint` or `nack-retry`) and
+  `durationMs` what running it cost the batch, from the moment the batch awaited
+  it to its settlement. A send whose carrier queued the bytes settles there, so
+  its carrier's later settlement is not in it. The dequeued rows of one selection
+  start together, so each of theirs runs from the group's start. A drain that
+  takes seconds therefore names the claim that took them; `claims` is not an
+  identity, and an `admit-control` among them is the replay of a control a
+  `control-admission` read `pending-control` for
 - `commit-phases` also carries `msgId` and `typeId`, so one message -- an RTC
   offer, say -- can be followed from the commit that admitted it to the drain
   that sent it, and a lane's commits can be counted apart from the rest
-- `commit-phases` splits what `browser-lock-hold` measures as one number:
-  `readDurationMs` and `readOperationCount` for the admission read chain.
+- `commit-phases` splits one commit in two: `readDurationMs` and
+  `readOperationCount` for the admission read chain.
   `readDurationMs` covers the whole decision read (`readOutgoingMessage` plus
   the pending-admission probe and the decision; for a single send also the
   effect rows and the canonical pair its commit fences, read in the same
@@ -454,7 +477,13 @@ every session the page opens. The event's `data` is the event itself:
   are timed but not counted. Then come
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
-  settled before opening one
+  settled before opening one. No queue or lock orders a sender's commits, so a
+  write can lose the sender-version fence to another commit of the sender; the
+  commit then reads, decides and writes again, and `commitAttemptCount` counts
+  the write transactions it opened: one per attempt, at most three, and one more
+  when a send lost every attempt and retained its request (`commitOutcome` is
+  then the retention's). The read fields and `commitDurationMs` sum over every
+  attempt
 - `readOperationCount` counts read **operations**, not transactions: several
   keys read from one storage transaction are several operations. It is also an
   upper bound rather than an exact per-call count, because the commit samples a
@@ -517,9 +546,15 @@ every session the page opens. The event's `data` is the event itself:
   storage-queue regime (`pageRegime`, `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
-  `reason`, for a receipt `phase` (below), and for a NACK `nackReason`, the
-  NACK's own reason, then `nackOrderingKey`, the track key a gap NACK names
-  (absent when the NACK names none): one event for every inbound ACK, NACK,
+  `reason`, for a receipt `phase` (below), and for a NACK, in this order,
+  `nackReason`, the NACK's own reason; `nackOrderingKey`, the track key a gap
+  NACK names (absent when the NACK names none); `nackGapRequestNumber`, which
+  request for its sequences a gap NACK is, 1 for the report an arrival causes
+  and one more for each renewal (present exactly when the NACK carries one, a
+  gap NACK's); `nackLogicalRecipientPeerId`, the recipient the NACK speaks for;
+  and `nackFromPeerId`, the peer that sent it, the recipient itself or the relay
+  that forwarded it (both present on every NACK, and on no other control): one
+  event for every inbound ACK, NACK,
   repair or receipt control the outbound owner decides, recorded when it decides
   it. Every carrier discards that verdict: when captured, the inbound topic's
   `admission-outcome` for the same control reads `not-handled`/`control`
@@ -527,29 +562,41 @@ every session the page opens. The event's `data` is the event itself:
   verdict. `msgId` is the control's own id, the join key when both events are
   present, and `targetMsgId` is the sent message it answers. `outcome` is
   `committed`, `pending-control` (a conflict retained as `admit-control` work,
-  which the outbound drain replays), `rejected`, or `not-handled` (the control's
+  which the outbound drain replays: a batch running when it was retained claims
+  it before its next claim, so it waits behind the claim in flight and no more,
+  and runs it again at once while its replay conflicts, three runs in all),
+  `rejected`, `duplicate` (every issue of
+  the refusal is a repeat: `AL control was already admitted`,
+  `AL acknowledgement confirms a peer the receipt already counted`), or
+  `not-handled` (the control's
   repair authority failed, or a NACK the origin leaves to its hop: the WS
   server's advisory `not-yet-in-sync` NACK on a room send, which the server
   retains and delivers itself once its room meets the floor). `reason` is the
-  rejection's reasons, every issue in the validator's order, joined by a
-  semicolon and a space, or `none` for every other outcome — for an ACK whose
+  refusal's reasons for `rejected` and `duplicate`, every issue in the
+  validator's order, joined by a semicolon and a space, or `none` for every
+  other outcome — for an ACK whose
   receipt is gone it reads
   `AL acknowledgement sender has no pending outbound obligation`, and a
-  duplicate control whose proof is also refused reads its proof refusal
-  (`AL control proof is refused: <kind>`) after
+  duplicate control whose proof is also refused reads `rejected`, its proof
+  refusal (`AL control proof is refused: <kind>`) after
   `AL control was already admitted`, so a wait that matches a proof refusal
   reads `proofRefusal` rather than the reason's start. Its bounded
   dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
-  `targetMsgId` and the free-text `reason` are not. A gap NACK a relay forwarded
-  reads `nackReason: gap` at the origin, like the recipient's own, since it is
-  the recipient's own. A `rejected` control whose receipt proof the origin
+  `nackGapRequestNumber`, the two peer ids, `targetMsgId` and the free-text
+  `reason` are not. A gap NACK a relay forwarded reads `nackReason: gap` at the
+  origin, like the recipient's own, since it is the recipient's own; it reads the
+  relay as `nackFromPeerId`, so a gap request a relay carried is the one whose
+  `nackFromPeerId` differs from its `nackLogicalRecipientPeerId`. A lane wait
+  matches `"nackGapRequestNumber":<n>,"nackLogicalRecipientPeerId":"<peer>"` as
+  one run (`toGapRequestAdmissionWait`), and `"nackReason":"gap","nackOrderingKey":"<key>`
+  still opens a gap NACK's fields. A `rejected` control whose receipt proof the origin
   refused also carries, straight after the NACK's fields, `proofRefusal`
   (`missing-proof`, `unknown-key`, `key-mismatch` or `invalid-signature`),
   `claimedRecipientPeerId` (the recipient the control speaks for) and
   `channelPeerId` (its `fromPeerId`, the peer it arrived from); every other
   event carries none of the three. A control the outbound drain replays reports
   the verdict its replay reaches under the same control id, so a control that
-  read `pending-control` reads again, `committed` or `rejected`, once per replay
+  read `pending-control` reads again, `committed`, `rejected` or `duplicate`, once per replay
   (a replay that conflicts again reads `pending-control` again); a replay past
   the control's deadline reports nothing. The event describes a received control
   decision and rides the page's batched diagnostics. Its presence does not
@@ -846,8 +893,7 @@ publication succeed. The event's `data` is the event itself:
   `status` in `stats.rallar.alm.ordering`.
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
-  touched work, the same five fields the outbound topic reports for its own
-  drains. A batch that claimed and rejected nothing reports nothing: the
+  touched work, five fields the outbound topic's drains also carry. A batch that claimed and rejected nothing reports nothing: the
   inbound rotation runs a batch only for a page its probe can claim from, or for
   a commit, so an empty one is a commit's page with nothing claimable or a port
   that reserved nothing the page cleared, and it says nothing the probe had not

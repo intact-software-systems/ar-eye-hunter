@@ -42,6 +42,7 @@ import { createBrowserMessageSenderFixture } from '../../shared-web/messages/bro
 import {
     createDefaultOutboundTestRuntime,
     holdOutboundClaims,
+    loseOutboundCommitAttempts,
     readOutboundTestAdmission,
     runOutboundWorkTask
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
@@ -429,7 +430,6 @@ it('observes a retained pending admission without storage reads and wakes on the
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
-    const commit = admissionStore.commitBundle.bind(admissionStore);
     vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mockImplementation(async (message) => {
         const competitor = await readOutboundTestAdmission({
             store: admissionStore,
@@ -441,11 +441,8 @@ it('observes a retained pending admission without storage reads and wakes on the
             creationNow: () => Temporal.Now.instant(),
             clock: { nowMs: () => Date.now() }
         });
-        vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
-            expect(await commit(competitor)).toBe('committed');
-            const outcome = await commit(bundle);
-            expect(outcome).toBe('conflict');
-            return outcome;
+        loseOutboundCommitAttempts(admissionStore, async (competing) => {
+            expect(await competing(competitor)).toBe('committed');
         });
         const result = await outbound.enqueueIfAbsent(message);
         carrierAdmission.resolve(result);
@@ -466,6 +463,14 @@ it('observes a retained pending admission without storage reads and wakes on the
             await Promise.allSettled([sending]);
         }
     });
+    // The last of its attempts waits the commit retry's jittered pause, at most 15 ms of the fake clock.
+    let carrierAdmitted = false;
+    void carrierAdmission.promise.then(() => {
+        carrierAdmitted = true;
+    });
+    while (!carrierAdmitted) {
+        await vi.advanceTimersByTimeAsync(1);
+    }
     const admission = await carrierAdmission.promise;
     expect(admission.verdict).toEqual({ kind: 'pending' });
     await vi.advanceTimersByTimeAsync(0);

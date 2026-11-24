@@ -70,6 +70,8 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         });
         await store.commitBundle({
             senderId: 'self',
+            fencesSender: true,
+            message: { originPeerId: 'self', msgId: 'malformed', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [],
             durableEffects: ['malformed', 'valid'].map((msgId) => ({
                 effectId: msgId,

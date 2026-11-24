@@ -42,7 +42,7 @@ it('counts each congestion decision the page relays, by action, across both carr
     emitOutbound(toCongestion('hand-over'));
     emitOutbound(toCongestion('defer'));
     emitOutbound(toCongestion('defer', 'ws'));
-    emitOutbound({ kind: 'sender-queue-wait', senderId: 'sender-1', origin: 'send', queued: false, queuedBehindOrigin: 'none', durationMs: 0 });
+    emitOutbound({ kind: 'readiness-probe', lane: 'durable', workerId: 'worker-1', cause: 'no-memory', readyAtMs: 'none', durationMs: 0 });
 
     await expect(runtime.readCongestionCounters()).resolves.toEqual({
         dropped: 1,

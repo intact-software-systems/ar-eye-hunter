@@ -162,7 +162,9 @@ const CARRIER_SCENARIO_IDS = {
         'granted-rtc-list-lane-roles',
         'receipted-relay-path',
         'granted-rtc-relay-only',
-        'granted-rtc-ordered-relay'
+        'granted-rtc-ordered-relay',
+        'relayed-gap-renewal',
+        'relayed-unreceipted-gap-renewal'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',

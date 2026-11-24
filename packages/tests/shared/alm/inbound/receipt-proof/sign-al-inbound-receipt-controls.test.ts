@@ -86,6 +86,7 @@ describe('signALInboundReceiptControls', () => {
             bundle,
             namespace: NAMESPACE,
             receiptProofs: { kind: 'carrier-authenticated' },
+            signFailure: 'leave-out',
             diagnostics: undefined
         });
 
@@ -102,6 +103,7 @@ describe('signALInboundReceiptControls', () => {
             bundle,
             namespace: NAMESPACE,
             receiptProofs: SIGNED,
+            signFailure: 'leave-out',
             diagnostics: undefined
         });
 
@@ -136,6 +138,7 @@ describe('signALInboundReceiptControls', () => {
             bundle,
             namespace: NAMESPACE,
             receiptProofs: { kind: 'signed', signer: REFUSING_SIGNER },
+            signFailure: 'leave-out',
             diagnostics: (event) => events.push(event)
         });
 
@@ -150,6 +153,23 @@ describe('signALInboundReceiptControls', () => {
         }]);
         expect(validateALInboundCommitBundle(signed, NAMESPACE).right).toBeDefined();
         expect(signed.mutations).toEqual(bundle.mutations);
+    });
+
+    it('sends a control whose sign failed unsigned under `send-unsigned`, still writing its receipt-sign diagnostic (ruling 19)', async () => {
+        const bundle = await readMarkedAdmission('refused-unreceipted');
+        const events: ALInboundRuntimeDiagnosticsEvent[] = [];
+
+        const signed = await signALInboundReceiptControls({
+            bundle,
+            namespace: NAMESPACE,
+            receiptProofs: { kind: 'signed', signer: REFUSING_SIGNER },
+            signFailure: 'send-unsigned',
+            diagnostics: (event) => events.push(event)
+        });
+
+        expect(signed.durableEffects).toEqual(bundle.durableEffects);
+        expect(events.map((event) => event.kind)).toEqual(['receipt-sign']);
+        expect(validateALInboundCommitBundle(signed, NAMESPACE).right).toBeDefined();
     });
 });
 

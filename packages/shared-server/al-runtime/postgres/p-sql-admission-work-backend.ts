@@ -2,11 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
-import {
-    assertALAdmissionFence,
-    type ALAdmissionReadSession,
-    type ALAdmissionWorkBackend,
-    type ALAdmissionWorkWriteContext
+import type {
+    ALAdmissionReadSession,
+    ALAdmissionWorkBackend,
+    ALAdmissionWorkWriteContext
 } from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { requireLivePersistenceWrite } from '@shared/persistence/persistence-write-deadline.ts';
@@ -157,9 +156,9 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 }
 
-/** A commit's state rows and the work rows it holds, inserts and replaces, all computed before it begins. */
+/** A commit's state statements and the work rows it holds, inserts and replaces, all computed before it begins. */
 interface PSqlAdmissionCommit {
-    readonly state: PSqlAdmissionStateWrite | undefined;
+    readonly state: readonly PSqlAdmissionStateWrite[];
     readonly holds: readonly ResourceInboxObservation[];
     readonly inserts: readonly ResourceInboxEntryInsertValues[];
     readonly replacements: readonly ResourceInboxObservedReplacement[];
@@ -177,7 +176,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     private readonly workObservations = new Map<string, ResourceEntry | undefined>();
     private readonly claimedSlots = new Map<string, ResourceEntry>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
-    private fenceKey: string | undefined;
+    private readonly fenceKeys = new Set<string>();
 
     constructor(input: PSqlAdmissionWorkWriteBuffer.Input) {
         super(input.collector);
@@ -217,8 +216,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     }
 
     async setFence<V>(key: string, value: V, expireAtTimestamp?: number): Promise<void> {
-        assertALAdmissionFence(this.fenceKey, key);
-        this.fenceKey = key;
+        this.fenceKeys.add(key);
         await this.set(key, value, expireAtTimestamp);
     }
 
@@ -229,7 +227,7 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
             expected: this.workObservations.get(key)
         }));
         return {
-            state: this.computeStateWrite(this.fenceKey),
+            state: this.computeStateWrites(this.fenceKeys),
             holds: [...this.claimedSlots]
                 .filter(([key]) => !this.pendingWork.has(key))
                 .map(([, claimed]) => computeResourceInboxObservation(claimed)),
@@ -244,20 +242,22 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
 }
 
 function hasPSqlAdmissionWrites(computed: PSqlAdmissionCommit): boolean {
-    return computed.state !== undefined || computed.inserts.length > 0 || computed.replacements.length > 0;
+    return computed.state.length > 0 || computed.inserts.length > 0 || computed.replacements.length > 0;
 }
 
 /**
- * The state rows first, their fence before every other row, then one statement for every held claim and one for
- * every new work row; a row that moved since its observation rolls the commit back as a conflict.
+ * The state statements first, each fence a conditional write in key order before every other row, then one statement
+ * for every held claim and one for every new work row; a row that moved since its observation rolls the commit back as
+ * a conflict. No row is locked but by the conditional writes themselves.
  */
 async function writePSqlAdmissionCommit(
     sql: PSqlSql,
     computed: PSqlAdmissionCommit,
     now: () => Date
 ): Promise<void> {
-    if (computed.state !== undefined) {
-        await writePSqlAdmissionState(createTransactionBoundPSqlRuntimeStateRepository(sql), computed.state);
+    const repository = createTransactionBoundPSqlRuntimeStateRepository(sql);
+    for (const state of computed.state) {
+        await writePSqlAdmissionState(repository, state);
     }
     const work = new PSqlResourceInboxEntryRepository(sql, now);
     if (

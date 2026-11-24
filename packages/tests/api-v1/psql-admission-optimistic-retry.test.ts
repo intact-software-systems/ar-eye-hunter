@@ -30,10 +30,12 @@ import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outboun
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { decodeALOutboundWorkEntry, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { AL_OUTBOUND_COMMIT_ATTEMPTS } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 const AUTHENTICATED_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -182,6 +184,8 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
+            message: { originPeerId: 'self', msgId: 'outbound-conflict', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'outbound-conflict',
@@ -244,6 +248,8 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
+            fencesSender: true,
+            message: { originPeerId: 'self', msgId: 'outbound-error', expectedVersion: undefined, expiresAtMs: undefined },
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'outbound-error',
@@ -267,16 +273,21 @@ describe('PSql admission optimistic retry', () => {
         const runtime = createOutboxOnlyTestRuntime(stores);
         await runtime.ready();
         const commit = store.commitBundle.bind(store);
-        vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (candidate) => {
-            expect(candidate.expectedVersion).toBeUndefined();
-            await repository.upsert(
-                {
-                    namespace: store.namespace,
-                    key: `${store.namespace}:version:self`,
-                    value: JSON.stringify({ senderId: 'self', version: 1 }),
-                    expireAtTimestamp: Date.now() + 60_000
-                }
-            );
+        let attempts = 0;
+        // Another commit of the sender moves its version after each attempt's read, so every attempt loses the fence.
+        vi.spyOn(store, 'commitBundle').mockImplementation(async (candidate) => {
+            if (attempts < AL_OUTBOUND_COMMIT_ATTEMPTS) {
+                expect(candidate.expectedVersion).toBe(attempts === 0 ? undefined : attempts);
+                attempts += 1;
+                await repository.upsert(
+                    {
+                        namespace: store.namespace,
+                        key: `${store.namespace}:version:self`,
+                        value: JSON.stringify({ senderId: 'self', version: attempts }),
+                        expireAtTimestamp: Date.now() + 60_000
+                    }
+                );
+            }
             return await commit(candidate);
         });
         const retain = store.retainPendingAdmission.bind(store);
@@ -328,6 +339,10 @@ function createInboundTestRuntime(
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

@@ -46,7 +46,7 @@ const RECEIPTED_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('Postgres outbound message end', () => {
-    postgresIt('marks the row, ends the receipt and its timer, fences a decision taken before it, and refuses the next repair', async () => {
+    postgresIt('marks the row, keeps the receipt row, ends its timer, fences a decision taken before it, and refuses the next repair', async () => {
         const store = await createStore();
         const message = createOutboundMessage('ending');
         expect(
@@ -69,7 +69,8 @@ describe('Postgres outbound message end', () => {
             .toBe('committed');
 
         expect((await store.readStoredMessage(message.id.msgId))?.ended).toBe(true);
-        expect(await store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
+        expect(read.pendingAck).toBeDefined();
+        expect(await store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toEqual(read.pendingAck);
         expect((await store.readWork(timeoutKey))?.status).toBe(EntityStatus.COMPLETED);
         expect(await store.commitBundle(decidedBeforeTheEnd.bundle!)).toBe('conflict');
         expect((await decideRepair(store, message)).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });

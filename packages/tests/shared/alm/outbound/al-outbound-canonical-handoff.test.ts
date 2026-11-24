@@ -36,6 +36,7 @@ import {
     createRecordingOutboundTestRuntime,
     createVolatileOutboundTestStores,
     holdOutboundClaims,
+    loseOutboundCommitAttempts,
     OUTBOUND_TEST_SEND_PLANNER,
     readOutboundTestAdmission,
     runOutboundWorkTask
@@ -256,23 +257,9 @@ describe('the committed canonical message handed to dispatch', () => {
     it('sends the stored canonical message when its lane replays a retained pending admission', async () => {
         const { stores } = openHandoffTestPair(`handoff-replay-${crypto.randomUUID()}`);
         const store = stores.admissionStore;
-        const competitor = await readOutboundTestAdmission({
-            store: store,
-            message: createOutboundMessage('competing-sender-version'),
-            creationNow: () => Temporal.Now.instant(),
-            clock: { nowMs: () => Date.now() }
-        });
-        const commit = store.commitBundle.bind(store);
-        let first = true;
-        // A competing commit wins the sender version inside the first commit, so the send below is
+        // A competing commit wins the sender version inside each of its commit attempts, so the send below is
         // retained as a pending admission and replayed by the lane's own work.
-        vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
-            if (first) {
-                first = false;
-                expect(await commit(competitor)).toBe('committed');
-            }
-            return await commit(bundle);
-        });
+        loseOutboundCommitAttempts(store);
         const engine = new InboxOutboxEngine();
         const sent: ALMessage[] = [];
         const runtime = createDefaultOutboundTestRuntime({

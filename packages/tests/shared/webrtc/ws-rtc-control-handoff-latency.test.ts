@@ -15,6 +15,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import {
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -336,6 +337,7 @@ class RtcControlHandoffFixture {
             orderingObserver: 'addressed',
             diagnostics: undefined,
             ...resources,
+            readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
             planIncomingMessage,
             workPort: createTestALInboundWorkPort({
                 carrier: 'ws',

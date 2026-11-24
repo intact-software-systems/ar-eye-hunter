@@ -15,7 +15,6 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { toALOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -47,7 +46,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
-import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { writeALOutboundRelayForwardDiagnostic } from '../alm/outbound/lane/write-al-outbound-relay-forward-diagnostic.ts';
 import { toProofPreservingALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
@@ -108,8 +107,10 @@ import {
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
-import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
+import { createRtcRecipientAuthentication } from './receipt-proof/create-rtc-recipient-authentication.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
+import { createRtcInboundRoutes, toRtcAcceptedOverlayAdjacency } from './resolve-rtc-upstream-peer-id.ts';
+import type { RtcInboundRoutes } from './resolve-rtc-upstream-peer-id.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
@@ -286,13 +287,11 @@ export class WebRtcOverlayMulticastManager {
             {
                 ...dependencies.outboundRuntime,
                 carrier: 'rtc',
-                recipientAuthentication: {
-                    kind: 'signature',
-                    verifier: new RtcReceiptProofVerifier({
-                        crypto: dependencies.publicationCrypto,
-                        nowEpochMs: () => this.clock.nowMs()
-                    })
-                },
+                recipientAuthentication: createRtcRecipientAuthentication({
+                    crypto: dependencies.publicationCrypto,
+                    groupCache: dependencies.groupCache,
+                    nowEpochMs: () => this.clock.nowMs()
+                }),
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
@@ -585,6 +584,11 @@ export class WebRtcOverlayMulticastManager {
         const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
         return snapshot !== undefined && isSessionInGroup(snapshot, peerId) &&
             this.connectionService.readyPeerIdsForLane().includes(peerId);
+    }
+
+    /** The inbound runtime's route capabilities over this lane's layouts (6d). */
+    toInboundRoutes(): RtcInboundRoutes {
+        return createRtcInboundRoutes(this, (msg) => this.readOutboundObservation(msg));
     }
 
     private planForwarding(
@@ -1245,10 +1249,7 @@ export class WebRtcOverlayMulticastManager {
                 msg,
                 request,
                 selfPeerId,
-                adjacency: toALOverlayAdjacency(
-                    selfPeerId,
-                    toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
-                ),
+                adjacency: toRtcAcceptedOverlayAdjacency(this.readOutboundObservation(msg), selfPeerId),
                 planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan'),
                 isRepairTargetAdmitted
             });

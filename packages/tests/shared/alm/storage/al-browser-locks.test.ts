@@ -6,10 +6,7 @@ import {
     vi
 } from 'vitest';
 
-import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { readALBrowserLocks, toALOutboundCommitLockName } from '@shared/alm/storage/al-browser-locks.ts';
-
-import { decodeOutboundTestPayload } from '../outbound-test-payload.ts';
+import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -27,18 +24,5 @@ describe('ALBrowserLocks', () => {
         vi.stubGlobal('navigator', {});
 
         expect(readALBrowserLocks()).toBeUndefined();
-    });
-
-    it('names the commit lock by its sender', () => {
-        expect(toALOutboundCommitLockName('self')).toBe('rallar:al-outbound-commit:self');
-    });
-
-    it('hands the default outbound resources the browser lock manager', () => {
-        const locks = { request: vi.fn() };
-        vi.stubGlobal('navigator', { locks });
-
-        const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeOutboundTestPayload });
-
-        expect(resources.browserLocks).toBe(locks);
     });
 });

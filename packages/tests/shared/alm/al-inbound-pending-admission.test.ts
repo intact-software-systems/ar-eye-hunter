@@ -40,6 +40,7 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const PENDING_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
@@ -1007,6 +1008,10 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
 
 function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessage[], controls: ALMessage[]): ALInboundMessageRuntime.Dependencies {
     return {
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',

@@ -137,8 +137,27 @@ function createBufferedSnapshot(): ALStoredInboundBufferedSnapshot {
         message: toMessageReference(message),
         plan: planMessage(message),
         carrier: 'ws' as const,
+        copyCarriers: [{ carrier: 'ws' as const, ackToPeerId: message.id.senderId }],
         completesThrough: 2
     };
+}
+
+/** The release read of a buffered slot stored as `slot` at seq 2, beside its message and owner rows. */
+async function readStoredBufferedSlot(slot: object) {
+    const { backend, store } = createFixture();
+    const trackKey = toALOrderingTrackKey(message)!;
+    await backend.write(async (transaction) => {
+        await writeCanonicalMessage(transaction);
+        await transaction.set(`inbound:delivered:${trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+        await transaction.set(`inbound:buffered:${trackKey}:2`, slot);
+        await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+            msgId: message.id.msgId,
+            senderId: message.id.senderId,
+            source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
+            supersedenceKey: null
+        });
+    });
+    return store.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() });
 }
 
 function toMessageReference(candidate: ALMessage): ALInboundMessageReference {
@@ -466,6 +485,35 @@ describe('inbound admission persisted values', () => {
         await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
+    // A slot the previous build wrote carries no `copyCarriers`: it is refused as corrupt, with no fallback.
+    it.each([
+        { shape: 'names no copy carriers', copyCarriers: undefined },
+        {
+            shape: 'names another carrier than its own first',
+            copyCarriers: [{ carrier: 'rtc', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: message.id.senderId }]
+        },
+        {
+            shape: 'names its own pair twice',
+            copyCarriers: [{ carrier: 'ws', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: message.id.senderId }]
+        }
+    ])('refuses a stored buffered slot that $shape, and reads the same slot back once it names its own', async ({ copyCarriers }) => {
+        const snapshot = createBufferedSnapshot();
+        const { copyCarriers: recorded, ...withoutCopyCarriers } = snapshot;
+
+        const stored = copyCarriers === undefined ? withoutCopyCarriers : { ...withoutCopyCarriers, copyCarriers };
+
+        await expect(readStoredBufferedSlot(stored)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect((await readStoredBufferedSlot(snapshot))?.snapshot.copyCarriers).toEqual(recorded);
+    });
+
+    // A reshape gives the slot a second parent on its own carrier, which the release answers too.
+    it('reads back a stored buffered slot that names a second peer on its own carrier', async () => {
+        const copyCarriers = [{ carrier: 'ws', ackToPeerId: message.id.senderId }, { carrier: 'ws', ackToPeerId: 'relay' }];
+
+        expect((await readStoredBufferedSlot({ ...createBufferedSnapshot(), copyCarriers }))?.snapshot.copyCarriers)
+            .toEqual(copyCarriers);
+    });
+
     it('rejects malformed nested plans in direct buffered reads', async () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
@@ -586,6 +634,7 @@ describe('inbound admission persisted values', () => {
                     message: reference,
                     plan: planMessage(copy),
                     carrier: 'ws',
+                    copyCarriers: [{ carrier: 'ws', ackToPeerId: copy.id.senderId }],
                     completesThrough: copy.ordering.seq
                 }, retainUntilMs);
             }

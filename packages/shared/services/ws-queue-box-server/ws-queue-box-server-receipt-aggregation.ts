@@ -18,6 +18,7 @@ import {
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALOwnWord } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../alm/delivery/is-al-recipient-confirmation-ack.ts';
@@ -27,7 +28,7 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { isALOutboundReceiptComplete } from '../../alm/outbound/transition-al-outbound-pending-ack.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -77,6 +78,11 @@ interface WsQueueBoxServerReceiptCountObservation {
     readonly outcome: 'rejected' | 'partial' | 'complete';
 }
 
+interface WsQueueBoxServerReplayedRecipients {
+    readonly recipientPeerIds: readonly string[];
+    readonly neverSentRecipientPeerIds: readonly string[];
+}
+
 interface WsQueueBoxServerReceiptAckValidationContext {
     readonly nowMs: number;
     readonly serverPeerId: string;
@@ -95,7 +101,8 @@ export namespace WsQueueBoxServerReceiptAggregation {
         | 'outside-frozen-audience'
         | 'already-confirmed'
         | 'already-outside'
-        | 'deadline-expired';
+        | 'deadline-expired'
+        | 'never-sent';
 
     export interface AckValidationIssue {
         readonly code: AckGuard;
@@ -118,6 +125,8 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly expectedRecipientPeerIds: readonly string[];
         readonly snapshotVersion: number;
         readonly deadlineAtMs: number;
+        /** Expected recipients this server never sent the message: their own ACK cannot count. */
+        readonly neverSentRecipientPeerIds: readonly string[];
     }
 
     export interface Dependencies {
@@ -151,6 +160,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly originPeerId: string;
         readonly roomAudience: WsServerRoomAudience | undefined;
         readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
+        readonly neverSentRecipientPeerIds: readonly string[];
     }
 
     export interface CountedAck {
@@ -447,7 +457,7 @@ export class WsQueueBoxServerReceiptAggregation {
         admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
         roomAudience: WsServerRoomAudience
     ): WsQueueBoxServerReceiptAggregation.Admission | undefined {
-        const { message, originPeerId } = admitted;
+        const { message, originPeerId, neverSentRecipientPeerIds } = admitted;
         const { serverPeerId, qosProvider, clock } = this.#dependencies;
         const qos = resolveALQosNormalizationInput(
             message,
@@ -466,7 +476,8 @@ export class WsQueueBoxServerReceiptAggregation {
             deadlineAtMs: Math.min(
                 resolveALMessageExpireAtMs(message, effective) ?? clock.nowMs() + effective.ack.opts.timeoutMs,
                 clock.nowMs() + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS
-            )
+            ),
+            neverSentRecipientPeerIds
         };
     }
 
@@ -568,7 +579,8 @@ export class WsQueueBoxServerReceiptAggregation {
  * A kept WS client send its replay admitted, as the admission that starts its receipt; none when its source is
  * not a `ws-client`, when it captured no room audience, or when it carries no snapshot version. The receipt expects
  * the audience the replay's authority answered with, unless that authority left it nobody to expect while the
- * audience captured at ingress had someone: then it expects the captured audience.
+ * audience captured at ingress had someone: then it expects the captured audience, and records it never sent, since
+ * the replay sends it nothing.
  */
 export function toWsQueueBoxServerReplayedAdmittedMessage(
     replayed: ALInboundMessageRuntime.ReplayedAdmission
@@ -577,29 +589,32 @@ export function toWsQueueBoxServerReplayedAdmittedMessage(
     if (source.kind !== 'ws-client' || source.groupRecipientPeerIds === undefined || snapshotVersion === undefined) {
         return undefined;
     }
+    const { recipientPeerIds, neverSentRecipientPeerIds } = resolveReplayedRecipients(
+        replayed,
+        source.groupRecipientPeerIds
+    );
     return {
         message: replayed.msg,
         originPeerId: source.peerId,
-        roomAudience: {
-            recipientPeerIds: resolveReplayedRecipientPeerIds(replayed, source.groupRecipientPeerIds),
-            snapshotVersion
-        },
-        acceptance: { kind: 'admitted' }
+        roomAudience: { recipientPeerIds, snapshotVersion },
+        acceptance: { kind: 'admitted' },
+        neverSentRecipientPeerIds
     };
 }
 
-function resolveReplayedRecipientPeerIds(
+function resolveReplayedRecipients(
     { msg, pendingSource }: ALInboundMessageRuntime.ReplayedAdmission,
     replayedRecipientPeerIds: readonly string[]
-): readonly string[] {
+): WsQueueBoxServerReplayedRecipients {
+    const replayed = { recipientPeerIds: replayedRecipientPeerIds, neverSentRecipientPeerIds: [] };
     if (pendingSource.kind !== 'ws-client' || pendingSource.groupRecipientPeerIds === undefined) {
-        return replayedRecipientPeerIds;
+        return replayed;
     }
     const { peerId: originPeerId, groupRecipientPeerIds: captured } = pendingSource;
-    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 &&
-            toFrozenAudience(msg, originPeerId, captured).length > 0
-        ? captured
-        : replayedRecipientPeerIds;
+    const capturedFrozen = toFrozenAudience(msg, originPeerId, captured);
+    return toFrozenAudience(msg, originPeerId, replayedRecipientPeerIds).length === 0 && capturedFrozen.length > 0
+        ? { recipientPeerIds: captured, neverSentRecipientPeerIds: capturedFrozen }
+        : replayed;
 }
 
 /**
@@ -635,7 +650,7 @@ function validateWsQueueBoxServerReceiptAck(
             message: 'AL acknowledgement is not addressed to the origin it names'
         });
     }
-    if (ack.fromPeerId !== ack.logicalRecipientPeerId && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
+    if (!isALOwnWord(ack) && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
         issues.push({
             code: 'sender-recipient-mismatch',
             message: 'AL acknowledgement speaks for another recipient than its sender'
@@ -661,6 +676,15 @@ function validateWsQueueBoxServerReceiptAck(
     }
     if (aggregate.deadlineAtMs <= nowMs) {
         issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
+    }
+    if (
+        aggregate.neverSentRecipientPeerIds.includes(ack.logicalRecipientPeerId) &&
+        !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)
+    ) {
+        issues.push({
+            code: 'never-sent',
+            message: 'AL acknowledgement comes from a recipient this server never sent the message'
+        });
     }
     return issues;
 }

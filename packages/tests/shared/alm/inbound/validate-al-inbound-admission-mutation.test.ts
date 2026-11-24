@@ -194,7 +194,15 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
         const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
         const slot: ALInboundAdmissionMutation = {
             kind: 'set-buffered',
-            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc', completesThrough: 9 },
+            snapshot: {
+                trackKey,
+                seq: 9,
+                msg,
+                plan,
+                carrier: 'rtc',
+                copyCarriers: [{ carrier: 'rtc', ackToPeerId: msg.id.senderId }],
+                completesThrough: 9
+            },
             expireAtTimestamp: 1_000
         };
 
@@ -215,7 +223,15 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
         const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
         const toSlot = (completesThrough: number): ALInboundAdmissionMutation => ({
             kind: 'set-buffered',
-            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc', completesThrough },
+            snapshot: {
+                trackKey,
+                seq: 9,
+                msg,
+                plan,
+                carrier: 'rtc',
+                copyCarriers: [{ carrier: 'rtc', ackToPeerId: msg.id.senderId }],
+                completesThrough
+            },
             expireAtTimestamp: 1_000
         });
 
@@ -249,7 +265,16 @@ describe('validateALInboundAdmissionMutation delivery progress', () => {
                 mutations: [completion, { kind: 'delete-buffered', trackKey, seq: 3 }],
                 observations: {
                     ...bundle.observations,
-                    buffered: { trackKey, seq: 3, msg, plan, carrier: 'rtc', completesThrough: 4, ownerRetainUntilMs: 1_000 },
+                    buffered: {
+                        trackKey,
+                        seq: 3,
+                        msg,
+                        plan,
+                        carrier: 'rtc',
+                        copyCarriers: [{ carrier: 'rtc', ackToPeerId: msg.id.senderId }],
+                        completesThrough: 4,
+                        ownerRetainUntilMs: 1_000
+                    },
                     deliveryProgress: { trackKey, value: { completedThrough: 0, expireAtTimestamp: 1_000 } }
                 }
             }];

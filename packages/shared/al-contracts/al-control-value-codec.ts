@@ -11,7 +11,7 @@ import type {
     ALRepairPayload,
     ALRepairReason
 } from './al-control.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
+import { AL_GAP_NACK_RELAY_HOP_LIMIT, AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 import { decodeALSeqRanges } from './al-seq-range.ts';
 
@@ -92,7 +92,7 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             'observedAtEpochMs',
             'proof'
         ],
-        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber', 'serverSnapshotVersion']
+        ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber', 'relayHopsLeft', 'serverSnapshotVersion']
     );
     const reason = decodeNackReason(record.reason);
     return {
@@ -106,9 +106,17 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
-        ...decodeGapRequestNumber(record, reason === 'gap', {
+        ...decodeGapOnlyNumber(record, reason === 'gap', {
+            key: 'gapRequestNumber',
             misplaced: 'NACK gap request number is required on a gap and refused on any other reason',
-            label: 'NACK gap request number'
+            label: 'NACK gap request number',
+            range: GAP_REQUEST_NUMBER_RANGE
+        }),
+        ...decodeGapOnlyNumber(record, reason === 'gap', {
+            key: 'relayHopsLeft',
+            misplaced: 'NACK relay hop count is required on a gap and refused on any other reason',
+            label: 'NACK relay hop count',
+            range: { minimum: 0, maximum: AL_GAP_NACK_RELAY_HOP_LIMIT }
         }),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
         proof: decodeControlProof(record.proof)
@@ -134,9 +142,11 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
         ...decodeOptionalIdentifier(record, 'orderingKey', 'repair ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'repair expected sequence'),
         ...missingRanges,
-        ...decodeGapRequestNumber(record, reason === 'missing-seq', {
+        ...decodeGapOnlyNumber(record, reason === 'missing-seq', {
+            key: 'gapRequestNumber',
             misplaced: 'Repair gap request number is required on a missing-seq request and refused on any other reason',
-            label: 'Repair gap request number'
+            label: 'Repair gap request number',
+            range: GAP_REQUEST_NUMBER_RANGE
         })
     };
 }
@@ -323,29 +333,34 @@ export function toALGapRequestNumberField(
     return gapRequestNumber === undefined ? {} : { gapRequestNumber };
 }
 
-interface GapRequestNumberRefusals {
+/** A number a control carries exactly when its reason names a gap, and the refusals that name it. */
+interface GapOnlyNumberRule {
+    readonly key: 'gapRequestNumber' | 'relayHopsLeft';
     readonly misplaced: string;
     /** The number's name in its `<label> is invalid` refusal. */
     readonly label: string;
+    readonly range: Readonly<{ minimum: number; maximum: number; }>;
 }
 
-/** Present exactly when the control's reason names a gap; a safe integer of at least 1. */
-function decodeGapRequestNumber(
-    record: ControlRecord,
-    namesGap: boolean,
-    refusals: GapRequestNumberRefusals
-): Readonly<{ gapRequestNumber?: number; }> {
-    if (Object.hasOwn(record, 'gapRequestNumber') !== namesGap) {
-        throw new TypeError(refusals.misplaced);
+/** A request number is a safe integer of at least 1. */
+const GAP_REQUEST_NUMBER_RANGE = { minimum: 1, maximum: Number.MAX_SAFE_INTEGER } as const;
+
+/** The gap-only numbers a NACK and a repair request carry, each named by its own field. */
+type GapOnlyNumberField = Readonly<Partial<Pick<ALNackPayload, GapOnlyNumberRule['key']>>>;
+
+/** Present exactly when the control's reason names a gap; a safe integer within the rule's range. */
+function decodeGapOnlyNumber(record: ControlRecord, namesGap: boolean, rule: GapOnlyNumberRule): GapOnlyNumberField {
+    if (Object.hasOwn(record, rule.key) !== namesGap) {
+        throw new TypeError(rule.misplaced);
     }
     if (!namesGap) {
         return {};
     }
-    const value = decodeControlNumber(record.gapRequestNumber, refusals.label);
-    if (value < 1) {
-        throw new TypeError(`${refusals.label} is invalid`);
+    const value = decodeControlNumber(record[rule.key], rule.label);
+    if (value < rule.range.minimum || value > rule.range.maximum) {
+        throw new TypeError(`${rule.label} is invalid`);
     }
-    return { gapRequestNumber: value };
+    return { [rule.key]: value };
 }
 
 function decodeOptionalSeqRanges(

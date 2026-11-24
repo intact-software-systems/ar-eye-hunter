@@ -70,7 +70,9 @@ describe('ALM run on an agent per role', () => {
                 'leader-confirms',
                 'no-leader-refused',
                 'claim-refused-on-rtc',
-                'receipted-relay-path'
+                'receipted-relay-path',
+                'relayed-gap-renewal',
+                'relayed-unreceipted-gap-renewal'
             ],
             'rtc-with-ws-fallback': [
                 'paced-isolation-lists',

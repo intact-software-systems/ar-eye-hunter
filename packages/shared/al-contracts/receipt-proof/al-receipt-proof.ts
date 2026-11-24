@@ -44,6 +44,7 @@ export const AL_RECEIPT_PROOF_FIELD_CLASSES = {
         serverSnapshotVersion: 'signed',
         fromPeerId: 'excluded',
         toPeerId: 'excluded',
+        relayHopsLeft: 'excluded',
         proof: 'excluded'
     } satisfies Record<keyof ALNackPayload, SignedFieldClass>
 } as const;
@@ -94,9 +95,11 @@ export function toALReceiptProofSigningInput(control: ALReceiptControl): string 
         ]);
 }
 
-/** Whether one proof that verifies for `left` verifies for `right`: one control type over the same signing input. */
-export function isALSameReceiptProofContent(left: ALReceiptControl, right: ALReceiptControl): boolean {
-    return left.type === right.type && toALReceiptProofSigningInput(left) === toALReceiptProofSigningInput(right);
+/** A control its recipient sent on its own channel: the one kind a relay heard from the recipient itself. */
+export function isALOwnWord(
+    control: Pick<ALAckPayload | ALNackPayload, 'fromPeerId' | 'logicalRecipientPeerId'>
+): boolean {
+    return control.fromPeerId === control.logicalRecipientPeerId;
 }
 
 /** The refusal of a control, naming the recipient it speaks for and the peer it arrived from. */

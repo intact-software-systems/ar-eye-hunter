@@ -12,6 +12,7 @@ import type {
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarWaitForOpenOptions, RallarWaitForOpenStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarConnectionEnd } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -40,7 +41,7 @@ export interface RallarWsController {
     attach(ctx?: ApiMiddleware): void;
     connected(): void;
     detach(ctx?: ApiMiddleware): void;
-    disconnected(): void;
+    disconnected(end: RallarConnectionEnd): void;
 }
 
 export namespace BrowserRallarWsController {
@@ -113,10 +114,10 @@ export class BrowserRallarWsController implements RallarWsController {
         this.unregisterWsStatusCallbacks(ctx);
     }
 
-    disconnected(): void {
+    disconnected(end: RallarConnectionEnd): void {
         this.emitWsLifecycle('disconnected', {
             code: 1000,
-            reason: 'rallar-disconnect',
+            reason: end.kind === 'disconnect' ? 'rallar-disconnect' : `server-clock-ended: ${end.reason}`,
             intentional: true
         });
     }

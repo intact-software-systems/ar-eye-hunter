@@ -26,7 +26,7 @@ describe('Rallar lifecycle coordinator', () => {
         lifecycle.attach(middleware);
         lifecycle.connected();
         lifecycle.detach(middleware);
-        lifecycle.disconnected();
+        lifecycle.disconnected({ kind: 'disconnect' });
 
         expect(events).toEqual([
             'attach:state',

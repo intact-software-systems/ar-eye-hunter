@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALCountedRecipient } from '@shared/alm/delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -21,12 +22,18 @@ import {
     ORIGIN_ROOM,
     signRoomNackPayload,
     toOriginDirectedSnapshot,
+    useFakeClock,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
 import { createRelayChain, deliverEach, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
-import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import {
+    signTestALReceiptControl,
+    toTestALAckPayload,
+    toTestALNackPayload,
+    toTestSignatureProof
+} from '../../../al-control-test-payloads.ts';
 import {
     acceptEach,
     readProofRefusals,
@@ -295,15 +302,33 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect(receipt?.ackedPeerIds).not.toContain('c');
     });
 
-    it('Limit: under hop, a next hop\'s unsigned not-subscribed NACK that names another next hop moves it outside', async () => {
+    it.each(['hop', 'subtree'] as const)(
+        'under %s, a next hop\'s unsigned not-subscribed NACK that names another next hop is refused and moves nobody outside',
+        async (algo) => {
+            const { origin } = await createStarOrigin();
+            const message = { ...createOriginReceiverMulticast(`hop-nack-other-${algo}`), qos: { ack: { algo } } } as const;
+            expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+            const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
+
+            expect(await origin.manager.acceptControlMessage(toControlMessage(nack, algo))).toEqual({
+                kind: 'rejected',
+                reason: expect.stringContaining('speaks for another recipient under a hop receipt')
+            });
+
+            const receipt = await readReceipt(origin, message);
+            expect(receipt?.outsideAudiencePeerIds).toEqual([]);
+            expect(receipt?.expectedPeerIds).toContain('c');
+        }
+    );
+
+    it('under hop, c\'s own not-subscribed NACK still moves c outside', async () => {
         const { origin } = await createStarOrigin();
-        const message = { ...createOriginReceiverMulticast('hop-nack-other'), qos: { ack: { algo: 'hop' } } } as const;
+        const message = { ...createOriginReceiverMulticast('hop-nack-own'), qos: { ack: { algo: 'hop' } } } as const;
         expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
-        const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
+        const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
 
-        await origin.manager.acceptControlMessage(toControlMessage(nack, 'hop'));
+        expect(await origin.manager.acceptControlMessage(toControlMessage(nack, 'hop'))).toEqual({ kind: 'committed' });
 
-        // S8-R1 (a) keeps `hop` on channel trust: the next hop's word about another next hop stands, unsigned.
         expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
     });
 
@@ -771,6 +796,96 @@ describe('a child hop at an honest relay that speaks for another recipient (S8-R
         );
     });
 });
+
+describe('a relay whose outside recorder is gone (D601)', () => {
+    useFakeClock();
+
+    it('a relay whose outside recorder was evicted by 256 later controls forwards the recipient\'s true signed ACK, and the origin counts it', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('evicted-recorder');
+        const forgedHopEnd = toChildAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'm',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+        const own = await signTestALReceiptControl(
+            chain.keys.c!,
+            toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' })
+        );
+
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forgedHopEnd), 'forged-hop-end'), 'm');
+        await relay.receiveEach(toForgedAckFlood(message), 'm');
+        await relay.receive(toControlMessage(own, 'own'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+
+        expect((await relay.readSentControls('a')).map((control) => control.type === 'repair' ? null : control.payload.proof))
+            .toContainEqual(own.payload.proof);
+        expect((await readReceipt(origin, message))?.ackedPeerIds).toContain('c');
+    });
+
+    it('a recipient the origin holds outside is still refused there', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('outside-at-origin');
+        const nack = toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, nack), 'own-nack'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+        const forwarded = await signTestALReceiptControl(
+            chain.keys.c!,
+            toAckControl({ msgId: message.id.msgId, fromPeerId: 'r', logicalRecipientPeerId: 'c' })
+        );
+
+        expect(await origin.manager.acceptControlMessage(toControlMessage(forwarded, 'forwarded'))).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        });
+        expect((await readReceipt(origin, message))?.ackedPeerIds).not.toContain('c');
+    });
+
+    it('a stale control the relay forwards once its recorder is gone costs one more forward, which the origin refuses', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('stale-after-eviction');
+        const hopEnd = toChildAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'c',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+        const stale = await signTestALReceiptControl(
+            chain.keys.c!,
+            toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' })
+        );
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, hopEnd), 'own-hop-end'), 'c');
+        await relay.receiveEach(toForgedAckFlood(message), 'm');
+        await acceptEach(origin, await relay.readSent('a'));
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+        const before = (await relay.readSent('a')).length;
+
+        await relay.receive(toControlMessage(stale, 'stale'), 'c');
+        const forwarded = (await relay.readSent('a')).slice(before);
+
+        expect(forwarded).toHaveLength(1);
+        expect(await origin.manager.acceptControlMessage(forwarded[0]!)).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        });
+        expect((await readReceipt(origin, message))?.ackedPeerIds).not.toContain('c');
+    });
+});
+
+/** `collectionEntries` distinct unsigned ACKs `m` sends about `c`: enough to evict every earlier child ACK at the relay. */
+function toForgedAckFlood(message: ALMessage): readonly ALMessage[] {
+    return Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => {
+        const payload = toTestALAckPayload({
+            ackedMsgId: message.id.msgId,
+            fromPeerId: 'm',
+            toPeerId: 'r',
+            originPeerId: 'a',
+            logicalRecipientPeerId: 'c',
+            observedAtEpochMs: Date.now(),
+            proof: toTestSignatureProof(index + 1)
+        });
+        return toControlMessage({ type: 'ack', payload }, `flood-${index + 1}`);
+    });
+}
 
 describe('a logical receipt never expects a peer its message does not count (S8-R1)', () => {
     beforeEach(() => {

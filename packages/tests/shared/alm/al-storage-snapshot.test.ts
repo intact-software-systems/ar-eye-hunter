@@ -44,6 +44,7 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 import { NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { AL_GAP_NACK_RELAY_HOP_LIMIT } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
     createOutboundTestRuntimeFor,
     enqueueOutboundOrThrow,
@@ -73,14 +74,17 @@ const WORKLOAD = {
  *
  * I1b-i moved every topic for one reason: each envelope, and so each row that retains one, carries a required
  * 36-character `id.traceId`.
+ *
+ * `AL_ADMISSION` moved from 106,900 bytes for one reason: every message keeps a version row, about 269 bytes, which
+ * each commit of it moves, so a control of one message is fenced on that message alone (ruling 24).
  */
 const EXPECTED_BYTES_BY_TOPIC = {
     AL_OUTBOUND: 1_820_740,
     AL_OUTBOUND_MESSAGE: 1_746_530,
-    AL_ADMISSION: 106_900,
+    AL_ADMISSION: 126_270,
     AL_OUTBOUND_IDENTITY: 71_770
 } as const;
-const EXPECTED_TOTAL_BYTES = 3_745_940;
+const EXPECTED_TOTAL_BYTES = 3_765_310;
 const BYTES_TOLERANCE = 0.02;
 
 /**
@@ -323,6 +327,10 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         namespace: INBOUND_NAMESPACE
     });
     const runtime = new ALInboundMessageRuntime({
+        readUpstreamPeerId: () => undefined,
+        readGapNackRelayHops: () => AL_GAP_NACK_RELAY_HOP_LIMIT,
+        isRoutedPeerReady: () => false,
+        isLayoutChildPeer: () => false,
         receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',

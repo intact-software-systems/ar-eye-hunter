@@ -20,6 +20,7 @@ import {
     type ALStoredInboundMessage
 } from '../al-inbound-canonical-message.ts';
 import {
+    AL_INBOUND_BUFFERED_SLOT_FIELDS,
     decodeALInboundBufferedSnapshot,
     type ALStoredInboundBufferedSnapshot
 } from '../al-inbound-ordering-validation.ts';
@@ -177,11 +178,7 @@ function readCanonical(raw: ALAdmissionStoredValue, row: ALAdmissionStoredValue,
 
 function readBuffered(key: string, row: ALAdmissionStoredValue, namespace: string): ALStoredInboundBufferedSnapshot {
     return decodeALAdmissionValue(row.value, key, (value) => {
-        const record = decodeALAdmissionRecord(
-            value,
-            ['trackKey', 'seq', 'message', 'plan', 'carrier', 'completesThrough'],
-            ['delivery']
-        );
+        const record = decodeALAdmissionRecord(value, AL_INBOUND_BUFFERED_SLOT_FIELDS, ['delivery']);
         const trackKey = decodeALAdmissionString(record.trackKey);
         const seq = decodeALAdmissionNumber(record.seq);
         const prefix = `${namespace}:buffered:${trackKey}:`;
