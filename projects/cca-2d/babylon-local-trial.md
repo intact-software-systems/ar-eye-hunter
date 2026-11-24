@@ -534,3 +534,9 @@ qualification target or winner screen is implemented yet.
 The current slice collects physical phone feedback and tunes the local loop.
 Rallar-only player-hosted multiplayer follows, with explicit recovery behaviour.
 Keep the historical separate CCA server outside this app.
+
+### Invited iPhone guest, 24 November 2026
+
+The guest scanned the desktop lobby QR, joined the town without an account and readied on the iPhone. The desktop owner readied and started the round. The phone then displayed “Recovery could not be confirmed.” This trial verifies invitation and round entry. The round did not finish.
+
+During the failure window the standard Rallar Server recorded match messages with no recipients and event-loop delays up to 3.2 seconds. These observations do not establish which event first interrupted checkpoint agreement. Repeat the trial after reproducing the interruption in two browsers. Verify checkpoint progress, the same final scores on both devices, reload, rematch and host handoff.

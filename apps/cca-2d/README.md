@@ -74,8 +74,15 @@ creatures, eight additional residents, civic/shop/house facades and street furni
 
 ## Optional online lobby
 
-Choose **Play with friends** to sign in or create a local test account. Solo
-continues to work without Rallar. Start the development API in another terminal:
+To host, choose **Play with friends**, sign in and **Create town**. Choose
+**Invite guests** to show a QR code and a shareable link. A friend can scan or
+open the link, shuffle their nickname and tap **Join this town** without an
+account. Reloading in the same tab restores their seat. **Replace invitation**
+issues a new link. **Remove guest** ends that guest's access and cancels the
+current link.
+
+Solo runs without Rallar. To run multiplayer locally, start the standard
+Rallar API alongside the app.
 
 ```sh
 npm --workspace cca-2d run start:rallar
@@ -84,8 +91,9 @@ npm --workspace cca-2d run dev
 
 The launcher runs the existing Rallar API on port 8084 with an isolated in-memory
 store and fresh process-only secrets. Accounts, rooms and friendships disappear
-when that server stops. It does not run a separate CCA server. The development
-client defaults to `http://localhost:8084`; `VITE_RALLAR_API_BASE_URL` overrides it.
+when that server stops. The browser uses the app's origin by default. Vite
+proxies its API requests and WebSocket connections to Rallar. Set
+`VITE_RALLAR_API_BASE_URL` to use a different API origin.
 `CCA_RALLAR_PUBLIC_URL` configures the API's advertised public HTTP/WS origin and
 `CCA_RALLAR_PORT` selects its listening port. These origins must agree; never
 weaken Rallar's WebSocket host validation to work around a mismatch.
