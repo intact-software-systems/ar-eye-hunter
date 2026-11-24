@@ -1,3 +1,4 @@
+import { openGuestInvitation } from './online/guest-invitation.ts';
 import './style.css';
 
 const root = document.getElementById('app');
@@ -8,7 +9,12 @@ const lifetime = new AbortController();
 let current: { stop(): void | Promise<void>; } | undefined;
 let teardown: Promise<void> = import.meta.hot?.data.teardown ?? Promise.resolve();
 let generation = 0;
-void openMode(root, 'solo');
+if (location.pathname.replace(/\/$/, '') === `${import.meta.env.BASE_URL}guest`) {
+    openGuestInvitation(root, lifetime.signal);
+}
+else {
+    void openMode(root, 'solo');
+}
 
 async function openMode(element: HTMLElement, mode: 'solo' | 'online'): Promise<void> {
     const revision = ++generation;
