@@ -9,6 +9,8 @@ let current: { stop(): void | Promise<void>; } | undefined;
 let teardown: Promise<void> = import.meta.hot?.data.teardown ?? Promise.resolve();
 let generation = 0;
 if (location.pathname.replace(/\/$/, '') === `${import.meta.env.BASE_URL}guest`) {
+    // Opening a replacement invitation in the same tab changes only the fragment.
+    window.addEventListener('hashchange', () => location.reload(), { signal: lifetime.signal });
     void import('./online/open-guest-invitation.ts').then(({ openGuestInvitation }) => {
         if (!lifetime.signal.aborted) {
             openGuestInvitation(root, lifetime.signal);
