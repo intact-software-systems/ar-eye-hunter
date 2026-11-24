@@ -1,6 +1,5 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-import { roomGuestCredentialExpiresAt } from '@shared/api/room-guests/access.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { clearSession, configureAuthSessionStorage, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -38,20 +37,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     };
     renderOccupants(snapshot);
     configureAuthSessionStorage('session');
-    let transportDeadline: number | undefined;
-    function syncTransportDeadline(room: GroupSnapshot): void {
-        const member = room.members.find(row => row.principalId === visit.access.clientId && row.status === 'active');
-        if (!member?.guestLease) {
-            return;
-        }
-        const deadline = roomGuestCredentialExpiresAt(room.group, member);
-        if (deadline !== transportDeadline) {
-            writeSession({ ...visit.access, username: visit.nickname, guestRoom: roomRef, expiresAtEpochMs: deadline });
-            transportDeadline = deadline;
-            rallar.auth.restore();
-        }
-    }
-    syncTransportDeadline(snapshot);
+    writeSession({ ...visit.access, username: visit.nickname, guestRoom: roomRef });
     const leave = () => location.assign(import.meta.env.BASE_URL);
     const diagnostics = new URLSearchParams(location.search).get('diagnostics') === '1'
         ? new GuestConnectionDiagnostics(root, signal) : undefined;
@@ -59,22 +45,17 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     const unsubscribe = rallar.rooms.onChange(state => {
         if (state.currentRoom?.group.groupId === visit.room) {
             renderOccupants(state.currentRoom);
-            syncTransportDeadline(state.currentRoom);
         }
         match.reconcile();
     });
     const stopSocket = rallar.ws.onLifecycle(event => {
         if (event.kind === 'close') diagnostics?.closed(event.code);
+        if (event.kind === 'disconnected') showRetry();
         if (event.kind === 'close' && event.code === 1008) {
             void recheckAccess();
         }
     }, { emitCurrent: false });
     const cancelRecovery = watchTownClockLoss(rallar, signal, async attempt => {
-        const current = await findStateGroup(visit.room, CCA_SCOPE, {
-            signal: attempt, authSession: { ...visit.access, username: visit.nickname }
-        });
-        attempt.throwIfAborted();
-        syncTransportDeadline(current);
         await rallar.connect({ signal: attempt });
         await enterVerifiedRoom(attempt);
     }, error => {
@@ -83,7 +64,7 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
     });
     const stopAuth = rallar.auth.onChange(state => {
         if (!state.authenticated && (state.reason === 'expired' || state.reason === 'unauthorized')) {
-            void recheckAccess();
+            endAccess();
         }
     }, { emitCurrent: false });
     signal.addEventListener('abort', () => {
@@ -105,12 +86,9 @@ export function openGuestMatch({ root, visit, snapshot, pageSignal }: OpenGuestM
 
     async function recheckAccess(): Promise<void> {
         try {
-            const current = await findStateGroup(visit.room, CCA_SCOPE, {
+            await findStateGroup(visit.room, CCA_SCOPE, {
                 signal, authSession: { ...visit.access, username: visit.nickname }
             });
-            if (!signal.aborted) {
-                syncTransportDeadline(current);
-            }
         }
         catch (error) {
             if (!signal.aborted && error instanceof ApiHttpError && [401, 403, 404].includes(error.status)) {

@@ -245,6 +245,15 @@ test('a phone guest reloads into the same playing round and moves again', async 
         const game = phone.locator('#online-game');
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 20000 });
         const matchId = await game.getAttribute('data-match-id');
+        // An old local admission deadline requires Rallar to verify the unchanged seat on reload.
+        const admissionDeadline = await phone.evaluate(() => {
+            const visit = JSON.parse(sessionStorage.getItem('cca.guest-visit')!);
+            const lifetime = visit.access.expiresAtEpochMs - visit.access.issuedAtEpochMs;
+            visit.access.expiresAtEpochMs = visit.access.issuedAtEpochMs;
+            visit.access.issuedAtEpochMs -= lifetime;
+            sessionStorage.setItem('cca.guest-visit', JSON.stringify(visit));
+            return Number(visit.access.expiresAtEpochMs);
+        });
         await phone.reload();
         await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 22000 });
         await expect(game).toHaveAttribute('data-match-id', matchId!);
@@ -257,6 +266,8 @@ test('a phone guest reloads into the same playing round and moves again', async 
         await expect.poll(async () => Number(await host.getAttribute('data-peer-x'))).toBeGreaterThan(originalX + 0.2);
         await phone.keyboard.up('KeyD');
         await expect(host).toHaveAttribute('data-match-id', matchId!);
+        expect(await phone.evaluate(() => JSON.parse(sessionStorage.getItem('auth.session')!).expiresAtEpochMs))
+            .toBe(admissionDeadline);
     }
     finally {
         await guest.close();
