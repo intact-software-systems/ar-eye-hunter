@@ -1,5 +1,5 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { RoomGuestSocket } from '../runtime/room-guest-websocket.ts';
+import { RoomGuestSocket } from '../runtime/room-guest-socket.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';

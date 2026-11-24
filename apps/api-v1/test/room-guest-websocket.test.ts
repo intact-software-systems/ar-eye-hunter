@@ -20,7 +20,7 @@ test('a guest socket confines send and receive to the admitted room and rejects 
 });
 
 test('movement bursts use the live room authorization and refresh once it ages out', async () => {
-    const { RoomGuestSocket } = await import('../src/runtime/room-guest-websocket.ts');
+    const { RoomGuestSocket } = await import('../src/runtime/room-guest-socket.ts');
     const guest = { roomRef: { ...TEST_GROUP_SCOPE, groupId: 'market' }, clientId: 'guest', sessionId: 'guest-session' };
     const room = createGroupStateRouteSnapshotWithMember('market', 'guest', 'active');
     const snapshot = { ...room, members: room.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 10000 } })) };
@@ -44,7 +44,7 @@ test('movement bursts use the live room authorization and refresh once it ages o
 
 test('guest reliability controls can acknowledge only messages delivered on this room socket', async () => {
     const { newALAckControlMessage } = await import('@shared/al-contracts/al-control.ts');
-    const { RoomGuestSocket } = await import('../src/runtime/room-guest-websocket.ts');
+    const { RoomGuestSocket } = await import('../src/runtime/room-guest-socket.ts');
     const guest = { roomRef: { ...TEST_GROUP_SCOPE, groupId: 'market' }, clientId: 'guest', sessionId: 'guest-session' };
     const room = createGroupStateRouteSnapshotWithMember('market', 'guest', 'active');
     const snapshot = { ...room, members: room.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: 10000 } })) };

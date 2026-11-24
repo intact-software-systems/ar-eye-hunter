@@ -32,7 +32,7 @@ describe('browser complete collection refresh', () => {
         const group = createGroupSnapshotFixture({ ...scope, groupId: 'room-1', sessionIds: [] });
         clientSnapshots.setClientStateSnapshots([client]);
         groupSnapshots.setGroupStateSnapshots([group]);
-        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])));
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json([])));
 
         await refreshStateSnapshots(scope);
 
@@ -59,13 +59,13 @@ describe('browser complete collection refresh', () => {
 
     it.each([
         ['failed', () => new Response('unavailable', { status: 503 })],
-        ['malformed', () => jsonResponse({ partial: true })]
+        ['malformed', () => Response.json({ partial: true })]
     ])('does not reconcile after a %s group collection', async (_label, groupResponse) => {
         const client = createClientSnapshotFixture({ ...scope, principalId: 'alice' });
         const group = createGroupSnapshotFixture({ ...scope, groupId: 'room-1', sessionIds: [] });
         clientSnapshots.setClientStateSnapshots([client]);
         groupSnapshots.setGroupStateSnapshots([group]);
-        vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => String(url).endsWith('/clients') ? jsonResponse([]) : groupResponse()));
+        vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => String(url).endsWith('/clients') ? Response.json([]) : groupResponse()));
 
         await expect(refreshStateSnapshots(scope)).rejects.toThrow();
 
@@ -73,10 +73,3 @@ describe('browser complete collection refresh', () => {
         expect(groupSnapshots.findGroupStateSnapshotByRef(group.group)).toBe(group);
     });
 });
-
-function jsonResponse(body: unknown): Response {
-    return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { 'content-type': 'application/json' }
-    });
-}

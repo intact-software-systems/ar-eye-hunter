@@ -1,4 +1,4 @@
-import type { RoomGuestSocket } from './room-guest-websocket.ts';
+import type { RoomGuestSocket } from './room-guest-socket.ts';
 import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { replyToSocketClockRequest } from '@shared/websocket/socket-clock.ts';
 import type { WSContext, WSEvents } from 'hono/ws';
