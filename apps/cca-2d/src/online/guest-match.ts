@@ -1,6 +1,6 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-import { roomGuestCredentialExpiresAt } from '@shared/api/room-guest-access.ts';
+import { roomGuestCredentialExpiresAt } from '@shared/api/room-guests/access.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { clearSession, configureAuthSessionStorage, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

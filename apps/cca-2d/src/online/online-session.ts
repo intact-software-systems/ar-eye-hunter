@@ -2,10 +2,10 @@ import type { AuthenticatedResource } from '@shared-web/browser/api/authenticate
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import type { RallarFacade, RallarRoomState } from '@shared-web/browser/rallar.ts';
-import { createRoomGuestSecret } from '@shared-web/browser/rooms/room-guest-access.ts';
+import { createRoomGuestSecret } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import type { LoginRequest } from '@shared/api/api-config.ts';
-import { hashRoomInvitationSecret } from '@shared/api/room-guest-invitation.ts';
+import { hashRoomInvitationSecret } from '@shared/api/room-guests/invitation.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { FriendsView } from '@shared/api/friends/friends-view.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';

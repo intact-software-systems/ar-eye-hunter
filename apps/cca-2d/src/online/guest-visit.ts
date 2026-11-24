@@ -1,4 +1,4 @@
-import { isGuestInvitationVerifier, isRoomGuestAccess, type RoomGuestAccess } from '@shared/api/room-guest-invitation.ts';
+import { isGuestInvitationVerifier, isRoomGuestAccess, type RoomGuestAccess } from '@shared/api/room-guests/invitation.ts';
 
 export type GuestVisit =
     | { room: string; nickname: string; access: RoomGuestAccess }

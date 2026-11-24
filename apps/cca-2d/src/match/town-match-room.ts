@@ -3,7 +3,7 @@ import type {
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { RallarGroupDirectorAppointmentEligibility } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

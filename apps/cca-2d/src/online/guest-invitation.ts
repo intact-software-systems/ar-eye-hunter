@@ -1,8 +1,8 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { createRoomGuestSecret, redeemRoomGuestInvitation } from '@shared-web/browser/rooms/room-guest-access.ts';
+import { createRoomGuestSecret, redeemRoomGuestInvitation } from '@shared-web/browser/rooms/entry/redeem-guest-invitation.ts';
 import { findStateGroup } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
-import { hashRoomInvitationSecret, isGuestInvitationVerifier } from '@shared/api/room-guest-invitation.ts';
+import { hashRoomInvitationSecret, isGuestInvitationVerifier } from '@shared/api/room-guests/invitation.ts';
 
 import { readGuestVisit, saveGuestVisit, type GuestVisit } from './guest-visit.ts';
 import { CCA_SCOPE, townApiBaseUrl } from './town-server.ts';

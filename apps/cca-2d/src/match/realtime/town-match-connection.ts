@@ -1,5 +1,5 @@
 import { readRoomTimeline } from '@shared/api/group-deadlines/room-timeline.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestAccessMode } from '@shared/api/room-guests/access.ts';
 import { permitsFinishingGuestAction } from '../guest-round-clock.ts';
 import type { TownMatchFrame } from '../match-protocol.ts';
 import type { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
