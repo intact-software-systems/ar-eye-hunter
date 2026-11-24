@@ -70,7 +70,7 @@ test('friends consent, room invitation and matchmaking work between separate acc
         await alice.getByRole('button', { name: 'Leave town' }).click();
         await expect(alice.getByRole('button', { name: 'Create town' })).toBeVisible();
         await expect(alice.locator('#online-error')).toBeEmpty();
-        await expect(bob.locator('#roster')).toContainText('host');
+        await expect(bob.locator('#roster')).toContainText(bobName + ' · here · room owner');
         await expect(bob.locator('#roster li')).toHaveCount(1);
         await bob.getByRole('button', { name: 'Leave town' }).click();
         await expect(bob.getByRole('button', { name: 'Create town' })).toBeVisible();
