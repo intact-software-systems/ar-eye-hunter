@@ -57,17 +57,12 @@ test('a ready host sees a guest reload and ready again in the same lobby', async
         const room = await alice.getByLabel('Room code').inputValue();
         await alice.getByRole('button', { name: 'Host match' }).click();
         await alice.getByRole('button', { name: 'Ready', exact: true }).click();
+        await bob.getByLabel('Town code', { exact: true }).fill(room);
+        await bob.getByRole('button', { name: 'Join town', exact: true }).click();
         for (let entry = 0; entry < 2; entry++) {
             if (entry === 1) {
                 await bob.reload();
                 await bob.getByRole('button', { name: 'Play with friends' }).click();
-            }
-            const joinCode = bob.getByLabel('Town code', { exact: true });
-            const roomCode = bob.getByLabel('Room code', { exact: true });
-            await expect(roomCode.or(joinCode)).toBeVisible({ timeout: 15000 });
-            if (await joinCode.isVisible()) {
-                await joinCode.fill(room);
-                await bob.getByRole('button', { name: 'Join town', exact: true }).click();
             }
             await expect(bob.getByLabel('Room code')).toHaveValue(room, { timeout: 15000 });
             await expect(alice.locator('#match-controls')).toContainText('1/2 ready', { timeout: 15000 });
