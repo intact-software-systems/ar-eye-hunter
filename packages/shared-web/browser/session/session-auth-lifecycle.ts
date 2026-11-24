@@ -42,6 +42,7 @@ import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
+import { observeFinishingGuest } from './room-guest-auth-expiry.ts';
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
 
@@ -92,6 +93,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     private readonly input: BrowserSessionAuthLifecycle.Input;
     private readonly timers: Timers;
     private loginGeneration = 0;
+    private guestExpiry?: ReturnType<typeof observeFinishingGuest>;
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
@@ -161,11 +163,20 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             },
             onAuthInvalid: async (error) => await this.endUnauthorizedSession(error, session)
         });
+        const now = this.readServerExpiryEpochMs();
+        if (session.guestRoom && now !== undefined && session.expiresAtEpochMs <= now) {
+            await this.expireAuthSessionIfCurrent(session);
+            if (this.input.connectionRuntime.readMiddleware() !== connected.middleware) {
+                throw new Error('The room guest session ended before connection completed.');
+            }
+        }
         this.scheduleAuthExpiry(connected.middleware.session);
         return connected;
     }
 
     public disconnect(): Promise<void> {
+        this.guestExpiry?.stop();
+        this.guestExpiry = undefined;
         return this.input.connectionLifecycle.disconnect();
     }
 
@@ -310,6 +321,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     /** Without a calibrated connection clock the server judges the session on its next request. */
     private scheduleAuthExpiry(session: AuthSession | undefined): void {
         this.input.authRuntime.clearAuthExpiryTimer();
+        if (this.guestExpiry && (!session || this.guestExpiry.sessionKey !== toAuthSessionKey(session))) {
+            this.guestExpiry.stop();
+            this.guestExpiry = undefined;
+        }
         const serverNowEpochMs = this.readServerExpiryEpochMs();
         if (!session || serverNowEpochMs === undefined) {
             return;
@@ -317,7 +332,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         this.input.authRuntime.setAuthExpiryTimer(
             scheduleAtDeadline(
                 this.timers,
-                this.timers.nowMs() + session.expiresAtEpochMs - serverNowEpochMs,
+                this.timers.nowMs() + (this.guestExpiry?.deadline ?? session.expiresAtEpochMs) - serverNowEpochMs,
                 () =>
                     void this.expireAuthSessionIfCurrent(session).catch((error) =>
                         console.error('Failed to expire the Rallar auth session', error)
@@ -336,6 +351,29 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (currentSession && (serverNowEpochMs === undefined || currentSession.expiresAtEpochMs > serverNowEpochMs)) {
             this.scheduleAuthExpiry(currentSession);
             return;
+        }
+        if (currentSession?.guestRoom && serverNowEpochMs !== undefined) {
+            const grant = this.guestExpiry ??= observeFinishingGuest(currentSession, currentSession.guestRoom,
+                serverNowEpochMs, this.input.connectionRuntime.requireMiddleware().middleware.webSocketQueueBox.socket,
+                () => this.scheduleAuthExpiry(readSession()));
+            try {
+                await grant.verified;
+            }
+            catch (error) {
+                // A transport failure cannot revoke the credential. Reconnect must verify again.
+                const stored = readSession();
+                if (this.guestExpiry === grant && stored && toAuthSessionKey(stored) === grant.sessionKey) {
+                    await this.disconnect();
+                }
+                throw error;
+            }
+            const stored = readSession();
+            if (this.guestExpiry !== grant || !stored || toAuthSessionKey(stored) !== grant.sessionKey) return;
+            const now = this.readServerExpiryEpochMs();
+            if (now === undefined || grant.deadline > now) {
+                this.scheduleAuthExpiry(currentSession);
+                return;
+            }
         }
         await this.endAuthSession('expired', {
             revoke: false,

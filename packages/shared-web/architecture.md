@@ -158,16 +158,15 @@ The command bundles `browser/rallar.ts`, the narrow browser entry points, and
 sizes. The measurement command is reporting-only; the check command fails when
 an entry exceeds its Brotli budget.
 
-The full-facade ceiling is 162 KiB. It was raised from 161 KiB when the direct,
-plan-compliant CRDT owners measured 161.3 KiB; retaining forwarding factories
-or adding compression-only indirection would make the runtime harder to trace
-for a negligible transfer-size difference.
+The full facade has a 330 KiB Brotli ceiling. Admission-boundary verification
+and prompt closure for finishing room guests brought it to 329.5 KiB against
+the previous 329 KiB ceiling.
 
 Current measured sizes and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 771.2 KiB | 196.3 KiB | 161.3 KiB | < 162.0 KiB |
+| `browser/rallar.ts`             | 1536.4 KiB | 408.1 KiB | 329.5 KiB | < 330.0 KiB |
 | `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
 | `browser/rallar-data.ts`        |  30.1 KiB |   7.1 KiB |   6.4 KiB |  < 20.0 KiB |
