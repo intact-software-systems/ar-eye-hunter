@@ -643,18 +643,28 @@ return test does not establish that transition; retain it in reliability qualifi
 
 ### Silent host loss and opt-in room presence
 
-CCA grants room presence for nine seconds. Browsers renew every second, allow
-1.25 seconds for the whole attempt and retry after 250 ms. Under Rallar’s
-safe-renewal check this allows a server-clock uncertainty window under four
+CCA grants room presence for eight seconds. Browsers renew every second, allow
+one second for the whole attempt and retry after 250 ms. Under Rallar’s
+safe-renewal check this allows a server-clock uncertainty window under 3.75
 seconds. In the iPhone guest trial, the short-lease configuration allowed only
 500 ms and the server recorded an event-loop stall of 3.2 seconds. The first
 ordinary host message refusal followed its last room heartbeat request by about
 eight seconds.
 
 The organizer configures a 500 ms host reconnect reservation before its first
-appointment. A silent loss leaves room for a surviving player to claim at 9.5
+appointment. A silent loss leaves room for a surviving player to claim at 8.5
 seconds after the last lease began. The game’s existing three-browser trial
-allows 11.5 seconds for takeover and resumed play.
+allows 11.5 seconds for takeover and resumed play. Its silent-partition fixture drops
+all HTTP and gameplay frames while forwarding connection-local clock samples.
+A total outage through clock expiry retires the transport and selected room.
+Grumpy Town opens a fresh clocked connection when visible and asks Rallar to
+re-establish presence in the authenticated player’s previously selected town.
+A player who returns after the game’s seat grace watches the remaining round.
+Two isolated three-browser runs resumed survivors in 9.180 and 10.433 seconds
+over an open socket, and 9.429 and 11.112 seconds after loss of all network
+traffic. The former
+host returned in the same round as a player under the new host. Broader clock
+work is tracked in [#836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
 Nested requests inherit the attempt cancellation; they do not each receive an
 additional time budget.
 The policy is captured at connection setup and shared by create/join, quick join,

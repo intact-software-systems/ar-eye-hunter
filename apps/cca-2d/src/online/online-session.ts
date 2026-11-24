@@ -1,3 +1,4 @@
+import { trackAccountTownRecovery } from './account-town-recovery.ts';
 import { leaveCurrentTown } from './leave-current-town.ts';
 import type { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
@@ -50,6 +51,7 @@ export class OnlineSession {
     private error = '';
     private busy = false;
     private connected = false;
+    private cancelVisitRecovery: (() => void) | undefined;
     private matchmakingAction: Promise<void> | null = null;
 
     constructor(browser: RallarFacade, apiBaseUrl: string) {
@@ -84,6 +86,10 @@ export class OnlineSession {
     }
 
     async start(): Promise<void> {
+        this.cancelVisitRecovery = trackAccountTownRecovery(this.browser, this.lifetime.signal, error => {
+            this.error = error?.message ?? '';
+            this.publish();
+        });
         this.entry.start();
         this.subscriptions.add(this.browser.rooms.onChange((state) => {
             this.rooms = state;
@@ -135,6 +141,7 @@ export class OnlineSession {
 
     async createTown(): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             this.entry.cancel();
             await leaveCurrentTown(this.browser, this.lifetime.signal);
             await this.browser.rooms.createAndSwitch({
@@ -194,6 +201,7 @@ export class OnlineSession {
 
     async joinTown(groupId: string): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             this.entry.enter({
                 intent: 'join',
                 roomRef: { ...CCA_SCOPE, groupId },
@@ -206,6 +214,7 @@ export class OnlineSession {
 
     async enterMatchmaking(): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             await this.matchmaking.enter();
             await this.resumeDestination();
         });
@@ -237,6 +246,7 @@ export class OnlineSession {
 
     async enterInvitation(invitationId: string): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             await this.friends.openInvitation(invitationId);
             await this.resumeDestination();
         });
@@ -244,13 +254,16 @@ export class OnlineSession {
 
     async leaveTown(): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             this.entry.cancel();
             await leaveCurrentTown(this.browser, this.lifetime.signal);
+            this.cancelVisitRecovery?.();
         });
     }
 
     async logout(): Promise<void> {
         await this.run(async () => {
+            this.cancelVisitRecovery?.();
             this.entry.cancel();
             try {
                 await this.finishSearch();

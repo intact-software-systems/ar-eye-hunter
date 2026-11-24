@@ -22,7 +22,7 @@ it('lets a survivor claim a silent host inside the 11.5-second recovery budget, 
         if (!('metadata' in result)) throw new Error(result.message);
         room = { ...room, group: { ...room.group, metadata: result.metadata } };
     }
-    const now = 9_500;
+    const now = 8_500;
     const friend = { principalId: 'friend', sessionId: 'friend', role: 'member' as const };
     expect(townHostCommand(room.group.metadata, friend, deadline => deadline <= 3_200 ? 'at-or-after' : 'before')).toBeUndefined();
     const claim = townHostCommand(room.group.metadata, friend, deadline => deadline <= now ? 'at-or-after' : 'before');
