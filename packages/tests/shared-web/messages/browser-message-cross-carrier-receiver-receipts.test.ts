@@ -322,8 +322,10 @@ describe('cross-carrier receipts', () => {
         await loop.clock.advanceBy(100);
         const missing = await sendOrderedPredecessorToC(loop, 2);
         loop.origin.dispatch.send(loop.origin.delivery);
-        await loop.clock.advanceBy(100);
-        const bufferedCopy = loop.origin.rtc.channels.c!.sent.find((frame) => frame.id.msgId === loop.origin.handle.msgId)!;
+        // The origin signs this receipted send with real WebCrypto (D758), which fake time alone does not wait for.
+        const isBufferedCopy = (frame: ALMessage) => frame.id.msgId === loop.origin.handle.msgId;
+        await loop.clock.advanceUntil(() => loop.origin.rtc.channels.c!.sent.some(isBufferedCopy));
+        const bufferedCopy = loop.origin.rtc.channels.c!.sent.find(isBufferedCopy)!;
         expect((await c.rtc.admitIncomingMessage(bufferedCopy, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
         await loop.clock.advanceBy(100);
         expect(c.delivered).toEqual(LEADER_BUFFERED_EXPECTATION.delivered.c);
@@ -333,7 +335,8 @@ describe('cross-carrier receipts', () => {
         expect(readSubmittedAcks(c)).toEqual([]);
 
         expect((await c.rtc.admitIncomingMessage(missing, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
-        await loop.clock.advanceBy(100);
+        // The release's ACK is signed with real WebCrypto after the delivery.
+        await loop.clock.advanceUntil(() => c.delivered.length === 3 && readSubmittedAcks(c).length > 0);
         expect(c.delivered).toEqual(['{"beforeStart":1}', '{"beforeStart":2}', '{"start":true}']);
         const releaseAck = readSubmittedAck(c, 'c');
         expect(readSubmittedAcks(c)).toHaveLength(1);
@@ -731,7 +734,9 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
         });
         expect((await loop.receivers[peerId].rtc.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
     }
-    await loop.clock.advanceBy(100);
+    await loop.clock.advanceUntil(() =>
+        (['b', 'c'] as const).every((peerId) => loop.receivers[peerId].delivered.length >= loop.expectation.delivered[peerId].length)
+    );
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
     if (loop.expectation.mode === 'receiver') {
@@ -812,7 +817,10 @@ async function exhaustRtcAndAdmitWsFallback(loop: ReceiptLoop): Promise<void> {
     expect(submitted.constraints?.expiresAtMs).toBe(loop.origin.delivery.message.constraints?.expiresAtMs);
     expect(await loop.origin.rtc.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: submitted.id.msgId })).toBeUndefined();
     await loop.server.sockets.a.receive(submittedFrame);
-    await loop.clock.advanceBy(100);
+    const forwardedTo = (peerId: 'b' | 'c') =>
+        loop.server.sockets[peerId].sent.some((frame) => decodePersistedALMessage(frame).id.msgId === submitted.id.msgId);
+    // The server admits the signed WS copy after a real WebCrypto verify, which fake time alone does not wait for.
+    await loop.clock.advanceUntil(() => loop.expectation.expectedRecipientPeerIds.every(forwardedTo));
     expect(
         loop.server.sockets.a.sent.map(decodePersistedALMessage)
             .filter((message) => message.id.msgId === submitted.id.msgId)
