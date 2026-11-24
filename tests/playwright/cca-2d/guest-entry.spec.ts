@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { chromium, expect, test, type Page } from '@playwright/test';
 
 import { decodeMatchWire } from './match-browser.ts';
 import { installCcaRtcTrial } from './match-rtc-browser.ts';
@@ -223,5 +223,43 @@ test('the guest keeps the confirmed score when the owner closes the finished tow
     }
     finally {
         await guest.close();
+    }
+});
+
+test('a phone guest reloads into the same playing round and moves again', async ({ page, browser, browserName, baseURL }) => {
+    test.setTimeout(80000);
+    const desktop = browserName === 'webkit' ? await chromium.launch({ args: ['--enable-unsafe-swiftshader'] }) : undefined;
+    const owner = desktop ? await desktop.newPage({ baseURL }) : page;
+    await createTown(owner);
+    await owner.getByRole('button', { name: 'Host match' }).click();
+    await owner.getByRole('button', { name: 'Invite guests' }).click();
+    const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+        const phone = await guest.newPage();
+        await phone.goto(await owner.getByLabel('Guest invitation link').inputValue());
+        const nickname = await phone.getByRole('status', { name: 'Your nickname' }).innerText();
+        await phone.getByRole('button', { name: 'Join this town' }).click();
+        await phone.getByRole('button', { name: 'Ready', exact: true }).click();
+        await owner.getByRole('button', { name: 'Ready', exact: true }).click();
+        await owner.getByRole('button', { name: 'Start round' }).click();
+        const game = phone.locator('#online-game');
+        await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 20000 });
+        const matchId = await game.getAttribute('data-match-id');
+        await phone.reload();
+        await expect(game).toHaveAttribute('data-phase', 'playing', { timeout: 22000 });
+        await expect(game).toHaveAttribute('data-match-id', matchId!);
+        await expect(phone.getByLabel('Your nickname')).toHaveText(nickname);
+        await expect(phone.getByRole('button', { name: 'Dash and drop' })).toBeEnabled({ timeout: 12000 });
+        await expect.poll(async () => Number(await game.getAttribute('data-tick'))).toBeGreaterThan(45);
+        const host = owner.locator('#online-game');
+        const originalX = Number(await host.getAttribute('data-peer-x'));
+        await phone.keyboard.down('KeyD');
+        await expect.poll(async () => Number(await host.getAttribute('data-peer-x'))).toBeGreaterThan(originalX + 0.2);
+        await phone.keyboard.up('KeyD');
+        await expect(host).toHaveAttribute('data-match-id', matchId!);
+    }
+    finally {
+        await guest.close();
+        await desktop?.close();
     }
 });

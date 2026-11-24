@@ -91,7 +91,11 @@ export class TownMatchRound {
             this.intent = undefined;
         }
         this.lastProposal = undefined;
-        this.committedProposal = undefined;
+        // A reloading peer has no in-memory state and needs the full agreed snapshot to rejoin.
+        // Only the same appointed host can replay its original proposal in the same epoch.
+        if (authority.sessionId !== session.sessionId || this.committedProposal?.epoch !== authority.epoch) {
+            this.committedProposal = undefined;
+        }
         this.members = authority.members;
         this.authorityKey = key;
         this.generation += 1;
