@@ -799,13 +799,13 @@ carries either.
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
 
-The `cross-carrier-duplicate` conformance scenario replays in both orders over
-`rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
-refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
-refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
-envelope, which the api-v1 WS server routes to the room's other members, so the
-receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
-orders.
+The `cross-carrier-duplicate` conformance scenario (`cross-carrier-duplicate-rtc-then-ws`) replays the first RTC
+send's envelope on WS over `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that refuses the
+second copy as `not-handled`/`duplicate`. The second copy is the WS-carried multicast room envelope, which the api-v1
+WS server routes to the room's other members, so the receiver refuses it on carrier `ws`. The reverse order does not
+run: the product never admits a message on RTC while its WS admission lives (D56), and the receiver's refusal in
+both arrival orders is a unit test (`alm-cross-carrier-duplicate-outcome.test.ts`). The Hetzner two-agent manifest
+runs the scenario.
 
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
 seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the

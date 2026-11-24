@@ -35,12 +35,10 @@ import {
 } from '../shared/alm/inbound-runtime-test-fixture.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
-type CrossCarrierOrder = 'rtc-then-ws' | 'ws-then-rtc';
-
 const RTC_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID };
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
-function toCrossCarrierScenario(order: CrossCarrierOrder): AlmConformanceScenario {
+function toCrossCarrierScenario(): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
         carrier: 'rtc-with-ws-fallback',
@@ -50,18 +48,18 @@ function toCrossCarrierScenario(order: CrossCarrierOrder): AlmConformanceScenari
         deadlineMs: 18_000,
         laneFamilies: ['two-agent'],
         principalIdsByRole: {}
-    }).find((candidate) => candidate.scenarioKey === `cross-carrier-duplicate-${order}`);
+    }).find((candidate) => candidate.scenarioKey === 'cross-carrier-duplicate-rtc-then-ws');
     if (!scenario) {
-        throw new Error(`The generator produced no cross-carrier-duplicate-${order} pair.`);
+        throw new Error('The generator produced no cross-carrier-duplicate-rtc-then-ws pair.');
     }
     return scenario;
 }
 
 async function readDuplicateDiagnostics(
-    order: CrossCarrierOrder,
     arrivals: readonly ALInboundMessageRuntime.Source[]
 ): Promise<readonly ALInboundRuntimeDiagnosticsEvent[]> {
-    const scenario = toCrossCarrierScenario(order);
+    const scenario = toCrossCarrierScenario();
+    const order = arrivals.map((source) => source.kind).join('-then-');
     const { runtime, diagnostics } = createInboundTestRuntime({
         carrier: 'rtc',
         stores: createInboundTestStores({
@@ -112,10 +110,9 @@ function createRecipeDiagnosticsPorts(recipeRuntime: ReturnType<typeof createDef
 
 /** Real page diagnostic publication feeds the authored receiver commands after their absence window. */
 async function runDiagnosticOutcomeCommands(
-    order: CrossCarrierOrder,
     diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[]
 ): Promise<boolean> {
-    const scenario = toCrossCarrierScenario(order);
+    const scenario = toCrossCarrierScenario();
     const recipeRuntime = createDefaultRallarBlackBoxTestRuntime();
     const ports = createRecipeDiagnosticsPorts(recipeRuntime);
     writeAlmCellStartEvents(recipeRuntime, scenario.receiver.commands);
@@ -131,11 +128,8 @@ async function runDiagnosticOutcomeCommands(
 }
 
 /** Admission and page publication use their production ports; neither matcher nor diagnostics are mocked. */
-async function runDuplicateOutcomeCommands(
-    order: CrossCarrierOrder,
-    arrivals: readonly ALInboundMessageRuntime.Source[]
-): Promise<boolean> {
-    return runDiagnosticOutcomeCommands(order, await readDuplicateDiagnostics(order, arrivals));
+async function runDuplicateOutcomeCommands(arrivals: readonly ALInboundMessageRuntime.Source[]): Promise<boolean> {
+    return runDiagnosticOutcomeCommands(await readDuplicateDiagnostics(arrivals));
 }
 
 /** An absent branch spends its whole wall-clock wait budget, so each case that fails takes about two seconds. */
@@ -143,19 +137,29 @@ const WAIT_BUDGET_TEST_TIMEOUT_MS = 15_000;
 
 describe('the cross-carrier duplicate outcome wait', () => {
     it('matches the emitter\'s admission-outcome for the pair\'s refused WS copy in rtc-then-ws, and nothing else', async () => {
-        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
-        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [WS_ARRIVAL, RTC_ARRIVAL])).toBe(false);
-        expect(await runDuplicateOutcomeCommands('rtc-then-ws', [RTC_ARRIVAL])).toBe(false);
+        expect(await runDuplicateOutcomeCommands([RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
+        expect(await runDuplicateOutcomeCommands([WS_ARRIVAL, RTC_ARRIVAL])).toBe(false);
+        expect(await runDuplicateOutcomeCommands([RTC_ARRIVAL])).toBe(false);
     }, WAIT_BUDGET_TEST_TIMEOUT_MS);
 
-    it('accepts the refused copy on either carrier in ws-then-rtc, and fails when neither arrived twice', async () => {
-        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL, RTC_ARRIVAL])).toBe(true);
-        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [RTC_ARRIVAL, WS_ARRIVAL])).toBe(true);
-        expect(await runDuplicateOutcomeCommands('ws-then-rtc', [WS_ARRIVAL])).toBe(false);
-    }, WAIT_BUDGET_TEST_TIMEOUT_MS);
+    // The lane runs rtc-then-ws alone (D56); the receiver still refuses the second copy in either arrival order.
+    it.each(
+        [
+            ['rtc', [RTC_ARRIVAL, WS_ARRIVAL], 'ws'],
+            ['ws', [WS_ARRIVAL, RTC_ARRIVAL], 'rtc']
+        ] as const
+    )('refuses the second copy as a duplicate when the %s copy arrives first', async (first, arrivals, second) => {
+        const outcomes = (await readDuplicateDiagnostics(arrivals))
+            .flatMap((event) => event.kind === 'admission-outcome' ? [event] : []);
 
-    it.each(['rtc-then-ws', 'ws-then-rtc'] as const)('ignores newer routing and wrong-scenario admissions for %s', async (order) => {
-        const diagnostics = await readDuplicateDiagnostics(order, [RTC_ARRIVAL, WS_ARRIVAL]);
+        expect(outcomes.map((event) => [event.carrier, event.outcome, event.reason])).toEqual([
+            [first, 'committed', 'admitted'],
+            [second, 'not-handled', 'duplicate']
+        ]);
+    });
+
+    it('ignores newer routing and wrong-scenario admissions', async () => {
+        const diagnostics = await readDuplicateDiagnostics([RTC_ARRIVAL, WS_ARRIVAL]);
         const duplicate = diagnostics.find((event) => event.kind === 'admission-outcome' && event.reason === 'duplicate');
         if (duplicate?.kind !== 'admission-outcome') {
             throw new Error('The real duplicate arrival produced no admission outcome.');
@@ -181,7 +185,7 @@ describe('the cross-carrier duplicate outcome wait', () => {
             reason: 'admitted'
         };
 
-        expect(await runDiagnosticOutcomeCommands(order, [...diagnostics, newerRouting, wrongScenario])).toBe(true);
-        expect(await runDiagnosticOutcomeCommands(order, [newerRouting, wrongScenario])).toBe(false);
+        expect(await runDiagnosticOutcomeCommands([...diagnostics, newerRouting, wrongScenario])).toBe(true);
+        expect(await runDiagnosticOutcomeCommands([newerRouting, wrongScenario])).toBe(false);
     }, WAIT_BUDGET_TEST_TIMEOUT_MS);
 });
