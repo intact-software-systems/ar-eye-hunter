@@ -460,9 +460,10 @@ runtime's inbound and outbound stores are; D740 states it.
   `packages/tests/shared-server/integration/postgres/`.
 - The sustained measurement above is repeated on the built path at +0 and +5 ms and must show no backlog;
   it is quoted in the pull request. Not met at five publishers and +5 ms: the receipts backlog in their delivery
-  on the server's outbound identity ("Measured through the WS server"); one publisher at +0 and +5 ms (run 1 at
-  the edge, 1.51) and five publishers at +0 ms show no backlog. Measured by test-only code, not kept in the tree:
-  "Measured on the built record" runs the record alone, and "Measured through the WS server" the built path.
+  through each instance's one outbound worker ("Measured through the WS server"); one publisher at +0 and +5 ms
+  (run 1 at the edge, 1.51) and five publishers at +0 ms show no backlog. Measured by test-only code, not kept
+  in the tree: "Measured on the built record" runs the record alone, and "Measured through the WS server" the
+  built path.
 - The cluster recipe `api-v1-cluster-publisher-instance-loss` is restated in slice 2: the publisher,
   reconnected to a survivor, reads `complete` for the broadcast its lost server admitted.
   `api-v1-cluster-subscriber-instance-loss` keeps its `timed-out`, since the lost subscriber cannot
@@ -521,8 +522,8 @@ runtime's inbound and outbound stores are; D740 states it.
   `acceptControlMessage`, and validates again inside its write. An ACK costs about 8 round trips, none serialized
   against another ACK. Counting at `admitAuthorizedMessage`, so that the count's refusal is the answer and the hook
   is store-free again, stays only as the lever for the ACK's own cost: through the WS server the count kept up at
-  five publishers and +5 ms (71 ms from the last ACK, flat); the backlog is in the receipts' delivery on the
-  server's outbound identity, not in the count.
+  five publishers and +5 ms (71 ms from the last ACK, flat); the backlog is in the receipts' delivery through
+  each instance's one outbound worker, not in the count.
 - An ACK's provenance is proven once, in the hook: with no head, the inbound admission row must hold the message
   under that origin with the ACK's sender in its audience (the volatile store's answer, and the durable store's
   when the volatile one has none). The count then answers a missing head with `countAhead` without a second proof.
@@ -631,55 +632,66 @@ receipt the publisher had not read when the sends stopped.
   450 ms where the record alone took 60 ms ("Measured on the built record"). One stage-timed run splits it:
   about 74 ms from the last ACK to a complete count, 170 ms for the `end` and its ended work to reach the
   receipt enqueue, and 227 ms from that enqueue to the publisher's read, 116 ms for an enqueue that did not
-  conflict and 314 ms for one that conflicted on the fence (23 to 27 of 80 did) and waited for its replay.
+  conflict and 314 ms for one that conflicted on the fence (20 of 80 in that run) and waited for its replay.
 - **At +0 ms both cells keep up**, ratios 0.79 to 1.05, every message `complete` within 50 ms of its last
   ACK, one enqueue in all retained `pending`.
 - **Where the lag is.** Eight further runs at the same shape timed each stage. Five ran after the matrix: one
-  each of one publisher at +0 and +5 ms and five publishers at +0 and +5 ms (load 2.2 to 2.5), and five
+  each of one publisher at +0 and +5 ms and five publishers at +0 and +5 ms (load 2.5 to 2.4), and five
   publishers at +5 ms once more (load 7.5 to 4.6). Three more ran five publishers at +5 ms with the pool, the
   outbound commits and the outbound worker instrumented (load 0.7 to 1.6). At five publishers and +5 ms, over
   the five runs of that cell:
   - **The count keeps up.** A message's last ACK reached a complete count in 70 to 73 ms, first ten and last
     ten alike, and the `end` and its ended work reached the receipt enqueue 170 to 420 ms later (p50 173 to
-    289 ms over the first ten, 285 to 418 ms over the last ten).
+    289 ms over the first ten, 285 to 418 ms over the last ten). That stage grew in each run, by 64 to 227 ms,
+    small beside the 7.8 to 8.9 s by which the wait from the terminal enqueue to the read grew.
   - **The enqueue attempts did not grow.** Send to the `admitted` enqueue took about 205 ms (p50 189 to 211 ms
     over the first ten, 195 to 207 ms over the last ten).
-  - **The growing term lies after the receipt enqueue, on the server's one outbound identity.** From the
-    terminal enqueue to the publisher's read took 1.1 to 2.5 s over the first ten and 9.1 to 11.3 s over the
-    last ten; the `admitted` receipt, which no ACK precedes, grew the same way (0.4 to 0.8 s, then 9.6 to
-    12.0 s). 75 to 80 % of the receipt enqueues conflicted on the fence of the server's outbound version row
-    (74 to 79 % in the matrix above). Those that did not conflict also waited: 6.9 to 8.7 s from their
-    enqueue to the read over the last ten (p50, in six of seven groups; 2.3 s in the seventh, of three
-    receipts). Publishers read 8.1 to 9.8 receipts a second while the sends ran, against 20 offered.
+  - **The growing term lies after the receipt enqueue, in each instance's one outbound worker (the server
+    identity's fence adds replay claims to it).** From the terminal enqueue to the publisher's read took 1.1
+    to 2.5 s over the first ten and 9.1 to 11.3 s over the last ten; the `admitted` receipt, which no ACK
+    precedes, grew the same way (0.4 to 0.8 s, then 9.6 to 12.0 s). 75 to 80 % of the receipt enqueues
+    conflicted on the fence of the server's outbound version row (74 to 79 % in the matrix above). Those that
+    did not conflict also waited: 6.9 to 8.7 s from their enqueue to the read over the last ten (p50, in six
+    of seven groups of one to four receipts, the run at load 7.5 to 4.6 giving one; 2.3 s in the seventh, of
+    three receipts), and 3.3 to 6.8 s over all 200 messages (p50, in eight groups of 26 to 59 receipts).
+    Publishers read 8.1 to 9.8 receipts a second while the sends ran, against 20 offered.
   - **The pool does not account for it.** In the instrumented runs a transaction waited 0.6 ms from its
-    `begin` to its callback (the median per instance and second; at most 1.2 ms), an autocommit statement
-    took 0.8 ms (at most 1.3 ms), and at most 8 or 9 of an instance's 10 connections were inside a
-    transaction at once, flat across the run.
+    `begin` to its callback (the median per instance and second; at most 1.2 ms), a statement took 0.8 ms
+    in or out of a transaction (at most 1.3 ms), and at most 8 or 9 of an instance's 10 connections were
+    inside a transaction at once, flat across the run. Outstanding autocommit statements on an instance
+    peaked at 14 to 17 against its pool of 10.
   - **The fence does not account for it.** In the instrumented runs a conflicted enqueue's replay committed at
     its first attempt in 85 to 88 % of cases (1.13 to 1.16 attempts each), a replay commit took about 28 ms
     early and late in the run, and the server's commit queue on an instance never waited more than 1 ms.
-  - **The drain's serial throughput does.** In the instrumented runs each instance's one outbound worker ran
-    its claims one at a time, a page of 16 per batch at 44 to 56 ms a claim, and 13 to 26 % of its claims
-    were rescheduled. It found a full page in 17 to 24 of its 19 to 24 batches while the sends ran, and
-    completed 13 to 17 rows a second while they ran and 11 to 17 after they stopped. Across the three
-    instances receipt replays committed 9.2 to 10.0 a second and receipt dequeues 13.4 while the sends ran,
-    and 12.2 to 12.4 and 13.6 to 13.9 after, until the queue was empty. A conflicted receipt waited for its
-    replay 0.3 to 0.8 s over the first ten and 6.9 to 7.9 s over the last ten, then 1.9 to 3.3 s from its
-    dequeue commit to the read. An unconflicted one, which has no replay, waited 0.2 to 0.9 s from its dequeue
-    commit to the read over the first ten, and over the last ten 6.8 to 8.0 s in five of six groups of two to
-    four receipts (1.9 s in the sixth). The fence adds a replay to the drain's work for each receipt that
-    conflicted; every receipt waits in the drain.
+  - **The drain's serial throughput does.** Each instance's one outbound worker runs one batch at a time, and
+    within a batch its claims one after another, except that the batch's dequeued rows are admitted together
+    (`run-al-outbound-dequeue-claim-group.ts`). In the instrumented runs it was busy throughout: 19 to 24
+    batches of 0.79 to 0.96 s each (the mean per instance), back to back over the 18 s of sends, nearly all
+    full pages of 16 (17 to 24 of them), at 44 to 56 ms a claimed row, with 13 to 26 % of its claims
+    rescheduled. It completed 13 to 17 rows a second while the sends ran and 11 to 17 after they stopped. Its
+    own queue wait is not observed (the outbound owner claims without reading a page), so saturation is read
+    from that; replay and dequeue are told apart by each receipt's order of commits, not by a field. Across
+    the three instances receipt replays committed 9.2 to 10.0 a second and receipt dequeues 13.4 while the
+    sends ran, and 12.2 to 12.4 and 13.6 to 13.9 after, until the queue was empty. From the enqueue, or from
+    the replay, to the dequeue commit took 0.10 to 0.57 s (p50), over the first ten and the last ten alike,
+    in all 12 groups. The wait grew around that step. A conflicted receipt waited for its replay 0.3 to
+    0.8 s over the first ten and 6.9 to 7.9 s over the last ten, then 1.9 to 3.3 s from its dequeue commit
+    to the read over the last ten. An unconflicted one, which has no replay, waited 0.2 to 0.9 s from its
+    dequeue commit to the read over the first ten, and over the last ten 6.8 to 8.0 s in five of six groups
+    of two to four receipts (1.9 s in the sixth): longer after the dequeue than a conflicted receipt. The
+    fence adds a replay claim to the worker's work for each receipt that conflicted; every receipt waits in
+    the worker.
   - **The room messages share the drain, not the identity.** Their commits are under their publishers'
     identities, none under the server's, but each instance's one outbound worker drains them beside the
     receipts. Send to the last ACK offered: p50 0.50 to 0.58 s over the first ten and 0.65 to 1.05 s over the
     last ten, p95 6.2 to 6.9 s and max 8.9 to 15.0 s over all 200, in the four runs that timed it.
-- **The lever the numbers point at is the receipts' delivery, not the count:** take the receipts off the
-  server's one outbound identity, its fence and its serial drain, for example by delivering them from the
-  record's own work rows, so that a receipt no longer takes a fenced enqueue, a replay, a dequeue and a send,
-  each a claim on the instance's one outbound worker. What that path itself sustains is not measured, and it
-  would not bring the lag to the record alone's 60 ms: the `end` and its ended work (170 to 420 ms) stay. The
-  count keeps up, so counting at `admitAuthorizedMessage`, a per-instance head cache or a single-statement
-  unfenced write would shorten a lag that does not grow.
+- **The lever the numbers point at is the receipts' delivery, not the count:** take the receipts' delivery off
+  the instance's outbound worker, and with it off the server identity's fence, for example by delivering
+  them from the record's own work rows, so that a receipt no longer takes a fenced enqueue, then a replay, a
+  dequeue and a send, each a claim on the instance's one outbound worker. What that path itself sustains is
+  not measured, and it would not bring the lag to the record alone's 60 ms: the `end` and its ended work (170
+  to 420 ms) stay. The count keeps up, so counting at `admitAuthorizedMessage`, a per-instance head cache or a
+  single-statement unfenced write would shorten a lag that does not grow.
 - At +5 ms the last ACKs of almost every message overlap: 183 to 192 losing `end`s for 200 messages at five
   publishers, 34 to 44 for 40 at one. No losing `end` delivered a second terminal receipt.
 
@@ -780,6 +792,13 @@ receipt the publisher had not read when the sends stopped.
 - Where the room messages' fan-out tail comes from (p95 6.2 to 6.9 s at five publishers and +5 ms): they share
   each instance's one outbound worker with the receipts, not the server's identity, and no run timed their own
   claims in that worker's queue.
+- How the outbound worker orders a receipt's replay, dequeue and send claims among its other claims: the runs
+  time each receipt's commits, not the worker's claim order.
+- Whether the outbound worker keeps up at five publishers and +5 ms once the fence's replays are gone: receipt
+  replays were 21 to 22 % of its completed claims while the sends ran (9.2 to 10.0 replays committed a second
+  against 43.9 to 44.9 rows completed a second across the three instances), and no run removed them. Nor what
+  the lever's path itself sustains: delivering the receipts from the record's own work rows is neither built
+  nor measured.
 - More than five publishers in a room: not run, so whether the receipts keep up with ten publishers even at
   +0 ms is not shown.
 - The sustained cost of an ACK that finds no head: the measurement through the WS server offers each ACK only
