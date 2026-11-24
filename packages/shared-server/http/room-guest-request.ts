@@ -1,7 +1,7 @@
 import type { IssuedAuthSession } from '../rallar-system/auth/persistence/auth-session-types.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { roomGuestCredentialExpiresAt, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
 import { readRoomGuestCredential, ROOM_GUEST_TOKEN_PREFIX } from '../rallar-system/auth/credentials/room-guest-credential.ts';
 import { authenticationRequired, authorizationDenied } from './request-auth-service.ts';
 
@@ -52,11 +52,11 @@ export async function readRoomGuestSession(
     const snapshot = await readSnapshot(guest.roomRef);
     if (!snapshot) throw authorizationDenied('Guest room is unavailable.');
     assertRoomGuestSeat(guest, snapshot, nowEpochMs());
-    const lease = snapshot.members.find(member => member.principalId === guest.clientId)?.guestLease;
-    if (!lease) throw authorizationDenied('Guest membership is unavailable.');
+    const member = snapshot.members.find(member => member.principalId === guest.clientId);
+    if (!member?.guestLease) throw authorizationDenied('Guest membership is unavailable.');
     return {
         clientId: guest.clientId, sessionId: guest.sessionId, username: guest.clientId,
         accessToken: request.header('authorization')!.slice('Bearer '.length),
-        issuedAtEpochMs: lease.admittedAtEpochMs, expiresAtEpochMs: lease.expiresAtEpochMs
+        issuedAtEpochMs: member.guestLease.admittedAtEpochMs, expiresAtEpochMs: roomGuestCredentialExpiresAt(snapshot.group, member)
     };
 }

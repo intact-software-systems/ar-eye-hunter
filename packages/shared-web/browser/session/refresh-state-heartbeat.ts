@@ -3,6 +3,8 @@ import {
     validateAuthoritativeClientSnapshot,
     validateAuthoritativeGroupSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { readStateClientSnapshot } from '../state-read/point-read.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -85,10 +87,12 @@ type HeartbeatRetryError = Parameters<NonNullable<NonNullable<HeartbeatCommandPo
 
 export async function refreshStateHeartbeat(
     clientData: ClientInfo,
-    joinedGroups: readonly GroupSnapshot[],
+    observedGroups: readonly GroupSnapshot[],
     options: RefreshStateHeartbeatOptions
 ): Promise<RefreshStateHeartbeatResult> {
     const scope = options.scope ?? defaultStateScope();
+    const guest = options.authSession?.guestRoom;
+    const joinedGroups = guest ? observedGroups.filter(row => isSameGroupRef(row.group, guest)) : observedGroups;
     const heartbeatAtEpochMs = options.heartbeatAtEpochMs;
     const expiresAtEpochMs = heartbeatAtEpochMs + (options.ttlMs ?? DEFAULT_STATE_HEARTBEAT_TTL_MSECS);
     const clientRequestId = toApiMutationWorkflowRequestId();
@@ -102,8 +106,11 @@ export async function refreshStateHeartbeat(
         .sequential(
             flow.commandStep(
                 'client',
-                (signal) =>
-                    heartbeatClientWithPresenceRepair({
+                async (signal) => guest
+                    ? options.clientSnapshot ?? (await readStateClientSnapshot(clientData.clientId, guest, {
+                        signal, authSession: options.authSession
+                    })).snapshot
+                    : await heartbeatClientWithPresenceRepair({
                         clientData,
                         request: clientHeartbeatRequest({
                             clientData,

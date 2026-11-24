@@ -1,4 +1,5 @@
-import { roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
+import { readRoomGuestTransportRows } from './mutation/membership/room-guest-transport-lifecycle.ts';
+import { closesGuestPlayOccurrence, roomGuestAccessMode } from '@shared/api/room-guest-access.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { verifyPausedGroupAdmission } from './retention/verify-paused-group-admission.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
@@ -413,6 +414,8 @@ async function verifyGroupMutationAttemptSession(
                 command.input.succession?.operation === 'claim-deputy')) return;
             break;
         case 'updateGroup':
+            if (mode === 'finish-round' && closesGuestPlayOccurrence(command.input.roomClock) &&
+                command.input.roomDeadline === undefined) return;
             // The director fence independently checks the current appointment, epoch and absence of unrelated edits.
             if (mode === 'room' &&
                 (command.input.roomClock?.expectedDirectorEpoch !== undefined ||
@@ -443,7 +446,8 @@ async function readGroupMutationFences(
             isGroupSessionViewAudienceCommand(command)
         ? await readGroupSessionViewAudience(runtime, command.aggregateRef, ingress.facts.attemptAtEpochMs)
         : null;
-    const read = { ...initialRead, connectTriggerLatch, sessionViewAudience };
+    const guestTransportRows = await readRoomGuestTransportRows(owners.authSessions, command, initialRead);
+    const read = { ...initialRead, connectTriggerLatch, sessionViewAudience, guestTransportRows };
     if (!readsGroupLayoutRows(ingress.command)) {
         return read;
     }

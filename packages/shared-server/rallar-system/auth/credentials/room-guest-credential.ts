@@ -53,8 +53,13 @@ export async function readRoomGuestCredential(token: string): Promise<(RoomGuest
 }
 
 async function deriveRoomGuestIdentity(payload: string): Promise<RoomGuestIdentity> {
-    const [principal, session] = await Promise.all([guestDigest('principal', payload), guestDigest('session', payload)]);
-    return { clientId: 'guest-' + principal, sessionId: 'guest-session-' + session };
+    const clientId = 'guest-' + await guestDigest('principal', payload);
+    return { clientId, sessionId: await roomGuestTransportSessionId(clientId) };
+}
+
+/** Session identity is public; opening the session still needs the secret-derived access token. */
+export async function roomGuestTransportSessionId(principalId: string): Promise<string> {
+    return 'guest-session-' + await guestDigest('session', principalId);
 }
 
 async function guestDigest(purpose: 'principal' | 'session', payload: string): Promise<string> {

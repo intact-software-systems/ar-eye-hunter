@@ -306,9 +306,11 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         await facade.connect();
+        const connected = new Set(['friend-session', 'guest-session']);
+        mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => [...connected]);
+        mocks.webRtcConnectionService.disconnectPeer.mockImplementation(peerId => { connected.delete(peerId); });
         facade.rtc.disconnectPeer('guest-session');
-        expect(mocks.webRtcConnectionService.disconnectPeer).toHaveBeenCalledWith('guest-session');
-        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+        expect(facade.rtc.knownPeerIds()).toEqual(['friend-session']);
     });
 
     it('reconnects an RTC peer and waits for the requested lane', async () => {

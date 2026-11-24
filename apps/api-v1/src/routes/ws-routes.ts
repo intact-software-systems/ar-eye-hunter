@@ -86,7 +86,7 @@ async function upgradeAuthorisedWebSocket(
             requestUrl.searchParams.get('workspaceId') !== room.workspaceId) {
             return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
         }
-        guestSocket = new RoomGuestSocket({ roomRef: room, clientId: session.clientId, sessionId }, input.readGuestRoom, input.nowEpochMs);
+        guestSocket = new RoomGuestSocket({ roomRef: room, clientId: session.clientId, sessionId }, input.readGuestRoom, input.nowEpochMs, input.serverPeerId);
         if (!await guestSocket.authorizeUpgrade()) return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
     const connect = createAuthorisedWsConnect(input, {

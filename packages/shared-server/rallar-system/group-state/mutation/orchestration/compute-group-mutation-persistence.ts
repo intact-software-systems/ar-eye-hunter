@@ -1,3 +1,4 @@
+import { roomGuestTransportEffects } from '../membership/room-guest-transport-lifecycle.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../../../auth/persistence/auth-storage-keys.ts';
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -90,7 +91,7 @@ function computeGroupMutationGuardedBatch(
     read: GroupMutationRead
 ): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
-    effects.push(...computePresenceAndMembershipEffects(computed));
+    effects.push(...computePresenceAndMembershipEffects(computed), ...roomGuestTransportEffects(computed, read));
     const guestSession = computed.guestTransportSession;
     if (guestSession) {
         effects.push({

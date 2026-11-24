@@ -495,6 +495,7 @@ export interface GroupMutationIdempotencyRecord {
 }
 
 export interface GroupMutationRead {
+    readonly guestTransportRows?: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
     readonly sessionViewAudience: GroupSessionViewAudience | null;
     readonly sessionIntent: RuntimeStateEntryValue<StoredGroupSessionIntent> | null;
     readonly sessionReservations: RuntimeStateEntryValue<StoredGroupSessionReservations> | null;

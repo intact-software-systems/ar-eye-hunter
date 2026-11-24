@@ -1,5 +1,6 @@
 import { decodeStateSyncMessage } from '@shared-server/rallar-system/state-sync/state-sync-payload.ts';
 import { type ALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -80,11 +81,15 @@ export class RoomGuestSocket {
     private timer: ReturnType<typeof setInterval> | undefined;
     private socket: ConnectionContext.Socket | undefined;
 
+    private readonly deliveredOrigins = new Map<string, string>();
+    private readonly submittedOrigins = new Map<string, string>();
+    private readonly serverPeerId: string;
     private readonly guest: RoomGuestRequest;
     private readonly readSnapshot: (room: GroupRef) => Promise<GroupSnapshot | undefined>;
     private readonly now: () => number;
 
-    constructor(guest: RoomGuestRequest, readSnapshot: (room: GroupRef) => Promise<GroupSnapshot | undefined>, now: () => number) {
+    constructor(guest: RoomGuestRequest, readSnapshot: (room: GroupRef) => Promise<GroupSnapshot | undefined>, now: () => number, serverPeerId: string) {
+        this.serverPeerId = serverPeerId;
         this.guest = guest;
         this.readSnapshot = readSnapshot;
         this.now = now;
@@ -100,7 +105,10 @@ export class RoomGuestSocket {
         this.stopWatching = onGroupStateSnapshotChange(change => {
             if (!isSameGroupRef(change.groupRef, this.guest.roomRef)) return;
             if (change.snapshot) {
-                try { assertRoomGuestSeat(this.guest, change.snapshot, this.now()); }
+                try {
+                    assertRoomGuestSeat(this.guest, change.snapshot, this.now());
+                    this.snapshot = change.snapshot;
+                }
                 catch {
                     this.snapshot = undefined;
                     this.socket?.close(1008, 'Guest membership ended');
@@ -117,8 +125,10 @@ export class RoomGuestSocket {
             close: (code, reason) => socket.close(code, reason),
             send: text => {
                 const frame = readFrame(text);
-                return frame && this.isLive() && allowsGuestRoomFrame(frame, 'outbound', this.guest, this.snapshot!, this.now())
-                    ? socket.send(text) : 0;
+                if (!frame || !this.permits(frame, 'outbound')) return 0;
+                const written = socket.send(text);
+                if (written !== 0) this.remember(this.deliveredOrigins, frame);
+                return written;
             }
         };
     }
@@ -126,8 +136,10 @@ export class RoomGuestSocket {
     async allowsInbound(data: unknown): Promise<boolean> {
         const frame = readFrame(data);
         if (!frame) return false;
-        await this.refresh();
-        return this.isLive() && allowsGuestRoomFrame(frame, 'inbound', this.guest, this.snapshot!, this.now());
+        if (!this.isLive()) await this.refresh();
+        if (!this.permits(frame, 'inbound')) return false;
+        this.remember(this.submittedOrigins, frame);
+        return true;
     }
 
     close(): void {
@@ -136,6 +148,38 @@ export class RoomGuestSocket {
         if (this.timer !== undefined) clearInterval(this.timer);
         this.stopWatching?.();
         this.socket = undefined;
+    }
+
+    private permits(frame: ALMessage, direction: 'inbound' | 'outbound'): boolean {
+        if (!this.isLive() || !this.snapshot) return false;
+        if (!isALControlTypeId(frame.payload.typeId)) {
+            return allowsGuestRoomFrame(frame, direction, this.guest, this.snapshot, this.now());
+        }
+        const control = decodeALControlMessage(frame).right;
+        if (!control) return false;
+        const own = this.guest.sessionId;
+        if (control.type === 'receipt') {
+            return direction === 'outbound' && frame.id.senderId === this.serverPeerId &&
+                control.payload.originPeerId === own && this.submittedOrigins.has(control.payload.msgId);
+        }
+        const msgId = control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
+        const body = control.payload;
+        if (direction === 'inbound') {
+            const origin = this.deliveredOrigins.get(msgId);
+            return origin !== undefined && frame.id.senderId === own && body.fromPeerId === own &&
+                (body.toPeerId === this.serverPeerId || body.toPeerId === origin) &&
+                (!('originPeerId' in body) || (body.originPeerId === origin && body.logicalRecipientPeerId === own));
+        }
+        return this.submittedOrigins.has(msgId) && body.toPeerId === own &&
+            (!('originPeerId' in body) || body.originPeerId === own);
+    }
+
+    /** Unscoped delivery controls must refer to a message that crossed this room socket. */
+    private remember(origins: Map<string, string>, frame: ALMessage): void {
+        if (isALControlTypeId(frame.payload.typeId) || !frame.delivery ||
+            (frame.delivery.reliability === 'best-effort' && frame.delivery.ack === 'none')) return;
+        origins.set(frame.id.msgId, frame.id.senderId);
+        if (origins.size > 1024) origins.delete(origins.keys().next().value!);
     }
 
     private isLive(): boolean {

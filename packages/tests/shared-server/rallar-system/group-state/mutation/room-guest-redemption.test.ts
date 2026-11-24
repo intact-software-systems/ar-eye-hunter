@@ -1,3 +1,5 @@
+import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
+import { roomGuestTransportSessionId } from '@shared-server/rallar-system/auth/credentials/room-guest-credential.ts';
 import { computeGroupClockUpdate } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-clock-change.ts';
 import { toRoomGuestSeatExpiryCommand } from '@shared-server/rallar-system/group-state/schedule/room-guest-seat-deadline.ts';
 import { expect, it } from 'vitest';
@@ -20,9 +22,9 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
         await ownerUpdate('bound', { maxMembers: 2 });
         await ownerUpdate('invite', { guestInvitationVerifier: verifier });
         const principals = ['b', 'c'].map(character => 'guest-' + character.repeat(64));
-        const admissions = await Promise.all(principals.map(principalId => fixture.mutations.captureGuestMembershipMutationIngress(
+        const admissions = await Promise.all(principals.map(async principalId => fixture.mutations.captureGuestMembershipMutationIngress(
             toRoomGuestAdmissionCommand({ roomRef: RETENTION_REF, principalId, invitationVerifier: verifier, requestId: 'join', displayName: 'Grumpy Gull',
-                guestTransport: { sessionId: 'guest-session-' + principalId.slice(6), accessTokenDigest: 'A'.repeat(43) } }), fixture.nowEpochMs
+                guestTransport: { sessionId: await roomGuestTransportSessionId(principalId), accessTokenDigest: 'A'.repeat(43) } }), fixture.nowEpochMs
         )));
         const admissionTime = fixture.nowEpochMs;
         fixture.nowEpochMs += 900_000;
@@ -52,6 +54,7 @@ it('commits one four-hour guest lease in the final seat and retires the link ato
             request: { actorPrincipalId: 'owner', requestId: 'remove' }
         }));
         await commitMutation(fixture, requireMutationWrite(removal.computed));
+        expect(await new AuthSessionPersistence(fixture.runtime).findBySessionId(await roomGuestTransportSessionId(principals[0]))).toBeUndefined();
         const after = await fixture.repository.readSnapshot(RETENTION_REF);
         expect(after?.group.guestInvitation).toBeUndefined();
         expect(after?.members.find(member => member.principalId === principals[0])?.status).toBe('removed');
@@ -75,7 +78,7 @@ it.each([false, true])('releases the seat at its fixed cutoff without a connecte
         await commitMutation(fixture, requireMutationWrite(update.computed));
         const join = await fixture.mutations.captureGuestMembershipMutationIngress(toRoomGuestAdmissionCommand({
             roomRef: RETENTION_REF, principalId, invitationVerifier, requestId: 'join',
-            guestTransport: { sessionId: 'guest-session-' + principalId.slice(6), accessTokenDigest: 'A'.repeat(43) }
+            guestTransport: { sessionId: await roomGuestTransportSessionId(principalId), accessTokenDigest: 'A'.repeat(43) }
         }), fixture.nowEpochMs);
         const admission = requireMutationWrite(await retryMutation(fixture, join));
         const expiresAtEpochMs = fixture.nowEpochMs + 14_400_000;

@@ -128,3 +128,25 @@ test('strict client collection reads the authenticated self from durable current
     assert.deepEqual(await response.json(), [snapshot]);
     assert.equal(currentReads, 1);
 });
+
+test('guest point reads require its own scoped client and a live admitted room seat', async () => {
+    const { toRoomGuestCredential } = await import('@shared-server/rallar-system/auth/credentials/room-guest-credential.ts');
+    const { createGroupStateRouteSnapshotWithMember, TEST_GROUP_SCOPE } = await import('../group-state/group-state-route-test-runtime.ts');
+    const roomRef = { ...TEST_GROUP_SCOPE, groupId: 'market' };
+    const credential = await toRoomGuestCredential(roomRef, 'ab'.repeat(32));
+    const snapshot = createGroupStateRouteSnapshotWithMember('market', credential.clientId, 'active');
+    const deps = createClientRouteDeps({ session: createAuthSession('ordinary'), clientService: {
+        readSnapshot: async () => createClientSnapshot(credential.clientId)
+    } });
+    let revoked = false;
+    const app = createClientRouteApp({ ...deps, readGuestRoom: async () => revoked ? undefined : {
+        ...snapshot, members: snapshot.members.map(member => ({ ...member, guestLease: { admittedAtEpochMs: 1, expiresAtEpochMs: Date.now() + 60000 } }))
+    } });
+    const path = '/api/state/apps/app-1/workspaces/workspace-1/clients/' + credential.clientId;
+    const headers = { authorization: 'Bearer ' + credential.accessToken, 'x-client-id': credential.clientId };
+    assert.equal((await app.request(path, { headers })).status, 200);
+    assert.equal((await app.request(path.replace(credential.clientId, 'other'), { headers })).status, 403);
+    assert.equal((await app.request(path.replace('workspace-1', 'different'), { headers })).status, 403);
+    revoked = true;
+    assert.equal((await app.request(path, { headers })).status, 403);
+});
